@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -7,28 +7,90 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { parseEvent } from '../../improvement/event.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { parseEvent, writeEvent } from '../../improvement/event.js';
+import type { ImprovementEvent } from '../../improvement/event.js';
+import type { ImprovementStatus } from '../../improvement/statusDecision.js';
 import type { SweepOptions, SweepOutcome } from '../../improvement/sweep.js';
+import { writeSweepIndex } from '../../improvement/sweepIndex.js';
+import type { SweepIndex } from '../../improvement/sweepIndex.js';
 import improvementExtension from './improvement.js';
 
 type SweepRunner = (options: SweepOptions) => Promise<SweepOutcome>;
 
-const sessionStartContext = (cwd: string) => ({ cwd }) as unknown as ExtensionContext;
+type SetStatus = (key: string, text: string | undefined) => void;
+
+const pullRequest = 'https://github.com/sQVe/tau/pull/562';
+
+const evidence: ImprovementEvent['evidence'] = [{ kind: 'pullRequest', url: pullRequest }];
+
+const mergeEvent: ImprovementEvent = {
+  version: 1,
+  id: 'merge-562',
+  kind: 'merge',
+  createdAt: '2026-11-15T12:00:00.000Z',
+  evidence,
+  repository: 'github.com/sQVe/tau',
+  pullRequest,
+  mergedAt: '2026-11-15T11:58:00.000Z',
+};
+
+const factsEvent: ImprovementEvent = {
+  version: 1,
+  id: 'facts-562',
+  kind: 'facts',
+  createdAt: '2026-11-15T12:01:00.000Z',
+  evidence,
+  pullRequest,
+  facts: { reviewCaptures: 5 },
+  coverage: 'complete',
+};
+
+const correctionEvent: ImprovementEvent = {
+  version: 1,
+  id: 'correction-1',
+  kind: 'correction',
+  createdAt: '2026-11-15T12:02:00.000Z',
+  evidence: [],
+  summary: 'Run the focused tests first.',
+  cwd: '/code/tau',
+};
+
+const sweepIndex = (projectRoot: string, outcome: 'caughtUp' | 'failed'): SweepIndex => ({
+  version: 1,
+  transcripts: {},
+  projects: {
+    [projectRoot]: {
+      repository: 'sqve/tau',
+      merged: { status: 'read', at: '2026-11-15T12:00:00.000Z', count: 1 },
+    },
+  },
+  lastSweep: { startedAt: '2026-11-15T12:00:00.000Z', outcome },
+});
+
+const sessionStartContext = (cwd: string, setStatus: SetStatus = () => undefined) =>
+  ({ cwd, hasUI: true, ui: { setStatus } }) as unknown as ExtensionContext;
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-const sessionContext = (cwd: string) =>
+const sessionContext = (cwd: string, setStatus: SetStatus) =>
   ({
     cwd,
+    hasUI: true,
+    ui: { setStatus },
     sessionManager: {
       getSessionId: () => 'session-1',
       getSessionFile: () => '/sessions/one.jsonl',
     },
   }) as unknown as ExtensionToolContext;
 
-const runManagerTool = async (cwd: string, input: Record<string, unknown>) => {
+const runManagerTool = async <Details>(
+  cwd: string,
+  input: Record<string, unknown>,
+  setStatus: SetStatus = () => undefined,
+): Promise<Details> => {
   vi.stubEnv('TAU_ROLE', undefined);
   const fake = fakeExtensionApi();
 
@@ -39,9 +101,15 @@ const runManagerTool = async (cwd: string, input: Record<string, unknown>) => {
     throw new Error('The manager has no improvement tool.');
   }
 
-  const result = await tool.execute('call-1', input, undefined, undefined, sessionContext(cwd));
+  const result = await tool.execute(
+    'call-1',
+    input,
+    undefined,
+    undefined,
+    sessionContext(cwd, setStatus),
+  );
 
-  return result.details as { path: string };
+  return result.details as Details;
 };
 
 it('registers no improvement tool in a worker', () => {
@@ -72,7 +140,7 @@ it('starts no sweep in a worker session', () => {
 it('records a correction from the session the manager runs', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const { path } = await runManagerTool(root, {
+  const { path } = await runManagerTool<{ path: string }>(root, {
     action: 'record',
     summary: 'Use run_tests for tests.',
   });
@@ -84,6 +152,35 @@ it('records a correction from the session the manager runs', async () => {
     summary: 'Use run_tests for tests.',
     cwd: root,
     evidence: [{ kind: 'transcript', path: '/sessions/one.jsonl', toolCallId: 'call-1' }],
+  });
+});
+
+it('returns tasks, correct due, and coverage from the status action', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const projectRoot = await realpath(root);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-agent-');
+
+  await writeEvent(projectRoot, mergeEvent);
+  await writeEvent(projectRoot, factsEvent);
+  await writeEvent(projectRoot, correctionEvent);
+  await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'caughtUp'));
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
+  const status = await runManagerTool<ImprovementStatus>(root, { action: 'status' });
+
+  expect(status).toEqual({
+    projectRoot,
+    tasks: [
+      {
+        pullRequest,
+        mergedAt: '2026-11-15T11:58:00.000Z',
+        signals: ['reviewRounds'],
+      },
+    ],
+    correctDue: true,
+    coverage: { complete: 1, managerOnly: 0, missing: 0 },
+    sweep: 'complete',
+    skipped: [],
   });
 });
 
@@ -115,6 +212,70 @@ it('returns from session start before the sweep finishes', async () => {
 
   resolve({ outcome: 'caughtUp' });
   await promise;
+});
+
+it('sets the sweep incomplete status after a failed sweep', async () => {
+  vi.stubEnv('TAU_ROLE', undefined);
+  const root = await createTemporaryRepository(onTestFinished);
+  const projectRoot = await realpath(root);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-agent-');
+  const setStatus = vi.fn<SetStatus>();
+  const { promise, resolve } = Promise.withResolvers<SweepOutcome>();
+  const runSweep = vi.fn<SweepRunner>(() => promise);
+
+  await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'caughtUp'));
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
+  const fake = fakeExtensionApi();
+  improvementExtension(fake.pi, { runSweep });
+  fake.handler('session_start')({}, sessionStartContext(root, setStatus));
+
+  await vi.waitFor(() => {
+    expect(setStatus).toHaveBeenCalledWith('improvement', undefined);
+  });
+
+  await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'failed'));
+  resolve({ outcome: 'failed', reason: 'fake failure' });
+
+  await vi.waitFor(() => {
+    expect(setStatus).toHaveBeenLastCalledWith('improvement', 'improve: sweep incomplete');
+  });
+});
+
+it('clears the status item when nothing is due and the sweep is caught up', async () => {
+  vi.stubEnv('TAU_ROLE', undefined);
+  const root = await createTemporaryRepository(onTestFinished);
+  const projectRoot = await realpath(root);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-agent-');
+  const setStatus = vi.fn<SetStatus>();
+  const runSweep = vi.fn<SweepRunner>(async () => ({ outcome: 'caughtUp' }));
+
+  await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'caughtUp'));
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
+  const fake = fakeExtensionApi();
+  improvementExtension(fake.pi, { runSweep });
+  fake.handler('session_start')({}, sessionStartContext(root, setStatus));
+
+  await vi.waitFor(() => {
+    expect(setStatus).toHaveBeenLastCalledWith('improvement', undefined);
+  });
+});
+
+it('refreshes the status item after a record call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const projectRoot = await realpath(root);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-agent-');
+  const setStatus = vi.fn<SetStatus>();
+
+  await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'caughtUp'));
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
+  await runManagerTool(root, { action: 'record', summary: 'Use run_tests.' }, setStatus);
+
+  await vi.waitFor(() => {
+    expect(setStatus).toHaveBeenCalledWith('improvement', 'improve: correct due');
+  });
 });
 
 it('refuses a record call without a summary', async () => {
