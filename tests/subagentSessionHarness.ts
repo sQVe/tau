@@ -16,6 +16,7 @@ import { workerCommand } from '../src/extensions/subagents/workerCommand.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
 import { get } from '../src/hc/hc.js';
 import { skillTools } from '../src/skillTools.js';
+import { initializeRepository } from './gitRepository.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -255,6 +256,15 @@ export const launchWorkerSession = async (
   writeControlledProvider(agentDirectory);
 
   options.prepareWorker?.(workerDirectory);
+
+  await initializeRepository(workerDirectory);
+  writeFileSync(join(workerDirectory, '.gitignore'), '.tau/\n');
+  mkdirSync(join(workerDirectory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(workerDirectory, '.pi', 'tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['node', '-e', 'process.exit(0)'] } }),
+  );
 
   const { argv: managerArgv, observationPath } = managerInvocation(agentDirectory, options.probe);
   const workerArgv = workerCommandArgv(agentDirectory, options.command);

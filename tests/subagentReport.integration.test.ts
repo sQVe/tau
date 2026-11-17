@@ -129,6 +129,7 @@ it('shows a real worker report once before it gives the worker the manager envir
   const worker = await launchWorkerSession({
     hc,
     model: fixtureModel,
+    tauPackage: true,
     task: 'Edit source.txt and report.',
     acceptance: ['source.txt says after.'],
     probe: { source: managerProbe },
@@ -211,6 +212,7 @@ it('delivers one worker report through the real hc event watch', async () => {
   const worker = await launchWorkerSession({
     hc,
     model: fixtureModel,
+    tauPackage: true,
     task: 'Edit source.txt and report.',
     acceptance: ['source.txt says after.'],
     probe: { source: managerProbe },

@@ -9,6 +9,7 @@ import type { Assignment, SavedReport } from './assignment.js';
 import {
   assignmentFor,
   dispatch,
+  savePassingFullCheck,
   sendStartMessage,
   setup,
 } from './fixtures/workerExtensionHarness.js';
@@ -48,6 +49,7 @@ it('reads the assignment and activates its tools without sending a message at se
   const { activeTools, context, directory, loadout, pi, shutdown, tools } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
 
@@ -135,6 +137,7 @@ it('passes unrelated input through unchanged', async () => {
   const { context, directory, pi } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
 
@@ -149,6 +152,7 @@ it('passes a second start message through unchanged', async () => {
   const { context, directory, pi } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
@@ -160,6 +164,7 @@ it('keeps a reloaded worker waiting without a second task prompt', async () => {
   const { context, directory, pi, shutdown } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
 
   Object.assign(context.sessionManager, {
     getBranch: () => [
@@ -204,6 +209,7 @@ it('reminds again for a report after the parent answers a question the reminded 
   const { context, directory, pi } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
   expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
@@ -238,6 +244,7 @@ it('does not restart the report reminder when a non-user message starts', async 
   const { context, directory, pi } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
   expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
@@ -256,6 +263,7 @@ it('shuts the worker down after a settled report', async () => {
   const { context, directory, pi, shutdown } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
   const tool = pi.tools.get('subagent_report');
@@ -297,6 +305,7 @@ it('keeps the worker running and skips the report reminder when its turn ends on
   const { context, directory, pi, shutdown } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
   const tool = pi.tools.get('subagent_question');
@@ -324,6 +333,7 @@ it('shuts the worker down when a report is saved after a question in the same ru
   const { context, directory, pi, shutdown } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
   const question = pi.tools.get('subagent_question');
@@ -362,6 +372,7 @@ it('reminds for a report after a reply is consumed while the turn streams', asyn
   const { context, directory, pi } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
   const question = pi.tools.get('subagent_question');
@@ -392,6 +403,7 @@ it('shuts the worker down when the turn that answers its question settles', asyn
   const { context, directory, pi, shutdown } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
   const tool = pi.tools.get('subagent_question');
@@ -423,6 +435,7 @@ it('reminds once for a report and shares that state', async () => {
   const { context, directory, pi } = setup();
 
   await writeAssignment(assignmentFor(directory));
+  await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
   const first = pi.handler('agent_before_settle')({ entries: [] }, context);

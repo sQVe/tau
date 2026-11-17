@@ -8,6 +8,7 @@ import type { SavedReport } from './assignment.js';
 import {
   assignmentFor,
   dispatch,
+  savePassingFullCheck,
   sendStartMessage,
   setup,
 } from './fixtures/workerExtensionHarness.js';
@@ -53,6 +54,7 @@ it('warns once 30 s before a deadline 120 s away, and not before', async () => {
   const { context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
@@ -93,6 +95,7 @@ it('shows no warning when the worker reports before the warning time', async () 
   const { context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
@@ -146,6 +149,7 @@ it('shows no warning after session_shutdown', async () => {
   const { context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
@@ -187,6 +191,7 @@ it('shows no warning when a report is saved after the warning is armed', async (
   const { assignmentPath, context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
@@ -203,6 +208,7 @@ it('shows no warning when the warning is cleared while the report read is pendin
   const { assignmentPath, context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
@@ -231,6 +237,7 @@ it('does not warn again when the start message arrives twice', async () => {
   const { context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
@@ -252,6 +259,7 @@ it('keeps a question wait when the deadline warning turn settles', async () => {
   const { context, directory, pi, shutdown } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
+  await savePassingFullCheck(directory);
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);

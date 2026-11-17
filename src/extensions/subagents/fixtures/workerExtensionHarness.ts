@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,8 +11,11 @@ import { onTestFinished, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { fakeExtensionApi } from '../../../../tests/extensionApi.js';
+import { initializeRepositorySync } from '../../../../tests/gitRepository.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { saveCheckRecord } from '../../../checkRecord/checkRecord.js';
+import { readCheckIdentity } from '../../../checkRecord/identity.js';
 import { skillTools } from '../../../skillTools.js';
 import { assignmentDirectory } from '../assignment.js';
 import type { Assignment } from '../assignment.js';
@@ -75,6 +78,15 @@ const workerHandler =
 
 export const setup = (assignmentPath?: string): WorkerExtensionSetup => {
   const directory = realpathSync(temporaryDirectory(onTestFinished, 'tau-worker-extension-'));
+
+  initializeRepositorySync(directory);
+  writeFileSync(join(directory, '.gitignore'), '.tau/\ntau/\n');
+  mkdirSync(join(directory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(directory, '.pi', 'tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
+  );
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
@@ -140,6 +152,17 @@ export const setup = (assignmentPath?: string): WorkerExtensionSetup => {
     shutdown,
     tools,
   };
+};
+
+export const savePassingFullCheck = async (directory: string): Promise<void> => {
+  const argv = ['pnpm', 'check'];
+  const identity = await readCheckIdentity(directory, argv);
+  const checks = join(directory, '.tau', 'checks');
+  const logPath = join(checks, 'run.log');
+
+  mkdirSync(checks, { recursive: true });
+  writeFileSync(logPath, 'output');
+  await saveCheckRecord(logPath, identity, true);
 };
 
 export const assignmentFor = (directory: string): Assignment => ({

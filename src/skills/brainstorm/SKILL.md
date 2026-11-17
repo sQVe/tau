@@ -9,6 +9,8 @@ description:
 
 # Brainstorm
 
+> **Role: architect.** A lead hands this step to the architect with the `architect` tool.
+
 ## When to use
 
 Use this skill when the user describes something to build and the approach or the requirements are

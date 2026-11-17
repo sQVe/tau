@@ -31,7 +31,7 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 55_000, // target 38,000
   architect: 53_500,
-  worker: 20_208, // target 14,000
+  worker: 21_110, // target 14,000
   reviewer: 16_564, // target 11,000
   checker: 16_717,
   qa: 13_393, // target 9,000
@@ -127,7 +127,12 @@ const workerSession = async (profileName: string, directory: string) => {
   const fake = await loadTools('worker', directory);
   const loadout = loadoutFor(profileName, directory);
   const names = new Set(workerTools(loadout, skillTools));
-  const tauTools = workerTools({ tools: [], skills: loadout.skills }, skillTools);
+
+  const tauTools = workerTools(
+    { tools: [], skills: loadout.skills, role: loadout.role },
+    skillTools,
+  );
+
   const missing = tauTools.filter((name) => !fake.tools.has(name));
 
   if (missing.length > 0) {

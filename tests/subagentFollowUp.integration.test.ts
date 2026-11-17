@@ -30,6 +30,7 @@ it('resumes an ended worker with its first task in context', async () => {
   const worker = await launchWorkerSession({
     hc,
     model: fixtureModel,
+    tauPackage: true,
     task: `Edit source.txt ${firstTaskMarker}`,
     acceptance: ['source.txt says after.'],
     prepareWorker: (workerDirectory) => {

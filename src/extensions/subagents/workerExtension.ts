@@ -16,6 +16,8 @@ import {
   nestedControlCallReason,
 } from '../../codemode/controlTools.js';
 import { codemodeGuidelines } from '../../codemode/guidelines.js';
+import { readConfigLocation } from '../../config/config.js';
+import { readRepositoryArgv } from '../../config/repositoryCommand.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress, readCurrentTerminal } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
@@ -26,6 +28,7 @@ import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPro
 import { registerTypeScriptRules } from '../../instructions/typescriptRules.js';
 import { isWorkerProcess } from '../../role.js';
 import { skillTools } from '../../skillTools.js';
+import { findTauRoot } from '../../tauDirectory.js';
 import { createWake } from '../../wake/wake.js';
 import { readAssignment } from './assignment.js';
 import { checkWorkerRuntime } from './loadout.js';
@@ -157,8 +160,13 @@ const registerReportTool = (
       }
 
       const { target } = state;
+      const parameters = argumentsList[1];
+      const context = argumentsList[4];
+      const root = await findTauRoot(context.cwd, 'subagent_report');
+      const location = readConfigLocation(root, {}, context);
+      const { argv } = readRepositoryArgv(location, context.ui, 'fullCheck');
 
-      return inOrder(state, () => reportToParent(target, argumentsList[1], warning));
+      return inOrder(state, () => reportToParent(target, parameters, warning, { root, argv }));
     },
   });
 };

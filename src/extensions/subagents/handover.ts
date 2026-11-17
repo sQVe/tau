@@ -3,6 +3,7 @@ import { handoverSectionNames } from './report.js';
 const assignmentContract = [
   'Own the assigned outcome through to completion: acceptance criteria, exploration, design, implementation, tests, and debugging.',
   'The tests, docs, and checks the assignment names are part of the work, not follow-ups.',
+  "Before you report success, run `pnpm style:fix` and then the repository's `full_check` tool on the final tree, and cite its log path under Evidence.",
   'You are the only editor for this worktree.',
   'Report changes you did not make instead of claiming them.',
   'A failed approach or blocked tool call is not a handover: fix it within the safety rules and continue.',

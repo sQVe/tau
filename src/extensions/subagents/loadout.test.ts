@@ -577,14 +577,14 @@ it('loads the tdd and benchmark-checklist skills in the bundled worker profile',
   expect(() => resolveLoadout(request, context, [])).toThrow('Worker profile skill not found: tdd');
 });
 
-it('gives the bundled worker the run_tests and mutation_check tools without full_check', async ({
+it('gives the bundled editing worker the run_tests, mutation_check, and full_check tools', async ({
   onTestFinished,
 }) => {
   const { context, request } = await workerFixture(onTestFinished);
   const tools = workerTools(resolveLoadout(request, context), skillTools);
 
   expect(tools).toEqual(expect.arrayContaining(['run_tests', 'mutation_check']));
-  expect(tools).not.toContain('full_check');
+  expect(tools).toContain('full_check');
 });
 
 const parseSettings = (settings: string) =>

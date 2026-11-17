@@ -152,6 +152,7 @@ const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/p
 const workerExtensionPaths = [
   fileURLToPath(new URL('../src/extensions/subagents/workerExtension.ts', import.meta.url)),
   fileURLToPath(new URL('../src/extensions/inbox/inbox.ts', import.meta.url)),
+  fileURLToPath(new URL('../src/extensions/fullCheck/fullCheck.ts', import.meta.url)),
   safetyPackage,
 ];
 
@@ -203,6 +204,7 @@ it('resumes a saved worker session without waiting once it holds the answer rece
     fauxAssistantMessage([fauxToolCall('subagent_question', { question: 'Which value?' })]),
     fauxAssistantMessage('Noted the answer.'),
     fauxAssistantMessage('Still noted.'),
+    fauxAssistantMessage([fauxToolCall('full_check', {})]),
     (context) =>
       fauxAssistantMessage([
         fauxToolCall('subagent_report', {

@@ -1,7 +1,7 @@
 import type { Loadout } from './types.js';
 
 export const workerTools = (
-  loadout: Pick<Loadout, 'tools' | 'skills'>,
+  loadout: Pick<Loadout, 'tools' | 'skills' | 'role'>,
   skillTools: Readonly<Record<string, readonly string[]>>,
 ): string[] => {
   const loadedSkillTools = loadout.skills.flatMap((path) => {
@@ -21,8 +21,11 @@ export const workerTools = (
     ...loadedSkillTools,
   ]);
 
-  // Only the manager's PR step runs the full check, even when a worker loads the pr skill.
-  tools.delete('full_check');
+  if (loadout.role === 'editing') {
+    tools.add('full_check');
+  } else {
+    tools.delete('full_check');
+  }
 
   return [...tools];
 };

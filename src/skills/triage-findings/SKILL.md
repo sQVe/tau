@@ -33,6 +33,8 @@ changing and within the requested scope. Explain the rest.
   intended product behavior, or policy, or when you cannot settle a disputed claim against the code.
   Fixing a defect so the code does what the task intends needs no decision. Make the safe fixes
   first, then ask about the Blocked findings.
+- The lead sends each supported fix to a `worker` and checks its report. The lead makes no edit
+  itself.
 - Making the reviewer happy is not a reason to change code.
 
 ## Procedure
@@ -62,12 +64,14 @@ changing and within the requested scope. Explain the rest.
      decide.
    - The `local` and `restructure` labels of code-quality are the finder's estimate. Decide by the
      rules above, not by the label.
-3. Fix the findings whose outcome is Fixed.
+3. Send the findings whose outcome is Fixed to a `worker`.
    - Weigh each fix against the branches, guards, and abstractions it adds.
    - Put defensive checks where untrusted input enters, not inside trusted code.
    - When a simpler change covers the concern, make that one instead.
    - For a surviving mutant, follow the mutation step of the [tdd skill](../tdd/SKILL.md).
-4. Run the checks that cover your changes.
+   - The worker runs the mutation and check steps and reports the results. The lead checks its
+     report and makes no edit itself.
+4. Have the worker run the checks that cover the changes.
 5. Report every finding under one heading per outcome, in this order: Fixed, Not worth changing,
    Incorrect, and Blocked. Write "None" under an empty heading.
    - Use one bullet per finding. Start it with a descriptive title or a short summary of the
