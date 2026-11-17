@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { runTests } from './nextest.js';
 import { maximumStdoutBytes } from './process.js';
 import type { RunnerResult, RunTestsInput, SpawnCommand } from './types.js';
@@ -161,10 +161,15 @@ const fakeNextest = (
 };
 
 let searchPath = '';
+const registerCleanup = suiteCleanup();
 
 beforeAll(async () => {
-  vi.stubEnv('PI_CODING_AGENT_DIR', temporaryDirectory(afterAll, 'tau-nextest-attribution-agent-'));
-  searchPath = temporaryDirectory(afterAll, 'tau-nextest-attribution-path-');
+  vi.stubEnv(
+    'PI_CODING_AGENT_DIR',
+    temporaryDirectory(registerCleanup, 'tau-nextest-attribution-agent-'),
+  );
+
+  searchPath = temporaryDirectory(registerCleanup, 'tau-nextest-attribution-path-');
 
   const executable = join(searchPath, 'cargo-nextest');
 

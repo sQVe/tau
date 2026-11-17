@@ -1,14 +1,15 @@
 import { cp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { afterAll, beforeAll, beforeEach, expect, it, onTestFinished } from 'vitest';
+import { beforeAll, beforeEach, expect, it, onTestFinished } from 'vitest';
 
 import { createPrTool } from '../src/extensions/pr/tool.js';
 import { githubOrigin, serveGithubOriginFrom } from './githubOriginFake.js';
 import { createTemporaryRepository, git } from './gitRepository.js';
 import { createGhFake } from './prGhFake.js';
 import { createSavedFix, createSavedReview, savedReviewLink } from './savedReview.js';
-import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
+import type { SuiteCleanup } from './temporaryDirectoryHarness.js';
 
 const commitFeature = async (root: string, text: string) => {
   await writeFile(join(root, 'feature.txt'), text);
@@ -18,7 +19,7 @@ const commitFeature = async (root: string, text: string) => {
   return git(root, 'rev-parse', 'HEAD');
 };
 
-const setUpChain = async (registerCleanup: typeof afterAll) => {
+const setUpChain = async (registerCleanup: SuiteCleanup) => {
   const root = await createTemporaryRepository(registerCleanup);
   const remote = temporaryDirectory(registerCleanup, 'tau-pr-chain-');
 
@@ -61,10 +62,11 @@ const setUpChain = async (registerCleanup: typeof afterAll) => {
 
 let builtChain: Awaited<ReturnType<typeof setUpChain>>;
 let snapshotDirectory: string;
+const registerCleanup = suiteCleanup();
 
 beforeAll(async () => {
-  builtChain = await setUpChain(afterAll);
-  snapshotDirectory = temporaryDirectory(afterAll, 'tau-pr-chain-snapshot-');
+  builtChain = await setUpChain(registerCleanup);
+  snapshotDirectory = temporaryDirectory(registerCleanup, 'tau-pr-chain-snapshot-');
 
   await cp(builtChain.root, snapshotDirectory, { recursive: true });
 });

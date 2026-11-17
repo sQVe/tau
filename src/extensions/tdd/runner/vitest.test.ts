@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
 import { fakeSpawn, makeDeps, runTests } from '../fixtures/vitestRunner.js';
 import { thrownErrorType } from '../observation.js';
@@ -16,8 +16,10 @@ import { defaultDeps } from './vitest.js';
 const verificationArgv = defaultTddConfig.verificationArgv;
 
 describe('runTests', () => {
+  const registerCleanup = suiteCleanup();
+
   beforeAll(() => {
-    const agentDirectory = temporaryDirectory(afterAll, 'tau-runner-agent-');
+    const agentDirectory = temporaryDirectory(registerCleanup, 'tau-runner-agent-');
     vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
   });
 

@@ -2,9 +2,9 @@ import { execFile } from 'node:child_process';
 import { readFile, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve as resolvePath } from 'node:path';
 
-import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { beforeAll, expect, it, vi } from 'vitest';
 
-import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface CaseFile {
   name: string;
@@ -206,9 +206,10 @@ const runNested = (directory: string, reportPath: string) =>
 
 let report: Report;
 let exitCode: number;
+const registerCleanup = suiteCleanup();
 
 beforeAll(async () => {
-  const directory = temporaryDirectory(afterAll, 'tau-file-isolation-');
+  const directory = temporaryDirectory(registerCleanup, 'tau-file-isolation-');
   const reportPath = join(directory, 'report.json');
 
   await symlink(join(repositoryRoot, 'node_modules'), join(directory, 'node_modules'), 'dir');

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { fullRun, validReport } from '../fixtures/reportBuilders.js';
 import { fakeSpawn, makeDeps, runTests } from '../fixtures/vitestRunner.js';
 
@@ -22,8 +22,13 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   };
 });
 
+const registerCleanup = suiteCleanup();
+
 beforeAll(() => {
-  vi.stubEnv('PI_CODING_AGENT_DIR', temporaryDirectory(afterAll, 'tau-vitest-cancel-agent-'));
+  vi.stubEnv(
+    'PI_CODING_AGENT_DIR',
+    temporaryDirectory(registerCleanup, 'tau-vitest-cancel-agent-'),
+  );
 });
 
 afterAll(() => {

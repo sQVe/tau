@@ -9,12 +9,14 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
+import { suiteCleanup } from './temporaryDirectoryHarness.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
 let directory: string;
 let agentDirectory: string;
 let webAccessExtension: string;
+const registerCleanup = suiteCleanup();
 
 // pi-web-access keeps the config path from its first load in a module instance. Other test files
 // in this process may load it first, so this file loads its own instance through a distinct URL,
@@ -37,9 +39,7 @@ beforeAll(async () => {
     `export { default } from ${JSON.stringify(webAccessUrl.href)};\n`,
   );
 
-  isolateWebAccessConfig(agentDirectory, (restore) => {
-    afterAll(restore);
-  });
+  isolateWebAccessConfig(agentDirectory, registerCleanup);
 
   // Without a passed answerModel, pi-web-access answers with its own configured model.
   await writeFile(

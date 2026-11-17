@@ -4,14 +4,14 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { afterAll, beforeAll, vi } from 'vitest';
+import { beforeAll, vi } from 'vitest';
 
 import { parseCargoMetadata } from '../src/extensions/tdd/runner/cargoMetadata.js';
 import { targetArguments } from '../src/extensions/tdd/runner/nextestArguments.js';
 import tddExtension from '../src/extensions/tdd/tdd.js';
 import type { ObservationResult } from '../src/extensions/tdd/types.js';
 import { fakeExtensionApi } from './extensionApi.js';
-import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 export interface NextestToolResult {
   content: { type: 'text'; text: string }[];
@@ -65,21 +65,21 @@ export const cargoPackage = (name: string): string =>
 
 export const libraryWith = (body: string): string => `#[cfg(test)]\nmod tests {\n${body}\n}\n`;
 
-let previousTargetDirectory: string | undefined;
-let previousAgentDirectory: string | undefined;
-
 // One target directory per test file keeps the crates from recompiling each other, and a fresh
 // agent directory keeps the developer's Tau config out of the run.
 export const useSharedCargoEnvironment = (prefix: string): void => {
+  const registerCleanup = suiteCleanup();
+  let previousTargetDirectory: string | undefined;
+  let previousAgentDirectory: string | undefined;
+
   beforeAll(() => {
     previousTargetDirectory = process.env.CARGO_TARGET_DIR;
     previousAgentDirectory = process.env.PI_CODING_AGENT_DIR;
-
-    process.env.CARGO_TARGET_DIR = temporaryDirectory(afterAll, `tau-${prefix}-target-`);
-    process.env.PI_CODING_AGENT_DIR = temporaryDirectory(afterAll, `tau-${prefix}-agent-`);
+    process.env.CARGO_TARGET_DIR = temporaryDirectory(registerCleanup, `tau-${prefix}-target-`);
+    process.env.PI_CODING_AGENT_DIR = temporaryDirectory(registerCleanup, `tau-${prefix}-agent-`);
   });
 
-  afterAll(() => {
+  registerCleanup(() => {
     if (previousTargetDirectory === undefined) {
       delete process.env.CARGO_TARGET_DIR;
     } else {
