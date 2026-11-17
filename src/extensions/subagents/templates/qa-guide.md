@@ -1,8 +1,8 @@
 # QA guide
 
 Use this shape for a repository's QA guide, `.pi/qa.md`. Use these exact headings, in this order.
-Leave out a part marked optional when it has nothing to say. Tau does not parse the guide, so the
-headings are a convention for readers.
+Leave out a part marked optional when it has nothing to say. Tau does not parse the guide, the
+feature files, or the journeys, so the headings are a convention for readers.
 
 ```markdown
 # QA guide
@@ -30,11 +30,21 @@ Optional. Index the journeys in `.pi/qa/journeys/`.
 | Journey | Goal | Run it when the change touches | Test |
 | ------- | ---- | ------------------------------ | ---- |
 
+## Features
+
+Optional. Index the feature files at `.pi/qa/features/<name>.md`.
+
+| Feature | Section | Target | Update it when the change touches |
+| ------- | ------- | ------ | --------------------------------- |
+
 ## Before a launch
 
 Optional. For the manager, because the `qa` worker builds, starts, and stops nothing.
 
-The manager starts:
+A section with a target needs no bullet here: the manager launches the target with the
+`verification` tool.
+
+The manager starts, for a section whose target is `none`:
 
 - <Section name, or the thing to start>
   - Start: the exact command.
@@ -55,13 +65,17 @@ this repository, and a shared way to reach or prove the instance.
 
 ## <Section name>
 
+Target: <the `verification.targets` entry in `.pi/tau.json` that serves this section, or `none`>
+
 ### Reach it
 
 ### Use it safely
 
 ### What to check
 
-### Recipes
+### Features
+
+- [<Feature name>](./qa/features/<name>.md)
 
 ## Not testable
 
@@ -72,7 +86,7 @@ verified and never tries them through another path.
 ## Rules
 
 - A section is an area to test: an interface, a way to run it, or a feature area of one interface.
-- A recipe is a check of one feature.
+- A feature file is a check of one feature.
 - A journey is one user goal across features, through several commands or screens.
 - A section may drop an empty subsection, or say "same as <section>" for one.
 - "Reach it" holds the proof that the running instance serves this worktree, as exact commands with
@@ -80,8 +94,8 @@ verified and never tries them through another path.
 - A step goes under "The manager starts" only when it reads no secret, costs no money, and touches
   no state that another worktree, another person, or the user's real environment shares. Every other
   step goes under "Ask the user".
-- Under "The manager starts", write one bullet per section, or per thing to start, so the manager
-  starts only what the assigned sections need.
+- A section whose target is `none` needs a bullet under "The manager starts" for each thing to
+  start, or one per section, so the manager starts only what the assigned sections need.
 - Give each bullet under "The manager starts" three labeled lines: Start, Check that it is up, and
   Stop.
 - Mark a section done only after you tried it against a running instance. Do not commit a guide with
@@ -92,11 +106,15 @@ verified and never tries them through another path.
   ruta. Name the command or file that holds them, and keep only what is specific to the repository.
 - Give exact commands and visible results. Write nothing that the `qa` worker's limits forbid, and
   no general QA method.
-- Aim for at most about 150 lines. Move detail that only one feature needs into a recipe under
-  `.pi/qa/`. Shorten a "Choose sections" cell that runs past two lines by moving its cross-effects
-  into the "Cross-effects" list.
-- A recipe under `.pi/qa/` has four parts: Entry points, Driving steps, Observable results, and
-  Gotchas.
+- Aim for at most about 150 lines. Move detail that only one feature needs into its feature file
+  under `.pi/qa/features/<name>.md`. Shorten a "Choose sections" cell that runs past two lines by
+  moving its cross-effects into the "Cross-effects" list.
+- A feature file at `.pi/qa/features/<name>.md` has six parts: Target, Entry points, Driving steps
+  (numbered, each with the action and its visible result), Observable results, End state (what
+  proves the feature works), and Gotchas.
+- The numbered steps of a feature file's Driving steps, or of a journey's Steps, are the step count
+  the manager registers.
+- A journey step may link a feature file.
 - A journey file at `.pi/qa/journeys/<name>.md` has five parts: Who, Goal, Test (a file path, or "by
   hand" with the reason), Steps (numbered, each with the action and its visible result), and End
   state (what proves the goal).
