@@ -64,6 +64,42 @@ it('resolves when setStatus throws', async () => {
   await expect(refresh(context)).resolves.toBeUndefined();
 });
 
+it('keeps the newest text when three overlapping reads finish out of order', async () => {
+  const first = Promise.withResolvers<ImprovementStatus>();
+  const second = Promise.withResolvers<ImprovementStatus>();
+  const third = Promise.withResolvers<ImprovementStatus>();
+  const reads = [first.promise, second.promise, third.promise];
+
+  const setStatus = vi.fn<SetStatus>();
+
+  const refresh = createStatusRefresh(() => {
+    const next = reads.shift();
+
+    if (next === undefined) {
+      throw new Error('No read left.');
+    }
+
+    return next;
+  });
+
+  const context = contextWithUI(setStatus);
+
+  const firstCall = refresh(context);
+  const secondCall = refresh(context);
+  const thirdCall = refresh(context);
+
+  third.resolve(statusWithTasks(3));
+  await thirdCall;
+
+  first.resolve(statusWithTasks(1));
+  await firstCall;
+
+  second.resolve(statusWithTasks(2));
+  await secondCall;
+
+  expect(setStatus.mock.calls).toEqual([['improvement', 'improve: 3 tasks to review']]);
+});
+
 it('keeps the newer text when an older read finishes later', async () => {
   const older = Promise.withResolvers<ImprovementStatus>();
   const newer = Promise.withResolvers<ImprovementStatus>();
