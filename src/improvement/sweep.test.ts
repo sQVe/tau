@@ -325,7 +325,7 @@ it('refuses to publish over a newer event', async () => {
   fixture.writeFixtureSession('manager.jsonl', 'multiplePublications.jsonl');
   fixture.setMerged([merged(562, 'me-1023-change')]);
   mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, 'newer.json'), JSON.stringify({ version: 2 }));
+  writeFileSync(join(directory, 'newer.json'), JSON.stringify({ version: 3 }));
 
   expect(await fixture.run()).toEqual({
     outcome: 'failed',

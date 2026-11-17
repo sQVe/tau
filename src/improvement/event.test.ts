@@ -20,7 +20,7 @@ const createProject = () => createTemporaryRepository((cleanup) => cleanups.push
 const eventDirectory = (root: string) => join(root, '.tau', 'improvement');
 
 const correction = (id: string, summary: string): ImprovementEvent => ({
-  version: 1,
+  version: 2,
   id,
   kind: 'correction',
   createdAt: '2026-11-15T12:05:00.000Z',
@@ -39,15 +39,118 @@ const writeEventFile = async (root: string, name: string, text: string) => {
 
 describe('parseEvent', () => {
   it.each(['merge', 'facts', 'correction', 'review', 'decision', 'backlog'])(
-    'parses the version 1 %s fixture',
+    'parses the version 1 %s fixture as the current format',
     async (kind) => {
       const path = join(import.meta.dirname, 'fixtures', `event-v1-${kind}.json`);
 
       const event = parseEvent(path, await readFile(path, 'utf8'));
 
-      expect({ version: event.version, kind: event.kind }).toEqual({ version: 1, kind });
+      expect({ version: event.version, kind: event.kind }).toEqual({ version: 2, kind });
     },
   );
+
+  it.each([
+    { kind: 'pass', fields: { pass: 'correct' } },
+    {
+      kind: 'class',
+      fields: {
+        identity: 'lint-await',
+        level: 'lint',
+        summary: 'The await keyword was missing before an async call.',
+        occurrences: ['correction-session-1-toolcall-1', 'correction-session-2-toolcall-4'],
+      },
+    },
+  ] as const)('parses the version 2 $kind fixture', async ({ kind, fields }) => {
+    const path = join(import.meta.dirname, 'fixtures', `event-v2-${kind}.json`);
+
+    const event = parseEvent(path, await readFile(path, 'utf8'));
+
+    expect(event).toMatchObject({ version: 2, kind, ...fields });
+  });
+
+  it('refuses a version 2 class event without occurrences with an error naming its path', () => {
+    const path = join(import.meta.dirname, 'fixtures', 'event-v2-class.json');
+
+    const withoutOccurrences = {
+      version: 2,
+      id: 'class-lint-await-9d1f2a3b4c5d6e7f',
+      kind: 'class',
+      createdAt: '2026-11-15T12:15:00.000Z',
+      evidence: [],
+      identity: 'lint-await',
+      level: 'lint',
+      summary: 'The await keyword was missing before an async call.',
+    };
+
+    expect(() => parseEvent(path, JSON.stringify(withoutOccurrences))).toThrow(
+      `${path}: / must have required properties occurrences.`,
+    );
+  });
+
+  const passEvent = {
+    version: 2,
+    id: 'pass-correct-2f4d9a7c1b3e5f60',
+    kind: 'pass',
+    createdAt: '2026-11-15T12:10:00.000Z',
+    evidence: [],
+    pass: 'correct',
+  };
+
+  const classEvent = {
+    version: 2,
+    id: 'class-lint-await-9d1f2a3b4c5d6e7f',
+    kind: 'class',
+    createdAt: '2026-11-15T12:15:00.000Z',
+    evidence: [],
+    identity: 'lint-await',
+    level: 'lint',
+    summary: 'The await keyword was missing before an async call.',
+    occurrences: ['correction-session-1-toolcall-1'],
+  };
+
+  it.each([
+    {
+      name: 'a version 2 pass event with an invalid pass value',
+      event: passEvent,
+      overrides: { pass: 'wrong' },
+      field: 'pass',
+    },
+    {
+      name: 'a version 2 class event with an uppercase identity',
+      event: classEvent,
+      overrides: { identity: 'Lint-await' },
+      field: 'identity',
+    },
+    {
+      name: 'a version 2 class event with a leading hyphen in its identity',
+      event: classEvent,
+      overrides: { identity: '-lint-await' },
+      field: 'identity',
+    },
+    {
+      name: 'a version 2 class event with an invalid level',
+      event: classEvent,
+      overrides: { level: 'style' },
+      field: 'level',
+    },
+    {
+      name: 'a version 2 class event with an empty occurrences array',
+      event: classEvent,
+      overrides: { occurrences: [] },
+      field: 'occurrences',
+    },
+    {
+      name: 'a version 2 class event with an empty string in occurrences',
+      event: classEvent,
+      overrides: { occurrences: [''] },
+      field: 'occurrences/0',
+    },
+  ])('refuses $name with an error naming its path', ({ event, overrides, field }) => {
+    const path = '/events/event-v2.json';
+    const invalid = { ...event, ...overrides };
+
+    expect(() => parseEvent(path, JSON.stringify(invalid))).toThrow(`${path}: /${field} `);
+  });
 
   it('names the invalid field of a known kind', () => {
     const text = JSON.stringify({ ...correction('c-1', 'Use focused tests.'), cwd: 7 });
@@ -129,7 +232,7 @@ describe('readEvents', () => {
   it('skips an event with a newer version and lists it with its path', async () => {
     const root = await createProject();
     const event = correction('correction-1', 'Run focused tests first.');
-    const newer = { ...correction('correction-9', 'Later format.'), version: 2 };
+    const newer = { ...correction('correction-9', 'Later format.'), version: 3 };
     await writeEvent(root, event);
     const path = await writeEventFile(root, 'correction-9.json', JSON.stringify(newer));
 

@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "id": "class-lint-await-9d1f2a3b4c5d6e7f",
+  "kind": "class",
+  "createdAt": "2026-11-15T12:15:00.000Z",
+  "evidence": [
+    {
+      "kind": "transcript",
+      "path": "/home/user/.pi/agent/sessions/manager.jsonl",
+      "toolCallId": "toolu_01ClassCheck"
+    }
+  ],
+  "identity": "lint-await",
+  "level": "lint",
+  "summary": "The await keyword was missing before an async call.",
+  "occurrences": ["correction-session-1-toolcall-1", "correction-session-2-toolcall-4"]
+}

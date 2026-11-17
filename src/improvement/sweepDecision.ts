@@ -55,7 +55,7 @@ const numericFacts = (counts: Task['counts']): Record<string, number> => {
 };
 
 const mergeEvent = (task: Task, hash: string, now: string): ImprovementEvent => ({
-  version: 1,
+  version: 2,
   id: `merge-${hash}`,
   kind: 'merge',
   createdAt: now,
@@ -85,7 +85,7 @@ const factsEvent = (task: Task, hash: string, now: string): ImprovementEvent | u
         ];
 
   return {
-    version: 1,
+    version: 2,
     id: `facts-${hash}`,
     kind: 'facts',
     createdAt: now,
