@@ -123,7 +123,7 @@ const startRequest = (
     file: input.file,
     folder: input.folder,
     target: startTarget(input),
-    ...(input.model === undefined ? {} : { model: input.model }),
+    model: input.model,
   };
 };
 

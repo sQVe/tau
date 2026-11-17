@@ -30,7 +30,7 @@ const requestFor = (
   root: string,
   file: string,
   target: StartHandoverTarget,
-): StartHandoverRequest => ({ cwd: root, file, folder: root, target });
+): StartHandoverRequest => ({ cwd: root, file, folder: root, target, model: undefined });
 
 const commandsOf = (fake: ExecFake<'app'>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));

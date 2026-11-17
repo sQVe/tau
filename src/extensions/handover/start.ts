@@ -14,7 +14,7 @@ export interface StartHandoverRequest {
   file: string;
   folder: string;
   target: StartHandoverTarget;
-  model?: string;
+  model: string | undefined;
 }
 
 export interface StartHandoverResult {

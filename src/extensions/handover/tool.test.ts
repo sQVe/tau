@@ -348,6 +348,9 @@ const createAppFake = (): ExecFake<'app'> =>
 const createStartTool = (app: ExecFake<'app'>) =>
   createHandoverTool({ exec: app.exec, connect: createHcFake().connect, cwd: '/repository' });
 
+const argvOf = ({ commandArguments }: { commandArguments: string[] }) =>
+  commandArguments[commandArguments.indexOf('--argv') + 1];
+
 const modelContext = (
   root: string,
   registerCleanup: (cleanup: () => void) => void,
@@ -404,6 +407,28 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
 
   expect(result.details).toEqual({ reply: '{"ok":true}' });
   expect(app.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
+});
+
+it('passes the model to the new Pi through herdr-app', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+
+  await createStartTool(app).execute(
+    'call',
+    {
+      action: 'start',
+      file,
+      folder: root,
+      space: 'space-1',
+      model: 'morph/morph-dsv41flash-1017',
+    },
+    undefined,
+    undefined,
+    modelContext(root, onTestFinished),
+  );
+
+  expect(app.calls.map(argvOf)).toEqual(['["pi","--model","morph/morph-dsv41flash-1017"]']);
 });
 
 it('refuses a start without a space or name before any herdr-app call', async () => {
