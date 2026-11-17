@@ -12,9 +12,9 @@ import { startSweep } from './sweepStart.js';
 import { createSweepState } from './sweepState.js';
 import { runTask } from './taskAction.js';
 
-const description = `- record: save an improvement event: correction (summary), review (pullRequest, outcome), backlog or decision (review, item, plus summary or choice). {id,path,outcome}; existing: saved before.
+const description = `- record: correction (summary) in session project; review (pullRequest, outcome), backlog (review, item, summary), decision (review, item, choice), each with projectRoot, in task project. {id,path,outcome}; existing kept.
 - status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,skipped}
-- task: read a merged task's transcript paths, coverage, and project root (pullRequest, worktree). {pullRequest,manager,workers,coverage,projectRoot}.`;
+- task: read a merged task's transcripts, coverage, projectRoot (pullRequest, worktree).`;
 
 export default function improvementExtension(
   pi: ExtensionAPI,

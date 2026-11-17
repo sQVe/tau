@@ -13,9 +13,29 @@ type Choice = 'approved' | 'rejected' | 'redirected';
 
 export type RecordRequest =
   | { action: 'record'; kind: 'correction'; summary: string }
-  | { action: 'record'; kind: 'review'; pullRequest: string; outcome: string }
-  | { action: 'record'; kind: 'backlog'; review: string; item: number; summary: string }
-  | { action: 'record'; kind: 'decision'; review: string; item: number; choice: Choice }
+  | {
+      action: 'record';
+      kind: 'review';
+      projectRoot: string;
+      pullRequest: string;
+      outcome: string;
+    }
+  | {
+      action: 'record';
+      kind: 'backlog';
+      projectRoot: string;
+      review: string;
+      item: number;
+      summary: string;
+    }
+  | {
+      action: 'record';
+      kind: 'decision';
+      projectRoot: string;
+      review: string;
+      item: number;
+      choice: Choice;
+    }
   | { action: 'task'; pullRequest: string; worktree: string }
   | { action: 'status' };
 
@@ -31,15 +51,16 @@ export const parameters = Type.Object({
   item: Type.Optional(Type.Integer({ minimum: 1 })),
   choice: Type.Optional(stringEnum(['approved', 'rejected', 'redirected'])),
   worktree: Type.Optional(Type.String()),
+  projectRoot: Type.Optional(Type.String()),
 });
 
 export type RecordInput = Static<typeof parameters>;
 
 const fieldsByKind: Readonly<Record<RecordKind, readonly string[]>> = {
   correction: ['summary'],
-  review: ['pullRequest', 'outcome'],
-  backlog: ['review', 'item', 'summary'],
-  decision: ['review', 'item', 'choice'],
+  review: ['projectRoot', 'pullRequest', 'outcome'],
+  backlog: ['projectRoot', 'review', 'item', 'summary'],
+  decision: ['projectRoot', 'review', 'item', 'choice'],
 };
 
 const rejectExtraFields = (input: RecordInput, kind: RecordKind): void => {
@@ -98,6 +119,26 @@ const requireChoice = (input: RecordInput, kind: RecordKind): Choice => {
   return value;
 };
 
+const requireAbsolutePath = (
+  value: string | undefined,
+  prefix: string,
+  field: 'worktree' | 'projectRoot',
+): string => {
+  if (value === undefined) {
+    throw new Error(`${prefix} needs ${field}.`);
+  }
+
+  if (value.trim() === '') {
+    throw new Error(`${prefix} needs a non-blank ${field}.`);
+  }
+
+  if (!isAbsolute(value)) {
+    throw new Error(`${prefix} ${field} must be absolute.`);
+  }
+
+  return value;
+};
+
 const parseRecord = (input: RecordInput): RecordRequest => {
   const kind = input.kind;
 
@@ -114,6 +155,7 @@ const parseRecord = (input: RecordInput): RecordRequest => {
       return {
         action: 'record',
         kind: 'review',
+        projectRoot: requireAbsolutePath(input.projectRoot, `record kind ${kind}`, 'projectRoot'),
         pullRequest: requirePullRequest(input, kind),
         outcome: requireText(input, kind, 'outcome'),
       };
@@ -121,6 +163,7 @@ const parseRecord = (input: RecordInput): RecordRequest => {
       return {
         action: 'record',
         kind: 'backlog',
+        projectRoot: requireAbsolutePath(input.projectRoot, `record kind ${kind}`, 'projectRoot'),
         review: requireText(input, kind, 'review'),
         item: requireItem(input, kind),
         summary: requireText(input, kind, 'summary'),
@@ -129,6 +172,7 @@ const parseRecord = (input: RecordInput): RecordRequest => {
       return {
         action: 'record',
         kind: 'decision',
+        projectRoot: requireAbsolutePath(input.projectRoot, `record kind ${kind}`, 'projectRoot'),
         review: requireText(input, kind, 'review'),
         item: requireItem(input, kind),
         choice: requireChoice(input, kind),
@@ -150,7 +194,7 @@ const rejectTaskExtraFields = (input: RecordInput): void => {
   }
 };
 
-const requireTaskText = (input: RecordInput, field: 'pullRequest' | 'worktree'): string => {
+const requireTaskText = (input: RecordInput, field: 'pullRequest'): string => {
   const value = input[field];
 
   if (value === undefined) {
@@ -167,16 +211,10 @@ const requireTaskText = (input: RecordInput, field: 'pullRequest' | 'worktree'):
 const parseTask = (input: RecordInput): RecordRequest => {
   rejectTaskExtraFields(input);
 
-  const worktree = requireTaskText(input, 'worktree');
-
-  if (!isAbsolute(worktree)) {
-    throw new Error('task worktree must be absolute.');
-  }
-
   return {
     action: 'task',
     pullRequest: requireTaskText(input, 'pullRequest'),
-    worktree,
+    worktree: requireAbsolutePath(input.worktree, 'task', 'worktree'),
   };
 };
 
