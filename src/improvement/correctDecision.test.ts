@@ -221,6 +221,34 @@ const repeatTable: {
     coverage: 1,
   },
   {
+    name: 'does not count a class with another identity after the approval',
+    classes: [
+      repeatedClassA,
+      classEvent({
+        id: 'class-b-later',
+        identity: 'lint-b',
+        createdAt: '2026-11-15T12:02:00.000Z',
+      }),
+    ],
+    decisions: [approvedA],
+    expected: 0,
+    coverage: 1,
+  },
+  {
+    name: 'does not count a class at the approval timestamp',
+    classes: [
+      repeatedClassA,
+      classEvent({
+        id: 'class-a-same-time',
+        identity: 'lint-a',
+        createdAt: '2026-11-15T12:01:00.000Z',
+      }),
+    ],
+    decisions: [approvedA],
+    expected: 0,
+    coverage: 1,
+  },
+  {
     name: 'has no repeat rate without an approved class',
     classes: [],
     decisions: [],
@@ -335,6 +363,46 @@ const acceptanceTable: {
         subject: 'class-a',
         choice: 'approved',
         createdAt: '2026-11-15T12:02:00.000Z',
+      }),
+    ],
+    expected: 1,
+    coverage: 1,
+  },
+  {
+    name: 'uses the higher ID when two decisions share a timestamp',
+    classes: [repeatedClassA],
+    decisions: [
+      decisionEvent({
+        id: 'decision-a',
+        subject: 'class-a',
+        choice: 'rejected',
+        createdAt: '2026-11-15T12:01:00.000Z',
+      }),
+      decisionEvent({
+        id: 'decision-b',
+        subject: 'class-a',
+        choice: 'approved',
+        createdAt: '2026-11-15T12:01:00.000Z',
+      }),
+    ],
+    expected: 1,
+    coverage: 1,
+  },
+  {
+    name: 'keeps the first decision when two share an ID and a timestamp',
+    classes: [repeatedClassA],
+    decisions: [
+      decisionEvent({
+        id: 'decision-a',
+        subject: 'class-a',
+        choice: 'approved',
+        createdAt: '2026-11-15T12:01:00.000Z',
+      }),
+      decisionEvent({
+        id: 'decision-a',
+        subject: 'class-a',
+        choice: 'rejected',
+        createdAt: '2026-11-15T12:01:00.000Z',
       }),
     ],
     expected: 1,

@@ -99,6 +99,108 @@ const table: {
     expected: { action: 'record', kind: 'decision', class: 'class-x', choice: 'approved' },
   },
   {
+    name: 'needs a class identity',
+    input: {
+      action: 'record',
+      kind: 'class',
+      level: 'lint',
+      summary: 'The await keyword was missing before an async call.',
+      occurrences: ['correction-1'],
+    },
+    expected: { error: 'record kind class needs identity.' },
+  },
+  {
+    name: 'refuses a blank class identity',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: ' ',
+      level: 'lint',
+      summary: 'The await keyword was missing before an async call.',
+      occurrences: ['correction-1'],
+    },
+    expected: { error: 'record kind class needs a non-blank identity.' },
+  },
+  {
+    name: 'refuses a class identity that is not kebab-case',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: 'Lint_Await',
+      level: 'lint',
+      summary: 'The await keyword was missing before an async call.',
+      occurrences: ['correction-1'],
+    },
+    expected: { error: 'record kind class identity must be kebab-case.' },
+  },
+  {
+    name: 'needs a class level',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: 'lint-await',
+      summary: 'The await keyword was missing before an async call.',
+      occurrences: ['correction-1'],
+    },
+    expected: { error: 'record kind class needs level.' },
+  },
+  {
+    name: 'needs a class summary',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: 'lint-await',
+      level: 'lint',
+      occurrences: ['correction-1'],
+    },
+    expected: { error: 'record kind class needs summary.' },
+  },
+  {
+    name: 'refuses a blank class summary',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: 'lint-await',
+      level: 'lint',
+      summary: '\n',
+      occurrences: ['correction-1'],
+    },
+    expected: { error: 'record kind class needs a non-blank summary.' },
+  },
+  {
+    name: 'refuses a blank class occurrence',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: 'lint-await',
+      level: 'lint',
+      summary: 'The await keyword was missing before an async call.',
+      occurrences: ['correction-1', ' '],
+    },
+    expected: { error: 'record kind class occurrence 2 must be non-blank.' },
+  },
+  {
+    name: 'refuses a class decision with an item',
+    input: {
+      action: 'record',
+      kind: 'decision',
+      class: 'class-x',
+      item: 2,
+      choice: 'approved',
+    },
+    expected: { error: 'record kind decision with class does not take item.' },
+  },
+  {
+    name: 'refuses a class decision without a class event ID',
+    input: { action: 'record', kind: 'decision', class: ' ', choice: 'approved' },
+    expected: { error: 'record kind decision needs a class event ID.' },
+  },
+  {
+    name: 'refuses a correct request with an extra field',
+    input: { action: 'correct', summary: 'Use run_tests.' },
+    expected: { error: 'correct does not take summary.' },
+  },
+  {
     name: 'refuses a decision with both review and class',
     input: {
       action: 'record',
