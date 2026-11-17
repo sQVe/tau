@@ -552,6 +552,28 @@ it('fails on an error report and shows its error and the unmutated files', async
   expect(text).toContain('Not mutated: src/b.ts');
 });
 
+it('reports the timed-out mutants and warns that the machine may have been overloaded', async () => {
+  const { configure, run } = await fixture();
+
+  await configure({ ...passReport, totals: { timeout: 4 } }, 0);
+
+  const result = await run();
+
+  expect(result.details?.timeouts).toBe(4);
+  expect(textOf(result)).toContain('4 mutants timed out; the machine may have been overloaded.');
+});
+
+it('prints no timeout line when no mutant timed out', async () => {
+  const { configure, run } = await fixture();
+
+  await configure({ ...passReport, totals: { timeout: 0 } }, 0);
+
+  const result = await run();
+
+  expect(result.details?.timeouts).toBe(0);
+  expect(textOf(result)).not.toContain('timed out');
+});
+
 it('fails on a pass report with a nonzero exit and saves nothing', async () => {
   const { configure, run, runCount } = await fixture();
 
