@@ -30,7 +30,7 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 57_748, // target 38,000
-  architect: 54_207,
+  architect: 54_278,
   worker: 22_387, // target 14,000
   reviewer: 17_841, // target 11,000
   checker: 17_994,

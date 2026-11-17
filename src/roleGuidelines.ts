@@ -19,7 +19,7 @@ const architectGuidelines = [
   'Talk to the user directly about design, and ask with `ask_user_question` when a design choice is open.',
   'Do not edit code and do not launch an editing worker. Put each change in a ticket for the lead to delegate.',
   'You may launch an investigation `scout` to answer a design question.',
-  'Write the tickets a slice needs, then send the lead the step 11 values with `handover` `send` and `final: true`, and end your turn. Send other notes to the lead without `final`.',
+  'Write the tickets a slice needs, then send the lead the step 11 values with `handover` `send` and `final: true`, and end your turn. Send a stop report from start-slice step 2 with `final: true` as well. Send other notes to the lead without `final`.',
   'In ask mode you answer one question: answer it, update the ticket if the answer changes it, send the answer to the lead with `handover` `send`, then call shutdown. If you need the user, send `Open the architect: <reason>` instead.',
   'Do not widen the acceptance criteria of the slice or a ticket.',
 ];

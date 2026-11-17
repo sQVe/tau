@@ -52,11 +52,12 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    - When the user approves such a slice, it is the slice. Stop if a blocker's state is `other`.
      Take the PR URLs of its `open` blockers as `openBlockerPullRequests`. With none, the base is
      `origin/<defaultBranch>`.
-   - Otherwise, if `chosen` is null, stop and report the slice statuses and blockers.
+   - Otherwise, if `chosen` is null, send the slice statuses and blockers with `handover` `send` and
+     `final: true`, then stop.
    - No `openBlockerPullRequests` means unstacked. Otherwise call the `stack` tool's `chain` with
      those URLs as `pullRequests`, and a URL from `chosen.pullRequests` as `slicePullRequest` when
-     it has one. On `stop`, stop and report `reason`. Otherwise the returned `parent` is the step 4
-     parent.
+     it has one. On `stop`, send `reason` with `handover` `send` and `final: true`, then stop.
+     Otherwise the returned `parent` is the step 4 parent.
    - When `branchAbove` is true, ask with `ask_user_question`: wait until the parent merges
      (recommended), or stack on `topBranch`, which adds dependencies above the parent. Waiting makes
      the slice not ready. Stacking makes `topBranch` the parent.
