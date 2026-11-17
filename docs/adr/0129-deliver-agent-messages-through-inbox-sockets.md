@@ -32,7 +32,10 @@ folder, and replies before the sender reports success.
 
 ### Sending
 
-- A send opens one connection, writes one message, and reads one `queued` or `refused` reply.
+- A send opens one connection, writes one message, and reads one `queued`, `refused`, or `unknown`
+  reply.
+- A receiver replies `unknown` only when it forwarded the message to another inbox and that inbox's
+  reply is missing.
 - A sender refuses a missing label, an unknown protocol, and a refused connection before it writes
   anything.
 - When the reply is missing after the message was written, the result is `unknown`, because the

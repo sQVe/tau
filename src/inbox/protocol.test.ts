@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { expect, it } from 'vitest';
 
 import {
@@ -164,6 +167,49 @@ const replyCases: [string, Uint8Array, ReturnType<typeof decodeReply>][] = [
 
 it.each(replyCases)('decodes %s', (_name, input, expected) => {
   expect(decodeReply(input)).toEqual(expected);
+});
+
+const answerRequestFixture = (name: string): unknown =>
+  JSON.parse(
+    readFileSync(join(import.meta.dirname, 'fixtures', 'answerRequest', name), 'utf8'),
+  ) as unknown;
+
+it('decodes the frozen answer-request frames', () => {
+  const request = answerRequestFixture('request.json');
+
+  expect(decodeRequest(line(request))).toEqual({ kind: 'frame', value: request });
+
+  for (const name of ['queued.json', 'refused.json', 'unknown.json']) {
+    const reply = answerRequestFixture(name);
+
+    expect(decodeReply(line(reply))).toEqual({ kind: 'frame', value: reply });
+  }
+});
+
+it('refuses an answer-request payload with an extra field', () => {
+  const request = answerRequestFixture('request.json') as { payload: Record<string, unknown> };
+
+  const withParentSession = {
+    ...request,
+    payload: { ...request.payload, parentSession: 'manager-session' },
+  };
+
+  expect(decodeRequest(line(withParentSession))).toEqual({
+    kind: 'refused',
+    reason: 'The frame is not an rpc1 request.',
+  });
+});
+
+it('refuses an unknown reply without a reason', () => {
+  const { reason: _reason, ...reply } = answerRequestFixture('unknown.json') as Record<
+    string,
+    unknown
+  >;
+
+  expect(decodeReply(line(reply))).toEqual({
+    kind: 'refused',
+    reason: 'The frame is not an rpc1 reply.',
+  });
 });
 
 it('accepts a frame of exactly 102400 bytes', () => {

@@ -6,7 +6,7 @@ import type { Static } from 'typebox';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { parseVersionedRecord, writeRecord } from '../record.js';
-import { isUuid, requestByteLimit, uuidSchema, withBody } from './protocol.js';
+import { isUuid, requestByteLimit, uuidSchema, withSavableBody } from './protocol.js';
 
 export type InboxRecord = Static<typeof recordSchema>;
 
@@ -19,7 +19,10 @@ export type SaveOutcome = 'saved' | 'existing' | 'changed';
 
 const recordVersion = 1;
 
-const recordSchema = withBody({ version: Type.Literal(recordVersion), messageId: uuidSchema });
+const recordSchema = withSavableBody({
+  version: Type.Literal(recordVersion),
+  messageId: uuidSchema,
+});
 
 const recordOptions = { label: 'inbox record', version: recordVersion, schema: recordSchema };
 
