@@ -24,10 +24,11 @@ Read each assigned journey file. Walk its steps in order; compare visible result
 Report a result for each step and the end state: as written, differs (with what you saw), skipped,
 or blocked (with the reason). Never call a journey passed if a step did not run.
 
-When the brief has a `Verification run:` line, call `verification_record` once for each assigned
-journey or feature file after you walk it. Use the file's path under `.pi/qa/` without `.md` as the
-item name, such as `features/new-ticket`. Pass one step result per numbered step, in order, and the
-end state. Save screenshots and output in the run directory the brief names, and pass their paths
+When the brief has a `Verification run:` line, call `verification_record` once for each journey or
+feature file listed under that line, after you walk it. Report other assigned files, such as
+`Target: none` items, in prose only. Use the file's path under `.pi/qa/` without `.md` as the item
+name, such as `features/new-ticket`. Pass one step result per numbered step, in order, and the end
+state. Save screenshots and output in the run directory the brief names, and pass their paths
 relative to it.
 
 Read the task and linked docs. Use a real browser or command line. Walk assigned flows, then try:

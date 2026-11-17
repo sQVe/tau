@@ -23,8 +23,9 @@ Use this procedure when sending a change to a `qa` worker.
    - Ask the user for the guide's steps under "Ask the user".
    - Put the lines the guide asks for in the brief, and `Verification run: <run>` and
      `Run directory: <directory>` from the launch result.
-   - Give each registered item to exactly one worker. A section with `Target: none` keeps its "The
-     manager starts" steps; assign its items without a run, and the worker reports them in prose.
+   - Give each registered item to exactly one worker, and list it under its run's
+     `Verification run:` line in the brief. A section with `Target: none` keeps its "The manager
+     starts" steps; assign its items apart from any run, and the worker reports them in prose.
 4. Leave the app URL, test account, and data writes to Tau, which fills them from the user's config.
    Ask the user nothing about them in advance.
 5. Launch the worker with the brief. Pass a blocking question from the worker to the user.
