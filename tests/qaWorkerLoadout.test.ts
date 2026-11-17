@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { workerFixture } from '../src/extensions/subagents/fixtures/routedLoadout.js';
+import { workerFixture } from '../src/extensions/subagents/fixtures/workerLoadout.js';
 import { checkWorkerRuntime, resolveLoadout } from '../src/extensions/subagents/loadout.js';
 import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';

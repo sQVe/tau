@@ -28,6 +28,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'checkRecord/checkRecord',
     publicFiles: ['checkRecord/identity', 'checkRecord/reuseDecision'],
   },
+  { name: 'classifier', entry: 'classifier/classifier', publicFiles: [] },
   {
     name: 'codemode',
     entry: 'codemode/codemode',
@@ -143,6 +144,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
 // root and has no row.
 export const importTable: Readonly<Record<string, readonly string[]>> = {
   checkRecord: ['errors', 'git', 'record'],
+  classifier: ['config'],
   codemode: [],
   command: ['schema'],
   config: ['errors', 'schema'],

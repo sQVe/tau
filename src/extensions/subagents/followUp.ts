@@ -215,7 +215,7 @@ export const executeFollowUp = async (
         label: parameters.label,
         extensionPackages,
         skillTools: skillTools ?? {},
-        modelChoice: { kind: 'followUp' },
+        modelReason: 'The follow-up keeps the model of its source assignment.',
         signal,
       });
     });

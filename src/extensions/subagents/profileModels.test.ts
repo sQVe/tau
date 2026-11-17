@@ -2,13 +2,7 @@ import { expect, it, vi } from 'vitest';
 
 import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import { readAllowedModels } from '../../config/models.js';
-import { defaultRouteConfidence } from './modelRoutes.js';
-import {
-  readProfileModel,
-  readProfileModels,
-  readProfileRoute,
-  readProfileThinking,
-} from './profileModels.js';
+import { readProfileModel, readProfileModels, readProfileThinking } from './profileModels.js';
 
 const uiFixture = () => ({ notify: vi.fn<(message: string, level?: string) => void>() });
 
@@ -25,6 +19,31 @@ it('reads profile models from the user file', ({ onTestFinished }) => {
       ['scout', 'a/scout'],
       ['default', 'openrouter/meta/llama'],
     ]),
+  );
+});
+
+it('an unknown route key warns and is ignored', ({ onTestFinished }) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
+
+  writeUser({
+    profiles: {
+      scout: {
+        model: 'a/scout',
+        route: { classifier: 'a/router', question: 'How wide?', labels: {} },
+      },
+    },
+  });
+
+  const ui = uiFixture();
+
+  expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
+
+  expect(ui.notify).toHaveBeenCalledWith(
+    expect.stringContaining(`${userFile}: profiles.scout.route `),
+    'warning',
   );
 });
 
@@ -93,293 +112,6 @@ it('leaves allowed models readable when profiles are broken', ({ onTestFinished 
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
 });
 
-const scoutRoute = {
-  classifier: 'a/router',
-  question: 'How wide is this scout brief?',
-  labels: {
-    narrow: { criterion: 'A lookup about known code.', model: 'a/small' },
-    wide: { criterion: 'An investigation across many files.', model: 'a/scout' },
-  },
-};
-
-it('reads a profile route and keeps the profile model', ({ onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({
-    profiles: { scout: { model: 'a/scout', route: scoutRoute }, plain: { model: 'a/plain' } },
-  });
-
-  expect(readProfileModels(location, uiFixture())).toEqual(
-    new Map([
-      ['scout', 'a/scout'],
-      ['plain', 'a/plain'],
-    ]),
-  );
-
-  expect(readProfileRoute(location, 'scout', uiFixture())).toEqual({
-    classifier: scoutRoute.classifier,
-    question: scoutRoute.question,
-    labels: new Map(Object.entries(scoutRoute.labels)),
-    confidence: defaultRouteConfidence,
-  });
-
-  expect(readProfileRoute(location, 'plain', uiFixture())).toBeUndefined();
-});
-
-it('warns about a leftover canary key as unknown and still loads the route', ({
-  onTestFinished,
-}) => {
-  const { location, userFile, writeUser } = temporaryTauConfig(
-    onTestFinished,
-    'tau-profile-models-',
-  );
-
-  writeUser({
-    profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, canary: 0.1 } } },
-  });
-
-  const ui = uiFixture();
-
-  expect(readProfileRoute(location, 'scout', ui)).toEqual({
-    classifier: scoutRoute.classifier,
-    question: scoutRoute.question,
-    labels: new Map(Object.entries(scoutRoute.labels)),
-    confidence: defaultRouteConfidence,
-  });
-
-  expect(ui.notify).toHaveBeenCalledTimes(1);
-
-  expect(ui.notify).toHaveBeenCalledWith(
-    expect.stringContaining(`${userFile}: profiles.scout.route.canary `),
-    'warning',
-  );
-});
-
-it.for<[number, number]>([
-  [0, 0],
-  [0.5, 0.5],
-  [1, 1],
-])('reads a route confidence cutoff of %s', ([confidence, expected], { onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({
-    profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, confidence } } },
-  });
-
-  expect(readProfileRoute(location, 'scout', uiFixture())?.confidence).toBe(expected);
-});
-
-it.for<[string, string, unknown, string]>([
-  ['a text confidence', 'confidence', '0.5', 'must be a number from 0 to 1'],
-  ['a null confidence', 'confidence', null, 'must be a number from 0 to 1'],
-  ['a confidence above 1', 'confidence', 1.5, 'outside the range 0 to 1'],
-  ['a negative confidence', 'confidence', -0.1, 'outside the range 0 to 1'],
-])(
-  'turns routing off for %s with its own message',
-  ([, key, value, message], { onTestFinished }) => {
-    const { location, userFile, writeUser } = temporaryTauConfig(
-      onTestFinished,
-      'tau-profile-models-',
-    );
-
-    writeUser({
-      profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, [key]: value } } },
-    });
-
-    const ui = uiFixture();
-
-    expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-    expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
-
-    expect(ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining(`profiles.scout.route.${key}`),
-      'error',
-    );
-
-    expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(message), 'error');
-  },
-);
-
-it('turns routing off for a NaN confidence and names the field', ({ onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({});
-
-  const parsed = vi.spyOn(JSON, 'parse').mockReturnValue({
-    profiles: {
-      scout: { model: 'a/scout', route: { ...scoutRoute, confidence: Number.NaN } },
-    },
-  });
-
-  onTestFinished(() => {
-    parsed.mockRestore();
-  });
-
-  const ui = uiFixture();
-
-  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-
-  expect(ui.notify).toHaveBeenCalledWith(
-    expect.stringContaining('profiles.scout.route.confidence'),
-    'error',
-  );
-
-  expect(ui.notify).toHaveBeenCalledWith(
-    expect.stringContaining('must be a number from 0 to 1'),
-    'error',
-  );
-});
-
-it('turns routing off for only the profile with a bad confidence cutoff', ({ onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({
-    profiles: {
-      scout: { model: 'a/scout', route: { ...scoutRoute, confidence: 2 } },
-      worker: { model: 'a/worker', route: scoutRoute },
-    },
-  });
-
-  const ui = uiFixture();
-
-  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-  expect(readProfileRoute(location, 'worker', ui)?.confidence).toBe(defaultRouteConfidence);
-  expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
-});
-
-it.for<[string, unknown, string]>([
-  [
-    'a route with one label',
-    { ...scoutRoute, labels: { narrow: scoutRoute.labels.narrow } },
-    'profiles.scout.route.labels',
-  ],
-  [
-    'a bad label model',
-    {
-      ...scoutRoute,
-      labels: { ...scoutRoute.labels, wide: { criterion: 'c', model: 'no-provider' } },
-    },
-    'profiles.scout.route.labels.wide.model',
-  ],
-  [
-    'a missing question',
-    { classifier: scoutRoute.classifier, labels: scoutRoute.labels },
-    'profiles.scout.route.question',
-  ],
-  [
-    'an empty label name',
-    { ...scoutRoute, labels: { narrow: scoutRoute.labels.narrow, '': scoutRoute.labels.wide } },
-    'profiles.scout.route.labels',
-  ],
-  [
-    'a blank label name',
-    { ...scoutRoute, labels: { narrow: scoutRoute.labels.narrow, ' ': scoutRoute.labels.wide } },
-    'profiles.scout.route.labels',
-  ],
-])(
-  'turns routing off for %s and names the file and field',
-  ([, routes, field], { onTestFinished }) => {
-    const { location, userFile, writeUser } = temporaryTauConfig(
-      onTestFinished,
-      'tau-profile-models-',
-    );
-
-    writeUser({ profiles: { scout: { model: 'a/scout', route: routes } } });
-
-    const ui = uiFixture();
-
-    expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-    expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
-    expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(field), 'error');
-    expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
-  },
-);
-
-it.for<[string, unknown, string]>([
-  ['a route without classifier', { ...scoutRoute, classifier: undefined }, 'route.classifier'],
-  ['a malformed classifier', { ...scoutRoute, classifier: 'router' }, 'route.classifier'],
-])('turns routing off for %s and names the field', ([, route, field], { onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({ profiles: { scout: { model: 'a/scout', route } } });
-
-  const ui = uiFixture();
-
-  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-  expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(field), 'error');
-  expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
-});
-
-it('turns routing off for a profile that still sets routes and names the edit', ({
-  onTestFinished,
-}) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({ profiles: { scout: { model: 'a/scout', routes: scoutRoute } } });
-
-  const ui = uiFixture();
-
-  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-
-  const messages = ui.notify.mock.calls.map(([message]) => message);
-
-  expect(messages).toHaveLength(1);
-  expect(messages[0]).toContain('profiles.scout.routes');
-  expect(messages[0]).toContain('profiles.scout.route');
-  expect(messages[0]).toContain('route.classifier');
-  expect(ui.notify).toHaveBeenCalledWith(expect.any(String), 'error');
-  expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
-});
-
-it('reads a profile with unknown keys at any depth and reports each key path once per session', ({
-  onTestFinished,
-}) => {
-  const { location, userFile, writeUser } = temporaryTauConfig(
-    onTestFinished,
-    'tau-profile-models-',
-  );
-
-  writeUser({
-    profiles: {
-      worker: {
-        model: 'a/worker',
-        futureKey: true,
-        route: {
-          ...scoutRoute,
-          later: 1,
-          labels: { ...scoutRoute.labels, wide: { ...scoutRoute.labels.wide, speed: 2 } },
-        },
-      },
-    },
-  });
-
-  const ui = uiFixture();
-
-  expect(readProfileModel(location, 'worker', ui)).toBe('a/worker');
-  expect(readProfileRoute(location, 'worker', ui)?.confidence).toBe(defaultRouteConfidence);
-  expect(readProfileModel(location, 'worker', ui)).toBe('a/worker');
-
-  const warnings = ui.notify.mock.calls.map(([message, level]) => ({ message, level }));
-
-  expect(warnings).toHaveLength(3);
-  expect(warnings.every(({ level }) => level === 'warning')).toBe(true);
-
-  for (const keyPath of [
-    'profiles.worker.futureKey',
-    'profiles.worker.route.later',
-    'profiles.worker.route.labels.wide.speed',
-  ]) {
-    expect(
-      warnings.filter(({ message }) => message.includes(`${userFile}: ${keyPath} `)),
-    ).toHaveLength(1);
-  }
-
-  const nextSession = uiFixture();
-  readProfileModel(location, 'worker', nextSession);
-
-  expect(nextSession.notify).toHaveBeenCalledTimes(3);
-});
-
 it('fails only the profile whose entry is bad', ({ onTestFinished }) => {
   const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
@@ -391,44 +123,6 @@ it('fails only the profile whose entry is bad', ({ onTestFinished }) => {
   expect(readProfileModel(location, 'worker', uiFixture())).toBe('a/worker');
   expect(() => readProfileModel(location, 'other', uiFixture())).toThrow('profiles.other.model');
   expect(readProfileModels(location, uiFixture())).toEqual(new Map([['worker', 'a/worker']]));
-});
-
-it.for<[string, string]>([
-  ['a profile with no entry', 'missing'],
-  ['a profile entry with no route', 'plain'],
-])('reads no route and raises no notice for %s', ([, name], { onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({ profiles: { plain: { model: 'a/plain' } } });
-
-  const ui = uiFixture();
-
-  expect(readProfileRoute(location, name, ui)).toBeUndefined();
-  expect(ui.notify).not.toHaveBeenCalled();
-});
-
-it.for<[string, unknown, string]>([
-  ['a numeric question', { ...scoutRoute, question: 5 }, 'route.question'],
-  ['an empty question', { ...scoutRoute, question: '' }, 'route.question'],
-  ['a blank question', { ...scoutRoute, question: '  \n' }, 'route.question'],
-  [
-    'a blank label criterion',
-    {
-      ...scoutRoute,
-      labels: { ...scoutRoute.labels, wide: { criterion: ' ', model: 'a/scout' } },
-    },
-    'route.labels.wide.criterion',
-  ],
-  ['labels as a list', { ...scoutRoute, labels: Object.values(scoutRoute.labels) }, 'route.labels'],
-])('turns routing off for %s and names the field', ([, route, field], { onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({ profiles: { scout: { model: 'a/scout', route } } });
-
-  const ui = uiFixture();
-
-  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-  expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(field), 'error');
 });
 
 it('refuses a profile model that is not a string', ({ onTestFinished }) => {
@@ -473,90 +167,4 @@ it('refuses a profile thinking that is not a string and names the field', ({ onT
   expect(() => readProfileThinking(location, 'scout', uiFixture())).toThrow(
     'profiles.scout.thinking',
   );
-});
-
-it('reads a route label thinking and leaves an absent one undefined', ({ onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({
-    profiles: {
-      scout: {
-        model: 'a/scout',
-        route: {
-          ...scoutRoute,
-          labels: {
-            ...scoutRoute.labels,
-            narrow: { ...scoutRoute.labels.narrow, thinking: 'low' },
-          },
-        },
-      },
-    },
-  });
-
-  const route = readProfileRoute(location, 'scout', uiFixture());
-
-  expect(route?.labels.get('narrow')?.thinking).toBe('low');
-  expect(route?.labels.get('wide')?.thinking).toBeUndefined();
-});
-
-it('turns routing off for a bad label thinking and names the field', ({ onTestFinished }) => {
-  const { location, userFile, writeUser } = temporaryTauConfig(
-    onTestFinished,
-    'tau-profile-models-',
-  );
-
-  writeUser({
-    profiles: {
-      scout: {
-        model: 'a/scout',
-        route: {
-          ...scoutRoute,
-          labels: {
-            ...scoutRoute.labels,
-            narrow: { ...scoutRoute.labels.narrow, thinking: 'bogus' },
-          },
-        },
-      },
-    },
-  });
-
-  const ui = uiFixture();
-
-  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-  expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
-
-  expect(ui.notify).toHaveBeenCalledWith(
-    expect.stringContaining('profiles.scout.route.labels.narrow.thinking'),
-    'error',
-  );
-});
-
-it('warns about no unknown key for thinking at the profile and label levels', ({
-  onTestFinished,
-}) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
-
-  writeUser({
-    profiles: {
-      scout: {
-        model: 'a/scout',
-        thinking: 'high',
-        route: {
-          ...scoutRoute,
-          labels: {
-            ...scoutRoute.labels,
-            narrow: { ...scoutRoute.labels.narrow, thinking: 'low' },
-          },
-        },
-      },
-    },
-  });
-
-  const ui = uiFixture();
-
-  readProfileModel(location, 'scout', ui);
-  readProfileThinking(location, 'scout', ui);
-  readProfileRoute(location, 'scout', ui);
-
-  expect(ui.notify).not.toHaveBeenCalled();
 });
