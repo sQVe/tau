@@ -30,6 +30,11 @@ interface DecisionRow {
   decision: 'skip' | 'retry' | 'resume';
 }
 
+type TimeLimit =
+  | { kind: 'none' }
+  | { kind: 'elapsed'; maxMs: number }
+  | { kind: 'requestedWait'; minMs: number; maxMs: number };
+
 interface ShellCase {
   name: string;
   terminalId: string;
@@ -43,7 +48,7 @@ interface ShellCase {
   waitSeconds: string;
   pi: boolean;
   getCalls: number | undefined;
-  maxElapsedMs: number | undefined;
+  timeLimit: TimeLimit;
   firstCallFailure?: 'exit' | 'malformed';
   pathSuffix?: string;
 }
@@ -58,6 +63,7 @@ interface ShellResult {
   piArgs: string | undefined;
   piCwd: string | undefined;
   hcCalls: number;
+  requestedWaitMs: number;
 }
 
 const snippetPath = fileURLToPath(new URL('./resume-pi.zsh', import.meta.url));
@@ -260,7 +266,7 @@ const decide = (row: DecisionRow): string => {
 const fakeHc = `#!/bin/sh
 printf '%s\\n' "$*" >> "$FAKE_HC_LOG"
 if [ -n "$FAKE_HC_DELAY" ]; then
-  sleep "$FAKE_HC_DELAY"
+  "$FAKE_REAL_SLEEP" "$FAKE_HC_DELAY"
 fi
 
 counter=0
@@ -309,6 +315,16 @@ pwd > "$FAKE_PI_CWD_FILE"
 exit 0
 `;
 
+const realSleepPath = spawnSync('sh', ['-c', 'command -v sleep'], {
+  encoding: 'utf8',
+}).stdout.trim();
+
+// Records the wait each caller asks for, then waits for real.
+const fakeSleep = `#!/bin/sh
+printf '%s\\n' "$*" >> "$FAKE_SLEEP_LOG"
+exec ${JSON.stringify(realSleepPath)} "$@"
+`;
+
 const shellCases: ShellCase[] = [
   {
     name: 'resumes and returns to the shell',
@@ -323,7 +339,7 @@ const shellCases: ShellCase[] = [
     waitSeconds: '',
     pi: true,
     getCalls: 1,
-    maxElapsedMs: undefined,
+    timeLimit: { kind: 'none' },
   },
   {
     name: 'skips when the guard already names this terminal',
@@ -338,7 +354,7 @@ const shellCases: ShellCase[] = [
     waitSeconds: '',
     pi: false,
     getCalls: 0,
-    maxElapsedMs: undefined,
+    timeLimit: { kind: 'none' },
   },
   {
     name: 'skips when the pid is a different process',
@@ -353,7 +369,7 @@ const shellCases: ShellCase[] = [
     waitSeconds: '',
     pi: false,
     getCalls: 1,
-    maxElapsedMs: undefined,
+    timeLimit: { kind: 'none' },
   },
   {
     name: 'shares one deadline across slow empty-pid replies',
@@ -368,7 +384,7 @@ const shellCases: ShellCase[] = [
     waitSeconds: '1',
     pi: false,
     getCalls: undefined,
-    maxElapsedMs: 1100,
+    timeLimit: { kind: 'elapsed', maxMs: 1100 },
   },
   {
     name: 'falls back to four seconds for an invalid wait value',
@@ -383,7 +399,7 @@ const shellCases: ShellCase[] = [
     waitSeconds: '1/0',
     pi: true,
     getCalls: 1,
-    maxElapsedMs: 2500,
+    timeLimit: { kind: 'elapsed', maxMs: 2500 },
   },
   {
     name: 'caps a huge wait value instead of retrying for a long time',
@@ -398,7 +414,7 @@ const shellCases: ShellCase[] = [
     waitSeconds: '1000000000',
     pi: false,
     getCalls: undefined,
-    maxElapsedMs: 5500,
+    timeLimit: { kind: 'elapsed', maxMs: 5500 },
   },
   {
     name: 'resumes soon after the core records the pid',
@@ -409,11 +425,12 @@ const shellCases: ShellCase[] = [
     pidMode: 'empty-then-match',
     sessionExists: true,
     cwdExists: true,
-    delay: '',
+    // The slow replies push elapsed time past the bound, so only the snippet's own wait fits it.
+    delay: '0.25',
     waitSeconds: '',
     pi: true,
     getCalls: 2,
-    maxElapsedMs: 240,
+    timeLimit: { kind: 'requestedWait', minMs: 50, maxMs: 200 },
   },
   {
     name: 'retries when hc get exits non-zero once, then resumes',
@@ -429,7 +446,7 @@ const shellCases: ShellCase[] = [
     firstCallFailure: 'exit',
     pi: true,
     getCalls: 2,
-    maxElapsedMs: undefined,
+    timeLimit: { kind: 'none' },
   },
   {
     name: 'retries when hc get prints invalid JSON once, then resumes',
@@ -445,7 +462,7 @@ const shellCases: ShellCase[] = [
     firstCallFailure: 'malformed',
     pi: true,
     getCalls: 2,
-    maxElapsedMs: undefined,
+    timeLimit: { kind: 'none' },
   },
   {
     name: 'keeps a tab in the session and cwd labels',
@@ -461,7 +478,7 @@ const shellCases: ShellCase[] = [
     pathSuffix: '\tpart',
     pi: true,
     getCalls: 1,
-    maxElapsedMs: undefined,
+    timeLimit: { kind: 'none' },
   },
   {
     name: 'keeps a newline in the session and cwd labels',
@@ -477,7 +494,7 @@ const shellCases: ShellCase[] = [
     pathSuffix: '\npart',
     pi: true,
     getCalls: 1,
-    maxElapsedMs: undefined,
+    timeLimit: { kind: 'none' },
   },
   {
     name: 'keeps quotes and backslashes in the session and cwd labels',
@@ -493,7 +510,7 @@ const shellCases: ShellCase[] = [
     pathSuffix: '"quoted" \\part',
     pi: true,
     getCalls: 1,
-    maxElapsedMs: undefined,
+    timeLimit: { kind: 'none' },
   },
 ];
 
@@ -510,6 +527,7 @@ const runCase = (row: ShellCase): ShellResult => {
     mkdirSync(bin);
     writeExecutable(join(bin, 'hc'), fakeHc);
     writeExecutable(join(bin, 'pi'), fakePi);
+    writeExecutable(join(bin, 'sleep'), fakeSleep);
 
     const zdotdir = join(root, 'zdotdir');
     mkdirSync(zdotdir);
@@ -529,6 +547,7 @@ const runCase = (row: ShellCase): ShellResult => {
 
     const hcLog = join(root, 'hc.log');
     const hcCounter = join(root, 'hc.counter');
+    const sleepLog = join(root, 'sleep.log');
     const piArgsFile = join(root, 'pi.args');
     const piCwdFile = join(root, 'pi.cwd');
     const command = `export EXPECTED_SHELL_PID=$$; source ${JSON.stringify(snippetPath)}; printf 'AFTER\\n'; if (( $+functions[_tau_resume_decision] )); then printf 'HELPER_LEAK\\n'; fi`;
@@ -552,6 +571,8 @@ const runCase = (row: ShellCase): ShellResult => {
         FAKE_HC_CWD: JSON.stringify(cwd),
         FAKE_HC_DELAY: row.delay,
         FAKE_HC_FIRST_CALL_FAILURE: row.firstCallFailure ?? '',
+        FAKE_REAL_SLEEP: realSleepPath,
+        FAKE_SLEEP_LOG: sleepLog,
         FAKE_PI_ARGS_FILE: piArgsFile,
         FAKE_PI_CWD_FILE: piCwdFile,
       },
@@ -559,6 +580,14 @@ const runCase = (row: ShellCase): ShellResult => {
     });
 
     const elapsedMs = performance.now() - started;
+
+    const requestedWaitMs = existsSync(sleepLog)
+      ? readFileSync(sleepLog, 'utf8')
+          .trim()
+          .split('\n')
+          .filter((line) => line !== '')
+          .reduce((total, seconds) => total + Number(seconds) * 1000, 0)
+      : 0;
 
     const hcCalls = existsSync(hcLog)
       ? readFileSync(hcLog, 'utf8')
@@ -577,6 +606,7 @@ const runCase = (row: ShellCase): ShellResult => {
       piArgs: existsSync(piArgsFile) ? readFileSync(piArgsFile, 'utf8').trim() : undefined,
       piCwd: existsSync(piCwdFile) ? readFileSync(piCwdFile, 'utf8').trim() : undefined,
       hcCalls,
+      requestedWaitMs,
     };
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -598,7 +628,16 @@ describe.skipIf(!hasZsh)('resume-pi shell snippet', () => {
     expect(result.piCwd).toBe(row.pi ? result.cwd : undefined);
     const hcCallsToCheck = row.getCalls === undefined ? undefined : result.hcCalls;
 
+    const measuredMs =
+      row.timeLimit.kind === 'requestedWait' ? result.requestedWaitMs : result.elapsedMs;
+
+    const limitMs = row.timeLimit.kind === 'none' ? Number.POSITIVE_INFINITY : row.timeLimit.maxMs;
+
+    const floorMs =
+      row.timeLimit.kind === 'requestedWait' ? row.timeLimit.minMs : Number.NEGATIVE_INFINITY;
+
     expect(hcCallsToCheck, result.stderr).toBe(row.getCalls);
-    expect(result.elapsedMs).toBeLessThan(row.maxElapsedMs ?? Number.POSITIVE_INFINITY);
+    expect(measuredMs, row.timeLimit.kind).toBeLessThan(limitMs);
+    expect(measuredMs, row.timeLimit.kind).toBeGreaterThanOrEqual(floorMs);
   });
 });
