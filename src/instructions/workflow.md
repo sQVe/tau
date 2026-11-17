@@ -44,3 +44,11 @@ when you stop. Follow explicit user instructions and repository conventions over
   handover files and Linear, not the conversation.
 - As manager, when the user corrects you, fix the mistake, save it with `improvement` `record`, and
   propose a rule or check for the user to approve.
+
+## Rule table
+
+The prose above is authoritative. Rules without a check are owned by the human reviewer.
+
+| Rule                  | Enforced by                              |
+| --------------------- | ---------------------------------------- |
+| Shared workflow rules | [stomme](https://github.com/sQVe/stomme) |

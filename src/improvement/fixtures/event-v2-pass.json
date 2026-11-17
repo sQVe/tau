@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "id": "pass-correct-2f4d9a7c1b3e5f60",
+  "kind": "pass",
+  "createdAt": "2026-11-15T12:10:00.000Z",
+  "evidence": [
+    {
+      "kind": "transcript",
+      "path": "/home/user/.pi/agent/sessions/manager.jsonl",
+      "toolCallId": "toolu_01PassCheck"
+    }
+  ],
+  "pass": "correct"
+}

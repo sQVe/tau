@@ -86,6 +86,7 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
+  'src/extensions/improvement/recordPassDecision.ts',
   'src/extensions/improvement/recordRequest.ts',
   'src/extensions/inbox/arrivalDecision.ts',
   'src/extensions/inbox/guardDecision.ts',
@@ -175,6 +176,9 @@ const pureModules = [
   'src/fileLock/lockHolderDecision.ts',
   'src/github/pullRequestDecisions.ts',
   'src/github/repositoryTargetDecisions.ts',
+  'src/improvement/classIdentity.ts',
+  'src/improvement/correctDecision.ts',
+  'src/improvement/historyRead.ts',
   'src/improvement/sessionDirectory.ts',
   'src/improvement/signals.ts',
   'src/improvement/statusDecision.ts',
@@ -262,6 +266,8 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/extensions/tdd/runner/cargoInputFiles.ts': ['node:path'],
   'src/extensions/tdd/runner/junit.ts': ['@xmldom/xmldom'],
   'src/extensions/tdd/runner/report.ts': ['node:path'],
+  'src/improvement/classIdentity.ts': ['node:crypto'],
+  'src/improvement/historyRead.ts': ['typebox', 'typebox/value'],
   'src/improvement/sessionDirectory.ts': ['node:path'],
   'src/improvement/taskFacts.ts': ['node:path'],
   'src/improvement/taskMapping.ts': ['node:path'],
@@ -450,10 +456,19 @@ it('keeps registered pure modules free of reads and effects', () => {
 });
 
 const versionedRecords = [
-  { writer: 'src/inbox/store.ts', fixtures: 'src/inbox/fixtures/handover' },
+  {
+    writer: 'src/inbox/store.ts',
+    fixtures: 'src/inbox/fixtures/handover',
+    names: ['current.json', 'newer.json', 'malformed.json'],
+  },
+  {
+    writer: 'src/improvement/event.ts',
+    fixtures: 'src/improvement/fixtures',
+    names: ['event-v1-merge.json', 'event-v2-pass.json', 'event-v2-class.json'],
+  },
 ];
 
-const recordFormatProblems = ({ writer, fixtures }: (typeof versionedRecords)[number]) => {
+const recordFormatProblems = ({ writer, fixtures, names }: (typeof versionedRecords)[number]) => {
   const source = readFileSync(join(root, writer), 'utf8');
   const problems: string[] = [];
 
@@ -461,7 +476,7 @@ const recordFormatProblems = ({ writer, fixtures }: (typeof versionedRecords)[nu
     problems.push(`${writer} has no version literal`);
   }
 
-  for (const name of ['current.json', 'newer.json', 'malformed.json']) {
+  for (const name of names) {
     if (!repositoryFiles().includes(`${fixtures}/${name}`)) {
       problems.push(`${fixtures} has no ${name}`);
     }

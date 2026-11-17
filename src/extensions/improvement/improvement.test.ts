@@ -33,7 +33,7 @@ const pullRequest = 'https://github.com/sQVe/tau/pull/562';
 const evidence: ImprovementEvent['evidence'] = [{ kind: 'pullRequest', url: pullRequest }];
 
 const mergeEvent: ImprovementEvent = {
-  version: 1,
+  version: 2,
   id: 'merge-562',
   kind: 'merge',
   createdAt: '2026-11-15T12:00:00.000Z',
@@ -44,7 +44,7 @@ const mergeEvent: ImprovementEvent = {
 };
 
 const factsEvent: ImprovementEvent = {
-  version: 1,
+  version: 2,
   id: 'facts-562',
   kind: 'facts',
   createdAt: '2026-11-15T12:01:00.000Z',
@@ -55,7 +55,7 @@ const factsEvent: ImprovementEvent = {
 };
 
 const correctionEvent: ImprovementEvent = {
-  version: 1,
+  version: 2,
   id: 'correction-1',
   kind: 'correction',
   createdAt: '2026-11-15T12:02:00.000Z',

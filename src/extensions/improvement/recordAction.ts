@@ -1,15 +1,14 @@
 import { createHash } from 'node:crypto';
-import { basename } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { eventDirectory, readEvents, writeEvent } from '../../improvement/event.js';
+import { writeEvent } from '../../improvement/event.js';
 import type { ImprovementEvent, WriteOutcome } from '../../improvement/event.js';
 import { findProjectRoot } from '../../improvement/projectRoot.js';
-import { parseRecordRequest } from './recordRequest.js';
-import type { RecordInput } from './recordRequest.js';
+import type { RecordRequest } from './recordRequest.js';
+import { findSavedEvent } from './savedEvent.js';
 
-interface SessionFacts {
+export interface SessionFacts {
   cwd: string;
   sessionId: string;
   sessionFile: string | undefined;
@@ -41,7 +40,7 @@ export interface DecisionFacts extends SessionFacts {
   choice: 'approved' | 'rejected' | 'redirected';
 }
 
-interface RecordResult {
+export interface RecordResult {
   id: string;
   path: string;
   outcome: WriteOutcome;
@@ -49,15 +48,21 @@ interface RecordResult {
 
 type ReviewEvent = Extract<ImprovementEvent, { kind: 'review' }>;
 
+export type StoredRecordRequest =
+  | Extract<RecordRequest, { kind: 'correction' }>
+  | Extract<RecordRequest, { kind: 'review' }>
+  | Extract<RecordRequest, { kind: 'backlog' }>
+  | Extract<RecordRequest, { kind: 'decision'; review: string }>;
+
 const hashLength = 32;
 
-const eventId = (prefix: string, sessionId: string, toolCallId: string) => {
+export const eventId = (prefix: string, sessionId: string, toolCallId: string): string => {
   const hash = createHash('sha256').update(`${sessionId}\0${toolCallId}`).digest('hex');
 
   return `${prefix}-${hash.slice(0, hashLength)}`;
 };
 
-const evidenceOf = (facts: SessionFacts): ImprovementEvent['evidence'][number] => {
+export const evidenceOf = (facts: SessionFacts): ImprovementEvent['evidence'][number] => {
   if (facts.sessionFile === undefined) {
     return { kind: 'session', sessionId: facts.sessionId, toolCallId: facts.toolCallId };
   }
@@ -65,31 +70,15 @@ const evidenceOf = (facts: SessionFacts): ImprovementEvent['evidence'][number] =
   return { kind: 'transcript', path: facts.sessionFile, toolCallId: facts.toolCallId };
 };
 
-const isReviewEvent = (event: ImprovementEvent): event is ReviewEvent => event.kind === 'review';
-
-const findReview = async (projectRoot: string, review: string): Promise<ReviewEvent> => {
-  const { events, gaps } = await readEvents(projectRoot);
-  const reviewGap = gaps.find(({ path }) => basename(path) === `${review}.json`);
-
-  if (reviewGap !== undefined) {
-    throw new Error(reviewGap.reason);
-  }
-
-  const event = events.find((candidate) => candidate.id === review);
-
-  if (event === undefined || !isReviewEvent(event)) {
-    throw new Error(`No review event ${review} in ${eventDirectory(projectRoot)}.`);
-  }
-
-  return event;
-};
+const findReview = (projectRoot: string, review: string): Promise<ReviewEvent> =>
+  findSavedEvent(projectRoot, review, 'review');
 
 export const recordCorrection = async (facts: CorrectionFacts): Promise<RecordResult> => {
   const projectRoot = await findProjectRoot(facts.cwd);
   const id = eventId('correction', facts.sessionId, facts.toolCallId);
 
   const { path, outcome } = await writeEvent(projectRoot, {
-    version: 1,
+    version: 2,
     id,
     kind: 'correction',
     createdAt: facts.createdAt,
@@ -106,7 +95,7 @@ export const recordReview = async (facts: ReviewFacts): Promise<RecordResult> =>
   const id = eventId('review', facts.sessionId, facts.toolCallId);
 
   const { path, outcome } = await writeEvent(projectRoot, {
-    version: 1,
+    version: 2,
     id,
     kind: 'review',
     createdAt: facts.createdAt,
@@ -124,7 +113,7 @@ export const recordBacklog = async (facts: BacklogFacts): Promise<RecordResult> 
   const id = `backlog-${facts.review}-${facts.item}`;
 
   const { path, outcome } = await writeEvent(projectRoot, {
-    version: 1,
+    version: 2,
     id,
     kind: 'backlog',
     createdAt: facts.createdAt,
@@ -144,7 +133,7 @@ export const recordDecision = async (facts: DecisionFacts): Promise<RecordResult
   const id = `decision-${facts.review}-${facts.item}`;
 
   const { path, outcome } = await writeEvent(projectRoot, {
-    version: 1,
+    version: 2,
     id,
     kind: 'decision',
     createdAt: facts.createdAt,
@@ -156,24 +145,20 @@ export const recordDecision = async (facts: DecisionFacts): Promise<RecordResult
   return { id, path, outcome };
 };
 
+export const sessionFacts = (toolCallId: string, context: ExtensionContext): SessionFacts => ({
+  cwd: context.cwd,
+  sessionId: context.sessionManager.getSessionId(),
+  sessionFile: context.sessionManager.getSessionFile(),
+  toolCallId,
+  createdAt: new Date().toISOString(),
+});
+
 export const runRecord = async (
   toolCallId: string,
-  input: RecordInput,
+  request: StoredRecordRequest,
   context: ExtensionContext,
 ): Promise<RecordResult> => {
-  const request = parseRecordRequest(input);
-
-  if (request.action !== 'record') {
-    throw new Error('runRecord takes a record request.');
-  }
-
-  const facts = {
-    cwd: context.cwd,
-    sessionId: context.sessionManager.getSessionId(),
-    sessionFile: context.sessionManager.getSessionFile(),
-    toolCallId,
-    createdAt: new Date().toISOString(),
-  };
+  const facts = sessionFacts(toolCallId, context);
 
   if (request.kind === 'correction') {
     return recordCorrection({ ...facts, summary: request.summary });

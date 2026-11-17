@@ -31,7 +31,7 @@ const evidence: { kind: 'pullRequest'; url: string }[] = [
 ];
 
 const mergeEvent: ImprovementEvent = {
-  version: 1,
+  version: 2,
   id: 'merge-562',
   kind: 'merge',
   createdAt: '2026-11-15T12:00:00.000Z',
@@ -42,7 +42,7 @@ const mergeEvent: ImprovementEvent = {
 };
 
 const factsEvent: ImprovementEvent = {
-  version: 1,
+  version: 2,
   id: 'facts-562',
   kind: 'facts',
   createdAt: '2026-11-15T12:01:00.000Z',
@@ -53,13 +53,22 @@ const factsEvent: ImprovementEvent = {
 };
 
 const correctionEvent: ImprovementEvent = {
-  version: 1,
+  version: 2,
   id: 'correction-1',
   kind: 'correction',
   createdAt: '2026-11-15T12:02:00.000Z',
   evidence: [],
   summary: 'Run the focused tests first.',
   cwd: '/code/tau',
+};
+
+const passEvent: ImprovementEvent = {
+  version: 2,
+  id: 'pass-correct-1',
+  kind: 'pass',
+  createdAt: '2026-11-15T12:10:00.000Z',
+  evidence: [],
+  pass: 'correct',
 };
 
 const caughtUpIndex = (projectRoot: string): SweepIndex => ({
@@ -141,6 +150,20 @@ it('reads tasks, coverage, the correct pass, and the sweep from saved records', 
   });
 
   expect(await snapshot(projectRoot, agentDirectory)).toEqual(before);
+});
+
+it('clears correct due after a pass', async () => {
+  const project = await createProject();
+  const projectRoot = await realpath(project);
+  const agentDirectory = createAgentDirectory();
+
+  await writeEvent(projectRoot, correctionEvent);
+  await writeEvent(projectRoot, passEvent);
+  await writeSweepIndex(agentDirectory, caughtUpIndex(projectRoot));
+
+  const status = await readImprovementStatus({ cwd: project, agentDirectory, now });
+
+  expect(status.correctDue).toBe(false);
 });
 
 it('reads a failed session sweep as incomplete despite a caught-up index', async () => {
@@ -266,7 +289,7 @@ it('lists a newer-format event in gaps', async () => {
   const path = join(directory, 'newer.json');
 
   await mkdir(directory, { recursive: true });
-  await writeFile(path, JSON.stringify({ version: 2, id: 'newer' }));
+  await writeFile(path, JSON.stringify({ version: 3, id: 'newer' }));
 
   const status = await readImprovementStatus({ cwd: project, agentDirectory, now });
 

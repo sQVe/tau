@@ -137,7 +137,7 @@ describe('plannedEvents', () => {
   const pullRequest = 'https://github.com/sQVe/tau/pull/562';
 
   const mergeEvent = (): ImprovementEvent => ({
-    version: 1,
+    version: 2,
     id: 'merge-abc123',
     kind: 'merge',
     createdAt: now,
@@ -150,7 +150,7 @@ describe('plannedEvents', () => {
   const factsEvent = (
     overrides: Partial<Extract<ImprovementEvent, { kind: 'facts' }>> = {},
   ): ImprovementEvent => ({
-    version: 1,
+    version: 2,
     id: 'facts-abc123',
     kind: 'facts',
     createdAt: now,

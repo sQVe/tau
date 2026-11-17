@@ -17,6 +17,9 @@ export const findProjectRoot = async (
   return dirname(commonDirectory);
 };
 
+export const projectRootsOf = (indexed: readonly string[], current: string | null): string[] =>
+  [...new Set(current === null ? indexed : [...indexed, current])].toSorted();
+
 const isNotARepository = (message: string) => message.includes('not a git repository');
 
 export const findOptionalProjectRoot = async (cwd: string): Promise<string | null> => {

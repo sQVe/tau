@@ -30,6 +30,11 @@ the sweep at manager session start.
 - A review of another project's task saves that task's `review`, `backlog`, and `decision` events in
   the project root that the record call names: the value `task` returns for the task, not the
   reviewing session's.
+- A `class` and its `decision` name the project root that must fix the class: the root with the most
+  occurrences of it. A `pass` names no root and is written to every project root the correct pass
+  read an event from, because it clears `correct due` in each of them. A root with no events has
+  nothing due, so it gets no pass file. A `correction` stays in the session's project root, because
+  it records what the user said in that session.
 - Each event is its own file, named by its ID, and is never replaced. A second write of the same ID
   keeps the first file. A retried tool call then saves no duplicate, and concurrent sessions need no
   lock across files.
@@ -43,6 +48,9 @@ the sweep at manager session start.
 - A user correction is saved when it happens. The manager fixes the mistake, saves a `correction`
   event with the `improvement` tool, and proposes a rule or check. Later reviews count repeated
   corrections from these events.
+- The event kinds are `merge`, `facts`, `correction`, `review`, `decision`, `backlog`, `pass`, and
+  `class`. A `pass` event marks a `correct` pass. A `class` event records a proposed class of
+  repeated mistakes, with its identity, level, summary, and occurrences.
 
 ### Task facts and signals
 
@@ -89,6 +97,14 @@ The status bar is the only due signal. Tau shows tasks to review, `correct due`,
 sweep there, and never interrupts the session. The `improvement` tool's `status` action returns the
 same facts. Signals are derived on read, not stored. Until a `correct` pass records itself, it
 counts as never run, so any review or correction makes it due.
+
+### Rule tables
+
+Each rule is listed once beside the owner of its enforcer. `AGENTS.md` holds the repository rules,
+and `src/instructions/workflow.md` holds the workflow rules. The prose above each table stays
+authoritative, and a row is a short reference, not a second copy of the policy. A rule with no check
+is owned by the human reviewer. Shared rules that Tau does not own live in stomme, and stomme's
+table is out of scope.
 
 ### Approval
 

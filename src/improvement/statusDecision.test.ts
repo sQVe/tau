@@ -24,7 +24,7 @@ const merge = (
   const pullRequest = overrides.pullRequest ?? pullRequestA;
 
   return {
-    version: 1,
+    version: 2,
     id: overrides.id ?? 'merge-562',
     kind: 'merge',
     createdAt: overrides.createdAt ?? '2026-11-15T12:00:00.000Z',
@@ -47,7 +47,7 @@ const facts = (
   const pullRequest = overrides.pullRequest ?? pullRequestA;
 
   return {
-    version: 1,
+    version: 2,
     id: overrides.id ?? 'facts-562',
     kind: 'facts',
     createdAt: overrides.createdAt ?? '2026-11-15T12:00:00.000Z',
@@ -64,7 +64,7 @@ const review = (
   const pullRequest = overrides.pullRequest ?? pullRequestA;
 
   return {
-    version: 1,
+    version: 2,
     id: overrides.id ?? 'review-562',
     kind: 'review',
     createdAt: overrides.createdAt ?? '2026-11-15T12:05:00.000Z',
@@ -75,7 +75,7 @@ const review = (
 };
 
 const correction = (createdAt: string, id = 'correction-1'): ImprovementEvent => ({
-  version: 1,
+  version: 2,
   id,
   kind: 'correction',
   createdAt,
@@ -85,7 +85,7 @@ const correction = (createdAt: string, id = 'correction-1'): ImprovementEvent =>
 });
 
 const decision = (): ImprovementEvent => ({
-  version: 1,
+  version: 2,
   id: 'decision-1',
   kind: 'decision',
   createdAt: '2026-11-15T12:03:00.000Z',
@@ -95,7 +95,7 @@ const decision = (): ImprovementEvent => ({
 });
 
 const backlog = (): ImprovementEvent => ({
-  version: 1,
+  version: 2,
   id: 'backlog-1',
   kind: 'backlog',
   createdAt: '2026-11-15T12:04:00.000Z',

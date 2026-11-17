@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
-import type { Static, TProperties } from 'typebox';
+import type { Static, TProperties, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.ts';
@@ -11,9 +11,7 @@ import { describeSchemaProblem, isRecord, stringEnum } from '../schema.ts';
 import { ensureTauDirectory, rejectLinkedFile } from '../tauDirectory.ts';
 import { assertWriteWithinTestRoot } from './writeGuard.ts';
 
-export type ImprovementEvent = Static<typeof eventSchema>;
-
-type EventKind = ImprovementEvent['kind'];
+export type ImprovementEvent = Static<typeof eventSchemaV2>;
 
 export type WriteOutcome = 'saved' | 'existing';
 
@@ -33,7 +31,7 @@ export interface EventRead {
   gaps: EventGap[];
 }
 
-const eventVersion = 1;
+const eventVersion = 2;
 
 const eventDirectoryPath = 'improvement';
 
@@ -76,10 +74,14 @@ const evidenceSchema = Type.Union([
   Type.Object({ kind: Type.Literal('reviewCapture'), ref: text }, { additionalProperties: false }),
 ]);
 
-const eventOf = <Kind extends string, Fields extends TProperties>(kind: Kind, fields: Fields) =>
+const eventOf = <Version extends number, Kind extends string, Fields extends TProperties>(
+  version: Version,
+  kind: Kind,
+  fields: Fields,
+) =>
   Type.Object(
     {
-      version: Type.Literal(eventVersion),
+      version: Type.Literal(version),
       id: eventId,
       kind: Type.Literal(kind),
       createdAt: isoTime,
@@ -90,50 +92,104 @@ const eventOf = <Kind extends string, Fields extends TProperties>(kind: Kind, fi
     { additionalProperties: false },
   );
 
-const kindSchemas = {
-  merge: eventOf('merge', { repository: text, pullRequest: pullRequestUrl, mergedAt: isoTime }),
-  facts: eventOf('facts', {
-    pullRequest: pullRequestUrl,
-    facts: Type.Record(Type.String(), Type.Integer({ minimum: 0 })),
-    coverage: stringEnum(['complete', 'managerOnly', 'missing']),
-  }),
-  correction: eventOf('correction', { summary: text, cwd: text }),
-  review: eventOf('review', { pullRequest: pullRequestUrl, outcome: text }),
-  decision: eventOf('decision', {
-    subject: eventId,
-    choice: stringEnum(['approved', 'rejected', 'redirected']),
-  }),
-  backlog: eventOf('backlog', { summary: text, pullRequest: pullRequestUrl }),
+const mergeFields = { repository: text, pullRequest: pullRequestUrl, mergedAt: isoTime };
+
+const factsFields = {
+  pullRequest: pullRequestUrl,
+  facts: Type.Record(Type.String(), Type.Integer({ minimum: 0 })),
+  coverage: stringEnum(['complete', 'managerOnly', 'missing']),
 };
 
-const eventSchema = Type.Union([
-  kindSchemas.merge,
-  kindSchemas.facts,
-  kindSchemas.correction,
-  kindSchemas.review,
-  kindSchemas.decision,
-  kindSchemas.backlog,
+const correctionFields = { summary: text, cwd: text };
+
+const reviewFields = { pullRequest: pullRequestUrl, outcome: text };
+
+const decisionFields = {
+  subject: eventId,
+  choice: stringEnum(['approved', 'rejected', 'redirected']),
+};
+
+const backlogFields = { summary: text, pullRequest: pullRequestUrl };
+
+const eventKindsOf = <Version extends number>(version: Version) => ({
+  merge: eventOf(version, 'merge', mergeFields),
+  facts: eventOf(version, 'facts', factsFields),
+  correction: eventOf(version, 'correction', correctionFields),
+  review: eventOf(version, 'review', reviewFields),
+  decision: eventOf(version, 'decision', decisionFields),
+  backlog: eventOf(version, 'backlog', backlogFields),
+});
+
+const kindSchemasV1 = eventKindsOf(1);
+
+const kindSchemasV2 = {
+  ...eventKindsOf(2),
+  pass: eventOf(2, 'pass', { pass: stringEnum(['correct']) }),
+  class: eventOf(2, 'class', {
+    identity: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,99}$' }),
+    level: stringEnum(['architecture', 'type', 'lint', 'test', 'prose']),
+    summary: text,
+    occurrences: Type.Array(text, { minItems: 1 }),
+  }),
+};
+
+const eventSchemaV1 = Type.Union([
+  kindSchemasV1.merge,
+  kindSchemasV1.facts,
+  kindSchemasV1.correction,
+  kindSchemasV1.review,
+  kindSchemasV1.decision,
+  kindSchemasV1.backlog,
 ]);
 
-const isEventKind = (kind: unknown): kind is EventKind =>
-  typeof kind === 'string' && Object.hasOwn(kindSchemas, kind);
+const eventSchemaV2 = Type.Union([
+  kindSchemasV2.merge,
+  kindSchemasV2.facts,
+  kindSchemasV2.correction,
+  kindSchemasV2.review,
+  kindSchemasV2.decision,
+  kindSchemasV2.backlog,
+  kindSchemasV2.pass,
+  kindSchemasV2.class,
+]);
+
+const kindSchemasByVersion: Readonly<Record<number, Readonly<Record<string, TSchema>>>> = {
+  1: kindSchemasV1,
+  2: kindSchemasV2,
+};
+
+const isEventKind = (schemas: Readonly<Record<string, TSchema>>, kind: unknown): kind is string =>
+  typeof kind === 'string' && Object.hasOwn(schemas, kind);
 
 const checkKindFields = (value: unknown): string | undefined => {
-  const kind = isRecord(value) ? value['kind'] : undefined;
-
-  if (!isEventKind(kind)) {
+  if (!isRecord(value)) {
     return undefined;
   }
 
-  const schema = kindSchemas[kind];
+  const version = value['version'];
+  const schemas = typeof version === 'number' ? kindSchemasByVersion[version] : undefined;
+  const kind = value['kind'];
+
+  if (schemas === undefined || !isEventKind(schemas, kind)) {
+    return undefined;
+  }
+
+  const schema = schemas[kind];
+
+  if (schema === undefined) {
+    return undefined;
+  }
 
   return Value.Check(schema, value) ? undefined : describeSchemaProblem(schema, value);
 };
 
+const schemaForVersion = (value: unknown) =>
+  isRecord(value) && value['version'] === 1 ? eventSchemaV1 : eventSchemaV2;
+
 const eventOptions = {
   label: 'improvement event',
   version: eventVersion,
-  schema: eventSchema,
+  schema: schemaForVersion,
   check: checkKindFields,
 };
 
@@ -144,8 +200,11 @@ const isUnpublished = (name: string) => name.startsWith('.receipt-');
 export const eventDirectory = (projectRoot: string): string =>
   join(projectRoot, '.tau', eventDirectoryPath);
 
-export const parseEvent = (path: string, eventText: string): ImprovementEvent =>
-  parseVersionedRecord(path, eventText, eventOptions);
+export const parseEvent = (path: string, eventText: string): ImprovementEvent => {
+  const event = parseVersionedRecord(path, eventText, eventOptions);
+
+  return event.version === 1 ? { ...event, version: eventVersion } : event;
+};
 
 export const writeEvent = async (
   projectRoot: string,
