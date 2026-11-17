@@ -250,6 +250,27 @@ it('saves an unresolved entry when no ancestor is a repository', async () => {
   expect(after.transcripts[path]).toMatchObject({ status: 'resolved', cwd });
 });
 
+it('saves an unresolved entry when location resolution is already aborted', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const path = fixture.writeSession('manager.jsonl', session(fixture.repository));
+
+  const result = await resolveTranscript({
+    path,
+    exec: fixture.fake.exec,
+    signal: AbortSignal.abort(),
+    cache: new Map(),
+  });
+
+  expect(result).toMatchObject({
+    status: 'unresolved',
+    entry: {
+      status: 'unresolved',
+      cwd: fixture.repository,
+      reason: expect.stringContaining('git rev-parse') as string,
+    },
+  });
+});
+
 it('saves an unresolved entry when the first line is not a session header', async () => {
   const fixture = await createSweepFixture(onTestFinished);
   const path = fixture.writeSession('manager.jsonl', '{"type":"message"}\n');

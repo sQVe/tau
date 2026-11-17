@@ -2,10 +2,10 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import type { Exec } from '../../command.js';
 import { readMergedPullRequest } from '../../github/mergedPullRequest.js';
-import { findProjectRoot } from '../../improvement/projectRoot.js';
 import { sessionDirectoryFor } from '../../improvement/sessionDirectory.js';
 import type { Coverage } from '../../improvement/taskMapping.js';
 import { readTaskTranscripts } from '../../improvement/taskTranscripts.js';
+import { findSharedRepositoryRoot } from '../../tauDirectory.js';
 import type { TaskRequest } from './recordRequest.js';
 
 export interface TaskResult {
@@ -18,7 +18,7 @@ export interface TaskResult {
 
 const projectRootFor = async (worktree: string): Promise<string | null> => {
   try {
-    return await findProjectRoot(worktree);
+    return await findSharedRepositoryRoot(worktree);
   } catch {
     return null;
   }

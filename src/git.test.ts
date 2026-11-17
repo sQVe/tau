@@ -203,6 +203,14 @@ it('finds the checkout root from a directory inside it', async ({ onTestFinished
   await expect(findCheckoutRoot(nested, 'pr')).resolves.toBe(realpathSync(root));
 });
 
+it('passes its signal to the Git call', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(findCheckoutRoot(root, 'pr', { signal: AbortSignal.abort() })).rejects.toThrow(
+    `The pr tool needs a Git checkout, and ${root} is not in one.`,
+  );
+});
+
 it('names the tool when the directory is not in a Git checkout', async ({ onTestFinished }) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-no-checkout-');
 
