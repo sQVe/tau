@@ -19,6 +19,7 @@ import {
   runRecord,
 } from './recordAction.js';
 import type { BacklogFacts, CorrectionFacts, DecisionFacts, ReviewFacts } from './recordAction.js';
+import { parseRecordRequest } from './recordRequest.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 
@@ -113,7 +114,7 @@ describe('recordCorrection', () => {
     ).toEqual(
       [fromWorktree.id, fromBareRoot.id]
         .toSorted()
-        .map((id) => ({ version: 1, kind: 'correction', id })),
+        .map((id) => ({ version: 2, kind: 'correction', id })),
     );
   });
 
@@ -338,7 +339,7 @@ it('refuses a decision or backlog item for a review that does not exist', async 
   const projectRoot = await realpath(root);
 
   await writeEvent(projectRoot, {
-    version: 1,
+    version: 2,
     id: 'merge-1',
     kind: 'merge',
     createdAt: '2026-11-15T12:00:00.000Z',
@@ -407,8 +408,8 @@ it('refuses a decision when the named review has a newer format', async () => {
   const other = join(directory, 'review-aaa.json');
 
   await mkdir(directory, { recursive: true });
-  await writeFile(named, '{"version":2}', 'utf8');
-  await writeFile(other, '{"version":2}', 'utf8');
+  await writeFile(named, '{"version":3}', 'utf8');
+  await writeFile(other, '{"version":3}', 'utf8');
 
   const failure = await recordDecision(decisionFactsFor(root, { review: 'review-newer' })).then(
     () => 'no error',
@@ -420,8 +421,8 @@ it('refuses a decision when the named review has a newer format', async () => {
   );
 
   expect((await readdir(directory)).toSorted()).toEqual(['review-aaa.json', 'review-newer.json']);
-  expect(await readFile(named, 'utf8')).toBe('{"version":2}');
-  expect(await readFile(other, 'utf8')).toBe('{"version":2}');
+  expect(await readFile(named, 'utf8')).toBe('{"version":3}');
+  expect(await readFile(other, 'utf8')).toBe('{"version":3}');
 });
 
 describe('runRecord', () => {
@@ -433,14 +434,19 @@ describe('runRecord', () => {
       sessionManager: { getSessionId: () => 'session-1', getSessionFile: () => undefined },
     } as unknown as ExtensionContext;
 
-    const failure = await runRecord(
-      'call-1',
-      { action: 'record', kind: 'correction', summary: ' \n\t ' },
-      context,
-    ).then(
-      () => 'no error',
-      (error: unknown) => (error instanceof Error ? error.message : String(error)),
-    );
+    const failure = await Promise.resolve()
+      .then(() => parseRecordRequest({ action: 'record', kind: 'correction', summary: ' \n\t ' }))
+      .then((request) => {
+        if (request.action !== 'record' || request.kind !== 'correction') {
+          throw new Error('The request is not a correction.');
+        }
+
+        return runRecord('call-1', request, context);
+      })
+      .then(
+        () => 'no error',
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
 
     expect({ failure, saved: existsSync(join(root, '.tau', 'improvement')) }).toEqual({
       failure: 'record kind correction needs a non-blank summary.',

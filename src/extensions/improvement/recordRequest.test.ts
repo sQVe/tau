@@ -70,6 +70,72 @@ const table: {
     },
   },
   {
+    name: 'parses a pass record',
+    input: { action: 'record', kind: 'pass' },
+    expected: { action: 'record', kind: 'pass' },
+  },
+  {
+    name: 'parses a class record',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: 'lint-await',
+      level: 'lint',
+      summary: 'The await keyword was missing before an async call.',
+      occurrences: ['correction-1', 'correction-2'],
+    },
+    expected: {
+      action: 'record',
+      kind: 'class',
+      identity: 'lint-await',
+      level: 'lint',
+      summary: 'The await keyword was missing before an async call.',
+      occurrences: ['correction-1', 'correction-2'],
+    },
+  },
+  {
+    name: 'parses a class decision',
+    input: { action: 'record', kind: 'decision', class: 'class-x', choice: 'approved' },
+    expected: { action: 'record', kind: 'decision', class: 'class-x', choice: 'approved' },
+  },
+  {
+    name: 'refuses a decision with both review and class',
+    input: {
+      action: 'record',
+      kind: 'decision',
+      review: 'review-1',
+      item: 2,
+      class: 'class-x',
+      choice: 'approved',
+    },
+    expected: { error: 'record kind decision takes review or class, not both.' },
+  },
+  {
+    name: 'refuses a class without occurrences',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: 'lint-await',
+      level: 'lint',
+      summary: 'The await keyword was missing before an async call.',
+    },
+    expected: { error: 'record kind class needs occurrences.' },
+  },
+  {
+    name: 'refuses a class with an unknown level',
+    input: {
+      action: 'record',
+      kind: 'class',
+      identity: 'lint-await',
+      level: 'style' as NonNullable<RecordInput['level']>,
+      summary: 'The await keyword was missing before an async call.',
+      occurrences: ['correction-1'],
+    },
+    expected: {
+      error: 'record kind class level must be architecture, type, lint, test, or prose.',
+    },
+  },
+  {
     name: 'needs a correction summary',
     input: { action: 'record', kind: 'correction' },
     expected: { error: 'record kind correction needs summary.' },

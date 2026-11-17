@@ -5,14 +5,21 @@ import { piExec } from '../../command.js';
 import { readImprovementStatus } from '../../improvement/status.js';
 import { runSweep } from '../../improvement/sweep.js';
 import { isWorkerProcess } from '../../worker.js';
+import { runCorrect } from './correctAction.js';
+import type { CorrectResult } from './correctAction.js';
 import { runRecord } from './recordAction.js';
+import type { RecordResult } from './recordAction.js';
+import { runClass } from './recordClass.js';
+import { runPass } from './recordPass.js';
+import type { PassResult } from './recordPass.js';
 import { parseRecordRequest, parameters } from './recordRequest.js';
 import { createStatusRefresh } from './statusAction.js';
 import { startSweep } from './sweepStart.js';
 import { createSweepState } from './sweepState.js';
 import { runTask } from './taskAction.js';
 
-const description = `- record: correction (summary) in session project; review (pullRequest, outcome), backlog (review, item, summary), decision (review, item, choice), each with projectRoot, in task project. {id,path,outcome}; existing kept.
+const description = `- record: correction (summary) in session project; review (pullRequest, outcome), backlog (review, item, summary), decision (review, item, or class, plus choice), class (identity, level, summary, occurrences), each with projectRoot, in task project; pass in every project root. {id,path,outcome} or pass {id,paths,failed}; existing kept.
+- correct: read cross-project evidence. classes adds each class (identity, level, summary, occurrences, reverted, qaMiss) and ranks at most 5. Without classes {events,measures,rejected,coverage,gaps}; with {classes,measures,coverage,gaps}.
 - status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,gaps}
 - task: read a merged task's transcripts, coverage, projectRoot (pullRequest, worktree).`;
 
@@ -58,7 +65,19 @@ export default function improvementExtension(
           return { content: [{ type: 'text', text: JSON.stringify(task) }], details: task };
         }
 
-        const details = await runRecord(toolCallId, input, context);
+        let details: RecordResult | PassResult | CorrectResult;
+
+        if (request.action === 'correct') {
+          details = await runCorrect(getAgentDir(), context.cwd, request);
+        } else if (request.kind === 'pass') {
+          details = await runPass(toolCallId, context, getAgentDir());
+        } else if (request.kind === 'class') {
+          details = await runClass(toolCallId, request, context);
+        } else if (request.kind === 'decision' && 'class' in request) {
+          details = await runClass(toolCallId, request, context);
+        } else {
+          details = await runRecord(toolCallId, request, context);
+        }
 
         // oxlint-disable-next-line typescript/no-floating-promises -- refresh turns every failure into undefined, so it cannot reject.
         void refresh(context);
