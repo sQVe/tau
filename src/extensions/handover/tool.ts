@@ -7,11 +7,12 @@ import { Type } from 'typebox';
 
 import { resolveAllowedModel } from '../../config/models.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import type { PiStartTarget } from '../../piStart/piStart.js';
 import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 import { sendHandover } from './send.js';
 import type { SendHandoverRequest, SendHandoverResult } from './send.js';
 import { startHandover } from './start.js';
-import type { StartHandoverRequest, StartHandoverResult, StartHandoverTarget } from './start.js';
+import type { StartHandoverRequest, StartHandoverResult } from './start.js';
 
 interface PrepareDetails {
   directory: string;
@@ -86,7 +87,7 @@ const sendRequest = (cwd: string, input: HandoverInput): SendHandoverRequest => 
   };
 };
 
-const startTarget = (input: HandoverInput): StartHandoverTarget => {
+const startTarget = (input: HandoverInput): PiStartTarget => {
   if (input.space !== undefined) {
     return { space: input.space };
   }

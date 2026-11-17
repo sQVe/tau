@@ -63,6 +63,7 @@ The target shared modules and the modules each may import:
 | `improvement`   | `command`, `errors`, `fileLock`, `git`, `github`, `record`, `schema`, `tauDirectory` |
 | `inbox`         | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                               |
 | `record`        | `errors`, `schema`, `tauDirectory`                                                   |
+| `piStart`       | `command`, `config`, `errors`, `tauDirectory`                                        |
 | `checkRecord`   | `errors`, `git`, `record`                                                            |
 | `classifier`    | `config`                                                                             |
 | `reviewBots`    | `command`, `config`, `github`, `schema`                                              |

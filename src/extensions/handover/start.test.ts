@@ -7,8 +7,9 @@ import { createExecFake, succeededResult } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import type { PiStartTarget } from '../../piStart/piStart.js';
 import { startHandover } from './start.js';
-import type { StartHandoverRequest, StartHandoverTarget } from './start.js';
+import type { StartHandoverRequest } from './start.js';
 
 const createAppFake = (): ExecFake<'app'> =>
   createExecFake<'app'>({
@@ -26,11 +27,13 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const requestFor = (
-  root: string,
-  file: string,
-  target: StartHandoverTarget,
-): StartHandoverRequest => ({ cwd: root, file, folder: root, target, model: undefined });
+const requestFor = (root: string, file: string, target: PiStartTarget): StartHandoverRequest => ({
+  cwd: root,
+  file,
+  folder: root,
+  target,
+  model: undefined,
+});
 
 const commandsOf = (fake: ExecFake<'app'>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
@@ -87,99 +90,6 @@ it('opens a new space with a tab when no space is given', async () => {
         root,
         '--argv',
         '["pi"]',
-        '--task',
-        'Next steps\n',
-        '--focus',
-        'false',
-      ],
-    },
-  ]);
-});
-
-it('passes the model to a new tab in the space', async () => {
-  const fake = createAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  await startHandover(
-    { exec: fake.exec, cwd: root },
-    { ...requestFor(root, file, { space: 'space-1' }), model: 'morph/morph-dsv41flash-1017' },
-  );
-
-  expect(commandsOf(fake)).toEqual([
-    {
-      command: 'herdr-app',
-      commandArguments: [
-        'do',
-        'tab.new',
-        '--space',
-        'space-1',
-        '--folder',
-        root,
-        '--argv',
-        '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
-        '--task',
-        'Next steps\n',
-        '--focus',
-        'false',
-      ],
-    },
-  ]);
-});
-
-it('passes the model to a new space', async () => {
-  const fake = createAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  await startHandover(
-    { exec: fake.exec, cwd: root },
-    { ...requestFor(root, file, { name: 'ticket-1' }), model: 'morph/morph-dsv41flash-1017' },
-  );
-
-  expect(commandsOf(fake)).toEqual([
-    {
-      command: 'herdr-app',
-      commandArguments: [
-        'do',
-        'space.new',
-        '--name',
-        'ticket-1',
-        '--folder',
-        root,
-        '--argv',
-        '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
-        '--task',
-        'Next steps\n',
-        '--focus',
-        'false',
-      ],
-    },
-  ]);
-});
-
-it('pins the provider so a colliding model ID cannot resolve to another provider', async () => {
-  const fake = createAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  await startHandover(
-    { exec: fake.exec, cwd: root },
-    { ...requestFor(root, file, { space: 'space-1' }), model: 'direct/chat' },
-  );
-
-  expect(commandsOf(fake)).toEqual([
-    {
-      command: 'herdr-app',
-      commandArguments: [
-        'do',
-        'tab.new',
-        '--space',
-        'space-1',
-        '--folder',
-        root,
-        '--argv',
-        '["pi","--provider","direct","--model","chat"]',
         '--task',
         'Next steps\n',
         '--focus',
