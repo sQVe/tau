@@ -32,8 +32,9 @@ the sweep at manager session start.
   reviewing session's.
 - A `class` and its `decision` name the project root that must fix the class: the root with the most
   occurrences of it. A `pass` names no root and is written to every project root the correct pass
-  read, because it clears `correct due` in each of them. A `correction` stays in the session's
-  project root, because it records what the user said in that session.
+  read an event from, because it clears `correct due` in each of them. A root with no events has
+  nothing due, so it gets no pass file. A `correction` stays in the session's project root, because
+  it records what the user said in that session.
 - Each event is its own file, named by its ID, and is never replaced. A second write of the same ID
   keeps the first file. A retried tool call then saves no duplicate, and concurrent sessions need no
   lock across files.
