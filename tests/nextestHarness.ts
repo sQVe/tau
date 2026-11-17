@@ -1,19 +1,17 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
 import { appendFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { afterAll, beforeAll, vi } from 'vitest';
+import { beforeAll, vi } from 'vitest';
 
 import { parseCargoMetadata } from '../src/extensions/tdd/runner/cargoMetadata.js';
 import { targetArguments } from '../src/extensions/tdd/runner/nextestArguments.js';
 import tddExtension from '../src/extensions/tdd/tdd.js';
 import type { ObservationResult } from '../src/extensions/tdd/types.js';
 import { fakeExtensionApi } from './extensionApi.js';
-import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 export interface NextestToolResult {
   content: { type: 'text'; text: string }[];
@@ -70,23 +68,18 @@ export const libraryWith = (body: string): string => `#[cfg(test)]\nmod tests {\
 // One target directory per test file keeps the crates from recompiling each other, and a fresh
 // agent directory keeps the developer's Tau config out of the run.
 export const useSharedCargoEnvironment = (prefix: string): void => {
+  const registerCleanup = suiteCleanup();
   let previousTargetDirectory: string | undefined;
   let previousAgentDirectory: string | undefined;
-  let targetDirectory: string | undefined;
-  let agentDirectory: string | undefined;
 
   beforeAll(() => {
     previousTargetDirectory = process.env.CARGO_TARGET_DIR;
     previousAgentDirectory = process.env.PI_CODING_AGENT_DIR;
-    targetDirectory = mkdtempSync(join(tmpdir(), `tau-${prefix}-target-`));
-    agentDirectory = mkdtempSync(join(tmpdir(), `tau-${prefix}-agent-`));
-
-    process.env.CARGO_TARGET_DIR = targetDirectory;
-    process.env.PI_CODING_AGENT_DIR = agentDirectory;
+    process.env.CARGO_TARGET_DIR = temporaryDirectory(registerCleanup, `tau-${prefix}-target-`);
+    process.env.PI_CODING_AGENT_DIR = temporaryDirectory(registerCleanup, `tau-${prefix}-agent-`);
   });
 
-  // Vitest ignores an afterAll registered inside beforeAll, so the cleanup stays at module scope.
-  afterAll(() => {
+  registerCleanup(() => {
     if (previousTargetDirectory === undefined) {
       delete process.env.CARGO_TARGET_DIR;
     } else {
@@ -97,14 +90,6 @@ export const useSharedCargoEnvironment = (prefix: string): void => {
       delete process.env.PI_CODING_AGENT_DIR;
     } else {
       process.env.PI_CODING_AGENT_DIR = previousAgentDirectory;
-    }
-
-    if (targetDirectory !== undefined) {
-      rmSync(targetDirectory, { recursive: true, force: true });
-    }
-
-    if (agentDirectory !== undefined) {
-      rmSync(agentDirectory, { recursive: true, force: true });
     }
   });
 };

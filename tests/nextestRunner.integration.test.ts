@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { beforeAll, expect, it, vi } from 'vitest';
 
 import { defaultDeps, runTests } from '../src/extensions/tdd/runner/nextest.js';
 import type { NextestDeps } from '../src/extensions/tdd/runner/nextest.js';
@@ -18,7 +18,7 @@ import {
   useSharedCargoEnvironment,
   writeFiles,
 } from './nextestHarness.js';
-import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
@@ -38,11 +38,12 @@ const testNamesOf = (result: RunnerResult): string[] =>
   'tests' in result ? result.tests.map((test) => test.fullname) : [];
 
 let basicCrate = '';
+const registerCleanup = suiteCleanup();
 
 useSharedCargoEnvironment('nextest-runner');
 
 beforeAll(async () => {
-  basicCrate = temporaryDirectory(afterAll, 'tau-nextest-basic-');
+  basicCrate = temporaryDirectory(registerCleanup, 'tau-nextest-basic-');
 
   await writeFiles(basicCrate, {
     'Cargo.toml': cargoPackage('probe_basic'),

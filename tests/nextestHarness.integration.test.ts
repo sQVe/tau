@@ -9,7 +9,7 @@ import { expect, it } from 'vitest';
 const repositoryRoot = resolvePath(import.meta.dirname, '..');
 
 const probeDirectories = (prefix: string): string[] => {
-  const prefixes = [`tau-${prefix}-target-`, `tau-${prefix}-agent-`];
+  const prefixes = [`tau-${prefix}-target-`, `tau-${prefix}-agent-`, `tau-${prefix}-extra-`];
 
   return readdirSync(tmpdir()).filter((entry) =>
     prefixes.some((probePrefix) => entry.startsWith(probePrefix)),
@@ -59,15 +59,29 @@ it('removes the shared cargo directories when a failing suite exits', async ({
     [
       "import { writeFileSync } from 'node:fs';",
       "import { join } from 'node:path';",
-      "import { expect, it } from 'vitest';",
+      "import { beforeAll, expect, it } from 'vitest';",
       `import { useSharedCargoEnvironment } from ${JSON.stringify(join(repositoryRoot, 'tests', 'nextestHarness.js'))};`,
+      `import { suiteCleanup, temporaryDirectory } from ${JSON.stringify(join(repositoryRoot, 'tests', 'temporaryDirectoryHarness.js'))};`,
       '',
       `useSharedCargoEnvironment(${JSON.stringify(prefix)});`,
+      '',
+      'const registerCleanup = suiteCleanup();',
+      "let extraDirectory = '';",
+      '',
+      'beforeAll(() => {',
+      `  extraDirectory = temporaryDirectory(registerCleanup, ${JSON.stringify(`tau-${prefix}-extra-`)});`,
+      "  writeFileSync(join(extraDirectory, 'ran.txt'), 'ran');",
+      '});',
+      '',
+      'registerCleanup(async () => {',
+      "  writeFileSync(join(import.meta.dirname, 'async-cleanup.marker'), 'ran');",
+      '});',
       '',
       "it('creates the shared directories', () => {",
       '  const targetDirectory = process.env.CARGO_TARGET_DIR;',
       '  expect(targetDirectory).toBeDefined();',
       "  writeFileSync(join(targetDirectory as string, 'ran.txt'), 'ran');",
+      "  writeFileSync(join(extraDirectory, 'ran.txt'), 'ran');",
       "  writeFileSync(join(import.meta.dirname, 'ran.marker'), 'ran');",
       '});',
       '',
@@ -81,6 +95,7 @@ it('removes the shared cargo directories when a failing suite exits', async ({
   const succeeded = await runNested(directory);
 
   expect(existsSync(join(directory, 'ran.marker'))).toBe(true);
+  expect(existsSync(join(directory, 'async-cleanup.marker'))).toBe(true);
   expect(succeeded).toBe(false);
   expect(probeDirectories(prefix)).toEqual([]);
 });

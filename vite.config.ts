@@ -181,6 +181,7 @@ export default defineConfig({
     rules: {
       'tau/module-boundaries': 'error',
       'tau/no-enoent-literal': 'error',
+      'tau/no-hook-registration-in-hook': 'error',
     },
     overrides: [
       {

@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 
 import { afterAll, beforeAll, expect, it, onTestFinished, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultDeps, nextestRunner, runTests } from './nextest.js';
 import type { RunnerResult, RunTestsInput, SpawnCommand, SpawnResult } from './types.js';
 
@@ -135,11 +135,12 @@ const fakeNextest = (
 
 let searchPath = '';
 let sharedAgentDirectory = '';
+const registerCleanup = suiteCleanup();
 
 beforeAll(async () => {
-  sharedAgentDirectory = temporaryDirectory(afterAll, 'tau-nextest-agent-');
+  sharedAgentDirectory = temporaryDirectory(registerCleanup, 'tau-nextest-agent-');
   vi.stubEnv('PI_CODING_AGENT_DIR', sharedAgentDirectory);
-  searchPath = temporaryDirectory(afterAll, 'tau-nextest-path-');
+  searchPath = temporaryDirectory(registerCleanup, 'tau-nextest-path-');
 
   const executable = join(searchPath, 'cargo-nextest');
 

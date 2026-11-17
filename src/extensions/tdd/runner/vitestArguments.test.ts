@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
 import { fakeSpawn, makeDeps, outputFileFrom, runTests } from '../fixtures/vitestRunner.js';
 import type { SpawnCommand } from './types.js';
@@ -17,8 +17,10 @@ const isTauArgument = (argument: string) =>
   argument.endsWith('/vitestReportReporter.ts') || argument.startsWith('--outputFile=');
 
 describe('runTests', () => {
+  const registerCleanup = suiteCleanup();
+
   beforeAll(() => {
-    const agentDirectory = temporaryDirectory(afterAll, 'tau-runner-agent-');
+    const agentDirectory = temporaryDirectory(registerCleanup, 'tau-runner-agent-');
     vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
   });
 
