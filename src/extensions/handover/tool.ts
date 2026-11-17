@@ -1,10 +1,11 @@
 import { isAbsolute } from 'node:path';
 
-import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
+import { resolveAllowedModel } from '../../config/models.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 import { sendHandover } from './send.js';
@@ -42,6 +43,11 @@ const parameters = Type.Object({
     }),
   ),
   name: Type.Optional(Type.String({ description: 'start without space: name of the new space.' })),
+  model: Type.Optional(
+    Type.String({
+      description: "start: the new Pi's model as provider/model-id. Omit it for the default model.",
+    }),
+  ),
   messageId: Type.Optional(
     Type.String({
       description: 'send retry: messageId of an unknown result.',
@@ -92,7 +98,14 @@ const startTarget = (input: HandoverInput): StartHandoverTarget => {
   return { name: input.name };
 };
 
-const startRequest = (cwd: string, input: HandoverInput): StartHandoverRequest => {
+const startRequest = (
+  context: ExtensionToolContext,
+  input: HandoverInput,
+): StartHandoverRequest => {
+  if (input.model !== undefined) {
+    resolveAllowedModel(context, input.model);
+  }
+
   if (input.file === undefined) {
     throw new Error('start needs a file.');
   }
@@ -106,23 +119,32 @@ const startRequest = (cwd: string, input: HandoverInput): StartHandoverRequest =
   }
 
   return {
-    cwd,
+    cwd: context.cwd,
     file: input.file,
     folder: input.folder,
     target: startTarget(input),
+    ...(input.model === undefined ? {} : { model: input.model }),
   };
 };
 
-const runAction = (hc: HcRuntime, cwd: string, input: HandoverInput): Promise<HandoverDetails> => {
+const runAction = async (
+  hc: HcRuntime,
+  context: ExtensionToolContext,
+  input: HandoverInput,
+): Promise<HandoverDetails> => {
+  if (input.action !== 'start' && input.model !== undefined) {
+    throw new Error('model is only for action start.');
+  }
+
   if (input.action === 'prepare') {
-    return prepare(cwd);
+    return prepare(context.cwd);
   }
 
   if (input.action === 'start') {
-    return startHandover(hc, startRequest(cwd, input));
+    return startHandover(hc, startRequest(context, input));
   }
 
-  return sendHandover(hc, sendRequest(cwd, input));
+  return sendHandover(hc, sendRequest(context.cwd, input));
 };
 
 export const createHandoverTool = (
@@ -137,14 +159,14 @@ export const createHandoverTool = (
   - queued: saved and shown once. Never resend it.
   - unknown: it may be saved; see note. Retry with the same file, messageId, and sessionId.
   - An error ending "Nothing was queued." is a refusal.
-- action start: opens a Pi tab with the file's text as its task. Needs file and folder, plus space or name. Returns {reply}, herdr-app's output.`,
+- action start: opens a Pi tab with the file's text as its task. Needs file and folder, plus space or name. Pass model as provider/model-id to run the new Pi on another model. Returns {reply}, herdr-app's output.`,
     promptSnippet: 'Prepare, send, and start handover messages.',
     parameters,
     executionMode: 'sequential',
     async execute(_toolCallId, input, signal, _onUpdate, context) {
       signal?.throwIfAborted();
 
-      const details = await runAction({ ...hc, signal }, context.cwd, input);
+      const details = await runAction({ ...hc, signal }, context, input);
 
       return {
         content: [{ type: 'text', text: JSON.stringify(details, null, 2) }],

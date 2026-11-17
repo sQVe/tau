@@ -96,6 +96,68 @@ it('opens a new space with a tab when no space is given', async () => {
   ]);
 });
 
+it('passes the model to a new tab in the space', async () => {
+  const fake = createAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await startHandover(
+    { exec: fake.exec, cwd: root },
+    { ...requestFor(root, file, { space: 'space-1' }), model: 'morph/morph-dsv41flash-1017' },
+  );
+
+  expect(commandsOf(fake)).toEqual([
+    {
+      command: 'herdr-app',
+      commandArguments: [
+        'do',
+        'tab.new',
+        '--space',
+        'space-1',
+        '--folder',
+        root,
+        '--argv',
+        '["pi","--model","morph/morph-dsv41flash-1017"]',
+        '--task',
+        'Next steps\n',
+        '--focus',
+        'false',
+      ],
+    },
+  ]);
+});
+
+it('passes the model to a new space', async () => {
+  const fake = createAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await startHandover(
+    { exec: fake.exec, cwd: root },
+    { ...requestFor(root, file, { name: 'ticket-1' }), model: 'morph/morph-dsv41flash-1017' },
+  );
+
+  expect(commandsOf(fake)).toEqual([
+    {
+      command: 'herdr-app',
+      commandArguments: [
+        'do',
+        'space.new',
+        '--name',
+        'ticket-1',
+        '--folder',
+        root,
+        '--argv',
+        '["pi","--model","morph/morph-dsv41flash-1017"]',
+        '--task',
+        'Next steps\n',
+        '--focus',
+        'false',
+      ],
+    },
+  ]);
+});
+
 it('refuses a file outside .tau/handovers before any herdr-app call', async () => {
   const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);

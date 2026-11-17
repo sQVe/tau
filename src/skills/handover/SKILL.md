@@ -80,5 +80,7 @@ commit another worktree from your session, even over bash.
      - No space: leave `space` out and pass `name` as a short title of what the work does, such as
        `completion uses the read record`: about 40 characters, lowercase, one line, and no ticket
        ID.
+     - Pass `model` when the receiver must run a model other than the default, such as a DeepSeek
+       lead.
    - Never rename a reused space. The user may have renamed it by hand.
    - Then end your turn.

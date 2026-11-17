@@ -14,13 +14,22 @@ export interface StartHandoverRequest {
   file: string;
   folder: string;
   target: StartHandoverTarget;
+  model?: string;
 }
 
 export interface StartHandoverResult {
   reply: string;
 }
 
-const tabArguments = (space: string, folder: string, task: string): string[] => [
+const piArguments = (model: string | undefined): string[] =>
+  model === undefined ? ['pi'] : ['pi', '--model', model];
+
+const tabArguments = (
+  space: string,
+  folder: string,
+  task: string,
+  model: string | undefined,
+): string[] => [
   'do',
   'tab.new',
   '--space',
@@ -28,14 +37,19 @@ const tabArguments = (space: string, folder: string, task: string): string[] => 
   '--folder',
   folder,
   '--argv',
-  '["pi"]',
+  JSON.stringify(piArguments(model)),
   '--task',
   task,
   '--focus',
   'false',
 ];
 
-const spaceArguments = (name: string, folder: string, task: string): string[] => [
+const spaceArguments = (
+  name: string,
+  folder: string,
+  task: string,
+  model: string | undefined,
+): string[] => [
   'do',
   'space.new',
   '--name',
@@ -43,7 +57,7 @@ const spaceArguments = (name: string, folder: string, task: string): string[] =>
   '--folder',
   folder,
   '--argv',
-  '["pi"]',
+  JSON.stringify(piArguments(model)),
   '--task',
   task,
   '--focus',
@@ -52,8 +66,8 @@ const spaceArguments = (name: string, folder: string, task: string): string[] =>
 
 const startArguments = (request: StartHandoverRequest, task: string): string[] =>
   'space' in request.target
-    ? tabArguments(request.target.space, request.folder, task)
-    : spaceArguments(request.target.name, request.folder, task);
+    ? tabArguments(request.target.space, request.folder, task, request.model)
+    : spaceArguments(request.target.name, request.folder, task, request.model);
 
 const isDirectory = (path: string): Promise<boolean> =>
   stat(path).then(

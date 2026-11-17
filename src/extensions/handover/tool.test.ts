@@ -1,7 +1,8 @@
-import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { link, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -15,6 +16,7 @@ import {
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createHandoverTool } from './tool.js';
 
@@ -346,6 +348,21 @@ const createAppFake = (): ExecFake<'app'> =>
 const createStartTool = (app: ExecFake<'app'>) =>
   createHandoverTool({ exec: app.exec, connect: createHcFake().connect, cwd: '/repository' });
 
+const modelContext = (
+  root: string,
+  registerCleanup: (cleanup: () => void) => void,
+): ExtensionToolContext => {
+  vi.stubEnv('PI_CODING_AGENT_DIR', temporaryDirectory(registerCleanup, 'tau-handover-agent-'));
+
+  return {
+    ...noUiContext(root),
+    isProjectTrusted: () => true,
+    modelRegistry: {
+      find: (provider: string, id: string) => ({ provider, id }),
+    },
+  } as unknown as ExtensionToolContext;
+};
+
 const abortedSignal = (): AbortSignal => {
   const controller = new AbortController();
 
@@ -426,6 +443,88 @@ it.each([
   ).rejects.toThrow(/start needs an absolute folder/);
 
   expect(app.calls).toEqual([]);
+});
+
+it('refuses a malformed start model before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+
+  await expect(
+    createStartTool(app).execute(
+      'call',
+      { action: 'start', file, folder: root, space: 'space-1', model: 'no-slash' },
+      undefined,
+      undefined,
+      modelContext(root, onTestFinished),
+    ),
+  ).rejects.toThrow(/Invalid model "no-slash"/);
+
+  expect(app.calls).toEqual([]);
+});
+
+it('refuses a start model outside allowedModels before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+
+  await mkdir(join(root, '.pi'), { recursive: true });
+
+  await writeFile(
+    join(root, '.pi', 'tau.json'),
+    JSON.stringify({ allowedModels: ['other/model'] }),
+  );
+
+  await expect(
+    createStartTool(app).execute(
+      'call',
+      {
+        action: 'start',
+        file,
+        folder: root,
+        space: 'space-1',
+        model: 'morph/morph-dsv41flash-1017',
+      },
+      undefined,
+      undefined,
+      modelContext(root, onTestFinished),
+    ),
+  ).rejects.toThrow(/morph\/morph-dsv41flash-1017 is not allowed/);
+
+  expect(app.calls).toEqual([]);
+});
+
+it('refuses a model with prepare and creates no directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(
+    createTool().execute(
+      'call',
+      { action: 'prepare', model: 'morph/morph-dsv41flash-1017' },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow('model is only for action start.');
+
+  expect(existsSync(join(root, '.tau'))).toBe(false);
+});
+
+it('refuses a model with send before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+
+  await expect(
+    createHandoverTool(runtimeOf(fake)).execute(
+      'call',
+      { action: 'send', terminal: 't7', file: join(root, 'message.md'), model: 'a/b' },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow('model is only for action start.');
+
+  expect(fake.calls).toEqual([]);
 });
 
 it('refuses an already-aborted start before any herdr-app call', async () => {
