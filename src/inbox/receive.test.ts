@@ -86,6 +86,35 @@ it('refuses a message its family check rejects and saves nothing', async () => {
   expect(existsSync(join(root, 'records', sessionId))).toBe(false);
 });
 
+it('refuses to save an answer-request message and saves nothing', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {
+    'answer-request': (_request, save) => save(),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'answer-request',
+    payload: {
+      assignmentId: randomUUID(),
+      questionId: randomUUID(),
+      answer: 'Use option A.',
+    },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'This session does not save answer-request messages.',
+    messageId,
+  });
+
+  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+  expect(woken).toEqual([]);
+});
+
 it('saves an accepted answer and wakes with its answer text', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
