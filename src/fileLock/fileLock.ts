@@ -5,6 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
+import type { LiveLockHolder } from './liveLockHolder.js';
 import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
@@ -214,6 +215,30 @@ const findCurrentHolder = async (lockPath: string) => {
   const current = await readOwner(generationPath(lockPath, highest));
 
   return { highest, holder: current, facts: await readHolderFacts(current) };
+};
+
+// Returns the holder only while its session or command is alive. A released, missing, or dead
+// holder is not a live holder.
+export const readLiveLockHolder = async (lockPath: string): Promise<LiveLockHolder | undefined> => {
+  const current = await findCurrentHolder(lockPath).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  });
+
+  if (current === undefined) {
+    return undefined;
+  }
+
+  const { holder, facts } = current;
+
+  if (holder === undefined || holderIsGone(facts)) {
+    return undefined;
+  }
+
+  return { pid: holder.pid, checkout: holder.checkout };
 };
 
 // Links generation `next`, and keeps it only if no higher generation exists. A stalled session can

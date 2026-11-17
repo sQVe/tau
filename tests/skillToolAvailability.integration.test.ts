@@ -9,6 +9,7 @@ import {
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
+import architectExtension from '../src/extensions/architect/architect.js';
 import codeReviewExtension from '../src/extensions/codeReview/codeReview.js';
 import draftReviewExtension from '../src/extensions/draftReview/draftReview.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
@@ -31,6 +32,7 @@ const registerTools = (pi: ExtensionAPI) => {
   fullCheckExtension(pi);
   codeReviewExtension(pi);
   handoverExtension(pi);
+  architectExtension(pi);
   improvementExtension(pi);
   prExtension(pi);
   prFeedbackExtension(pi);
