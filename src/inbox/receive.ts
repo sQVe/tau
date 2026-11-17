@@ -195,6 +195,11 @@ export const createReceiver = (options: ReceiverOptions): Receiver => {
 
   return {
     accept: (request) => {
+      // The queue orders saves, so a family this receiver never saves skips it.
+      if (bodyOf(request) === undefined) {
+        return accept(options, request);
+      }
+
       const reply = accepting.then(() => accept(options, request));
 
       accepting = reply.catch(() => undefined);

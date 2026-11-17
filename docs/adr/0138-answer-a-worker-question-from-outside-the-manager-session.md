@@ -52,6 +52,10 @@ and the manager decides whether to queue the answer to the worker.
 - `queued` means the worker's inbox saved the answer, not that the worker read it.
 - `unknown` means the manager wrote the answer to the worker but got no reply. A retry with the same
   question ID and text is safe.
+- The manager handles each answer request when it arrives. It does not queue the request behind
+  other inbox messages.
+- The worker's inbox decides between competing answers. It keeps the first saved answer for a
+  question ID and refuses a different later answer.
 
 ### Pinning the contract
 
