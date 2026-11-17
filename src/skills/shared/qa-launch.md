@@ -18,7 +18,8 @@ Use this procedure when sending a change to a `qa` worker.
      with that target, once per target. On `failed`, read its log, call `stop` unless `stopped` is
      true, and report that QA did not run for those sections. On `ready`, call `register` once per
      run with all assigned journey and feature items of that target's sections, each with its step
-     count.
+     count. Name each item by its file's path under `.pi/qa/` without `.md`, such as
+     `features/new-ticket`, because the worker records results under that exact name.
    - Ask the user for the guide's steps under "Ask the user".
    - Put the lines the guide asks for in the brief, and `Verification run: <run>` and
      `Run directory: <directory>` from the launch result.
