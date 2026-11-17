@@ -86,11 +86,11 @@ const sessionContext = (cwd: string, setStatus: SetStatus) =>
     },
   }) as unknown as ExtensionToolContext;
 
-const runManagerTool = async <Details>(
+const runManagerToolResult = async (
   cwd: string,
   input: Record<string, unknown>,
   setStatus: SetStatus = () => undefined,
-): Promise<Details> => {
+) => {
   vi.stubEnv('TAU_ROLE', undefined);
   const fake = fakeExtensionApi();
 
@@ -101,13 +101,15 @@ const runManagerTool = async <Details>(
     throw new Error('The manager has no improvement tool.');
   }
 
-  const result = await tool.execute(
-    'call-1',
-    input,
-    undefined,
-    undefined,
-    sessionContext(cwd, setStatus),
-  );
+  return tool.execute('call-1', input, undefined, undefined, sessionContext(cwd, setStatus));
+};
+
+const runManagerTool = async <Details>(
+  cwd: string,
+  input: Record<string, unknown>,
+  setStatus: SetStatus = () => undefined,
+): Promise<Details> => {
+  const result = await runManagerToolResult(cwd, input, setStatus);
 
   return result.details as Details;
 };
@@ -182,6 +184,25 @@ it('returns tasks, correct due, and coverage from the status action', async () =
     sweep: 'complete',
     skipped: [],
   });
+});
+
+it('returns the status as one text item that parses to its details', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const projectRoot = await realpath(root);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-agent-');
+
+  await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'caughtUp'));
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
+  const result = await runManagerToolResult(root, { action: 'status' });
+  const [item] = result.content;
+
+  expect(result.content).toHaveLength(1);
+  expect(item).toMatchObject({ type: 'text' });
+
+  const text = item?.type === 'text' ? item.text : '';
+
+  expect(JSON.parse(text)).toEqual(result.details);
 });
 
 it('starts a sweep at manager session start', () => {
