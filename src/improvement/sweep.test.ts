@@ -70,6 +70,13 @@ const recordReads = async (path: string, reads: { length: number; position: numb
   });
 };
 
+it('rewrites every real path in a saved session fixture', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const path = fixture.writeFixtureSession('manager.jsonl', 'multiplePublications.jsonl');
+
+  expect(readFileSync(path, 'utf8')).not.toContain('/home/sqve/code/personal/tau/');
+});
+
 it('writes one merge event per merged pull request', async () => {
   const fixture = await createSweepFixture(onTestFinished);
 

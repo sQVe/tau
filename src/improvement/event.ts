@@ -9,6 +9,7 @@ import { hasErrorCode, isMissingFile } from '../errors.ts';
 import { newerFormatNotice, parseVersionedRecord, publishTextSync } from '../record.ts';
 import { describeSchemaProblem, isRecord, stringEnum } from '../schema.ts';
 import { ensureTauDirectory, rejectLinkedFile } from '../tauDirectory.ts';
+import { assertWriteWithinTestRoot } from './writeGuard.ts';
 
 export type ImprovementEvent = Static<typeof eventSchema>;
 
@@ -154,8 +155,11 @@ export const writeEvent = async (
     throw new Error(`Improvement event ID ${JSON.stringify(event.id)} is not a safe file name.`);
   }
 
-  const directory = await ensureTauDirectory(projectRoot, eventDirectoryPath);
+  const directory = eventDirectory(projectRoot);
   const path = join(directory, `${event.id}.json`);
+
+  assertWriteWithinTestRoot(path);
+  await ensureTauDirectory(projectRoot, eventDirectoryPath);
   const eventText = `${JSON.stringify(event, null, 2)}\n`;
 
   try {

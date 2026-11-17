@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { format, lint, vitest } from '@sqve/seam';
@@ -151,6 +152,7 @@ export default defineConfig({
       HC_SESSION: '',
       GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_NOSYSTEM: '1',
+      TAU_TEST_WRITE_ROOT: tmpdir(),
       GIT_AUTHOR_NAME: 'Tau Test',
       GIT_AUTHOR_EMAIL: 'tau@example.com',
       GIT_AUTHOR_DATE: '2005-04-07T22:13:13Z',

@@ -71,7 +71,11 @@ export const createSweepFixture = async (
 
   const writeFixtureSession = (name: string, fixtureName: string): string => {
     const content = readFileSync(fixturePath(fixtureName), 'utf8');
-    const rewritten = content.replace(/"cwd":"[^"]*"/u, `"cwd":${JSON.stringify(repository)}`);
+    const fixtureHome = join(agentDirectory, 'fixture-home');
+
+    const rewritten = content
+      .replace(/"cwd":"[^"]*"/u, `"cwd":${JSON.stringify(repository)}`)
+      .replaceAll('/home/', `${fixtureHome}/`);
 
     return writeSession(name, rewritten);
   };

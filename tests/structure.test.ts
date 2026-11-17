@@ -183,6 +183,7 @@ const pureModules = [
   'src/improvement/taskMapping.ts',
   'src/improvement/transcript.ts',
   'src/improvement/workerRecord.ts',
+  'src/improvement/writeDecision.ts',
   'src/inbox/protocol.ts',
   'src/inbox/receiptDecision.ts',
   'src/inbox/targetDecision.ts',
@@ -265,6 +266,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/improvement/taskFacts.ts': ['node:path'],
   'src/improvement/taskMapping.ts': ['node:path'],
   'src/improvement/transcript.ts': ['typebox'],
+  'src/improvement/writeDecision.ts': ['node:path'],
   'src/inbox/protocol.ts': ['typebox', 'typebox/value'],
   'src/schema.ts': ['typebox', 'typebox/value'],
 };
