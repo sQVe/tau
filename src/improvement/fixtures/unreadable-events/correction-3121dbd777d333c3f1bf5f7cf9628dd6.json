@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "correction-3121dbd777d333c3f1bf5f7cf9628dd6",
+  "kind": "correction",
+  "evidence": [
+    {
+      "kind": "session"
+    }
+  ]
+}

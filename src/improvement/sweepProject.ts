@@ -285,10 +285,10 @@ const writePlannedEvents = async (
     return { status: 'unknown', reason: errorMessage(error) };
   }
 
-  const skipped = read.skipped[0];
+  const gap = read.gaps[0];
 
-  if (skipped !== undefined) {
-    return { status: 'unknown', reason: skipped.notice };
+  if (gap !== undefined) {
+    return { status: 'unknown', reason: gap.reason };
   }
 
   const existingIds = new Set(read.events.map((event) => event.id));

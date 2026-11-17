@@ -13,8 +13,7 @@ export const readImprovementStatus = async (sources: {
 }): Promise<ImprovementStatus> => {
   const projectRoot = await findOptionalProjectRoot(sources.cwd);
 
-  const eventRead =
-    projectRoot === null ? { events: [], skipped: [] } : await readEvents(projectRoot);
+  const eventRead = projectRoot === null ? { events: [], gaps: [] } : await readEvents(projectRoot);
 
   const index = await readSweepIndex(sources.agentDirectory);
   const { tasks, coverage } = decideTasks(eventRead.events);
@@ -24,6 +23,7 @@ export const readImprovementStatus = async (sources: {
     events: eventRead.events,
     lastPassAt: undefined,
     now: sources.now,
+    readFailed: eventRead.gaps.length > 0,
   });
 
   const sweep = decideSweep({ index, projectRoot, sessionSweep: sources.sessionSweep });
@@ -34,6 +34,6 @@ export const readImprovementStatus = async (sources: {
     correctDue,
     coverage,
     sweep,
-    skipped: eventRead.skipped,
+    gaps: eventRead.gaps,
   };
 };

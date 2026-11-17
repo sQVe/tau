@@ -5,7 +5,7 @@ import { Type } from 'typebox';
 import type { Static, TProperties } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { hasErrorCode, isMissingFile } from '../errors.ts';
+import { errorMessage, hasErrorCode, isMissingFile } from '../errors.ts';
 import { newerFormatNotice, parseVersionedRecord, publishTextSync } from '../record.ts';
 import { describeSchemaProblem, isRecord, stringEnum } from '../schema.ts';
 import { ensureTauDirectory, rejectLinkedFile } from '../tauDirectory.ts';
@@ -22,15 +22,15 @@ export interface WrittenEvent {
   outcome: WriteOutcome;
 }
 
-interface SkippedEvent {
+export interface EventGap {
   path: string;
-  notice: string;
+  reason: string;
 }
 
-// A newer-format event is skipped, not refused, so callers must show `skipped` to the user.
+// A newer-format or unreadable event is skipped, not refused, so callers must show `gaps` to the user.
 export interface EventRead {
   events: ImprovementEvent[];
-  skipped: SkippedEvent[];
+  gaps: EventGap[];
 }
 
 const eventVersion = 1;
@@ -193,24 +193,27 @@ export const readEvents = async (projectRoot: string): Promise<EventRead> => {
   const directory = eventDirectory(projectRoot);
   const names = await listEventNames(directory);
   const events: ImprovementEvent[] = [];
-  const skipped: SkippedEvent[] = [];
+  const gaps: EventGap[] = [];
 
   for (const name of names) {
     const path = join(directory, name);
 
-    // oxlint-disable-next-line no-await-in-loop -- Reading in name order names the first damaged file.
-    await rejectLinkedFile(path, 'read');
-    // oxlint-disable-next-line no-await-in-loop -- Reading in name order names the first damaged file.
-    const eventText = await readFile(path, 'utf8');
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- Reading in name order keeps gap order stable.
+      await rejectLinkedFile(path, 'read');
+      // oxlint-disable-next-line no-await-in-loop -- Reading in name order keeps gap order stable.
+      const eventText = await readFile(path, 'utf8');
+      const notice = newerFormatNotice(path, eventText, eventOptions);
 
-    const notice = newerFormatNotice(path, eventText, eventOptions);
-
-    if (notice !== undefined) {
-      skipped.push({ path, notice });
-    } else {
-      events.push(parseEvent(path, eventText));
+      if (notice !== undefined) {
+        gaps.push({ path, reason: notice });
+      } else {
+        events.push(parseEvent(path, eventText));
+      }
+    } catch (error) {
+      gaps.push({ path, reason: errorMessage(error) });
     }
   }
 
-  return { events, skipped };
+  return { events, gaps };
 };

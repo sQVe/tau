@@ -328,6 +328,7 @@ const correctTable: {
   events: ImprovementEvent[];
   lastPassAt: string | undefined;
   now: Date;
+  readFailed?: boolean;
   expected: boolean;
 }[] = [
   {
@@ -402,10 +403,23 @@ const correctTable: {
     now: new Date('2026-11-15T13:00:00.000Z'),
     expected: false,
   },
+  {
+    name: 'is due when the event read failed, even after a recent pass',
+    events: [],
+    lastPassAt: '2026-11-14T12:00:00.000Z',
+    now: new Date('2026-11-15T13:00:00.000Z'),
+    readFailed: true,
+    expected: true,
+  },
 ];
 
 it.each(correctTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
-  const dueFacts = { events: row.events, lastPassAt: row.lastPassAt, now: row.now };
+  const dueFacts = {
+    events: row.events,
+    lastPassAt: row.lastPassAt,
+    now: row.now,
+    readFailed: row.readFailed ?? false,
+  };
 
   expect(decideCorrectDue(dueFacts)).toBe(row.expected);
 });
@@ -553,7 +567,7 @@ const status = (overrides: Partial<ImprovementStatus> = {}): ImprovementStatus =
   correctDue: false,
   coverage: noCoverage,
   sweep: 'complete',
-  skipped: [],
+  gaps: [],
   ...overrides,
 });
 

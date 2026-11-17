@@ -1,4 +1,4 @@
-import type { ImprovementEvent } from './event.ts';
+import type { EventGap, ImprovementEvent } from './event.ts';
 import { decideStoredSignals } from './signals.ts';
 import type { StoredSignals } from './signals.ts';
 import type { SweepOutcome } from './sweep.ts';
@@ -28,7 +28,7 @@ export interface ImprovementStatus {
   correctDue: boolean;
   coverage: CoverageCounts;
   sweep: 'complete' | 'incomplete';
-  skipped: { path: string; notice: string }[];
+  gaps: EventGap[];
 }
 
 const correctPassIntervalMilliseconds = 604_800_000;
@@ -134,7 +134,13 @@ export const decideCorrectDue = (facts: {
   events: readonly ImprovementEvent[];
   lastPassAt: string | undefined;
   now: Date;
+  readFailed: boolean;
 }): boolean => {
+  // A skipped event could be a review or correction, so a failed read is never "nothing due".
+  if (facts.readFailed) {
+    return true;
+  }
+
   const newEvents = facts.events.filter((event) =>
     isNewReviewOrCorrection(event, facts.lastPassAt),
   );

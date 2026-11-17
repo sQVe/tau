@@ -13,7 +13,7 @@ import { createSweepState } from './sweepState.js';
 import { runTask } from './taskAction.js';
 
 const description = `- record: correction (summary) in session project; review (pullRequest, outcome), backlog (review, item, summary), decision (review, item, choice), each with projectRoot, in task project. {id,path,outcome}; existing kept.
-- status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,skipped}
+- status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,gaps}
 - task: read a merged task's transcripts, coverage, projectRoot (pullRequest, worktree).`;
 
 export default function improvementExtension(
