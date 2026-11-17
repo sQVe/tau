@@ -99,7 +99,11 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    that each changed feature maps to one ticket with its feature file and index row. Change the
    draft until none is uncovered. Each `## Acceptance` item must name a test, a command, or a manual
    observation, with its expected result. Rewrite an item when the slice or step 5 says what to
-   check. Before step 9, list each item with no check and its body file, and tell the user the
+   check. In target acceptance planning, name one probe per missing dependency: missing root,
+   missing executable, incompatible version. A probe that reports a skip is not a pass. When the
+   slice changes a tool or read path the manager uses, plan the walk in a manager session that
+   loaded the branch, and keep the public-interface item open until that session proves the
+   interface. Before step 9, list each item with no check and its body file, and tell the user the
    worker gets a vague task. Say nothing when all pass; the list never stops a launch.
 8. For each new ticket (`identifier` is `null`), launch one fresh default-model `scout` in one turn.
    Brief it with the body file path, the step 5 tree, and the plan questions. It reads the body file
@@ -170,6 +174,10 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     - When the slice or an agent ticket has a user-visible acceptance item or a journey item, send
       the committed tree to `qa` by [the QA launch procedure](../shared/qa-launch.md) before the
       audit. Save the report in `$slicedir` with the commit it tested, for the audit to cite.
+    - When the slice changes a tool or read path the manager uses, arrange a manager session that
+      loaded the branch before the walk. Drive the shared QA launch procedure with one recorded item
+      and one `Target: none` item. Keep a public-interface criterion open when only an internal
+      adapter ran.
     - A QA failure makes the item not met; the audit's existing fix-ticket loop handles it.
     - A step that differs is either map drift (the feature or journey file is out of date: fix the
       file in the slice) or a product bug (the item is not met).
