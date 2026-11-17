@@ -23,6 +23,11 @@ type SweepRunner = (options: SweepOptions) => Promise<SweepOutcome>;
 
 type SetStatus = (key: string, text: string | undefined) => void;
 
+interface RecordDetails {
+  id: string;
+  path: string;
+}
+
 const pullRequest = 'https://github.com/sQVe/tau/pull/562';
 
 const evidence: ImprovementEvent['evidence'] = [{ kind: 'pullRequest', url: pullRequest }];
@@ -107,11 +112,6 @@ const runManagerToolResult = async (
 
   return tool.execute('call-1', input, undefined, undefined, sessionContext(cwd, setStatus));
 };
-
-interface RecordDetails {
-  id: string;
-  path: string;
-}
 
 const runManagerTool = async <Details>(
   cwd: string,
