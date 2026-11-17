@@ -16,7 +16,7 @@ export const checkRefusal = async (facts: ReportCheckFacts): Promise<string | un
   }
 
   if (facts.argv === undefined) {
-    return 'Report refused: this repository configures no full check. Add fullCheck.argv to .pi/tau.json.';
+    return undefined;
   }
 
   const identity = await readCheckIdentity(facts.root, facts.argv);

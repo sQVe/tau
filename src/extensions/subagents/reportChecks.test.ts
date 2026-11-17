@@ -41,7 +41,7 @@ it.each([
       'Report refused: no passing full check record for the current tree. Run full_check on the final tree, then report.',
   },
   {
-    name: 'no record refuses',
+    name: 'a configured full check with no record refuses',
     role: 'editing' as const,
     record: 'none' as const,
     commandArguments: argv,
@@ -56,12 +56,11 @@ it.each([
     expected: undefined,
   },
   {
-    name: 'no configured full check refuses with the config key',
+    name: 'no configured full check accepts the report',
     role: 'editing' as const,
     record: 'none' as const,
     commandArguments: undefined,
-    expected:
-      'Report refused: this repository configures no full check. Add fullCheck.argv to .pi/tau.json.',
+    expected: undefined,
   },
 ])('$name', async ({ role, record, commandArguments, expected }) => {
   const root = await createTemporaryRepository(onTestFinished);

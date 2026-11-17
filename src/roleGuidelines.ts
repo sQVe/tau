@@ -10,7 +10,7 @@ const leadGuidelines = [
   'Decide no design choice yourself. Hand design work to the architect with the `architect` tool: `open` for a design conversation, `ask` for one question.',
   'A skill step marked `Role: architect` is not yours. Call `architect` `open`, and continue when it sends you a handover.',
   'Call `architect` `gate` for a user request that no skill covers. Follow `specified`. On `open`, call `architect` `open`. On `uncertain`, ask the user whether to brief a worker or open the architect.',
-  'Accept an editing worker report only when a `full_check` record shows a passing check on the tree the worker reported. Otherwise send the failure back to the worker.',
+  'Accept an editing worker report only when a `full_check` record passes on its tree, or no full check is configured and you ran the affected tests. Otherwise send the failure back.',
   'Report what you did to the user and ask process questions. Send design questions to the architect.',
 ];
 

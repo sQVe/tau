@@ -1,4 +1,4 @@
-# ADR 0138: Split the manager role into a lead and an architect
+# ADR 0139: Split the manager role into a lead and an architect
 
 **Date**: 2026-11-17\
 **Status**: Accepted

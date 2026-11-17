@@ -41,7 +41,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0127: Version the draft review viewer protocol](./0127-version-the-draft-review-viewer-protocol.md)
 - [0128: Support Linux and macOS only](./0128-support-linux-and-macos-only.md)
 - [0135: Record improvement events in each project root](./0135-record-improvement-events-in-each-project-root.md)
-- [0138: Split the manager role into a lead and an architect](./0138-split-the-manager-role-into-a-lead-and-an-architect.md)
+- [0139: Split the manager role into a lead and an architect](./0139-split-the-manager-role-into-a-lead-and-an-architect.md)
 
 ## Documentation and writing
 
@@ -71,7 +71,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0113: Mutation-test changed lines and list survivors as advice](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)
 - [0121: Test architecture rules for placement, naming, fakes, and fixtures](./0121-test-architecture-rules.md)
-- [0133: Run the full check only at the PR step](./0133-run-the-full-check-only-at-the-pr-step.md)
+- [0133: Run the full check at the PR step](./0133-run-the-full-check-only-at-the-pr-step.md)
 - [0130: Select focused files through the project's Vitest API](./0130-select-focused-files-through-the-project-vitest-api.md)
 - [0136: Verify apps with targets and run records](./0136-verify-apps-with-targets-and-run-records.md)
 - [0137: Replay generated order failures as decision table rows](./0137-replay-generated-order-failures-as-decision-table-rows.md)

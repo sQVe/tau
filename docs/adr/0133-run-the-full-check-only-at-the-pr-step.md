@@ -1,4 +1,4 @@
-# ADR 0133: Run the full check only at the PR step
+# ADR 0133: Run the full check at the PR step
 
 **Date**: 2026-10-26\
 **Status**: Accepted\
@@ -14,30 +14,34 @@ content.
 
 ## Decision
 
-The PR step runs the only local full check. Workers have no `full_check` tool, and no skill tells a
-worker to run the full check. Workers verify with focused tests and the check stage that failed. The
-`pr` skill keeps the `full_check` tool for the manager. A worker's tool list drops `full_check` even
-when its profile lists the tool or it loads the `pr` skill.
+The PR step runs the full check that gates publication. An editing worker may also run `full_check`,
+because its success report needs a passing record for the tree it reports when the repository
+configures a full check. A text rule alone did not stop a lead from accepting a failing tree.
+
+No skill tells a worker to run the full check. Workers verify with focused tests and the check stage
+that failed. The `pr` skill keeps the `full_check` tool for the manager. An investigation worker's
+tool list drops `full_check` even when its profile lists the tool or it loads the `pr` skill.
 
 ## Consequences
 
 ### Positive
 
-- Each work state runs the full suite once, at the PR step.
-- Workers do not queue on the per-repository full check lock.
+- An editing worker's report can prove that its final tree passed the full suite.
+- Investigation workers do not queue on the per-repository full check lock.
 
 ### Negative
 
-- A failure in the full suite appears at the PR step, after the worker has finished its change.
-- A worker can miss a failure that only the full suite shows, until the PR step runs.
+- An editing worker can queue on the per-repository full check lock.
+- The PR step can run the full suite again on a tree an editing worker already checked.
 
 ## Alternatives considered
 
-### Keep the full check in workers
+### Keep the full check in every worker
 
-Let each worker run the full check before it reports. Rejected because the PR step would run the
-same suite on the same work state, which
-[ADR 0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md) rejected.
+Let every worker run the full check before it reports. Rejected because investigation workers add
+lock waits without a report that needs the record, and the PR step would run the same suite on the
+same work state, which [ADR 0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
+rejected.
 
 ### Remove the tool only from the skills
 
