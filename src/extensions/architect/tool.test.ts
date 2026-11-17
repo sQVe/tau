@@ -4,7 +4,7 @@ import { basename, dirname, join } from 'node:path';
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../../tests/execFake.js';
+import { argumentAfter, createExecFake, succeededResult } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
@@ -16,7 +16,9 @@ import {
   gateRecordDirectory,
   readAskRecords,
   readArchitectRecord,
+  readGateRecord,
   writeArchitectRecord,
+  writeAskRecord,
 } from './record.js';
 import { createArchitectTool } from './tool.js';
 
@@ -112,7 +114,7 @@ it('open starts a fresh architect on roles.architect.model', async ({
   const hc = createHcFake();
   const app = appFake();
   const tool = createArchitectTool({ ...hc, exec: app.exec, cwd: root });
-  const design = join(root, '.tau', 'slices', 'me-1', 'design.md');
+  const design = join(root, '.tau', 'slices', basename(root), 'design.md');
 
   await mkdir(dirname(design), { recursive: true });
   await writeFile(design, '# Design\n');
@@ -140,6 +142,28 @@ it('open starts a fresh architect on roles.architect.model', async ({
   expect(serialized).toContain('--model');
   expect(serialized).toContain('architect');
   expect(serialized).toContain(design);
+  expect(argumentAfter(args, '--task')).toContain('t-lead');
+});
+
+it('open seeds a fresh architect with AGENTS.md when the root has no own slice design', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  const app = appFake();
+  const tool = createArchitectTool({ ...hc, exec: app.exec, cwd: root });
+  const otherDesign = join(root, '.tau', 'slices', 'me-1', 'design.md');
+
+  await mkdir(dirname(otherDesign), { recursive: true });
+  await writeFile(otherDesign, '# Design\n');
+
+  await tool.execute('call', { action: 'open' }, undefined, undefined, contextOf(root));
+
+  const args = app.calls[0]?.commandArguments ?? [];
+  const task = argumentAfter(args, '--task') ?? '';
+
+  expect(task).toContain('AGENTS.md');
+  expect(task).not.toContain(otherDesign);
 });
 
 it('open resumes the recorded architect session', async ({ onTestFinished: cleanup }) => {
@@ -163,6 +187,7 @@ it('open resumes the recorded architect session', async ({ onTestFinished: clean
 
   expect(serialized).toContain('--session');
   expect(serialized).toContain(sessionFile);
+  expect(argumentAfter(app.calls[0]?.commandArguments ?? [], '--task')).toContain('t-lead');
 });
 
 it('open starts a fresh session when the recorded session file is gone', async ({
@@ -256,6 +281,7 @@ it('a second ask while one runs is refused', async ({ onTestFinished: cleanup })
       deadline: Date.now() + 1000,
       status: 'running',
       detail: null,
+      answer: null,
     }),
   );
 
@@ -308,6 +334,44 @@ it('an ask deadline returns needsOpen and kills the terminal', async ({
   expect(record?.deadline).toBeGreaterThanOrEqual(startedAt + askDeadlineSeconds * 1000);
 });
 
+it('ask returns the answer the architect saved', async ({ onTestFinished: cleanup }) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  const answer = 'Use --quick.';
+
+  await recordSession(root);
+  hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
+
+  hc.reply(
+    'wait',
+    JSON.stringify({ terminal: 't-ask', ended: true, reason: 'ended', turn: 1, children: [] }),
+  );
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      const [record] = await readAskRecords(root);
+
+      if (record !== undefined) {
+        await writeAskRecord(root, { ...record, status: 'sent', answer });
+      }
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const tool = createArchitectTool({ ...hc, exec, cwd: root });
+
+  const result = await tool.execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(result.details).toMatchObject({ action: 'ask', status: 'ended', answer });
+});
+
 it('gate writes one record per call', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
   const hc = createHcFake();
@@ -343,6 +407,37 @@ it('gate writes one record per call', async ({ onTestFinished: cleanup }) => {
   expect(first.details).toMatchObject({ decision: 'specified', label: 'specified' });
   expect(second.details).toMatchObject({ decision: 'specified', label: 'specified' });
   expect(classifierCalls[0]).toEqual(['classifier', ...gateClassifier.split('/')]);
-  expect(await readdir(gateRecordDirectory(root))).toHaveLength(2);
+
+  const names = await readdir(gateRecordDirectory(root));
+  const records = await Promise.all(names.map((name) => readGateRecord(root, name)));
+
+  expect(records.map((record) => record?.decision)).toEqual(['specified', 'specified']);
   expect(await readArchitectRecord(root)).toBeUndefined();
+});
+
+it('gate records an uncertain decision below the cutoff', async ({ onTestFinished: cleanup }) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  const tool = createArchitectTool({ ...hc, cwd: root });
+
+  const context = contextOf(root, {
+    findOfType: () => ({}),
+    classify: async () => ({
+      stopReason: 'stop',
+      answers: { choice: { type: 'choice', choice: 'specified', confidence: 0.69 } },
+    }),
+  });
+
+  await tool.execute(
+    'call',
+    { action: 'gate', request: 'Rename --fast.', restatement: 'Rename --fast to --quick.' },
+    undefined,
+    undefined,
+    context,
+  );
+
+  const [name] = await readdir(gateRecordDirectory(root));
+  const record = name === undefined ? undefined : await readGateRecord(root, name);
+
+  expect(record?.decision).toBe('uncertain');
 });

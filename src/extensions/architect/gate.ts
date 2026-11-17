@@ -18,7 +18,7 @@ export interface GateRequest {
 }
 
 export interface GateResult {
-  decision: 'specified' | 'open';
+  decision: 'specified' | 'open' | 'uncertain';
   label: string | null;
   confidence: number | null;
   recordPath: string;

@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
@@ -19,26 +20,37 @@ const askRecord = (): AskRecord => ({
   deadline: 1,
   status: 'running',
   detail: null,
+  answer: null,
 });
 
 const askFile = async (
   cleanup: (cleanup: () => void) => void,
-): Promise<{ path: string; record: AskRecord }> => {
+): Promise<{ directory: string; path: string; record: AskRecord }> => {
   const directory = temporaryDirectory(cleanup, 'tau-ask-mode-');
   const path = join(directory, 'ask.json');
   const record = askRecord();
 
   await writeAskRecordAt(path, record);
 
-  return { path, record };
+  return { directory, path, record };
 };
 
-it('ask mode names the ask in its prompt and shuts down after a queued handover', async ({
+const writeHandover = async (directory: string, text: string): Promise<string> => {
+  const path = join(directory, 'message.md');
+
+  await writeFile(path, text);
+
+  return path;
+};
+
+it('ask mode names the ask in its prompt and saves the answer to the lead', async ({
   onTestFinished,
 }) => {
-  const { path, record } = await askFile(onTestFinished);
+  const { directory, path, record } = await askFile(onTestFinished);
   const fake = fakeExtensionApi();
   const shutdown = vi.fn<() => void>();
+  const answer = 'Use --quick.';
+  const file = await writeHandover(directory, answer);
 
   registerAskMode(fake.pi, path);
 
@@ -48,12 +60,34 @@ it('ask mode names the ask in its prompt and shuts down after a queued handover'
 
   expect(event.systemPromptOptions.appendSystemPrompt).toBe(askModePrompt(record, path));
 
-  await fake.handler('tool_result')({ toolName: 'handover', details: { status: 'queued' } }, {
-    shutdown,
-  } as never);
+  await fake.handler('tool_result')(
+    { toolName: 'handover', details: { status: 'queued' }, input: { terminal: 't-lead', file } },
+    { shutdown, cwd: directory } as never,
+  );
 
   expect(shutdown).toHaveBeenCalledTimes(1);
-  expect(await readAskRecordAt(path)).toMatchObject({ status: 'sent' });
+  expect(await readAskRecordAt(path)).toMatchObject({ status: 'sent', answer });
+});
+
+it('ask mode refuses a handover to a terminal that is not the lead', async ({ onTestFinished }) => {
+  const { directory, path } = await askFile(onTestFinished);
+  const fake = fakeExtensionApi();
+  const shutdown = vi.fn<() => void>();
+  const file = await writeHandover(directory, 'Use --quick.');
+
+  registerAskMode(fake.pi, path);
+
+  await fake.handler('tool_result')(
+    {
+      toolName: 'handover',
+      details: { status: 'queued' },
+      input: { terminal: 't-other', file },
+    },
+    { shutdown, cwd: directory } as never,
+  );
+
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(await readAskRecordAt(path)).toMatchObject({ status: 'running', answer: null });
 });
 
 it('ask mode does not shut down when no handover was queued', async ({ onTestFinished }) => {

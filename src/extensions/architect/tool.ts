@@ -122,8 +122,8 @@ export const createArchitectTool = (
     label: 'Architect',
     description: `Open, ask, or gate the checkout's architect.
 - action open: starts the architect in a herdr-app tab, or resumes its recorded session. Refuses while a live architect runs. Returns {status, sessionFile}.
-- action ask: resumes the architect in a hidden terminal with question. The answer reaches your inbox. Refuses while an architect runs or another ask is live. A deadline returns {status: "needsOpen"}; call open instead.
-- action gate: classifies request and restatement with typesafe/jev-latest. Returns {decision, label, confidence, recordPath}. Follow specified only when confidence is at least 0.7; every other outcome is open, so ask the user whether to brief a worker or open the architect.
+- action ask: resumes the architect in a hidden terminal with question. Returns {status, askId, answer} when the architect answers. Refuses while an architect runs or another ask is live. A deadline returns {status: "needsOpen"}; call open instead.
+- action gate: classifies request and restatement with typesafe/jev-latest. Returns {decision, label, confidence, recordPath}. Follow specified; on open, call architect open; on uncertain, ask the user whether to brief a worker or open the architect.
 Every gate call writes a record under .tau/lead/gate.`,
     promptSnippet: 'Open, ask, or gate the checkout architect.',
     parameters,

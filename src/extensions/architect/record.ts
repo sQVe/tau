@@ -36,7 +36,11 @@ const gateRecordSchema = Type.Object({
   request: Type.String(),
   restatement: Type.String(),
   outcome: choiceOutcomeSchema,
-  decision: Type.Union([Type.Literal('specified'), Type.Literal('open')]),
+  decision: Type.Union([
+    Type.Literal('specified'),
+    Type.Literal('open'),
+    Type.Literal('uncertain'),
+  ]),
   label: Type.Union([Type.String(), Type.Null()]),
   confidence: Type.Union([Type.Number(), Type.Null()]),
 });
@@ -63,6 +67,7 @@ const askRecordSchema = Type.Object({
   deadline: Type.Number(),
   status: askStatusSchema,
   detail: Type.Union([Type.String(), Type.Null()]),
+  answer: Type.Union([Type.String(), Type.Null()]),
 });
 
 export type AskRecord = Static<typeof askRecordSchema>;

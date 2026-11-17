@@ -29,7 +29,7 @@ export interface AskRequest {
 
 export type AskResult =
   | { status: 'needsOpen'; reason: string }
-  | { status: 'ended'; askId: string }
+  | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
 
 export const askDeadlineSeconds = 900;
@@ -102,6 +102,7 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     deadline: Date.now() + askDeadlineSeconds * millisecondsPerSecond,
     status: 'running',
     detail: null,
+    answer: null,
   };
 
   await writeAskRecord(request.root, initial);
@@ -150,8 +151,8 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     exitCode: waited.exit_code ?? null,
   });
 
-  if (outcome === 'answered') {
-    return { status: 'ended', askId };
+  if (outcome === 'answered' && latest.answer !== null) {
+    return { status: 'ended', askId, answer: latest.answer };
   }
 
   if (outcome === 'needsOpen') {

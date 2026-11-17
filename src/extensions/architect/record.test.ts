@@ -81,6 +81,7 @@ it('lists ask records oldest first and reads one by id', async () => {
     deadline: 1,
     status: 'sent',
     detail: null,
+    answer: 'Use --quick.',
   } as const;
 
   const later = { ...base, askId: 'b', createdAt: '2026-11-17T10:00:01.000Z' } as const;
