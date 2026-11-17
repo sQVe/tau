@@ -12,9 +12,11 @@ prompt.
 
 ## Driving steps
 
-1. Create a scratch repository under the scratch root. It prints the path:
+1. Set `run` to the run name from the brief, then create a scratch repository under the scratch
+   root. It sets the path in `scratch`:
 
    ```sh
+   run=<run>
    scratch=$(mktemp -d "/tmp/tau-verification-$run/qa-XXXXXX")
    git -C "$scratch" init --quiet
    ```

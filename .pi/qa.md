@@ -119,7 +119,8 @@ and ask the parent.
 ### Use it safely
 
 - Give `--cwd` a new directory under the scratch root, such as
-  `mktemp -d "/tmp/tau-verification-$run/qa-XXXXXX"`, never a worktree.
+  `mktemp -d "/tmp/tau-verification-<run>/qa-XXXXXX"` where `<run>` is the run name from the
+  brief, never a worktree.
 - Pass the brief's model as `--model`, and `--timeout 300`.
 - Send one prompt per session. Start it with the first two sentences of the prompt in the feature
   file, so the session asks no question.

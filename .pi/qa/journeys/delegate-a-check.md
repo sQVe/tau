@@ -34,8 +34,18 @@ session fails or times out, the manager still briefs the worker, which records t
    It prints `false`, `"qa"`, and an assignment path under `~/.pi/agent/tau/`.
    The folder after `tau/` starts with this worktree's folder name.
 4. Run the feature's report check and the [QA guide's reply check](../../qa.md#what-to-check-1).
-   The report check prints `["tau-worker-report","success"]`.
-   The reply contains `WORKER-REPORT-SEEN`, `Added: milk`, and `1. [ ] milk`.
+   The report check prints `["tau-worker-report","success"]`, and these checks on the worker report
+   print `report has Added: milk` and `report has 1. [ ] milk`:
+
+   ```sh
+   report=$(jq -r 'select(.type == "message_start" and .message.role == "custom")
+     | .message.content | tostring' "$log")
+   printf '%s' "$report" | grep -q 'Added: milk' && echo 'report has Added: milk'
+   printf '%s' "$report" | grep -qF '1. [ ] milk' && echo 'report has 1. [ ] milk'
+   ```
+
+   The reply contains `WORKER-REPORT-SEEN`.
+
 5. Run the feature's run-record check.
    `find "$scratch/.tau/verification" -name run.json` prints one path.
    `jq -c '[.steps[].status, .endState.status]'` on
@@ -46,5 +56,6 @@ session fails or times out, the manager still briefs the worker, which records t
 
 ## End state
 
-The session's reply holds `WORKER-REPORT-SEEN`, `Added: milk`, and `1. [ ] milk`.
+The session's reply holds `WORKER-REPORT-SEEN`, and the worker report in the log holds
+`Added: milk` and `1. [ ] milk`.
 The scratch repository holds a run whose item has every step passed.

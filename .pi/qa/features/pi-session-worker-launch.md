@@ -12,10 +12,11 @@ needs the `HC_TERMINAL_ID` of that terminal. The launched worker becomes a child
 
 ## Driving steps
 
-1. Create a scratch repository under the scratch root. It has an executable notes command, a notes
-   target, and a two-step feature file:
+1. Set `run` to the run name from the brief, then create a scratch repository under the scratch
+   root. It has an executable notes command, a notes target, and a two-step feature file:
 
 ```sh
+run=<run>
 scratch=$(mktemp -d "/tmp/tau-verification-$run/qa-XXXXXX")
 git -C "$scratch" init --quiet
 mkdir -p "$scratch/.pi/qa/features"
@@ -136,8 +137,8 @@ pnpm pi-session --cwd "$scratch" --model <pattern> --timeout 300 --prompt-file "
   It prints `["tau-worker-report","success"]`. A worker that ended without a report prints
   `tau-worker-ended` instead.
 
-- The reply check of the QA guide prints `WORKER-REPORT-SEEN` and a summary with `Added: milk` and
-  `1. [ ] milk`.
+- The reply check of the QA guide prints `WORKER-REPORT-SEEN`.
+- The worker report in the event log holds `Added: milk` and `1. [ ] milk`.
 - The run-record check finds one run and shows every step passed:
 
   ```sh
