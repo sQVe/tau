@@ -73,10 +73,16 @@ const readTimeouts = (totals: unknown): number => {
     return 0;
   }
 
-  if (typeof timeout !== 'number' || !Number.isInteger(timeout) || timeout < 0) {
-    throw new TypeError(
-      'The mutation report is invalid: totals.timeout must be a non-negative integer.',
-    );
+  if (typeof timeout !== 'number') {
+    throw new TypeError('The mutation report is invalid: totals.timeout must be a number.');
+  }
+
+  if (!Number.isInteger(timeout)) {
+    throw new TypeError('The mutation report is invalid: totals.timeout must be an integer.');
+  }
+
+  if (timeout < 0) {
+    throw new TypeError('The mutation report is invalid: totals.timeout must not be negative.');
   }
 
   return timeout;
