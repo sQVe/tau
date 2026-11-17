@@ -1,10 +1,10 @@
 import type { ToolResultEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-import { isQueuedHandover } from './queuedHandover.js';
+import { isFinalHandover, isQueuedHandover } from './queuedHandover.js';
 
-const event = (toolName: string, details?: unknown): ToolResultEvent =>
-  ({ toolName, details }) as unknown as ToolResultEvent;
+const event = (toolName: string, details?: unknown, input?: unknown): ToolResultEvent =>
+  ({ toolName, details, input }) as unknown as ToolResultEvent;
 
 it.each([
   {
@@ -34,4 +34,34 @@ it.each([
   },
 ] as const)('$name', ({ value, expected }) => {
   expect(isQueuedHandover(value)).toBe(expected);
+});
+
+it.each([
+  {
+    name: 'a queued handover with final true is final',
+    value: event('handover', { status: 'queued' }, { action: 'send', final: true }),
+    expected: true,
+  },
+  {
+    name: 'a queued handover with final false is not final',
+    value: event('handover', { status: 'queued' }, { action: 'send', final: false }),
+    expected: false,
+  },
+  {
+    name: 'a queued handover with no input is not final',
+    value: event('handover', { status: 'queued' }),
+    expected: false,
+  },
+  {
+    name: 'a queued handover with a string final is not final',
+    value: event('handover', { status: 'queued' }, { action: 'send', final: 'true' }),
+    expected: false,
+  },
+  {
+    name: 'an unknown handover with final true is not final',
+    value: event('handover', { status: 'unknown' }, { action: 'send', final: true }),
+    expected: false,
+  },
+] as const)('$name', ({ value, expected }) => {
+  expect(isFinalHandover(value)).toBe(expected);
 });

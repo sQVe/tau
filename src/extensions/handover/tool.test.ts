@@ -290,6 +290,47 @@ it('sends the handover file to the receiver inbox and returns queued as JSON tex
   );
 });
 
+it('sends a handover with final true and returns queued', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const file = join(root, '.tau', 'handovers', 'message.md');
+  const sockets = mkdtempSync('/tmp/tau-tool-');
+  const messageId = '11111111-1111-4111-8111-111111111111';
+
+  chmodSync(sockets, 0o700);
+
+  onTestFinished(() => {
+    rmSync(sockets, { recursive: true, force: true });
+  });
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, 't7');
+
+  vi.stubEnv('HC_TERMINAL_ID', 'caller');
+  await mkdir(join(root, '.tau', 'handovers'), { recursive: true });
+  await writeFile(file, 'Next steps\n');
+
+  fake.reply(
+    'get',
+    JSON.stringify({
+      address: 't7',
+      state: 'live',
+      labels: { 'tau.inbox': `rpc1:${receiver.path}` },
+    }),
+  );
+
+  const result = await createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', file, messageId, sessionId: receiver.sessionId, final: true },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  const queued = { status: 'queued', terminal: 't7', sessionId: receiver.sessionId, messageId };
+
+  expect(result.details).toEqual(queued);
+});
+
 it('refuses a send without a terminal before any hc call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();
@@ -552,6 +593,22 @@ it('refuses a model with send before any hc call', async () => {
   ).rejects.toThrow('model is only for action start.');
 
   expect(fake.calls).toEqual([]);
+});
+
+it('refuses final outside send', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(
+    createTool().execute(
+      'call',
+      { action: 'prepare', final: true },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow('final is only for action send.');
+
+  expect(existsSync(join(root, '.tau'))).toBe(false);
 });
 
 it('refuses an already-aborted start before any herdr-app call', async () => {
