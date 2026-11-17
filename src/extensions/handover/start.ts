@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { runCommand } from '../../command.js';
 import type { CommandRuntime } from '../../command.js';
+import { parseModelReference } from '../../config/models.js';
 import { isMissingFile } from '../../errors.js';
 import { existingEntry } from '../../tauDirectory.js';
 import { readHandoverText } from './handoverFile.js';
@@ -14,13 +15,35 @@ export interface StartHandoverRequest {
   file: string;
   folder: string;
   target: StartHandoverTarget;
+  model: string | undefined;
 }
 
 export interface StartHandoverResult {
   reply: string;
 }
 
-const tabArguments = (space: string, folder: string, task: string): string[] => [
+// Pi treats a provider prefix in --model as a hint and can fall back to another provider's model
+// with the same ID. --provider pins the provider that validation accepted.
+const piArguments = (model: string | undefined): string[] => {
+  if (model === undefined) {
+    return ['pi'];
+  }
+
+  const reference = parseModelReference(model);
+
+  if (reference === undefined) {
+    return ['pi', '--model', model];
+  }
+
+  return ['pi', '--provider', reference.provider, '--model', reference.id];
+};
+
+const tabArguments = (
+  space: string,
+  folder: string,
+  task: string,
+  model: string | undefined,
+): string[] => [
   'do',
   'tab.new',
   '--space',
@@ -28,14 +51,19 @@ const tabArguments = (space: string, folder: string, task: string): string[] => 
   '--folder',
   folder,
   '--argv',
-  '["pi"]',
+  JSON.stringify(piArguments(model)),
   '--task',
   task,
   '--focus',
   'false',
 ];
 
-const spaceArguments = (name: string, folder: string, task: string): string[] => [
+const spaceArguments = (
+  name: string,
+  folder: string,
+  task: string,
+  model: string | undefined,
+): string[] => [
   'do',
   'space.new',
   '--name',
@@ -43,7 +71,7 @@ const spaceArguments = (name: string, folder: string, task: string): string[] =>
   '--folder',
   folder,
   '--argv',
-  '["pi"]',
+  JSON.stringify(piArguments(model)),
   '--task',
   task,
   '--focus',
@@ -52,8 +80,8 @@ const spaceArguments = (name: string, folder: string, task: string): string[] =>
 
 const startArguments = (request: StartHandoverRequest, task: string): string[] =>
   'space' in request.target
-    ? tabArguments(request.target.space, request.folder, task)
-    : spaceArguments(request.target.name, request.folder, task);
+    ? tabArguments(request.target.space, request.folder, task, request.model)
+    : spaceArguments(request.target.name, request.folder, task, request.model);
 
 const isDirectory = (path: string): Promise<boolean> =>
   stat(path).then(
