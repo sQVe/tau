@@ -20,7 +20,7 @@ const protocolName = 'rpc1';
 
 export const savableFamilies = ['handover', 'answer'] as const;
 
-export const families = [...savableFamilies, 'answer-request'] as const;
+const families = [...savableFamilies, 'answer-request'] as const;
 
 export type SavableFamily = (typeof savableFamilies)[number];
 
@@ -110,7 +110,7 @@ export const withSavableBody = <Fields extends TProperties>(fields: Fields): Wit
     Type.Object({ ...fields, ...answerBody }, strict),
   ]);
 
-export const withBody = <Fields extends TProperties>(fields: Fields): WithRequestBody<Fields> =>
+const withBody = <Fields extends TProperties>(fields: Fields): WithRequestBody<Fields> =>
   Type.Union([
     Type.Object({ ...fields, ...handoverBody }, strict),
     Type.Object({ ...fields, ...answerBody }, strict),
