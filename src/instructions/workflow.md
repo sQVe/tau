@@ -44,6 +44,10 @@ when you stop. Follow explicit user instructions and repository conventions over
   handover files and Linear, not the conversation.
 - As manager, when the user corrects you, fix the mistake, save it with `improvement` `record`, and
   propose a rule or check for the user to approve.
+- As manager, do the work you can do instead of handing it back to the user. Fix a bug you find
+  right away in its own space, not only as a backlog ticket. Make the tracker status change you can
+  make, such as moving a slice to In Progress. Treat a proposal the user has effectively accepted as
+  decided and do not ask again.
 
 ## Rule table
 
