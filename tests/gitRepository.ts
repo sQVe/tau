@@ -44,6 +44,17 @@ export const createTemporaryRepository = async (
   return repositoryDirectory;
 };
 
+export const createTemporaryBareRepository = async (
+  registerCleanup: RegisterCleanup,
+): Promise<string> => {
+  const repositoryDirectory = await mkdtemp(join(tmpdir(), 'tau-bare-repository-'));
+  registerCleanup(() => rm(repositoryDirectory, { recursive: true, force: true }));
+
+  await promisify(execFile)('git', ['init', '--quiet', '--bare'], { cwd: repositoryDirectory });
+
+  return repositoryDirectory;
+};
+
 // Builds the layout Tau checkouts use: a `.git` file pointing at `.bare`, with worktrees beside it.
 export const createTemporaryBareRoot = async (
   registerCleanup: RegisterCleanup,

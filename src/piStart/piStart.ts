@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { isMissingFile } from '../errors.js';
-import { existingEntry } from '../tauDirectory.js';
+import { existingEntry, isBareRoot } from '../tauDirectory.js';
 import { piArguments } from './piArguments.js';
 
 export type PiStartTarget = { space: string } | { name: string };
@@ -78,7 +78,11 @@ const isGitCheckout = async (folder: string): Promise<boolean> => {
     return false;
   }
 
-  return (await existingEntry(join(folder, '.git'))) !== undefined;
+  if ((await existingEntry(join(folder, '.git'))) !== undefined) {
+    return true;
+  }
+
+  return isBareRoot(folder);
 };
 
 export const startPiSession = async (

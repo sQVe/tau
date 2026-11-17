@@ -48,7 +48,7 @@ it('a lead guideline set names the lead rules and no architect rule', () => {
 
   expect(
     guidelines.some((guideline) =>
-      guideline.includes('Do not edit code and do not launch workers.'),
+      guideline.includes('Do not edit code and do not launch an editing worker.'),
     ),
   ).toBe(false);
 });
@@ -61,7 +61,11 @@ it('an architect guideline set names the architect rules and no lead rule', () =
   );
 
   expect(guidelines).toContain(
-    'Do not edit code and do not launch workers. Put each change in a ticket for the lead to delegate.',
+    'Do not edit code and do not launch an editing worker. Put each change in a ticket for the lead to delegate.',
+  );
+
+  expect(guidelines).toContain(
+    'You may launch an investigation `scout` to answer a design question.',
   );
 
   expect(guidelines.some((guideline) => guideline.includes('You are the lead.'))).toBe(false);

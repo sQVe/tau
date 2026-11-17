@@ -165,6 +165,39 @@ it('open resumes the recorded architect session', async ({ onTestFinished: clean
   expect(serialized).toContain(sessionFile);
 });
 
+it('open starts a fresh session when the recorded session file is gone', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  const app = appFake();
+  const tool = createArchitectTool({ ...hc, exec: app.exec, cwd: root });
+  const missingSession = join(root, 'missing-session.jsonl');
+
+  await writeArchitectRecord(root, {
+    version: 1,
+    sessionFile: missingSession,
+    terminal: null,
+    leadTerminal: 't-lead',
+    updatedAt: new Date().toISOString(),
+  });
+
+  const result = await tool.execute(
+    'call',
+    { action: 'open' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+
+  const serialized = JSON.stringify(app.calls[0]?.commandArguments ?? []);
+
+  expect(serialized).not.toContain('--session');
+  expect(serialized).not.toContain(missingSession);
+});
+
 it('ask refuses without a recorded session file', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
   const hc = createHcFake();

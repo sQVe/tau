@@ -2,7 +2,10 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createExecFake, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import {
+  createTemporaryBareRepository,
+  createTemporaryRepository,
+} from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { startPiSession } from './piStart.js';
 
@@ -50,6 +53,26 @@ it('a tab start passes the argv as JSON', async () => {
       signal: undefined,
     },
   ]);
+});
+
+it('a true bare repository root starts a session', async () => {
+  const fake = createAppFake();
+  const root = await createTemporaryBareRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { space: 'space-1' },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(fake.calls).toHaveLength(1);
 });
 
 it('a folder that is not a Git checkout is refused', async () => {
