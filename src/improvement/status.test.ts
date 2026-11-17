@@ -5,6 +5,7 @@ import { afterEach, expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.ts';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
+import { isMissingFile } from '../errors.ts';
 import { writeEvent } from './event.ts';
 import type { ImprovementEvent } from './event.ts';
 import { readImprovementStatus } from './status.ts';
@@ -75,15 +76,39 @@ const caughtUpIndex = (projectRoot: string): SweepIndex => ({
 
 const eventDirectory = (projectRoot: string) => join(projectRoot, '.tau', 'improvement');
 
+const readOptional = async (path: string) => {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
+
+const listEventNames = async (directory: string): Promise<string[]> => {
+  try {
+    return (await readdir(directory)).toSorted();
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+};
+
 const snapshot = async (projectRoot: string, agentDirectory: string) => {
   const directory = eventDirectory(projectRoot);
-  const names = (await readdir(directory)).toSorted();
+  const names = await listEventNames(directory);
 
   const events = await Promise.all(
     names.map(async (name) => [name, await readFile(join(directory, name), 'utf8')] as const),
   );
 
-  return { events, index: await readFile(sweepIndexPath(agentDirectory), 'utf8') };
+  return { events, index: await readOptional(sweepIndexPath(agentDirectory)) };
 };
 
 it('reads tasks, coverage, the correct pass, and the sweep from saved records', async () => {
@@ -156,26 +181,35 @@ it('rejects a cwd that does not exist', async () => {
 
 it('rejects a damaged event with an error naming its path', async () => {
   const project = await createProject();
+  const projectRoot = await realpath(project);
   const agentDirectory = createAgentDirectory();
-  const path = join(eventDirectory(await realpath(project)), 'broken.json');
+  const path = join(eventDirectory(projectRoot), 'broken.json');
 
-  await mkdir(eventDirectory(await realpath(project)), { recursive: true });
+  await mkdir(eventDirectory(projectRoot), { recursive: true });
   await writeFile(path, '{');
 
+  const before = await snapshot(projectRoot, agentDirectory);
+
   await expect(readImprovementStatus({ cwd: project, agentDirectory, now })).rejects.toThrow(path);
+
+  expect(await snapshot(projectRoot, agentDirectory)).toEqual(before);
 });
 
 it('reads a malformed index as an incomplete sweep', async () => {
   const project = await createProject();
+  const projectRoot = await realpath(project);
   const agentDirectory = createAgentDirectory();
   const path = sweepIndexPath(agentDirectory);
 
   await mkdir(join(agentDirectory, 'tau', 'improvement'), { recursive: true });
   await writeFile(path, 'not JSON');
 
+  const before = await snapshot(projectRoot, agentDirectory);
+
   const status = await readImprovementStatus({ cwd: project, agentDirectory, now });
 
   expect(status.sweep).toBe('incomplete');
+  expect(await snapshot(projectRoot, agentDirectory)).toEqual(before);
 });
 
 it('lists a newer-format event in skipped', async () => {
