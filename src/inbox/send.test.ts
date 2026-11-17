@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import type { Server, Socket } from 'node:net';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { failedResult, succeededResult } from '../../tests/execFake.js';
 import { startHandoverReceiver } from '../../tests/inboxReceiverHarness.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import type { HcRuntime } from '../hc/hc.js';
 import { sendInboxMessage } from './inbox.js';
 import type { InboxSendRequest } from './inbox.js';
@@ -18,7 +19,7 @@ let root = '';
 const cleanups: (() => Promise<void> | void)[] = [];
 
 beforeEach(() => {
-  root = mkdtempSync('/tmp/tau-send-');
+  root = temporaryDirectory(onTestFinished, 'tau-send-');
   chmodSync(root, 0o700);
   vi.stubEnv('HC_TERMINAL_ID', 't1');
 });

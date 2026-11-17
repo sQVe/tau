@@ -3,6 +3,10 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
+import {
+  createTemporaryOutputDirectorySync,
+  pruneTemporaryOutput,
+} from '../src/codemode/fullOutput.ts';
 import { gitEnvironment } from '../src/git.ts';
 import { installedPiPath } from './piVersionDrift.ts';
 
@@ -17,6 +21,7 @@ export const git = (cwd: string, args: string[]): string => {
 };
 
 export const createScratchRepository = (tau: string): string => {
+  pruneTemporaryOutput(tmpdir(), 'tau-pi-smoke-repo-');
   const directory = mkdtempSync(join(tmpdir(), 'tau-pi-smoke-repo-'));
 
   mkdirSync(join(directory, 'src'));
@@ -50,7 +55,7 @@ export const createScratchRepository = (tau: string): string => {
 };
 
 export const createEventLog = (prefix: string): string => {
-  const path = join(mkdtempSync(join(tmpdir(), prefix)), 'events.jsonl');
+  const path = join(createTemporaryOutputDirectorySync(prefix), 'events.jsonl');
 
   writeFileSync(path, '');
 

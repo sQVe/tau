@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { forgetTemporaryDirectory, trackTemporaryDirectory } from './temporaryDirectoryHarness.ts';
+
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
 
 export const git = async (cwd: string, ...commandArguments: string[]): Promise<string> => {
@@ -25,7 +27,13 @@ export const createTemporaryRepository = async (
   prefix = 'tau-repository-',
 ): Promise<string> => {
   const repositoryDirectory = await mkdtemp(join(tmpdir(), prefix));
-  registerCleanup(() => rm(repositoryDirectory, { recursive: true, force: true }));
+
+  trackTemporaryDirectory(repositoryDirectory);
+
+  registerCleanup(async () => {
+    await rm(repositoryDirectory, { recursive: true, force: true });
+    forgetTemporaryDirectory(repositoryDirectory);
+  });
 
   await initializeRepository(repositoryDirectory);
 
@@ -37,7 +45,13 @@ export const createTemporaryBareRoot = async (
   registerCleanup: RegisterCleanup,
 ): Promise<string> => {
   const rootDirectory = await mkdtemp(join(tmpdir(), 'tau-bare-root-'));
-  registerCleanup(() => rm(rootDirectory, { recursive: true, force: true }));
+
+  trackTemporaryDirectory(rootDirectory);
+
+  registerCleanup(async () => {
+    await rm(rootDirectory, { recursive: true, force: true });
+    forgetTemporaryDirectory(rootDirectory);
+  });
 
   await promisify(execFile)('git', ['init', '--quiet', '--bare', '.bare'], { cwd: rootDirectory });
   await writeFile(join(rootDirectory, '.git'), 'gitdir: .bare\n');

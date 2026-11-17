@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   existsSync,
@@ -46,13 +46,74 @@ const runNested = (directory: string): Promise<boolean> =>
     );
   });
 
-const nestedSuiteSource = (prefix: string, outcome: 'pass' | 'fail'): string => {
+// Starts a nested run that waits for a signal, then sends SIGHUP to its live worker. Returns the
+// worker PID so the test can assert it terminated before checking the directories.
+const runNestedWithSignal = (
+  directory: string,
+  onTestFinished: (cleanup: () => void) => void,
+): Promise<number> => {
+  const child = spawn(
+    join(repositoryRoot, 'node_modules', '.bin', 'vitest'),
+    ['run', '--config', join(directory, 'vitest.config.mjs')],
+    { cwd: directory, stdio: 'ignore' },
+  );
+
+  const pidFile = join(directory, 'signal.pid');
+
+  onTestFinished(() => {
+    child.kill('SIGKILL');
+  });
+
+  return new Promise((resolve, reject) => {
+    let workerPid = 0;
+
+    const poll = setInterval(() => {
+      if (!existsSync(pidFile)) {
+        return;
+      }
+
+      clearInterval(poll);
+      workerPid = Number(readFileSync(pidFile, 'utf8'));
+
+      try {
+        process.kill(workerPid, 'SIGHUP');
+      } catch (error) {
+        reject(new Error(`Could not signal the nested worker: ${String(error)}`));
+      }
+    }, 10);
+
+    const timeout = setTimeout(() => {
+      clearInterval(poll);
+      child.kill('SIGKILL');
+      reject(new Error('The nested suite did not report its worker PID.'));
+    }, 20_000);
+
+    child.once('error', (error) => {
+      clearInterval(poll);
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    child.once('exit', () => {
+      clearInterval(poll);
+      clearTimeout(timeout);
+      resolve(workerPid);
+    });
+  });
+};
+
+const nestedSuiteSource = (
+  prefix: string,
+  outcome: 'pass' | 'fail' | 'exit' | 'signal',
+): string => {
   const lines = [
     "import { existsSync, writeFileSync } from 'node:fs';",
     "import { join } from 'node:path';",
-    "import { beforeAll, expect, it } from 'vitest';",
+    "import { beforeAll, expect, it, vi } from 'vitest';",
     `import { useSharedCargoEnvironment } from ${JSON.stringify(join(repositoryRoot, 'tests', 'nextestHarness.js'))};`,
     `import { suiteCleanup, temporaryDirectory } from ${JSON.stringify(join(repositoryRoot, 'tests', 'temporaryDirectoryHarness.js'))};`,
+    '',
+    'vi.setConfig({ testTimeout: 60_000 });',
     '',
     `useSharedCargoEnvironment(${JSON.stringify(prefix)});`,
     '',
@@ -92,13 +153,32 @@ const nestedSuiteSource = (prefix: string, outcome: 'pass' | 'fail'): string => 
     );
   }
 
+  if (outcome === 'exit') {
+    lines.push(
+      '',
+      "it('exits before the suite cleanup runs', () => {",
+      '  process.exit(0);',
+      '});',
+    );
+  }
+
+  if (outcome === 'signal') {
+    lines.push(
+      '',
+      "it('waits for a signal before the suite cleanup runs', async () => {",
+      "  writeFileSync(join(import.meta.dirname, 'signal.pid'), String(process.pid));",
+      '  await new Promise(() => {});',
+      '});',
+    );
+  }
+
   return lines.join('\n');
 };
 
-const runSuite = async (
+const createNestedSuite = (
   onTestFinished: (cleanup: () => void) => void,
-  outcome: 'pass' | 'fail',
-): Promise<{ directory: string; prefix: string; succeeded: boolean }> => {
+  outcome: 'pass' | 'fail' | 'exit' | 'signal',
+): { directory: string; prefix: string } => {
   const prefix = `harness-leak-${randomUUID()}`;
   const directory = join(tmpdir(), `tau-${prefix}-nested-`);
 
@@ -120,6 +200,15 @@ const runSuite = async (
     join(directory, 'sharedCargoEnvironment.test.ts'),
     nestedSuiteSource(prefix, outcome),
   );
+
+  return { directory, prefix };
+};
+
+const runSuite = async (
+  onTestFinished: (cleanup: () => void) => void,
+  outcome: 'pass' | 'fail' | 'exit',
+): Promise<{ directory: string; prefix: string; succeeded: boolean }> => {
+  const { directory, prefix } = createNestedSuite(onTestFinished, outcome);
 
   return { directory, prefix, succeeded: await runNested(directory) };
 };
@@ -147,4 +236,24 @@ it('removes the shared cargo directories when a passing suite exits', async ({
   onTestFinished,
 }) => {
   await expectCleanSuite(onTestFinished, 'pass');
+});
+
+it('removes the shared cargo directories when a suite exits before its cleanup runs', async ({
+  onTestFinished,
+}) => {
+  const { directory, prefix } = await runSuite(onTestFinished, 'exit');
+
+  expect(existsSync(join(directory, 'ran.marker'))).toBe(true);
+  expect(probeDirectories(prefix)).toEqual([]);
+});
+
+it('removes the shared cargo directories when a live suite is killed before its cleanup runs', async ({
+  onTestFinished,
+}) => {
+  const { directory, prefix } = createNestedSuite(onTestFinished, 'signal');
+  const workerPid = await runNestedWithSignal(directory, onTestFinished);
+
+  expect(existsSync(join(directory, 'ran.marker'))).toBe(true);
+  expect(() => process.kill(workerPid, 0)).toThrow('ESRCH');
+  expect(probeDirectories(prefix)).toEqual([]);
 });
