@@ -22,6 +22,7 @@ interface MutationVerdict extends CheckResult {
   error?: string;
   survivors: Survivor[];
   unmutated: string[];
+  timeouts: number;
 }
 
 export type MutationDetails = Recorded<MutationVerdict>;
@@ -169,11 +170,19 @@ const verdictFromReport = (result: CheckResult, report: MutationReport): Mutatio
   ...(report.error === undefined ? {} : { error: report.error }),
   survivors: report.survivors,
   unmutated: report.unmutated,
+  timeouts: report.timeouts,
 });
 
 const settleRun = async (result: CheckResult): Promise<MutationVerdict> => {
   if (runWasStopped(result) || result.stdoutPath === undefined) {
-    return { ...result, passed: false, status: undefined, survivors: [], unmutated: [] };
+    return {
+      ...result,
+      passed: false,
+      status: undefined,
+      survivors: [],
+      unmutated: [],
+      timeouts: 0,
+    };
   }
 
   const report = await readReport(result.stdoutPath, result.logPath);
@@ -242,6 +251,12 @@ const describeResult = (result: MutationDetails): string => {
 
   if (result.unmutated.length > 0) {
     lines.push(`Not mutated: ${result.unmutated.join(', ')}`);
+  }
+
+  if (result.timeouts > 0) {
+    lines.push(
+      `${pluralize(result.timeouts, 'mutant')} timed out; the machine may have been overloaded.`,
+    );
   }
 
   lines.push(

@@ -29,6 +29,28 @@ it.each([
   expect(() => parseMutationReport(reportWith(item))).toThrow(field);
 });
 
+const passReport = (extra: Record<string, unknown>) =>
+  JSON.stringify({ version: 1, status: 'pass', survivors: [], ...extra });
+
+it('parses the timed-out mutant count from totals', () => {
+  const report = parseMutationReport(passReport({ totals: { timeout: 4 } }));
+
+  expect(report.timeouts).toBe(4);
+});
+
+it.each([
+  { name: 'no totals', extra: {} },
+  { name: 'totals without timeout', extra: { totals: { total: 9 } } },
+])('defaults the timed-out mutant count to 0 with $name', ({ extra }) => {
+  const report = parseMutationReport(passReport(extra));
+
+  expect(report.timeouts).toBe(0);
+});
+
+it.each([-1, 1.5, '4', null])('rejects totals.timeout %s', (timeout) => {
+  expect(() => parseMutationReport(passReport({ totals: { timeout } }))).toThrow('totals.timeout');
+});
+
 it.each([
   { name: 'covered true', item: survivor },
   { name: 'covered false', item: { ...survivor, covered: false } },

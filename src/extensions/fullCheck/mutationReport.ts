@@ -16,6 +16,7 @@ export interface MutationReport {
   error?: string;
   survivors: Survivor[];
   unmutated: string[];
+  timeouts: number;
 }
 
 const statuses: readonly string[] = ['pass', 'survivors', 'nothing', 'error'];
@@ -55,6 +56,36 @@ const readSurvivor = (item: unknown, index: number): Survivor => {
   }
 
   return { file, line, mutator, original, replacement, covered };
+};
+
+const readTimeouts = (totals: unknown): number => {
+  if (totals === undefined) {
+    return 0;
+  }
+
+  if (!isRecord(totals)) {
+    throw new TypeError('The mutation report is invalid: totals must be an object.');
+  }
+
+  const { timeout } = totals;
+
+  if (timeout === undefined) {
+    return 0;
+  }
+
+  if (typeof timeout !== 'number') {
+    throw new TypeError('The mutation report is invalid: totals.timeout must be a number.');
+  }
+
+  if (!Number.isInteger(timeout)) {
+    throw new TypeError('The mutation report is invalid: totals.timeout must be an integer.');
+  }
+
+  if (timeout < 0) {
+    throw new TypeError('The mutation report is invalid: totals.timeout must not be negative.');
+  }
+
+  return timeout;
 };
 
 const readStrings = (value: unknown, field: string): string[] => {
@@ -101,6 +132,7 @@ export const parseMutationReport = (text: string): MutationReport => {
 
   const survivorList = survivors.map((item, index) => readSurvivor(item, index));
   const unmutated = readStrings(report.unmutated, 'unmutated');
+  const timeouts = readTimeouts(report.totals);
   const passing = status === 'pass' || status === 'nothing';
 
   // A passing verdict is saved for reuse, so a contradictory report must not pass.
@@ -119,5 +151,6 @@ export const parseMutationReport = (text: string): MutationReport => {
     ...(typeof error === 'string' ? { error } : {}),
     survivors: survivorList,
     unmutated,
+    timeouts,
   };
 };
