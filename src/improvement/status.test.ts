@@ -143,6 +143,23 @@ it('reads tasks, coverage, the correct pass, and the sweep from saved records', 
   expect(await snapshot(projectRoot, agentDirectory)).toEqual(before);
 });
 
+it('reads a failed session sweep as incomplete despite a caught-up index', async () => {
+  const project = await createProject();
+  const projectRoot = await realpath(project);
+  const agentDirectory = createAgentDirectory();
+
+  await writeSweepIndex(agentDirectory, caughtUpIndex(projectRoot));
+
+  const status = await readImprovementStatus({
+    cwd: project,
+    agentDirectory,
+    now,
+    sessionSweep: { outcome: 'failed', reason: 'lock failed' },
+  });
+
+  expect(status.sweep).toBe('incomplete');
+});
+
 it('reads a repository with no events and no index as empty and incomplete', async () => {
   const project = await createProject();
   const projectRoot = await realpath(project);

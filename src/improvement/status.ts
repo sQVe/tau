@@ -2,12 +2,14 @@ import { readEvents } from './event.ts';
 import { findOptionalProjectRoot } from './projectRoot.ts';
 import { decideCorrectDue, decideSweep, decideTasks } from './statusDecision.ts';
 import type { ImprovementStatus } from './statusDecision.ts';
+import type { SweepOutcome } from './sweep.ts';
 import { readSweepIndex } from './sweepIndex.ts';
 
 export const readImprovementStatus = async (sources: {
   cwd: string;
   agentDirectory: string;
   now: Date;
+  sessionSweep?: SweepOutcome | undefined;
 }): Promise<ImprovementStatus> => {
   const projectRoot = await findOptionalProjectRoot(sources.cwd);
 
@@ -24,7 +26,7 @@ export const readImprovementStatus = async (sources: {
     now: sources.now,
   });
 
-  const sweep = decideSweep({ index, projectRoot });
+  const sweep = decideSweep({ index, projectRoot, sessionSweep: sources.sessionSweep });
 
   return {
     projectRoot,

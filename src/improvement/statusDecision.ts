@@ -1,6 +1,7 @@
 import type { ImprovementEvent } from './event.ts';
 import { decideStoredSignals } from './signals.ts';
 import type { StoredSignals } from './signals.ts';
+import type { SweepOutcome } from './sweep.ts';
 import type { SweepIndexRead } from './sweepIndex.ts';
 
 export type SignalName = keyof StoredSignals;
@@ -179,7 +180,12 @@ export const decideCorrectDue = (facts: {
 export const decideSweep = (facts: {
   index: SweepIndexRead;
   projectRoot: string | null;
+  sessionSweep: SweepOutcome | undefined;
 }): 'complete' | 'incomplete' => {
+  if (facts.sessionSweep?.outcome === 'failed') {
+    return 'incomplete';
+  }
+
   if (facts.index.status !== 'read') {
     return 'incomplete';
   }

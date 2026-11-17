@@ -3,6 +3,7 @@ import { expect, it } from 'vitest';
 import type { ImprovementEvent } from './event.ts';
 import { decideCorrectDue, decideSweep, decideTasks, statusText } from './statusDecision.ts';
 import type { CoverageCounts, ImprovementStatus, TaskToReview } from './statusDecision.ts';
+import type { SweepOutcome } from './sweep.ts';
 import type { SweepIndex, SweepIndexRead } from './sweepIndex.ts';
 
 const pullRequestA = 'https://github.com/sQVe/tau/pull/562';
@@ -428,6 +429,7 @@ const sweepTable: {
   name: string;
   index: SweepIndexRead;
   projectRoot: string | null;
+  sessionSweep?: SweepOutcome | undefined;
   expected: 'complete' | 'incomplete';
 }[] = [
   {
@@ -512,10 +514,37 @@ const sweepTable: {
     projectRoot: null,
     expected: 'complete',
   },
+  {
+    name: "is incomplete when this session's latest sweep failed",
+    index: readIndex(),
+    projectRoot,
+    sessionSweep: { outcome: 'failed', reason: 'lock failed' },
+    expected: 'incomplete',
+  },
+  {
+    name: "keeps the index rule when this session's latest sweep ran out of budget",
+    index: readIndex(),
+    projectRoot,
+    sessionSweep: { outcome: 'budget' },
+    expected: 'complete',
+  },
+  {
+    name: 'keeps the index rule when this session has no sweep outcome',
+    index: readIndex(),
+    projectRoot,
+    sessionSweep: undefined,
+    expected: 'complete',
+  },
 ];
 
 it.each(sweepTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
-  expect(decideSweep({ index: row.index, projectRoot: row.projectRoot })).toBe(row.expected);
+  expect(
+    decideSweep({
+      index: row.index,
+      projectRoot: row.projectRoot,
+      sessionSweep: row.sessionSweep,
+    }),
+  ).toBe(row.expected);
 });
 
 const status = (overrides: Partial<ImprovementStatus> = {}): ImprovementStatus => ({

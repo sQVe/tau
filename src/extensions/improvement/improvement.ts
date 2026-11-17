@@ -10,6 +10,7 @@ import { isWorkerProcess } from '../../worker.js';
 import { runRecord } from './recordAction.js';
 import { createStatusRefresh } from './statusAction.js';
 import { startSweep } from './sweepStart.js';
+import { createSweepState } from './sweepState.js';
 
 const parameters = Type.Object({
   action: stringEnum(['record', 'status']),
@@ -19,9 +20,6 @@ const parameters = Type.Object({
 const description = `- record: save a user correction. {id,path,outcome}; existing: saved before.
 - status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,skipped}`;
 
-const readStatus = (cwd: string) =>
-  readImprovementStatus({ cwd, agentDirectory: getAgentDir(), now: new Date() });
-
 export default function improvementExtension(
   pi: ExtensionAPI,
   options: { runSweep?: typeof runSweep } = {},
@@ -29,6 +27,16 @@ export default function improvementExtension(
   if (isWorkerProcess()) {
     return;
   }
+
+  const sweepState = createSweepState();
+
+  const readStatus = (cwd: string) =>
+    readImprovementStatus({
+      cwd,
+      agentDirectory: getAgentDir(),
+      now: new Date(),
+      sessionSweep: sweepState.latest(),
+    });
 
   const refresh = createStatusRefresh(readStatus);
 
@@ -62,10 +70,14 @@ export default function improvementExtension(
     // oxlint-disable-next-line typescript/no-floating-promises -- refresh turns every failure into undefined, so it cannot reject.
     void refresh(context);
 
-    // oxlint-disable-next-line typescript/no-floating-promises -- startSweep turns every failure into undefined, so the sweep cannot reject.
+    // oxlint-disable-next-line typescript/no-floating-promises -- startSweep turns every failure into a failed outcome, so the sweep cannot reject.
     void startSweep(
       { cwd: context.cwd, agentDirectory: getAgentDir(), exec: piExec(pi) },
       sweepRunner,
-    ).then(() => refresh(context));
+    ).then((outcome) => {
+      sweepState.record(outcome);
+
+      return refresh(context);
+    });
   });
 }

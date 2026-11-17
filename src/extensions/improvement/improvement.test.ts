@@ -263,6 +263,46 @@ it('sets the sweep incomplete status after a failed sweep', async () => {
   });
 });
 
+it('shows a failed sweep that writes no index as incomplete', async () => {
+  vi.stubEnv('TAU_ROLE', undefined);
+  const root = await createTemporaryRepository(onTestFinished);
+  const projectRoot = await realpath(root);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-agent-');
+  const setStatus = vi.fn<SetStatus>();
+
+  const runSweep = vi.fn<SweepRunner>(async () => ({
+    outcome: 'failed',
+    reason: 'lock failed',
+  }));
+
+  await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'caughtUp'));
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
+  const fake = fakeExtensionApi();
+  improvementExtension(fake.pi, { runSweep });
+  fake.handler('session_start')({}, sessionStartContext(root, setStatus));
+
+  await vi.waitFor(() => {
+    expect(setStatus).toHaveBeenLastCalledWith('improvement', 'improve: sweep incomplete');
+  });
+
+  const tool = fake.tools.get('improvement');
+
+  if (tool === undefined) {
+    throw new Error('The manager has no improvement tool.');
+  }
+
+  const result = await tool.execute(
+    'call-1',
+    { action: 'status' },
+    undefined,
+    undefined,
+    sessionContext(root, setStatus),
+  );
+
+  expect(result.details).toMatchObject({ sweep: 'incomplete' });
+});
+
 it('clears the status item when nothing is due and the sweep is caught up', async () => {
   vi.stubEnv('TAU_ROLE', undefined);
   const root = await createTemporaryRepository(onTestFinished);
