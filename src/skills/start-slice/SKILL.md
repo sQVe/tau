@@ -175,9 +175,12 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       the committed tree to `qa` by [the QA launch procedure](../shared/qa-launch.md) before the
       audit. Save the report in `$slicedir` with the commit it tested, for the audit to cite.
     - When the slice changes a tool or read path the manager uses, arrange a manager session that
-      loaded the branch before the walk. Drive the shared QA launch procedure with one recorded item
-      and one `Target: none` item. Keep a public-interface criterion open when only an internal
-      adapter ran.
+      loaded the branch before the walk. The manager session calls the changed tool itself and
+      records the call. Drive the shared QA launch procedure with one recorded item and one
+      `Target: none` item. A worker run does not replace the manager's own call. Keep a
+      public-interface criterion open when only an internal adapter ran. When the guide has no
+      section with a named target, no item is recorded; report the walk as not run and keep the
+      criterion open.
     - A QA failure makes the item not met; the audit's existing fix-ticket loop handles it.
     - A step that differs is either map drift (the feature or journey file is out of date: fix the
       file in the slice) or a product bug (the item is not met).
