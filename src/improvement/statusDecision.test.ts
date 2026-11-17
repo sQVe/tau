@@ -83,6 +83,26 @@ const correction = (createdAt: string, id = 'correction-1'): ImprovementEvent =>
   cwd: '/code/tau',
 });
 
+const decision = (): ImprovementEvent => ({
+  version: 1,
+  id: 'decision-1',
+  kind: 'decision',
+  createdAt: '2026-11-15T12:03:00.000Z',
+  evidence: [],
+  subject: 'correction-1',
+  choice: 'approved',
+});
+
+const backlog = (): ImprovementEvent => ({
+  version: 1,
+  id: 'backlog-1',
+  kind: 'backlog',
+  createdAt: '2026-11-15T12:04:00.000Z',
+  evidence: pullRequestEvidence(pullRequestA),
+  summary: 'Review the repeated review rounds.',
+  pullRequest: pullRequestA,
+});
+
 const reviews = (count: number, createdAt: string): ImprovementEvent[] =>
   Array.from({ length: count }, (_value, index) => review({ id: `review-${index}`, createdAt }));
 
@@ -155,6 +175,23 @@ const taskTable: {
     expected: { tasks: [], coverage: { complete: 1, managerOnly: 0, missing: 0 } },
   },
   {
+    name: 'uses the later facts event when its id is smaller and it comes first',
+    events: [
+      merge(),
+      facts({
+        id: 'facts-a',
+        counts: { reviewCaptures: 4 },
+        createdAt: '2026-11-15T13:00:00.000Z',
+      }),
+      facts({
+        id: 'facts-z',
+        counts: { reviewCaptures: 5 },
+        createdAt: '2026-11-15T12:00:00.000Z',
+      }),
+    ],
+    expected: { tasks: [], coverage: { complete: 1, managerOnly: 0, missing: 0 } },
+  },
+  {
     name: 'uses the later merge event and counts one pull request once',
     events: [
       merge({ id: 'merge-earlier', mergedAt: '2026-11-15T10:00:00.000Z' }),
@@ -212,6 +249,72 @@ const taskTable: {
       ],
       coverage: { complete: 2, managerOnly: 0, missing: 0 },
     },
+  },
+  {
+    name: 'uses the greater facts id when createdAt is equal',
+    events: [
+      merge(),
+      facts({
+        id: 'facts-a',
+        counts: { reviewCaptures: 5 },
+        createdAt: '2026-11-15T12:00:00.000Z',
+      }),
+      facts({
+        id: 'facts-b',
+        counts: { reviewCaptures: 4 },
+        createdAt: '2026-11-15T12:00:00.000Z',
+      }),
+    ],
+    expected: { tasks: [], coverage: { complete: 1, managerOnly: 0, missing: 0 } },
+  },
+  {
+    name: 'sorts equal merged times by pull request from unsorted input',
+    events: [
+      merge({ id: 'merge-564', pullRequest: pullRequestB, mergedAt: '2026-11-15T12:00:00.000Z' }),
+      facts({ id: 'facts-564', pullRequest: pullRequestB, counts: { reviewCaptures: 5 } }),
+      merge({ id: 'merge-562', pullRequest: pullRequestA, mergedAt: '2026-11-15T12:00:00.000Z' }),
+      facts({ id: 'facts-562', pullRequest: pullRequestA, counts: { reviewCaptures: 5 } }),
+    ],
+    expected: {
+      tasks: [
+        {
+          pullRequest: pullRequestA,
+          mergedAt: '2026-11-15T12:00:00.000Z',
+          signals: ['reviewRounds'],
+        },
+        {
+          pullRequest: pullRequestB,
+          mergedAt: '2026-11-15T12:00:00.000Z',
+          signals: ['reviewRounds'],
+        },
+      ],
+      coverage: { complete: 2, managerOnly: 0, missing: 0 },
+    },
+  },
+  {
+    name: 'ignores correction, decision, and backlog events',
+    events: [
+      merge(),
+      facts({ counts: { reviewCaptures: 5 } }),
+      correction('2026-11-15T12:02:00.000Z'),
+      decision(),
+      backlog(),
+    ],
+    expected: {
+      tasks: [
+        {
+          pullRequest: pullRequestA,
+          mergedAt: '2026-11-15T11:58:00.000Z',
+          signals: ['reviewRounds'],
+        },
+      ],
+      coverage: { complete: 1, managerOnly: 0, missing: 0 },
+    },
+  },
+  {
+    name: 'makes no task from a facts event without a merge event',
+    events: [facts({ counts: { reviewCaptures: 5 } })],
+    expected: { tasks: [], coverage: noCoverage },
   },
 ];
 
@@ -273,6 +376,29 @@ const correctTable: {
     events: [review({ createdAt: '2026-11-14T12:00:00.000Z' })],
     lastPassAt: '2026-11-15T12:00:00.000Z',
     now: new Date('2026-11-23T13:00:00.000Z'),
+    expected: false,
+  },
+  {
+    name: 'treats an event created exactly at the pass as old',
+    events: [correction('2026-11-15T12:00:00.000Z')],
+    lastPassAt: '2026-11-15T12:00:00.000Z',
+    now: new Date('2026-11-23T13:00:00.000Z'),
+    expected: false,
+  },
+  {
+    name: 'is due exactly seven days after the pass with one correction',
+    events: [correction('2026-11-22T12:00:00.000Z')],
+    lastPassAt: '2026-11-15T12:00:00.000Z',
+    now: new Date('2026-11-22T12:00:00.000Z'),
+    expected: true,
+  },
+  {
+    name: 'is not due with five corrections after a pass one day ago',
+    events: Array.from({ length: 5 }, (_value, index) =>
+      correction('2026-11-15T12:00:00.000Z', `correction-${index}`),
+    ),
+    lastPassAt: '2026-11-14T12:00:00.000Z',
+    now: new Date('2026-11-15T13:00:00.000Z'),
     expected: false,
   },
 ];
@@ -378,6 +504,12 @@ const sweepTable: {
     name: 'is complete when the project has no entry',
     index: readIndex(),
     projectRoot,
+    expected: 'complete',
+  },
+  {
+    name: 'is complete with a caught-up sweep and no project root',
+    index: readIndex(),
+    projectRoot: null,
     expected: 'complete',
   },
 ];
