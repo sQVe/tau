@@ -17,6 +17,16 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     steps:
+      # Commits and pull requests made with GITHUB_TOKEN start no workflows, so the release pull
+      # request would get no required checks. A GitHub App token makes GitHub start them.
+      - name: Mint the release token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.STOMME_APP_ID }}
+          private-key: ${{ secrets.STOMME_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -33,4 +43,4 @@ jobs:
           commit-message: 'chore: release version packages'
           pr-title: 'chore: release version packages'
           create-github-releases: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.token.outputs.token }}
