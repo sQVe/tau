@@ -1,39 +1,30 @@
-# Retrospective: <task or workspace>
+# Retrospective: <task>
 
-- Scope: <the task, ticket, branch, or pane as resolved, and the time span>
-- Workspace: <workspace and worktree>
-- Scout: <name and report file, or "none; stopped" with the reason>
+## TLDR
 
-## Findings
+<At most 5 lines.>
 
-Give each verified problem its own heading, in the order it matters. Write None under any section
-with no entry, such as when no problem is supported. Do not add entries to meet a count.
+## Accepted
 
-### <Short title of the problem>
+| Problem        | Proposal | Route                                      | Evidence           |
+| -------------- | -------- | ------------------------------------------ | ------------------ |
+| <failure mode> | <change> | <skill, tool, instruction, check, or rule> | Verified: <source> |
 
-- Observation: <what happened, in one or two sentences>
-- Evidence: <file:line or record, each marked Verified>
-- Observed effect: <what the evidence shows followed, with its source>
-- Causal hypothesis: <a possible cause, marked as a hypothesis; write None when there is none>
-- Gaps: <evidence missing, stale, or inaccessible for this finding; write None when there is none>
+At most 5 rows. Write None when no row is supported.
 
-## Refuted suspicions
+## Rejected
 
-- <Suspicion>: <the refuting evidence, marked Verified>
+- <Problem>: <reason, with the evidence that refutes it>
 
-## Supported practices
+## Backlog
 
-- <Practice>: <the evidence that shows it worked, marked Verified>
+- <Pattern, what it hit, and the check that could enforce it>
 
-## Gaps
+## Attention
 
-- <Unverified claim or missing evidence with no supported finding>: <why it is unverified or
-  missing>
+- <A risk, gap, or decision the user must make>
 
-## Not checked
+## Coverage
 
-- <Area or question not checked>: <why, such as out of scope or no access>
-
-## Sources
-
-- <Source>: <read and checked, stale, or inaccessible, with the reason>
+- Transcripts: <complete, manager only, or missing>
+- Shared record: <sources read, and each source with no result>

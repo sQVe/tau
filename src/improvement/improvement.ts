@@ -49,6 +49,11 @@ type LongLineRead =
   | { status: 'skipped'; nextOffset: number }
   | { status: 'partial'; nextOffset: number };
 
+export interface WorkerTranscriptRead {
+  readability: WorkerTranscript;
+  sessions: string[];
+}
+
 const listFiles = async (directory: string) => {
   try {
     const names = await readdir(directory, { recursive: true, encoding: 'utf8' });
@@ -156,12 +161,12 @@ const readSessions = async (paths: readonly string[]) => {
   return results;
 };
 
-export const readWorkerTranscripts = async (
+export const readWorkerTranscriptsWithPaths = async (
   agentDirectory: string,
   taskIds: ReadonlySet<string>,
-): Promise<Map<string, WorkerTranscript>> => {
+): Promise<Map<string, WorkerTranscriptRead>> => {
   const { workerRecords, workerSessions } = await findWorkerFiles(agentDirectory);
-  const workers = new Map<string, WorkerTranscript>();
+  const workers = new Map<string, WorkerTranscriptRead>();
 
   for (const recordPath of workerRecords) {
     // oxlint-disable-next-line no-await-in-loop -- Reads started together would open too many files.
@@ -176,7 +181,7 @@ export const readWorkerTranscripts = async (
     }
 
     if (read.status !== 'read' && read.status !== 'missing') {
-      workers.set(directoryName, 'unreadable');
+      workers.set(directoryName, { readability: 'unreadable', sessions: [] });
     }
 
     if (read.status !== 'read') {
@@ -192,11 +197,25 @@ export const readWorkerTranscripts = async (
     // oxlint-disable-next-line no-await-in-loop -- Reads started together would open too many files.
     const results = await readSessions(sessions);
 
-    workers.set(record.task.taskId, combinedReadability(results));
+    workers.set(record.task.taskId, {
+      readability: combinedReadability(results),
+      sessions,
+    });
   }
 
   return workers;
 };
+
+const readabilityOf = (
+  workers: ReadonlyMap<string, WorkerTranscriptRead>,
+): Map<string, WorkerTranscript> =>
+  new Map([...workers].map(([key, read]) => [key, read.readability]));
+
+export const readWorkerTranscripts = async (
+  agentDirectory: string,
+  taskIds: ReadonlySet<string>,
+): Promise<Map<string, WorkerTranscript>> =>
+  readabilityOf(await readWorkerTranscriptsWithPaths(agentDirectory, taskIds));
 
 const newlineByte = 0x0a;
 

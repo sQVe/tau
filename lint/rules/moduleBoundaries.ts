@@ -77,7 +77,11 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'github',
     entry: 'github/github',
-    publicFiles: ['github/repositoryTarget', 'github/repositoryTargetDecisions'],
+    publicFiles: [
+      'github/mergedPullRequest',
+      'github/repositoryTarget',
+      'github/repositoryTargetDecisions',
+    ],
   },
   { name: 'hc', entry: 'hc/hc', publicFiles: ['hc/connect', 'hc/events'] },
   {
@@ -86,11 +90,14 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: [
       'improvement/event',
       'improvement/projectRoot',
+      'improvement/sessionDirectory',
       'improvement/status',
       'improvement/statusDecision',
       'improvement/sweep',
       'improvement/sweepIndex',
+      'improvement/taskMapping',
       'improvement/taskSignals',
+      'improvement/taskTranscripts',
       'improvement/transcript',
       'improvement/workerRecord',
     ],

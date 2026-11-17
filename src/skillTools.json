@@ -12,5 +12,6 @@
   "pr": ["pr", "full_check", "stack", "draft_review"],
   "tdd": ["mutation_check"],
   "pr-feedback": ["pr_feedback"],
+  "retrospective": ["improvement"],
   "tracker": ["tracker_evidence", "ticket", "draft_review"]
 }

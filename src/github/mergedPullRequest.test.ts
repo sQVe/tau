@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 
-import { createExecFake, failedResult, succeededResult } from '../../../tests/execFake.js';
-import type { ExecResult } from '../../../tests/execFake.js';
-import { readMergedPullRequest } from './pullRequestReads.js';
+import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
+import type { ExecResult } from '../../tests/execFake.js';
+import { readMergedPullRequest } from './mergedPullRequest.js';
 
 const url = 'https://github.com/owner/repo/pull/42';
 

@@ -49,6 +49,8 @@ the sweep at manager session start.
 - A tool call whose shape or result the reader does not know is missing evidence. The counts it
   affects read unknown, not zero. Each task also reports whether its manager and worker transcripts
   were found.
+- The `improvement` tool reads a task's transcript paths for a review, and the skill finds no
+  transcripts itself.
 - Review signals are pure rules over those counts, with thresholds set on past merged tasks. A count
   at its threshold fires even when some of its facts are missing. A count below its threshold with
   missing facts, or on a task without transcript coverage, reads unknown. The revert signal comes
@@ -86,8 +88,9 @@ counts as never run, so any review or correction makes it due.
 
 ### Approval
 
-Automatic steps only propose. The user approves each change before Tau edits a skill, check, rule,
-or ticket.
+Automatic steps only propose. The user approves each row of a review before Tau edits a skill,
+check, rule, or ticket. An approved row opens a worktree and a handover in the owning project, and
+that session files the ticket. A review saves `review`, `backlog`, and `decision` events.
 
 ## Consequences
 

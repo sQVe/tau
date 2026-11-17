@@ -86,6 +86,7 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
+  'src/extensions/improvement/recordRequest.ts',
   'src/extensions/inbox/arrivalDecision.ts',
   'src/extensions/inbox/guardDecision.ts',
   'src/extensions/mergeWatch/autoMergeRequest.ts',
@@ -173,6 +174,7 @@ const pureModules = [
   'src/fileLock/lockHolderDecision.ts',
   'src/github/pullRequestDecisions.ts',
   'src/github/repositoryTargetDecisions.ts',
+  'src/improvement/sessionDirectory.ts',
   'src/improvement/signals.ts',
   'src/improvement/statusDecision.ts',
   'src/improvement/sweepDecision.ts',
@@ -252,11 +254,13 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 
 // The outside libraries a registered module may import, by module path.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
+  'src/extensions/improvement/recordRequest.ts': ['node:path', 'typebox'],
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/projectPath.ts': ['node:path'],
   'src/extensions/tdd/runner/cargoInputFiles.ts': ['node:path'],
   'src/extensions/tdd/runner/junit.ts': ['@xmldom/xmldom'],
   'src/extensions/tdd/runner/report.ts': ['node:path'],
+  'src/improvement/sessionDirectory.ts': ['node:path'],
   'src/improvement/taskFacts.ts': ['node:path'],
   'src/improvement/taskMapping.ts': ['node:path'],
   'src/improvement/transcript.ts': ['typebox'],

@@ -1,13 +1,16 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, realpath } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
+import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { createExecFake, failedResult, succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { published, sessionHeader, workerLaunch } from '../../../tests/transcriptHarness.js';
 import { parseEvent, writeEvent } from '../../improvement/event.js';
 import type { ImprovementEvent } from '../../improvement/event.js';
 import type { ImprovementStatus } from '../../improvement/statusDecision.js';
@@ -19,6 +22,11 @@ import improvementExtension from './improvement.js';
 type SweepRunner = (options: SweepOptions) => Promise<SweepOutcome>;
 
 type SetStatus = (key: string, text: string | undefined) => void;
+
+interface RecordDetails {
+  id: string;
+  path: string;
+}
 
 const pullRequest = 'https://github.com/sQVe/tau/pull/562';
 
@@ -90,9 +98,10 @@ const runManagerToolResult = async (
   cwd: string,
   input: Record<string, unknown>,
   setStatus: SetStatus = () => undefined,
+  exec = fakeExtensionApi().pi.exec,
 ) => {
   vi.stubEnv('TAU_ROLE', undefined);
-  const fake = fakeExtensionApi();
+  const fake = fakeExtensionApi({ exec });
 
   improvementExtension(fake.pi);
   const tool = fake.tools.get('improvement');
@@ -113,6 +122,35 @@ const runManagerTool = async <Details>(
 
   return result.details as Details;
 };
+
+const runTaskTool = async (
+  cwd: string,
+  input: Record<string, unknown>,
+  exec: ReturnType<typeof fakeExtensionApi>['pi']['exec'],
+): Promise<unknown> => {
+  const result = await runManagerToolResult(cwd, input, () => undefined, exec);
+
+  return result.details;
+};
+
+const writeFile = (path: string, content: string) => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+};
+
+const mergedPullRequestExec = () =>
+  createExecFake<'merged'>({
+    keyOf: () => 'merged',
+    handlerFor: () => () =>
+      succeededResult(
+        JSON.stringify({
+          number: 7,
+          headRefName: 'me-7-change',
+          createdAt: '2026-11-01T00:00:00.000Z',
+          mergedAt: '2026-11-02T00:00:00.000Z',
+        }),
+      ),
+  });
 
 it('registers no improvement tool in a worker', () => {
   vi.stubEnv('TAU_ROLE', 'worker');
@@ -142,8 +180,9 @@ it('starts no sweep in a worker session', () => {
 it('records a correction from the session the manager runs', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const { path } = await runManagerTool<{ path: string }>(root, {
+  const { path } = await runManagerTool<RecordDetails>(root, {
     action: 'record',
+    kind: 'correction',
     summary: 'Use run_tests for tests.',
   });
 
@@ -332,23 +371,255 @@ it('refreshes the status item after a record call', async () => {
   await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'caughtUp'));
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
-  await runManagerTool(root, { action: 'record', summary: 'Use run_tests.' }, setStatus);
+  await runManagerTool(
+    root,
+    { action: 'record', kind: 'correction', summary: 'Use run_tests.' },
+    setStatus,
+  );
 
   await vi.waitFor(() => {
     expect(setStatus).toHaveBeenCalledWith('improvement', 'improve: correct due');
   });
 });
 
+it('records a review from the session the manager runs', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const { id, path } = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'review',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    outcome: 'The task passed.',
+  });
+
+  const event = parseEvent(path, await readFile(path, 'utf8'));
+
+  expect(id).toMatch(/^review-[0-9a-f]{32}$/u);
+
+  expect(event).toMatchObject({
+    id,
+    kind: 'review',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    outcome: 'The task passed.',
+    evidence: [
+      { kind: 'transcript', path: '/sessions/one.jsonl', toolCallId: 'call-1' },
+      { kind: 'pullRequest', url: 'https://github.com/example/repo/pull/1' },
+    ],
+  });
+});
+
+it('records a backlog item from the session the manager runs', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const review = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'review',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    outcome: 'The task passed.',
+  });
+
+  const { id, path } = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'backlog',
+    review: review.id,
+    item: 2,
+    summary: 'Split the module.',
+  });
+
+  const event = parseEvent(path, await readFile(path, 'utf8'));
+
+  expect(id).toBe(`backlog-${review.id}-2`);
+
+  expect(event).toMatchObject({
+    id,
+    kind: 'backlog',
+    summary: 'Split the module.',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+  });
+});
+
+it('records a decision from the session the manager runs', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const review = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'review',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    outcome: 'The task passed.',
+  });
+
+  const { id, path } = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'decision',
+    review: review.id,
+    item: 2,
+    choice: 'approved',
+  });
+
+  const event = parseEvent(path, await readFile(path, 'utf8'));
+
+  expect(id).toBe(`decision-${review.id}-2`);
+
+  expect(event).toMatchObject({ id, kind: 'decision', subject: review.id, choice: 'approved' });
+});
+
 it('refuses a record call without a summary', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const failure = await runManagerTool(root, { action: 'record' }).then(
+  const failure = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'correction',
+  }).then(
     () => 'no error',
     (error: unknown) => (error instanceof Error ? error.message : String(error)),
   );
 
   expect({ failure, saved: existsSync(join(root, '.tau', 'improvement')) }).toEqual({
-    failure: 'record needs summary.',
+    failure: 'record kind correction needs summary.',
     saved: false,
+  });
+});
+
+it('reads a merged task through the improvement tool', async () => {
+  const worktree = await createTemporaryRepository(onTestFinished);
+  const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
+  const exec = mergedPullRequestExec();
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agent);
+
+  const sessionDirectory = SessionManager.create(worktree).getSessionDir();
+  const manager = join(sessionDirectory, 'main.jsonl');
+  const worker = join(agent, 'tau', 'main-1', 'workers', 'w1', 'session.jsonl');
+
+  writeFile(manager, [sessionHeader(worktree), ...published(7), ...workerLaunch('w1')].join('\n'));
+
+  writeFile(
+    join(agent, 'tau', 'main-1', 'workers', 'w1', 'task.json'),
+    '{"taskId":"w1","createdAt":1}',
+  );
+
+  writeFile(worker, sessionHeader('/worker'));
+
+  const details = await runTaskTool(
+    worktree,
+    {
+      action: 'task',
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+      worktree,
+    },
+    exec.exec,
+  );
+
+  expect(details).toEqual({
+    pullRequest: 'https://github.com/owner/repo/pull/7',
+    manager: [manager],
+    workers: [worker],
+    coverage: 'complete',
+    projectRoot: worktree,
+  });
+});
+
+it('creates no session folder when reading a task', async () => {
+  const worktree = await createTemporaryRepository(onTestFinished);
+  const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
+  const exec = mergedPullRequestExec();
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agent);
+
+  const before = readdirSync(agent);
+
+  const details = await runTaskTool(
+    worktree,
+    {
+      action: 'task',
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+      worktree,
+    },
+    exec.exec,
+  );
+
+  expect(details).toMatchObject({ coverage: 'missing' });
+  expect(readdirSync(agent)).toEqual(before);
+});
+
+it('refuses a task whose merged pull request cannot be read', async () => {
+  const worktree = await createTemporaryRepository(onTestFinished);
+  const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
+
+  const exec = createExecFake<'merged'>({
+    keyOf: () => 'merged',
+    handlerFor: () => () => failedResult('HTTP 502'),
+  });
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agent);
+
+  const failure = await runTaskTool(
+    worktree,
+    {
+      action: 'task',
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+      worktree,
+    },
+    exec.exec,
+  ).then(
+    () => 'no error',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  expect(failure).toContain('https://github.com/owner/repo/pull/7');
+});
+
+it('refuses a task whose session folder cannot be read', async () => {
+  const worktree = await createTemporaryRepository(onTestFinished);
+  const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
+  const exec = mergedPullRequestExec();
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agent);
+
+  const sessionDirectory = SessionManager.create(worktree).getSessionDir();
+
+  rmSync(sessionDirectory, { recursive: true, force: true });
+  writeFile(sessionDirectory, 'not a directory');
+
+  const failure = await runTaskTool(
+    worktree,
+    {
+      action: 'task',
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+      worktree,
+    },
+    exec.exec,
+  ).then(
+    () => 'no error',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  expect(failure).toContain(sessionDirectory);
+});
+
+it('returns no project root when the task worktree is gone', async () => {
+  const worktree = await createTemporaryRepository(onTestFinished);
+  const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
+  const exec = mergedPullRequestExec();
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agent);
+  rmSync(worktree, { recursive: true, force: true });
+
+  const details = await runTaskTool(
+    worktree,
+    {
+      action: 'task',
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+      worktree,
+    },
+    exec.exec,
+  );
+
+  expect(details).toMatchObject({
+    pullRequest: 'https://github.com/owner/repo/pull/7',
+    manager: [],
+    workers: [],
+    coverage: 'missing',
+    projectRoot: null,
   });
 });
