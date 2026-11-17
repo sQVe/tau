@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { runCommand } from '../../command.js';
 import type { CommandRuntime } from '../../command.js';
+import { parseModelReference } from '../../config/models.js';
 import { isMissingFile } from '../../errors.js';
 import { existingEntry } from '../../tauDirectory.js';
 import { readHandoverText } from './handoverFile.js';
@@ -21,8 +22,21 @@ export interface StartHandoverResult {
   reply: string;
 }
 
-const piArguments = (model: string | undefined): string[] =>
-  model === undefined ? ['pi'] : ['pi', '--model', model];
+// Pi treats a provider prefix in --model as a hint and can fall back to another provider's model
+// with the same ID. --provider pins the provider that validation accepted.
+const piArguments = (model: string | undefined): string[] => {
+  if (model === undefined) {
+    return ['pi'];
+  }
+
+  const reference = parseModelReference(model);
+
+  if (reference === undefined) {
+    return ['pi', '--model', model];
+  }
+
+  return ['pi', '--provider', reference.provider, '--model', reference.id];
+};
 
 const tabArguments = (
   space: string,

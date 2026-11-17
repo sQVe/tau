@@ -428,7 +428,9 @@ it('passes the model to the new Pi through herdr-app', async () => {
     modelContext(root, onTestFinished),
   );
 
-  expect(app.calls.map(argvOf)).toEqual(['["pi","--model","morph/morph-dsv41flash-1017"]']);
+  expect(app.calls.map(argvOf)).toEqual([
+    '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
+  ]);
 });
 
 it('refuses a start without a space or name before any herdr-app call', async () => {

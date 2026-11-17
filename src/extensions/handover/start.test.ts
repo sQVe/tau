@@ -117,7 +117,7 @@ it('passes the model to a new tab in the space', async () => {
         '--folder',
         root,
         '--argv',
-        '["pi","--model","morph/morph-dsv41flash-1017"]',
+        '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
         '--task',
         'Next steps\n',
         '--focus',
@@ -148,7 +148,38 @@ it('passes the model to a new space', async () => {
         '--folder',
         root,
         '--argv',
-        '["pi","--model","morph/morph-dsv41flash-1017"]',
+        '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
+        '--task',
+        'Next steps\n',
+        '--focus',
+        'false',
+      ],
+    },
+  ]);
+});
+
+it('pins the provider so a colliding model ID cannot resolve to another provider', async () => {
+  const fake = createAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await startHandover(
+    { exec: fake.exec, cwd: root },
+    { ...requestFor(root, file, { space: 'space-1' }), model: 'direct/chat' },
+  );
+
+  expect(commandsOf(fake)).toEqual([
+    {
+      command: 'herdr-app',
+      commandArguments: [
+        'do',
+        'tab.new',
+        '--space',
+        'space-1',
+        '--folder',
+        root,
+        '--argv',
+        '["pi","--provider","direct","--model","chat"]',
         '--task',
         'Next steps\n',
         '--focus',
