@@ -38,7 +38,8 @@ session fails or times out, the manager still briefs the worker, which records t
    print `report has Added: milk` and `report has 1. [ ] milk`:
 
    ```sh
-   report=$(jq -r 'select(.type == "message_start" and .message.role == "custom")
+   report=$(jq -r 'select(.type == "message_start" and .message.role == "custom"
+     and .message.customType == "tau-worker-report")
      | .message.content | tostring' "$log")
    printf '%s' "$report" | grep -q 'Added: milk' && echo 'report has Added: milk'
    printf '%s' "$report" | grep -qF '1. [ ] milk' && echo 'report has 1. [ ] milk'
