@@ -92,6 +92,28 @@ it('writes a pass event to the current root when the index lists another project
   );
 });
 
+it('writes a pass event to the indexed roots from a cwd outside Git', async () => {
+  const indexed = await createProject();
+  const agentDirectory = createAgentDirectory();
+  const outside = temporaryDirectory(onTestFinished, 'tau-outside-');
+
+  await writeSweepIndex(agentDirectory, indexFor([indexed]));
+
+  const result = await recordPass(agentDirectory, factsFor(outside));
+
+  expect(result.failed).toEqual([]);
+  expect(result.paths).toEqual([join(eventDirectory(indexed), `${result.id}.json`)]);
+});
+
+it('refuses a pass with no project root to write to', async () => {
+  const agentDirectory = createAgentDirectory();
+  const outside = temporaryDirectory(onTestFinished, 'tau-outside-');
+
+  await expect(recordPass(agentDirectory, factsFor(outside))).rejects.toThrow(
+    `No project root to record the pass in from ${outside}.`,
+  );
+});
+
 it('writes a pass event to the current root when the index is missing', async () => {
   const project = await createProject();
   const agentDirectory = createAgentDirectory();
