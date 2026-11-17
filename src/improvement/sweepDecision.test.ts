@@ -1,4 +1,4 @@
-import { array, constantFrom, property, tuple, uniqueArray } from 'fast-check';
+import { array, assert, constantFrom, property, tuple, uniqueArray } from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { ImprovementEvent } from './event.ts';
@@ -104,30 +104,32 @@ describe('discoveryOrder', () => {
       })),
     );
 
-    property(candidate, (candidates) => {
-      const order = discoveryOrder(candidates);
-      const kept = candidates.filter(({ status }) => status !== 'resolved');
+    assert(
+      property(candidate, (candidates) => {
+        const order = discoveryOrder(candidates);
+        const kept = candidates.filter(({ status }) => status !== 'resolved');
 
-      const unseen = order.filter(
-        (path) => candidates.find((entry) => entry.path === path)?.status === 'new',
-      );
+        const unseen = order.filter(
+          (path) => candidates.find((entry) => entry.path === path)?.status === 'new',
+        );
 
-      const retried = order.filter(
-        (path) => candidates.find((entry) => entry.path === path)?.status === 'unresolved',
-      );
+        const retried = order.filter(
+          (path) => candidates.find((entry) => entry.path === path)?.status === 'unresolved',
+        );
 
-      expect(order).toHaveLength(kept.length);
-      expect(new Set(order).size).toBe(order.length);
-      expect(order).toEqual([...unseen, ...retried]);
+        expect(order).toHaveLength(kept.length);
+        expect(new Set(order).size).toBe(order.length);
+        expect(order).toEqual([...unseen, ...retried]);
 
-      expect(unseen).toEqual(
-        candidates.filter(({ status }) => status === 'new').map(({ path }) => path),
-      );
+        expect(unseen).toEqual(
+          candidates.filter(({ status }) => status === 'new').map(({ path }) => path),
+        );
 
-      expect(retried).toEqual(
-        candidates.filter(({ status }) => status === 'unresolved').map(({ path }) => path),
-      );
-    });
+        expect(retried).toEqual(
+          candidates.filter(({ status }) => status === 'unresolved').map(({ path }) => path),
+        );
+      }),
+    );
   });
 });
 
