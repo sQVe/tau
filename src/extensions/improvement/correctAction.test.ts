@@ -128,6 +128,15 @@ it('returns the ranked classes and measures', async () => {
     medianFixRounds: { value: 2.5, coverage: 2 },
     acceptanceRate: { value: 1, coverage: 1 },
   });
+
+  expect(result.projectRoots).toEqual([project]);
+
+  expect(result.eventOwners).toEqual(
+    expect.arrayContaining([
+      { id: saved.id, projectRoot: project },
+      { id: `decision-${saved.id}`, projectRoot: project },
+    ]),
+  );
 });
 
 it('returns the evidence, measures, and skipped notices without classes', async () => {
@@ -158,6 +167,14 @@ it('returns the evidence, measures, and skipped notices without classes', async 
   expect(result.skipped).toHaveLength(1);
   expect(result.skipped[0]?.path).toBe(newerPath);
   expect(result.coverage).toEqual({ complete: 0, managerOnly: 0, missing: 0 });
+  expect(result.projectRoots).toEqual([project]);
+
+  expect(result.eventOwners).toEqual(
+    expect.arrayContaining([
+      { id: rejected.id, projectRoot: project },
+      { id: `decision-${rejected.id}`, projectRoot: project },
+    ]),
+  );
 });
 
 it('reports a failed project and keeps the other evidence', async () => {
@@ -178,4 +195,6 @@ it('reports a failed project and keeps the other evidence', async () => {
   expect(result.failed).toHaveLength(1);
   expect(result.failed[0]?.projectRoot).toBe(malformed);
   expect(result.failed[0]?.reason).toContain(brokenPath);
+  expect(result.projectRoots).toEqual([readable]);
+  expect(result.eventOwners).toEqual([{ id: saved.id, projectRoot: readable }]);
 });

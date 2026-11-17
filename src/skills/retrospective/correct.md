@@ -6,6 +6,8 @@ proposed checks.
 
 1. Call the `improvement` tool with `action: correct` and no classes. Read:
    - `events`: every saved event from each project root.
+   - `projectRoots`: the project roots whose events were read.
+   - `eventOwners`: the project root each event came from, with its event ID.
    - `measures`: `repeatRateAfterCheck`, `medianFixRounds`, and `acceptanceRate`. Each has a `value`
      and a `coverage`.
    - `rejected`: the class IDs whose latest decision is `rejected`.
@@ -13,7 +15,8 @@ proposed checks.
      event files skipped and why; the project roots that failed. The measures cover every saved
      event. They do not include reverts or review comments, which step 2 adds.
 2. Read the last 30 days of evidence outside the event log:
-   - For each project root, run `git -C <root> log --since=30.days --grep=Revert --oneline`.
+   - For each root in `projectRoots`, run
+     `git -C <root> log --since=30.days --grep=Revert --oneline`.
    - For each PR URL in the events, run `gh pr view <url> --json reviews,comments`.
    - For each of those PRs, run `gh api repos/<owner>/<name>/pulls/<number>/comments`.
    - A source with no result is a fact. A failed read is unknown, not empty.
@@ -41,8 +44,8 @@ proposed checks.
    `kind: decision`, `class` set to the returned class ID, and `choice` set to `approved`,
    `rejected`, or `redirected`.
 8. For each approved or redirected class, follow [SKILL.md](SKILL.md) step 10 to open a worktree tab
-   and hand over the fix. The owning project is the project root with the most occurrences. Ask when
-   two roots tie.
+   and hand over the fix. The owning project is the project root with the most occurrences in
+   `eventOwners`. Ask when two roots tie or an occurrence has no owner.
 9. Call `improvement` with `action: record` and `kind: pass` after the answers are saved, so
    `correct due` clears. With no classes, record the pass at once. On cancellation, record nothing.
    A failed worktree or handover is reported and does not block the pass.

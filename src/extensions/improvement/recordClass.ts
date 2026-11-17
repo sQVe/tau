@@ -1,15 +1,14 @@
-import { basename } from 'node:path';
-
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { classEventId } from '../../improvement/classIdentity.js';
 import type { ClassLevel } from '../../improvement/correctDecision.js';
-import { eventDirectory, readEvents, writeEvent } from '../../improvement/event.js';
+import { writeEvent } from '../../improvement/event.js';
 import type { ImprovementEvent } from '../../improvement/event.js';
 import { findProjectRoot } from '../../improvement/projectRoot.js';
 import { evidenceOf, sessionFacts } from './recordAction.js';
 import type { RecordResult, SessionFacts } from './recordAction.js';
 import type { RecordRequest } from './recordRequest.js';
+import { findSavedEvent } from './savedEvent.js';
 
 type ClassEvent = Extract<ImprovementEvent, { kind: 'class' }>;
 
@@ -31,22 +30,8 @@ export type ClassRequest =
   | Extract<RecordRequest, { kind: 'class' }>
   | Extract<RecordRequest, { kind: 'decision'; class: string }>;
 
-const findClass = async (projectRoot: string, id: string): Promise<ClassEvent> => {
-  const { events, skipped } = await readEvents(projectRoot);
-  const skippedClass = skipped.find(({ path }) => basename(path) === `${id}.json`);
-
-  if (skippedClass !== undefined) {
-    throw new Error(skippedClass.notice);
-  }
-
-  const event = events.find((candidate) => candidate.id === id);
-
-  if (event?.kind !== 'class') {
-    throw new Error(`No class event ${id} in ${eventDirectory(projectRoot)}.`);
-  }
-
-  return event;
-};
+const findClass = (projectRoot: string, id: string): Promise<ClassEvent> =>
+  findSavedEvent(projectRoot, id, 'class');
 
 export const recordClass = async (facts: ClassFacts): Promise<RecordResult> => {
   const projectRoot = await findProjectRoot(facts.cwd);

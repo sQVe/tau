@@ -6,7 +6,13 @@ import { afterEach, expect, it, onTestFinished } from 'vitest';
 import { createTemporaryRepository } from '../../tests/gitRepository.ts';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
 import { isMissingFile } from '../errors.ts';
-import { readCorrectSources } from './correctSources.ts';
+import {
+  correctEventOwners,
+  correctEvents,
+  correctFailed,
+  correctProjectRoots,
+  readCorrectSources,
+} from './correctSources.ts';
 import { writeEvent } from './event.ts';
 import type { ImprovementEvent } from './event.ts';
 import { sweepIndexPath, writeSweepIndex } from './sweepIndex.ts';
@@ -104,9 +110,17 @@ it('reads events from every project root in the index', async () => {
 
   const sources = await readCorrectSources({ agentDirectory, cwd: first });
 
-  expect(sources.events).toHaveLength(2);
-  expect(sources.events).toEqual(expect.arrayContaining([firstEvent, secondEvent]));
-  expect(sources.unknownProjects).toEqual([]);
+  expect(correctEvents(sources)).toHaveLength(2);
+  expect(correctEvents(sources)).toEqual(expect.arrayContaining([firstEvent, secondEvent]));
+  expect(correctFailed(sources)).toEqual([]);
+  expect(correctProjectRoots(sources)).toEqual([first, second].toSorted());
+
+  expect(correctEventOwners(sources)).toEqual(
+    expect.arrayContaining([
+      { id: firstEvent.id, projectRoot: first },
+      { id: secondEvent.id, projectRoot: second },
+    ]),
+  );
 });
 
 it('adds the current project root when the index is missing', async () => {
@@ -118,8 +132,10 @@ it('adds the current project root when the index is missing', async () => {
 
   const sources = await readCorrectSources({ agentDirectory, cwd: project });
 
-  expect(sources.events).toEqual([event]);
-  expect(sources.unknownProjects).toEqual([]);
+  expect(correctEvents(sources)).toEqual([event]);
+  expect(correctFailed(sources)).toEqual([]);
+  expect(correctProjectRoots(sources)).toEqual([project]);
+  expect(correctEventOwners(sources)).toEqual([{ id: event.id, projectRoot: project }]);
 });
 
 it('reports a project whose events cannot be read as unknown', async () => {
@@ -135,8 +151,13 @@ it('reports a project whose events cannot be read as unknown', async () => {
 
   const sources = await readCorrectSources({ agentDirectory, cwd: first });
 
-  expect(sources.unknownProjects).toEqual([second]);
-  expect(sources.events).toEqual([firstEvent]);
+  const failed = correctFailed(sources);
+
+  expect(failed.map(({ projectRoot }) => projectRoot)).toEqual([second]);
+  expect(failed[0]?.reason).toContain(join(eventDirectory(second), 'broken.json'));
+  expect(correctEvents(sources)).toEqual([firstEvent]);
+  expect(correctProjectRoots(sources)).toEqual([first]);
+  expect(correctEventOwners(sources)).toEqual([{ id: firstEvent.id, projectRoot: first }]);
 });
 
 it('returns no events when no project root is known', async () => {
@@ -145,7 +166,7 @@ it('returns no events when no project root is known', async () => {
 
   const sources = await readCorrectSources({ agentDirectory, cwd: directory });
 
-  expect(sources).toEqual({ projects: [], events: [], unknownProjects: [], skipped: [] });
+  expect(sources).toEqual({ projects: [] });
 });
 
 it('writes nothing while reading', async () => {

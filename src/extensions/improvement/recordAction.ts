@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { basename } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { eventDirectory, readEvents, writeEvent } from '../../improvement/event.js';
+import { writeEvent } from '../../improvement/event.js';
 import type { ImprovementEvent, WriteOutcome } from '../../improvement/event.js';
 import { findProjectRoot } from '../../improvement/projectRoot.js';
 import type { RecordRequest } from './recordRequest.js';
+import { findSavedEvent } from './savedEvent.js';
 
 export interface SessionFacts {
   cwd: string;
@@ -70,24 +70,8 @@ export const evidenceOf = (facts: SessionFacts): ImprovementEvent['evidence'][nu
   return { kind: 'transcript', path: facts.sessionFile, toolCallId: facts.toolCallId };
 };
 
-const isReviewEvent = (event: ImprovementEvent): event is ReviewEvent => event.kind === 'review';
-
-const findReview = async (projectRoot: string, review: string): Promise<ReviewEvent> => {
-  const { events, gaps } = await readEvents(projectRoot);
-  const reviewGap = gaps.find(({ path }) => basename(path) === `${review}.json`);
-
-  if (reviewGap !== undefined) {
-    throw new Error(reviewGap.reason);
-  }
-
-  const event = events.find((candidate) => candidate.id === review);
-
-  if (event === undefined || !isReviewEvent(event)) {
-    throw new Error(`No review event ${review} in ${eventDirectory(projectRoot)}.`);
-  }
-
-  return event;
-};
+const findReview = (projectRoot: string, review: string): Promise<ReviewEvent> =>
+  findSavedEvent(projectRoot, review, 'review');
 
 export const recordCorrection = async (facts: CorrectionFacts): Promise<RecordResult> => {
   const projectRoot = await findProjectRoot(facts.cwd);
