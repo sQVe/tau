@@ -15,7 +15,7 @@ export default function architectExtension(pi: ExtensionAPI): void {
 
   if (askRecordPath !== undefined && askRecordPath !== '') {
     registerAskMode(pi, askRecordPath);
-  } else {
+  } else if (currentRole() === 'architect') {
     pi.on('tool_result', (event, context) => {
       if (isQueuedHandover(event)) {
         context.shutdown();
