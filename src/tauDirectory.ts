@@ -275,9 +275,6 @@ export const findTauRoot = async (cwd: string, toolName: string): Promise<string
   return bareRootOf(await gitDirectoryOf(cwd, toolName));
 };
 
-// Resolves the repository root that every worktree shares: the bare root for this repository's
-// bare-plus-worktrees layout, the checkout for a normal clone, and the repository itself for a
-// conventional bare repository.
 export const findSharedRepositoryRoot = async (
   cwd: string,
   options: Pick<GitOptions, 'signal'> = {},
