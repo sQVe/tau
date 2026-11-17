@@ -21,8 +21,13 @@ drafts it never showed the user.
 Each review record holds a versioned viewer protocol, and `collect` reads a viewer's reply through
 it.
 
-- `request.json` names the review ID, which is the record directory name, and the ordered file pairs
-  the review staged. `open` writes it beside `review.json`.
+- `request.json` is protocol version 2. It names the review ID, which is the record directory name;
+  `managerTerminal`, the hc address of the terminal whose Pi session called `draft_review open`
+  (`null` outside hc, and never the viewer's terminal); the absolute `stagingDirectory`; an optional
+  `reviewedItem` with an identifier and an https URL; and the ordered file pairs the review staged.
+  `open` writes it beside `review.json`. A viewer opens `join(stagingDirectory, stagedPath)`. A
+  stagedPath is relative and `/`-separated; a backslash is a name character, not a separator. A
+  reader refuses an absolute stagedPath or one with any `..` segment. Version 1 is retired.
 - `comments.json` is a viewer's reply: the review ID, a state of `open`, `submitted`, or `error`
   with a reason, and comments that name a staged path with lines, type, and content.
 - `collect` validates a reply before any change. A newer version, malformed JSON, another review ID,
@@ -36,8 +41,10 @@ it.
 - Both files are versions of the shared saved-record format, so a reader gets the same version and
   schema errors as other `.tau/` records.
 - `src/extensions/draftReview/fixtures/viewerProtocol/` holds frozen current, newer, malformed,
-  foreign-ID, path-outside, and error fixtures. A viewer project can pin them by Tau commit and test
-  that it reads and writes the contract a Tau version expects.
+  foreign-ID, path-outside, and error comment fixtures. Its `request/` folder holds six request
+  fixtures: `current.json`, `manual.json`, `newer.json`, `malformed.json`,
+  `staged-path-outside.json`, and `version-1.json`. A viewer project can pin them by Tau commit and
+  test that it reads and writes the contract a Tau version expects.
 
 The slice that removes tuicr supersedes
 [ADR 0112](./0112-review-collaborative-drafts-as-files-in-tuicr.md).

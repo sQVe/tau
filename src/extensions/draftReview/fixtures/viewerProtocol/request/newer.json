@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "reviewId": "review-AbC123",
+  "managerTerminal": "t28",
+  "stagingDirectory": "/tmp/tau-draft-review-AbC123",
+  "reviewedItem": {
+    "identifier": "ME-1421",
+    "url": "https://linear.app/sqve/issue/ME-1421"
+  },
+  "files": [
+    {
+      "path": "notes/title.md",
+      "stagedPath": "01-notes/1-title.md"
+    },
+    {
+      "path": "notes/body.md",
+      "stagedPath": "01-notes/2-body.md"
+    }
+  ]
+}

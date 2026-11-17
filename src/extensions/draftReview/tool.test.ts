@@ -478,6 +478,29 @@ it('opens tuicr in a manager tab with the space label and --bg, then saves a ver
   });
 });
 
+it('writes the manager terminal, not the review terminal, into request.json', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+  const details = opened.details;
+
+  if (details.status !== 'opened') {
+    throw new Error(`Expected an opened review, got ${details.status}`);
+  }
+
+  const request = JSON.parse(await readFile(join(details.directory, 'request.json'), 'utf8')) as {
+    version: number;
+    managerTerminal: unknown;
+    stagingDirectory: string;
+  };
+
+  const { stagingDirectory } = await readReview(context.repository, details.directory);
+
+  expect(request.version).toBe(2);
+  expect(request.managerTerminal).toBe('manager');
+  expect(request.managerTerminal).not.toBe(reviewAddress);
+  expect(request.stagingDirectory).toBe(stagingDirectory);
+});
+
 it('returns comments after an hc wait reports the terminal ended', async () => {
   const context = await fixture({ space: 'space-a' });
   const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });

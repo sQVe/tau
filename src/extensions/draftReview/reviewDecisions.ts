@@ -126,6 +126,11 @@ export const selectReviewedComments = (
     return file === undefined ? [] : [{ ...comment, path: file.path }];
   });
 
+// A viewer opens join(stagingDirectory, stagedPath), so a staged path must stay a relative,
+// `/`-separated name. A backslash is an ordinary name character.
+export const isStagedPathRefused = (stagedPath: string): boolean =>
+  stagedPath.startsWith('/') || stagedPath.split('/').includes('..');
+
 export const decideViewerReply = (facts: ViewerReplyFacts): ViewerReplyDecision => {
   if (facts.state.kind === 'error') {
     return { kind: 'viewer-error', reason: facts.state.reason };

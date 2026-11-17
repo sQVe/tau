@@ -4,6 +4,7 @@ import {
   decideDestination,
   decideEdit,
   decideWaitOutcome,
+  isStagedPathRefused,
   selectReviewedComments,
   stagedNames,
 } from './reviewDecisions.js';
@@ -153,3 +154,16 @@ it.each([
     expect(decideDestination({ kind, linkCount, insideTauDirectory: inside })).toBe(expected);
   },
 );
+
+it.each([
+  { stagedPath: 'notes.md', refused: false },
+  { stagedPath: '01-notes/1-body.md', refused: false },
+  { stagedPath: '01-notes/1-a\\b.md', refused: false },
+  { stagedPath: '01-notes/..notes.md', refused: false },
+  { stagedPath: '/tmp/outside.md', refused: true },
+  { stagedPath: '../outside.md', refused: true },
+  { stagedPath: '01-notes/../01-notes/2-body.md', refused: true },
+  { stagedPath: '01-notes/..', refused: true },
+])('refuses $stagedPath: $refused', ({ stagedPath, refused }) => {
+  expect(isStagedPathRefused(stagedPath)).toBe(refused);
+});

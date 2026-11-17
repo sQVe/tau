@@ -4,6 +4,11 @@ import { kill, readCurrentTerminal, run, wait } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { decideWaitOutcome } from './reviewDecisions.js';
 
+export interface RequestingManager {
+  address: string;
+  space: string | undefined;
+}
+
 export interface ReviewTerminalRequest {
   stagingDirectory: string;
   space: string;
@@ -25,11 +30,16 @@ export class TuicrExitTimeoutError extends Error {
   override name = 'TuicrExitTimeoutError';
 }
 
-export const reviewSpace = async (runtime: HcRuntime): Promise<string | undefined> => {
+export const readRequestingManager = async (
+  runtime: HcRuntime,
+): Promise<RequestingManager | undefined> => {
   const terminal = await readCurrentTerminal(runtime);
-  const labels = terminal?.labels;
 
-  return labels?.['herdr.space'];
+  if (terminal === undefined) {
+    return undefined;
+  }
+
+  return { address: terminal.address, space: terminal.labels?.['herdr.space'] };
 };
 
 export const openReviewTerminal = async (

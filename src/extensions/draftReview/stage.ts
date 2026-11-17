@@ -210,6 +210,19 @@ export const saveTerminal = async (review: Review, address: string): Promise<voi
   review.terminal = terminal;
 };
 
+export const saveViewerRequest = async (
+  review: Review,
+  managerTerminal: string | null,
+): Promise<void> => {
+  await writeRequest(review.recordDirectory, {
+    version: 2,
+    reviewId: basename(review.recordDirectory),
+    managerTerminal,
+    stagingDirectory: review.stagingDirectory,
+    files: review.files,
+  });
+};
+
 const populateReview = async (review: Review) => {
   const { tauDirectory, recordDirectory, stagingDirectory, files } = review;
 
@@ -230,12 +243,6 @@ const populateReview = async (review: Review) => {
   }
 
   await writeManifest(review, null);
-
-  await writeRequest(review.recordDirectory, {
-    version: 1,
-    reviewId: basename(recordDirectory),
-    files,
-  });
 };
 
 export const stageReview = async (cwd: string, requested: readonly string[]): Promise<Review> => {
