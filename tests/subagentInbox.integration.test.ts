@@ -101,7 +101,7 @@ it('queues an answer on the worker socket, shows it once, and leaves the assignm
     tauPackage: true,
   });
 
-  const asked = await waitForQuestion(worker.assignmentFilePath);
+  const asked = await waitForQuestion(worker);
   const questionId = asked.questions[0]?.questionId;
   const assignmentText = readFileSync(worker.assignmentFilePath, 'utf8');
   const assignmentFiles = readdirSync(dirname(worker.assignmentFilePath));
@@ -139,7 +139,7 @@ it('queues an answer on the worker socket, shows it once, and leaves the assignm
 
   writeFileSync(join(asked.cwd, reportReleaseFile), '');
 
-  const reported = await waitForReport(worker.assignmentFilePath);
+  const reported = await waitForReport(worker);
 
   expect(reported.report?.evidence).toEqual([reply]);
   expect(savedAnswerEntries(asked.session.file)).toHaveLength(1);
@@ -231,7 +231,7 @@ it('resumes a saved worker session without waiting once it holds the answer rece
 
   await session.prompt(workerStartMessage);
 
-  const asked = await waitForQuestion(worker.assignmentFilePath);
+  const asked = await waitForQuestion(worker);
 
   await session.reload();
 
@@ -254,7 +254,7 @@ it('resumes a saved worker session without waiting once it holds the answer rece
 
   await resumed.session.prompt(workerStartMessage);
 
-  const reported = await waitForReport(worker.assignmentFilePath);
+  const reported = await waitForReport(worker);
 
   await shutdownSession(resumed.session);
 

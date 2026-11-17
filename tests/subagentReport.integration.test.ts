@@ -139,7 +139,7 @@ it('shows a real worker report once before it gives the worker the manager envir
     },
   });
 
-  const assignment = await waitForReport(worker.assignmentFilePath);
+  const assignment = await waitForReport(worker);
   const evidence = assignment.report?.evidence ?? [];
 
   if (worker.observationPath === undefined) {

@@ -39,7 +39,7 @@ it('resumes an ended worker with its first task in context', async () => {
     },
   });
 
-  const first = await waitForReport(worker.assignmentFilePath);
+  const first = await waitForReport(worker);
 
   expect(first.report?.outcome).toBe('success');
 
@@ -51,7 +51,7 @@ it('resumes an ended worker with its first task in context', async () => {
     acceptance: ['The follow-up reports the first task context.'],
   });
 
-  const second = await waitForReport(followUp.assignmentFilePath);
+  const second = await waitForReport(followUp);
 
   expect(second.previousAssignmentId).toBe(first.assignmentId);
   expect(second.session.file).toBe(first.session.file);

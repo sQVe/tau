@@ -160,7 +160,7 @@ it('shows a real worker question once and carries the subagent_answer reply into
     tauPackage: true,
   });
 
-  const assignment = await waitForQuestion(worker.assignmentFilePath);
+  const assignment = await waitForQuestion(worker);
 
   if (worker.observationPath === undefined) {
     throw new Error('The fixture worker got no manager probe.');
@@ -228,7 +228,7 @@ it('shows a real worker question once and carries the subagent_answer reply into
 
   expect(answered.details).toMatchObject({ status: 'queued', messageId: question.questionId });
 
-  const reported = await waitForReport(worker.assignmentFilePath);
+  const reported = await waitForReport(worker);
 
   expect(reported.report?.evidence).toContain(reply);
 
@@ -265,7 +265,7 @@ it('shows a question once across repeated delivery scans', async () => {
     acceptance: ['Report the answer.'],
   });
 
-  const assignment = await waitForQuestion(worker.assignmentFilePath);
+  const assignment = await waitForQuestion(worker);
   const question = assignment.questions[0];
 
   if (question === undefined) {
