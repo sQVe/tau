@@ -1,3 +1,4 @@
+import { createHook } from 'node:async_hooks';
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -67,5 +68,30 @@ describe('findSharedRepositoryRoot', () => {
     await expect(
       findSharedRepositoryRoot(root, { signal: AbortSignal.timeout(0) }),
     ).rejects.toThrow(/git rev-parse/u);
+  });
+
+  it('stops when its signal is aborted after Git returns', async () => {
+    const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const controller = new AbortController();
+    let armed = true;
+
+    const hook = createHook({
+      init: (_asyncId, type) => {
+        if (armed && type === 'FSREQPROMISE') {
+          armed = false;
+          controller.abort();
+        }
+      },
+    });
+
+    hook.enable();
+
+    try {
+      await expect(findSharedRepositoryRoot(root, { signal: controller.signal })).rejects.toThrow(
+        /aborted/u,
+      );
+    } finally {
+      hook.disable();
+    }
   });
 });

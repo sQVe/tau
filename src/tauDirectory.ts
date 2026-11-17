@@ -279,19 +279,29 @@ export const findSharedRepositoryRoot = async (
   cwd: string,
   options: Pick<GitOptions, 'signal'> = {},
 ): Promise<string> => {
+  const { signal } = options;
+
   const commonDirectory = await readGit(
     cwd,
     ['rev-parse', '--path-format=absolute', '--git-common-dir'],
     options,
   );
 
+  signal?.throwIfAborted();
+
   const resolved = await realpath(commonDirectory);
+
+  signal?.throwIfAborted();
 
   if (basename(resolved) === '.git') {
     return dirname(resolved);
   }
 
-  return bareRootOf(resolved);
+  const root = await bareRootOf(resolved);
+
+  signal?.throwIfAborted();
+
+  return root;
 };
 
 // Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
