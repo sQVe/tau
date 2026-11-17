@@ -234,6 +234,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - Length: aim for 100 to 150 words written this session, never over 200. Exclude kept text,
      template headings and checklist items, and verification lines. Cut repetition before adding
      length. Never repeat the diff or commit messages in the body.
+   - Final change: describe only the change as it ships. Leave out the path the work took: earlier
+     versions, review rounds, regressions found and fixed during the task, and build order.
    - Lead: one bold sentence led by PR type. Features name the user benefit; fixes give symptom then
      cause; refactors say "no behavior change" and why; tooling names the new developer action.
    - Context: one or two sentences on the cause or constraint the diff cannot show.
@@ -258,9 +260,11 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      counts. Put decision-relevant limitations as plain lines and accepted follow-ups as links in
      their template slots. Put deferred audit items in its deferred verification section.
      Bookkeeping, record matching, and unrelated issues belong in the session report.
-   - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
-     use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others. A
-     slice with an open acceptance item gets `Related to`, since `Fixes` closes it on merge.
+   - Issues: internal ticket references follow the repository's rule. Link Linear tickets as the
+     [tracker skill](../tracker/SKILL.md) says where the repository allows them, and leave them out
+     where it forbids them. For other issues, use `Fixes <issue>` only for issues this PR completes;
+     use `Related to <issue>` for others. A slice with an open acceptance item gets `Related to`,
+     since `Fixes` closes it on merge.
    - Repository template: map these rules to matching sections. Omit empty optional sections; keep
      required headings with the shortest true content, such as "None". Changes holds only parts,
      decisions, and unrelated changes. Keep the template's checklist intact; the required-action
