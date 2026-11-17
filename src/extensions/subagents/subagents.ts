@@ -18,7 +18,8 @@ import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { setAcceptCheck } from '../../inbox/inbox.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
-import { isWorkerProcess } from '../../worker.js';
+import { currentRole, isWorkerProcess } from '../../role.js';
+import { managerGuidelines } from '../../roleGuidelines.js';
 import { executeAnswer } from './answer.js';
 import { answerParameters } from './answerParameters.js';
 import { answerRequestCheck } from './answerRequest.js';
@@ -36,7 +37,6 @@ import type { LaunchRuntime } from './launch.js';
 import { checkLaunchEnvironment } from './launchCheck.js';
 import { launchParameters } from './launchParameters.js';
 import { launchModels, requireTrustedProject } from './loadout.js';
-import { delegationGuidelines } from './managerPrompt.js';
 import { readProfileModels } from './profileModels.js';
 import { listProfiles } from './profiles.js';
 import type { ProfileSummary } from './profiles.js';
@@ -314,6 +314,10 @@ export const registerWorkerScan = (
   });
 };
 
+// A worker returns before this file reads the guidelines, so only the manager kinds reach them.
+const managerRole = (): 'lead' | 'architect' =>
+  currentRole() === 'architect' ? 'architect' : 'lead';
+
 export default function subagentsExtension(
   pi: ExtensionAPI,
   capacityRefusal: CapacityRefusal,
@@ -323,7 +327,12 @@ export default function subagentsExtension(
   }
 
   const admission = new Admission();
-  let guidelines = delegationGuidelines(undefined, undefined);
+
+  let guidelines = managerGuidelines(managerRole(), {
+    loginCommand: undefined,
+    qaProcedurePath: undefined,
+    qaGuidePath,
+  });
 
   const delegating = currentTerminalAddress() !== undefined;
 
@@ -382,7 +391,11 @@ export default function subagentsExtension(
       const qaGuideExists = existsSync(resolvePath(context.cwd, qaGuidePath));
       const qaProcedurePath = qaGuideExists ? qaLaunchProcedurePath : undefined;
 
-      guidelines = delegationGuidelines(browserLoginCommand(context), qaProcedurePath);
+      guidelines = managerGuidelines(managerRole(), {
+        loginCommand: browserLoginCommand(context),
+        qaProcedurePath,
+        qaGuidePath,
+      });
     }
   });
 

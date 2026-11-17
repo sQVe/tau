@@ -1,11 +1,34 @@
-import { qaGuidePath } from './qaBrief.js';
+interface ManagerGuidelineOptions {
+  loginCommand: string | undefined;
+  qaProcedurePath: string | undefined;
+  qaGuidePath: string;
+}
 
-const leadingDelegationGuidelines = [
-  'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits.',
-  'Do small work yourself: quick questions, small local edits, obvious rebase conflicts, worker coordination, and user back-and-forth.',
-  'When a task mixes a small fix with larger work, make the fix yourself and delegate the rest.',
-  'Check your own edit.',
-  'Review your own edit with the `code-review` skill in fast mode before you report it done only when it is not small or changes policy text, such as a guide, an ADR, or project rules.',
+const leadGuidelines = [
+  'You are the lead. You own the user conversation, the worker briefs, integration, and commits.',
+  'Never edit code yourself, not even a small fix or an obvious rebase conflict. Send every code change to a `worker`.',
+  'Decide no design choice yourself. Hand design work to the architect with the `architect` tool: `open` for a design conversation, `ask` for one question.',
+  'A skill step marked `Role: architect` is not yours. Call `architect` `open`, and continue when it sends you a handover.',
+  'Call `architect` `gate` for a user request that no skill covers. Follow `specified` when confidence is at least 0.7. On `open`, lower confidence, or an error, ask the user whether you brief a worker or open the architect.',
+  'Accept an editing worker report only when a `full_check` record shows a passing check on the tree the worker reported. Otherwise send the failure back to the worker.',
+  'Report what you did to the user and ask process questions. Send design questions to the architect.',
+];
+
+const architectGuidelines = [
+  'You are the architect. You own how work is done: the design, the plan, the acceptance criteria, and the worker briefs.',
+  'Talk to the user directly about design, and ask with `ask_user_question` when a design choice is open.',
+  'Do not edit code and do not launch workers. Put each change in a ticket for the lead to delegate.',
+  'Write the tickets a slice needs, then send the lead the step 11 values with `handover` `send` and end your turn.',
+  'In ask mode you answer one question: answer it, update the ticket if the answer changes it, send the answer to the lead with `handover` `send`, then call shutdown. If you need the user, send `Open the architect: <reason>` instead.',
+  'Do not widen the acceptance criteria of the slice or a ticket.',
+];
+
+const roleGuidelines = {
+  lead: leadGuidelines,
+  architect: architectGuidelines,
+};
+
+const sharedDelegationGuidelines = [
   'Without waiting to be asked, send larger implementation or work needing new tests to a `worker`, and open questions needing wide reading or commands to a `scout`.',
   'Outside a slice, review a finished worker change with the `code-review` skill in fast mode before you accept or commit it. Never launch a `reviewer` for it.',
   'Inside a slice, follow the `start-slice` skill for review timing.',
@@ -43,20 +66,21 @@ const browserGuideline =
 const browserLoginGuideline = (loginCommand: string | undefined): string =>
   `Start \`browser\` and \`qa\` workers as if the agent Chrome profile is signed in. When one reports a login wall, ${browserLoginStep(loginCommand)}. Then cancel the waiting worker and start a new one, which copies the configured profile at start.`;
 
-const qaGuideGuidelines = (qaProcedurePath: string | undefined): string[] =>
+const qaGuideGuidelines = (qaProcedurePath: string | undefined, qaGuidePath: string): string[] =>
   qaProcedurePath === undefined
     ? []
     : [
         `Before a \`qa\` launch, follow \`${qaProcedurePath}\` with the repository guide \`${qaGuidePath}\`.`,
       ];
 
-export const delegationGuidelines = (
-  loginCommand: string | undefined,
-  qaProcedurePath: string | undefined,
+export const managerGuidelines = (
+  role: 'lead' | 'architect',
+  options: ManagerGuidelineOptions,
 ): string[] => [
-  ...leadingDelegationGuidelines,
-  ...qaGuideGuidelines(qaProcedurePath),
+  ...roleGuidelines[role],
+  ...sharedDelegationGuidelines,
+  ...qaGuideGuidelines(options.qaProcedurePath, options.qaGuidePath),
   browserGuideline,
-  browserLoginGuideline(loginCommand),
+  browserLoginGuideline(options.loginCommand),
   ...trailingDelegationGuidelines,
 ];

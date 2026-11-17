@@ -20,7 +20,11 @@ const safetyPath = join(
 
 it('starts a qa worker with verification_record registered', async ({ onTestFinished }) => {
   const { directory, model, context, request } = await workerFixture(onTestFinished);
-  const loadout = resolveLoadout({ ...request, profile: 'qa' }, context);
+
+  const loadout = resolveLoadout({ ...request, profile: 'qa' }, context, [], {
+    launchingRole: 'lead',
+  });
+
   const tools = workerTools(loadout, skillTools);
 
   const recordPath = workerArguments('/records/session.jsonl', loadout, [], skillTools).find(

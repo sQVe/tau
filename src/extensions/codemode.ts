@@ -4,7 +4,7 @@ import { registerCodemodeBudget } from '../codemode/codemode.js';
 import { isNestedChangeCall, nestedChangeCallReason } from '../codemode/controlTools.js';
 import { codemodeGuidelines } from '../codemode/guidelines.js';
 import { appendToolGuidelines } from '../instructions/systemPrompt.js';
-import { isWorkerProcess } from '../worker.js';
+import { isWorkerProcess } from '../role.js';
 
 export default function codemodeExtension(pi: ExtensionAPI): void {
   const guidelines = isWorkerProcess() ? [] : codemodeGuidelines;

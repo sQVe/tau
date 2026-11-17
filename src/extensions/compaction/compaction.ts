@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { isWorkerProcess } from '../../worker.js';
+import { isWorkerProcess } from '../../role.js';
 import { decideReminder } from './reminder.js';
 
 const thresholdPercent = 50;

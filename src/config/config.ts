@@ -90,6 +90,7 @@ const topLevelKeys: Readonly<Record<string, string>> = {
   profiles: 'subagents',
   qa: 'subagents',
   reviews: 'pr',
+  roles: 'architect',
   subagents: 'subagents',
   tdd: 'tdd',
   tracker: 'tracker',

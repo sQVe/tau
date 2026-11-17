@@ -28,11 +28,14 @@ import { workerTools } from './workerTools.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
 
+const defaultLaunchOptions = { launchingRole: 'lead' } as const;
+
 const resolveLoadout = (
   input: Parameters<typeof loadoutModule.resolveLoadout>[0],
   context: Parameters<typeof loadoutModule.resolveLoadout>[1],
   commands: SlashCommandInfo[] = workerSkillCommands,
-) => loadoutModule.resolveLoadout(input, context, commands);
+  options: Parameters<typeof loadoutModule.resolveLoadout>[3] = defaultLaunchOptions,
+) => loadoutModule.resolveLoadout(input, context, commands, options);
 
 const startup =
   (...startupArguments: Parameters<typeof checkWorkerRuntime>) =>
@@ -169,6 +172,39 @@ it('an explicit model wins over the profile model', async ({ onTestFinished }) =
 
   expect(resolveLoadout({ profile: 'scout', model: haiku }, scoped).model).toBe(haiku);
   expect(resolveLoadout({ profile: 'scout' }, scoped).model).toBe(request.model);
+});
+
+it('a role override wins over the profile model', async ({ onTestFinished }) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+
+  writeConfig(join(directory, 'tau.json'), {
+    profiles: { scout: { model: request.model } },
+    roles: { lead: { profiles: { scout: { model: haiku } } } },
+  });
+
+  expect(
+    resolveLoadout({ profile: 'scout' }, context, workerSkillCommands, {
+      launchingRole: 'lead',
+    }).model,
+  ).toBe(haiku);
+
+  expect(
+    resolveLoadout({ profile: 'scout' }, context, workerSkillCommands, {
+      launchingRole: 'architect',
+    }).model,
+  ).toBe(request.model);
+});
+
+it('an explicit model wins over the role override', async ({ onTestFinished }) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+
+  writeConfig(join(directory, 'tau.json'), {
+    roles: { lead: { profiles: { scout: { model: haiku } } } },
+  });
+
+  expect(resolveLoadout({ profile: 'scout', model: request.model }, context).model).toBe(
+    request.model,
+  );
 });
 
 it('refuses a configured profile model that is unavailable or malformed', async ({

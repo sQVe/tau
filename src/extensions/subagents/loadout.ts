@@ -18,6 +18,8 @@ import {
   readAllowedModels,
   requireAllowedModel,
 } from '../../config/models.js';
+import { readRoleProfileModel } from '../../config/roleModels.js';
+import type { RoleKind } from '../../role.js';
 import { readProfileModel, readProfileThinking } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
 import type { Loadout, Profile, ThinkingLevel } from './types.js';
@@ -73,11 +75,13 @@ const resolveModel = (
   profile: Profile,
   context: ModelContext,
   location: ConfigLocation,
+  launchingRole: RoleKind,
 ) => {
+  const roleModel = readRoleProfileModel(location, launchingRole, profile.name, context.ui);
   const profileModel = readProfileModel(location, profile.name, context.ui);
+  const defaultModel = readProfileModel(location, defaultProfileName, context.ui);
 
-  const model =
-    explicit ?? profileModel ?? readProfileModel(location, defaultProfileName, context.ui);
+  const model = explicit ?? roleModel ?? profileModel ?? defaultModel;
 
   if (model === undefined) {
     throw new Error(
@@ -168,14 +172,14 @@ export const resolveLoadout = (
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'> & {
     ui: ConfigWarnings;
   },
-  commands: SlashCommandInfo[] = [],
-  thinkingOverride?: ThinkingLevel,
+  commands: SlashCommandInfo[],
+  options: { thinkingOverride?: ThinkingLevel; launchingRole: RoleKind },
 ): Loadout => {
   const { cwd, agentDirectory, profile } = resolveLaunchPlan(input, context);
   // The launch plan already requires a trusted project.
   const location = { cwd, agentDirectory, projectTrusted: true };
-  const model = resolveModel(input.model, profile, context, location);
-  const thinking = thinkingOverride ?? resolveProfileThinking(profile, context, location);
+  const model = resolveModel(input.model, profile, context, location, options.launchingRole);
+  const thinking = options.thinkingOverride ?? resolveProfileThinking(profile, context, location);
 
   return {
     harness: 'pi',

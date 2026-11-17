@@ -18,7 +18,7 @@ policy. [ADR 0043](./README.md#retired)'s coordinator and task controllers fixed
 for worker control only.
 
 Conflicts come from shared blocks, not from size. Replaying PR #340 and PR #350 on one base
-conflicts in `managerPrompt.ts` because a login policy and a URL policy share one template string.
+conflicts in `roleGuidelines.ts` because a login policy and a URL policy share one template string.
 Additions to the `pureModules` registry conflict when they land in the same place. Sorting spreads
 unrelated additions apart, but two additions in the same gap still conflict: PR #294 and PR #316
 conflict whether the list is sorted or not.

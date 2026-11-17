@@ -43,6 +43,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'config/repositoryCommand',
       'config/repositoryEntry',
       'config/repositorySection',
+      'config/roleModels',
       'config/verificationTargets',
     ],
   },
@@ -127,6 +128,8 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'reviewCapture/reviewCapture',
     publicFiles: ['reviewCapture/evidence', 'reviewCapture/reports'],
   },
+  { name: 'role', entry: 'role', publicFiles: [] },
+  { name: 'roleGuidelines', entry: 'roleGuidelines', publicFiles: [] },
   { name: 'schema', entry: 'schema', publicFiles: [] },
   { name: 'shell', entry: 'shell', publicFiles: [] },
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
@@ -138,7 +141,6 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: ['verification/freshness', 'verification/records', 'verification/selection'],
   },
   { name: 'wake', entry: 'wake/wake', publicFiles: [] },
-  { name: 'worker', entry: 'worker', publicFiles: [] },
 ];
 
 // The shared modules each module may import, one row per module. src/tau.ts is the composition
@@ -148,8 +150,8 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   classifier: ['config'],
   codemode: [],
   command: ['schema'],
-  config: ['errors', 'schema'],
-  dialog: ['worker'],
+  config: ['errors', 'role', 'schema'],
+  dialog: ['role'],
   errors: [],
   fileLock: ['errors', 'process', 'schema'],
   git: ['errors'],
@@ -173,13 +175,14 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   record: ['errors', 'schema', 'tauDirectory'],
   reviewBots: ['command', 'config', 'github', 'schema'],
   reviewCapture: ['command', 'errors', 'git', 'github', 'record', 'schema', 'tauDirectory'],
+  role: ['schema'],
+  roleGuidelines: [],
   schema: [],
   shell: [],
   skillTools: [],
   tauDirectory: ['errors', 'git'],
   verification: ['errors', 'record', 'schema'],
   wake: [],
-  worker: ['schema'],
 };
 
 const publicPaths = new Set(moduleList.flatMap((module) => [module.entry, ...module.publicFiles]));

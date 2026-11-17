@@ -16,7 +16,7 @@ const copiedFiles = [
   'instructions/typescriptRules.ts',
   'instructions/typescriptRulesDecision.ts',
   'schema.ts',
-  'worker.ts',
+  'role.ts',
 ];
 
 for (const instructionSet of instructionSets) {
