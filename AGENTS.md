@@ -85,3 +85,24 @@ Keep tests fast so the full suite stays practical as coverage grows.
 - Keep mutable fixtures isolated. Never drop assertions or failure cases to save time.
 - Measure slow tests before optimizing. Split a slow test file by behavior when it prevents workers
   from sharing the work. Compare repeated full-suite runs before changing worker limits.
+
+## Rule table
+
+Each local rule with a check appears once here. The prose above is authoritative. Rules without a
+check are owned by the human reviewer.
+
+Shared coding, writing, and workflow rules live in [stomme](https://github.com/sQVe/stomme).
+
+| Rule                                                                 | Enforced by                                                 |
+| -------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Run the full check before a pull request                             | `pnpm check`                                                |
+| Format with `pnpm format`                                            | `pnpm format:check`                                         |
+| Keep each ADR in the index with its status                           | `tests/markdownFiles.test.ts`                               |
+| Check that local links resolve                                       | `tests/markdownFiles.test.ts`                               |
+| Add a changeset for a `src/` change                                  | `.github/workflows/changeset.yml`                           |
+| Keep modules and imports inside the import table                     | `lint/rules/moduleBoundaries.ts`, `tests/structure.test.ts` |
+| Change the import table or module list instead of silencing the rule | `lint/rules/moduleBoundaries.ts`                            |
+| Keep a registered pure module free of reads and effects              | `tests/structure.test.ts`                                   |
+| Version each saved record format with fixtures                       | `tests/structure.test.ts`                                   |
+| Name each unit test after its owner                                  | `tests/structure.test.ts`                                   |
+| Keep fixtures out of production modules                              | `tests/structure.test.ts`                                   |
