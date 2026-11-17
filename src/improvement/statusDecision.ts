@@ -4,6 +4,10 @@ import type { StoredSignals } from './signals.ts';
 import type { SweepOutcome } from './sweep.ts';
 import type { SweepIndexRead } from './sweepIndex.ts';
 
+type MergeEvent = Extract<ImprovementEvent, { kind: 'merge' }>;
+
+type FactsEvent = Extract<ImprovementEvent, { kind: 'facts' }>;
+
 export type SignalName = keyof StoredSignals;
 
 export interface TaskToReview {
@@ -44,29 +48,14 @@ const isLater = (candidate: ImprovementEvent, current: ImprovementEvent): boolea
   return candidate.id > current.id;
 };
 
-const latest = (events: readonly ImprovementEvent[]): ImprovementEvent | undefined => {
-  let found: ImprovementEvent | undefined;
+const keepLatest = <Event extends MergeEvent | FactsEvent>(
+  events: Map<string, Event>,
+  event: Event,
+): void => {
+  const current = events.get(event.pullRequest);
 
-  for (const event of events) {
-    if (found === undefined || isLater(event, found)) {
-      found = event;
-    }
-  }
-
-  return found;
-};
-
-const addToGroup = (
-  groups: Map<string, ImprovementEvent[]>,
-  key: string,
-  event: ImprovementEvent,
-) => {
-  const group = groups.get(key);
-
-  if (group === undefined) {
-    groups.set(key, [event]);
-  } else {
-    group.push(event);
+  if (current === undefined || isLater(event, current)) {
+    events.set(event.pullRequest, event);
   }
 };
 
@@ -81,19 +70,15 @@ const compareTasks = (left: TaskToReview, right: TaskToReview): number => {
 };
 
 const groupEvents = (events: readonly ImprovementEvent[]) => {
-  const merges = new Map<string, ImprovementEvent[]>();
-  const facts = new Map<string, ImprovementEvent[]>();
+  const merges = new Map<string, MergeEvent>();
+  const facts = new Map<string, FactsEvent>();
   const reviewed = new Set<string>();
 
   for (const event of events) {
-    if (!('pullRequest' in event)) {
-      continue;
-    }
-
     if (event.kind === 'merge') {
-      addToGroup(merges, event.pullRequest, event);
+      keepLatest(merges, event);
     } else if (event.kind === 'facts') {
-      addToGroup(facts, event.pullRequest, event);
+      keepLatest(facts, event);
     } else if (event.kind === 'review') {
       reviewed.add(event.pullRequest);
     }
@@ -109,19 +94,13 @@ export const decideTasks = (
   const coverage: CoverageCounts = { complete: 0, managerOnly: 0, missing: 0 };
   const tasks: TaskToReview[] = [];
 
-  for (const [pullRequest, mergeEvents] of merges) {
-    const mergeEvent = latest(mergeEvents);
-    const factsEvent = latest(facts.get(pullRequest) ?? []);
-
-    if (mergeEvent?.kind !== 'merge') {
-      continue;
-    }
-
-    const factsCoverage = factsEvent?.kind === 'facts' ? factsEvent.coverage : 'missing';
+  for (const [pullRequest, mergeEvent] of merges) {
+    const factsEvent = facts.get(pullRequest);
+    const factsCoverage = factsEvent?.coverage ?? 'missing';
 
     coverage[factsCoverage] += 1;
 
-    if (factsEvent?.kind !== 'facts' || reviewed.has(pullRequest)) {
+    if (factsEvent === undefined || reviewed.has(pullRequest)) {
       continue;
     }
 
