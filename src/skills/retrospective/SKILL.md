@@ -55,7 +55,8 @@ nothing.
    - A source with no result is still a fact.
 3. Read the task's transcripts with `improvement` action `task`, with the PR URL as `pullRequest`
    and the worktree path from step 1 as `worktree`. Use the returned `manager` and `workers` paths
-   and `coverage`. State coverage as the tool returns it.
+   and `coverage`, and keep its `projectRoot`. When `projectRoot` is null, ask the user for the task
+   repository's root and use that. State coverage as the tool returns it.
 4. Launch the reviewers.
    - Fast mode: launch one `reviewer` worker with [lenses.md](lenses.md). Give it:
      - the transcript paths;
@@ -80,18 +81,18 @@ nothing.
    Verified rows stay in Accepted. A Refuted row goes to Rejected with its evidence.
 7. In both modes, the manager writes TLDR, Attention, and Coverage in [report.md](report.md)'s
    shape, then shows the report.
-8. Save the review with `improvement` `record` kind `review`, with the PR URL as `pullRequest` and
-   `outcome` as `clean` or one line per Accepted row. Save each Backlog item as kind `backlog` with
-   the review ID as `review`, its number as `item`, and its text as `summary`.
+8. Save the review with `improvement` `record` kind `review`, with step 3's `projectRoot`, the PR
+   URL as `pullRequest`, and `outcome` as `clean` or one line per Accepted row. Save each Backlog
+   item as kind `backlog` with the same `projectRoot`, the review ID as `review`, its number as
+   `item`, and its text as `summary`.
 9. For each Accepted row, ask approve, reject, or redirect with `ask_user_question`. Ask at most 4
-   questions per call. Save one kind `decision` event per answered row, with the review ID as
-   `review`, the row number as `item`, and the answer as `choice`.
+   questions per call. Save one kind `decision` event per answered row, with step 3's `projectRoot`,
+   the review ID as `review`, the row number as `item`, and the answer as `choice`.
 10. For each approved or redirected row:
     - Pick the owning project from its route. A Tau skill, tool, or instruction goes to the Tau
       repository. A repository check goes to the task's repository. A stomme rule goes to stomme.
-    - Resolve the owning project's root. For the task's own repository, use the `projectRoot`
-      returned in step 3. When it is null, ask the user for the task repository's root. For another
-      project, ask the user for its root path.
+    - Resolve the owning project's root. For the task's own repository, use the `projectRoot` from
+      step 3. For another project, ask the user for its root path.
     - Follow the [worktree skill](../worktree/SKILL.md) with `grove add <branch>` run from that
       root. Grove creates the worktree under the current directory. The branch is a descriptive
       kebab-case name from the proposal, because no ticket exists yet.

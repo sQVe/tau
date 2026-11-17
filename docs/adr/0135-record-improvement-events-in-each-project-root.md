@@ -27,6 +27,9 @@ the sweep at manager session start.
 - The project root is the parent of the Git common directory. Every linked worktree and the bare
   root of a project resolve to the same directory, so all of them write one shared history that
   outlives each worktree.
+- A review of another project's task saves that task's `review`, `backlog`, and `decision` events in
+  the project root that the record call names: the value `task` returns for the task, not the
+  reviewing session's.
 - Each event is its own file, named by its ID, and is never replaced. A second write of the same ID
   keeps the first file. A retried tool call then saves no duplicate, and concurrent sessions need no
   lock across files.

@@ -22,17 +22,20 @@ export interface CorrectionFacts extends SessionFacts {
 }
 
 export interface ReviewFacts extends SessionFacts {
+  projectRoot: string;
   pullRequest: string;
   outcome: string;
 }
 
 export interface BacklogFacts extends SessionFacts {
+  projectRoot: string;
   review: string;
   item: number;
   summary: string;
 }
 
 export interface DecisionFacts extends SessionFacts {
+  projectRoot: string;
   review: string;
   item: number;
   choice: 'approved' | 'rejected' | 'redirected';
@@ -99,7 +102,7 @@ export const recordCorrection = async (facts: CorrectionFacts): Promise<RecordRe
 };
 
 export const recordReview = async (facts: ReviewFacts): Promise<RecordResult> => {
-  const projectRoot = await findProjectRoot(facts.cwd);
+  const { projectRoot } = facts;
   const id = eventId('review', facts.sessionId, facts.toolCallId);
 
   const { path, outcome } = await writeEvent(projectRoot, {
@@ -116,7 +119,7 @@ export const recordReview = async (facts: ReviewFacts): Promise<RecordResult> =>
 };
 
 export const recordBacklog = async (facts: BacklogFacts): Promise<RecordResult> => {
-  const projectRoot = await findProjectRoot(facts.cwd);
+  const { projectRoot } = facts;
   const review = await findReview(projectRoot, facts.review);
   const id = `backlog-${facts.review}-${facts.item}`;
 
@@ -134,7 +137,7 @@ export const recordBacklog = async (facts: BacklogFacts): Promise<RecordResult> 
 };
 
 export const recordDecision = async (facts: DecisionFacts): Promise<RecordResult> => {
-  const projectRoot = await findProjectRoot(facts.cwd);
+  const { projectRoot } = facts;
 
   await findReview(projectRoot, facts.review);
 
@@ -179,6 +182,7 @@ export const runRecord = async (
   if (request.kind === 'review') {
     return recordReview({
       ...facts,
+      projectRoot: request.projectRoot,
       pullRequest: request.pullRequest,
       outcome: request.outcome,
     });
@@ -187,6 +191,7 @@ export const runRecord = async (
   if (request.kind === 'backlog') {
     return recordBacklog({
       ...facts,
+      projectRoot: request.projectRoot,
       review: request.review,
       item: request.item,
       summary: request.summary,
@@ -195,6 +200,7 @@ export const runRecord = async (
 
   return recordDecision({
     ...facts,
+    projectRoot: request.projectRoot,
     review: request.review,
     item: request.item,
     choice: request.choice,

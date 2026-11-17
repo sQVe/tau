@@ -38,6 +38,7 @@ const factsFor = (cwd: string, overrides: Partial<CorrectionFacts> = {}): Correc
 
 const reviewFactsFor = (cwd: string, overrides: Partial<ReviewFacts> = {}): ReviewFacts => ({
   cwd,
+  projectRoot: cwd,
   sessionId: 'session-1',
   sessionFile: undefined,
   toolCallId: 'call|review',
@@ -49,6 +50,7 @@ const reviewFactsFor = (cwd: string, overrides: Partial<ReviewFacts> = {}): Revi
 
 const backlogFactsFor = (cwd: string, overrides: Partial<BacklogFacts> = {}): BacklogFacts => ({
   cwd,
+  projectRoot: cwd,
   sessionId: 'session-1',
   sessionFile: undefined,
   toolCallId: 'call|backlog',
@@ -61,6 +63,7 @@ const backlogFactsFor = (cwd: string, overrides: Partial<BacklogFacts> = {}): Ba
 
 const decisionFactsFor = (cwd: string, overrides: Partial<DecisionFacts> = {}): DecisionFacts => ({
   cwd,
+  projectRoot: cwd,
   sessionId: 'session-1',
   sessionFile: undefined,
   toolCallId: 'call|decision',
@@ -169,6 +172,32 @@ describe('recordCorrection', () => {
 });
 
 describe('recordReview', () => {
+  it('saves a review in the reviewed task project, not the session project', async () => {
+    const sessionRoot = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const taskRoot = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const taskProjectRoot = await realpath(taskRoot);
+
+    const saved = await recordReview(reviewFactsFor(sessionRoot, { projectRoot: taskRoot }));
+
+    expect(saved.path).toBe(join(taskProjectRoot, '.tau', 'improvement', `${saved.id}.json`));
+    expect(existsSync(join(taskProjectRoot, '.tau', 'improvement'))).toBe(true);
+    expect(existsSync(join(await realpath(sessionRoot), '.tau', 'improvement'))).toBe(false);
+  });
+
+  it('records a review after the task worktree was removed', async () => {
+    const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
+    await git(root, 'worktree', 'add', '--quiet', '--orphan', 'main');
+    const projectRoot = await realpath(root);
+    await git(root, 'worktree', 'remove', '--force', 'main');
+
+    const sessionRoot = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const saved = await recordReview(reviewFactsFor(sessionRoot, { projectRoot }));
+
+    expect(saved.path).toBe(join(projectRoot, '.tau', 'improvement', `${saved.id}.json`));
+    expect(existsSync(join(projectRoot, '.tau', 'improvement'))).toBe(true);
+    expect(existsSync(join(await realpath(sessionRoot), '.tau', 'improvement'))).toBe(false);
+  });
+
   it('saves a review event with its pull request and keeps it on retry', async () => {
     const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
 
@@ -211,6 +240,21 @@ describe('recordReview', () => {
 });
 
 describe('recordDecision', () => {
+  it('finds the review in the reviewed task project', async () => {
+    const sessionRoot = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const taskRoot = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const taskProjectRoot = await realpath(taskRoot);
+
+    const review = await recordReview(reviewFactsFor(sessionRoot, { projectRoot: taskRoot }));
+
+    const saved = await recordDecision(
+      decisionFactsFor(sessionRoot, { projectRoot: taskRoot, review: review.id, item: 2 }),
+    );
+
+    expect(saved.path).toBe(join(taskProjectRoot, '.tau', 'improvement', `${saved.id}.json`));
+    expect(existsSync(join(await realpath(sessionRoot), '.tau', 'improvement'))).toBe(false);
+  });
+
   it('saves one decision per review item and keeps the first on retry', async () => {
     const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
     const review = await recordReview(reviewFactsFor(root));
@@ -250,6 +294,21 @@ describe('recordDecision', () => {
 });
 
 describe('recordBacklog', () => {
+  it('finds the review in the reviewed task project', async () => {
+    const sessionRoot = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const taskRoot = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const taskProjectRoot = await realpath(taskRoot);
+
+    const review = await recordReview(reviewFactsFor(sessionRoot, { projectRoot: taskRoot }));
+
+    const saved = await recordBacklog(
+      backlogFactsFor(sessionRoot, { projectRoot: taskRoot, review: review.id, item: 3 }),
+    );
+
+    expect(saved.path).toBe(join(taskProjectRoot, '.tau', 'improvement', `${saved.id}.json`));
+    expect(existsSync(join(await realpath(sessionRoot), '.tau', 'improvement'))).toBe(false);
+  });
+
   it("saves a backlog item with the review's pull request", async () => {
     const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
     const review = await recordReview(reviewFactsFor(root));

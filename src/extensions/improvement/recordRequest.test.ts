@@ -19,12 +19,14 @@ const table: {
     input: {
       action: 'record',
       kind: 'review',
+      projectRoot: '/repository/me-1',
       pullRequest: 'https://github.com/example/repo/pull/1',
       outcome: 'The task passed.',
     },
     expected: {
       action: 'record',
       kind: 'review',
+      projectRoot: '/repository/me-1',
       pullRequest: 'https://github.com/example/repo/pull/1',
       outcome: 'The task passed.',
     },
@@ -34,6 +36,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'backlog',
+      projectRoot: '/repository/me-1',
       review: 'review-1',
       item: 2,
       summary: 'Split the module.',
@@ -41,6 +44,7 @@ const table: {
     expected: {
       action: 'record',
       kind: 'backlog',
+      projectRoot: '/repository/me-1',
       review: 'review-1',
       item: 2,
       summary: 'Split the module.',
@@ -51,6 +55,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'decision',
+      projectRoot: '/repository/me-1',
       review: 'review-1',
       item: 2,
       choice: 'approved',
@@ -58,6 +63,7 @@ const table: {
     expected: {
       action: 'record',
       kind: 'decision',
+      projectRoot: '/repository/me-1',
       review: 'review-1',
       item: 2,
       choice: 'approved',
@@ -70,7 +76,12 @@ const table: {
   },
   {
     name: 'needs a review pull request',
-    input: { action: 'record', kind: 'review', outcome: 'The task passed.' },
+    input: {
+      action: 'record',
+      kind: 'review',
+      projectRoot: '/repository/me-1',
+      outcome: 'The task passed.',
+    },
     expected: { error: 'record kind review needs pullRequest.' },
   },
   {
@@ -78,39 +89,137 @@ const table: {
     input: {
       action: 'record',
       kind: 'review',
+      projectRoot: '/repository/me-1',
       pullRequest: 'https://github.com/example/repo/pull/1',
     },
     expected: { error: 'record kind review needs outcome.' },
   },
   {
+    name: 'needs a review projectRoot',
+    input: {
+      action: 'record',
+      kind: 'review',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      outcome: 'The task passed.',
+    },
+    expected: { error: 'record kind review needs projectRoot.' },
+  },
+  {
+    name: 'refuses a blank review projectRoot',
+    input: {
+      action: 'record',
+      kind: 'review',
+      projectRoot: ' ',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      outcome: 'The task passed.',
+    },
+    expected: { error: 'record kind review needs a non-blank projectRoot.' },
+  },
+  {
     name: 'needs a backlog review',
-    input: { action: 'record', kind: 'backlog', item: 2, summary: 'Split the module.' },
+    input: {
+      action: 'record',
+      kind: 'backlog',
+      projectRoot: '/repository/me-1',
+      item: 2,
+      summary: 'Split the module.',
+    },
     expected: { error: 'record kind backlog needs review.' },
   },
   {
     name: 'needs a backlog item',
-    input: { action: 'record', kind: 'backlog', review: 'review-1', summary: 'Split the module.' },
+    input: {
+      action: 'record',
+      kind: 'backlog',
+      projectRoot: '/repository/me-1',
+      review: 'review-1',
+      summary: 'Split the module.',
+    },
     expected: { error: 'record kind backlog needs item.' },
   },
   {
     name: 'needs a backlog summary',
-    input: { action: 'record', kind: 'backlog', review: 'review-1', item: 2 },
+    input: {
+      action: 'record',
+      kind: 'backlog',
+      projectRoot: '/repository/me-1',
+      review: 'review-1',
+      item: 2,
+    },
     expected: { error: 'record kind backlog needs summary.' },
   },
   {
+    name: 'needs a backlog projectRoot',
+    input: {
+      action: 'record',
+      kind: 'backlog',
+      review: 'review-1',
+      item: 2,
+      summary: 'Split the module.',
+    },
+    expected: { error: 'record kind backlog needs projectRoot.' },
+  },
+  {
+    name: 'refuses a blank backlog projectRoot',
+    input: {
+      action: 'record',
+      kind: 'backlog',
+      projectRoot: ' ',
+      review: 'review-1',
+      item: 2,
+      summary: 'Split the module.',
+    },
+    expected: { error: 'record kind backlog needs a non-blank projectRoot.' },
+  },
+  {
     name: 'needs a decision review',
-    input: { action: 'record', kind: 'decision', item: 2, choice: 'approved' },
+    input: {
+      action: 'record',
+      kind: 'decision',
+      projectRoot: '/repository/me-1',
+      item: 2,
+      choice: 'approved',
+    },
     expected: { error: 'record kind decision needs review.' },
   },
   {
     name: 'needs a decision item',
-    input: { action: 'record', kind: 'decision', review: 'review-1', choice: 'approved' },
+    input: {
+      action: 'record',
+      kind: 'decision',
+      projectRoot: '/repository/me-1',
+      review: 'review-1',
+      choice: 'approved',
+    },
     expected: { error: 'record kind decision needs item.' },
   },
   {
     name: 'needs a decision choice',
-    input: { action: 'record', kind: 'decision', review: 'review-1', item: 2 },
+    input: {
+      action: 'record',
+      kind: 'decision',
+      projectRoot: '/repository/me-1',
+      review: 'review-1',
+      item: 2,
+    },
     expected: { error: 'record kind decision needs choice.' },
+  },
+  {
+    name: 'needs a decision projectRoot',
+    input: { action: 'record', kind: 'decision', review: 'review-1', item: 2, choice: 'approved' },
+    expected: { error: 'record kind decision needs projectRoot.' },
+  },
+  {
+    name: 'refuses a blank decision projectRoot',
+    input: {
+      action: 'record',
+      kind: 'decision',
+      projectRoot: ' ',
+      review: 'review-1',
+      item: 2,
+      choice: 'approved',
+    },
+    expected: { error: 'record kind decision needs a non-blank projectRoot.' },
   },
   {
     name: 'needs a kind',
@@ -127,6 +236,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'review',
+      projectRoot: '/repository/me-1',
       pullRequest: ' ',
       outcome: 'The task passed.',
     },
@@ -137,6 +247,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'review',
+      projectRoot: '/repository/me-1',
       pullRequest: 'https://github.com/example/repo/pull/1',
       outcome: '\n',
     },
@@ -144,7 +255,14 @@ const table: {
   },
   {
     name: 'refuses a blank review',
-    input: { action: 'record', kind: 'backlog', review: '\t', item: 2, summary: 'Split it.' },
+    input: {
+      action: 'record',
+      kind: 'backlog',
+      projectRoot: '/repository/me-1',
+      review: '\t',
+      item: 2,
+      summary: 'Split it.',
+    },
     expected: { error: 'record kind backlog needs a non-blank review.' },
   },
   {
@@ -152,10 +270,46 @@ const table: {
     input: {
       action: 'record',
       kind: 'review',
+      projectRoot: '/repository/me-1',
       pullRequest: 'http://github.com/example/repo/pull/1',
       outcome: 'The task passed.',
     },
     expected: { error: 'record kind review pullRequest must start with https://.' },
+  },
+  {
+    name: 'refuses a relative review projectRoot',
+    input: {
+      action: 'record',
+      kind: 'review',
+      projectRoot: 'me-1',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      outcome: 'The task passed.',
+    },
+    expected: { error: 'record kind review projectRoot must be absolute.' },
+  },
+  {
+    name: 'refuses a relative backlog projectRoot',
+    input: {
+      action: 'record',
+      kind: 'backlog',
+      projectRoot: 'me-1',
+      review: 'review-1',
+      item: 2,
+      summary: 'Split the module.',
+    },
+    expected: { error: 'record kind backlog projectRoot must be absolute.' },
+  },
+  {
+    name: 'refuses a relative decision projectRoot',
+    input: {
+      action: 'record',
+      kind: 'decision',
+      projectRoot: 'me-1',
+      review: 'review-1',
+      item: 2,
+      choice: 'approved',
+    },
+    expected: { error: 'record kind decision projectRoot must be absolute.' },
   },
   {
     name: 'refuses a field the kind does not take',

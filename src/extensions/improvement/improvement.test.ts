@@ -388,6 +388,7 @@ it('records a review from the session the manager runs', async () => {
   const { id, path } = await runManagerTool<RecordDetails>(root, {
     action: 'record',
     kind: 'review',
+    projectRoot: root,
     pullRequest: 'https://github.com/example/repo/pull/1',
     outcome: 'The task passed.',
   });
@@ -414,6 +415,7 @@ it('records a backlog item from the session the manager runs', async () => {
   const review = await runManagerTool<RecordDetails>(root, {
     action: 'record',
     kind: 'review',
+    projectRoot: root,
     pullRequest: 'https://github.com/example/repo/pull/1',
     outcome: 'The task passed.',
   });
@@ -421,6 +423,7 @@ it('records a backlog item from the session the manager runs', async () => {
   const { id, path } = await runManagerTool<RecordDetails>(root, {
     action: 'record',
     kind: 'backlog',
+    projectRoot: root,
     review: review.id,
     item: 2,
     summary: 'Split the module.',
@@ -444,6 +447,7 @@ it('records a decision from the session the manager runs', async () => {
   const review = await runManagerTool<RecordDetails>(root, {
     action: 'record',
     kind: 'review',
+    projectRoot: root,
     pullRequest: 'https://github.com/example/repo/pull/1',
     outcome: 'The task passed.',
   });
@@ -451,6 +455,7 @@ it('records a decision from the session the manager runs', async () => {
   const { id, path } = await runManagerTool<RecordDetails>(root, {
     action: 'record',
     kind: 'decision',
+    projectRoot: root,
     review: review.id,
     item: 2,
     choice: 'approved',
