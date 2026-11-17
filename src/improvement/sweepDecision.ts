@@ -19,12 +19,27 @@ export interface PlannedEventFacts {
   now: string;
 }
 
+export interface DiscoveryCandidate {
+  path: string;
+  status: 'new' | 'unresolved' | 'resolved';
+}
+
 export const decideTranscriptRead = ({ cursor, size }: TranscriptReadFacts): TranscriptRead => {
   if (size < cursor) {
     return 'restart';
   }
 
   return size === cursor ? 'unchanged' : 'read';
+};
+
+export const discoveryOrder = (candidates: readonly DiscoveryCandidate[]): string[] => {
+  const unseen = candidates.filter(({ status }) => status === 'new').map(({ path }) => path);
+
+  const retried = candidates
+    .filter(({ status }) => status === 'unresolved')
+    .map(({ path }) => path);
+
+  return [...unseen, ...retried];
 };
 
 const numericFacts = (counts: Task['counts']): Record<string, number> => {
