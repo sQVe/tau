@@ -57,7 +57,8 @@ export const createEventLog = (prefix: string): string => {
   return path;
 };
 
-export const piChildEnvironment = (path: string): NodeJS.ProcessEnv => ({
-  ...gitEnvironment(),
-  PATH: installedPiPath(path, delimiter),
-});
+export const piChildEnvironment = (path: string): NodeJS.ProcessEnv => {
+  const { TAU_ROLE: _role, TAU_WORKER_RECORD: _workerRecord, ...environment } = gitEnvironment();
+
+  return { ...environment, PATH: installedPiPath(path, delimiter) };
+};

@@ -65,3 +65,21 @@ it('gives the Pi child no Git repository selectors and keeps the adjusted PATH',
   expect(environment).not.toHaveProperty('GIT_COMMON_DIR');
   expect(environment).not.toHaveProperty('GIT_INDEX_FILE');
 });
+
+it('gives the Pi child no Tau worker markers and keeps the other caller variables', ({
+  onTestFinished,
+}) => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('TAU_ROLE', 'worker');
+  vi.stubEnv('TAU_WORKER_RECORD', '/caller/records/worker');
+  vi.stubEnv('TAU_SMOKE_CREDENTIAL', 'kept');
+
+  const environment = piChildEnvironment('/caller/node_modules/.bin:/usr/bin');
+
+  expect(environment).toMatchObject({ TAU_SMOKE_CREDENTIAL: 'kept' });
+  expect(environment).not.toHaveProperty('TAU_ROLE');
+  expect(environment).not.toHaveProperty('TAU_WORKER_RECORD');
+});
