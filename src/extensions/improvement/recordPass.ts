@@ -2,16 +2,12 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
 import { readEvents, writeEvent } from '../../improvement/event.js';
-import type { EventGap, ImprovementEvent } from '../../improvement/event.js';
 import { findOptionalProjectRoot, projectRootsOf } from '../../improvement/projectRoot.js';
 import { readSweepIndex } from '../../improvement/sweepIndex.js';
 import { evidenceOf, eventId, sessionFacts } from './recordAction.js';
 import type { SessionFacts } from './recordAction.js';
-
-interface PassFailure {
-  projectRoot: string;
-  reason: string;
-}
+import { decidePassRoot } from './recordPassDecision.js';
+import type { PassFailure } from './recordPassDecision.js';
 
 export interface PassResult {
   id: string;
@@ -31,22 +27,6 @@ const passCandidates = async (agentDirectory: string, cwd: string): Promise<stri
   return roots;
 };
 
-const rootFailure = (
-  projectRoot: string,
-  events: readonly ImprovementEvent[],
-  gaps: readonly EventGap[],
-): PassFailure | undefined => {
-  if (events.length > 0) {
-    return undefined;
-  }
-
-  const [firstGap] = gaps;
-
-  return firstGap === undefined
-    ? undefined
-    : { projectRoot, reason: `${firstGap.path}: ${firstGap.reason}` };
-};
-
 const readRoots = async (candidates: string[], failed: PassFailure[]): Promise<string[]> => {
   const roots: string[] = [];
 
@@ -54,15 +34,14 @@ const readRoots = async (candidates: string[], failed: PassFailure[]): Promise<s
     try {
       // oxlint-disable-next-line no-await-in-loop -- A failed root must not stop the other roots.
       const { events, gaps } = await readEvents(projectRoot);
+      const decision = decidePassRoot({ projectRoot, events, gaps });
 
-      if (events.length > 0) {
+      if (decision.kind === 'write') {
         roots.push(projectRoot);
       }
 
-      const failure = rootFailure(projectRoot, events, gaps);
-
-      if (failure !== undefined) {
-        failed.push(failure);
+      if (decision.kind === 'failed') {
+        failed.push(decision.failure);
       }
     } catch (error) {
       failed.push({ projectRoot, reason: errorMessage(error) });

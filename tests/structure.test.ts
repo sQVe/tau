@@ -86,6 +86,7 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
+  'src/extensions/improvement/recordPassDecision.ts',
   'src/extensions/improvement/recordRequest.ts',
   'src/extensions/inbox/arrivalDecision.ts',
   'src/extensions/inbox/guardDecision.ts',
