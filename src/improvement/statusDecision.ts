@@ -8,7 +8,7 @@ type MergeEvent = Extract<ImprovementEvent, { kind: 'merge' }>;
 
 type FactsEvent = Extract<ImprovementEvent, { kind: 'facts' }>;
 
-export type SignalName = keyof StoredSignals;
+type SignalName = keyof StoredSignals;
 
 export interface TaskToReview {
   pullRequest: string;
