@@ -52,7 +52,8 @@ another skill. Name the lookup the agent should have made.
 
 ### Divergent
 
-Name the contrarian or second-order observation the other lenses will miss. Scan for:
+Name the contrarian or second-order observation the other lenses will miss. When the other lenses
+will likely surface principle X, find the principle Y that complicates or contradicts it. Scan for:
 
 - decisions that worked for the wrong reason, or survived because the test path was lucky;
 - verifications that were skipped, deferred, or self-reported instead of checked against an
@@ -75,3 +76,8 @@ did not, route to a description tune for that skill. Drop a finding with no rout
 
 Skip typos, retries, and anything already obvious from the skill the task followed. Skip details
 that drift, such as a commit hash, a current path, a version number, or an exact byte count.
+
+## One lens
+
+When the brief names one lens, apply only that lens's section. Write the per-transcript blocks and
+the findings in the same shape.
