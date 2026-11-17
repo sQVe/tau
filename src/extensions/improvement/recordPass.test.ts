@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import { mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -5,7 +6,7 @@ import { afterEach, expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { parseEvent } from '../../improvement/event.js';
+import { parseEvent, writeEvent } from '../../improvement/event.js';
 import { writeSweepIndex } from '../../improvement/sweepIndex.js';
 import type { SweepIndex } from '../../improvement/sweepIndex.js';
 import type { SessionFacts } from './recordAction.js';
@@ -47,14 +48,27 @@ const indexFor = (projectRoots: string[]): SweepIndex => ({
 
 const eventDirectory = (projectRoot: string) => join(projectRoot, '.tau', 'improvement');
 
+const seedEvent = (projectRoot: string, id: string) =>
+  writeEvent(projectRoot, {
+    version: 2,
+    id,
+    kind: 'correction',
+    createdAt: '2026-11-15T11:00:00.000Z',
+    evidence: [{ kind: 'session', sessionId: 'session-1', toolCallId: `call|${id}` }],
+    summary: 'seed',
+    cwd: projectRoot,
+  });
+
 const eventNames = (projectRoot: string) => readdir(eventDirectory(projectRoot));
 
-it('writes a pass event to every project root', async () => {
+it('writes a pass event to every project root that has an event', async () => {
   const first = await createProject();
   const second = await createProject();
   const agentDirectory = createAgentDirectory();
 
   await writeSweepIndex(agentDirectory, indexFor([first, second]));
+  await seedEvent(first, 'correction-first');
+  await seedEvent(second, 'correction-second');
 
   const result = await recordPass(agentDirectory, factsFor(first));
 
@@ -82,6 +96,8 @@ it('writes a pass event to the current root when the index lists another project
   const agentDirectory = createAgentDirectory();
 
   await writeSweepIndex(agentDirectory, indexFor([indexed]));
+  await seedEvent(indexed, 'correction-indexed');
+  await seedEvent(current, 'correction-current');
 
   const result = await recordPass(agentDirectory, factsFor(current));
 
@@ -98,11 +114,27 @@ it('writes a pass event to the indexed roots from a cwd outside Git', async () =
   const outside = temporaryDirectory(onTestFinished, 'tau-outside-');
 
   await writeSweepIndex(agentDirectory, indexFor([indexed]));
+  await seedEvent(indexed, 'correction-indexed');
 
   const result = await recordPass(agentDirectory, factsFor(outside));
 
   expect(result.failed).toEqual([]);
   expect(result.paths).toEqual([join(eventDirectory(indexed), `${result.id}.json`)]);
+});
+
+it('writes no pass event to a root with no events', async () => {
+  const read = await createProject();
+  const empty = await createProject();
+  const agentDirectory = createAgentDirectory();
+
+  await writeSweepIndex(agentDirectory, indexFor([read, empty]));
+  await seedEvent(read, 'correction-read');
+
+  const result = await recordPass(agentDirectory, factsFor(read));
+
+  expect(result.failed).toEqual([]);
+  expect(result.paths).toEqual([join(eventDirectory(read), `${result.id}.json`)]);
+  expect(statSync(eventDirectory(empty), { throwIfNoEntry: false })).toBeUndefined();
 });
 
 it('refuses a pass with no project root to write to', async () => {
@@ -118,11 +150,15 @@ it('writes a pass event to the current root when the index is missing', async ()
   const project = await createProject();
   const agentDirectory = createAgentDirectory();
 
+  await seedEvent(project, 'correction-current');
+
   const result = await recordPass(agentDirectory, factsFor(project));
 
   expect(result.failed).toEqual([]);
   expect(result.paths).toEqual([join(eventDirectory(project), `${result.id}.json`)]);
-  expect(await eventNames(project)).toEqual([`${result.id}.json`]);
+  const names = (await eventNames(project)).toSorted();
+
+  expect(names).toEqual(['correction-current.json', `${result.id}.json`].toSorted());
 });
 
 it('reports a failed pass root and retries only it', async () => {
@@ -132,6 +168,7 @@ it('reports a failed pass root and retries only it', async () => {
   const failedRoot = join(second, '.tau');
 
   await writeSweepIndex(agentDirectory, indexFor([first, second]));
+  await seedEvent(first, 'correction-first');
   await writeFile(failedRoot, 'not a directory');
 
   const firstCall = await recordPass(agentDirectory, factsFor(first));
@@ -144,6 +181,7 @@ it('reports a failed pass root and retries only it', async () => {
 
   await rm(failedRoot);
   await mkdir(failedRoot, { recursive: true });
+  await seedEvent(second, 'correction-second');
 
   const retry = await recordPass(agentDirectory, factsFor(first));
 

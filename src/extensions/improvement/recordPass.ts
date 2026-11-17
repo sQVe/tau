@@ -1,7 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
-import { writeEvent } from '../../improvement/event.js';
+import { readEvents, writeEvent } from '../../improvement/event.js';
 import { findOptionalProjectRoot, projectRootsOf } from '../../improvement/projectRoot.js';
 import { readSweepIndex } from '../../improvement/sweepIndex.js';
 import { evidenceOf, eventId, sessionFacts } from './recordAction.js';
@@ -18,13 +18,32 @@ export interface PassResult {
   failed: PassFailure[];
 }
 
-const passRoots = async (agentDirectory: string, cwd: string): Promise<string[]> => {
+const passCandidates = async (agentDirectory: string, cwd: string): Promise<string[]> => {
   const index = await readSweepIndex(agentDirectory);
   const indexed = index.status === 'read' ? Object.keys(index.index.projects) : [];
   const roots = projectRootsOf(indexed, await findOptionalProjectRoot(cwd));
 
   if (roots.length === 0) {
     throw new Error(`No project root to record the pass in from ${cwd}.`);
+  }
+
+  return roots;
+};
+
+const readRoots = async (candidates: string[], failed: PassFailure[]): Promise<string[]> => {
+  const roots: string[] = [];
+
+  for (const projectRoot of candidates) {
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- A failed root must not stop the other roots.
+      const { events } = await readEvents(projectRoot);
+
+      if (events.length > 0) {
+        roots.push(projectRoot);
+      }
+    } catch (error) {
+      failed.push({ projectRoot, reason: errorMessage(error) });
+    }
   }
 
   return roots;
@@ -37,8 +56,9 @@ export const recordPass = async (
   const id = eventId('pass', facts.sessionId, facts.toolCallId);
   const paths: string[] = [];
   const failed: PassFailure[] = [];
+  const roots = await readRoots(await passCandidates(agentDirectory, facts.cwd), failed);
 
-  for (const projectRoot of await passRoots(agentDirectory, facts.cwd)) {
+  for (const projectRoot of roots) {
     try {
       // oxlint-disable-next-line no-await-in-loop -- A failed root must not stop the other roots.
       const { path, outcome } = await writeEvent(projectRoot, {

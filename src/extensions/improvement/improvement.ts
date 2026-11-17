@@ -18,7 +18,7 @@ import { startSweep } from './sweepStart.js';
 import { createSweepState } from './sweepState.js';
 import { runTask } from './taskAction.js';
 
-const description = `- record: correction (summary) in session project; review (pullRequest, outcome), backlog (review, item, summary), decision (review, item, or class, plus choice), class (identity, level, summary, occurrences), each with projectRoot, in task project; pass in every project root. {id,path,outcome} or pass {id,paths,failed}; existing kept.
+const description = `- record: correction (summary) in session project; review (pullRequest, outcome), backlog (review, item, summary), decision (review, item, or class, plus choice), class (identity, level, summary, occurrences), each with projectRoot, in task project; pass in every project root that has an event. {id,path,outcome} or pass {id,paths,failed}; existing kept.
 - correct: read cross-project evidence. classes adds each class (identity, level, summary, occurrences, reverted, qaMiss) and ranks at most 5. Without classes {events,measures,rejected,coverage,gaps}; with {classes,measures,coverage,gaps}.
 - status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,gaps}
 - task: read a merged task's transcripts, coverage, projectRoot (pullRequest, worktree).`;

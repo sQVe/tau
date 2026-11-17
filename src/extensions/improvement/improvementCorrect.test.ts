@@ -47,6 +47,8 @@ it('records a correct pass through the improvement tool', async () => {
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
+  await runTool(project, { action: 'record', kind: 'correction', summary: 'seed' });
+
   const details = await runTool(project, { action: 'record', kind: 'pass' });
   const paths = details['paths'];
 
