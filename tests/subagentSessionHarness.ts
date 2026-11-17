@@ -51,9 +51,11 @@ export interface FollowUpWorkerOptions {
   timeoutSeconds?: number;
 }
 
-export interface FollowUpWorkerSession {
+// What a wait needs to read the assignment and notice that the worker ended first.
+export interface ObservedWorker {
   assignmentFilePath: string;
   workerAddress: string;
+  runtime: LaunchRuntime;
 }
 
 // Launches record this parent session, so a fake manager context must return it from getSessionFile.
@@ -61,40 +63,74 @@ export const managerSessionFile = '/sessions/manager.jsonl';
 
 const observationDeadlineMilliseconds = 90_000;
 const observationPollMilliseconds = 100;
+// hc runs one command per terminal check, so the worker is checked once per second, not per poll.
+const pollsPerTerminalCheck = 10;
 
-export const waitForReport = async (path: string): Promise<Assignment> => {
+// A worker saves its report and then exits, so a finished terminal only means the wait failed when
+// the assignment still lacks what the wait asks for after one more read.
+const throwIfWorkerEnded = async (
+  worker: ObservedWorker,
+  isDone: (assignment: Assignment | undefined) => assignment is Assignment,
+): Promise<void> => {
+  const terminal = await get(worker.runtime.hc, worker.workerAddress);
+
+  if (terminal.state !== 'finished') {
+    return;
+  }
+
+  if (isDone(await readAssignment(worker.assignmentFilePath))) {
+    return;
+  }
+
+  const exitCode = String(terminal.exit_code ?? 'unknown');
+
+  throw new Error(
+    `Worker terminal ${worker.workerAddress} ended (exit code ${exitCode}) before it saved a report or a question to ${worker.assignmentFilePath}.`,
+  );
+};
+
+const waitForAssignment = async (
+  worker: ObservedWorker,
+  isDone: (assignment: Assignment | undefined) => assignment is Assignment,
+  missingMessage: string,
+): Promise<Assignment> => {
   const deadline = Date.now() + observationDeadlineMilliseconds;
 
-  let assignment = await readAssignment(path);
+  let assignment = await readAssignment(worker.assignmentFilePath);
+  let polls = 0;
 
-  while (assignment?.report == null) {
+  while (!isDone(assignment)) {
     if (Date.now() > deadline) {
-      throw new Error(`Worker never wrote a report to ${path}.`);
+      throw new Error(missingMessage);
     }
 
+    if (polls % pollsPerTerminalCheck === 0) {
+      await throwIfWorkerEnded(worker, isDone);
+    }
+
+    polls += 1;
+
     await delay(observationPollMilliseconds);
-    assignment = await readAssignment(path);
+    assignment = await readAssignment(worker.assignmentFilePath);
   }
 
   return assignment;
 };
 
-export const waitForQuestion = async (path: string): Promise<Assignment> => {
-  const deadline = Date.now() + observationDeadlineMilliseconds;
+export const waitForReport = async (worker: ObservedWorker): Promise<Assignment> =>
+  waitForAssignment(
+    worker,
+    (assignment): assignment is Assignment => assignment?.report != null,
+    `Worker never wrote a report to ${worker.assignmentFilePath}.`,
+  );
 
-  let assignment = await readAssignment(path);
-
-  while (assignment === undefined || assignment.questions.length === 0) {
-    if (Date.now() > deadline) {
-      throw new Error(`Worker never saved a question to ${path}.`);
-    }
-
-    await delay(observationPollMilliseconds);
-    assignment = await readAssignment(path);
-  }
-
-  return assignment;
-};
+export const waitForQuestion = async (worker: ObservedWorker): Promise<Assignment> =>
+  waitForAssignment(
+    worker,
+    (assignment): assignment is Assignment =>
+      assignment !== undefined && assignment.questions.length > 0,
+    `Worker never saved a question to ${worker.assignmentFilePath}.`,
+  );
 
 const writeAgentSettings = (agentDirectory: string): void => {
   const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json')));
@@ -165,12 +201,15 @@ const launchContext = (
     ui: { notify: () => undefined },
   }) as unknown as ExtensionContext;
 
+// hc kills a worker when its parent terminal ends, so the manager fixture must outlive the test.
+const managerIdleProgram = ['node', '-e', 'setInterval(() => undefined, 60_000);'];
+
 const managerInvocation = (
   agentDirectory: string,
   probe: { source: string } | undefined,
 ): { argv: string[]; observationPath: string | undefined } => {
   if (probe === undefined) {
-    return { argv: ['sleep', '60'], observationPath: undefined };
+    return { argv: managerIdleProgram, observationPath: undefined };
   }
 
   const probePath = join(agentDirectory, 'manager-probe.mjs');
@@ -300,7 +339,7 @@ export const waitForTerminalFinished = async (hc: HcSession, address: string): P
 
 export const followUpWorkerSession = async (
   options: FollowUpWorkerOptions,
-): Promise<FollowUpWorkerSession> => {
+): Promise<ObservedWorker> => {
   const { source } = options;
   const sourceAssignment = await readAssignment(source.assignmentFilePath);
 
@@ -337,5 +376,5 @@ export const followUpWorkerSession = async (
     throw new Error('The follow-up returned no assignment label or address.');
   }
 
-  return { assignmentFilePath, workerAddress };
+  return { assignmentFilePath, workerAddress, runtime: source.runtime };
 };
