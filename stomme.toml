@@ -1,0 +1,608 @@
+schema = 1
+version = "0.1.0"
+language = "typescript"
+layers = ["pi"]
+
+[roles]
+core = "src"
+
+[exceptions]
+extra_docs = [
+  "docs/configuration.md",
+  "docs/skill-authoring.md",
+  "docs/skill-template.md",
+  "docs/vision.md",
+]
+
+[[violations]]
+path = "scripts/piSession.ts"
+rule = "typescript-owner-folder"
+key = "piSessionRules.ts"
+
+[[violations]]
+path = "scripts/piSmoke.ts"
+rule = "typescript-owner-folder"
+key = "piSmokeChecks.ts"
+
+[[violations]]
+path = "scripts/piSmoke.ts"
+rule = "typescript-owner-folder"
+key = "piSmokeSetup.ts"
+
+[[violations]]
+path = "scripts/sessionHealth.ts"
+rule = "typescript-owner-folder"
+key = "sessionHealthReport.ts"
+
+[[violations]]
+path = "scripts/sessionHealth.ts"
+rule = "typescript-owner-folder"
+key = "sessionHealthRules.ts"
+
+[[violations]]
+path = "scripts/tokenUsage.ts"
+rule = "typescript-owner-folder"
+key = "tokenUsageReport.ts"
+
+[[violations]]
+path = "src"
+rule = "role-folder"
+key = "core:src"
+
+[[violations]]
+path = "src/extensions/architect/ask.ts"
+rule = "typescript-owner-folder"
+key = "askDecision.ts"
+
+[[violations]]
+path = "src/extensions/architect/ask.ts"
+rule = "typescript-owner-folder"
+key = "askMode.ts"
+
+[[violations]]
+path = "src/extensions/architect/gate.ts"
+rule = "typescript-owner-folder"
+key = "gateDecision.ts"
+
+[[violations]]
+path = "src/extensions/commit/types.ts"
+rule = "typescript-catch-all-name"
+key = "types.ts"
+
+[[violations]]
+path = "src/extensions/improvement/recordPass.ts"
+rule = "typescript-owner-folder"
+key = "recordPassDecision.ts"
+
+[[violations]]
+path = "src/extensions/inbox/guard.ts"
+rule = "typescript-owner-folder"
+key = "guardDecision.ts"
+
+[[violations]]
+path = "src/extensions/pr/evidence.ts"
+rule = "typescript-owner-folder"
+key = "evidenceChain.ts"
+
+[[violations]]
+path = "src/extensions/pr/evidence.ts"
+rule = "typescript-owner-folder"
+key = "evidenceDecisions.ts"
+
+[[violations]]
+path = "src/extensions/pr/reuse.ts"
+rule = "typescript-owner-folder"
+key = "reuseDecisions.ts"
+
+[[violations]]
+path = "src/extensions/pr/target.ts"
+rule = "typescript-owner-folder"
+key = "targetDecisions.ts"
+
+[[violations]]
+path = "src/extensions/pr/verify.ts"
+rule = "typescript-owner-folder"
+key = "verifyDecisions.ts"
+
+[[violations]]
+path = "src/extensions/prFeedback/status.ts"
+rule = "typescript-owner-folder"
+key = "statusDecisions.ts"
+
+[[violations]]
+path = "src/extensions/slice/apply.ts"
+rule = "typescript-owner-folder"
+key = "applyApproval.ts"
+
+[[violations]]
+path = "src/extensions/slice/draft.ts"
+rule = "typescript-owner-folder"
+key = "draftDirectory.ts"
+
+[[violations]]
+path = "src/extensions/slice/startPick.ts"
+rule = "typescript-owner-folder"
+key = "startPickDecisions.ts"
+
+[[violations]]
+path = "src/extensions/stack/branch.ts"
+rule = "typescript-owner-folder"
+key = "branchDecisions.ts"
+
+[[violations]]
+path = "src/extensions/stack/branch.ts"
+rule = "typescript-owner-folder"
+key = "branchTool.ts"
+
+[[violations]]
+path = "src/extensions/stack/chain.ts"
+rule = "typescript-owner-folder"
+key = "chainDecisions.ts"
+
+[[violations]]
+path = "src/extensions/stack/check.ts"
+rule = "typescript-owner-folder"
+key = "checkDecisions.ts"
+
+[[violations]]
+path = "src/extensions/stack/history.ts"
+rule = "typescript-owner-folder"
+key = "historyDecisions.ts"
+
+[[violations]]
+path = "src/extensions/stack/link.ts"
+rule = "typescript-owner-folder"
+key = "linkDecisions.ts"
+
+[[violations]]
+path = "src/extensions/subagents/answer.ts"
+rule = "typescript-owner-folder"
+key = "answerParameters.ts"
+
+[[violations]]
+path = "src/extensions/subagents/answer.ts"
+rule = "typescript-owner-folder"
+key = "answerRequest.ts"
+
+[[violations]]
+path = "src/extensions/subagents/followUp.ts"
+rule = "typescript-owner-folder"
+key = "followUpParameters.ts"
+
+[[violations]]
+path = "src/extensions/subagents/launch.ts"
+rule = "typescript-owner-folder"
+key = "launchCheck.ts"
+
+[[violations]]
+path = "src/extensions/subagents/launch.ts"
+rule = "typescript-owner-folder"
+key = "launchEnvironment.ts"
+
+[[violations]]
+path = "src/extensions/subagents/launch.ts"
+rule = "typescript-owner-folder"
+key = "launchParameters.ts"
+
+[[violations]]
+path = "src/extensions/subagents/report.ts"
+rule = "typescript-owner-folder"
+key = "reportChecks.ts"
+
+[[violations]]
+path = "src/extensions/subagents/report.ts"
+rule = "typescript-owner-folder"
+key = "reportReminder.ts"
+
+[[violations]]
+path = "src/extensions/subagents/types.ts"
+rule = "typescript-catch-all-name"
+key = "types.ts"
+
+[[violations]]
+path = "src/extensions/subagents/workerStart.ts"
+rule = "typescript-owner-folder"
+key = "workerStartInput.ts"
+
+[[violations]]
+path = "src/extensions/tdd/config.ts"
+rule = "typescript-owner-folder"
+key = "configLayers.ts"
+
+[[violations]]
+path = "src/extensions/tdd/inputFingerprint.errors.test.ts"
+rule = "test-file-name"
+key = "inputFingerprint.errors.test.ts"
+
+[[violations]]
+path = "src/extensions/tdd/observation.ts"
+rule = "typescript-owner-folder"
+key = "observationTracker.ts"
+
+[[violations]]
+path = "src/extensions/tdd/observation.ts"
+rule = "typescript-owner-folder"
+key = "observationTransition.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/nextest.ts"
+rule = "typescript-owner-folder"
+key = "nextestArguments.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/nextest.ts"
+rule = "typescript-owner-folder"
+key = "nextestFocus.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/nextest.ts"
+rule = "typescript-owner-folder"
+key = "nextestList.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/nextest.ts"
+rule = "typescript-owner-folder"
+key = "nextestResult.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/nextest.ts"
+rule = "typescript-owner-folder"
+key = "nextestSources.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/types.ts"
+rule = "typescript-catch-all-name"
+key = "types.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/vitest.ts"
+rule = "typescript-owner-folder"
+key = "vitestFocused.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/vitest.ts"
+rule = "typescript-owner-folder"
+key = "vitestOptions.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/vitest.ts"
+rule = "typescript-owner-folder"
+key = "vitestReportReporter.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/vitest.ts"
+rule = "typescript-owner-folder"
+key = "vitestSelection.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/vitest.ts"
+rule = "typescript-owner-folder"
+key = "vitestVersion.ts"
+
+[[violations]]
+path = "src/extensions/tdd/runner/vitestSelection.ts"
+rule = "typescript-owner-folder"
+key = "vitestSelectionReporter.ts"
+
+[[violations]]
+path = "src/extensions/tdd/types.ts"
+rule = "typescript-catch-all-name"
+key = "types.ts"
+
+[[violations]]
+path = "src/extensions/tracker/cancel.ts"
+rule = "typescript-owner-folder"
+key = "cancelDecision.ts"
+
+[[violations]]
+path = "src/extensions/tracker/comment.ts"
+rule = "typescript-owner-folder"
+key = "commentTarget.ts"
+
+[[violations]]
+path = "src/github/repositoryTarget.ts"
+rule = "typescript-owner-folder"
+key = "repositoryTargetDecisions.ts"
+
+[[violations]]
+path = "src/improvement/status.ts"
+rule = "typescript-owner-folder"
+key = "statusDecision.ts"
+
+[[violations]]
+path = "src/improvement/sweep.ts"
+rule = "typescript-owner-folder"
+key = "sweepDecision.ts"
+
+[[violations]]
+path = "src/improvement/sweep.ts"
+rule = "typescript-owner-folder"
+key = "sweepDiscovery.ts"
+
+[[violations]]
+path = "src/improvement/sweep.ts"
+rule = "typescript-owner-folder"
+key = "sweepIndex.ts"
+
+[[violations]]
+path = "src/improvement/sweep.ts"
+rule = "typescript-owner-folder"
+key = "sweepProject.ts"
+
+[[violations]]
+path = "src/instructions/typescriptRules.ts"
+rule = "typescript-owner-folder"
+key = "typescriptRulesDecision.ts"
+
+[[violations]]
+path = "src/reviewCapture/chainSelection.ts"
+rule = "typescript-owner-folder"
+key = "chainSelectionDecision.ts"
+
+[[violations]]
+path = "src/reviewCapture/coverage.ts"
+rule = "typescript-owner-folder"
+key = "coverageDecision.ts"
+
+[[violations]]
+path = "src/reviewCapture/endpoint.ts"
+rule = "typescript-owner-folder"
+key = "endpointDecision.ts"
+
+[[violations]]
+path = "src/reviewCapture/endpoint.ts"
+rule = "typescript-owner-folder"
+key = "endpointPrune.ts"
+
+[[violations]]
+path = "src/reviewCapture/endpoint.ts"
+rule = "typescript-owner-folder"
+key = "endpointRetention.ts"
+
+[[violations]]
+path = "src/reviewCapture/endpoint.ts"
+rule = "typescript-owner-folder"
+key = "endpointTransition.ts"
+
+[[violations]]
+path = "src/reviewCapture/endpointPrune.ts"
+rule = "typescript-owner-folder"
+key = "endpointPruneDecision.ts"
+
+[[violations]]
+path = "src/reviewCapture/evidence.ts"
+rule = "typescript-owner-folder"
+key = "evidenceDecisions.ts"
+
+[[violations]]
+path = "src/reviewCapture/generation.ts"
+rule = "typescript-owner-folder"
+key = "generationDecision.ts"
+
+[[violations]]
+path = "src/reviewCapture/ownership.ts"
+rule = "typescript-owner-folder"
+key = "ownershipDecision.ts"
+
+[[violations]]
+path = "src/reviewCapture/record.ts"
+rule = "typescript-owner-folder"
+key = "recordRead.ts"
+
+[[violations]]
+path = "src/role.ts"
+rule = "typescript-owner-folder"
+key = "roleGuidelines.ts"
+
+[[violations]]
+path = "src/tau.ts"
+rule = "typescript-owner-folder"
+key = "tauDirectory.ts"
+
+[[violations]]
+path = "tests/hangWatchdog.ts"
+rule = "typescript-owner-folder"
+key = "hangWatchdogSource.ts"
+
+[modules.checkRecord]
+entry = "src/checkRecord/checkRecord.ts"
+public = ["src/checkRecord/identity.ts", "src/checkRecord/reuseDecision.ts"]
+imports = ["errors", "git", "record"]
+
+[modules.classifier]
+entry = "src/classifier/classifier.ts"
+public = []
+imports = ["config"]
+
+[modules.codemode]
+entry = "src/codemode/codemode.ts"
+public = [
+  "src/codemode/controlTools.ts",
+  "src/codemode/fullOutput.ts",
+  "src/codemode/guidelines.ts",
+]
+imports = []
+
+[modules.command]
+entry = "src/command.ts"
+public = []
+imports = ["schema"]
+
+[modules.config]
+entry = "src/config/config.ts"
+public = [
+  "src/config/models.ts",
+  "src/config/repositoryCommand.ts",
+  "src/config/repositoryEntry.ts",
+  "src/config/repositorySection.ts",
+  "src/config/roleModels.ts",
+  "src/config/verificationTargets.ts",
+]
+imports = ["errors", "role", "schema"]
+
+[modules.dialog]
+entry = "src/dialog/dialog.ts"
+public = ["src/dialog/blockedStatus.ts", "src/dialog/box.ts", "src/dialog/keys.ts"]
+imports = ["role"]
+
+[modules.errors]
+entry = "src/errors.ts"
+public = []
+imports = []
+
+[modules."extensions/subagents/controller"]
+entry = "src/extensions/subagents/controller/controller.ts"
+public = [
+  "src/extensions/subagents/controller/budget.ts",
+  "src/extensions/subagents/controller/controller.ts",
+  "src/extensions/subagents/controller/record.ts",
+]
+imports = []
+
+[modules."extensions/tdd/runner"]
+entry = "src/extensions/tdd/runner/vitest.ts"
+public = [
+  "src/extensions/tdd/runner/constants.ts",
+  "src/extensions/tdd/runner/report.ts",
+  "src/extensions/tdd/runner/retention.ts",
+  "src/extensions/tdd/runner/runners.ts",
+  "src/extensions/tdd/runner/types.ts",
+  "src/extensions/tdd/runner/vitest.ts",
+]
+imports = []
+
+[modules.fileLock]
+entry = "src/fileLock/fileLock.ts"
+public = []
+imports = ["errors", "process", "schema"]
+
+[modules.git]
+entry = "src/git.ts"
+public = []
+imports = ["errors"]
+
+[modules.github]
+entry = "src/github/github.ts"
+public = [
+  "src/github/mergedPullRequest.ts",
+  "src/github/repositoryTarget.ts",
+  "src/github/repositoryTargetDecisions.ts",
+]
+imports = ["command", "errors", "git", "schema"]
+
+[modules.hc]
+entry = "src/hc/hc.ts"
+public = ["src/hc/connect.ts", "src/hc/events.ts"]
+imports = ["command", "errors", "schema"]
+
+[modules.improvement]
+entry = "src/improvement/improvement.ts"
+public = [
+  "src/improvement/classIdentity.ts",
+  "src/improvement/correctDecision.ts",
+  "src/improvement/correctSources.ts",
+  "src/improvement/event.ts",
+  "src/improvement/historyRead.ts",
+  "src/improvement/projectRoot.ts",
+  "src/improvement/sessionDirectory.ts",
+  "src/improvement/status.ts",
+  "src/improvement/statusDecision.ts",
+  "src/improvement/sweep.ts",
+  "src/improvement/sweepIndex.ts",
+  "src/improvement/taskMapping.ts",
+  "src/improvement/taskSignals.ts",
+  "src/improvement/taskTranscripts.ts",
+  "src/improvement/transcript.ts",
+  "src/improvement/workerRecord.ts",
+]
+imports = ["command", "errors", "fileLock", "git", "github", "record", "schema", "tauDirectory"]
+
+[modules.inbox]
+entry = "src/inbox/inbox.ts"
+public = ["src/inbox/receiptDecision.ts"]
+imports = ["errors", "fileLock", "hc", "record", "schema", "wake"]
+
+[modules.instructions]
+entry = "src/instructions/instructions.ts"
+public = ["src/instructions/systemPrompt.ts", "src/instructions/typescriptRules.ts"]
+imports = []
+
+[modules.linear]
+entry = "src/linear/linear.ts"
+public = ["src/linear/descriptionMatch.ts", "src/linear/ownership.ts"]
+imports = ["command", "errors"]
+
+[modules.piStart]
+entry = "src/piStart/piStart.ts"
+public = ["src/piStart/piArguments.ts"]
+imports = ["command", "config", "errors", "tauDirectory"]
+
+[modules.process]
+entry = "src/process/process.ts"
+public = []
+imports = ["errors"]
+
+[modules.record]
+entry = "src/record.ts"
+public = []
+imports = ["errors", "schema", "tauDirectory"]
+
+[modules.reviewBots]
+entry = "src/reviewBots/reviewBots.ts"
+public = []
+imports = ["command", "config", "github", "schema"]
+
+[modules.reviewCapture]
+entry = "src/reviewCapture/reviewCapture.ts"
+public = ["src/reviewCapture/evidence.ts", "src/reviewCapture/reports.ts"]
+imports = ["command", "errors", "git", "github", "record", "schema", "tauDirectory"]
+
+[modules.role]
+entry = "src/role.ts"
+public = []
+imports = ["schema"]
+
+[modules.roleGuidelines]
+entry = "src/roleGuidelines.ts"
+public = []
+imports = []
+
+[modules.schema]
+entry = "src/schema.ts"
+public = []
+imports = []
+
+[modules.shell]
+entry = "src/shell.ts"
+public = []
+imports = []
+
+[modules.skillTools]
+entry = "src/skillTools.ts"
+public = []
+imports = []
+
+[modules.tau]
+entry = "src/tau.ts"
+public = []
+imports = []
+
+[modules.tauDirectory]
+entry = "src/tauDirectory.ts"
+public = []
+imports = ["errors", "git"]
+
+[modules.verification]
+entry = "src/verification/verification.ts"
+public = [
+  "src/verification/freshness.ts",
+  "src/verification/records.ts",
+  "src/verification/selection.ts",
+]
+imports = ["errors", "record", "schema"]
+
+[modules.wake]
+entry = "src/wake/wake.ts"
+public = []
+imports = []
+

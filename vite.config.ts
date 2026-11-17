@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { format, lint, vitest } from '@sqve/seam';
+import { format, lint, vitest } from '@sqve/stomme-ts-style';
 import { defineConfig } from 'vite-plus';
 
 interface TestProject {
@@ -221,7 +221,7 @@ export default defineConfig({
   fmt: {
     ...format,
     // Local `.pi` agent state, including preserved review reports, is not source and must not be reformatted.
-    ignorePatterns: ['pnpm-lock.yaml', '.pi/**'],
+    ignorePatterns: ['pnpm-lock.yaml', '.pi/**', 'docs/stomme/**'],
     overrides: [
       ...(format.overrides ?? []),
       // Snippet bodies are sent to the model as written, so wrapping them would
@@ -233,7 +233,10 @@ export default defineConfig({
     ],
   },
   staged: {
-    '*.{ts,tsx,js,jsx,mjs,cjs}': ['seam', 'vp fmt --check --no-error-on-unmatched-pattern'],
+    '*.{ts,tsx,js,jsx,mjs,cjs}': [
+      'stomme-ts-style',
+      'vp fmt --check --no-error-on-unmatched-pattern',
+    ],
     '!(pnpm-lock).{json,md,yaml,yml,css}': 'vp fmt --check --no-error-on-unmatched-pattern',
   },
 });
