@@ -1,6 +1,6 @@
 import { readEvents } from './event.ts';
 import { findOptionalProjectRoot } from './projectRoot.ts';
-import { decideCorrectDue, decideSweep, decideTasks } from './statusDecision.ts';
+import { decideCorrectDue, decideSweep, decideTasks, lastPassAt } from './statusDecision.ts';
 import type { ImprovementStatus } from './statusDecision.ts';
 import type { SweepOutcome } from './sweep.ts';
 import { readSweepIndex } from './sweepIndex.ts';
@@ -18,10 +18,9 @@ export const readImprovementStatus = async (sources: {
   const index = await readSweepIndex(sources.agentDirectory);
   const { tasks, coverage } = decideTasks(eventRead.events);
 
-  // No event marks a `correct` pass yet.
   const correctDue = decideCorrectDue({
     events: eventRead.events,
-    lastPassAt: undefined,
+    lastPassAt: lastPassAt(eventRead.events),
     now: sources.now,
     readFailed: eventRead.gaps.length > 0,
   });

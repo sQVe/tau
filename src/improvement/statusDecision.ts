@@ -48,6 +48,17 @@ const isLater = (candidate: ImprovementEvent, current: ImprovementEvent): boolea
   return candidate.id > current.id;
 };
 
+export const lastPassAt = (events: readonly ImprovementEvent[]): string | undefined => {
+  const passes = events.filter((event) => event.kind === 'pass');
+
+  const newest = passes.reduce<ImprovementEvent | undefined>(
+    (current, event) => (current === undefined || isLater(event, current) ? event : current),
+    undefined,
+  );
+
+  return newest?.createdAt;
+};
+
 const keepLatest = <Event extends MergeEvent | FactsEvent>(
   events: Map<string, Event>,
   event: Event,
@@ -119,16 +130,14 @@ export const decideTasks = (
   return { tasks, coverage };
 };
 
-const isNew = (event: ImprovementEvent, lastPassAt: string | undefined): boolean =>
-  lastPassAt === undefined || Date.parse(event.createdAt) > Date.parse(lastPassAt);
+const isNew = (event: ImprovementEvent, passAt: string | undefined): boolean =>
+  passAt === undefined || Date.parse(event.createdAt) > Date.parse(passAt);
 
 const isReviewOrCorrection = (event: ImprovementEvent): boolean =>
   event.kind === 'review' || event.kind === 'correction';
 
-const isNewReviewOrCorrection = (
-  event: ImprovementEvent,
-  lastPassAt: string | undefined,
-): boolean => isReviewOrCorrection(event) && isNew(event, lastPassAt);
+const isNewReviewOrCorrection = (event: ImprovementEvent, passAt: string | undefined): boolean =>
+  isReviewOrCorrection(event) && isNew(event, passAt);
 
 export const decideCorrectDue = (facts: {
   events: readonly ImprovementEvent[];

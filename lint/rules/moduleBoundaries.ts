@@ -88,6 +88,9 @@ export const moduleList: readonly ModuleDeclaration[] = [
     name: 'improvement',
     entry: 'improvement/improvement',
     publicFiles: [
+      'improvement/classIdentity',
+      'improvement/correctDecision',
+      'improvement/correctSources',
       'improvement/event',
       'improvement/projectRoot',
       'improvement/sessionDirectory',
