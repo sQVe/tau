@@ -1,7 +1,9 @@
+import { array, constantFrom, property, tuple, uniqueArray } from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { ImprovementEvent } from './event.ts';
 import { decideTranscriptRead, discoveryOrder, plannedEvents } from './sweepDecision.ts';
+import type { DiscoveryCandidate } from './sweepDecision.ts';
 import type { TaskCounts } from './taskFacts.ts';
 import type { Task } from './taskMapping.ts';
 
@@ -86,6 +88,46 @@ describe('discoveryOrder', () => {
     },
   ] as const)('$rule', ({ candidates, order }) => {
     expect(discoveryOrder(candidates)).toEqual(order);
+  });
+
+  it('keeps every unresolved path after every unseen path and drops resolved ones', () => {
+    const candidate = tuple(
+      uniqueArray(constantFrom('/sessions/a', '/sessions/b', '/sessions/c'), {
+        minLength: 0,
+        maxLength: 3,
+      }),
+      array(constantFrom('new', 'unresolved', 'resolved'), { minLength: 0, maxLength: 3 }),
+    ).map(([paths, statuses]): DiscoveryCandidate[] =>
+      paths.map((path, index) => ({
+        path,
+        status: statuses[index % statuses.length] ?? 'new',
+      })),
+    );
+
+    property(candidate, (candidates) => {
+      const order = discoveryOrder(candidates);
+      const kept = candidates.filter(({ status }) => status !== 'resolved');
+
+      const unseen = order.filter(
+        (path) => candidates.find((entry) => entry.path === path)?.status === 'new',
+      );
+
+      const retried = order.filter(
+        (path) => candidates.find((entry) => entry.path === path)?.status === 'unresolved',
+      );
+
+      expect(order).toHaveLength(kept.length);
+      expect(new Set(order).size).toBe(order.length);
+      expect(order).toEqual([...unseen, ...retried]);
+
+      expect(unseen).toEqual(
+        candidates.filter(({ status }) => status === 'new').map(({ path }) => path),
+      );
+
+      expect(retried).toEqual(
+        candidates.filter(({ status }) => status === 'unresolved').map(({ path }) => path),
+      );
+    });
   });
 });
 
