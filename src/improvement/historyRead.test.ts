@@ -101,10 +101,25 @@ it('parses reviews and comments from a pull request view', () => {
 });
 
 it('parses inline review comments', () => {
-  const output = JSON.stringify([{ user: { login: 'reviewer' }, body: 'Use the helper.' }]);
+  const output = JSON.stringify([[{ user: { login: 'reviewer' }, body: 'Use the helper.' }]]);
 
   expect(parseInlineComments(pullRequest, output)).toEqual({
     comments: [{ url: pullRequest, author: 'reviewer', body: 'Use the helper.' }],
+    gaps: [],
+  });
+});
+
+it('flattens every inline comment page', () => {
+  const output = JSON.stringify([
+    [{ user: { login: 'first' }, body: 'First page.' }],
+    [{ user: { login: 'second' }, body: 'Second page.' }],
+  ]);
+
+  expect(parseInlineComments(pullRequest, output)).toEqual({
+    comments: [
+      { url: pullRequest, author: 'first', body: 'First page.' },
+      { url: pullRequest, author: 'second', body: 'Second page.' },
+    ],
     gaps: [],
   });
 });

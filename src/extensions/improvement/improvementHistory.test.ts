@@ -83,7 +83,7 @@ it('dispatches the history action through the improvement tool', async () => {
   expect(fake.calls.map((call) => [call.command, call.commandArguments])).toEqual([
     ['git', ['-C', projectRoot, 'log', '--since=30.days', '--grep=Revert', '--format=%H%x09%s']],
     ['gh', ['pr', 'view', pullRequest, '--json', 'reviews,comments']],
-    ['gh', ['api', 'repos/sqve/tau/pulls/562/comments']],
+    ['gh', ['api', 'repos/sqve/tau/pulls/562/comments', '--paginate', '--slurp']],
   ]);
 
   expect(argumentAfter(fake.calls[0]?.commandArguments ?? [], '-C')).toBe(projectRoot);

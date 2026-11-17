@@ -137,6 +137,38 @@ it('writes no pass event to a root with no events', async () => {
   expect(statSync(eventDirectory(empty), { throwIfNoEntry: false })).toBeUndefined();
 });
 
+it('reports a root whose events are all unreadable', async () => {
+  const project = await createProject();
+  const agentDirectory = createAgentDirectory();
+  const path = join(eventDirectory(project), 'broken.json');
+
+  await writeSweepIndex(agentDirectory, indexFor([project]));
+  await mkdir(eventDirectory(project), { recursive: true });
+  await writeFile(path, 'not json');
+
+  const result = await recordPass(agentDirectory, factsFor(project));
+
+  expect(result.paths).toEqual([]);
+
+  expect(result.failed).toEqual([
+    { projectRoot: project, reason: `${path}: Malformed improvement event ${path}: not JSON.` },
+  ]);
+});
+
+it('writes a pass event to a root with one readable and one unreadable event', async () => {
+  const project = await createProject();
+  const agentDirectory = createAgentDirectory();
+
+  await writeSweepIndex(agentDirectory, indexFor([project]));
+  await seedEvent(project, 'correction-readable');
+  await writeFile(join(eventDirectory(project), 'broken.json'), 'not json');
+
+  const result = await recordPass(agentDirectory, factsFor(project));
+
+  expect(result.failed).toEqual([]);
+  expect(result.paths).toEqual([join(eventDirectory(project), `${result.id}.json`)]);
+});
+
 it('refuses a pass with no project root to write to', async () => {
   const agentDirectory = createAgentDirectory();
   const outside = temporaryDirectory(onTestFinished, 'tau-outside-');

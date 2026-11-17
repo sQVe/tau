@@ -16,7 +16,7 @@ const viewOutput = (comment: string) =>
   });
 
 const inlineOutput = (comment: string) =>
-  JSON.stringify([{ user: { login: 'reviewer' }, body: comment }]);
+  JSON.stringify([[{ user: { login: 'reviewer' }, body: comment }]]);
 
 const createHistoryExec = (handlers: Readonly<Record<string, ExecHandler>>) =>
   createExecFake<string>({
@@ -72,8 +72,150 @@ it('runs one revert log and two pull request reads', async () => {
   expect(fake.calls.map((call) => [call.command, call.commandArguments])).toEqual([
     ['git', ['-C', firstRoot, 'log', '--since=30.days', '--grep=Revert', '--format=%H%x09%s']],
     ['gh', ['pr', 'view', firstPullRequest, '--json', 'reviews,comments']],
-    ['gh', ['api', 'repos/sqve/tau/pulls/562/comments']],
+    ['gh', ['api', 'repos/sqve/tau/pulls/562/comments', '--paginate', '--slurp']],
   ]);
+});
+
+it('reads inline comments from every page', async () => {
+  const fake = createHistoryExec({
+    [`git ${firstRoot}`]: () => succeededResult(''),
+    [`view ${firstPullRequest}`]: () =>
+      succeededResult(JSON.stringify({ reviews: [], comments: [] })),
+    'inline repos/sqve/tau/pulls/562/comments': () =>
+      succeededResult(
+        JSON.stringify([
+          [{ user: { login: 'first' }, body: 'First page.' }],
+          [{ user: { login: 'second' }, body: 'Second page.' }],
+        ]),
+      ),
+  });
+
+  const result = await runHistory(
+    { exec: fake.exec, cwd: '/work/tau' },
+    { action: 'history', projectRoots: [firstRoot], pullRequests: [firstPullRequest] },
+  );
+
+  expect(result.comments).toEqual([
+    { url: firstPullRequest, author: 'first', body: 'First page.' },
+    { url: firstPullRequest, author: 'second', body: 'Second page.' },
+  ]);
+
+  const inlineCall = fake.calls.find((call) => call.commandArguments[0] === 'api');
+
+  expect(inlineCall?.commandArguments).toEqual([
+    'api',
+    'repos/sqve/tau/pulls/562/comments',
+    '--paginate',
+    '--slurp',
+  ]);
+});
+
+it('reports invalid JSON without dropping a valid source', async () => {
+  const fake = createHistoryExec({
+    [`git ${firstRoot}`]: () => succeededResult('abc123\tRevert "Kept"\n'),
+    [`view ${firstPullRequest}`]: () => succeededResult('not json'),
+    'inline repos/sqve/tau/pulls/562/comments': () => succeededResult(inlineOutput('Kept inline.')),
+  });
+
+  const result = await runHistory(
+    { exec: fake.exec, cwd: '/work/tau' },
+    { action: 'history', projectRoots: [firstRoot], pullRequests: [firstPullRequest] },
+  );
+
+  expect(result.reverts).toHaveLength(1);
+
+  expect(result.comments).toEqual([
+    { url: firstPullRequest, author: 'reviewer', body: 'Kept inline.' },
+  ]);
+
+  expect(result.gaps.map((entry) => entry.source)).toEqual([firstPullRequest]);
+  expect(result.gaps[0]?.reason).toContain('not JSON');
+  expect(result.coverage).toBe('partial');
+});
+
+it('reports an invalid review shape without dropping a valid source', async () => {
+  const fake = createHistoryExec({
+    [`git ${firstRoot}`]: () => succeededResult('abc123\tRevert "Kept"\n'),
+    [`view ${firstPullRequest}`]: () =>
+      succeededResult(
+        JSON.stringify({ reviews: [{ author: { login: 'reviewer' }, state: 'APPROVED' }] }),
+      ),
+    'inline repos/sqve/tau/pulls/562/comments': () => succeededResult(inlineOutput('Kept inline.')),
+  });
+
+  const result = await runHistory(
+    { exec: fake.exec, cwd: '/work/tau' },
+    { action: 'history', projectRoots: [firstRoot], pullRequests: [firstPullRequest] },
+  );
+
+  expect(result.reverts).toHaveLength(1);
+
+  expect(result.comments).toEqual([
+    { url: firstPullRequest, author: 'reviewer', body: 'Kept inline.' },
+  ]);
+
+  expect(result.gaps.map((entry) => entry.source)).toEqual([firstPullRequest]);
+  expect(result.gaps[0]?.reason).toContain('unexpected output');
+  expect(result.coverage).toBe('partial');
+});
+
+it('reports an invalid comment shape without dropping a valid source', async () => {
+  const fake = createHistoryExec({
+    [`git ${firstRoot}`]: () => succeededResult('abc123\tRevert "Kept"\n'),
+    [`view ${firstPullRequest}`]: () =>
+      succeededResult(JSON.stringify({ reviews: [], comments: [] })),
+    'inline repos/sqve/tau/pulls/562/comments': () =>
+      succeededResult(JSON.stringify([[{ user: { login: 'reviewer' } }]])),
+    [`view ${secondPullRequest}`]: () => succeededResult(viewOutput('Still read.')),
+    'inline repos/sqve/tau/pulls/563/comments': () => succeededResult(inlineOutput('Also read.')),
+  });
+
+  const result = await runHistory(
+    { exec: fake.exec, cwd: '/work/tau' },
+    {
+      action: 'history',
+      projectRoots: [firstRoot],
+      pullRequests: [firstPullRequest, secondPullRequest],
+    },
+  );
+
+  expect(result.reverts).toHaveLength(1);
+
+  expect(result.comments).toEqual([
+    { url: secondPullRequest, author: 'author', body: 'Still read.' },
+    { url: secondPullRequest, author: 'reviewer', body: 'Also read.' },
+  ]);
+
+  expect(result.gaps.map((entry) => entry.source)).toEqual([firstPullRequest]);
+  expect(result.gaps[0]?.reason).toContain('unexpected output');
+  expect(result.coverage).toBe('partial');
+});
+
+it('reports a malformed revert line without dropping a valid source', async () => {
+  const fake = createHistoryExec({
+    [`git ${firstRoot}`]: () => succeededResult('not a revert line\n'),
+    [`git ${secondRoot}`]: () => succeededResult('def456\tRevert "Kept"\n'),
+    [`view ${firstPullRequest}`]: () => succeededResult(viewOutput('Still read.')),
+    'inline repos/sqve/tau/pulls/562/comments': () => succeededResult(inlineOutput('Also read.')),
+  });
+
+  const result = await runHistory(
+    { exec: fake.exec, cwd: '/work/tau' },
+    {
+      action: 'history',
+      projectRoots: [firstRoot, secondRoot],
+      pullRequests: [firstPullRequest],
+    },
+  );
+
+  expect(result.reverts).toEqual([
+    { projectRoot: secondRoot, commit: 'def456', subject: 'Revert "Kept"' },
+  ]);
+
+  expect(result.comments).toHaveLength(2);
+  expect(result.gaps.map((entry) => entry.source)).toEqual([firstRoot]);
+  expect(result.gaps[0]?.reason).toContain('unexpected output');
+  expect(result.coverage).toBe('partial');
 });
 
 it('continues after a failed root and a failed pull request', async () => {

@@ -2,6 +2,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
 import { readEvents, writeEvent } from '../../improvement/event.js';
+import type { EventGap, ImprovementEvent } from '../../improvement/event.js';
 import { findOptionalProjectRoot, projectRootsOf } from '../../improvement/projectRoot.js';
 import { readSweepIndex } from '../../improvement/sweepIndex.js';
 import { evidenceOf, eventId, sessionFacts } from './recordAction.js';
@@ -30,16 +31,38 @@ const passCandidates = async (agentDirectory: string, cwd: string): Promise<stri
   return roots;
 };
 
+const rootFailure = (
+  projectRoot: string,
+  events: readonly ImprovementEvent[],
+  gaps: readonly EventGap[],
+): PassFailure | undefined => {
+  if (events.length > 0) {
+    return undefined;
+  }
+
+  const [firstGap] = gaps;
+
+  return firstGap === undefined
+    ? undefined
+    : { projectRoot, reason: `${firstGap.path}: ${firstGap.reason}` };
+};
+
 const readRoots = async (candidates: string[], failed: PassFailure[]): Promise<string[]> => {
   const roots: string[] = [];
 
   for (const projectRoot of candidates) {
     try {
       // oxlint-disable-next-line no-await-in-loop -- A failed root must not stop the other roots.
-      const { events } = await readEvents(projectRoot);
+      const { events, gaps } = await readEvents(projectRoot);
 
       if (events.length > 0) {
         roots.push(projectRoot);
+      }
+
+      const failure = rootFailure(projectRoot, events, gaps);
+
+      if (failure !== undefined) {
+        failed.push(failure);
       }
     } catch (error) {
       failed.push({ projectRoot, reason: errorMessage(error) });

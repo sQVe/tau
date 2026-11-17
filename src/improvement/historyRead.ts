@@ -73,10 +73,12 @@ const reviewViewSchema = Type.Object({
 });
 
 const inlineCommentSchema = Type.Array(
-  Type.Object({
-    user: authorSchema,
-    body: Type.String(),
-  }),
+  Type.Array(
+    Type.Object({
+      user: authorSchema,
+      body: Type.String(),
+    }),
+  ),
 );
 
 const capList = (entries: readonly string[], maximum: number, source: string): CappedList => {
@@ -137,7 +139,7 @@ export const inlineCommentArguments = (url: string): string[] => {
 
   const [, owner = '', name = '', number = ''] = match;
 
-  return ['api', `repos/${owner}/${name}/pulls/${number}/comments`];
+  return ['api', `repos/${owner}/${name}/pulls/${number}/comments`, '--paginate', '--slurp'];
 };
 
 const parseJson = (label: string, stdout: string): unknown => {
@@ -242,7 +244,7 @@ export const parseInlineComments = (
 
   const gaps: HistoryGap[] = [];
 
-  const comments = value.map((comment) => {
+  const comments = value.flat().map((comment) => {
     const truncated = truncateBody(url, comment.body);
 
     if (truncated.gap !== undefined) {
