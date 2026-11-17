@@ -42,6 +42,40 @@ it('resolves a transcript through the nearest existing ancestor of its cwd', asy
   });
 });
 
+it('resolves a new transcript before retrying unresolved ones', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+
+  for (let index = 0; index < 3; index += 1) {
+    fixture.writeSession(`malformed-${index}.jsonl`, '{"type":"message"}\n');
+  }
+
+  fixture.setMerged([]);
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const path = fixture.writeSession('manager.jsonl', session(fixture.repository));
+  const start = new Date('2026-11-15T12:00:00.000Z');
+  const budget = 1000;
+  let calls = 0;
+
+  const clock = () => {
+    calls += 1;
+
+    return calls >= 4 ? new Date(start.getTime() + budget) : start;
+  };
+
+  expect(await fixture.run({ now: clock, budgetMilliseconds: budget })).toEqual({
+    outcome: 'budget',
+  });
+
+  const index = await fixture.readIndex();
+
+  expect(index.transcripts[path]).toMatchObject({
+    status: 'resolved',
+    cwd: fixture.repository,
+  });
+});
+
 it('retries an unresolved transcript on the next sweep', async () => {
   const fixture = await createSweepFixture(onTestFinished);
   const directory = join(fixture.agentDirectory, 'becomes-a-repository');

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ImprovementEvent } from './event.ts';
-import { decideTranscriptRead, plannedEvents } from './sweepDecision.ts';
+import { decideTranscriptRead, discoveryOrder, plannedEvents } from './sweepDecision.ts';
 import type { TaskCounts } from './taskFacts.ts';
 import type { Task } from './taskMapping.ts';
 
@@ -49,6 +49,43 @@ describe('decideTranscriptRead', () => {
     { rule: 'an empty new file is unchanged', cursor: 0, size: 0, read: 'unchanged' },
   ] as const)('$rule', ({ cursor, size, read }) => {
     expect(decideTranscriptRead({ cursor, size })).toBe(read);
+  });
+});
+
+describe('discoveryOrder', () => {
+  it.each([
+    {
+      rule: 'reads unseen transcripts before retrying unresolved ones',
+      candidates: [
+        { path: '/sessions/retried.jsonl', status: 'unresolved' },
+        { path: '/sessions/unseen.jsonl', status: 'new' },
+      ],
+      order: ['/sessions/unseen.jsonl', '/sessions/retried.jsonl'],
+    },
+    {
+      rule: 'keeps the unseen transcripts in the order they were found',
+      candidates: [
+        { path: '/sessions/first.jsonl', status: 'new' },
+        { path: '/sessions/retried.jsonl', status: 'unresolved' },
+        { path: '/sessions/second.jsonl', status: 'new' },
+      ],
+      order: ['/sessions/first.jsonl', '/sessions/second.jsonl', '/sessions/retried.jsonl'],
+    },
+    {
+      rule: 'skips a transcript that was already resolved',
+      candidates: [
+        { path: '/sessions/resolved.jsonl', status: 'resolved' },
+        { path: '/sessions/unseen.jsonl', status: 'new' },
+      ],
+      order: ['/sessions/unseen.jsonl'],
+    },
+    {
+      rule: 'reads nothing when there is no transcript',
+      candidates: [],
+      order: [],
+    },
+  ] as const)('$rule', ({ candidates, order }) => {
+    expect(discoveryOrder(candidates)).toEqual(order);
   });
 });
 

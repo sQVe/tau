@@ -7,6 +7,8 @@ import { readOriginRepository } from '../github/repositoryTarget.ts';
 import { formatRepository } from '../github/repositoryTargetDecisions.ts';
 import { findSessionFiles, readTranscriptChunk } from './improvement.ts';
 import { findProjectRoot } from './projectRoot.ts';
+import { discoveryOrder } from './sweepDecision.ts';
+import type { DiscoveryCandidate } from './sweepDecision.ts';
 import type { SweepIndex } from './sweepIndex.ts';
 import { continueTranscript, finishTranscript } from './transcript.ts';
 import type { TranscriptState } from './transcript.ts';
@@ -289,9 +291,12 @@ const discoverUnresolved = async (
   options: DiscoveryOptions,
   cache: Map<string, Promise<LocationResult>>,
 ): Promise<DiscoveryResult | undefined> => {
-  const unresolved = sessions.filter((path) => transcripts[path]?.status !== 'resolved');
+  const candidates: DiscoveryCandidate[] = sessions.map((path) => ({
+    path,
+    status: transcripts[path]?.status ?? 'new',
+  }));
 
-  for (const path of unresolved) {
+  for (const path of discoveryOrder(candidates)) {
     if (budgetReached(options)) {
       return budgetResult(options, transcripts, projects);
     }
