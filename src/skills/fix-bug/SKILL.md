@@ -28,6 +28,9 @@ out each step yourself in the same order.
   supports ship.
 - Stop for the user only when the root cause is uncertain, no reliable reproduction exists, or the
   fix changes behavior beyond the bug. Otherwise continue.
+- When a property-test trigger from the coding instructions holds, such as a bug caused by event
+  order, add a property test beside the regression test, or state in one PR line why examples are
+  enough.
 
 ## Procedure
 

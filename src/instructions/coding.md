@@ -80,3 +80,15 @@ and repository conventions over these defaults.
 - Before refactoring, reuse useful coverage or add a characterization test or equivalence check of
   observable behavior that passes before and after. Do not force a failing test. For a rename, also
   check strings, docs, and serialized names.
+
+## Decide when a module gets a property test
+
+A property test generates inputs or call orders and checks one rule against each of them.
+
+- Write a property test for a module when one of these triggers holds:
+  - Its output depends on state from earlier calls, such as dedupe, retry, cancellation, ownership,
+    or queues.
+  - A bug in it was caused by event order.
+  - One of its functions has a law: a round trip, idempotence, or agreement with a simpler oracle.
+- When a trigger holds and you write no property test, state in one PR line why examples are enough.
+- When no trigger holds, the PR needs no such line.
