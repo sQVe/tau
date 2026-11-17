@@ -60,6 +60,18 @@ it('ask mode names the ask in its prompt and saves the answer to the lead', asyn
 
   expect(event.systemPromptOptions.appendSystemPrompt).toBe(askModePrompt(record, path));
 
+  const block = await fake.handler('tool_call')(
+    {
+      type: 'tool_call',
+      toolName: 'handover',
+      toolCallId: 'call',
+      input: { action: 'send', terminal: 't-lead', file },
+    },
+    { shutdown, cwd: directory } as never,
+  );
+
+  expect(block).toBeUndefined();
+
   await fake.handler('tool_result')(
     { toolName: 'handover', details: { status: 'queued' }, input: { terminal: 't-lead', file } },
     { shutdown, cwd: directory } as never,
@@ -69,7 +81,9 @@ it('ask mode names the ask in its prompt and saves the answer to the lead', asyn
   expect(await readAskRecordAt(path)).toMatchObject({ status: 'sent', answer });
 });
 
-it('ask mode refuses a handover to a terminal that is not the lead', async ({ onTestFinished }) => {
+it('ask mode blocks a handover send to a terminal that is not the lead', async ({
+  onTestFinished,
+}) => {
   const { directory, path } = await askFile(onTestFinished);
   const fake = fakeExtensionApi();
   const shutdown = vi.fn<() => void>();
@@ -77,14 +91,20 @@ it('ask mode refuses a handover to a terminal that is not the lead', async ({ on
 
   registerAskMode(fake.pi, path);
 
-  await fake.handler('tool_result')(
+  const block = await fake.handler('tool_call')(
     {
+      type: 'tool_call',
       toolName: 'handover',
-      details: { status: 'queued' },
-      input: { terminal: 't-other', file },
+      toolCallId: 'call',
+      input: { action: 'send', terminal: 't-other', file },
     },
     { shutdown, cwd: directory } as never,
   );
+
+  expect(block).toEqual({
+    block: true,
+    reason: expect.stringContaining('t-lead') as string,
+  });
 
   expect(shutdown).not.toHaveBeenCalled();
   expect(await readAskRecordAt(path)).toMatchObject({ status: 'running', answer: null });
