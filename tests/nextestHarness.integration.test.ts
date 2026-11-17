@@ -92,10 +92,16 @@ const nestedSuiteSource = (prefix: string, outcome: 'pass' | 'fail'): string => 
 };
 
 const runSuite = async (
+  onTestFinished: (cleanup: () => void) => void,
   outcome: 'pass' | 'fail',
 ): Promise<{ directory: string; prefix: string; succeeded: boolean }> => {
   const prefix = `harness-leak-${randomUUID()}`;
   const directory = join(tmpdir(), `tau-${prefix}-nested-`);
+
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+    removeProbeDirectories(prefix);
+  });
 
   mkdirSync(directory, { recursive: true });
   symlinkSync(join(repositoryRoot, 'node_modules'), join(directory, 'node_modules'), 'dir');
@@ -118,12 +124,7 @@ const expectCleanSuite = async (
   onTestFinished: (cleanup: () => void) => void,
   outcome: 'pass' | 'fail',
 ): Promise<void> => {
-  const { directory, prefix, succeeded } = await runSuite(outcome);
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-    removeProbeDirectories(prefix);
-  });
+  const { directory, prefix, succeeded } = await runSuite(onTestFinished, outcome);
 
   expect(existsSync(join(directory, 'ran.marker'))).toBe(true);
   expect(existsSync(join(directory, 'async-cleanup.marker'))).toBe(true);
