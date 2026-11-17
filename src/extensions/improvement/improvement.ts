@@ -13,11 +13,11 @@ import { startSweep } from './sweepStart.js';
 
 const parameters = Type.Object({
   action: stringEnum(['record', 'status']),
-  summary: Type.Optional(Type.String()),
+  summary: Type.Optional(Type.String({ description: 'record: one sentence.' })),
 });
 
-const description = `- record: correction. {id,path,outcome}
-- status: {projectRoot,tasks,correctDue,coverage,sweep,skipped}`;
+const description = `- record: save a user correction. {id,path,outcome}; existing: saved before.
+- status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,skipped}`;
 
 const readStatus = (cwd: string) =>
   readImprovementStatus({ cwd, agentDirectory: getAgentDir(), now: new Date() });
