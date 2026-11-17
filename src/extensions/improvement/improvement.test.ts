@@ -221,7 +221,7 @@ it('returns tasks, correct due, and coverage from the status action', async () =
     correctDue: true,
     coverage: { complete: 1, managerOnly: 0, missing: 0 },
     sweep: 'complete',
-    skipped: [],
+    gaps: [],
   });
 });
 

@@ -16,7 +16,7 @@ const statusWithTasks = (count: number): ImprovementStatus => ({
   correctDue: false,
   coverage: { complete: count, managerOnly: 0, missing: 0 },
   sweep: 'complete',
-  skipped: [],
+  gaps: [],
 });
 
 const contextWithUI = (setStatus: SetStatus): ExtensionContext =>

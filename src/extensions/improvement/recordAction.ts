@@ -68,11 +68,11 @@ const evidenceOf = (facts: SessionFacts): ImprovementEvent['evidence'][number] =
 const isReviewEvent = (event: ImprovementEvent): event is ReviewEvent => event.kind === 'review';
 
 const findReview = async (projectRoot: string, review: string): Promise<ReviewEvent> => {
-  const { events, skipped } = await readEvents(projectRoot);
-  const skippedReview = skipped.find(({ path }) => basename(path) === `${review}.json`);
+  const { events, gaps } = await readEvents(projectRoot);
+  const reviewGap = gaps.find(({ path }) => basename(path) === `${review}.json`);
 
-  if (skippedReview !== undefined) {
-    throw new Error(skippedReview.notice);
+  if (reviewGap !== undefined) {
+    throw new Error(reviewGap.reason);
   }
 
   const event = events.find((candidate) => candidate.id === review);

@@ -76,7 +76,7 @@ describe('parseEvent', () => {
 
     await writeEvent(root, event);
 
-    expect(await readEvents(root)).toEqual({ events: [event], skipped: [] });
+    expect(await readEvents(root)).toEqual({ events: [event], gaps: [] });
   });
 });
 
@@ -88,13 +88,13 @@ describe('readEvents', () => {
     await writeEvent(root, second);
     await writeEvent(root, first);
 
-    expect(await readEvents(root)).toEqual({ events: [first, second], skipped: [] });
+    expect(await readEvents(root)).toEqual({ events: [first, second], gaps: [] });
   });
 
   it('returns no events when .tau/improvement is missing', async () => {
     const root = await createProject();
 
-    expect(await readEvents(root)).toEqual({ events: [], skipped: [] });
+    expect(await readEvents(root)).toEqual({ events: [], gaps: [] });
   });
 
   it('throws a read error other than a missing directory', async () => {
@@ -111,15 +111,19 @@ describe('readEvents', () => {
     await writeEvent(root, event);
     await writeEventFile(root, '.receipt-0f6b', 'partial');
 
-    expect(await readEvents(root)).toEqual({ events: [event], skipped: [] });
+    expect(await readEvents(root)).toEqual({ events: [event], gaps: [] });
   });
 
-  it('refuses a malformed event file with an error naming its path', async () => {
+  it('skips a malformed event file and lists it with its path and reason', async () => {
     const root = await createProject();
     await writeEvent(root, correction('correction-1', 'Run focused tests first.'));
     const path = await writeEventFile(root, 'broken.json', '{"version":1,');
 
-    await expect(readEvents(root)).rejects.toThrow(path);
+    const { events, gaps } = await readEvents(root);
+
+    expect(events.map((event) => event.id)).toEqual(['correction-1']);
+    expect(gaps.map((gap) => gap.path)).toEqual([path]);
+    expect(gaps[0]?.reason).toContain(path);
   });
 
   it('skips an event with a newer version and lists it with its path', async () => {
@@ -129,11 +133,11 @@ describe('readEvents', () => {
     await writeEvent(root, event);
     const path = await writeEventFile(root, 'correction-9.json', JSON.stringify(newer));
 
-    const { events, skipped } = await readEvents(root);
+    const { events, gaps } = await readEvents(root);
 
-    const notices = skipped.map((entry) => entry.notice.includes('restart the session'));
+    const notices = gaps.map((entry) => entry.reason.includes('restart the session'));
 
-    expect({ events, paths: skipped.map((entry) => entry.path), notices }).toEqual({
+    expect({ events, paths: gaps.map((entry) => entry.path), notices }).toEqual({
       events: [event],
       paths: [path],
       notices: [true],
@@ -176,7 +180,7 @@ describe('writeEvent', () => {
         { path, outcome: 'existing' },
       ],
       names: ['correction-1.json'],
-      read: { events: [first], skipped: [] },
+      read: { events: [first], gaps: [] },
     });
   });
 

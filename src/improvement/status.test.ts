@@ -137,7 +137,7 @@ it('reads tasks, coverage, the correct pass, and the sweep from saved records', 
     correctDue: true,
     coverage: { complete: 1, managerOnly: 0, missing: 0 },
     sweep: 'complete',
-    skipped: [],
+    gaps: [],
   });
 
   expect(await snapshot(projectRoot, agentDirectory)).toEqual(before);
@@ -173,7 +173,7 @@ it('reads a repository with no events and no index as empty and incomplete', asy
     correctDue: false,
     coverage: { complete: 0, managerOnly: 0, missing: 0 },
     sweep: 'incomplete',
-    skipped: [],
+    gaps: [],
   });
 });
 
@@ -196,7 +196,33 @@ it('rejects a cwd that does not exist', async () => {
   ).rejects.toThrow(/git rev-parse/u);
 });
 
-it('rejects a damaged event with an error naming its path', async () => {
+it('reads the status when event files are unreadable and reports each as a gap', async () => {
+  const project = await createProject();
+  const projectRoot = await realpath(project);
+  const agentDirectory = createAgentDirectory();
+  const directory = eventDirectory(projectRoot);
+  const fixtureDirectory = join(import.meta.dirname, 'fixtures', 'unreadable-events');
+
+  await writeEvent(projectRoot, mergeEvent);
+
+  const names = (await readdir(fixtureDirectory)).toSorted();
+
+  for (const name of names) {
+    const text = await readFile(join(fixtureDirectory, name), 'utf8');
+
+    await writeFile(join(directory, name), text);
+  }
+
+  const status = await readImprovementStatus({ cwd: project, agentDirectory, now });
+
+  expect(status.tasks).toEqual([]);
+  expect(status.coverage).toEqual({ complete: 0, managerOnly: 0, missing: 1 });
+  expect(status.correctDue).toBe(true);
+  expect(status.gaps.map((gap) => gap.path)).toEqual(names.map((name) => join(directory, name)));
+  expect(status.gaps.every((gap) => gap.reason.length > 0)).toBe(true);
+});
+
+it('reads a damaged event as a gap and returns the readable status', async () => {
   const project = await createProject();
   const projectRoot = await realpath(project);
   const agentDirectory = createAgentDirectory();
@@ -207,8 +233,11 @@ it('rejects a damaged event with an error naming its path', async () => {
 
   const before = await snapshot(projectRoot, agentDirectory);
 
-  await expect(readImprovementStatus({ cwd: project, agentDirectory, now })).rejects.toThrow(path);
+  const status = await readImprovementStatus({ cwd: project, agentDirectory, now });
 
+  expect(status.gaps.map((gap) => gap.path)).toEqual([path]);
+  expect(status.gaps[0]?.reason).toContain(path);
+  expect(status.correctDue).toBe(true);
   expect(await snapshot(projectRoot, agentDirectory)).toEqual(before);
 });
 
@@ -229,7 +258,7 @@ it('reads a malformed index as an incomplete sweep', async () => {
   expect(await snapshot(projectRoot, agentDirectory)).toEqual(before);
 });
 
-it('lists a newer-format event in skipped', async () => {
+it('lists a newer-format event in gaps', async () => {
   const project = await createProject();
   const projectRoot = await realpath(project);
   const agentDirectory = createAgentDirectory();
@@ -241,5 +270,6 @@ it('lists a newer-format event in skipped', async () => {
 
   const status = await readImprovementStatus({ cwd: project, agentDirectory, now });
 
-  expect(status.skipped.map((entry) => entry.path)).toEqual([path]);
+  expect(status.gaps.map((gap) => gap.path)).toEqual([path]);
+  expect(status.gaps[0]?.reason).toContain('newer format');
 });
