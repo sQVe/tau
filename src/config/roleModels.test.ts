@@ -35,6 +35,14 @@ it('returns no role model for a worker or a missing entry', ({ onTestFinished })
   expect(readRoleProfileModel(location, 'lead', 'scout', uiFixture())).toBeUndefined();
 });
 
+it('returns no role profile model for an existing entry without a model', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-role-models-');
+
+  writeUser({ roles: { lead: { profiles: { scout: {} } } } });
+
+  expect(readRoleProfileModel(location, 'lead', 'scout', uiFixture())).toBeUndefined();
+});
+
 it('warns about an unknown role name and keeps an unknown profile override silently', ({
   onTestFinished,
 }) => {

@@ -55,6 +55,7 @@ check that code.
 | `mutation`      | no        | yes             | `argv` is the mutation command, beside the package pin it runs                                                    |
 | `subagents`     | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256                                                    |
 | `profiles`      | yes       | no              | Worker models and model routes                                                                                    |
+| `roles`         | yes       | no              | Per-role worker model overrides                                                                                   |
 | `browser`       | yes       | no              | `loginCommand`, which the manager asks the user to run                                                            |
 | `tracker`       | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry                                                     |
 | `qa`            | yes       | no              | `repositories` with URL and test-account commands, and `dataWrites`                                               |
@@ -85,9 +86,10 @@ start with `vitest`.
 ### Models
 
 - Tau's code names no model. Each model comes from a call argument or from the user file.
-- A worker launch uses the launch `model`, then `profiles.<name>.model`, then
-  `profiles.default.model`. Without any of them, the launch fails and names
-  `profiles.default.model`. Profile files may not set `model:`.
+- A worker launch uses the launch `model`, then `roles.<role>.profiles.<name>.model` for the
+  launching role, then `profiles.<name>.model`, then `profiles.default.model`. Without any of them,
+  the launch fails and names `profiles.default.model`. Profile files may not set `model:`. `roles`
+  is user-file only, like `profiles`, because it chooses a model.
 - A worker's model is chosen once at launch. The `subagent` tool's model line is fixed for the
   session, so the prompt cache holds. The manager guidance says to use the profile default unless
   the user asks for another model or a multi-model discussion.

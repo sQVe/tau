@@ -158,6 +158,18 @@ it('selects the launch model, then the profile entry, then the default entry', a
   expect(resolveLoadout({ profile: 'reviewer' }, context).model).toBe(request.model);
 });
 
+it('ignores a malformed default model when the profile model resolves', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await bundledFixture(onTestFinished);
+
+  writeConfig(join(directory, 'tau.json'), {
+    profiles: { scout: { model: request.model }, default: { model: 'no-provider' } },
+  });
+
+  expect(resolveLoadout({ profile: 'scout' }, context).model).toBe(request.model);
+});
+
 it('an explicit model wins over the profile model', async ({ onTestFinished }) => {
   const { directory, context, request } = await workerFixture(onTestFinished);
   const haikuModel = context.modelRegistry.find('tau-worker-fixture', 'haiku');

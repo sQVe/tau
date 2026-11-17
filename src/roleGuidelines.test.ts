@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { managerGuidelines } from './roleGuidelines.js';
+import { leadOnlyGuidelines, managerGuidelines } from './roleGuidelines.js';
 
 const qaGuidePath = '/tau/src/skills/shared/qa-guide.md';
 
@@ -18,6 +18,19 @@ it('adds one line that names the QA procedure and the guide only when given a pr
   expect(addedGuidelines[0]).toContain(qaGuidePath);
   expect(sharedGuidelines).toEqual(withoutGuide);
   expect(withoutGuide.some((guideline) => guideline.includes(qaGuidePath))).toBe(false);
+});
+
+it('keeps every lead-only guideline out of the architect set', () => {
+  const leadOnly = leadOnlyGuidelines(options);
+  const lead = managerGuidelines('lead', options);
+  const architect = managerGuidelines('architect', options);
+
+  expect(leadOnly.length).toBeGreaterThan(0);
+  expect(lead).toEqual(expect.arrayContaining(leadOnly));
+
+  for (const guideline of leadOnly) {
+    expect(architect).not.toContain(guideline);
+  }
 });
 
 it('a lead guideline set names the lead rules and no architect rule', () => {

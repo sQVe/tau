@@ -22,13 +22,19 @@ it.each([
 });
 
 it.each([
-  { role: 'worker', expected: true },
-  { role: undefined, expected: false },
-  { role: 'lead', expected: false },
-  { role: 'architect', expected: false },
-])('reads the worker role from TAU_ROLE only: role $role', ({ role, expected }) => {
-  vi.stubEnv('TAU_ROLE', role);
-  vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
+  { role: 'worker', recordDirectory: undefined, expected: true },
+  { role: 'worker', recordDirectory: '', expected: true },
+  { role: undefined, recordDirectory: undefined, expected: false },
+  { role: undefined, recordDirectory: '', expected: false },
+  { role: '', recordDirectory: '', expected: false },
+  { role: 'lead', recordDirectory: '/records/task-one', expected: false },
+  { role: 'architect', recordDirectory: undefined, expected: false },
+])(
+  'reads the worker role from TAU_ROLE only: role $role, record $recordDirectory',
+  ({ role, recordDirectory, expected }) => {
+    vi.stubEnv('TAU_ROLE', role);
+    vi.stubEnv('TAU_WORKER_RECORD', recordDirectory);
 
-  expect(isWorkerProcess()).toBe(expected);
-});
+    expect(isWorkerProcess()).toBe(expected);
+  },
+);

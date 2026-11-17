@@ -79,9 +79,14 @@ const resolveModel = (
 ) => {
   const roleModel = readRoleProfileModel(location, launchingRole, profile.name, context.ui);
   const profileModel = readProfileModel(location, profile.name, context.ui);
-  const defaultModel = readProfileModel(location, defaultProfileName, context.ui);
+  const earlierModel = explicit ?? roleModel ?? profileModel;
 
-  const model = explicit ?? roleModel ?? profileModel ?? defaultModel;
+  const defaultModel =
+    earlierModel === undefined
+      ? readProfileModel(location, defaultProfileName, context.ui)
+      : undefined;
+
+  const model = earlierModel ?? defaultModel;
 
   if (model === undefined) {
     throw new Error(
