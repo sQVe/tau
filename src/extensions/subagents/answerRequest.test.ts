@@ -13,13 +13,10 @@ import type { HcRuntime } from '../../hc/hc.js';
 import type { MessageRequest } from '../../inbox/inbox.js';
 import { decodeRequest } from '../../inbox/protocol.js';
 import type { MessageReply } from '../../inbox/protocol.js';
-import { executeAnswer } from './answer.js';
 import { answerRequestCheck } from './answerRequest.js';
 import { assignmentPath, writeAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { assignmentFor } from './fixtures/workerExtensionHarness.js';
-
-vi.mock(import('./answer.js'), { spy: true });
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -298,80 +295,6 @@ it('returns the answer failure text when the assignment already has a report', a
   expect(save).not.toHaveBeenCalled();
 });
 
-it('returns the answer failure text when executeAnswer reports an error with details', async () => {
-  const { assignment } = await questionedAssignment();
-
-  vi.mocked(executeAnswer).mockResolvedValueOnce({
-    content: [{ type: 'text', text: 'The worker refused the answer.' }],
-    details: {
-      status: 'queued',
-      terminal: worker,
-      sessionId: managerSession,
-      messageId: questionId,
-    },
-    isError: true,
-  });
-
-  const facts = {
-    hc: runtimeOf(createHcFake()),
-    parentSession: assignment.parentSession,
-    terminal: manager,
-    sessionId: managerSession,
-  };
-
-  const save = saveSpy();
-  const result = await answerRequestCheck(() => facts)(answerRequestFor(assignment), save);
-
-  expect(result).toBe('The worker refused the answer.');
-  expect(save).not.toHaveBeenCalled();
-});
-
-it('returns the answer failure text when executeAnswer reports no details', async () => {
-  const { assignment } = await questionedAssignment();
-
-  vi.mocked(executeAnswer).mockResolvedValueOnce({
-    content: [{ type: 'text', text: 'The answer failed without details.' }],
-    details: undefined,
-    isError: false,
-  });
-
-  const facts = {
-    hc: runtimeOf(createHcFake()),
-    parentSession: assignment.parentSession,
-    terminal: manager,
-    sessionId: managerSession,
-  };
-
-  const save = saveSpy();
-  const result = await answerRequestCheck(() => facts)(answerRequestFor(assignment), save);
-
-  expect(result).toBe('The answer failed without details.');
-  expect(save).not.toHaveBeenCalled();
-});
-
-it('returns the fallback when the answer failure has no text', async () => {
-  const { assignment } = await questionedAssignment();
-
-  vi.mocked(executeAnswer).mockResolvedValueOnce({
-    content: [],
-    details: undefined,
-    isError: true,
-  });
-
-  const facts = {
-    hc: runtimeOf(createHcFake()),
-    parentSession: assignment.parentSession,
-    terminal: manager,
-    sessionId: managerSession,
-  };
-
-  const save = saveSpy();
-  const result = await answerRequestCheck(() => facts)(answerRequestFor(assignment), save);
-
-  expect(result).toBe('The answer failed without a message.');
-  expect(save).not.toHaveBeenCalled();
-});
-
 it('refuses a handover family', async () => {
   const { assignment } = await questionedAssignment();
 
@@ -402,40 +325,6 @@ it('refuses a handover family', async () => {
 
   expect(result).toBe('This check accepts answer requests, not handover messages.');
   expect(receiver.savedRecords()).toEqual([]);
-  expect(save).not.toHaveBeenCalled();
-});
-
-it('returns the fallback reason when an unknown answer result has no text', async () => {
-  const { assignment } = await questionedAssignment();
-
-  vi.mocked(executeAnswer).mockResolvedValueOnce({
-    content: [],
-    details: {
-      status: 'unknown',
-      terminal: worker,
-      sessionId: managerSession,
-      messageId: questionId,
-    },
-    isError: false,
-  });
-
-  const facts = {
-    hc: runtimeOf(createHcFake()),
-    parentSession: assignment.parentSession,
-    terminal: manager,
-    sessionId: managerSession,
-  };
-
-  const save = saveSpy();
-  const result = await answerRequestCheck(() => facts)(answerRequestFor(assignment), save);
-
-  expect(result).toEqual({
-    protocol: 'rpc1',
-    kind: 'unknown',
-    messageId: questionId,
-    reason: 'The answer failed without a message.',
-  });
-
   expect(save).not.toHaveBeenCalled();
 });
 

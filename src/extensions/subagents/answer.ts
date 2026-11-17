@@ -64,30 +64,40 @@ const findWorkerTerminal = async (hc: HcRuntime, assignmentId: string): Promise<
   return worker.terminal.address;
 };
 
+export const sendAnswer = async (
+  hc: HcRuntime,
+  request: AnswerRequest,
+): Promise<InboxSendResult> => {
+  const { assignmentId, questionId, answer } = request.parameters;
+
+  await checkAnswerable(request);
+
+  return sendInboxMessage({
+    hc,
+    target: await findWorkerTerminal(hc, assignmentId),
+    body: {
+      family: 'answer',
+      payload: { assignmentId, questionId, parentSession: request.parentSession, answer },
+    },
+    messageId: questionId,
+    refusal: restartRecovery,
+  });
+};
+
+export const unknownNote = (sent: InboxSendResult): string =>
+  sent.note ?? `Acceptance unknown for message ${sent.messageId}.`;
+
 const resultText = (sent: InboxSendResult): string =>
   sent.status === 'queued'
     ? `Queued the answer for ${sent.terminal} as message ${sent.messageId}. Queued is not a read receipt. End your turn to wait for the worker.`
-    : (sent.note ?? `Acceptance unknown for message ${sent.messageId}.`);
+    : unknownNote(sent);
 
 export const executeAnswer = async (
   hc: HcRuntime,
   request: AnswerRequest,
 ): Promise<ToolResult<InboxSendResult | undefined>> => {
-  const { assignmentId, questionId, answer } = request.parameters;
-
   try {
-    await checkAnswerable(request);
-
-    const sent = await sendInboxMessage({
-      hc,
-      target: await findWorkerTerminal(hc, assignmentId),
-      body: {
-        family: 'answer',
-        payload: { assignmentId, questionId, parentSession: request.parentSession, answer },
-      },
-      messageId: questionId,
-      refusal: restartRecovery,
-    });
+    const sent = await sendAnswer(hc, request);
 
     return { content: [{ type: 'text', text: resultText(sent) }], details: sent };
   } catch (error) {

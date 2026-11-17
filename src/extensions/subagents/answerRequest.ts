@@ -1,6 +1,7 @@
+import { errorMessage } from '../../errors.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import type { AcceptCheck } from '../../inbox/inbox.js';
-import { executeAnswer } from './answer.js';
+import { sendAnswer, unknownNote } from './answer.js';
 
 export interface AnswerRequestFacts {
   hc: HcRuntime;
@@ -30,31 +31,29 @@ export const answerRequestCheck =
       return 'This session has no HC_TERMINAL_ID, so it cannot answer a worker.';
     }
 
-    const result = await executeAnswer(current.hc, {
-      parameters: request.payload,
-      parentSession: current.parentSession,
-    });
+    try {
+      const sent = await sendAnswer(current.hc, {
+        parameters: request.payload,
+        parentSession: current.parentSession,
+      });
 
-    const text = result.content[0]?.text;
+      if (sent.status === 'unknown') {
+        return {
+          protocol: 'rpc1',
+          kind: 'unknown',
+          messageId: request.messageId,
+          reason: unknownNote(sent),
+        };
+      }
 
-    if (result.isError === true || result.details === undefined) {
-      return text ?? 'The answer failed without a message.';
-    }
-
-    if (result.details.status === 'unknown') {
       return {
         protocol: 'rpc1',
-        kind: 'unknown',
+        kind: 'queued',
         messageId: request.messageId,
-        reason: text ?? 'The answer failed without a message.',
+        terminal: current.terminal,
+        sessionId: current.sessionId,
       };
+    } catch (error) {
+      return errorMessage(error);
     }
-
-    return {
-      protocol: 'rpc1',
-      kind: 'queued',
-      messageId: request.messageId,
-      terminal: current.terminal,
-      sessionId: current.sessionId,
-    };
   };
