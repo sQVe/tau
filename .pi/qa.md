@@ -3,6 +3,9 @@
 Tau ships Pi extensions, skills, and hand-run scripts. A `qa` worker can test the scripts. It can
 test behavior inside a Pi session with `pnpm pi-session`, but not the terminal user interface.
 
+One exception: the manager runs the [worker-launch feature](qa/features/pi-session-worker-launch.md)
+session; a `qa` worker only checks its saved output and records the result.
+
 ## Choose sections
 
 | Section     | Test it when the change touches                                               |
@@ -15,8 +18,8 @@ Cross-effects:
 - `src/errors.ts` and `src/schema.ts`: the scripts import them, so a change there needs "Scripts".
 - A change to how a script reads session logs or worker records needs "Scripts". A change to the
   code that writes them needs "Pi sessions".
-- A change to behavior that launches workers needs "Pi sessions", and the manager runs its
-  worker-launch recipe. Launch no `qa` worker for that behavior.
+- A change to behavior that launches workers needs "Pi sessions". The manager runs its
+  [worker-launch session](qa/features/pi-session-worker-launch.md) and a `qa` worker records it.
 
 No launch, and unclear impact:
 
@@ -29,12 +32,20 @@ No launch, and unclear impact:
 | Journey | Goal | Run it when the change touches | Test |
 | ------- | ---- | ------------------------------ | ---- |
 | [Day token use](qa/journeys/day-token-use.md) | Learn where the last day's tokens went and whether the sessions were healthy. | `pnpm token-usage`, `pnpm session-health`, their `package.json` entries, `src/errors.ts`, `src/schema.ts`, or session-log and worker-record readers | By hand |
-| [Delegate a check](qa/journeys/delegate-a-check.md) | Delegate a check to a `qa` worker and get its report. | Worker-launch behavior under `src/`, or the `package.json` `pi` manifest | By hand, manager only |
+| [Delegate a check](qa/journeys/delegate-a-check.md) | Delegate a check to a `qa` worker and get its report. | Worker-launch behavior under `src/`, or the `package.json` `pi` manifest | By hand, manager and a `qa` worker |
 | [Review a task at merge](qa/journeys/review-a-task-at-merge.md) | Learn from a task that went badly while it is fresh. | `src/extensions/mergeWatch/` or `src/improvement/` | By hand |
+
+## Features
+
+| Feature | Section | Target | Update it when the change touches |
+| ------- | ------- | ------ | --------------------------------- |
+| [Prompt in a Pi session](qa/features/pi-session-prompt.md) | Pi sessions | `pi-session` | Behavior inside a session that launches no worker |
+| [Worker launch in a Pi session](qa/features/pi-session-worker-launch.md) | Pi sessions | `pi-session` | Behavior that launches workers |
 
 ## Before a launch
 
-The manager starts nothing. For "Pi sessions", the brief must give these two lines:
+The manager launches the `pi-session` target with the `verification` tool, and "Scripts" needs
+nothing started because its target is `none`. For "Pi sessions", the brief must give two lines:
 
 - `Model runs allowed`. A session costs model tokens. Without this line, the worker runs no session
   and asks the parent.
@@ -44,14 +55,15 @@ The manager starts nothing. For "Pi sessions", the brief must give these two lin
 
 - The scripts read the session logs and worker records under `~/.pi/agent/` and write nothing. A Pi
   session writes in its scratch working directory and in temporary directories. No section needs a
-  data write in this worktree.
-- Test only the scripts the change affects, directly or through a file they import.
+  data write in this worktree. Test only the scripts the change affects, directly or through a file
+  they import.
 - Run `pnpm pi-session` only for "Pi sessions", because it starts Pi and costs model turns.
 - Never run `pnpm smoke:pi`, `pnpm mutation`, `pnpm changeset`, `pnpm changeset:version`, or
-  `pnpm release:github`. The first is the release check and costs model turns. The others change
-  tracked files or tags, or run for minutes.
+  `pnpm release:github`. These cost model turns, or change tracked files or tags, or run for minutes.
 
 ## Scripts
+
+Target: none
 
 ### Reach it
 
@@ -84,10 +96,17 @@ pnpm session-health --since 1d
 
 ## Pi sessions
 
+Target: pi-session
+
+`pnpm pi-session` loads Tau from this worktree's source, so the code under test is this checkout.
+The launch creates the scratch root `/tmp/tau-verification-<run>`. The doctor checks the scratch
+root, that `pi` runs, and, with `pnpm pi-version:check`, that the installed Pi has the minor
+version Tau builds against. The stop keeps the scratch root.
+
 ### Reach it
 
-Run `pnpm pi-session` in this worktree, as the recipe below shows. It prints `Event log: <path>`.
-Set `log` to that path, then run this proof after each session:
+Run `pnpm pi-session` in this worktree, as the feature files below show. It prints
+`Event log: <path>`. Set `log` to that path, then run this proof after each session:
 
 ```sh
 jq -r 'select(.type == "message_start" and .message.role == "system")
@@ -99,22 +118,17 @@ and ask the parent.
 
 ### Use it safely
 
-- Give `--cwd` a new scratch directory under `/tmp`, never a worktree.
+- Give `--cwd` a new directory under the scratch root, such as
+  `mktemp -d "/tmp/tau-verification-$run/qa-XXXXXX"`, never a worktree.
 - Pass the brief's model as `--model`, and `--timeout 300`.
-- Send one prompt per session. Start it with the first two sentences of the recipe's prompt, so
-  the session asks no question.
+- Send one prompt per session. Start it with the first two sentences of the prompt in the feature
+  file, so the session asks no question.
 - A session that a worker starts has no `subagent` tool. Never ask it to launch a worker, and
   report such a check as not verified.
 
 ### What to check
 
 - The command exits with code 0. A failed session exits with code 1 and prints a `FAIL` line.
-- The tools the session called, each with its error flag:
-
-  ```sh
-  jq -c 'select(.type == "tool_execution_end") | [.toolName, .isError]' "$log"
-  ```
-
 - The text the session replied with:
 
   ```sh
@@ -122,21 +136,13 @@ and ask the parent.
     | .message.content[] | select(.type == "text") | .text' "$log"
   ```
 
-### Recipes
+### Features
 
-A `qa` worker runs this recipe, for behavior that launches no worker. Change the prompt after its
-first two sentences to trigger the changed behavior.
-
-```sh
-scratch=$(mktemp -d /tmp/tau-qa-XXXXXX)
-git -C "$scratch" init --quiet
-pnpm pi-session --cwd "$scratch" --model <pattern> --timeout 300 --prompt 'This is an automated check with no user present. Never call ask_user_question. Run the bash command "echo SESSION-OK" once. Then reply with only the output of the command.'
-```
-
-As written, the tools check prints `["bash",false]` and the reply check prints `SESSION-OK`.
-
-Only the manager runs the [worker-launch recipe](qa/pi-session-worker-launch.md), for behavior that
-launches workers.
+- [Prompt in a Pi session](qa/features/pi-session-prompt.md): a `qa` worker runs it, for behavior
+  that launches no worker. Change the prompt after its first two sentences to trigger the changed
+  behavior.
+- [Worker launch in a Pi session](qa/features/pi-session-worker-launch.md): only the manager runs
+  its session, for behavior that launches workers.
 
 ## Not testable
 
