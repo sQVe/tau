@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
@@ -14,9 +14,15 @@ import { runWithEnvironment } from '../src/hc/connect.js';
 import { get } from '../src/hc/hc.js';
 import { startHcSession } from './hcSessionHarness.js';
 
+const writeDefaultModel = (directory: string, model: string): void => {
+  writeFileSync(join(directory, 'tau.json'), JSON.stringify({ profiles: { default: { model } } }));
+};
+
 it('launches a background worker as an hc child with tau labels', async ({ onTestFinished }) => {
   const hc = await startHcSession(onTestFinished);
   const fixture = await workerFixture(onTestFinished);
+
+  writeDefaultModel(fixture.directory, fixture.request.model);
 
   onTestFinished(() => {
     vi.restoreAllMocks();
@@ -51,7 +57,6 @@ it('launches a background worker as an hc child with tau labels', async ({ onTes
       parameters: {
         task: 'Inspect the counters.',
         profile: 'worker',
-        model: fixture.request.model,
         acceptance: ['The counters are inspected.'],
         label: 'Inspect counters',
       },
@@ -90,6 +95,8 @@ it('gives a launched worker the private session paths when the manager environme
 }) => {
   const hc = await startHcSession(onTestFinished);
   const fixture = await workerFixture(onTestFinished);
+
+  writeDefaultModel(fixture.directory, fixture.request.model);
 
   onTestFinished(() => {
     vi.restoreAllMocks();
@@ -138,7 +145,6 @@ it('gives a launched worker the private session paths when the manager environme
       parameters: {
         task: 'Inspect the environment.',
         profile: 'worker',
-        model: fixture.request.model,
         acceptance: ['The environment is inspected.'],
       },
       startedAt: { wall: Date.now(), monotonic: performance.now() },

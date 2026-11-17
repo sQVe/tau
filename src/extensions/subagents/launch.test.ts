@@ -24,6 +24,7 @@ import { assignmentDirectory, writeAssignment } from './assignment.js';
 import { savedAssignment } from './fixtures/deliveryManager.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
+import { workerFixture } from './fixtures/workerLoadout.js';
 import { Admission, executeLaunch, startReservedWorker } from './launch.js';
 import type { LaunchRuntime } from './launch.js';
 import type { LaunchParameters } from './launchParameters.js';
@@ -373,6 +374,91 @@ it('refuses an editing launch without acceptance criteria', async () => {
 
   expect(result).toMatchObject({ isError: true });
   expect(result.content[0]?.text).toContain('acceptance criteria');
+});
+
+const profileLoadout = (profile: string) => ({ ...loadout, profile });
+
+it.each(['worker', 'scout', 'qa', 'browser'] as const)(
+  'refuses a launch that sets model for the %s profile',
+  async (profile) => {
+    const { fake, runtime } = setup();
+
+    vi.mocked(loadouts.resolveLoadout).mockReturnValue(profileLoadout(profile));
+    vi.mocked(writeAssignment).mockClear();
+
+    const result = await launch(runtime, { model: 'faux/test', profile });
+    const text = result.content[0]?.text ?? '';
+
+    expect(result).toMatchObject({ isError: true });
+    expect(text).toContain('reviewer');
+    expect(text).toContain('checker');
+    expect(text).toContain('profiles');
+    expect(text).toContain('tau.json');
+    expect(writeAssignment).not.toHaveBeenCalled();
+    expect(fake.connectCalls).toHaveLength(0);
+    expect(existsSync(join(runtime.agentDirectory, 'tau'))).toBe(false);
+  },
+);
+
+it.each(['invalid model', 'missing/model'] as const)(
+  'refuses a worker launch with model %s before resolving it',
+  async (model) => {
+    const { fake, runtime } = setup();
+
+    vi.mocked(loadouts.resolveLoadout).mockRestore();
+    vi.mocked(writeAssignment).mockClear();
+
+    const fixture = await workerFixture(onTestFinished);
+
+    const result = await executeLaunch(
+      runtime,
+      {
+        parameters: {
+          task: 'Fix the counts.',
+          profile: 'worker',
+          acceptance: ['Done.'],
+          model,
+        },
+        startedAt: { wall: 1000, monotonic: 2 },
+        parentSession: '/work/parent.jsonl',
+      },
+      undefined,
+      fixture.context as unknown as ExtensionContext,
+    );
+
+    const text = result.content[0]?.text ?? '';
+
+    expect(result).toMatchObject({ isError: true });
+    expect(text).toContain('reviewer');
+    expect(text).toContain('checker');
+    expect(text).toContain('profiles');
+    expect(text).toContain('tau.json');
+    expect(writeAssignment).not.toHaveBeenCalled();
+    expect(fake.connectCalls).toHaveLength(0);
+    expect(existsSync(join(runtime.agentDirectory, 'tau'))).toBe(false);
+  },
+);
+
+it.each(['reviewer', 'checker'] as const)('launches the %s profile with model', async (profile) => {
+  const { fake, runtime } = setup();
+
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue(profileLoadout(profile));
+
+  const result = await launch(runtime, { model: 'faux/test', profile });
+
+  expect(result.isError).not.toBe(true);
+  expect(terminalRun(fake)).toBeDefined();
+  expect(fake.connectCalls).toHaveLength(1);
+});
+
+it('launches the worker profile without model', async () => {
+  const { fake, runtime } = setup();
+
+  const result = await launch(runtime, { profile: 'worker' });
+
+  expect(result.isError).not.toBe(true);
+  expect(terminalRun(fake)).toBeDefined();
+  expect(fake.connectCalls).toHaveLength(1);
 });
 
 it('reports a failed loadout check', async () => {
@@ -931,7 +1017,7 @@ it('refuses a launch aborted while it waits for admission', async () => {
   const controller = new AbortController();
   const release = Promise.withResolvers<undefined>();
   const held = runtime.admission.run(() => release.promise);
-  const pending = launch(runtime, { model: 'faux/test' }, controller.signal);
+  const pending = launch(runtime, {}, controller.signal);
 
   controller.abort();
   release.resolve(undefined);
@@ -985,7 +1071,7 @@ it('frees the slot and removes the snapshot when the signal aborts after admissi
     });
   });
 
-  const result = await launch(runtime, { model: 'faux/test' }, controller.signal);
+  const result = await launch(runtime, {}, controller.signal);
 
   expect(result.isError).toBe(true);
   expect(terminalRun(fake)).toBeUndefined();
@@ -1148,7 +1234,7 @@ it('refuses a foreground launch whose signal aborts during the manager label rea
     return originalExec(command, commandArguments, execOptions);
   };
 
-  const pending = launch(runtime, { model: 'faux/test' }, controller.signal);
+  const pending = launch(runtime, {}, controller.signal);
 
   await entered.promise;
   controller.abort();

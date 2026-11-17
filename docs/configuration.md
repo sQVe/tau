@@ -278,9 +278,11 @@ integer from 1 to 256. The default is 12.
 name, such as `scout`. `profiles.default.model` applies to every profile without its own entry.
 `default` is reserved and cannot name a profile.
 
-A worker launch uses the launch `model`, then `roles.<kind>.profiles.<profile>.model` for the
-launching role, then `profiles.<profile>.model`, then `profiles.default.model`. A worker launch with
-none of them fails. Tau fails a model that Pi does not list, or a model outside `allowedModels`.
+A `reviewer` or `checker` launch may set `model`, which wins over the role override and the profile
+entries. Every other profile omits `model`; the user's `profiles` entry decides its model. A launch
+without `model` uses `roles.<kind>.profiles.<profile>.model`, then `profiles.<profile>.model`, then
+`profiles.default.model`. A worker launch with none of them fails. Tau fails a model that Pi does
+not list, or a model outside `allowedModels`.
 
 `profiles.<name>.thinking` is optional. It sets the worker thinking level and overrides the
 `thinking` in the profile file. The levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`,
@@ -351,8 +353,9 @@ parent session does not use the browser itself, remove `npm:pi-agent-browser-nat
 architect session. Tau reads them from the user file only.
 
 `roles.<kind>.profiles.<profile>.model` overrides the profile model for subagents that role
-launches. A launch uses its `model`, then the role override, then `profiles.<name>.model`, then
-`profiles.default.model`.
+launches. Only a `reviewer` or `checker` launch may set its `model`, and that launch `model` wins
+over the role override. A launch without `model` uses the role override, then
+`profiles.<name>.model`, then `profiles.default.model`.
 
 A lead whose session model differs from `roles.lead.model` warns at session start. Tau does not
 switch the model of a session that already started.
