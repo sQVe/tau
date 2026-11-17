@@ -74,6 +74,13 @@ none, and nothing runs while Pi is closed.
   sweep writes it when that transcript appears. A reader treats a `merge` event without a `facts`
   event as missing coverage.
 
+### Status bar
+
+The status bar is the only due signal. Tau shows tasks to review, `correct due`, and an incomplete
+sweep there, and never interrupts the session. The `improvement` tool's `status` action returns the
+same facts. Signals are derived on read, not stored. Until a `correct` pass records itself, it
+counts as never run, so any review or correction makes it due.
+
 ### Approval
 
 Automatic steps only propose. The user approves each change before Tau edits a skill, check, rule,
