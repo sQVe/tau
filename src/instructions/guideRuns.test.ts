@@ -135,6 +135,23 @@ it('reads the guides of the session directory on demand without changing the run
   expect(cwds).toEqual(['/project']);
 });
 
+it('keeps the snapshot of a started run when current reads other facts', async () => {
+  const fake = fakeExtensionApi();
+  const queue: GuideSnapshot[] = [projectSnapshot, bundleSnapshot];
+
+  const guideRuns = trackGuideRuns(fake.pi, {
+    resolve: () => Promise.resolve(queue.shift() ?? brokenSnapshot('queue is empty')),
+  });
+
+  const context = sessionContext([]);
+
+  await fake.handler('session_start')({}, context);
+  await fake.handler('before_agent_start')({}, context);
+
+  expect(await guideRuns.current()).toBe(bundleSnapshot);
+  expect(await guideRuns.snapshot()).toBe(projectSnapshot);
+});
+
 describe('coding set text', () => {
   it('names the project folder and separates the guides by a blank line', () => {
     const text = codingSetText(projectSnapshot);
