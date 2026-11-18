@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
@@ -11,7 +11,7 @@ import type { HcFake } from '../../../tests/hcFake.js';
 import { createAnswerTracker } from './answer.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
 import { contextOf, setup } from './fixtures/toolHarness.js';
-import { askRecordPath, readAskRecord, writeAskRecord } from './record.js';
+import { askRecordDirectory, askRecordPath, readAskRecord, writeAskRecord } from './record.js';
 import type { LiveAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession } from './session.js';
 import type { ArchitectSession } from './session.js';
@@ -52,6 +52,27 @@ const replyLead = (hc: HcFake, path: string): void => {
   );
 };
 
+const answerText = (askId: string): string => `Answer to ask ${askId}:\n\nUse --dry-run.\n`;
+
+const breakAnswerRecordWrite = (getRoot: () => string): ((askId: string) => Promise<void>) => {
+  let broken = false;
+
+  return async (askId) => {
+    if (broken) {
+      return;
+    }
+
+    broken = true;
+    await rm(askRecordPath(getRoot(), askId), { force: true });
+    await mkdir(askRecordPath(getRoot(), askId));
+  };
+};
+
+const restoreRecord = async (root: string, record: LiveAskRecord): Promise<void> => {
+  await rm(askRecordPath(root, record.askId), { recursive: true, force: true });
+  await writeAskRecord(root, record);
+};
+
 const closingArchitect = async (
   cleanup: Cleanup,
   first: FirstSend,
@@ -70,10 +91,12 @@ const closingArchitect = async (
   await writeFile(join(root, 'answer.md'), 'Use --dry-run.\n');
   await writeAskRecord(root, record);
 
+  const notify = vi.fn<(message: string, level?: string) => void>();
+
   const session: ArchitectSession = {
     root,
     release: () => Promise.resolve(),
-    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
+    ui: { notify },
     owner: {
       lockToken: 'live',
       mode: 'visible',
@@ -98,6 +121,7 @@ const closingArchitect = async (
     record,
     answers,
     hc,
+    notify,
     answer: () => answerWith(hc),
     answerWith,
     end: () => endArchitectSession(session, { ...hc, cwd: root }, answers),
@@ -138,6 +162,103 @@ it('shutdown waits for an answer in flight and sends the lead no close note', as
 
   expect(lead.savedTexts()).toEqual([`Answer to ask ${record.askId}:\n\nUse --dry-run.\n`]);
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'answered' });
+});
+
+it('shutdown settles a delivered answer whose record write failed as answered and sends no close note', async ({
+  onTestFinished: cleanup,
+}) => {
+  let root = '';
+
+  const closing = await closingArchitect(
+    cleanup,
+    'reply',
+    breakAnswerRecordWrite(() => root),
+  );
+
+  const { lead, record, answer, end, notify } = closing;
+
+  root = closing.root;
+
+  const result = await answer();
+
+  expect(result.details).toMatchObject({ status: 'queued', askId: record.askId });
+  expect((result.details as { note: string }).note).toContain('could not be updated');
+
+  await restoreRecord(root, record);
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'answered',
+    answer: answerText(record.askId),
+  });
+
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(notify).not.toHaveBeenCalled();
+});
+
+it('shutdown reports a delivered answer it cannot settle and still sends no close note', async ({
+  onTestFinished: cleanup,
+}) => {
+  let root = '';
+
+  const closing = await closingArchitect(
+    cleanup,
+    'reply',
+    breakAnswerRecordWrite(() => root),
+  );
+
+  const { lead, record, answer, end, notify } = closing;
+
+  root = closing.root;
+
+  await answer();
+  await restoreRecord(root, record);
+  await chmod(askRecordDirectory(root), 0o500);
+
+  cleanup(async () => {
+    await chmod(askRecordDirectory(root), 0o700);
+  });
+
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'queued' });
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(notify.mock.calls[0]?.[0]).toContain(`Ask ${record.askId} was answered`);
+});
+
+it('shutdown still fails an open ask that was never answered', async ({
+  onTestFinished: cleanup,
+}) => {
+  let root = '';
+
+  const closing = await closingArchitect(
+    cleanup,
+    'reply',
+    breakAnswerRecordWrite(() => root),
+  );
+
+  const { lead, record, answer, end, notify } = closing;
+
+  root = closing.root;
+
+  const unanswered = { ...liveRecord(), createdAt: '2026-11-18T10:01:00.000Z' };
+
+  await writeAskRecord(root, unanswered);
+  await answer();
+  await restoreRecord(root, record);
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'answered' });
+  expect(await readAskRecord(root, unanswered.askId)).toMatchObject({ status: 'failed' });
+
+  const expectedTexts = [answerText(record.askId), closeNote(unanswered.askId)].toSorted();
+
+  const savedTexts = lead.savedTexts().toSorted();
+
+  expect(savedTexts).toEqual(expectedTexts);
+
+  expect(notify).not.toHaveBeenCalled();
 });
 
 it('shutdown fails an ask whose answer send ended unknown and sends the close note', async ({

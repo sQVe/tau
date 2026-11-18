@@ -5,6 +5,8 @@ import { encodeMessageFrame, requestByteLimit, sendInboxMessage } from '../../in
 import { changeAskRecord, isOpenLiveAsk, isOpenLiveAskStatus, readAskRecord } from './record.js';
 import type { AskRecordChange, LiveAskRecord } from './record.js';
 
+export type DeliveredAnswers = ReadonlyMap<string, string>;
+
 export interface AnswerRequest {
   root: string;
   cwd: string;
@@ -12,6 +14,7 @@ export interface AnswerRequest {
   file: string;
   architectSessionId: string;
   hc: HcRuntime;
+  recordDelivered: (askId: string, answer: string) => void;
 }
 
 export type AnswerResult =
@@ -20,7 +23,8 @@ export type AnswerResult =
 
 export interface AnswerTracker {
   run: <Result>(answer: () => Promise<Result>) => Promise<Result>;
-  close: () => Promise<void>;
+  recordDelivered: (askId: string, answer: string) => void;
+  close: () => Promise<DeliveredAnswers>;
 }
 
 type Settlement =
@@ -31,6 +35,7 @@ const closeLimitMilliseconds = 10_000;
 
 export const createAnswerTracker = (): AnswerTracker => {
   const inFlight = new Set<Promise<unknown>>();
+  const delivered = new Map<string, string>();
   let closed = false;
 
   return {
@@ -49,6 +54,9 @@ export const createAnswerTracker = (): AnswerTracker => {
         inFlight.delete(running);
       }
     },
+    recordDelivered: (askId, answer) => {
+      delivered.set(askId, answer);
+    },
     close: async () => {
       closed = true;
 
@@ -63,6 +71,8 @@ export const createAnswerTracker = (): AnswerTracker => {
       } finally {
         clearTimeout(timer);
       }
+
+      return delivered;
     },
   };
 };
@@ -164,6 +174,8 @@ export const answerLiveAsk = async (request: AnswerRequest): Promise<AnswerResul
   const settled = await markAnswered(request.root, askId, answer);
 
   if (settled.kind === 'failed') {
+    request.recordDelivered(askId, answer);
+
     return {
       status: 'queued',
       askId,

@@ -498,8 +498,7 @@ it('ending does not note an ask that closes after the scan', async ({ onTestFini
 
   const closing = failOpenLiveAsks(
     { root, sessionId: 'session-architect' },
-    hcRuntime(hc),
-    (message) => warnings.push(message),
+    { hc: hcRuntime(hc), report: (message) => warnings.push(message), delivered: new Map() },
     {
       onWaiting: () => {
         waiting.resolve(undefined);
@@ -538,8 +537,7 @@ it('ending does not note an ask that disappears after the scan', async ({ onTest
 
   const closing = failOpenLiveAsks(
     { root, sessionId: 'session-architect' },
-    hcRuntime(hc),
-    (message) => warnings.push(message),
+    { hc: hcRuntime(hc), report: (message) => warnings.push(message), delivered: new Map() },
     {
       onWaiting: () => {
         waiting.resolve(undefined);

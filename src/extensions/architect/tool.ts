@@ -203,6 +203,7 @@ export const createArchitectAnswerTool = (
           file: input.file,
           architectSessionId: context.sessionManager.getSessionId(),
           hc: { ...hc, signal },
+          recordDelivered: answers.recordDelivered,
         }),
       );
 
