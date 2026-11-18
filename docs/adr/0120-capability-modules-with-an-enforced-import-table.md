@@ -49,12 +49,15 @@ Tau differs from shared ADR 0002 in two places today.
    below between two I/O modules.
 
 A module is an I/O module when at least one of its files reads or writes the filesystem, starts a
-process, uses the network or a socket, reads the clock or the environment, sends a message into the
-Pi session, or draws the terminal UI. A module with no such file is a pure module. A module that
-runs a command through an injected `exec` function starts a process, so it is an I/O module.
+process, uses the network or a socket, reads the clock or the environment, calls a model or sets a
+timer, sends a message into the Pi session, or draws the terminal UI. A module that runs a command
+through an injected `exec` function starts a process, so it is an I/O module.
 
-The pure modules are `errors`, `schema`, and `shell`. None of their files does I/O by this
-criterion. Every other module in `importTable` is an I/O module. Each of its edges to a pure module
+In this section, a pure module is a module with no I/O file. It is not the same as a module in
+`pureModules`, which makes pure decisions.
+
+The pure modules are `errors`, `schema`, and `shell`. None of their files does I/O by the criterion
+above. Every other module in `importTable` is an I/O module. Each of its edges to a pure module
 follows the shared rule and is not listed.
 
 Each line names a module and the I/O modules it may import:
@@ -76,8 +79,10 @@ Each line names a module and the I/O modules it may import:
 - `tauDirectory`: `git`
 - `verification`: `record`, `tauDirectory`
 
-This list records deviations, as shared ADR 0002's "Existing projects" section describes. It may
-only shrink.
+This list records deviations, as shared ADR 0002's "Existing projects" section asks, and it may only
+shrink. That section puts violations in `stomme.toml`. This list sits in this ADR as prose, and
+`stomme.toml` has no rows for these edges. No check keeps this list equal to `importTable`, so a
+change to the table updates the list in the same commit until the mirror ends.
 
 ### Tau's structure
 
