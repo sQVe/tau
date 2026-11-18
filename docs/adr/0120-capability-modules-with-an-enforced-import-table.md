@@ -79,10 +79,11 @@ Each line names a module and the I/O modules it may import:
 - `tauDirectory`: `git`
 - `verification`: `record`, `tauDirectory`
 
-This list records deviations, as shared ADR 0002's "Existing projects" section asks, and it may only
-shrink. That section puts violations in `stomme.toml`. This list sits in this ADR as prose, and
-`stomme.toml` has no rows for these edges. No check keeps this list equal to `importTable`, so a
-change to the table updates the list in the same commit until the mirror ends.
+This list records deviations, as shared ADR 0002's "Existing projects" section allows, and it may
+only shrink. That section lets a project record violations in `stomme.toml`. This list sits in this
+ADR as prose. `stomme.toml` has no `[[violations]]` entries for these edges, and the `imports` lists
+of its `[modules.*]` tables allow them. No check keeps this list equal to `importTable`, so a change
+to the table updates the list in the same commit until the mirror ends.
 
 ### Tau's structure
 
