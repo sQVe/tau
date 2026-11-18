@@ -76,7 +76,7 @@ const pureModules = [
   'src/dialog/eligibility.ts',
   'src/extensions/architect/askDecision.ts',
   'src/extensions/architect/gateDecision.ts',
-  'src/extensions/architect/openPlacementDecision.ts',
+  'src/extensions/architect/openReuseDecision.ts',
   'src/extensions/architect/queuedHandover.ts',
   'src/extensions/askUserQuestion/layout.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',

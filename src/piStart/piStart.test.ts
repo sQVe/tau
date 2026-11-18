@@ -7,7 +7,7 @@ import {
   createTemporaryRepository,
 } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { startPiSession } from './piStart.js';
+import { startPiSession, startPiSessionLeftOf } from './piStart.js';
 
 const createAppFake = (): ExecFake<'app'> =>
   createExecFake<'app'>({
@@ -109,15 +109,15 @@ const paneAppFake = (splitReply: string): ExecFake<'split' | 'swap'> =>
     handlerFor: (key) => () => succeededResult(key === 'split' ? splitReply : '{"ok":true}'),
   });
 
-it('a pane start splits right with the task in the argv, then swaps the new pane left', async () => {
+it('a left-of start splits right with the task in the argv, then swaps the new pane left', async () => {
   const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await startPiSession(
+  const result = await startPiSessionLeftOf(
     { exec: fake.exec, cwd: root },
     {
       folder: root,
-      target: { pane: 'p-lead' },
+      pane: 'p-lead',
       task: 'Design this',
       model: undefined,
       session: undefined,
@@ -147,11 +147,11 @@ it('a pane split reply without a pane ends the start before the swap', async () 
   const root = await createTemporaryRepository(onTestFinished);
 
   await expect(
-    startPiSession(
+    startPiSessionLeftOf(
       { exec: fake.exec, cwd: root },
       {
         folder: root,
-        target: { pane: 'p-lead' },
+        pane: 'p-lead',
         task: 'Design this',
         model: undefined,
         session: undefined,
@@ -175,7 +175,7 @@ const failingSwapFake = (): ExecFake<'split' | 'swap'> =>
 
 const paneRequest = (root: string) => ({
   folder: root,
-  target: { pane: 'p-lead' },
+  pane: 'p-lead',
   task: 'Design this',
   model: undefined,
   session: undefined,
@@ -186,9 +186,10 @@ it('a failed swap names the created pane and terminal and where the architect ru
   const fake = failingSwapFake();
   const root = await createTemporaryRepository(onTestFinished);
 
-  const failure = await startPiSession({ exec: fake.exec, cwd: root }, paneRequest(root)).catch(
-    (error: unknown) => error,
-  );
+  const failure = await startPiSessionLeftOf(
+    { exec: fake.exec, cwd: root },
+    paneRequest(root),
+  ).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain('p-new');
@@ -212,7 +213,7 @@ it('a cancel after the split skips the swap and names the created pane', async (
 
   const root = await createTemporaryRepository(onTestFinished);
 
-  const failure = await startPiSession(
+  const failure = await startPiSessionLeftOf(
     { exec: fake.exec, cwd: root, signal: controller.signal },
     paneRequest(root),
   ).catch((error: unknown) => error);

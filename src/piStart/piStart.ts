@@ -9,20 +9,27 @@ import { errorMessage, isMissingFile } from '../errors.js';
 import { existingEntry, isBareRoot } from '../tauDirectory.js';
 import { piArguments } from './piArguments.js';
 
-export type PiStartTarget = { space: string } | { name: string } | { pane: string };
+export type PiStartTarget = { space: string } | { name: string };
 
-export interface PiStartRequest {
+interface PiSessionRequest {
   folder: string;
-  target: PiStartTarget;
   task: string;
   model: string | undefined;
   session: string | undefined;
   environment: Record<string, string> | undefined;
 }
 
+export interface PiStartRequest extends PiSessionRequest {
+  target: PiStartTarget;
+}
+
+export interface PiStartLeftOfRequest extends PiSessionRequest {
+  pane: string;
+}
+
 const splitReplySchema = Type.Object({ pane: Type.String(), terminal: Type.String() });
 
-const argvOf = (request: PiStartRequest, message: string | undefined): string[] =>
+const argvOf = (request: PiSessionRequest, message: string | undefined): string[] =>
   piArguments({
     model: request.model,
     session: request.session,
@@ -30,7 +37,7 @@ const argvOf = (request: PiStartRequest, message: string | undefined): string[] 
     message,
   });
 
-const tabArguments = (request: PiStartRequest, space: string): string[] => [
+const tabArguments = (request: PiSessionRequest, space: string): string[] => [
   'do',
   'tab.new',
   '--space',
@@ -45,7 +52,7 @@ const tabArguments = (request: PiStartRequest, space: string): string[] => [
   'false',
 ];
 
-const spaceArguments = (request: PiStartRequest, name: string): string[] => [
+const spaceArguments = (request: PiSessionRequest, name: string): string[] => [
   'do',
   'space.new',
   '--name',
@@ -60,7 +67,7 @@ const spaceArguments = (request: PiStartRequest, name: string): string[] => [
   'false',
 ];
 
-const splitArguments = (request: PiStartRequest, pane: string): string[] => [
+const splitArguments = (request: PiSessionRequest, pane: string): string[] => [
   'do',
   'pane.split',
   '--direction',
@@ -80,15 +87,14 @@ const swapArguments = (pane: string, target: string): string[] => [
   target,
 ];
 
-const startArguments = (
-  request: PiStartRequest,
-  target: { space: string } | { name: string },
-): string[] =>
-  'space' in target ? tabArguments(request, target.space) : spaceArguments(request, target.name);
+const startArguments = (request: PiStartRequest): string[] =>
+  'space' in request.target
+    ? tabArguments(request, request.target.space)
+    : spaceArguments(request, request.target.name);
 
 const startInPane = async (
   runtime: CommandRuntime,
-  request: PiStartRequest,
+  request: PiSessionRequest,
   pane: string,
 ): Promise<string> => {
   const reply = await runCommand(
@@ -145,26 +151,30 @@ const isGitCheckout = async (folder: string): Promise<boolean> => {
   return isBareRoot(folder);
 };
 
+const requireCheckout = async (runtime: CommandRuntime, folder: string): Promise<void> => {
+  if (!(await isGitCheckout(folder))) {
+    throw new Error(`start folder is not a Git checkout: ${folder}`);
+  }
+
+  runtime.signal?.throwIfAborted();
+};
+
 export const startPiSession = async (
   runtime: CommandRuntime,
   request: PiStartRequest,
 ): Promise<{ reply: string }> => {
-  if (!(await isGitCheckout(request.folder))) {
-    throw new Error(`start folder is not a Git checkout: ${request.folder}`);
-  }
+  await requireCheckout(runtime, request.folder);
 
-  runtime.signal?.throwIfAborted();
-
-  if ('pane' in request.target) {
-    return { reply: await startInPane(runtime, request, request.target.pane) };
-  }
-
-  const reply = await runCommand(
-    runtime,
-    'herdr-app',
-    startArguments(request, request.target),
-    'herdr-app do',
-  );
+  const reply = await runCommand(runtime, 'herdr-app', startArguments(request), 'herdr-app do');
 
   return { reply };
+};
+
+export const startPiSessionLeftOf = async (
+  runtime: CommandRuntime,
+  request: PiStartLeftOfRequest,
+): Promise<{ reply: string }> => {
+  await requireCheckout(runtime, request.folder);
+
+  return { reply: await startInPane(runtime, request, request.pane) };
 };

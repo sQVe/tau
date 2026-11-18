@@ -7,13 +7,12 @@ import { readRoleModel } from '../../config/roleModels.js';
 import { isMissingFile } from '../../errors.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { get } from '../../hc/hc.js';
-import type { HcRuntime } from '../../hc/hc.js';
+import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { findPane } from '../../piStart/herdrPane.js';
-import { startPiSession } from '../../piStart/piStart.js';
-import type { PiStartTarget } from '../../piStart/piStart.js';
+import { startPiSession, startPiSessionLeftOf } from '../../piStart/piStart.js';
 import { architectLockPath } from './lock.js';
-import { openPlacement } from './openPlacementDecision.js';
-import type { OpenPlacement } from './openPlacementDecision.js';
+import { openReuse } from './openReuseDecision.js';
+import type { OpenReuse } from './openReuseDecision.js';
 import { readArchitectRecord, readAskRecords } from './record.js';
 
 export interface OpenRequest {
@@ -29,6 +28,8 @@ export type OpenResult =
   | { status: 'opened'; sessionFile: null }
   | { status: 'running'; terminal: string }
   | { status: 'resumed'; sessionFile: string };
+
+const askLabel = 'tau.architect.ask';
 
 const fileExists = (path: string): Promise<boolean> =>
   stat(path).then(
@@ -78,17 +79,17 @@ const requireModel = (request: OpenRequest): string => {
   return model;
 };
 
-const liveTerminal = async (
+const readLiveTerminal = async (
   hc: HcRuntime,
   terminal: string | null | undefined,
-): Promise<string | undefined> => {
+): Promise<HcTerminal | undefined> => {
   if (terminal === null || terminal === undefined) {
     return undefined;
   }
 
   const found = await get(hc, terminal).catch(() => undefined);
 
-  return found?.state === 'live' ? terminal : undefined;
+  return found?.state === 'live' ? found : undefined;
 };
 
 const terminalRunsAsk = async (root: string, terminal: string | undefined): Promise<boolean> => {
@@ -101,79 +102,90 @@ const terminalRunsAsk = async (root: string, terminal: string | undefined): Prom
   return asks.some((ask) => ask.status === 'running' && ask.terminal === terminal);
 };
 
+const reuseOf = async (
+  request: OpenRequest,
+  recordedTerminal: string | null | undefined,
+  holder: { checkout: string },
+): Promise<OpenReuse> => {
+  const found = await readLiveTerminal(request.hc, recordedTerminal);
+  const liveTerminal = found === undefined ? undefined : (recordedTerminal ?? undefined);
+
+  return openReuse({
+    checkout: holder.checkout,
+    liveTerminal,
+    terminalRunsAsk: await terminalRunsAsk(request.root, liveTerminal),
+    terminalLabeledAsk: found?.labels?.[askLabel] !== undefined,
+  });
+};
+
 const readLeadSpace = async (request: OpenRequest): Promise<string | undefined> => {
   const lead = await get(request.hc, request.leadTerminal);
 
   return lead.labels?.['herdr.space'];
 };
 
-const placementOf = async (
-  request: OpenRequest,
-  recordedTerminal: string | null | undefined,
-): Promise<OpenPlacement> => {
-  const holder = await readLiveLockHolder(architectLockPath(request.root));
-
-  if (holder === undefined) {
-    const leadSpace = await readLeadSpace(request);
-
-    return openPlacement({ holder, liveTerminal: undefined, terminalRunsAsk: false, leadSpace });
-  }
-
-  const terminal = await liveTerminal(request.hc, recordedTerminal);
-
-  return openPlacement({
-    holder,
-    liveTerminal: terminal,
-    terminalRunsAsk: await terminalRunsAsk(request.root, terminal),
-    leadSpace: undefined,
-  });
-};
-
-const paneTarget = async (request: OpenRequest): Promise<PiStartTarget> => {
+const findLeadPane = async (request: OpenRequest): Promise<string> => {
   const pane = await findPane(request.hc, request.leadTerminal);
 
   if (pane === undefined) {
     throw new Error(`herdr-app shows no pane for the lead terminal ${request.leadTerminal}.`);
   }
 
-  return { pane };
+  return pane;
 };
 
-export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
-  const record = await readArchitectRecord(request.root);
-  const placement = await placementOf(request, record?.terminal);
+const hasSpace = (leadSpace: string | undefined): boolean =>
+  leadSpace !== undefined && leadSpace !== '';
 
-  if (placement.kind === 'refuse') {
-    throw new Error(`The architect is already running in ${placement.checkout}.`);
-  }
-
-  if (placement.kind === 'reuse') {
-    return { status: 'running', terminal: placement.terminal };
-  }
-
+const startArchitect = async (
+  request: OpenRequest,
+  recordedSession: string | undefined,
+): Promise<string | undefined> => {
+  const leadSpace = await readLeadSpace(request);
   const model = requireModel(request);
-  const recordedSession = record?.sessionFile ?? undefined;
   const resume = recordedSession !== undefined && (await fileExists(recordedSession));
   const session = resume ? recordedSession : undefined;
-
-  const target: PiStartTarget =
-    placement.kind === 'pane'
-      ? await paneTarget(request)
-      : { name: `architect-${basename(request.root)}` };
+  const pane = hasSpace(leadSpace) ? await findLeadPane(request) : undefined;
 
   const task =
     session === undefined
       ? await freshTask(request.root, request.leadTerminal, request.request)
       : resumeTask(request.root, request.leadTerminal, request.request);
 
-  await startPiSession(request.hc, {
+  const start = {
     folder: request.root,
-    target,
     task,
     model,
     session,
     environment: { TAU_ROLE: 'architect', TAU_LEAD_TERMINAL: request.leadTerminal },
-  });
+  };
+
+  if (pane === undefined) {
+    const target = { name: `architect-${basename(request.root)}` };
+
+    await startPiSession(request.hc, { ...start, target });
+  } else {
+    await startPiSessionLeftOf(request.hc, { ...start, pane });
+  }
+
+  return session;
+};
+
+export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
+  const record = await readArchitectRecord(request.root);
+  const holder = await readLiveLockHolder(architectLockPath(request.root));
+
+  if (holder !== undefined) {
+    const reuse = await reuseOf(request, record?.terminal, holder);
+
+    if (reuse.kind === 'refuse') {
+      throw new Error(`The architect is already running in ${reuse.checkout}.`);
+    }
+
+    return { status: 'running', terminal: reuse.terminal };
+  }
+
+  const session = await startArchitect(request, record?.sessionFile ?? undefined);
 
   return session === undefined
     ? { status: 'opened', sessionFile: null }
