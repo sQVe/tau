@@ -48,20 +48,21 @@ check that code.
 
 ### Who may set each key
 
-| Key             | User file | Repository file | Rule                                                                                                              |
-| --------------- | --------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `tdd`           | yes       | yes             | Per field; a list replaces the earlier list, and a layer that changes `runner` starts from that runner's defaults |
-| `allowedModels` | yes       | yes             | Each file may only remove models from the list before it                                                          |
-| `mutation`      | no        | yes             | `argv` is the mutation command, beside the package pin it runs                                                    |
-| `subagents`     | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256                                                    |
-| `profiles`      | yes       | no              | Worker models                                                                                                     |
-| `roles`         | yes       | no              | Per-role worker model overrides                                                                                   |
-| `browser`       | yes       | no              | `loginCommand`, which the manager asks the user to run                                                            |
-| `tracker`       | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry                                                     |
-| `qa`            | yes       | no              | `repositories` with URL and test-account commands, and `dataWrites`                                               |
-| `reviews`       | yes       | no              | `repositories` with the review bots per entry                                                                     |
-| `fullCheck`     | yes       | yes             | User file: `repositories` with the lock scope per entry. Repository file: `argv`, read only in a trusted project  |
-| `verification`  | no        | yes             | `targets` with launch, doctor, and stop argv per target, read only in a trusted project                           |
+| Key              | User file | Repository file | Rule                                                                                                              |
+| ---------------- | --------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `tdd`            | yes       | yes             | Per field; a list replaces the earlier list, and a layer that changes `runner` starts from that runner's defaults |
+| `allowedModels`  | yes       | yes             | Each file may only remove models from the list before it                                                          |
+| `mutation`       | no        | yes             | `argv` is the mutation command, beside the package pin it runs                                                    |
+| `subagents`      | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256                                                    |
+| `profiles`       | yes       | no              | Worker models                                                                                                     |
+| `roles`          | yes       | no              | Per-role worker model overrides                                                                                   |
+| `browser`        | yes       | no              | `loginCommand`, which the manager asks the user to run                                                            |
+| `tracker`        | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry                                                     |
+| `qa`             | yes       | no              | `repositories` with URL and test-account commands, and `dataWrites`                                               |
+| `reviews`        | yes       | no              | `repositories` with the review bots per entry                                                                     |
+| `fallbackModels` | yes       | no              | Virtual models `tau/<name>` with a primary, a fallback, and the retry that switches                               |
+| `fullCheck`      | yes       | yes             | User file: `repositories` with the lock scope per entry. Repository file: `argv`, read only in a trusted project  |
+| `verification`   | no        | yes             | `targets` with launch, doctor, and stop argv per target, read only in a trusted project                           |
 
 A key in the wrong file is an error. The error names the file and the file the key belongs in.
 `tdd.verificationArgv` is validated by the selected `tdd.runner`; the Vitest runner's command must

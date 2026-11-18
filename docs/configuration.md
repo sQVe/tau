@@ -225,18 +225,34 @@ switches. Tau registers the name as the virtual model `tau/<name>`.
 }
 ```
 
-A name uses lower-case letters, digits, and hyphens. Each model is `provider/model-id`, and the
-primary and fallback differ. `fallbackAtRetry` is a whole number of at least 1. It must be at most
-Pi's `retry.maxRetries`, or the retry that would switch never runs.
+A name starts with a lower-case letter or digit and uses only lower-case letters, digits, and
+hyphens. The primary and the fallback are each a physical model as `provider/model-id`, and they
+differ. Neither may name another `tau/<name>`; a route to a virtual model fails the request.
+`fallbackAtRetry` is a whole number of at least 1. It must be at most Pi's `retry.maxRetries`, or
+the retry that would switch never runs.
 
-A user message goes to the primary. Each failed retry stays on the primary until the configured
-retry, and every retry from then on goes to the fallback. A request outside the agent loop goes to
-the model that answered last. The next user message returns to the primary. A route that names an
-unknown or disallowed model fails the request and names the model.
+A user message goes to the primary. Pi decides from the error text whether to retry a failed
+request. Tau never reads the error text; it counts each request that Pi sends as a retry. Every such
+retry counts, including the retry after a context overflow recovery. Below the configured retry, a
+retry stays on the primary. From that retry on, every retry goes to the fallback. The next user
+message returns to the primary.
+
+A request outside the agent loop, such as a compaction summary, goes to the fallback only when the
+latest successful answer came from the fallback. Otherwise it goes to the primary, also when no
+answer exists yet.
+
+A route that names an unknown or disallowed model fails the request and names the model.
 
 Only the user file may set `fallbackModels`. A repository file that sets it is an error and supplies
-no models. When `allowedModels` is set, it must list `tau/<name>`, the primary, and the fallback.
-When Pi's `enabledModels` is set, it must list `tau/<name>`.
+no models. When `allowedModels` is set, each selection path checks a different model:
+
+- Each route checks the physical model it picks. The list must hold the primary, and the fallback
+  for the switch to work.
+- A Tau worker launch checks the selected model. The list must hold `tau/<name>` to launch a worker
+  on it.
+
+Pi's `--model` and Pi's `enabledModels` scope Pi's own model selection, apart from `allowedModels`.
+When `enabledModels` is set, it must list `tau/<name>` to select the virtual model in Pi.
 
 ### Web search
 
