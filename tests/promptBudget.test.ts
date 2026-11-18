@@ -1,25 +1,30 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolDefinition,
+} from '@earendil-works/pi-coding-agent';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { assignmentDirectory, writeAssignment } from '../src/extensions/subagents/assignment.js';
+import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { bundledProfileDirectory, resolveProfile } from '../src/extensions/subagents/profiles.js';
 import { qaGuidePath } from '../src/extensions/subagents/qaBrief.js';
 import type { Loadout } from '../src/extensions/subagents/types.js';
-import workerExtension, {
-  workerSystemPrompt,
-} from '../src/extensions/subagents/workerExtension.js';
+import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
-import { resolveStommeGuides } from '../src/instructions/stommeGuides/stommeGuides.js';
 import type { RoleKind } from '../src/role/role.js';
 import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
 import tauExtension from '../src/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
+import { createHcFake } from './hcFake.js';
 import { writeStommeProject } from './stommeProjectHarness.js';
 
 type Sessions = Map<string, { tools: ToolDefinition[]; size: number; prompt: string }>;
@@ -126,12 +131,122 @@ const loadoutFor = (profileName: string, directory: string): Loadout => {
   }
 
   return {
+    harness: 'pi',
+    profile: profileName,
     role: profile.role,
+    model: 'faux/test',
+    thinking: 'off',
+    cwd: directory,
+    agentDirectory: directory,
+    permissions: 'trusted-full-tools',
     instructions: profile.instructions,
     tools: profile.tools,
-    instructionSets: profile.instructionSets,
     skills: profile.skills.map((name) => join(skillsDirectory, name, 'SKILL.md')),
-  } as Loadout;
+    instructionSets: profile.instructionSets,
+    packages: profile.packages,
+  };
+};
+
+const safetyNetPath = join(
+  dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
+  'dist',
+  'pi',
+  'index.js',
+);
+
+const workerTerminal = 'worker-1';
+const parentTerminal = 'manager-1';
+
+const assignmentFor = (loadout: Loadout, directory: string): Assignment => {
+  const assignmentId = randomUUID();
+  const sessionId = randomUUID();
+
+  return {
+    version: 3,
+    assignmentId,
+    task: 'Measure the prompt.',
+    acceptance: [],
+    label: null,
+    profile: loadout.profile,
+    loadout,
+    routing: null,
+    packageSnapshot: null,
+    session: {
+      id: sessionId,
+      file: join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`),
+    },
+    parentSession: join(directory, 'parent.jsonl'),
+    cwd: directory,
+    parentTerminal,
+    deadline: Date.now() + 60_000,
+    createdAt: Date.now(),
+    previousAssignmentId: null,
+    extensionPackages: null,
+    questions: [],
+    report: null,
+  };
+};
+
+// Starts a worker with a saved assignment and returns what its registered hook appends to the prompt.
+const workerHookPrompt = async (loadout: Loadout, directory: string): Promise<string> => {
+  vi.stubEnv('TAU_ROLE', 'worker');
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('HC_TERMINAL_ID', workerTerminal);
+
+  try {
+    const assignment = assignmentFor(loadout, directory);
+    const hc = createHcFake();
+    const toolNames = workerTools(loadout, skillTools);
+
+    hc.reply(
+      'get',
+      JSON.stringify({
+        address: workerTerminal,
+        state: 'live',
+        parent: parentTerminal,
+        labels: {
+          'tau.assignment': join(assignmentDirectory(assignment.assignmentId), 'assignment.json'),
+        },
+      }),
+    );
+
+    const api = fakeExtensionApi({
+      exec: hc.exec,
+      getThinkingLevel: () => 'off',
+      getCommands: () => [
+        { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safetyNetPath } },
+      ],
+      getAllTools: () => toolNames.map((name) => ({ name })),
+      setActiveTools: () => undefined,
+    } as unknown as Partial<ExtensionAPI>);
+
+    const context = {
+      sessionManager: { getBranch: () => [] },
+      shutdown: () => undefined,
+      cwd: directory,
+      model: { provider: 'faux', id: 'test' },
+      isProjectTrusted: () => true,
+      isIdle: () => true,
+      ui: { notify: () => undefined },
+    } as unknown as ExtensionContext;
+
+    workerExtension(api.pi);
+    await writeAssignment(assignment);
+
+    for (const handler of api.handlers.get('session_start') ?? []) {
+      await handler({} as never, context);
+    }
+
+    const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: [] } };
+
+    for (const handler of api.handlers.get('before_agent_start') ?? []) {
+      await handler(event as never, context);
+    }
+
+    return event.systemPromptOptions.appendSystemPrompt;
+  } finally {
+    vi.unstubAllEnvs();
+  }
 };
 
 const workerSession = async (profileName: string, directory: string) => {
@@ -152,11 +267,7 @@ const workerSession = async (profileName: string, directory: string) => {
 
   const tools = [...fake.tools.values()].filter((tool) => names.has(tool.name));
 
-  const systemPrompt = await workerSystemPrompt(loadout, {
-    snapshot: () => resolveStommeGuides(directory),
-  });
-
-  const prompt = measuredPrompt(systemPrompt);
+  const prompt = measuredPrompt(await workerHookPrompt(loadout, directory));
 
   return { tools, size: prompt.length + toolsSize(tools), prompt };
 };
@@ -182,8 +293,10 @@ let directory = '';
 let adoptedDirectory = '';
 
 beforeAll(async () => {
-  directory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-'));
-  adoptedDirectory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-adopted-'));
+  directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-prompt-budget-')));
+
+  adoptedDirectory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-prompt-budget-adopted-')));
+
   await writeStommeProject(adoptedDirectory, { language: 'typescript', layers: ['pi'] });
 
   for (const [name, session] of await measureSessions(directory)) {

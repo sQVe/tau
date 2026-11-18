@@ -64,8 +64,9 @@ interface WorkerState {
 }
 
 interface WorkerPromptParts {
-  loadout: Loadout;
+  prefix: string;
   sections: InstructionSection[];
+  suffix: string[];
 }
 
 const inOrder = <Result>(state: WorkerState, step: () => Promise<Result>): Promise<Result> => {
@@ -80,8 +81,9 @@ const workerCodemodeGuidelines = (loadout: Loadout): string[] =>
   loadout.tools.includes('codemode') ? [guidelineLines(codemodeGuidelines)] : [];
 
 const readWorkerPromptParts = async (loadout: Loadout): Promise<WorkerPromptParts> => ({
-  loadout,
+  prefix: workerInstructions(loadout),
   sections: await readInstructionSections(loadout.instructionSets),
+  suffix: workerCodemodeGuidelines(loadout),
 });
 
 const workerPromptText = async (
@@ -90,17 +92,8 @@ const workerPromptText = async (
 ): Promise<string> => {
   const instructionSets = await instructionTexts(parts.sections, guideRuns);
 
-  return [
-    workerInstructions(parts.loadout),
-    ...instructionSets,
-    ...workerCodemodeGuidelines(parts.loadout),
-  ].join('\n\n');
+  return [parts.prefix, ...instructionSets, ...parts.suffix].join('\n\n');
 };
-
-export const workerSystemPrompt = async (
-  loadout: Loadout,
-  guideRuns: Pick<GuideRuns, 'snapshot'>,
-): Promise<string> => workerPromptText(await readWorkerPromptParts(loadout), guideRuns);
 
 const callsReportAlone = (
   assistant: ReturnType<ExtensionContext['sessionManager']['getBranch']>[number] | undefined,

@@ -56,9 +56,10 @@ it('appends the instruction sets and the coding guides of the loadout to each ru
   const prompt = await startRun(fixture);
   const guides = codingSetText(await resolveStommeGuides(fixture.directory));
 
-  expect(prompt).toContain(await readInstructionSet('writing'));
-  expect(prompt).toContain(await readInstructionSet('workflow'));
-  expect(prompt).toContain(guides);
+  const sets = [await readInstructionSet('writing'), guides, await readInstructionSet('workflow')];
+
+  expect(prompt).toContain(`\n\n${sets.join('\n\n')}`);
+  expect(prompt.startsWith('Work on the assigned task.')).toBe(true);
   expect(await startRun(fixture)).toBe(prompt);
 });
 
