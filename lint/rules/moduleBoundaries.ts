@@ -171,7 +171,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
     'tauDirectory',
   ],
   inbox: ['errors', 'fileLock', 'hc', 'record', 'schema', 'wake'],
-  instructions: [],
+  instructions: ['errors'],
   linear: ['command', 'errors'],
   piStart: ['command', 'config', 'errors', 'tauDirectory'],
   process: ['errors'],
