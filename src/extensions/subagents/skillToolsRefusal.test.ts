@@ -43,6 +43,8 @@ it('skips a listed tool the role never registers', () => {
   expect(refusal).toBeUndefined();
 });
 
+const occurrences = (text: string, value: string): number => text.split(value).length - 1;
+
 const refusalCases: readonly {
   case: string;
   role: RoleKind;
@@ -50,6 +52,7 @@ const refusalCases: readonly {
   registered: readonly string[];
   missing: readonly string[];
   absent: readonly string[];
+  exactlyOnce?: readonly string[];
 }[] = [
   {
     case: 'one listed tool is not registered',
@@ -74,6 +77,7 @@ const refusalCases: readonly {
     registered: [],
     missing: ['mutation_check'],
     absent: [],
+    exactlyOnce: ['mutation_check'],
   },
   {
     case: 'the lead does not register the architect tool',
@@ -91,11 +95,19 @@ const refusalCases: readonly {
     missing: ['mutation_check'],
     absent: ['architect'],
   },
+  {
+    case: 'an inherited name is missing',
+    role: 'lead',
+    current: { tdd: ['constructor'] },
+    registered: [],
+    missing: ['constructor'],
+    absent: [],
+  },
 ];
 
 it.each(refusalCases)(
   'refuses a launch and names the tools when $case',
-  ({ role, current, registered, missing, absent }) => {
+  ({ role, current, registered, missing, absent, exactlyOnce }) => {
     const refusal = skillToolsRefusal(current, new Set(registered), role);
 
     expect(refusal).toBeDefined();
@@ -107,6 +119,10 @@ it.each(refusalCases)(
 
     for (const tool of absent) {
       expect(refusal).not.toContain(tool);
+    }
+
+    for (const tool of exactlyOnce ?? []) {
+      expect(occurrences(refusal ?? '', tool)).toBe(1);
     }
   },
 );

@@ -33,6 +33,12 @@ const cases: readonly {
     tool: 'slice',
     expected: true,
   },
+  {
+    case: 'inherited names are registered',
+    role: 'lead',
+    tool: 'constructor',
+    expected: true,
+  },
 ];
 
 it.each(cases)('decides whether $case', ({ role, tool, expected }) => {
