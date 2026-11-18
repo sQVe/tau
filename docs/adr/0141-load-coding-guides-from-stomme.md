@@ -53,6 +53,9 @@ file in Tau. The set keeps its name, so profiles and saved loadouts stay valid.
 - Tau shows an error notice with the reason once per new reason. A usable run clears it. Only a
   session that loads the coding set shows it, so a worker without `coding` stays quiet.
 - A broken project never falls back to the bundled guides.
+- Tau reads and hashes every file the sync record lists, not only the guides the project loads. A
+  missing file, a hash mismatch, or a bad link in any recorded file, including shared ADRs, makes
+  the whole installation broken.
 
 ## Consequences
 
@@ -66,6 +69,7 @@ file in Tau. The set keeps its name, so profiles and saved loadouts stay valid.
 
 - Each run reads and hashes the guides again.
 - A broken installation leaves the agent without coding rules until the user fixes it.
+- A fault in a recorded file that the project does not load still breaks the coding rules.
 - The prompt grows with the size of the guides the project selects.
 
 ## Alternatives considered
