@@ -243,3 +243,65 @@ it('warns about an unknown key on a refused entry and keeps the valid sibling', 
     warnings: [`Invalid Tau config ${userFile}: fallbackModels.bad has unknown key extra.`],
   });
 });
+
+it('reports a primary that names a Tau virtual model and keeps the other entry', ({
+  onTestFinished,
+}) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-fallback-models-',
+  );
+
+  writeUser({
+    fallbackModels: {
+      bad: { ...validModel, primary: 'tau/other' },
+      'deepseek-flash': validModel,
+    },
+  });
+
+  expect(readUser(location)).toEqual({
+    models: [
+      {
+        name: 'deepseek-flash',
+        primary: 'a/primary',
+        fallback: 'b/fallback',
+        fallbackAtRetry: 5,
+      },
+    ],
+    problems: [
+      `Invalid Tau config ${userFile}: fallbackModels.bad.primary "tau/other" names a Tau virtual model; use a physical model.`,
+    ],
+    warnings: [],
+  });
+});
+
+it('reports a fallback that names a Tau virtual model and keeps the other entry', ({
+  onTestFinished,
+}) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-fallback-models-',
+  );
+
+  writeUser({
+    fallbackModels: {
+      bad: { ...validModel, fallback: 'tau/other' },
+      'deepseek-flash': validModel,
+    },
+  });
+
+  expect(readUser(location)).toEqual({
+    models: [
+      {
+        name: 'deepseek-flash',
+        primary: 'a/primary',
+        fallback: 'b/fallback',
+        fallbackAtRetry: 5,
+      },
+    ],
+    problems: [
+      `Invalid Tau config ${userFile}: fallbackModels.bad.fallback "tau/other" names a Tau virtual model; use a physical model.`,
+    ],
+    warnings: [],
+  });
+});

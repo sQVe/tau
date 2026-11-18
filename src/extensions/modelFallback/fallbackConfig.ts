@@ -20,6 +20,8 @@ export interface FallbackModelsRead {
 
 type EntryRead = { kind: 'model'; model: FallbackModel } | { kind: 'invalid'; problem: string };
 
+export const virtualModelProvider = 'tau';
+
 const namePattern = /^[a-z0-9][a-z0-9-]*$/u;
 
 const knownEntryKeys: KnownKeys = { primary: true, fallback: true, fallbackAtRetry: true };
@@ -34,6 +36,9 @@ const invalidEntry = (source: string, message: string): EntryRead => ({
 
 const isModelReference = (value: unknown): value is string =>
   typeof value === 'string' && parseModelReference(value) !== undefined;
+
+const isVirtualModel = (reference: string): boolean =>
+  parseModelReference(reference)?.provider === virtualModelProvider;
 
 const isRetryCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 1;
@@ -60,10 +65,24 @@ const readEntry = (source: string, name: string, value: unknown): EntryRead => {
     );
   }
 
+  if (isVirtualModel(primary)) {
+    return invalidEntry(
+      source,
+      `${field}.primary ${JSON.stringify(primary)} names a Tau virtual model; use a physical model.`,
+    );
+  }
+
   if (!isModelReference(fallback)) {
     return invalidEntry(
       source,
       `${field}.fallback ${JSON.stringify(fallback)} is not provider/model-id.`,
+    );
+  }
+
+  if (isVirtualModel(fallback)) {
+    return invalidEntry(
+      source,
+      `${field}.fallback ${JSON.stringify(fallback)} names a Tau virtual model; use a physical model.`,
     );
   }
 

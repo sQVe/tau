@@ -227,9 +227,9 @@ switches. Tau registers the name as the virtual model `tau/<name>`.
 
 A name starts with a lower-case letter or digit and uses only lower-case letters, digits, and
 hyphens. The primary and the fallback are each a physical model as `provider/model-id`, and they
-differ. Neither may name another `tau/<name>`; a route to a virtual model fails the request.
-`fallbackAtRetry` is a whole number of at least 1. It must be at most Pi's `retry.maxRetries`, or
-the retry that would switch never runs.
+differ. Neither may name another `tau/<name>`; such an entry is an error. `fallbackAtRetry` is a
+whole number of at least 1. It must be at most Pi's `retry.maxRetries`, or the retry that would
+switch never runs.
 
 A user message goes to the primary. Pi decides from the error text whether to retry a failed
 request. Tau never reads the error text; it counts each request that Pi sends as a retry. Every such

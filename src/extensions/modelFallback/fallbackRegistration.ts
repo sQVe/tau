@@ -2,6 +2,7 @@ import type { ModelThinkingLevel } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ModelRouteRequest } from '@earendil-works/pi-coding-agent';
 
 import { resolveAllowedModel } from '../../config/models.js';
+import { virtualModelProvider } from './fallbackConfig.js';
 import type { FallbackModel } from './fallbackConfig.js';
 import { decideFallbackRoute } from './fallbackRoute.js';
 import type { FallbackRouteState } from './fallbackRoute.js';
@@ -28,7 +29,7 @@ export const registerFallbackModels = (
 ): void => {
   for (const model of models) {
     pi.registerVirtualModel<FallbackRouteState>({
-      provider: 'tau',
+      provider: virtualModelProvider,
       id: model.name,
       name: `${model.primary} with fallback ${model.fallback}`,
       thinkingLevels,
