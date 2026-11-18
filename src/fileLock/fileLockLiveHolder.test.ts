@@ -11,14 +11,19 @@ const writeOwner = async (lockPath: string, owner: string): Promise<void> => {
   await writeFile(`${lockPath}.1`, owner);
 };
 
-it('reads a live holder', async () => {
+it('reads a live holder with the time it started', async () => {
   const { lockPath } = fixture();
+  const startedAt = '2026-11-18T10:00:00.000Z';
 
-  await writeOwner(lockPath, ownerJson('live'));
+  await writeOwner(
+    lockPath,
+    JSON.stringify({ pid: process.pid, checkout: '/other', startedAt, token: 'live' }),
+  );
 
   expect(await readLiveLockHolder(lockPath)).toEqual({
     pid: process.pid,
     checkout: '/other',
+    startedAt,
     token: 'live',
   });
 });
@@ -26,18 +31,14 @@ it('reads a live holder', async () => {
 it('reads a lock file without a token as an empty token', async () => {
   const { lockPath } = fixture();
 
-  await writeOwner(
-    lockPath,
-    JSON.stringify({
-      pid: process.pid,
-      checkout: '/other',
-      startedAt: new Date().toISOString(),
-    }),
-  );
+  const startedAt = new Date().toISOString();
+
+  await writeOwner(lockPath, JSON.stringify({ pid: process.pid, checkout: '/other', startedAt }));
 
   expect(await readLiveLockHolder(lockPath)).toEqual({
     pid: process.pid,
     checkout: '/other',
+    startedAt,
     token: '',
   });
 });
@@ -56,7 +57,7 @@ it('uses the token the caller gives it', async () => {
       token: 'given-token',
     },
     async () => {
-      expect(await readLiveLockHolder(lockPath)).toEqual({
+      expect(await readLiveLockHolder(lockPath)).toMatchObject({
         pid: process.pid,
         checkout: '/repo',
         token: 'given-token',

@@ -12,6 +12,7 @@ export interface LiveLockHolder {
   pid: number;
   checkout: string;
   terminal: string | undefined;
+  startedAt: string;
   token: string;
 }
 
@@ -51,6 +52,8 @@ export interface HoldFileLockOptions {
 export type HeldFileLock =
   | { kind: 'held'; release: () => Promise<void> }
   | { kind: 'refused'; holder: LiveLockHolder | undefined };
+
+type LockClaim = Omit<LockOwner, 'startedAt'>;
 
 const tokenRadix = 36;
 
@@ -244,6 +247,7 @@ const toLiveHolder = (owner: LockOwner): LiveLockHolder => ({
   pid: owner.pid,
   checkout: owner.checkout,
   terminal: owner.terminal,
+  startedAt: owner.startedAt,
   token: owner.token,
 });
 
@@ -272,19 +276,23 @@ export const readLiveLockHolder = async (lockPath: string): Promise<LiveLockHold
 };
 
 // Links generation `next`, and keeps it only if no higher generation exists. A stalled session can
-// link a number that was deleted while a higher generation is live.
+// link a number that was deleted while a higher generation is live. The owner's start time is
+// stamped here, after the attempt saw the old holder gone, so a lock is never older than anything
+// its previous holder wrote while it held the lock. A tie in one millisecond is possible.
 const claimGeneration = async (
   options: FileLockOptions,
-  owner: LockOwner,
+  claim: LockClaim,
   next: number,
-): Promise<boolean> => {
+): Promise<LockOwner | undefined> => {
   const { lockPath } = options;
   const path = generationPath(lockPath, next);
 
   await options.beforeLink?.();
 
+  const owner: LockOwner = { ...claim, startedAt: new Date().toISOString() };
+
   if (!(await tryCreate(path, owner))) {
-    return false;
+    return undefined;
   }
 
   const current = await listGenerations(lockPath);
@@ -292,17 +300,20 @@ const claimGeneration = async (
   if (current.some((generation) => generation > next)) {
     await rm(path, { force: true });
 
-    return false;
+    return undefined;
   }
 
   await removeOlderGenerations(lockPath, next);
 
-  return true;
+  return owner;
 };
 
-// Polls until this process owns the lock and returns the path of its file. Each poll depends on
-// the one before, so the loop awaits.
-const acquireLock = async (options: FileLockOptions, owner: LockOwner): Promise<string> => {
+// Polls until this process owns the lock and returns the path and owner record of its file. Each
+// poll depends on the one before, so the loop awaits.
+const acquireLock = async (
+  options: FileLockOptions,
+  claim: LockClaim,
+): Promise<{ path: string; owner: LockOwner }> => {
   const { lockPath, signal, pollMilliseconds, onWaiting, cancelled } = options;
   let reportedHolder: string | undefined;
 
@@ -319,8 +330,10 @@ const acquireLock = async (options: FileLockOptions, owner: LockOwner): Promise<
       const path = generationPath(lockPath, next);
 
       // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-      if (await claimGeneration(options, owner, next)) {
-        return path;
+      const owner = await claimGeneration(options, claim, next);
+
+      if (owner !== undefined) {
+        return { path, owner };
       }
     } else {
       const holderKey = `${holder?.pid}:${holder?.token}`;
@@ -343,16 +356,16 @@ export const withFileLock = async <T>(
   const { lockPath, checkout, cancelled, terminal } = options;
   const token = options.token ?? newToken();
 
-  const owner: LockOwner = {
+  const claim: LockClaim = {
     pid: process.pid,
     checkout,
-    startedAt: new Date().toISOString(),
     token,
     ...(terminal === undefined ? {} : { terminal }),
   };
 
   await mkdir(dirname(lockPath), { recursive: true });
-  const path = await acquireLock(options, owner);
+
+  const { path, owner } = await acquireLock(options, claim);
 
   let result: T;
 
