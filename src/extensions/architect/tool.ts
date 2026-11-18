@@ -23,7 +23,7 @@ const parameters = Type.Object({
   action: Type.Union([Type.Literal('open'), Type.Literal('ask'), Type.Literal('gate')]),
   question: Type.Optional(Type.String({ description: 'ask: the question for the architect.' })),
   request: Type.Optional(
-    Type.String({ description: 'gate: the user request, in the user words.' }),
+    Type.String({ description: 'open, gate: the user request, in the user words.' }),
   ),
   restatement: Type.Optional(
     Type.String({ description: 'gate: what the lead understood the user to ask for.' }),
@@ -66,19 +66,19 @@ const runAction = async (
 ): Promise<ArchitectDetails> => {
   const root = await findTauRoot(context.cwd, 'architect');
   const location = readConfigLocation(root, {}, context);
-  const runtime = { exec: hc.exec, cwd: hc.cwd, signal };
 
   if (input.action === 'open') {
-    rejectUnexpected(input, ['question', 'request', 'restatement']);
+    rejectUnexpected(input, ['question', 'restatement']);
 
     return {
       action: 'open',
       ...(await openArchitect({
         root,
         leadTerminal: leadTerminal(),
+        request: requireText('request', input.request),
         location,
         ui: context.ui,
-        runtime,
+        hc: { ...hc, signal },
       })),
     };
   }
@@ -121,7 +121,7 @@ export const createArchitectTool = (
     name: 'architect',
     label: 'Architect',
     description: `Open, ask, or gate the checkout's architect.
-- action open: starts the architect in a herdr-app tab, or resumes its recorded session. Refuses while a live architect runs. Returns {status, sessionFile}.
+- action open: with request, starts the architect in a pane beside the lead, or resumes its recorded session. Returns {status, sessionFile}, or {status: "running", terminal} for a live architect; send it the request with handover. Refuses while another architect holds the lock.
 - action ask: resumes the architect in a hidden terminal with question. Returns {status, askId, answer} when the architect answers. Refuses while an architect runs or another ask is live. A deadline returns {status: "needsOpen"}; call open instead.
 - action gate: classifies request and restatement with typesafe/jev-latest. Returns {decision, label, confidence, recordPath}. Follow specified; on open, call architect open; on uncertain, ask the user whether to brief a worker or open the architect.
 Every gate call writes a record under .tau/lead/gate.`,

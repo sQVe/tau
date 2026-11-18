@@ -1,6 +1,6 @@
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../tests/execFake.js';
+import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
@@ -95,4 +95,130 @@ it('a folder that is not a Git checkout is refused', async () => {
   ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
 
   expect(fake.calls).toEqual([]);
+});
+
+const paneAppFake = (splitReply: string): ExecFake<'split' | 'swap'> =>
+  createExecFake<'split' | 'swap'>({
+    keyOf: (command, commandArguments) => {
+      if (command !== 'herdr-app') {
+        return undefined;
+      }
+
+      return commandArguments[1] === 'pane.split' ? 'split' : 'swap';
+    },
+    handlerFor: (key) => () => succeededResult(key === 'split' ? splitReply : '{"ok":true}'),
+  });
+
+it('a pane start splits right with the task in the argv, then swaps the new pane left', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { pane: 'p-lead' },
+      task: 'Design this',
+      model: undefined,
+      session: undefined,
+      environment: { TAU_ROLE: 'architect' },
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+
+  expect(fake.calls.map((call) => call.commandArguments)).toEqual([
+    [
+      'do',
+      'pane.split',
+      '--direction',
+      'right',
+      '--pane',
+      'p-lead',
+      '--argv',
+      JSON.stringify(['env', '-C', root, 'env', 'TAU_ROLE=architect', 'pi', 'Design this']),
+    ],
+    ['do', 'pane.swap', '--pane', 'p-new', '--target', 'p-lead'],
+  ]);
+});
+
+it('a pane split reply without a pane ends the start before the swap', async () => {
+  const fake = paneAppFake('{"terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(
+    startPiSession(
+      { exec: fake.exec, cwd: root },
+      {
+        folder: root,
+        target: { pane: 'p-lead' },
+        task: 'Design this',
+        model: undefined,
+        session: undefined,
+        environment: undefined,
+      },
+    ),
+  ).rejects.toThrow('herdr-app do pane.split printed unexpected output');
+
+  expect(fake.calls).toHaveLength(1);
+});
+
+const failingSwapFake = (): ExecFake<'split' | 'swap'> =>
+  createExecFake<'split' | 'swap'>({
+    keyOf: (command, commandArguments) =>
+      command === 'herdr-app' && commandArguments[1] === 'pane.split' ? 'split' : 'swap',
+    handlerFor: (key) => () =>
+      key === 'split'
+        ? succeededResult('{"pane":"p-new","terminal":"t-new"}')
+        : failedResult('no such pane'),
+  });
+
+const paneRequest = (root: string) => ({
+  folder: root,
+  target: { pane: 'p-lead' },
+  task: 'Design this',
+  model: undefined,
+  session: undefined,
+  environment: undefined,
+});
+
+it('a failed swap names the created pane and terminal and where the architect runs', async () => {
+  const fake = failingSwapFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const failure = await startPiSession({ exec: fake.exec, cwd: root }, paneRequest(root)).catch(
+    (error: unknown) => error,
+  );
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('p-new');
+  expect((failure as Error).message).toContain('t-new');
+  expect((failure as Error).message).toContain('right of pane p-lead');
+  expect((failure as Error).message).toContain('no such pane');
+  expect(fake.calls).toHaveLength(2);
+});
+
+it('a cancel after the split skips the swap and names the created pane', async () => {
+  const controller = new AbortController();
+
+  const fake = createExecFake<'split'>({
+    keyOf: () => 'split',
+    handlerFor: () => () => {
+      controller.abort();
+
+      return succeededResult('{"pane":"p-new","terminal":"t-new"}');
+    },
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const failure = await startPiSession(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    paneRequest(root),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('p-new');
+  expect((failure as Error).message).toContain('t-new');
+  expect(fake.calls).toHaveLength(1);
 });

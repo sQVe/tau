@@ -1,13 +1,17 @@
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { runCommand } from '../command.js';
+import { Type } from 'typebox';
+
+import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
-import { isMissingFile } from '../errors.js';
+import { errorMessage, isMissingFile } from '../errors.js';
 import { existingEntry, isBareRoot } from '../tauDirectory.js';
 import { piArguments } from './piArguments.js';
 
-export type PiStartTarget = { space: string } | { name: string };
+// A pane target splits the pane to its right and swaps the new pane into its place, so the session
+// starts to the left of that pane.
+export type PiStartTarget = { space: string } | { name: string } | { pane: string };
 
 export interface PiStartRequest {
   folder: string;
@@ -18,12 +22,14 @@ export interface PiStartRequest {
   environment: Record<string, string> | undefined;
 }
 
-const argvOf = (request: PiStartRequest): string[] =>
+const splitReplySchema = Type.Object({ pane: Type.String(), terminal: Type.String() });
+
+const argvOf = (request: PiStartRequest, message: string | undefined): string[] =>
   piArguments({
     model: request.model,
     session: request.session,
     environment: request.environment,
-    message: undefined,
+    message,
   });
 
 const tabArguments = (request: PiStartRequest, space: string): string[] => [
@@ -34,7 +40,7 @@ const tabArguments = (request: PiStartRequest, space: string): string[] => [
   '--folder',
   request.folder,
   '--argv',
-  JSON.stringify(argvOf(request)),
+  JSON.stringify(argvOf(request, undefined)),
   '--task',
   request.task,
   '--focus',
@@ -49,17 +55,74 @@ const spaceArguments = (request: PiStartRequest, name: string): string[] => [
   '--folder',
   request.folder,
   '--argv',
-  JSON.stringify(argvOf(request)),
+  JSON.stringify(argvOf(request, undefined)),
   '--task',
   request.task,
   '--focus',
   'false',
 ];
 
-const startArguments = (request: PiStartRequest): string[] =>
-  'space' in request.target
-    ? tabArguments(request, request.target.space)
-    : spaceArguments(request, request.target.name);
+// pane.split has no folder and no task, so the argv starts in the folder and carries the task.
+const splitArguments = (request: PiStartRequest, pane: string): string[] => [
+  'do',
+  'pane.split',
+  '--direction',
+  'right',
+  '--pane',
+  pane,
+  '--argv',
+  JSON.stringify(['env', '-C', request.folder, ...argvOf(request, request.task)]),
+];
+
+const swapArguments = (pane: string, target: string): string[] => [
+  'do',
+  'pane.swap',
+  '--pane',
+  pane,
+  '--target',
+  target,
+];
+
+const startArguments = (
+  request: PiStartRequest,
+  target: { space: string } | { name: string },
+): string[] =>
+  'space' in target ? tabArguments(request, target.space) : spaceArguments(request, target.name);
+
+const startInPane = async (
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+  pane: string,
+): Promise<string> => {
+  const reply = await runCommand(
+    runtime,
+    'herdr-app',
+    splitArguments(request, pane),
+    'herdr-app do pane.split',
+  );
+
+  const created = parseJson('herdr-app do pane.split', reply);
+
+  checkOutput('herdr-app do pane.split', splitReplySchema, created);
+
+  try {
+    runtime.signal?.throwIfAborted();
+
+    await runCommand(
+      runtime,
+      'herdr-app',
+      swapArguments(created.pane, pane),
+      'herdr-app do pane.swap',
+    );
+  } catch (error) {
+    throw new Error(
+      `The session runs in pane ${created.pane} (terminal ${created.terminal}) to the right of pane ${pane}, because the swap did not finish: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+
+  return reply;
+};
 
 const isDirectory = (path: string): Promise<boolean> =>
   stat(path).then(
@@ -95,7 +158,16 @@ export const startPiSession = async (
 
   runtime.signal?.throwIfAborted();
 
-  const reply = await runCommand(runtime, 'herdr-app', startArguments(request), 'herdr-app do');
+  if ('pane' in request.target) {
+    return { reply: await startInPane(runtime, request, request.target.pane) };
+  }
+
+  const reply = await runCommand(
+    runtime,
+    'herdr-app',
+    startArguments(request, request.target),
+    'herdr-app do',
+  );
 
   return { reply };
 };

@@ -26,14 +26,14 @@ code and launches no editing worker; it may launch investigation `scout` workers
 ### The architect session
 
 The lead opens the architect with the `architect` tool. `open` starts or resumes the checkout's
-architect in a visible tab. `ask` resumes the same saved session in a hidden terminal with one
-question and a deadline. The architect answers, updates the ticket if needed, sends the answer to
-the lead's inbox, and ends. `gate` classifies a user request that no skill covers.
+architect in a pane beside the lead. `ask` resumes the same saved session in a hidden terminal with
+one question and a deadline. The architect answers, updates the ticket if needed, sends the answer
+to the lead's inbox, and ends. `gate` classifies a user request that no skill covers.
 
 The architect is a Pi session resumed by its saved session file. It can ask the user directly and
 keeps its earlier design context and approvals. The checkout records the session file. A lock file
-stops two sessions from writing one session file, and `open` and `ask` refuse while a live holder
-keeps the lock.
+stops two sessions from writing one session file. `open` reports the live visible architect instead
+of refusing, and `ask` and a second start still refuse while a live holder keeps the lock.
 
 ### Models
 
