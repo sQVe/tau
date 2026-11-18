@@ -123,7 +123,8 @@ const runEvidenceScript = async (fake: GhFake, activate = true) => {
 
   provider.setResponses([
     (context) => {
-      declarations.push(getCurrentTools(context.messages).map((tool) => tool.name));
+      const toolNames = getCurrentTools(context.messages).map((tool) => tool.name);
+      declarations.push(toolNames);
 
       return fauxAssistantMessage([fauxToolCall('codemode', { code: evidenceScript })]);
     },

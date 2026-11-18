@@ -85,7 +85,9 @@ it('runs an override in the process the caller started', async () => {
     overrides: [{ match: ' status ', script: 'kill -9 $$' }],
   });
 
-  await expect(promisify(execFile)('git', ['status'])).rejects.toMatchObject({
+  const gitStatus = promisify(execFile)('git', ['status']);
+
+  await expect(gitStatus).rejects.toMatchObject({
     signal: 'SIGKILL',
   });
 });

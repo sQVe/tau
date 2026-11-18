@@ -297,12 +297,18 @@ it.each([
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createLinearFake();
 
-  await expect(
-    createTicketTool(fake.exec).execute('call', input as never, undefined, undefined, {
+  const execution = createTicketTool(fake.exec).execute(
+    'call',
+    input as never,
+    undefined,
+    undefined,
+    {
       ...noUiContext(root),
       isProjectTrusted: () => false,
-    }),
-  ).rejects.toThrow(error);
+    },
+  );
+
+  await expect(execution).rejects.toThrow(error);
 
   expect(fake.calls).toEqual([]);
   expect(fake.writes()).toEqual([]);

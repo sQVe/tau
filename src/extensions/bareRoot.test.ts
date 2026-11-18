@@ -14,7 +14,8 @@ const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
   vi.unstubAllEnvs();
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  const cleanupTasks = cleanups.splice(0).map((cleanup) => cleanup());
+  await Promise.all(cleanupTasks);
 });
 
 const startSession = async (cwd: string) => {
@@ -25,9 +26,12 @@ const startSession = async (cwd: string) => {
 
   const systemPromptOptions = { appendSystemPrompt: 'user append' };
 
-  expect(
-    api.handler('before_agent_start')({ systemPrompt: 'base', systemPromptOptions }, context),
-  ).toBeUndefined();
+  const startResult = api.handler('before_agent_start')(
+    { systemPrompt: 'base', systemPromptOptions },
+    context,
+  );
+
+  expect(startResult).toBeUndefined();
 
   return systemPromptOptions.appendSystemPrompt;
 };

@@ -332,7 +332,8 @@ it('omits the slow test heading when none of its entries fit', () => {
   );
 
   expect(summary).not.toMatch(/\d+ ms/);
-  expect(summary.trimEnd().endsWith(':')).toBe(false);
+  const endsWithColon = summary.trimEnd().endsWith(':');
+  expect(endsWithColon).toBe(false);
 });
 
 it('shows failure messages before durations when both do not fit', () => {

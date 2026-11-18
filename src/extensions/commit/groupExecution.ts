@@ -195,11 +195,11 @@ const stageAndVerifyRequest = async (run: GroupRun): Promise<boolean> => {
   if (stagedAfterRequest.length === 0) {
     const consumed = [...run.requestedFiles].some((file) => run.committedFiles.has(file));
 
-    throw new Error(
-      consumed
-        ? 'Requested changes were already committed by an earlier hook. Stopped remaining groups. Inspect the reported commits and remaining working changes before retrying.'
-        : 'No staged changes for the requested files. Stopped before Git hooks.',
-    );
+    const stopMessage = consumed
+      ? 'Requested changes were already committed by an earlier hook. Stopped remaining groups. Inspect the reported commits and remaining working changes before retrying.'
+      : 'No staged changes for the requested files. Stopped before Git hooks.';
+
+    throw new Error(stopMessage);
   }
 
   return true;

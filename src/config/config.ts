@@ -187,9 +187,8 @@ export const warnUnknownKeys = (
 };
 
 // Each feature checks the keys inside its own section, so the top level knows only the section names.
-const knownTopLevelKeys: KnownKeys = Object.fromEntries(
-  Object.keys(topLevelKeys).map((key) => [key, true]),
-);
+const topLevelEntries = Object.keys(topLevelKeys).map((key) => [key, true] as const);
+const knownTopLevelKeys: KnownKeys = Object.fromEntries(topLevelEntries);
 
 export const warnUnknownTopLevelKeys = (ui: ConfigWarnings, files: ConfigFile[]): void => {
   for (const { source, value } of files) {

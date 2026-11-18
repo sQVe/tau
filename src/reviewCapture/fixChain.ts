@@ -105,7 +105,9 @@ const dirtySubmodules = (status: string): string[] => {
     const submodule = parts[2] ?? '';
 
     if (pathStart !== undefined && /^S.(M.|.U)$/.test(submodule)) {
-      paths.push(parts.slice(pathStart).join(' '));
+      const submodulePath = parts.slice(pathStart).join(' ');
+
+      paths.push(submodulePath);
     }
 
     if (parts[0] === '2') {

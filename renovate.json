@@ -1,6 +1,10 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    "github>sQVe/stomme//renovate/stomme"
+  ],
   "timezone": "Europe/Stockholm",
   "schedule": ["before 6am on monday"],
   "minimumReleaseAge": "3 days",

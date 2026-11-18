@@ -2,26 +2,21 @@
 
 **Date**: 2026-09-27\
 **Status**: Accepted\
-**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
-[ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md)
+**Related**: [shared ADR 0008 (Drop backwards compatibility by default)](../stomme/shared/adr/0008-backwards-compatibility.md)
 
 ## Context
 
 Worker records outlive the Tau that wrote them. An open session and a newer session can share one
 records folder ([ADR 0043](./README.md#retired)).
 
-Every record schema rejects unknown fields, so an older reader fails on any new field. An older
-session once refused every follow-up because a newer Tau had saved a name it rejected.
-
 Task records used `version` to name the worker kind, so it could not mark a format change. Tau has
 no releases. Sessions load Tau from a checkout, so "the previous release" names nothing.
 
 ## Decision
 
-Each saved record format has its own format version in a `version` field. The version names the
-format only, never a worker kind or another value the reader can derive. Giving each format its own
-version, and keeping strict readers, lets a reader tell a newer record from a broken one, and it
-still rejects fields it does not know.
+Tau's saved records follow [shared ADR 0008](../stomme/shared/adr/0008-backwards-compatibility.md):
+each format has its own `version` field, readers stay strict, and each reader sorts a record into
+current, previous and supported, retired, or newer. The sections below state what is Tau's own.
 
 ### Version only records that Tau reads back
 
@@ -30,63 +25,42 @@ write-only diagnostic file that no Tau reader parses, such as the `run.json` of 
 version or fixtures. Its readers are people and agents who inspect it. Once Tau code starts to read
 such a file, it becomes a record and gets a version with that change.
 
-### Change the version with the format
+### Keep a record's values open when the reader does not branch
 
-- Any change to the saved fields is a format change, including a new optional field. A strict older
-  reader rejects the new field, so the version must say why.
-- Close an enumeration only when the reader branches on its value. Use an open, bounded pattern for
-  values the reader only stores or displays, such as the worker name.
-
-### State a policy for each version
-
-Each format's reader sorts a record into one of four groups:
-
-- Current: read as saved.
-- Previous and supported: read, and treated as the current format in memory. A format stays
-  supported while running Tau sessions may still own such records.
-- Retired: skipped with a notice to start a fresh task.
-- Newer: a version above the reader's current one. Skipped with a notice to restart the session.
-  Follow-ups still read the claimed predecessor from it, so it keeps blocking a second follow-up of
-  the same source.
-
-A record that claims a known version but fails its schema is malformed. The reader reports it as a
-diagnostic. No unreadable record may stop an operation that does not need it.
+Close an enumeration only when the reader branches on its value. Use an open, bounded pattern for
+values the reader only stores or displays, such as the worker name.
 
 ### Support older sessions until they restart
 
 An older session reads newer records on a best-effort basis. It must not fail unrelated work, but it
-may skip what it cannot read. Restarting the session is the supported fix. Supporting an older,
-running Tau until the session restarts, best effort, lets the older session skip what it cannot read
-and keep working on everything else. A restart loads the newer reader.
+may skip what it cannot read. Restarting the session is the supported fix.
 
 ### Write through `src/record.ts`
 
 `src/record.ts` is the one path for versioned records. It parses and writes them, and it holds the
 synchronous publish and bounded read that worker records use. Versioned worker formats are listed in
-`versionedRecords` and written only through `publishRecord`. A structure test checks that each
-listed schema has a version literal and that no module writes a listed file with plain `publish`.
-Other records move to this path when their format next changes.
+`versionedRecords` and written only through `publishRecord`. Other records move to this path when
+their format next changes.
 
 ### Test both directions
 
 A change to a record writer keeps frozen fixtures, saved as files, for each supported version. Tests
 read the previous and current fixtures with the current reader. They also check that a newer and a
 malformed fixture are skipped without hiding other records. Assignment records, in
-`src/extensions/subagents/fixtures/assignment/`, are the example to copy.
+`src/extensions/subagents/fixtures/assignment/`, are the example to copy. A structure test checks
+that each schema in `versionedRecords` has a version literal and that no module writes a listed file
+with plain `publish`.
 
 ## Consequences
 
 ### Positive
 
 - A newer record cannot break unrelated work in an older session, and its notice names the fix.
-- Adding a field is a deliberate step with a version change and fixtures.
 - Each record type states which versions its reader supports, so a reader never guesses.
 
 ### Negative
 
 - An older session does not show newer records until it restarts.
-- Every format change drops that record type from older sessions, even when the change only adds a
-  field.
 - Most record types have no version yet. They keep failing closed until their next change.
 
 ## Alternatives considered
@@ -96,13 +70,3 @@ malformed fixture are skipped without hiding other records. Assignment records, 
 Require an older, running Tau to read records a newer Tau writes one release back, so a newer Tau
 never writes a record the previous release cannot read. Rejected because every new field would need
 two releases, and Tau cuts no releases to test against.
-
-### Strict readers without a version
-
-Keep strict readers without a version. Rejected because a reader cannot tell a newer record from a
-broken one, so it can only report a failure with no fix.
-
-### Accept unknown fields
-
-Accept unknown fields. Rejected because old readers would read records whose meaning changed, and
-act on them.

@@ -280,9 +280,11 @@ it('reports unknown coverage when every read fails', async () => {
 it('reports a cap without reading the extra source', async () => {
   const roots = Array.from({ length: 11 }, (_, index) => `/repository/${index + 1}`);
 
-  const handlers = Object.fromEntries(
-    roots.slice(0, 10).map((root) => [`git ${root}`, () => succeededResult('')]),
-  );
+  const handlerEntries = roots
+    .slice(0, 10)
+    .map((root) => [`git ${root}`, () => succeededResult('')] as const);
+
+  const handlers = Object.fromEntries(handlerEntries);
 
   const fake = createHistoryExec(handlers);
 

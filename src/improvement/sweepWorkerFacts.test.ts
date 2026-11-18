@@ -68,7 +68,8 @@ it('keeps worker facts after the worker transcript is deleted', async () => {
   const before = await readEvents(fixture.repository);
   const facts = before.events.find((event) => event.id === factsId);
 
-  expect(facts?.kind === 'facts' ? facts.coverage : undefined).toBe('complete');
+  const coverage = facts?.kind === 'facts' ? facts.coverage : undefined;
+  expect(coverage).toBe('complete');
 
   rmSync(workerSession);
   fixture.advance(1000);

@@ -112,9 +112,8 @@ describe('checks', () => {
       expect(text.length).toBeLessThanOrEqual(40_000);
       expect(result.checks.length).toBeLessThan(20);
 
-      expect(result.checks.map((item) => item.name)).toEqual(
-        fake.checks.slice(0, result.checks.length).map((item) => item.name),
-      );
+      const fakeCheckNames = fake.checks.slice(0, result.checks.length).map((item) => item.name);
+      expect(result.checks.map((item) => item.name)).toEqual(fakeCheckNames);
 
       expect(result.gaps).toContainEqual(
         expect.objectContaining({
@@ -192,6 +191,8 @@ describe('checks', () => {
 
     const result = await readChecks();
 
+    const logExcerpt = lines.slice(-200).join('\n');
+
     expect(result.checks).toEqual([
       {
         name: 'test',
@@ -200,7 +201,7 @@ describe('checks', () => {
         state: 'FAILURE',
         link: jobLink(11, 21),
         log: {
-          excerpt: lines.slice(-200).join('\n'),
+          excerpt: logExcerpt,
           omittedLines: 4800,
           command: 'gh run view 11 --repo github.com/sQVe/tau --job 21 --log-failed',
         },
@@ -257,7 +258,9 @@ describe('checks', () => {
         gaps: [],
       });
 
-      expect(runViewCalls(fake).map((call) => call.commandArguments)).toEqual([
+      const runViewArguments = runViewCalls(fake).map((call) => call.commandArguments);
+
+      expect(runViewArguments).toEqual([
         ['run', 'view', '14', '--repo', 'github.com/sQVe/tau', '--job', '24', '--log-failed'],
       ]);
 

@@ -13,7 +13,8 @@ import type { ClassDecisionFacts, ClassFacts } from './recordClass.js';
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  const cleanupTasks = cleanups.splice(0).map((cleanup) => cleanup());
+  await Promise.all(cleanupTasks);
 });
 
 const createProject = async () =>

@@ -38,7 +38,8 @@ it('shows only the message and requests no render after that', () => {
   vi.advanceTimersByTime(2000);
 
   expect(firstText.trim()).toBe('Running sleep');
-  expect(loader.render(80).join('\n')).toBe(firstText);
+  const renderedText = loader.render(80).join('\n');
+  expect(renderedText).toBe(firstText);
   expect(requestRender).toHaveBeenCalledTimes(rendersAfterStart);
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -52,7 +53,8 @@ it('shows a new message and requests a render for it', () => {
   requestRender.mockClear();
   loader.setMessage('Compacting');
 
-  expect(loader.render(80).join('\n').trim()).toBe('Compacting');
+  const trimmedText = loader.render(80).join('\n').trim();
+  expect(trimmedText).toBe('Compacting');
   expect(requestRender).toHaveBeenCalledOnce();
 });
 
@@ -69,7 +71,8 @@ it('stops the animation of an earlier loader when that loader restarts', () => {
   vi.advanceTimersByTime(2000);
 
   expect(restartedText.trim()).toBe('Working');
-  expect(loader.render(80).join('\n')).toBe(restartedText);
+  const renderedText = loader.render(80).join('\n');
+  expect(renderedText).toBe(restartedText);
   expect(requestRender).toHaveBeenCalledTimes(rendersAfterRestart);
   expect(vi.getTimerCount()).toBe(0);
 });

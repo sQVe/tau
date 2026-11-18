@@ -272,7 +272,8 @@ const folderModuleOf = (segments: string[]): FolderModule | undefined => {
   }
 
   const folder = segments.slice(0, depth).join('/');
-  const file = withoutExtension(segments.slice(depth).join('/'));
+  const fileSegment = segments.slice(depth).join('/');
+  const file = withoutExtension(fileSegment);
 
   return { folder, file };
 };

@@ -121,13 +121,17 @@ describe('discoveryOrder', () => {
         expect(new Set(order).size).toBe(order.length);
         expect(order).toEqual([...unseen, ...retried]);
 
-        expect(unseen).toEqual(
-          candidates.filter(({ status }) => status === 'new').map(({ path }) => path),
-        );
+        const unseenPaths = candidates
+          .filter(({ status }) => status === 'new')
+          .map(({ path }) => path);
 
-        expect(retried).toEqual(
-          candidates.filter(({ status }) => status === 'unresolved').map(({ path }) => path),
-        );
+        expect(unseen).toEqual(unseenPaths);
+
+        const retriedPaths = candidates
+          .filter(({ status }) => status === 'unresolved')
+          .map(({ path }) => path);
+
+        expect(retried).toEqual(retriedPaths);
       }),
     );
   });

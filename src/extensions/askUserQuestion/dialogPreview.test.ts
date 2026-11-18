@@ -185,14 +185,18 @@ it('hides the compact preview before it clips a focused description that fits', 
 const command = (index: number) =>
   `find .cache/${index} -type f -name cached-configuration-for-dashboard.json -delete`;
 
-const widePreview = (columns = 60) =>
-  open(
+const widePreview = (columns = 60) => {
+  const commandPreview = Array.from({ length: 20 }, (_line, index) => command(index + 1)).join(
+    '\n',
+  );
+
+  return open(
     [
       layoutQuestion([
         {
           label: 'Clean',
           description: 'Removes cached files.',
-          preview: Array.from({ length: 20 }, (_line, index) => command(index + 1)).join('\n'),
+          preview: commandPreview,
         },
         { label: 'Keep', description: 'Leaves cached files.', preview: command(0) },
       ]),
@@ -200,6 +204,7 @@ const widePreview = (columns = 60) =>
     24,
     columns,
   );
+};
 
 it('offers the full preview when a preview line is wider than the dialog', () => {
   const { dialog } = widePreview();
@@ -344,7 +349,8 @@ it('shows no question preview on the custom row', () => {
 
   dialog.handleInput(down);
 
-  expect(dialog.render(60).join('\n')).not.toContain('Body: Ship it.');
+  const renderedPreview = dialog.render(60).join('\n');
+  expect(renderedPreview).not.toContain('Body: Ship it.');
 });
 
 const previewRowsIn = (lines: string[]) => lines.filter((line) => /row-\d+$/u.test(line));
@@ -383,8 +389,10 @@ it.each(rowCounts)('keeps every preview line reachable at %i rows', (rows) => {
   const shown = previewRowsIn(lines).length;
   const hidden = hiddenCountIn(lines);
 
-  expect(hidden === undefined ? shown === 0 || shown === 8 : hidden === 8 - shown).toBe(true);
-  expect(shown === 8 ? hidden : undefined).toBeUndefined();
+  const previewReachable = hidden === undefined ? shown === 0 || shown === 8 : hidden === 8 - shown;
+  expect(previewReachable).toBe(true);
+  const hiddenWhenComplete = shown === 8 ? hidden : undefined;
+  expect(hiddenWhenComplete).toBeUndefined();
   expect(lines.some((line) => line.includes('Ctrl+O')) || shown === 8).toBe(true);
   expect(reachablePreviewLines(dialog).size).toBe(8);
 });
@@ -495,7 +503,8 @@ it('keeps the preview beside a clipped long description once the preview fits', 
   const first = clippedHeights.indexOf(true);
 
   expect(first).toBeGreaterThanOrEqual(0);
-  expect(clippedHeights.slice(first).every(Boolean)).toBe(true);
+  const allLinesVisible = clippedHeights.slice(first).every(Boolean);
+  expect(allLinesVisible).toBe(true);
 });
 
 it('fills the last page of the full preview after the terminal grows', () => {
@@ -517,5 +526,6 @@ it('fills the last page of the full preview after the terminal grows', () => {
   const freshRows = fresh.dialog.render(60).filter((line) => /line \d+$/u.test(line)).length;
 
   expect(previewRows()).toBe(freshRows);
-  expect(dialog.render(60).some((line) => line.endsWith('line 35'))).toBe(true);
+  const lastLineVisible = dialog.render(60).some((line) => line.endsWith('line 35'));
+  expect(lastLineVisible).toBe(true);
 });

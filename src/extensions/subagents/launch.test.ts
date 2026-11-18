@@ -110,11 +110,12 @@ const setup = (
           ? managerTerminal
           : [...children, ...launched].find((child) => child.address === address);
 
-      return Promise.resolve(
+      const terminalResult =
         terminal === undefined
           ? { code: 1, killed: false, truncated: false, stdout: '', stderr: 'not_found' }
-          : succeeded(terminal),
-      );
+          : succeeded(terminal);
+
+      return Promise.resolve(terminalResult);
     }
 
     return fake.exec(command, commandArguments, execOptions);

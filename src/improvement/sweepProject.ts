@@ -293,13 +293,15 @@ const writePlannedEvents = async (
 
   const existingIds = new Set(read.events.map((event) => event.id));
 
+  const recordedAt = options.now().toISOString();
+
   const planned = plannedEvents({
     tasks: tasks.map((task) => ({
       task,
       hash: taskHash(repository, task.pullRequest.number),
     })),
     existingIds,
-    now: options.now().toISOString(),
+    now: recordedAt,
   });
 
   for (const event of planned) {
@@ -322,13 +324,15 @@ const syncProject = async (options: ProjectOptions): Promise<ProjectSync> => {
   const repository = options.repository;
 
   if (repository === null) {
+    const failedAt = options.now().toISOString();
+
     return {
       status: 'done',
       index: withMergedUnknown(
         options.index,
         options.projectRoot,
         null,
-        options.now().toISOString(),
+        failedAt,
         'The project has no origin repository.',
       ),
     };
@@ -413,13 +417,15 @@ export const runProject = async (options: ProjectOptions): Promise<ProjectResult
     return result;
   }
 
+  const finishedAt = options.now().toISOString();
+
   return {
     ...result,
     index: withMergedUnknown(
       options.index,
       options.projectRoot,
       options.repository,
-      options.now().toISOString(),
+      finishedAt,
       result.reason,
     ),
   };

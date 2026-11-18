@@ -296,7 +296,9 @@ const handleListKey = (
   }
 
   if (key.kind === 'nextQuestion' || key.kind === 'previousQuestion') {
-    return switchQuestion(state, key.kind === 'nextQuestion' ? 1 : -1);
+    const direction = key.kind === 'nextQuestion' ? 1 : -1;
+
+    return switchQuestion(state, direction);
   }
 
   return handleOptionKey(state, key, facts, question);

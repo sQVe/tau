@@ -14,9 +14,8 @@ const survivor = {
 const reportWith = (item: Record<string, unknown>) =>
   JSON.stringify({ version: 1, status: 'survivors', survivors: [item] });
 
-const withoutCovered = Object.fromEntries(
-  Object.entries(survivor).filter(([key]) => key !== 'covered'),
-);
+const uncoveredEntries = Object.entries(survivor).filter(([key]) => key !== 'covered');
+const withoutCovered = Object.fromEntries(uncoveredEntries);
 
 it.each([
   { name: 'covered missing', item: withoutCovered, field: 'covered' },

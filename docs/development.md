@@ -4,11 +4,14 @@ Set up a checkout, try Tau in Pi, and check changes before release.
 
 ## Local setup
 
+Install [mise](https://mise.jdx.dev/getting-started.html), which installs the pinned stomme binary.
 Use Node.js 24.21.0 or later and the pnpm version specified by `packageManager` in
 [package.json](../package.json). Development needs a newer Node.js than `engines.node` because
-`@sqve/seam` requires 24.21.0. Run these commands from the Tau checkout:
+`@sqve/stomme-ts-style` requires 24.21.0. Run these commands from the Tau checkout:
 
 ```sh
+mise trust
+mise install
 pnpm install --frozen-lockfile
 pnpm check
 ```
@@ -27,15 +30,17 @@ Pi loads the TypeScript source directly; there is no build step.
 | `pnpm test`                                    | Run the full test suite without the cache, including package loading through Pi.                                                                   |
 | `pnpm style:check`                             | Check all lint rules, including house style.                                                                                                       |
 | `pnpm style:fix`                               | Apply safe lint fixes, then format.                                                                                                                |
+| `pnpm check:static:stomme`                     | Check the shared stomme rules.                                                                                                                     |
 | `pnpm lint`                                    | Run ordinary lint diagnostics, as editors do.                                                                                                      |
 | `pnpm format`                                  | Format files.                                                                                                                                      |
 
 Tests use temporary directories and need no model API. Changed-test selection follows imports;
 changes to `vite.config.ts` or `package.json` run the full suite.
 
-Style commands run [Seam](https://github.com/sQVe/seam) and accept file paths, for example
+Style commands run `stomme-ts-style` and accept file paths, for example
 `pnpm style:fix tests/lint.test.ts`. Rename bindings and move helpers manually. Staged-file hooks
-enforce the same rules.
+enforce the same rules. After a change to the stomme layer, language, or pin, run
+`mise exec -- stomme sync`.
 
 `TAU_PROPERTY_SEED` sets the seed of a generated order test. Unset, the test uses its fixed seed, as
 `pnpm check` needs. `random` picks a seed and prints it, and an integer replays one:
@@ -44,7 +49,7 @@ enforce the same rules.
 TAU_PROPERTY_SEED=random pnpm vitest run src/extensions/subagents/workerDeliveryOrdering.test.ts
 ```
 
-Seam provides the shared lint and format settings. Configure Tau's own settings in
+stomme-ts-style provides the shared lint and format settings. Configure Tau's own settings in
 [vite.config.ts](../vite.config.ts), and Tau's own lint rules in
 [lint/plugin.ts](../lint/plugin.ts). Keep the installed Vitest version the same as the version
 bundled with Vite+.

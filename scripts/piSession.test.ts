@@ -90,7 +90,8 @@ const run = (commandArguments: string[]) => {
   }>();
 
   execFile('node', [command, ...commandArguments], (error, stdout, stderr) => {
-    resolve({ code: error === null ? 0 : error.code, stdout, stderr });
+    const exitCode = error === null ? 0 : error.code;
+    resolve({ code: exitCode, stdout, stderr });
   });
 
   return promise;

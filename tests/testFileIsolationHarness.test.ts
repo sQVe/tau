@@ -199,7 +199,8 @@ const runNested = (directory: string, reportPath: string) =>
           return;
         }
 
-        resolve(typeof error.code === 'number' ? error.code : 1);
+        const exitCode = typeof error.code === 'number' ? error.code : 1;
+        resolve(exitCode);
       },
     );
   });

@@ -53,9 +53,11 @@ describe('hook outcomes', () => {
 
     expect(result.details.groups[0]!.files).toEqual(['first', 'second']);
 
-    expect(
-      (await git(directory, 'show', '-s', '--format=%P', 'HEAD')).trim().split(' '),
-    ).toHaveLength(2);
+    const parentHashes = (await git(directory, 'show', '-s', '--format=%P', 'HEAD'))
+      .trim()
+      .split(' ');
+
+    expect(parentHashes).toHaveLength(2);
   });
 
   it('stops a later group consumed by a merge hook', async () => {
@@ -310,9 +312,10 @@ describe('hook outcomes', () => {
       expect(failure).toContain('report unavailable');
       expect(failure).toContain('Do not retry this group');
 
-      expect(failure).toContain(
-        failingCommand === 'rev-parse' || failingCommand === 'cat-file' ? head.slice(0, 7) : head,
-      );
+      const expectedHead =
+        failingCommand === 'rev-parse' || failingCommand === 'cat-file' ? head.slice(0, 7) : head;
+
+      expect(failure).toContain(expectedHead);
 
       expect(await readGitBlob(directory, 'HEAD:requested')).toBe('value');
       expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
@@ -505,11 +508,13 @@ describe('hook outcomes', () => {
         'if [ ! -f .git/hook-ran ]; then git add second; printf new > second; touch .git/hook-ran; fi',
       );
 
+      const remainingFiles = partialOverlap ? ['second', 'third'] : ['second'];
+
       const result = await executeCommit(directory, {
         groups: [
           { files: ['first'], subject: 'feat: first' },
           {
-            files: partialOverlap ? ['second', 'third'] : ['second'],
+            files: remainingFiles,
             subject: 'feat: remaining',
           },
         ],
@@ -518,10 +523,9 @@ describe('hook outcomes', () => {
       expect(result.details.groups).toHaveLength(2);
       expect(await readGitBlob(directory, 'HEAD:second')).toBe('new');
       expect(await readGitBlob(directory, 'HEAD^:second')).toBe('second');
+      expect(result.details.groups[1]!.files).toEqual(remainingFiles);
 
-      expect(result.details.groups[1]!.files).toEqual(
-        partialOverlap ? ['second', 'third'] : ['second'],
-      );
+      const expectedThirdContent = partialOverlap ? 'third\n' : '';
 
       expect(
         (
@@ -529,7 +533,7 @@ describe('hook outcomes', () => {
             cwd: directory,
           })
         ).stdout,
-      ).toBe(partialOverlap ? 'third\n' : '');
+      ).toBe(expectedThirdContent);
 
       expect(await readFile(join(directory, 'third'), 'utf8')).toBe('third');
 

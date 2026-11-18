@@ -143,11 +143,11 @@ export const readAskRecords = async (root: string): Promise<AskRecord[]> => {
     throw error;
   });
 
-  const records = await Promise.all(
-    names
-      .filter((name) => name.endsWith('.json'))
-      .map((name) => readAskRecordAt(join(askRecordDirectory(root), name))),
-  );
+  const recordReads = names
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => readAskRecordAt(join(askRecordDirectory(root), name)));
+
+  const records = await Promise.all(recordReads);
 
   return records
     .filter((record): record is AskRecord => record !== undefined)

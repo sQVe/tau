@@ -278,10 +278,12 @@ it.for(['ordinary', 'long'] as const)(
 
     const details = result.details as Parameters<typeof summarize>[1];
 
+    const expectedFreshness = size === 'ordinary' ? 'fresh' : 'stale';
+
     expect(details).toMatchObject({
       kind: report.kind,
       scope: 'focused',
-      freshness: size === 'ordinary' ? 'fresh' : 'stale',
+      freshness: expectedFreshness,
       runPath: join(directory, 'run.json'),
       report,
     });
@@ -290,7 +292,8 @@ it.for(['ordinary', 'long'] as const)(
     expect(details.inputs.after).toMatch(/^[a-f0-9]{64}$/);
     expect(details.report).toBe(report);
 
-    expect(JSON.stringify(result.content).includes('Hint:')).toBe(hint !== undefined);
+    const hasHint = JSON.stringify(result.content).includes('Hint:');
+    expect(hasHint).toBe(hint !== undefined);
 
     for (const expectedHint of hintLines) {
       expect(result.content).toContainEqual({ type: 'text', text: expectedHint });

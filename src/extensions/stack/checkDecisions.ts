@@ -255,9 +255,10 @@ export const readStacksResponse = (
     return malformedOutput(command, output);
   }
 
-  return readOk(
-    pullRequests.length === 0 ? { kind: 'none' } : { kind: 'stack', number, pullRequests },
-  );
+  const stackedPullRequests: StackedPullRequests =
+    pullRequests.length === 0 ? { kind: 'none' } : { kind: 'stack', number, pullRequests };
+
+  return readOk(stackedPullRequests);
 };
 
 // `gh pr list --head` matches the branch name in any fork, so keep the pull requests from the

@@ -164,7 +164,8 @@ it('reports malformed run records', async () => {
     problem: containing('/items/0'),
   });
 
-  expect(collision.status === 'malformed' ? collision.problem : '').toContain('.json');
+  const problemText = collision.status === 'malformed' ? collision.problem : '';
+  expect(problemText).toContain('.json');
 });
 
 it('rejects registered item names that differ only in case', async () => {

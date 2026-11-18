@@ -46,7 +46,8 @@ const terminalFor = (rows: number): Terminal => ({
 });
 
 const dockLayout = (editor: Container, widgetRows: number) => {
-  const widget = new Text('Worker status\n'.repeat(widgetRows).trimEnd(), 0, 0);
+  const widgetText = 'Worker status\n'.repeat(widgetRows).trimEnd();
+  const widget = new Text(widgetText, 0, 0);
 
   const dock = new VStack([
     { component: new Container(), shrink: 1, minSize: 0 },
@@ -137,8 +138,10 @@ it.each([
     const context = layoutContext(terminal, widgetRows, (screen, sendInput, component) => {
       screen.renderNow();
 
+      const visibleLines = screen.getScreenLines().map(stripTerminalSequences);
+
       pages.push({
-        visible: screen.getScreenLines().map(stripTerminalSequences),
+        visible: visibleLines,
         dialog: component.render(terminal.columns),
       });
 
@@ -147,8 +150,10 @@ it.each([
         screen.renderNow();
       }
 
+      const visibleLinesAfterScroll = screen.getScreenLines().map(stripTerminalSequences);
+
       pages.push({
-        visible: screen.getScreenLines().map(stripTerminalSequences),
+        visible: visibleLinesAfterScroll,
         dialog: component.render(terminal.columns),
       });
 

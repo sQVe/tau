@@ -206,7 +206,8 @@ it('sends exactly the editor text after a snippet is picked and recalls it from 
 
   harness.editor().handleInput(enter);
 
-  expect(harness.editor().getText()).toBe(shown);
+  const sentEditorText = harness.editor().getText();
+  expect(sentEditorText).toBe(shown);
 
   harness.editor().handleInput(enter);
   await Promise.all(harness.sent);
@@ -215,7 +216,8 @@ it('sends exactly the editor text after a snippet is picked and recalls it from 
 
   harness.editor().handleInput(historyPrevious);
 
-  expect(harness.editor().getText()).toBe(shown);
+  const recalledEditorText = harness.editor().getText();
+  expect(recalledEditorText).toBe(shown);
 });
 
 it('sends a typed snippet id as plain text', async ({ onTestFinished }) => {
@@ -261,7 +263,8 @@ const recallHistory = (harness: Awaited<ReturnType<typeof createHarness>>, press
 
   for (let press = 0; press < presses; press += 1) {
     harness.editor().handleInput(historyPrevious);
-    recalled.push(harness.editor().getText());
+    const recalledText = harness.editor().getText();
+    recalled.push(recalledText);
   }
 
   return recalled;

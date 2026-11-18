@@ -123,7 +123,8 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
   // Staging goes under os.tmpdir(), and failed reviews keep it for a retry. Point it at data so
   // every test removes its staging.
   vi.stubEnv('TMPDIR', data);
-  vi.stubEnv('HC_TERMINAL_ID', options.space === undefined ? undefined : 'manager');
+  const terminalId = options.space === undefined ? undefined : 'manager';
+  vi.stubEnv('HC_TERMINAL_ID', terminalId);
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
@@ -266,10 +267,8 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
       JSON.stringify([{ path: join(data, 'session.json') }]),
     );
 
-    await writeFile(
-      join(data, 'comments.txt'),
-      typeof comments === 'string' ? comments : JSON.stringify(comments),
-    );
+    const commentsText = typeof comments === 'string' ? comments : JSON.stringify(comments);
+    await writeFile(join(data, 'comments.txt'), commentsText);
   };
 
   const setWait = (result: { ended: boolean; reason: string }) => {

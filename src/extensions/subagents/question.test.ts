@@ -81,7 +81,8 @@ it('keeps the saved question and names the failed label when hc label fails', as
   const result = await askParent(target, question);
   const content = result.content[0];
 
-  expect(content?.type === 'text' ? content.text : '').toContain('Question label failed');
+  const questionText = content?.type === 'text' ? content.text : '';
+  expect(questionText).toContain('Question label failed');
   expect(result.terminate).toBe(true);
 
   const saved = await readAssignment(target.assignmentPath);

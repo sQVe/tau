@@ -15,28 +15,23 @@ mergit ADR 0023 and koja ADR 0017, which make the same choice
 `run_tests` shows that a test failed and then passed. It does not show that the test pins the
 behavior. A mutation tool changes the code and reports each change that no test notices.
 
-A full mutation run takes too long to repeat, and most mutants sit in code that a change did not
-touch. Some survivors are equivalent changes that no test can catch.
-
-A survivor that blocks publication turns mutation testing into one more step to clear before a
-change can ship. Disable comments then became the easy way to clear a survivor. One pull request in
-phi added a large batch of them, and many hid real test gaps.
+[Shared ADR 0009](../stomme/shared/adr/0009-advisory-review-signals.md) decides why a run checks
+only the changed lines, why survivors are advice, and why code gets no disable comments.
 
 ## Decision
 
-Mutation testing checks only the production lines that a change touches, and each survivor is
-advice. Survivors never fail a check, a skill step, or a merge. No repository adds `Stryker disable`
-comments.
+Mutation testing follows [shared ADR 0009](../stomme/shared/adr/0009-advisory-review-signals.md): it
+checks only the production lines that a change touches, and each survivor is advice. Survivors never
+fail a check, a skill step, or a merge.
 
 ### The run
 
-- In `changed` mode, the script runs StrykerJS on the lines that `git diff -U0 <base>` adds, and on
-  every line of each untracked file. `audit` mode mutates whole files.
-- Each repository's Stryker config names its own mutated files, excluded modules, timeouts, and test
-  runner. Tau's config turns on Vitest related-test mode, so Stryker runs only the tests that relate
-  to the mutated files.
-- In `changed` mode the script exits 2 when mutants survive. In `audit` mode it exits 0 with
-  survivors. It exits 1 when any file stays unmutated, so a skipped file never looks like a pass.
+- Tau's Stryker config names its mutated files, excluded modules, timeouts, and test runner. It
+  turns on Vitest related-test mode, so Stryker runs only the tests that relate to the mutated
+  files.
+- In `changed` mode the script exits 2 to mark survivors. Exit 2 is advice, not a failure: every
+  caller, including CI, accepts it. In `audit` mode it exits 0 with survivors. It exits 1 when any
+  file stays unmutated, so a skipped file never looks like a pass.
 
 ### The command and reuse
 
@@ -72,12 +67,9 @@ comments.
   the tool then run at most once more.
 - The `tdd` skill lists the survivors left open, with file and line. It gives no reason for each
   mutant.
-- A test that kills a survivor joins the owner's existing behavior test file, or adds a row to its
-  decision table. No test file is named after a campaign or a test technique.
-- A survivor in wording, layout text, or transport encoding that no caller can observe gets no test.
-  It goes on the open list and does not count toward the three behaviors.
-- An equivalent mutant stays on the open list. Code gets no `Stryker disable` comment. The script
-  and Stryker still honor comments that already exist.
+- For each survivor, follow [shared ADR 0009](../stomme/shared/adr/0009-advisory-review-signals.md):
+  a test that kills it joins the owner's behavior test file or decision table, a wording or layout
+  survivor gets no test, and an equivalent mutant stays open without a disable comment.
 - The `pr` skill does not run `mutation_check` and does not report survivors.
 - The `Mutation` CI job runs on pull requests in `changed` mode. It accepts exit codes 0 and 2,
   writes each survivor to the job summary, and fails on any other exit code, a status other than
@@ -103,14 +95,8 @@ comments.
 
 ## Alternatives considered
 
-### Mutate the whole repository
-
-Rejected because the run takes too long to repeat, and it reports survivors in code that the change
-did not touch.
-
-### Survivors as a gate
-
-Rejected because it adds a step to every pull request for a check whose purpose is to improve tests.
+[Shared ADR 0009](../stomme/shared/adr/0009-advisory-review-signals.md) rejects mutating the whole
+repository, making survivors a gate, and disabling equivalent mutants with comments.
 
 ### Run the check in the `pr` skill
 
@@ -121,10 +107,6 @@ change in context. A second run adds a step without new advice.
 
 Rejected because each run mutates the work of the earlier workers again. One slice with several
 agent tickets ran the check 13 times, and one run took 16 minutes.
-
-### Disable comments for equivalent mutants
-
-Rejected because agents wrote them for real test gaps, and nobody rechecks a comment's reason.
 
 ### Name the command in the user file
 

@@ -82,7 +82,8 @@ it('decides tracked from gh stack view and reads only the pull requests based on
   });
 
   expect(stackViewCalls(joinedCalls(fake))).toHaveLength(1);
-  expect(joinedCalls(fake).filter((call) => call.startsWith('pr list'))).toHaveLength(1);
+  const pullListCalls = joinedCalls(fake).filter((call) => call.startsWith('pr list'));
+  expect(pullListCalls).toHaveLength(1);
 });
 
 it('decides tracked from the gh stack 0.2.1 view output, which has no head and no pr', async () => {
@@ -464,8 +465,10 @@ it('reads GitHub for the named branch, not for a local branch below it', async (
   const details = await run({ action: 'check', branch: 'parent' });
 
   expect(details).toMatchObject({ branch: 'parent', result: 'untracked' });
-  expect(joinedCalls(fake).some((call) => call.includes('--head parent/child'))).toBe(false);
-  expect(joinedCalls(fake).some((call) => call.includes('--head parent '))).toBe(true);
+  const hasChildHead = joinedCalls(fake).some((call) => call.includes('--head parent/child'));
+  expect(hasChildHead).toBe(false);
+  const hasParentHead = joinedCalls(fake).some((call) => call.includes('--head parent '));
+  expect(hasParentHead).toBe(true);
 });
 
 it('refuses an empty remote name', async () => {

@@ -101,13 +101,15 @@ export const createFooter = (pi: ExtensionAPI, context: ExtensionContext): Foote
         stats = readSessionStats(context, stats, performance.now());
         const usage = stats.contextUsage.contextUsage;
 
+        const thinkingLevel = context.model?.reasoning === true ? pi.getThinkingLevel() : undefined;
+
         const line = renderFooterLine(
           {
             cost: stats.cost.cost,
             contextPercent: usage?.percent ?? null,
             contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
             modelId: context.model?.id ?? 'no-model',
-            thinkingLevel: context.model?.reasoning === true ? pi.getThinkingLevel() : undefined,
+            thinkingLevel: thinkingLevel,
           },
           width,
           footerTheme,

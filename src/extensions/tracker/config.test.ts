@@ -55,7 +55,8 @@ it.for<[string, [string, unknown][]]>([
 
     const setup = readTrackerSetup(location, ui, 'sQVe/tau');
 
-    expect(setup.status === 'invalid' ? setup.message : undefined).toContain('same repository');
+    const setupMessage = setup.status === 'invalid' ? setup.message : undefined;
+    expect(setupMessage).toContain('same repository');
   },
 );
 
@@ -112,11 +113,10 @@ it('fails the setup for a bad entry of the current repository, naming the file a
 
   const setup = readTrackerSetup(location, ui, 'sQVe/tau');
 
-  expect(setup.status === 'invalid' ? setup.message : undefined).toContain(userFile);
+  const setupMessage = setup.status === 'invalid' ? setup.message : undefined;
+  expect(setupMessage).toContain(userFile);
 
-  expect(setup.status === 'invalid' ? setup.message : undefined).toContain(
-    'tracker.repositories.sqve/Tau.team',
-  );
+  expect(setupMessage).toContain('tracker.repositories.sqve/Tau.team');
 });
 
 it('skips a bad entry for another repository', ({ onTestFinished }) => {
@@ -232,8 +232,9 @@ it.for<[string, unknown, string]>([
 
   const setup = readTrackerSetup(location, ui, 'sQVe/tau');
 
-  expect(setup.status === 'invalid' ? setup.message : undefined).toContain(userFile);
-  expect(setup.status === 'invalid' ? setup.message : undefined).toContain(field);
+  const setupMessage = setup.status === 'invalid' ? setup.message : undefined;
+  expect(setupMessage).toContain(userFile);
+  expect(setupMessage).toContain(field);
 });
 
 it('refuses the old slice key and names tracker.agentTeam', ({ onTestFinished }) => {
@@ -246,8 +247,9 @@ it('refuses the old slice key and names tracker.agentTeam', ({ onTestFinished })
 
   const setup = readTrackerSetup(location, ui, 'sQVe/tau');
 
-  expect(setup.status === 'invalid' ? setup.message : undefined).toContain(userFile);
-  expect(setup.status === 'invalid' ? setup.message : undefined).toContain('tracker.agentTeam');
+  const setupMessage = setup.status === 'invalid' ? setup.message : undefined;
+  expect(setupMessage).toContain(userFile);
+  expect(setupMessage).toContain('tracker.agentTeam');
 });
 
 it('refuses tracker in the repository file and names that file', ({ onTestFinished }) => {
@@ -261,7 +263,8 @@ it('refuses tracker in the repository file and names that file', ({ onTestFinish
 
   const setup = readTrackerSetup(location, ui, 'sQVe/tau');
 
-  expect(setup.status === 'invalid' ? setup.message : undefined).toContain(repositoryFile);
+  const setupMessage = setup.status === 'invalid' ? setup.message : undefined;
+  expect(setupMessage).toContain(repositoryFile);
 
   expect(readTrackerSetup({ ...location, projectTrusted: false }, ui, 'sQVe/tau')).toEqual({
     status: 'read',
@@ -277,5 +280,6 @@ it('reports a config file that is not JSON as an invalid setup', ({ onTestFinish
 
   const setup = readTrackerSetup(location, ui, 'sQVe/tau');
 
-  expect(setup.status === 'invalid' ? setup.message : undefined).toContain(userFile);
+  const setupMessage = setup.status === 'invalid' ? setup.message : undefined;
+  expect(setupMessage).toContain(userFile);
 });

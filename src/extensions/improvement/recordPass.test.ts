@@ -15,7 +15,8 @@ import { recordPass } from './recordPass.js';
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  const cleanupTasks = cleanups.splice(0).map((cleanup) => cleanup());
+  await Promise.all(cleanupTasks);
 });
 
 const createProject = async () =>
@@ -75,9 +76,11 @@ it('writes a pass event to every project root that has an event', async () => {
   expect(result.id).toMatch(/^pass-[0-9a-f]{32}$/u);
   expect(result.failed).toEqual([]);
 
-  expect(result.paths.toSorted()).toEqual(
-    [first, second].map((root) => join(eventDirectory(root), `${result.id}.json`)).toSorted(),
-  );
+  const expectedEventPaths = [first, second]
+    .map((root) => join(eventDirectory(root), `${result.id}.json`))
+    .toSorted();
+
+  expect(result.paths.toSorted()).toEqual(expectedEventPaths);
 
   for (const root of [first, second]) {
     const path = join(eventDirectory(root), `${result.id}.json`);
@@ -103,9 +106,11 @@ it('writes a pass event to the current root when the index lists another project
 
   expect(result.failed).toEqual([]);
 
-  expect(result.paths.toSorted()).toEqual(
-    [indexed, current].map((root) => join(eventDirectory(root), `${result.id}.json`)).toSorted(),
-  );
+  const expectedEventPaths = [indexed, current]
+    .map((root) => join(eventDirectory(root), `${result.id}.json`))
+    .toSorted();
+
+  expect(result.paths.toSorted()).toEqual(expectedEventPaths);
 });
 
 it('writes a pass event to the indexed roots from a cwd outside Git', async () => {

@@ -191,12 +191,14 @@ it.each(['declined', 'no UI', 'worker', 'already canceled'])(
   async (mode) => {
     const fake = createLinearFake();
 
+    const issueState =
+      mode === 'already canceled'
+        ? ({ type: 'canceled', name: 'Canceled' } as const)
+        : ({ type: 'started', name: 'In Progress' } as const);
+
     const issue = fake.addIssue({
       title: 'Unused',
-      state:
-        mode === 'already canceled'
-          ? { type: 'canceled', name: 'Canceled' }
-          : { type: 'started', name: 'In Progress' },
+      state: issueState,
     });
 
     const prompts: string[] = [];
@@ -214,13 +216,16 @@ it.each(['declined', 'no UI', 'worker', 'already canceled'])(
       vi.stubEnv('TAU_ROLE', 'worker');
     }
 
+    const expectedStatus = mode === 'already canceled' ? 'unchanged' : 'declined';
+
     expect(await cancel(fake.exec, context, issue.identifier)).toEqual({
-      status: mode === 'already canceled' ? 'unchanged' : 'declined',
+      status: expectedStatus,
       identifier: issue.identifier,
     });
 
     expect(fake.writes()).toEqual([]);
-    expect(prompts).toHaveLength(mode === 'declined' ? 1 : 0);
+    const promptCount = mode === 'declined' ? 1 : 0;
+    expect(prompts).toHaveLength(promptCount);
   },
 );
 
@@ -282,7 +287,9 @@ it.each([
     /completed|no issue|unexpected output|network error|state|another page/,
   );
 
-  expect(fake.writes()).toHaveLength(reason === 'failed write' ? 1 : 0);
-  expect(prompts).toHaveLength(reason === 'failed write' ? 1 : 0);
+  const writeCount = reason === 'failed write' ? 1 : 0;
+  expect(fake.writes()).toHaveLength(writeCount);
+  const promptCount = reason === 'failed write' ? 1 : 0;
+  expect(prompts).toHaveLength(promptCount);
   expect(issue).toEqual(original);
 });

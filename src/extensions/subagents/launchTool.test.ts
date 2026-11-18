@@ -96,7 +96,8 @@ const terminalRun = (fake: HcFake) => {
   return undefined;
 };
 
-const allSkillToolNames = [...new Set(Object.values(skillTools).flat())];
+const skillToolNames = Object.values(skillTools).flat();
+const allSkillToolNames = [...new Set(skillToolNames)];
 
 const registerTool = (
   fake: HcFake,

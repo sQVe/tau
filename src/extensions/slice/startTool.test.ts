@@ -109,9 +109,11 @@ const setUp = async (fake = createLinearFake()) => {
   const snapshot = async () => {
     const names = await readdir(directory);
 
-    return Promise.all(
-      names.toSorted().map(async (name) => [name, await readFile(join(directory, name), 'utf8')]),
-    );
+    const savedFileContents = names
+      .toSorted()
+      .map(async (name) => [name, await readFile(join(directory, name), 'utf8')]);
+
+    return Promise.all(savedFileContents);
   };
 
   const saved = async () =>
@@ -160,7 +162,8 @@ describe('start_slice', () => {
       description: 'One.\n',
     });
 
-    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['new', 'unchanged']);
+    const ticketStatuses = ticketsOf(result).map((ticket) => ticket.status);
+    expect(ticketStatuses).toEqual(['new', 'unchanged']);
     expect(await saved()).toEqual([created?.identifier, 'AI-12']);
     expect(ticketsOf(result)[0]?.url).toContain(created?.identifier);
   });
@@ -253,7 +256,8 @@ describe('start_slice', () => {
 
     const result = await apply();
 
-    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['unchanged', 'updated']);
+    const ticketStatuses = ticketsOf(result).map((ticket) => ticket.status);
+    expect(ticketStatuses).toEqual(['unchanged', 'updated']);
     expect(fake.issues.get('AI-12')?.description).toBe('Two.\n');
     expect(fake.writes()).toHaveLength(1);
   });
@@ -271,7 +275,8 @@ describe('start_slice', () => {
     expect(children(fake)).toHaveLength(2);
     expect(await saved()).toEqual(['AI-20', 'AI-12']);
     expect(fake.issues.get('AI-20')?.description).toBe('One.\n');
-    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['updated', 'unchanged']);
+    const ticketStatuses = ticketsOf(result).map((ticket) => ticket.status);
+    expect(ticketStatuses).toEqual(['updated', 'unchanged']);
   });
 
   it.each([
@@ -328,8 +333,10 @@ describe('start_slice', () => {
 
     const result = applyOf(await call('apply', stateToken, flakyTeam));
 
-    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['new', 'new']);
-    expect(await saved()).toEqual(children(fake).map((issue) => issue.identifier));
+    const ticketStatuses = ticketsOf(result).map((ticket) => ticket.status);
+    expect(ticketStatuses).toEqual(['new', 'new']);
+    const childIdentifiers = children(fake).map((issue) => issue.identifier);
+    expect(await saved()).toEqual(childIdentifiers);
   });
 
   it('lists a created ticket as applied when saving its identifier fails', async () => {
@@ -410,7 +417,8 @@ describe('start_slice', () => {
     const result = await apply();
 
     expect(children(fake)).toHaveLength(2);
-    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['unchanged', 'new']);
+    const ticketStatuses = ticketsOf(result).map((ticket) => ticket.status);
+    expect(ticketStatuses).toEqual(['unchanged', 'new']);
     expect(ticketsOf(result)[0]?.identifier).toBe(first);
   });
 
@@ -456,7 +464,8 @@ describe('start_slice', () => {
 
     expect((await saved())[0]).toBe('AI-40');
     expect(ticketsOf(result)[0]?.status).toBe('unchanged');
-    expect(children(fake).filter((issue) => issue.title === 'Record the start')).toHaveLength(1);
+    const startRecordTickets = children(fake).filter((issue) => issue.title === 'Record the start');
+    expect(startRecordTickets).toHaveLength(1);
   });
 
   it('refuses a stateToken from before the body file changed', async () => {
@@ -666,7 +675,8 @@ describe('start_slice ownership', () => {
     const { seen, context } = prompts(root, true);
     const result = await apply(fake, context);
 
-    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['new', 'updated']);
+    const ticketStatuses = ticketsOf(result).map((ticket) => ticket.status);
+    expect(ticketStatuses).toEqual(['new', 'updated']);
     expect(fake.issues.get('AI-12')?.description).toBe('Two.\n');
     expect(seen).toHaveLength(1);
     expect(seen[0]).toContain('AI-12');

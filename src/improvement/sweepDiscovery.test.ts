@@ -352,7 +352,9 @@ it('retries a session file that disappeared before it was read', async () => {
 
   expect(result.status).toBe('ok');
 
-  expect(result.status === 'ok' ? result.index.transcripts[path] : undefined).toMatchObject({
+  const transcriptRead = result.status === 'ok' ? result.index.transcripts[path] : undefined;
+
+  expect(transcriptRead).toMatchObject({
     status: 'resolved',
     cwd: fixture.repository,
   });

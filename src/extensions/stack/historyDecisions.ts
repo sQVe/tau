@@ -152,7 +152,9 @@ const decideRewrite = (
 
   const rewritten = isOnlyEquivalent(newCherry.value) && isOnlyEquivalent(oldCherry.value);
 
-  return settled(rewritten ? 'rewritten' : 'diverged', tip);
+  const rewriteState = rewritten ? 'rewritten' : 'diverged';
+
+  return settled(rewriteState, tip);
 };
 
 const decidePublished = (tip: string, reads: PublishedReads): LayerDecision => {

@@ -65,7 +65,8 @@ it('declares every skill tool on the first manager request and accepts a direct 
 
   provider.setResponses([
     (context) => {
-      declarations.push(getCurrentTools(context.messages).map((tool) => tool.name));
+      const toolNames = getCurrentTools(context.messages).map((tool) => tool.name);
+      declarations.push(toolNames);
 
       return fauxAssistantMessage([fauxToolCall('slice', { action: 'prepare', id: 'first' })]);
     },

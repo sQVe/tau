@@ -11,8 +11,10 @@ export default function tauSkillsExtension(pi: ExtensionAPI, skillsDirectory: st
     pi.registerCommand(command.name, {
       description: command.description,
       handler: (argumentsText, context) => {
+        const deliveryMode = context.isIdle() ? 'followUp' : 'steer';
+
         pi.sendUserMessage(buildSkillMessage(command.name, argumentsText), {
-          deliverAs: context.isIdle() ? 'followUp' : 'steer',
+          deliverAs: deliveryMode,
           expandPromptTemplates: true,
         });
 

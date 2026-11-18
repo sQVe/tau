@@ -12,7 +12,8 @@ const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
   vi.unstubAllEnvs();
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  const cleanupTasks = cleanups.splice(0).map((cleanup) => cleanup());
+  await Promise.all(cleanupTasks);
 });
 
 const createProject = () => createTemporaryRepository((cleanup) => cleanups.push(cleanup));

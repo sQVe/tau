@@ -120,7 +120,8 @@ it.each([
   await pi.handler('session_start')({}, context);
 
   expect(await sendStartMessage(pi, context)).toEqual(expectedStartResults(assignment)[expected]);
-  expect(shutdown).toHaveBeenCalledTimes(shutdownCalled ? 1 : 0);
+  const shutdownCount = shutdownCalled ? 1 : 0;
+  expect(shutdown).toHaveBeenCalledTimes(shutdownCount);
   expect(pi.sendUserMessage).not.toHaveBeenCalled();
 });
 
@@ -141,9 +142,12 @@ it('passes unrelated input through unchanged', async () => {
 
   await pi.handler('session_start')({}, context);
 
-  const result = await Promise.resolve(
-    pi.handler('input')({ type: 'input', text: 'Use A.', source: 'rpc' }, context),
+  const inputResult = pi.handler('input')(
+    { type: 'input', text: 'Use A.', source: 'rpc' },
+    context,
   );
+
+  const result = await Promise.resolve(inputResult);
 
   expect(result).toEqual({ action: 'continue' });
 });
@@ -176,7 +180,8 @@ it('keeps a reloaded worker waiting without a second task prompt', async () => {
   await pi.handler('session_start')({}, context);
 
   expect(pi.sendUserMessage).not.toHaveBeenCalled();
-  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
+  const settleResult = pi.handler('agent_before_settle')({ entries: [] }, context);
+  expect(settleResult).toBeUndefined();
 
   dispatch(pi, 'agent_settled', {}, context);
 
@@ -212,7 +217,9 @@ it('reminds again for a report after the parent answers a question the reminded 
   await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
-  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+  const firstSettle = pi.handler('agent_before_settle')({ entries: [] }, context);
+
+  expect(firstSettle).toMatchObject({
     continue: true,
   });
 
@@ -235,7 +242,9 @@ it('reminds again for a report after the parent answers a question the reminded 
     context,
   );
 
-  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+  const secondSettle = pi.handler('agent_before_settle')({ entries: [] }, context);
+
+  expect(secondSettle).toMatchObject({
     continue: true,
   });
 });
@@ -247,7 +256,9 @@ it('does not restart the report reminder when a non-user message starts', async 
   await savePassingFullCheck(directory);
   await pi.handler('session_start')({}, context);
 
-  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+  const initialSettle = pi.handler('agent_before_settle')({ entries: [] }, context);
+
+  expect(initialSettle).toMatchObject({
     continue: true,
   });
 
@@ -256,7 +267,8 @@ it('does not restart the report reminder when a non-user message starts', async 
     context,
   );
 
-  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
+  const settledAfterAssistant = pi.handler('agent_before_settle')({ entries: [] }, context);
+  expect(settledAfterAssistant).toBeUndefined();
 });
 
 it('shuts the worker down after a settled report', async () => {
@@ -322,7 +334,8 @@ it('keeps the worker running and skips the report reminder when its turn ends on
     context,
   );
 
-  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
+  const settleResult = pi.handler('agent_before_settle')({ entries: [] }, context);
+  expect(settleResult).toBeUndefined();
 
   dispatch(pi, 'agent_settled', {}, context);
 
@@ -394,7 +407,9 @@ it('reminds for a report after a reply is consumed while the turn streams', asyn
     context,
   );
 
-  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+  const settleResult = pi.handler('agent_before_settle')({ entries: [] }, context);
+
+  expect(settleResult).toMatchObject({
     continue: true,
   });
 });

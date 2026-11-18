@@ -104,7 +104,8 @@ const footerRowCount = (compact: boolean): number => (compact ? 1 : footerRows);
 
 const headerPlan = (facts: HeaderFacts, compact: boolean, rows: number): HeaderPlan => {
   const decorated = !compact && rows >= decoratedHeaderRows;
-  const textRows = Math.max(1, decorated ? rows - 2 : rows);
+  const textAreaRows = decorated ? rows - 2 : rows;
+  const textRows = Math.max(1, textAreaRows);
   const questionRows = Math.max(1, textRows - 2);
   const shownQuestion = Math.min(facts.questionRows, questionRows);
   const remainingRows = textRows - shownQuestion;

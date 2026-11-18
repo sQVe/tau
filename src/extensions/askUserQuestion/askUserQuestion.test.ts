@@ -294,7 +294,8 @@ it.each([
   );
 
   expect(outcome === 'allowed').toBe(!refused);
-  expect(custom).toHaveBeenCalledTimes(refused ? 0 : 1);
+  const customCallCount = refused ? 0 : 1;
+  expect(custom).toHaveBeenCalledTimes(customCallCount);
 });
 
 const answers = (result: { details?: unknown }) =>

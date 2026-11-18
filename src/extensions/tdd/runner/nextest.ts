@@ -183,7 +183,9 @@ const runStageArguments = (
   if (input.scope === 'focused') {
     const focused = { ...request, testNames: input.testNames };
 
-    return runArguments(binaryIds === undefined ? focused : { ...focused, binaryIds });
+    const nextestArguments = binaryIds === undefined ? focused : { ...focused, binaryIds };
+
+    return runArguments(nextestArguments);
   }
 
   return runArguments(request);

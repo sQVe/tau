@@ -138,13 +138,13 @@ describe('read', () => {
       ...saved.threads.flatMap((item) => item.comments.map((comment) => comment.body)),
     ];
 
-    expect(Math.max(...text.split('\n').map((line) => Buffer.byteLength(line)))).toBeLessThan(
-      50 * 1024,
-    );
+    const lineByteLengths = text.split('\n').map((line) => Buffer.byteLength(line));
+    expect(Math.max(...lineByteLengths)).toBeLessThan(50 * 1024);
 
     expect(bodies.every((chunks) => Array.isArray(chunks))).toBe(true);
     expect(bodies.map((chunks) => chunks.join(''))).toEqual([body, body, body]);
-    expect(bodies.flat().every((chunk) => chunk.length <= 4000)).toBe(true);
+    const allChunksWithinLimit = bodies.flat().every((chunk) => chunk.length <= 4000);
+    expect(allChunksWithinLimit).toBe(true);
 
     expect(result.threads).toEqual([
       expect.objectContaining({

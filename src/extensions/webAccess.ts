@@ -12,7 +12,8 @@ const requireWebAccessTools = (pi: ExtensionAPI): void => {
   }
 
   pi.on('session_start', () => {
-    const registeredToolNames = new Set(pi.getAllTools().map((tool) => tool.name));
+    const registeredNames = pi.getAllTools().map((tool) => tool.name);
+    const registeredToolNames = new Set(registeredNames);
 
     const missingToolNames = requiredWebAccessTools.filter(
       (name) => !registeredToolNames.has(name),

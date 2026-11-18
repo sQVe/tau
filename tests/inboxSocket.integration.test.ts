@@ -78,7 +78,8 @@ const exchange = (path: string, request: unknown): Promise<unknown> =>
       try {
         resolve(JSON.parse(reply));
       } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
+        const socketError = error instanceof Error ? error : new Error(String(error));
+        reject(socketError);
       }
     });
 
@@ -144,11 +145,13 @@ const startReceiverSession = async (
     inboxDirectory: () => recordDirectory,
   });
 
+  const extensionFactories = hold === undefined ? [inbox] : [inbox, hold.extension];
+
   const { session, extensionsResult } = await createPiSession(finished, {
     cwd: hc.root,
     agentDirectory: join(hc.root, 'agent'),
     providers: [provider],
-    extensionFactories: hold === undefined ? [inbox] : [inbox, hold.extension],
+    extensionFactories: extensionFactories,
   });
 
   expect(extensionsResult.errors).toEqual([]);
@@ -244,7 +247,8 @@ const startReplyDroppingProxy = async (path: string, target: string): Promise<st
       });
 
       receiver.once('end', () => {
-        dropped.push(Buffer.concat(reply).toString('utf8'));
+        const replyText = Buffer.concat(reply).toString('utf8');
+        dropped.push(replyText);
         sender.destroy();
       });
     });

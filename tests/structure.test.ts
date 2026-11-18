@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import type { Dirent } from 'node:fs';
-import { basename, dirname, join, posix } from 'node:path';
+import { basename, join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseSync, Visitor } from 'oxc-parser';
@@ -216,7 +216,6 @@ const pureModules = [
   'src/verification/freshness.ts',
   'src/verification/selection.ts',
   'src/wake/deliveryStep.ts',
-  'tests/adrIndexMark.ts',
   'tests/hcIsolationHarness.ts',
 ];
 
@@ -285,8 +284,11 @@ const isPureLibrary = (path: string, specifier: string) =>
 const impurities = (path: string, source: string, registry: readonly string[]) => {
   const found: string[] = [];
 
-  const at = (offset: number, what: string) =>
-    found.push(`${path}:${source.slice(0, offset).split('\n').length}: ${what}`);
+  const at = (offset: number, what: string) => {
+    const lineNumber = source.slice(0, offset).split('\n').length;
+
+    return found.push(`${path}:${lineNumber}: ${what}`);
+  };
 
   const checkImport = (node: ModuleDeclaration) => {
     const specifier = 'source' in node ? node.source?.value : undefined;
@@ -379,8 +381,10 @@ const environmentReads = (path: string, source: string) => {
 // Folders that group files under src/ without forming a module.
 const groupingFolders = new Set(['src', 'src/extensions', 'src/skills']);
 
+const isTypeScriptFile = (path: string) => path.endsWith('.ts') && !path.endsWith('.d.ts');
+
 const isProductionSource = (path: string) =>
-  path.endsWith('.ts') && !isTest(path) && !isFixture(path);
+  isTypeScriptFile(path) && !isTest(path) && !isFixture(path);
 
 const parentFolders = (path: string) =>
   path
@@ -397,13 +401,14 @@ const moduleFolderOf = (path: string) => {
   return segments.length > depth && !groupingFolders.has(folder) ? folder : undefined;
 };
 
-// Lists index files, folders with one production source file, and folder modules without an
-// entry file named after the folder. Takes every file below src/ as a POSIX path.
+const isStommeSource = (path: string) =>
+  /\.tsx?$/.test(path) && !path.endsWith('.d.ts') && !isFixture(path);
+
 const layoutProblems = (paths: readonly string[]) => {
   const sources = paths.filter(isProductionSource);
 
   const indexFiles = paths
-    .filter((path) => basename(path).startsWith('index.'))
+    .filter((path) => basename(path).startsWith('index.') && !isStommeSource(path))
     .map((path) => `${path}: index file`);
 
   const folders = [...new Set(paths.flatMap(parentFolders))].filter(
@@ -424,21 +429,7 @@ const layoutProblems = (paths: readonly string[]) => {
 };
 
 const layoutAdvice =
-  'Name a folder module entry after its folder, and keep a module with one production source file as a flat file beside its siblings.';
-
-it('names each source test after the module beside it', () => {
-  const unmatched = sourceFiles.filter(isTest).filter((test) => {
-    const name = basename(test).split('.')[0] ?? '';
-
-    const siblings = sourceFiles.filter(
-      (path) => dirname(path) === dirname(test) && !isTest(path) && !isFixture(path),
-    );
-
-    return !siblings.some((source) => name.startsWith(basename(source, '.ts')));
-  });
-
-  expect(unmatched).toEqual([]);
-});
+  'Keep source folders free of index files, name a folder module entry after its folder, and keep a module with one production source file as a flat file beside its siblings.';
 
 it('keeps fixtures out of production modules', () => {
   const importers = sourceFiles
@@ -533,160 +524,6 @@ it('keeps the module list and import table sorted, free of duplicates, and close
   }
 });
 
-const sortedImportTable = (table: Readonly<Record<string, readonly string[]>>) =>
-  Object.fromEntries(Object.entries(table).map(([row, allowed]) => [row, [...allowed].toSorted()]));
-
-const importTableHeading = '### Target modules and import table';
-
-const headingPattern = /^#{1,6} /;
-
-const importTableRowPattern = /^\| `([^`]+)`\s*\|\s*(.*?)\s*\|$/;
-
-const dependencyListPattern = /^`[^`]+`(, `[^`]+`)*$/;
-
-const parseDependencies = (cell: string): string[] | undefined => {
-  if (cell === 'nothing') {
-    return [];
-  }
-
-  if (!dependencyListPattern.test(cell)) {
-    return undefined;
-  }
-
-  return cell.split(', ').map((item) => item.slice(1, -1));
-};
-
-const parseImportTable = (markdown: string) => {
-  const lines = markdown.split('\n');
-  const start = lines.indexOf(importTableHeading);
-
-  if (start === -1) {
-    return { table: {}, problems: ['missing table section'] };
-  }
-
-  const nextHeading = lines.findIndex((line, index) => index > start && headingPattern.test(line));
-  const end = nextHeading === -1 ? lines.length : nextHeading;
-  const table: Record<string, string[]> = {};
-  const problems: string[] = [];
-
-  let tableLineCount = 0;
-
-  for (const [index, line] of lines.entries()) {
-    if (!line.startsWith('|')) {
-      continue;
-    }
-
-    if (index < start || index >= end) {
-      problems.push(`row outside the table section: ${line}`);
-
-      continue;
-    }
-
-    tableLineCount += 1;
-
-    if (tableLineCount <= 2) {
-      continue;
-    }
-
-    const match = importTableRowPattern.exec(line);
-
-    if (match === null) {
-      problems.push(`malformed row: ${line}`);
-
-      continue;
-    }
-
-    const [, moduleName = '', cell = ''] = match;
-    const dependencies = parseDependencies(cell);
-
-    if (Object.hasOwn(table, moduleName)) {
-      problems.push(`duplicate row: ${moduleName}`);
-    } else if (dependencies === undefined) {
-      problems.push(`malformed dependencies for ${moduleName}: ${cell}`);
-    } else {
-      table[moduleName] = dependencies;
-    }
-  }
-
-  return { table, problems };
-};
-
-it('keeps the import table in ADR 0120 equal to the rule import table', () => {
-  const adr = readFileSync(
-    join(root, 'docs/adr/0120-capability-modules-with-an-enforced-import-table.md'),
-    'utf8',
-  );
-
-  const parsed = parseImportTable(adr);
-
-  expect(parsed.problems).toEqual([]);
-  expect(sortedImportTable(parsed.table)).toEqual(sortedImportTable(importTable));
-});
-
-const tableSection = (rows: string[], after: string[] = []) =>
-  [
-    '### Target modules and import table',
-    '',
-    '| Module | May import |',
-    '| --- | --- |',
-    ...rows,
-    '',
-    ...after,
-  ].join('\n');
-
-it.each([
-  {
-    name: 'a valid table',
-    markdown: tableSection(['| `errors` | nothing |', '| `linear` | `command`, `errors` |']),
-    problems: [],
-  },
-  {
-    name: 'a duplicated row',
-    markdown: tableSection(['| `linear` | `command`, `errors` |', '| `linear` | `errors` |']),
-    problems: ['duplicate row: linear'],
-  },
-  {
-    name: 'a plain-text dependency',
-    markdown: tableSection(['| `linear` | `command`, errors |']),
-    problems: ['malformed dependencies for linear: `command`, errors'],
-  },
-  {
-    name: 'a row after a later heading',
-    markdown: tableSection(
-      ['| `linear` | `command` |'],
-      ['## Consequences', '', '| `errors` | nothing |'],
-    ),
-    problems: ['row outside the table section: | `errors` | nothing |'],
-  },
-  {
-    name: 'a missing section',
-    markdown: '## Decision\n\nNo table here.\n',
-    problems: ['missing table section'],
-  },
-  {
-    name: 'a row without a backticked module',
-    markdown: tableSection(['| linear | `schema` |']),
-    problems: ['malformed row: | linear | `schema` |'],
-  },
-  {
-    name: 'a row without a space after the pipe',
-    markdown: tableSection(['|`linear` | `schema` |']),
-    problems: ['malformed row: |`linear` | `schema` |'],
-  },
-  {
-    name: 'a row without a closing pipe',
-    markdown: tableSection(['| `linear` | nothing']),
-    problems: ['malformed row: | `linear` | nothing'],
-  },
-  {
-    name: 'a row with a missing dependency cell',
-    markdown: tableSection(['| `linear` |']),
-    problems: ['malformed row: | `linear` |'],
-  },
-])('ADR table check reports problems for $name', ({ markdown, problems }) => {
-  expect(parseImportTable(markdown).problems).toEqual(problems);
-});
-
 it.each([
   { entries: ['a', 'b', 'c'], problems: [] },
   { entries: ['a', 'c', 'b'], problems: ['b sorts before c'] },
@@ -738,7 +575,7 @@ it('refuses reads and effects in a pure module but allows types and other pure m
   expect(impurities('src/schema.ts', schemaLibrary, registry)).toEqual([]);
 });
 
-it('keeps src/ free of index files, one-file folders, and folder modules without an entry', () => {
+it('keeps src/ free of one-file folders and folder modules without an entry', () => {
   const paths = walkRepository('src');
 
   expect(layoutProblems(paths), layoutAdvice).toEqual([]);
@@ -767,26 +604,23 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
   ];
 
   const refused = [
-    'src/index.ts',
+    'src/skills/pr/index.md',
+    'src/models/index.d.ts',
     'src/errors/errors.ts',
     'src/errors/errors.test.ts',
-    'src/extensions/index.ts',
     'src/extensions/bareRoot/bareRoot.ts',
     'src/extensions/bareRoot/fixtures/fake.ts',
-    'src/extensions/tdd/index.ts',
     'src/extensions/tdd/config.ts',
-    'src/skills/pr/index.md',
   ];
 
   expect(layoutProblems(allowed)).toEqual([]);
 
   expect(layoutProblems(refused)).toEqual([
-    'src/index.ts: index file',
-    'src/extensions/index.ts: index file',
-    'src/extensions/tdd/index.ts: index file',
     'src/skills/pr/index.md: index file',
+    'src/models/index.d.ts: index file',
     'src/errors/: one production source file',
     'src/extensions/bareRoot/: one production source file',
+    'src/extensions/tdd/: one production source file',
     'src/extensions/tdd/: no entry file tdd.ts',
   ]);
 });

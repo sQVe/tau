@@ -18,15 +18,17 @@ export interface CancelDetails {
 const readPullRequests = async (exec: Exec, context: ExtensionContext, urls: string[]) => {
   const runtime = { exec, cwd: context.cwd, signal: undefined };
 
-  return Promise.all(
-    urls.filter(isPullRequestUrl).map(async (url): Promise<PullRequestEvidence> => {
+  const pullRequestEvidence = urls
+    .filter(isPullRequestUrl)
+    .map(async (url): Promise<PullRequestEvidence> => {
       try {
         return { url, state: await readPullRequestState(runtime, url) };
       } catch (error) {
         return { url, error: errorMessage(error) };
       }
-    }),
-  );
+    });
+
+  return Promise.all(pullRequestEvidence);
 };
 
 const readGuardedCancellation = async (exec: Exec, context: ExtensionContext, ticket: string) => {

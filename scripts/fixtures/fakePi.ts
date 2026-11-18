@@ -13,7 +13,8 @@ const settings = existsSync(settingsPath) ? readFileSync(settingsPath, 'utf8') :
 const records: unknown[] = [];
 
 const emit = (lines: string[]) => {
-  process.stdout.write(lines.map((line) => `${line}\n`).join(''));
+  const emittedOutput = lines.map((line) => `${line}\n`).join('');
+  process.stdout.write(emittedOutput);
 };
 
 const save = () => {

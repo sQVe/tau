@@ -242,8 +242,10 @@ export const pickPushRepository = (remote: Remote): Repository => {
   );
 
   if (distinct.length > 1) {
+    const repositoryList = distinct.map(formatRepository).join(', ');
+
     throw new Error(
-      `Remote ${remote.name} pushes to several repositories: ${distinct.map(formatRepository).join(', ')}. Keep one push URL for it, or pass another remote.`,
+      `Remote ${remote.name} pushes to several repositories: ${repositoryList}. Keep one push URL for it, or pass another remote.`,
     );
   }
 

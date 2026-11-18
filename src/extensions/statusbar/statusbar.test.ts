@@ -182,7 +182,8 @@ describe('statusbar extension', () => {
 
     await application.emit('session_start');
 
-    expect(application.mount().component.render(100)).toHaveLength(1);
+    const renderedLines = application.mount().component.render(100);
+    expect(renderedLines).toHaveLength(1);
   });
 
   it('shows an incomplete improvement sweep status', async () => {

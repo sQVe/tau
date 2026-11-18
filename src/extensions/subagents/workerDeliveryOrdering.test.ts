@@ -184,10 +184,12 @@ const readNotices = (managerState: Manager): Notice[] => {
 
       const questionId = entry.details['questionId'];
 
+      const noticeQuestionId = typeof questionId === 'string' ? questionId : undefined;
+
       notices.push({
         kind,
         assignmentId,
-        questionId: typeof questionId === 'string' ? questionId : undefined,
+        questionId: noticeQuestionId,
         session,
       });
     }
@@ -506,7 +508,8 @@ class SwitchSessionCommand extends WorldCommand {
 
     const current = real.context.sessionManager.getSessionFile();
 
-    real.switchSession(current === managerSession ? otherSession : managerSession);
+    const nextSession = current === managerSession ? otherSession : managerSession;
+    real.switchSession(nextSession);
   }
 
   toString(): string {
@@ -533,17 +536,19 @@ class RestartCommand extends WorldCommand {
 
 const assignmentIndex = constantFrom(0, 1);
 
+const deadlineStepCommand = tuple(assignmentIndex, boolean(), boolean()).map(
+  ([index, killSuccess, labelSuccess]) => {
+    return new DeadlineStepCommand(index, killSuccess, labelSuccess);
+  },
+);
+
 const commandArbitrary = oneof(
   { arbitrary: constant(new PollCommand()), weight: 1 },
   { arbitrary: assignmentIndex.map((index) => new AskQuestionCommand(index)), weight: 1 },
   { arbitrary: assignmentIndex.map((index) => new SaveReportCommand(index)), weight: 1 },
   { arbitrary: assignmentIndex.map((index) => new NormalFinishCommand(index)), weight: 1 },
   {
-    arbitrary: tuple(assignmentIndex, boolean(), boolean()).map(
-      ([index, killSuccess, labelSuccess]) => {
-        return new DeadlineStepCommand(index, killSuccess, labelSuccess);
-      },
-    ),
+    arbitrary: deadlineStepCommand,
     weight: 5,
   },
   { arbitrary: constant(new SwitchSessionCommand()), weight: 1 },

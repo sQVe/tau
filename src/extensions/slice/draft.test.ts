@@ -21,9 +21,11 @@ const draftDirectory = async (fixture: string | undefined) => {
 const snapshot = async (directory: string) => {
   const names = await readdir(directory);
 
-  return Promise.all(
-    names.toSorted().map(async (name) => [name, await readFile(join(directory, name), 'utf8')]),
-  );
+  const savedFiles = names
+    .toSorted()
+    .map(async (name) => [name, await readFile(join(directory, name), 'utf8')]);
+
+  return Promise.all(savedFiles);
 };
 
 // Runs a read and checks that it changed no file in the draft.

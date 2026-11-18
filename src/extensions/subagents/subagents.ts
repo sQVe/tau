@@ -362,7 +362,9 @@ export default function subagentsExtension(
 
   pi.on('before_agent_start', (event) => {
     if (delegating && event.systemPromptOptions.selectedTools.includes('subagent')) {
-      appendSystemPrompt(event, guidelines.map((guideline) => `- ${guideline}`).join('\n'));
+      const guidelineLines = guidelines.map((guideline) => `- ${guideline}`).join('\n');
+
+      appendSystemPrompt(event, guidelineLines);
     }
   });
 

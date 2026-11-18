@@ -81,7 +81,9 @@ it('reports a failed Git call for the nextest runner instead of falling back to 
     stderr: 'git rev-parse --show-toplevel timed out after 5000 ms',
   };
 
-  await expect(createObservationTracker().observationFor(contextFor(cwd))).rejects.toThrow(
+  const observation = createObservationTracker().observationFor(contextFor(cwd));
+
+  await expect(observation).rejects.toThrow(
     'git rev-parse --show-toplevel timed out after 5000 ms',
   );
 });

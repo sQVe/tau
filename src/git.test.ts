@@ -175,7 +175,8 @@ it('passes a scoped environment to every Git call inside the scope only', async 
   const outside = await runGit(root, printLazyFetch);
 
   expect(inside).toBe('1');
-  expect(outside.stdout.toString('utf8').trim()).toBe('0');
+  const trimmedOutput = outside.stdout.toString('utf8').trim();
+  expect(trimmedOutput).toBe('0');
 });
 
 it('resolves a null exit code when Git runs past the timeout', async ({ onTestFinished }) => {
@@ -248,7 +249,8 @@ it('passes the user environment to Git', async ({ onTestFinished }) => {
 
   const result = await runGit(root, ['config', '--get', 'tau.probe']);
 
-  expect(result.stdout.toString('utf8').trim()).toBe('from-environment');
+  const trimmedOutput = result.stdout.toString('utf8').trim();
+  expect(trimmedOutput).toBe('from-environment');
 });
 
 it('resolves a null exit code with the reason when Git cannot start', async ({
@@ -284,7 +286,8 @@ it('adds the environment on top of the scrubbed one', async ({ onTestFinished })
     environment: { GIT_OPTIONAL_LOCKS: '0' },
   });
 
-  expect(result.stdout.toString('utf8').trim()).toBe(realpathSync(root));
+  const trimmedOutput = result.stdout.toString('utf8').trim();
+  expect(trimmedOutput).toBe(realpathSync(root));
 });
 
 it('uses alternate object directories only when explicitly supplied', async ({

@@ -29,80 +29,26 @@ and `passiveWait` became `waitPassive`.
 
 ## Decision
 
-Shared code under `src/` forms a closed list of capability modules, and the lint rule
-`tau/module-boundaries` in `lint/rules/moduleBoundaries.ts` allows one import direction between
-them, set by an import table. A new shared file must join a listed module, or the change adds a
-module to the list and a row to the table. Naming the modules and their edges in one place gives
-every agent the same answer to "where does this go" and "may this import that".
+Shared code under `src/` follows [shared ADR 0002](../stomme/shared/adr/0002-capability-modules.md)
+for capability modules, the import table, and dependency direction, and
+[shared ADR 0003](../stomme/shared/adr/0003-owner-folders-and-file-names.md) for folders, entry
+files, and file names. The module list and import table live in `stomme.toml`. Until
+`@sqve/stomme-ts-imports` ships, `tau/module-boundaries` in `lint/rules/moduleBoundaries.ts`
+enforces the table, and `tests/stommeModules.test.ts` keeps the table and the rule's module list
+equal.
 
-### Target modules and import table
+### Tau's structure
 
-The target shared modules and the modules each may import:
-
-| Module           | May import                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| `errors`         | nothing                                                                              |
-| `schema`         | nothing                                                                              |
-| `command`        | `schema`                                                                             |
-| `instructions`   | nothing                                                                              |
-| `codemode`       | nothing                                                                              |
-| `shell`          | nothing                                                                              |
-| `skillTools`     | nothing                                                                              |
-| `role`           | `schema`                                                                             |
-| `roleGuidelines` | nothing                                                                              |
-| `dialog`         | `role`                                                                               |
-| `process`        | `errors`                                                                             |
-| `fileLock`       | `errors`, `process`, `schema`                                                        |
-| `git`            | `errors`                                                                             |
-| `config`         | `errors`, `role`, `schema`                                                           |
-| `linear`         | `command`, `errors`                                                                  |
-| `github`         | `command`, `errors`, `git`, `schema`                                                 |
-| `hc`             | `command`, `errors`, `schema`                                                        |
-| `tauDirectory`   | `errors`, `git`                                                                      |
-| `verification`   | `errors`, `record`, `schema`, `tauDirectory`                                         |
-| `wake`           | nothing                                                                              |
-| `improvement`    | `command`, `errors`, `fileLock`, `git`, `github`, `record`, `schema`, `tauDirectory` |
-| `inbox`          | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                               |
-| `record`         | `errors`, `schema`, `tauDirectory`                                                   |
-| `piStart`        | `command`, `config`, `errors`, `tauDirectory`                                        |
-| `checkRecord`    | `errors`, `git`, `record`                                                            |
-| `classifier`     | `config`                                                                             |
-| `reviewBots`     | `command`, `config`, `github`, `schema`                                              |
-| `reviewCapture`  | `command`, `errors`, `git`, `github`, `record`, `schema`, `tauDirectory`             |
-
-`skillTools`, `tauDirectory`, and `reviewCapture` keep the edges they have today, renamed to the
-target modules. Shared modules never import extensions, and no module imports `src/tau.ts`.
-Extensions import shared modules and never import each other.
-
-The rule's table lists only these modules, so a new flat file under `src/` needs a new row.
-
-### Changing the table
-
-An edge that keeps the table's directions is an edit to the rule's table and this ADR's table, which
-a structure test keeps equal. An edge that reverses a listed direction needs a new ADR. When the
-rule reports an import, change the table or the module list instead of silencing the rule.
-
-### Placement and structure
-
-- Application code lives under `src/`. A skill folder stays a public identifier, so moving its
-  parent folder does not rename it.
-- Feature code stays in `src/extensions/<feature>/`. Code moves to shared `src/` only once two
-  extensions need it. The import rule does not enforce this threshold.
-- A move may come before its users when an agreed slice plan names the two extensions that will
-  import the module. The pull request names those slices. Moving the code once, in its own pull
-  request, keeps later slices to new behavior.
+- Feature code stays in `src/extensions/<feature>/`.
+- Shared modules never import extensions, and no module imports `src/tau.ts`. Extensions import
+  shared modules and never import each other.
 - `src/tau.ts` is the package entry and installs every extension. `package.json` points
   `pi.extensions` at that file, because Pi loads every `.ts` file of a folder it scans. `src/` has
   no `index.*` files and no barrel files.
-- A module is a flat file until it has two production source files. Then it becomes a folder whose
-  entry file is named after the folder. Count production files only; tests, `fixtures/`,
-  `profiles/`, and `snippets/` do not count. A flat module keeps its test beside it.
 - `src/extensions/` and `src/skills/` group files and are not modules.
 - Other modules import a folder module through its entry file. A module may list extra public files
-  that other modules already depend on, such as `controller.ts`, `record.ts`, and `budget.ts` in
-  `subagents/controller/`. An `eslint/no-restricted-imports` override in `vite.config.ts` lists
-  them, and tests and fixtures may import private files. Do not add shared `types.ts` files.
-- Tau requires no interfaces for module boundaries.
+  in `stomme.toml`. An `eslint/no-restricted-imports` override in `vite.config.ts` lists Tau's extra
+  public files, and tests and fixtures may import private files. Do not add shared `types.ts` files.
 - Register a module that makes pure decisions in `pureModules` in `tests/structure.test.ts`. The
   check fails the suite when a registered module does a runtime import of an unregistered module,
   imports dynamically, or reads the clock, randomness, or the environment. The caller reads those
@@ -116,27 +62,6 @@ rule reports an import, change the table or the module list instead of silencing
   `src/improvement/taskFacts.ts`, `src/improvement/taskMapping.ts`, and
   `src/improvement/writeDecision.ts`, which handle paths as strings without touching the filesystem.
   The check follows imports, not names, so renaming a file does not escape it.
-
-### File names
-
-- Use camelCase for `.ts` files. Use PascalCase only when a file mainly exports one class with the
-  same name.
-- Use one noun for one concept inside a module, and keep files about the same concept in one local
-  family, such as `report*` or `verify` with `verifyDecisions`.
-- No file reverses its module's name, such as `captureReview.ts` beside `reviewCapture.ts`. This
-  covers private files and extra public files.
-- A noun alone names what the file holds, such as `record.ts`. A plural noun alone names a
-  collection.
-- Keep an established domain phrase when it matches a config key or exported concept, such as
-  `allowedModels.ts` or `requiredFor.ts`.
-- Name a unit test `foo.test.ts` beside `foo.ts`. Split a large test file by behavior and keep the
-  source name first. Cross-module tests live in `tests/`. Mark tests that run a real Pi session or
-  `hc` with `.integration.test.ts`.
-- Rename an existing file only for a real ambiguity, in its own small change, after checking active
-  unlanded work and the file's importers. Squash-merged branch refs are not active work.
-- Use kebab-case under `docs/`. ADRs use the `NNNN-kebab.md` form.
-- Use uppercase file names only when an external convention requires them, such as `LICENSE`,
-  `README.md`, `SKILL.md`, and `TEMPLATE.md`.
 - Keep `pureModules` in `tests/structure.test.ts` and the module list and each module's public files
   in `lint/rules/moduleBoundaries.ts` sorted and free of duplicates, as
   [ADR 0109](./0109-keep-action-behavior-out-of-extension-roots.md) says.
@@ -159,16 +84,8 @@ rule reports an import, change the table or the module list instead of silencing
 
 ## Alternatives considered
 
-### Keep separate rules per concern
-
-Keep the placement, naming, purity, and extension rules as separate records, with the extension
-boundary as the only import rule. Rejected because no record named the shared modules, so shared
-files kept importing each other in any direction.
-
-### Import table in review only
-
-Describe the allowed edges in a document and rely on review. Rejected because agents copy nearby
-code, and a rule without a check drifts.
+[Shared ADR 0002](../stomme/shared/adr/0002-capability-modules.md) rejects layer folders, import
+rules written only in docs, and one shared list of module names.
 
 ### Owner noun first in every private file name
 
@@ -181,9 +98,3 @@ profiles.
 
 Rejected. A rename changes importers, tests, and registry entries, so it widens the merge surface of
 the very feature work that overlaps other branches.
-
-### Move only when the first extension user lands
-
-Keep the two-extension threshold strict, and move shared code inside the first slice that imports
-it. Rejected for planned work because it mixes a file move into a behavior slice and makes that
-slice harder to review.

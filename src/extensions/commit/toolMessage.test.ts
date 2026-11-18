@@ -171,9 +171,10 @@ describe('message policy', () => {
 
         const report = JSON.stringify(second);
 
-        expect(report).toContain(
-          outcome === 'group failure' ? 'primary group failure' : 'Commit cancelled',
-        );
+        const failureMessage =
+          outcome === 'group failure' ? 'primary group failure' : 'Commit cancelled';
+
+        expect(report).toContain(failureMessage);
 
         expect(report).toContain('cleanup denied');
         expect((await git(directory, 'rev-parse', 'HEAD')).trim()).toBe(head);

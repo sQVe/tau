@@ -56,11 +56,11 @@ export const qaBriefLines = (settings: QaSettings): string[] => {
     lines.push(`Test account: run \`${settings.testAccountCommand}\` to read it.`);
   }
 
-  lines.push(
-    settings.dataWrites
-      ? 'Data writes: allowed in the dev database.'
-      : 'Data writes: not allowed in the dev database.',
-  );
+  const dataWritesLine = settings.dataWrites
+    ? 'Data writes: allowed in the dev database.'
+    : 'Data writes: not allowed in the dev database.';
+
+  lines.push(dataWritesLine);
 
   return lines;
 };

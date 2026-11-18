@@ -18,7 +18,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await Promise.all(endpoints.splice(0).map((endpoint) => endpoint.close()));
+  const endpointClosures = endpoints.splice(0).map((endpoint) => endpoint.close());
+  await Promise.all(endpointClosures);
   rmSync(root, { recursive: true, force: true });
 });
 

@@ -408,10 +408,13 @@ export const createGhFake = (): GhFake => {
     return { code: found.code, killed: false, truncated: false, stdout: '', stderr: found.stderr };
   };
 
-  const respond = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) =>
-    JSON.stringify(
-      isWriteKey(key) ? writers[key](commandArguments) : responses[key](commandArguments),
-    );
+  const respond = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) => {
+    const responseBody = isWriteKey(key)
+      ? writers[key](commandArguments)
+      : responses[key](commandArguments);
+
+    return JSON.stringify(responseBody);
+  };
 
   const answer = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) => {
     if (isWriteKey(key)) {

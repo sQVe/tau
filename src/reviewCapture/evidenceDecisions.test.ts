@@ -435,7 +435,8 @@ it('lists an added marker line with its path and new-side line number', () => {
 it('picks the first marker in list order for a line', () => {
   const diff = addedDiff('a.ts', [`// @ts-ignore ${onlyCall}`]);
 
-  expect(scanMarkers(diff).items.map((item) => item.marker)).toEqual(['.only(']);
+  const markers = scanMarkers(diff).items.map((item) => item.marker);
+  expect(markers).toEqual(['.only(']);
 });
 
 it.each(['a.md', 'docs/a.MDX', 'b.markdown'])('does not list a marker in %s', (path) => {

@@ -47,15 +47,15 @@ const resolveExisting = (path: string | undefined): string | undefined =>
 const realValues = (): Record<ProtectedVariable, string | undefined> => {
   const home = resolveExisting(homedir());
 
+  const stateHome =
+    process.env['XDG_STATE_HOME'] ?? (home === undefined ? undefined : join(home, '.local/state'));
+
   return {
     HOME: home,
     XDG_RUNTIME_DIR: resolveExisting(
       process.env['XDG_RUNTIME_DIR'] ?? `/run/user/${String(userInfo().uid)}`,
     ),
-    XDG_STATE_HOME: resolveExisting(
-      process.env['XDG_STATE_HOME'] ??
-        (home === undefined ? undefined : join(home, '.local/state')),
-    ),
+    XDG_STATE_HOME: resolveExisting(stateHome),
     XDG_CONFIG_HOME: resolveExisting(process.env['XDG_CONFIG_HOME']),
     XDG_DATA_HOME: resolveExisting(process.env['XDG_DATA_HOME']),
     XDG_CACHE_HOME: resolveExisting(process.env['XDG_CACHE_HOME']),

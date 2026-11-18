@@ -304,7 +304,9 @@ const reviewEvidence = (call: ToolCall): CallEvidence => {
 const withoutResultEvidence = (call: ToolCall, affects: EvidenceKind[]): CallEvidence => {
   const captureKind = call.tool === 'code_review' ? captureKindOf(call) : undefined;
 
-  return missing(call, noResult, captureKind === undefined ? affects : [captureKind]);
+  const affectedEvidenceKinds = captureKind === undefined ? affects : [captureKind];
+
+  return missing(call, noResult, affectedEvidenceKinds);
 };
 
 const actionEvidence = (call: ToolCall): CallEvidence => {

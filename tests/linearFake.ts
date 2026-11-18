@@ -498,7 +498,9 @@ export const createLinearFake = (): LinearFake => {
     }
 
     if (operation.kind === 'pullRequest') {
-      return JSON.stringify({ state: mergedPullRequests.has(operation.url) ? 'MERGED' : 'OPEN' });
+      const pullRequestState = mergedPullRequests.has(operation.url) ? 'MERGED' : 'OPEN';
+
+      return JSON.stringify({ state: pullRequestState });
     }
 
     if (operation.kind === 'query') {

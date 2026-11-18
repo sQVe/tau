@@ -106,12 +106,12 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     'web_search',
   ]);
 
-  expect(
-    session.resourceLoader
-      .getSkills()
-      .skills.map((skill) => skill.name)
-      .toSorted(),
-  ).toEqual([
+  const skillNames = session.resourceLoader
+    .getSkills()
+    .skills.map((skill) => skill.name)
+    .toSorted();
+
+  expect(skillNames).toEqual([
     'benchmark-checklist',
     'brainstorm',
     'bro',
@@ -229,7 +229,8 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
   }
 
   for (const block of blocks) {
-    expect(transcripts[1]?.split(JSON.stringify(block).slice(1, -1))).toHaveLength(2);
+    const serializedBlock = JSON.stringify(block).slice(1, -1);
+    expect(transcripts[1]?.split(serializedBlock)).toHaveLength(2);
   }
 
   const browserInstructions = await readInstructionSet('browser');

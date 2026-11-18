@@ -28,8 +28,10 @@ const slowGit =
       const completionDelay = timedOut ? deadline : slowReadMilliseconds;
 
       setTimeout(() => {
+        const exitCode = timedOut ? null : 0;
+
         resolve({
-          exitCode: timedOut ? null : 0,
+          exitCode: exitCode,
           stdout: Buffer.from(resultOutput),
           stderr: '',
         });
@@ -114,9 +116,8 @@ describe('currentHead', () => {
 
     const expected = await runGit(repositoryDirectory, ['rev-parse', 'HEAD']);
 
-    expect(await currentHead(runGit, repositoryDirectory)).toBe(
-      expected.stdout.toString('utf8').trim(),
-    );
+    const expectedHead = expected.stdout.toString('utf8').trim();
+    expect(await currentHead(runGit, repositoryDirectory)).toBe(expectedHead);
   });
 
   it('reads no HEAD on an unborn branch', async () => {

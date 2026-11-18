@@ -92,11 +92,11 @@ it('records the separator Pi used so kept segments rebuild its text', () => {
 
   expect(segments.map((segment) => segment.separator)).toEqual(['', '\n', '\n']);
 
-  expect(
-    segments
-      .map((segment, position) => (position === 0 ? '' : segment.separator) + segment.text)
-      .join(''),
-  ).toBe('==> text 1/2 <==\nfirst\n==> text 2/2 <==\nsecond\n' + consoleBlock);
+  const rebuiltText = segments
+    .map((segment, position) => (position === 0 ? '' : segment.separator) + segment.text)
+    .join('');
+
+  expect(rebuiltText).toBe('==> text 1/2 <==\nfirst\n==> text 2/2 <==\nsecond\n' + consoleBlock);
 });
 
 it('treats an unexpected error-shaped tail as script text when Pi reported no error', () => {

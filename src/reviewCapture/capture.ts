@@ -257,7 +257,8 @@ export const readRawRecords = (output: Buffer): { records: RawRecord[]; next: nu
 
   while (field?.text.startsWith(':') === true) {
     const [oldMode = '', newMode = '', , blob = '', status = ''] = field.text.slice(1).split(' ');
-    const read = readPaths(output, field.next, /^[RC]/.test(status) ? 2 : 1);
+    const pathCount = /^[RC]/.test(status) ? 2 : 1;
+    const read = readPaths(output, field.next, pathCount);
 
     records.push({ oldMode, newMode, blob, status, paths: read.paths });
     next = read.next;
@@ -624,7 +625,8 @@ const readBatchOutput = (
 
   while (texts.length < count) {
     const lineEnd = output.indexOf('\n', offset);
-    const size = Number(output.toString('utf8', offset, lineEnd).split(' ')[2]);
+    const sizeField = output.toString('utf8', offset, lineEnd).split(' ')[2];
+    const size = Number(sizeField);
 
     if (lineEnd === -1 || !Number.isInteger(size)) {
       return {

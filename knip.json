@@ -8,5 +8,5 @@
     "stryker.vitest.config.ts"
   ],
   "ignoreDependencies": ["pi-web-access", "jiti"],
-  "ignoreBinaries": ["hc"]
+  "ignoreBinaries": ["hc", "mise"]
 }

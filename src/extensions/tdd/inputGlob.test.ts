@@ -89,7 +89,8 @@ it.each([
     input: false,
   },
 ])('decides input for $path with $globs excluding $excludes: $input', (fact) => {
-  expect(rules(fact.globs, fact.excludes).isInput(fact.path)).toBe(fact.input);
+  const isInput = rules(fact.globs, fact.excludes).isInput(fact.path);
+  expect(isInput).toBe(fact.input);
 });
 
 it.each([

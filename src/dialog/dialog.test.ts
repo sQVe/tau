@@ -130,7 +130,8 @@ it.each([12, 24])('keeps long confirmations within a %s-row terminal', async (ro
 
   expect(pages[0]?.join('\n')).toContain('Write 1');
   expect(pages[0]?.join('\n')).not.toContain('Write 40');
-  expect(pages.at(-1)?.join('\n')).toContain('Write 40');
+  const lastPage = pages.at(-1)?.join('\n');
+  expect(lastPage).toContain('Write 40');
 
   for (const line of message.split('\n')) {
     const visited = pages.some((page) => page.some((row) => row.trim() === line));
@@ -146,21 +147,24 @@ it('scrolls wrapped message rows both ways without changing No selection', async
   const context = customContext(
     (component) => {
       component.handleInput?.('j');
-      pages.push(component.render(50).join('\n'));
+      const firstPage = component.render(50).join('\n');
+      pages.push(firstPage);
 
       for (let index = 0; index < 40; index += 1) {
         component.handleInput?.('\u001B[6~');
         component.render(50);
       }
 
-      pages.push(component.render(50).join('\n'));
+      const lastPage = component.render(50).join('\n');
+      pages.push(lastPage);
 
       for (let index = 0; index < 40; index += 1) {
         component.handleInput?.('\u001B[5~');
         component.render(50);
       }
 
-      pages.push(component.render(50).join('\n'));
+      const returnedPage = component.render(50).join('\n');
+      pages.push(returnedPage);
       component.handleInput?.('\r');
     },
     plainTheme,

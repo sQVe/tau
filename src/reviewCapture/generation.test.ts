@@ -77,8 +77,13 @@ const savedFilePaths = (directory: string) => [
   join(directory, inputFileName),
 ];
 
-const readSavedFiles = (directory: string) =>
-  Promise.all(savedFilePaths(directory).map((path) => readFile(path).catch(() => undefined)));
+const readSavedFiles = (directory: string) => {
+  const savedFileReads = savedFilePaths(directory).map((path) =>
+    readFile(path).catch(() => undefined),
+  );
+
+  return Promise.all(savedFileReads);
+};
 
 it('returns completed with the identity of the saved record', async () => {
   const root = await createTemporaryRepository(onTestFinished);

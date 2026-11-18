@@ -145,7 +145,8 @@ const runTool = async (
     signal,
     (update) => {
       const [block] = update.content;
-      updates.push(block?.type === 'text' ? block.text : '');
+      const updateText = block?.type === 'text' ? block.text : '';
+      updates.push(updateText);
     },
     contextFor(cwd),
   );
@@ -311,7 +312,8 @@ it('takes over a lock left by a dead process', async () => {
 
   expect(result.details?.passed).toBe(true);
   expect(updates).toEqual([]);
-  expect((await readFile(record, 'utf8')).trim().split('\n')).toEqual(['start first', 'end first']);
+  const recordLines = (await readFile(record, 'utf8')).trim().split('\n');
+  expect(recordLines).toEqual(['start first', 'end first']);
 });
 
 it('refuses a checkout whose repository file sets no command and runs no command', async () => {
@@ -389,12 +391,8 @@ it('starts the next check only after a cancelled command has exited', async () =
   expect(await cancelled).toBeInstanceOf(Error);
   expect((await queued).result.details?.passed).toBe(true);
 
-  expect((await readFile(record, 'utf8')).trim().split('\n')).toEqual([
-    'start stubborn',
-    'end stubborn',
-    'start second',
-    'end second',
-  ]);
+  const recordLines = (await readFile(record, 'utf8')).trim().split('\n');
+  expect(recordLines).toEqual(['start stubborn', 'end stubborn', 'start second', 'end second']);
 });
 
 it('lets only one of two sessions that recover the same stale lock run at a time', async () => {
@@ -495,12 +493,8 @@ it('starts the next check only after a descendant of a cancelled command is gone
   expect(await cancelled).toBeInstanceOf(Error);
   await queued;
 
-  expect((await readFile(record, 'utf8')).trim().split('\n')).toEqual([
-    'start descendant',
-    'end descendant',
-    'start second',
-    'end second',
-  ]);
+  const recordLines = (await readFile(record, 'utf8')).trim().split('\n');
+  expect(recordLines).toEqual(['start descendant', 'end descendant', 'start second', 'end second']);
 });
 
 it('waits for the command group of a dead session before running a new check', async () => {
@@ -541,9 +535,6 @@ it('waits for the command group of a dead session before running a new check', a
 
   await runTool(agentDirectory, root);
 
-  expect((await readFile(record, 'utf8')).trim().split('\n')).toEqual([
-    'end holder',
-    'start first',
-    'end first',
-  ]);
+  const recordLines = (await readFile(record, 'utf8')).trim().split('\n');
+  expect(recordLines).toEqual(['end holder', 'start first', 'end first']);
 });

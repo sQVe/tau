@@ -87,7 +87,8 @@ it('writes one merge event per merged pull request', async () => {
 
   const events = await readEvents(fixture.repository);
 
-  expect(events.events.map((event) => event.id).toSorted()).toEqual(expectedIds([562, 564]));
+  const mergedEventIds = events.events.map((event) => event.id).toSorted();
+  expect(mergedEventIds).toEqual(expectedIds([562, 564]));
 
   const files = fixture.eventFiles();
 
@@ -105,16 +106,20 @@ it('writes facts once the publishing calls reach a transcript', async () => {
 
   expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
 
-  expect(fixture.eventFiles()).toEqual(
-    [`merge-${eventHash(repository, 562)}`, `merge-${eventHash(repository, 564)}`]
-      .toSorted()
-      .map((id) => `${id}.json`),
-  );
+  const expectedEventFiles = [
+    `merge-${eventHash(repository, 562)}`,
+    `merge-${eventHash(repository, 564)}`,
+  ]
+    .toSorted()
+    .map((id) => `${id}.json`);
+
+  expect(fixture.eventFiles()).toEqual(expectedEventFiles);
 
   appendFileSync(path, body.join(''));
 
   expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
-  expect(fixture.eventFiles()).toEqual(expectedIds([562, 564]).map((id) => `${id}.json`));
+  const expectedEventFilesAfterCatchUp = expectedIds([562, 564]).map((id) => `${id}.json`);
+  expect(fixture.eventFiles()).toEqual(expectedEventFilesAfterCatchUp);
 });
 
 it('writes each event once across concurrent sweeps', async () => {
@@ -126,7 +131,8 @@ it('writes each event once across concurrent sweeps', async () => {
   const outcomes = await Promise.all([fixture.run(), fixture.run()]);
 
   expect(outcomes).toEqual([{ outcome: 'caughtUp' }, { outcome: 'caughtUp' }]);
-  expect(fixture.eventFiles()).toEqual(expectedIds([562, 564]).map((id) => `${id}.json`));
+  const expectedEventFiles = expectedIds([562, 564]).map((id) => `${id}.json`);
+  expect(fixture.eventFiles()).toEqual(expectedEventFiles);
 });
 
 it('reads only bytes after the cursor', async () => {
@@ -166,9 +172,8 @@ it('reads only bytes after the cursor', async () => {
   const after = await fixture.readIndex();
   const advanced = after.transcripts[path];
 
-  expect(advanced?.status === 'resolved' ? advanced.cursor : undefined).toBe(
-    entry.cursor + Buffer.byteLength(line),
-  );
+  const cursor = advanced?.status === 'resolved' ? advanced.cursor : undefined;
+  expect(cursor).toBe(entry.cursor + Buffer.byteLength(line));
 });
 
 it('records unknown when gh fails and moves no cursor', async () => {
@@ -311,11 +316,11 @@ it('stops at the budget and continues next run', async () => {
 
   const after = await fixture.readIndex();
 
-  expect(
-    Object.values(after.projects)
-      .map((project) => project.merged.status)
-      .toSorted(),
-  ).toEqual(['read', 'read']);
+  const mergedStatuses = Object.values(after.projects)
+    .map((project) => project.merged.status)
+    .toSorted();
+
+  expect(mergedStatuses).toEqual(['read', 'read']);
 });
 
 it('refuses to publish over a newer event', async () => {

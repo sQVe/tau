@@ -88,8 +88,13 @@ it.each([
 
   expect(check.matches).toBe(fields.length === 0);
   expect(check.reasons.map((reason) => reason.field)).toEqual(fields);
-  expect(check.excerpt).toBe(fields.length === 0 ? 'passed' : null);
+  const expectedExcerpt = fields.length === 0 ? 'passed' : null;
+  expect(check.excerpt).toBe(expectedExcerpt);
 });
+
+const twentyLines = Array.from({ length: 20 }, (_, index) => index).join('\n');
+const twentyFiveLines = Array.from({ length: 25 }, (_, index) => index).join('\n');
+const shiftedTwentyLines = Array.from({ length: 20 }, (_, index) => index + 5).join('\n');
 
 it.each([
   { name: 'short output', body: 'ok\n', excerpt: 'ok', truncated: false },
@@ -97,8 +102,8 @@ it.each([
   { name: 'output without a final newline', body: 'ok', excerpt: 'ok', truncated: false },
   {
     name: 'exactly 20 lines',
-    body: `${Array.from({ length: 20 }, (_, index) => index).join('\n')}\n`,
-    excerpt: Array.from({ length: 20 }, (_, index) => index).join('\n'),
+    body: `${twentyLines}\n`,
+    excerpt: twentyLines,
     truncated: false,
   },
   {
@@ -109,8 +114,8 @@ it.each([
   },
   {
     name: 'too many lines',
-    body: `${Array.from({ length: 25 }, (_, index) => index).join('\n')}\n`,
-    excerpt: Array.from({ length: 20 }, (_, index) => index + 5).join('\n'),
+    body: `${twentyFiveLines}\n`,
+    excerpt: shiftedTwentyLines,
     truncated: true,
   },
   {
@@ -124,9 +129,8 @@ it.each([
 
   expect(check).toMatchObject({ matches: true, excerpt, truncated });
 
-  expect(checkLogGaps([check], null)).toEqual(
-    truncated ? [{ kind: 'checkExcerpt', path: 'check.log' }] : [],
-  );
+  const expectedGaps = truncated ? [{ kind: 'checkExcerpt', path: 'check.log' }] : [];
+  expect(checkLogGaps([check], null)).toEqual(expectedGaps);
 });
 
 it.each([

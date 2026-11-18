@@ -27,9 +27,11 @@ export const readGitText = async (
   commandArguments: string[],
   options: ReadTextOptions = {},
 ): Promise<string> => {
+  const timeoutMilliseconds =
+    options.timeout === undefined ? defaultTimeoutMilliseconds : options.timeout;
+
   const result = await runner(workingDirectory, commandArguments, {
-    timeoutMilliseconds:
-      options.timeout === undefined ? defaultTimeoutMilliseconds : options.timeout,
+    timeoutMilliseconds: timeoutMilliseconds,
     ...(options.signal ? { signal: options.signal } : {}),
   });
 
@@ -236,18 +238,18 @@ export const readIndexEntries = async (
     { timeout: null },
   );
 
-  return new Map(
-    output
-      .split('\0')
-      .filter(Boolean)
-      .map((line) => {
-        const tab = line.indexOf('\t');
-        const [mode, object] = line.slice(0, tab).split(' ');
-        const file = normalizeRepositoryPath(line.slice(tab + 1));
+  const indexEntries = output
+    .split('\0')
+    .filter(Boolean)
+    .map((line) => {
+      const tab = line.indexOf('\t');
+      const [mode, object] = line.slice(0, tab).split(' ');
+      const file = normalizeRepositoryPath(line.slice(tab + 1));
 
-        return [file, `${mode},${object},${file}`] as const;
-      }),
-  );
+      return [file, `${mode},${object},${file}`] as const;
+    });
+
+  return new Map(indexEntries);
 };
 
 export const restoreIndexEntries = (

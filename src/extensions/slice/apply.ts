@@ -163,16 +163,22 @@ const applyWrite = async (runtime: Runtime, progress: ApplyProgress, write: Slic
   }
 
   if (write.kind === 'updateContainer') {
+    const containerTitle = write.title ? plan.container.title : undefined;
+    const containerBody = write.description ? draft.containerBody : undefined;
+
     return updateIssue(exec, root, write.identifier, {
-      title: write.title ? plan.container.title : undefined,
-      description: write.description ? draft.containerBody : undefined,
+      title: containerTitle,
+      description: containerBody,
     });
   }
 
   if (write.kind === 'updateSlice') {
+    const sliceTitle = write.title ? planSlice(plan, write.number).title : undefined;
+    const sliceBody = write.description ? draft.sliceBodies[write.number - 1] : undefined;
+
     return updateIssue(exec, root, write.identifier, {
-      title: write.title ? planSlice(plan, write.number).title : undefined,
-      description: write.description ? draft.sliceBodies[write.number - 1] : undefined,
+      title: sliceTitle,
+      description: sliceBody,
     });
   }
 

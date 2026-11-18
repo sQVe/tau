@@ -336,15 +336,15 @@ const categoriesOf = (message: string | undefined, markers: Record<string, strin
     }
   }
 
-  return Object.fromEntries(
-    Object.entries(markers).map(([name, marker]) => {
-      const found = (Object.keys(sections) as Category[]).filter((category) =>
-        sections[category].some((line) => line.includes(marker)),
-      );
+  const markerCategories = Object.entries(markers).map(([name, marker]) => {
+    const found = (Object.keys(sections) as Category[]).filter((category) =>
+      sections[category].some((line) => line.includes(marker)),
+    );
 
-      return [name, found];
-    }),
-  );
+    return [name, found] as const;
+  });
+
+  return Object.fromEntries(markerCategories);
 };
 
 describe('post failure report', () => {

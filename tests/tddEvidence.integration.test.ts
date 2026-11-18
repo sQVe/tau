@@ -16,7 +16,8 @@ it('shows the selected tests before completion and saves full-suite input eviden
 
   expect(JSON.stringify(updates)).toContain('behavior.test.ts');
   expect(JSON.stringify(updates)).toContain('required behavior');
-  expect(focused.content.map((block) => block.text).join('\n')).toContain('Scope: focused');
+  const focusedText = focused.content.map((block) => block.text).join('\n');
+  expect(focusedText).toContain('Scope: focused');
 
   await writeFile(
     join(cwd, 'behavior.test.ts'),
@@ -64,9 +65,11 @@ it('observes RED and focused passes, then accepts full verification after format
   expect(red.content[0]!.text).not.toContain(cwd);
   expect(red.content[0]!.text).not.toMatch(/\n\s+at /);
 
-  expect(session.getAllTools().find((tool) => tool.name === 'run_tests')?.description).toContain(
-    'never edit permissions',
-  );
+  const runTestsDescription = session
+    .getAllTools()
+    .find((tool) => tool.name === 'run_tests')?.description;
+
+  expect(runTestsDescription).toContain('never edit permissions');
 
   await writeFile(
     join(cwd, 'behavior.test.ts'),
@@ -152,9 +155,14 @@ it('gives no hint for regression checks across Pi session handovers', async ({
 it('keeps the full report while shortening displayed output', async ({ onTestFinished }) => {
   const { cwd, run } = await createHarness(onTestFinished);
 
+  const generatedTestNames = Array.from(
+    { length: 100 },
+    (_, index) => `it('${index} ${'long name '.repeat(20)}', () => {});`,
+  ).join('\n');
+
   await writeFile(
     join(cwd, 'behavior.test.ts'),
-    `import { it } from 'vitest'; it('required behavior', () => {}); ${Array.from({ length: 100 }, (_, index) => `it('${index} ${'long name '.repeat(20)}', () => {});`).join('\n')}`,
+    `import { it } from 'vitest'; it('required behavior', () => {}); ${generatedTestNames}`,
   );
 
   const result = await run({ scope: 'full' });

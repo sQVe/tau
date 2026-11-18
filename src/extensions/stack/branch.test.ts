@@ -93,11 +93,8 @@ it('finds an existing branch in place and repeats the final check', async () => 
 
   expect(await run()).toEqual({ result: 'inPlace', writes: ['gh stack checkout child'] });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout child',
-    'stack view --json',
-    'stack view --json',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout child', 'stack view --json', 'stack view --json']);
 
   expect(await git(root, 'branch', '--show-current')).toBe('child');
 });
@@ -124,11 +121,8 @@ it('accepts a child imported by the parent checkout and repeats the final check'
     ],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout parent',
-    'stack view --json',
-    'stack view --json',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout parent', 'stack view --json', 'stack view --json']);
 
   expect(await git(root, 'rev-parse', 'child')).toBe(await git(root, 'rev-parse', 'parent'));
 });
@@ -144,7 +138,8 @@ it('stops before writes when the parent check is unknown', async () => {
     writes: [],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual([]);
   expect(await git(root, 'branch', '--show-current')).toBe('main');
   expect(await git(root, 'branch', '--list', 'child')).toBe('');
 });
@@ -183,7 +178,9 @@ it('keeps earlier writes when the final stack view is malformed', async () => {
     ],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+
+  expect(stackCalls).toEqual([
     'stack checkout parent',
     'stack init --base main parent child',
     'stack view --json',
@@ -204,9 +201,8 @@ it('stops after a failed checkout without attempting another write', async () =>
     writes: ['gh stack checkout parent'],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout parent',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout parent']);
 
   expect(await git(root, 'branch', '--show-current')).toBe('main');
   expect(await git(root, 'branch', '--list', 'child')).toBe('');
@@ -236,9 +232,8 @@ it('stops when fast-forwarding a diverged parent fails', async () => {
     ],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout parent',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout parent']);
 
   expect(await git(root, 'rev-parse', 'parent')).toBe(parentTip);
   expect(await git(root, 'branch', '--list', 'child')).toBe('');
@@ -262,9 +257,8 @@ it('stops without adding a branch when the parent is ahead of its remote', async
     ],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout parent',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout parent']);
 
   expect(await git(root, 'rev-parse', 'parent')).toBe(parentTip);
   expect(await git(root, 'branch', '--list', 'child')).toBe('');
@@ -305,7 +299,8 @@ it.each([
     writes,
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual(stackCalls);
+  const actualStackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(actualStackCalls).toEqual(stackCalls);
   expect(await git(root, 'branch', '--show-current')).toBe('parent');
   expect(await git(root, 'branch', '--list', 'child')).toBe('');
 });
@@ -322,9 +317,8 @@ it('stops on an existing branch checkout failure before checking out the parent'
     writes: ['gh stack checkout child'],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout child',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout child']);
 
   expect(await git(root, 'branch', '--show-current')).toBe('main');
 });
@@ -341,10 +335,8 @@ it('stops on an existing branch view failure without creating on the parent', as
     writes: ['gh stack checkout child'],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout child',
-    'stack view --json',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout child', 'stack view --json']);
 
   expect(await git(root, 'branch', '--show-current')).toBe('child');
 });
@@ -363,9 +355,8 @@ it('stops when the fast-forward history read fails before reading ahead history'
     ],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout parent',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout parent']);
 
   expect(await git(root, 'branch', '--list', 'child')).toBe('');
 });
@@ -395,7 +386,8 @@ it('stops when checking local branch existence fails instead of treating it as p
     writes: [],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual([]);
   expect(await git(root, 'branch', '--show-current')).toBe('main');
   expect(await git(root, 'branch', '--list', 'child')).toBe('');
 });
@@ -412,10 +404,8 @@ it('reads the parent stack after checkout instead of trusting its GitHub check',
     ],
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
-    'stack checkout parent',
-    'stack view --json',
-  ]);
+  const stackCalls = joinedCalls(fake).filter((call) => call.startsWith('stack '));
+  expect(stackCalls).toEqual(['stack checkout parent', 'stack view --json']);
 
   expect(await git(root, 'branch', '--show-current')).toBe('parent');
   expect(await git(root, 'branch', '--list', 'child')).toBe('');

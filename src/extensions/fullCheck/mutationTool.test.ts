@@ -41,19 +41,23 @@ const fakeScript = (
   code: number,
   gate?: string,
   ending: 'exit' | 'signal' | 'hang' = 'exit',
-) => `
+) => {
+  const scriptReport = typeof report === 'string' ? report : JSON.stringify(report);
+
+  return `
 const fs = require('node:fs');
 fs.appendFileSync(${JSON.stringify(counter)}, JSON.stringify(process.argv.slice(1)) + '\\n');
 if (${JSON.stringify(ending)} === 'signal') process.kill(process.pid, 'SIGKILL');
 if (${JSON.stringify(ending)} === 'hang') setInterval(() => undefined, 1000);
 const finish = () => {
-  process.stdout.write(${JSON.stringify(typeof report === 'string' ? report : JSON.stringify(report))});
+  process.stdout.write(${JSON.stringify(scriptReport)});
   process.exit(${code});
 };
 if (${JSON.stringify(ending)} === 'hang') undefined;
 else if (${JSON.stringify(gate ?? '')} === '') finish();
 else setInterval(() => { if (fs.existsSync(${JSON.stringify(gate ?? '')})) finish(); }, 10);
 `;
+};
 
 const fixture = async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-mutation-check-');
@@ -74,11 +78,11 @@ const fixture = async () => {
     code: number,
     gated = false,
     ending: 'exit' | 'signal' | 'hang' = 'exit',
-  ) => [
-    process.execPath,
-    '-e',
-    fakeScript(counter, report, code, gated ? gate : undefined, ending),
-  ];
+  ) => {
+    const gatePath = gated ? gate : undefined;
+
+    return [process.execPath, '-e', fakeScript(counter, report, code, gatePath, ending)];
+  };
 
   const configure = (
     report: unknown,
@@ -117,7 +121,8 @@ const fixture = async () => {
       undefined,
       (update) => {
         const [first] = update.content;
-        updates.push(first?.type === 'text' ? first.text : '');
+        const updateText = first?.type === 'text' ? first.text : '';
+        updates.push(updateText);
       },
       context as never,
     );
@@ -416,7 +421,8 @@ it('waits on the lock of a running mutation check for a full check of the same r
     undefined,
     (update) => {
       const [first] = update.content;
-      updates.push(first?.type === 'text' ? first.text : '');
+      const updateText = first?.type === 'text' ? first.text : '';
+      updates.push(updateText);
     },
     context as never,
   );
@@ -593,7 +599,8 @@ it('fails when a signal ends the script', async () => {
   const [first] = result.content;
 
   expect(result.details).toMatchObject({ passed: false, exitCode: null });
-  expect(first?.type === 'text' ? first.text : '').toContain('signal SIGKILL');
+  const signalText = first?.type === 'text' ? first.text : '';
+  expect(signalText).toContain('signal SIGKILL');
 });
 
 it('fails and says so when the script writes nothing for the idle limit', async () => {
@@ -605,7 +612,8 @@ it('fails and says so when the script writes nothing for the idle limit', async 
   const [first] = result.content;
 
   expect(result.details).toMatchObject({ passed: false, idle: true });
-  expect(first?.type === 'text' ? first.text : '').toContain('it was hung');
+  const idleText = first?.type === 'text' ? first.text : '';
+  expect(idleText).toContain('it was hung');
 });
 
 it('runs with an unnamed origin when the user file configures a named repository lock', async () => {
@@ -687,7 +695,8 @@ it('passes but saves no record when the record cannot be written, so the next ca
 
   expect(first.details?.passed).toBe(true);
   expect(first.details?.recordError).toBeDefined();
-  expect(text?.type === 'text' ? text.text : '').toContain('No reusable record was saved');
+  const recordErrorText = text?.type === 'text' ? text.text : '';
+  expect(recordErrorText).toContain('No reusable record was saved');
   expect(second.details?.reused).toBe(false);
   expect(await runCount()).toBe(2);
 });

@@ -30,7 +30,8 @@ it('returns the details as JSON text for the model', async () => {
   const text = result.content.find((item) => item.type === 'text');
 
   expect(text).toBeDefined();
-  expect(JSON.parse(text?.type === 'text' ? text.text : '')).toEqual(result.details);
+  const jsonText = text?.type === 'text' ? text.text : '';
+  expect(JSON.parse(jsonText)).toEqual(result.details);
 });
 
 const validated = (tool: ReturnType<typeof createPrTool>, call: unknown) =>

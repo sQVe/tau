@@ -141,9 +141,11 @@ it.each([
     }),
   );
 
-  expect(bounded.gaps.slice(1)).toEqual(
-    full.checks.slice(0, kept).flatMap((check) => (check.gap === undefined ? [] : [check.gap])),
-  );
+  const checkGaps = full.checks
+    .slice(0, kept)
+    .flatMap((check) => (check.gap === undefined ? [] : [check.gap]));
+
+  expect(bounded.gaps.slice(1)).toEqual(checkGaps);
 
   expect(full).toEqual(original);
 });
@@ -290,6 +292,11 @@ const logLines = (count: number, width = 0) =>
 
 const longLastLine = `${'x'.repeat(100_000)}end`;
 
+const longLog = logLines(5000).join('\n');
+const longLogExcerpt = logLines(5000).slice(-200).join('\n');
+const longCharacterLog = logLines(100, 999).join('\n');
+const longCharacterExcerpt = logLines(100, 999).slice(-20).join('\n');
+
 it.each([
   {
     name: 'a short log with trailing newlines',
@@ -303,9 +310,9 @@ it.each([
   },
   {
     name: 'a log past 200 lines',
-    log: `${logLines(5000).join('\n')}\n`,
+    log: `${longLog}\n`,
     excerpt: {
-      excerpt: logLines(5000).slice(-200).join('\n'),
+      excerpt: longLogExcerpt,
       omittedLines: 4800,
       command: logCommand,
     },
@@ -313,9 +320,9 @@ it.each([
   // 20 lines of 999 characters and their 19 line breaks fill 19999 characters.
   {
     name: 'a log past 20000 characters',
-    log: logLines(100, 999).join('\n'),
+    log: longCharacterLog,
     excerpt: {
-      excerpt: logLines(100, 999).slice(-20).join('\n'),
+      excerpt: longCharacterExcerpt,
       omittedLines: 80,
       command: logCommand,
     },
@@ -445,7 +452,8 @@ it.each([
   ({ conclusion, failed }) => {
     const run = trunkRun(31, conclusion);
 
-    expect(failedTrunkRuns([run])).toEqual(failed ? [run] : []);
+    const failedRuns = failed ? [run] : [];
+    expect(failedTrunkRuns([run])).toEqual(failedRuns);
   },
 );
 
@@ -495,7 +503,8 @@ it('quotes each unsafe argument so a POSIX shell splits the command back into it
     encoding: 'utf8',
   });
 
-  expect(printed.split('\0').slice(0, -1)).toEqual(commandArguments);
+  const quotedArguments = printed.split('\0').slice(0, -1);
+  expect(quotedArguments).toEqual(commandArguments);
 });
 
 it('leaves plain arguments unquoted', () => {

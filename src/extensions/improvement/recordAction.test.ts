@@ -24,7 +24,8 @@ import { parseRecordRequest } from './recordRequest.js';
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  const cleanupTasks = cleanups.splice(0).map((cleanup) => cleanup());
+  await Promise.all(cleanupTasks);
 });
 
 const factsFor = (cwd: string, overrides: Partial<CorrectionFacts> = {}): CorrectionFacts => ({
@@ -101,21 +102,21 @@ describe('recordCorrection', () => {
     const fromBareRoot = await recordCorrection(factsFor(root, { toolCallId: 'call-root' }));
     const events = await readEventFiles(projectRoot);
 
-    expect([fromWorktree.path, fromBareRoot.path].toSorted()).toEqual(
-      [fromWorktree.id, fromBareRoot.id]
-        .map((id) => join(projectRoot, '.tau', 'improvement', `${id}.json`))
-        .toSorted(),
-    );
+    const expectedImprovementPaths = [fromWorktree.id, fromBareRoot.id]
+      .map((id) => join(projectRoot, '.tau', 'improvement', `${id}.json`))
+      .toSorted();
 
-    expect(
-      events
-        .map((event) => ({ version: event.version, kind: event.kind, id: event.id }))
-        .toSorted((left, right) => left.id.localeCompare(right.id)),
-    ).toEqual(
-      [fromWorktree.id, fromBareRoot.id]
-        .toSorted()
-        .map((id) => ({ version: 2, kind: 'correction', id })),
-    );
+    expect([fromWorktree.path, fromBareRoot.path].toSorted()).toEqual(expectedImprovementPaths);
+
+    const eventSummaries = events
+      .map((event) => ({ version: event.version, kind: event.kind, id: event.id }))
+      .toSorted((left, right) => left.id.localeCompare(right.id));
+
+    const expectedEventSummaries = [fromWorktree.id, fromBareRoot.id]
+      .toSorted()
+      .map((id) => ({ version: 2, kind: 'correction', id }));
+
+    expect(eventSummaries).toEqual(expectedEventSummaries);
   });
 
   it('keeps one event file when the same tool call records twice', async () => {
@@ -276,15 +277,15 @@ describe('recordDecision', () => {
       second: 'existing',
     });
 
-    expect(
-      events
-        .filter((event) => event.kind === 'decision')
-        .map((event) => ({
-          subject: event.subject,
-          choice: event.choice,
-          evidence: event.evidence,
-        })),
-    ).toEqual([
+    const decisionRecords = events
+      .filter((event) => event.kind === 'decision')
+      .map((event) => ({
+        subject: event.subject,
+        choice: event.choice,
+        evidence: event.evidence,
+      }));
+
+    expect(decisionRecords).toEqual([
       {
         subject: review.id,
         choice: 'approved',

@@ -2,9 +2,11 @@ import type { SkillTools } from '../../skillTools.js';
 
 const reloadInstruction = 'Run /reload, then launch again.';
 
-const listedToolNames = (skillTools: SkillTools): string[] => [
-  ...new Set(Object.values(skillTools).flat()),
-];
+const listedToolNames = (skillTools: SkillTools): string[] => {
+  const skillToolNames = Object.values(skillTools).flat();
+
+  return [...new Set(skillToolNames)];
+};
 
 export const skillToolsRefusal = (
   current: SkillTools | undefined,

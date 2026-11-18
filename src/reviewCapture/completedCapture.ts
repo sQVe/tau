@@ -78,9 +78,8 @@ const snapshotManifest = async (
     throw new Error(`The snapshot of ${directory} names a path outside the repository: ${unsafe}`);
   }
 
-  const copyLines = await Promise.all(
-    snapshot.present.toSorted().map((path) => copyLine(root, folder, path)),
-  );
+  const copyOperations = snapshot.present.toSorted().map((path) => copyLine(root, folder, path));
+  const copyLines = await Promise.all(copyOperations);
 
   if (copyLines.includes(undefined)) {
     return undefined;

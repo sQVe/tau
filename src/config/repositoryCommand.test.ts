@@ -51,9 +51,11 @@ it.each([
     writeRepository(value);
   }
 
+  const ignoredFile = ignored ? repositoryFile : undefined;
+
   expect(readRepositoryArgv({ ...location, projectTrusted }, ui, 'fullCheck')).toEqual({
     argv: undefined,
-    ignored: ignored ? repositoryFile : undefined,
+    ignored: ignoredFile,
   });
 });
 

@@ -93,7 +93,8 @@ it('reads unknown coverage from a damaged transcript', async () => {
   const read = await readTaskTranscripts(sources(cwd, sessionDirectory));
 
   expect(read).toMatchObject({ status: 'read', coverage: 'unknown' });
-  expect(read.status === 'read' ? read.coverage : 'failed').not.toBe('complete');
+  const coverage = read.status === 'read' ? read.coverage : 'failed';
+  expect(coverage).not.toBe('complete');
 });
 
 it('fails when the session folder is a regular file', async () => {
@@ -106,7 +107,8 @@ it('fails when the session folder is a regular file', async () => {
   const read = await readTaskTranscripts(sources(cwd, sessionDirectory));
 
   expect(read.status).toBe('failed');
-  expect(read.status === 'failed' ? read.reason : '').toContain(sessionDirectory);
+  const failureReason = read.status === 'failed' ? read.reason : '';
+  expect(failureReason).toContain(sessionDirectory);
 });
 
 it('reads unknown coverage from an unreadable worker record', async () => {
@@ -120,5 +122,6 @@ it('reads unknown coverage from an unreadable worker record', async () => {
   const read = await readTaskTranscripts(sources(cwd, sessionDirectory));
 
   expect(read).toMatchObject({ status: 'read', workers: [], coverage: 'unknown' });
-  expect(read.status === 'read' ? read.coverage : 'failed').not.toBe('complete');
+  const coverage = read.status === 'read' ? read.coverage : 'failed';
+  expect(coverage).not.toBe('complete');
 });

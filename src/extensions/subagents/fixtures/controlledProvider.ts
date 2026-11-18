@@ -163,9 +163,11 @@ const followUpResponses = (): FauxResponseStep[] => [
   (context) => {
     const present = firstTaskPresent(context);
 
+    const outcome = present ? 'success' : 'failure';
+
     return fauxAssistantMessage([
       fauxToolCall('subagent_report', {
-        outcome: present ? 'success' : 'failure',
+        outcome: outcome,
         summary: fixtureSummary,
         evidence: [`first task in context: ${present}`],
       }),
@@ -221,9 +223,11 @@ const reportResponses = (): FauxResponseStep[] => [
     const instructions = systemInstructions(context);
     const appendPresent = appendSystemPresent(context);
 
+    const outcome = blocked && edited && instructions ? 'success' : 'failure';
+
     return fauxAssistantMessage([
       fauxToolCall('subagent_report', {
-        outcome: blocked && edited && instructions ? 'success' : 'failure',
+        outcome: outcome,
         summary: fixtureSummary,
         evidence: [
           'edit checked',

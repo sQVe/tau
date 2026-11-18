@@ -562,5 +562,6 @@ it('keeps the custom row once it is visible as the terminal grows', () => {
   const first = visibleAt.indexOf(true);
 
   expect(first).toBeGreaterThanOrEqual(0);
-  expect(visibleAt.slice(first).every(Boolean)).toBe(true);
+  const allRowsVisible = visibleAt.slice(first).every(Boolean);
+  expect(allRowsVisible).toBe(true);
 });

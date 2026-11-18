@@ -376,7 +376,8 @@ export const executeLaunch = async (
 ): Promise<ToolResult<LaunchStatus | undefined>> => {
   try {
     const currentSkillTools = (runtime.readSkillTools ?? readCurrentSkillTools)();
-    const registeredToolNames = new Set(runtime.pi.getAllTools().map((tool) => tool.name));
+    const registeredNames = runtime.pi.getAllTools().map((tool) => tool.name);
+    const registeredToolNames = new Set(registeredNames);
     const skillToolsRefused = skillToolsRefusal(currentSkillTools, registeredToolNames);
 
     if (skillToolsRefused !== undefined) {
@@ -449,6 +450,8 @@ export const executeLaunch = async (
       let assignment: Assignment;
 
       try {
+        const snapshotPath = extensionPackages.length === 0 ? undefined : snapshotDirectory;
+
         assignment = buildAssignment(
           assignmentId,
           request.parameters,
@@ -456,7 +459,7 @@ export const executeLaunch = async (
           deadline,
           request.parentSession,
           parentTerminal,
-          extensionPackages.length === 0 ? undefined : snapshotDirectory,
+          snapshotPath,
           extensionPackages,
         );
 

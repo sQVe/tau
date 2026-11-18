@@ -128,10 +128,13 @@ const gatherGithubFacts = async (
   const pull = headPull.ok && headPull.value.kind === 'one' ? headPull.value.pull : undefined;
   const basePullNeeded = pull !== undefined && needsBasePull(pull, defaultBranch);
 
-  const [stacks, basePulls] = await Promise.all([
-    pull === undefined ? null : readStacks(runtime, baseRepository, pull.number),
-    basePullNeeded ? readHeadPulls(runtime, baseRepository, pull.baseRefName) : null,
-  ]);
+  const stacksRead = pull === undefined ? null : readStacks(runtime, baseRepository, pull.number);
+
+  const basePullsRead = basePullNeeded
+    ? readHeadPulls(runtime, baseRepository, pull.baseRefName)
+    : null;
+
+  const [stacks, basePulls] = await Promise.all([stacksRead, basePullsRead]);
 
   const reads: GithubFacts = {
     defaultBranch,
