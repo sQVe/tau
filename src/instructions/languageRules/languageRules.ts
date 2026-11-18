@@ -2,13 +2,16 @@ import type { ContextEvent, ExtensionAPI, ExtensionContext } from '@earendil-wor
 
 import { guideSection } from '../guideRuns.js';
 import type { GuideRuns } from '../guideRuns.js';
+import type { GuideSnapshot } from '../stommeGuides/stommeGuides.js';
 import type { GuideLanguage } from '../stommeGuides/stommeGuidesDecision.js';
 import { appendSystemPrompt } from '../systemPrompt.js';
 import {
   classifyLanguageActivation,
+  commandOutcome,
   languageRulesTypes,
   languageToolDecision,
 } from './languageRulesDecision.js';
+import type { CommandMode, CommandOutcome } from './languageRulesDecision.js';
 
 interface RulesState {
   active: boolean;
@@ -18,7 +21,7 @@ interface RulesState {
 
 type BundleSnapshot = Extract<Awaited<ReturnType<GuideRuns['snapshot']>>, { kind: 'bundle' }>;
 
-type UsableSnapshot = Exclude<Awaited<ReturnType<GuideRuns['snapshot']>>, { kind: 'broken' }>;
+type NoticeReason = Extract<CommandOutcome, { kind: 'notice' }>['reason'];
 
 const languages: readonly GuideLanguage[] = ['typescript', 'rust'];
 
@@ -205,32 +208,21 @@ const registerToolGate = (
   });
 };
 
-const projectNotice = (
-  snapshot: Extract<UsableSnapshot, { kind: 'project' }>,
-  language: GuideLanguage,
-  usesCodingSet: boolean,
-): { text: string; level: 'info' | 'warning' } => {
-  const label = labels[language];
-
-  if (!usesCodingSet) {
-    return {
-      text: `This session does not load the coding guides, so it has no ${label} guide.`,
-      level: 'warning',
-    };
-  }
-
-  if (snapshot.language !== language) {
-    return {
-      text: `The project declares ${labels[snapshot.language]}, so Tau loads no ${label} guide.`,
-      level: 'warning',
-    };
-  }
-
-  return {
-    text: `The project's ${label} guide already loads with the coding guides.`,
-    level: 'info',
-  };
+const noticeTexts: Readonly<
+  Record<NoticeReason, (label: string, declaredLabel: string) => string>
+> = {
+  broken: (label) => `${label} rules are off, because Tau could not load the stomme guides.`,
+  'no-coding-set': (label) =>
+    `This session does not load the coding guides, so it has no ${label} guide.`,
+  'other-language': (label, declaredLabel) =>
+    `The project declares ${declaredLabel}, so Tau loads no ${label} guide.`,
+  loaded: (label) => `The project's ${label} guide already loads with the coding guides.`,
 };
+
+const commandMode = (snapshot: GuideSnapshot): CommandMode =>
+  snapshot.kind === 'project'
+    ? { kind: 'project', declared: snapshot.language }
+    : { kind: snapshot.kind };
 
 // A busy session keeps the run's snapshot, so the command does not mix two guide versions. An idle
 // session has no run to keep, so it reads the guides now.
@@ -250,20 +242,19 @@ const registerCommand = (
     handler: async (_arguments, context) => {
       const snapshot = await commandSnapshot(guideRuns, context);
 
-      if (snapshot.kind === 'project') {
-        const notice = projectNotice(snapshot, language, await guideRuns.usesCodingSet());
+      const mode = commandMode(snapshot);
+      const outcome = commandOutcome(mode, language, await guideRuns.usesCodingSet());
 
-        context.ui.notify(notice.text, notice.level);
+      if (outcome.kind === 'notice') {
+        const declaredLabel = mode.kind === 'project' ? labels[mode.declared] : '';
+        const text = noticeTexts[outcome.reason](label, declaredLabel);
+
+        context.ui.notify(text, outcome.level);
 
         return;
       }
 
-      if (snapshot.kind === 'broken') {
-        context.ui.notify(
-          `${label} rules are off, because Tau could not load the stomme guides.`,
-          'warning',
-        );
-
+      if (snapshot.kind !== 'bundle') {
         return;
       }
 

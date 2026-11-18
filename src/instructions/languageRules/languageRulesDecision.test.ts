@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 import type { GuideLanguage } from '../stommeGuides/stommeGuidesDecision.js';
 import {
   classifyLanguageActivation,
+  commandOutcome,
   languageForPath,
   languageRulesTypes,
   languageToolDecision,
@@ -198,3 +199,71 @@ it('keeps activation entries of the other language apart', () => {
     unreadable: [],
   });
 });
+
+const notice = (
+  reason: 'broken' | 'no-coding-set' | 'other-language' | 'loaded',
+  level: 'info' | 'warning',
+) => ({ kind: 'notice', reason, level });
+
+it.for([
+  { mode: { kind: 'bundle' }, requested: 'rust', coding: true, expected: { kind: 'activate' } },
+  {
+    mode: { kind: 'bundle' },
+    requested: 'typescript',
+    coding: false,
+    expected: { kind: 'activate' },
+  },
+  {
+    mode: { kind: 'broken' },
+    requested: 'rust',
+    coding: true,
+    expected: notice('broken', 'warning'),
+  },
+  {
+    mode: { kind: 'broken' },
+    requested: 'rust',
+    coding: false,
+    expected: notice('broken', 'warning'),
+  },
+  {
+    mode: { kind: 'project', declared: 'rust' },
+    requested: 'rust',
+    coding: true,
+    expected: notice('loaded', 'info'),
+  },
+  {
+    mode: { kind: 'project', declared: 'typescript' },
+    requested: 'typescript',
+    coding: true,
+    expected: notice('loaded', 'info'),
+  },
+  {
+    mode: { kind: 'project', declared: 'rust' },
+    requested: 'typescript',
+    coding: true,
+    expected: notice('other-language', 'warning'),
+  },
+  {
+    mode: { kind: 'project', declared: 'typescript' },
+    requested: 'rust',
+    coding: true,
+    expected: notice('other-language', 'warning'),
+  },
+  {
+    mode: { kind: 'project', declared: 'rust' },
+    requested: 'rust',
+    coding: false,
+    expected: notice('no-coding-set', 'warning'),
+  },
+  {
+    mode: { kind: 'project', declared: 'rust' },
+    requested: 'typescript',
+    coding: false,
+    expected: notice('no-coding-set', 'warning'),
+  },
+] as const)(
+  'decides the command outcome in $mode.kind mode for $requested with coding set $coding',
+  ({ mode, requested, coding, expected }) => {
+    expect(commandOutcome(mode, requested, coding)).toEqual(expected);
+  },
+);

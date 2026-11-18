@@ -6,6 +6,19 @@ type LanguageToolDecision =
   | { kind: 'ignore' }
   | { kind: 'activate' | 'block'; language: GuideLanguage };
 
+export type CommandMode =
+  | { kind: 'bundle' }
+  | { kind: 'broken' }
+  | { kind: 'project'; declared: GuideLanguage };
+
+export type CommandOutcome =
+  | { kind: 'activate' }
+  | {
+      kind: 'notice';
+      reason: 'broken' | 'no-coding-set' | 'other-language' | 'loaded';
+      level: 'info' | 'warning';
+    };
+
 export const languageRulesTypes: Readonly<Record<GuideLanguage, string>> = {
   typescript: 'tau-typescript-rules',
   rust: 'tau-rust-rules',
@@ -124,4 +137,28 @@ export const classifyLanguageActivation = (
   }
 
   return { active, unreadable };
+};
+
+export const commandOutcome = (
+  mode: CommandMode,
+  requested: GuideLanguage,
+  usesCodingSet: boolean,
+): CommandOutcome => {
+  if (mode.kind === 'bundle') {
+    return { kind: 'activate' };
+  }
+
+  if (mode.kind === 'broken') {
+    return { kind: 'notice', reason: 'broken', level: 'warning' };
+  }
+
+  if (!usesCodingSet) {
+    return { kind: 'notice', reason: 'no-coding-set', level: 'warning' };
+  }
+
+  if (mode.declared !== requested) {
+    return { kind: 'notice', reason: 'other-language', level: 'warning' };
+  }
+
+  return { kind: 'notice', reason: 'loaded', level: 'info' };
 };

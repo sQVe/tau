@@ -308,9 +308,15 @@ for (const { language, label, customType, path, command } of cases) {
 
       await fixture.emit(event);
 
-      expect(fixture.notify).toHaveBeenCalledTimes(2);
-      expect(fixture.notify).toHaveBeenCalledWith(expect.stringContaining('2'), 'warning');
-      expect(fixture.notify).toHaveBeenCalledWith(expect.stringContaining(label), 'warning');
+      const warnings = fixture.notify.mock.calls.filter(([, level]) => level === 'warning');
+      const messages = warnings.map(([message]) => message);
+      const newer = messages.filter((message) => message.includes('2'));
+      const malformed = messages.filter((message) => !message.includes('2'));
+
+      expect(warnings).toHaveLength(2);
+      expect(newer).toHaveLength(1);
+      expect(malformed).toHaveLength(1);
+      expect(malformed[0]).toContain(label);
       expect(await fixture.prompt()).toBe(rules);
       expect(fixture.sessionManager.getBranch()).toEqual(branch);
       expect(fixture.appendEntry).not.toHaveBeenCalled();
