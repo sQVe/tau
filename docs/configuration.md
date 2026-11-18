@@ -243,7 +243,7 @@ and `max`.
 {
   "profiles": {
     "default": { "model": "claude-bridge/claude-opus-5-5" },
-    "scout": { "model": "openai-codex/gpt-6.1-sol", "thinking": "high" }
+    "scout": { "model": "openai/gpt-6.2-sol", "thinking": "high" }
   }
 }
 ```
@@ -314,7 +314,7 @@ switch the model of a session that already started.
   "roles": {
     "lead": {
       "model": "morph/morph-dsv41flash-1017",
-      "profiles": { "scout": { "model": "openai-codex/gpt-6.1-sol" } }
+      "profiles": { "scout": { "model": "openai/gpt-6.2-sol" } }
     },
     "architect": { "model": "claude-bridge/claude-opus-5-5" }
   }

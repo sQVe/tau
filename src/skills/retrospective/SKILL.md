@@ -74,7 +74,7 @@ the owning project, and that session files the ticket. A rejected row or class c
    - Deep mode: launch three `reviewer` workers in one turn, each with [lenses.md](lenses.md) and
      one lens:
      - judgment on `claude-bridge/claude-fable-5-2`;
-     - tooling on `openai/gpt-6.1-sol`;
+     - tooling on `openai/gpt-6.2-sol`;
      - divergent on `claude-bridge/claude-opus-5-5`.
      - Give each the same inputs as the fast reviewer.
      - After all three report, launch one `reviewer` worker on `claude-bridge/claude-fable-5-2` with
