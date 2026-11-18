@@ -193,6 +193,7 @@ const pureModules = [
   'src/inbox/protocol.ts',
   'src/inbox/receiptDecision.ts',
   'src/inbox/targetDecision.ts',
+  'src/instructions/stommeGuides/stommeGuidesDecision.ts',
   'src/instructions/syncRecord.ts',
   'src/instructions/typescriptRulesDecision.ts',
   'src/linear/descriptionMatch.ts',
@@ -279,6 +280,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/improvement/transcript.ts': ['typebox'],
   'src/improvement/writeDecision.ts': ['node:path'],
   'src/inbox/protocol.ts': ['typebox', 'typebox/value'],
+  'src/instructions/stommeGuides/stommeGuidesDecision.ts': ['node:path', 'smol-toml'],
   'src/instructions/syncRecord.ts': ['smol-toml'],
   'src/schema.ts': ['typebox', 'typebox/value'],
 };
