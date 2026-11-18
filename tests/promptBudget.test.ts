@@ -187,7 +187,6 @@ const assignmentFor = (loadout: Loadout, directory: string): Assignment => {
   };
 };
 
-// Starts a worker with a saved assignment and returns what its registered hook appends to the prompt.
 const workerHookPrompt = async (loadout: Loadout, directory: string): Promise<string> => {
   vi.stubEnv('TAU_ROLE', 'worker');
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
