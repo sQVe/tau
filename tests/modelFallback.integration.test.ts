@@ -31,7 +31,6 @@ const overloaded = () =>
     errorMessage: '429 Service temporarily overloaded',
   });
 
-// Pi stops at its last retry, so the queue holds enough failures for one full episode.
 const overloadedResponses = () => Array.from({ length: 10 }, () => overloaded);
 
 const textOf = (message: AssistantMessage): string =>

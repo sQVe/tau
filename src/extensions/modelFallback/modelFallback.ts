@@ -6,7 +6,6 @@ import { registerFallbackModels } from './fallbackRegistration.js';
 import { reportFallbackModels } from './fallbackReport.js';
 
 export default function modelFallbackExtension(pi: ExtensionAPI): void {
-  // Pi resolves --model after the extension factory, before it knows the project trust.
   const registered = readFallbackModels({
     cwd: process.cwd(),
     agentDirectory: getAgentDir(),
