@@ -2,7 +2,6 @@ import type { ContextEvent, ExtensionAPI, ExtensionContext } from '@earendil-wor
 
 import { guideSection } from '../guideRuns.js';
 import type { GuideRuns } from '../guideRuns.js';
-import type { GuideSnapshot } from '../stommeGuides/stommeGuides.js';
 import type { GuideLanguage } from '../stommeGuides/stommeGuidesDecision.js';
 import { appendSystemPrompt } from '../systemPrompt.js';
 import {
@@ -11,7 +10,7 @@ import {
   languageRulesTypes,
   languageToolDecision,
 } from './languageRulesDecision.js';
-import type { CommandMode, CommandOutcome } from './languageRulesDecision.js';
+import type { CommandOutcome } from './languageRulesDecision.js';
 
 interface RulesState {
   active: boolean;
@@ -21,7 +20,7 @@ interface RulesState {
 
 type BundleSnapshot = Extract<Awaited<ReturnType<GuideRuns['snapshot']>>, { kind: 'bundle' }>;
 
-type NoticeReason = Extract<CommandOutcome, { kind: 'notice' }>['reason'];
+type CommandNotice = Extract<CommandOutcome<BundleSnapshot>, { kind: 'notice' }>;
 
 const languages: readonly GuideLanguage[] = ['typescript', 'rust'];
 
@@ -43,7 +42,11 @@ const isRulesMessage = (message: ContextEvent['messages'][number], language: Gui
 
 const sendRules = (pi: ExtensionAPI, language: GuideLanguage, rules: string): void => {
   pi.sendMessage(
-    { customType: languageRulesTypes[language], content: rules, display: false },
+    {
+      customType: languageRulesTypes[language],
+      content: rules,
+      display: false,
+    },
     { deliverAs: 'steer' },
   );
 };
@@ -133,6 +136,7 @@ const registerLifecycle = (
     if (snapshot !== undefined) {
       for (const language of languages) {
         const state = states[language];
+
         const messageLoaded = event.messages.some((message) => isRulesMessage(message, language));
 
         state.requestLoaded = state.systemPromptLoaded || messageLoaded;
@@ -194,7 +198,9 @@ const registerToolGate = (
 ): void => {
   pi.on('tool_call', (event) => {
     const path = 'path' in event.input ? event.input.path : undefined;
+
     const loaded = new Set(languages.filter((language) => states[language].requestLoaded));
+
     const decision = languageToolDecision(event.toolName, path, loaded);
 
     if (decision.kind === 'ignore') {
@@ -205,21 +211,19 @@ const registerToolGate = (
   });
 };
 
-const noticeTexts: Readonly<
-  Record<NoticeReason, (label: string, declaredLabel: string) => string>
+const plainNoticeTexts: Readonly<
+  Record<'broken' | 'no-coding-set' | 'loaded', (label: string) => string>
 > = {
   broken: (label) => `${label} rules are off, because Tau could not load the stomme guides.`,
   'no-coding-set': (label) =>
     `This session does not load the coding guides, so it has no ${label} guide.`,
-  'other-language': (label, declaredLabel) =>
-    `The project declares ${declaredLabel}, so Tau loads no ${label} guide.`,
   loaded: (label) => `The project's ${label} guide already loads with the coding guides.`,
 };
 
-const commandMode = (snapshot: GuideSnapshot): CommandMode =>
-  snapshot.kind === 'project'
-    ? { kind: 'project', declared: snapshot.language }
-    : { kind: snapshot.kind };
+const noticeText = (notice: CommandNotice, label: string): string =>
+  notice.reason === 'other-language'
+    ? `The project declares ${labels[notice.declared]}, so Tau loads no ${label} guide.`
+    : plainNoticeTexts[notice.reason](label);
 
 const commandSnapshot = (guideRuns: GuideRuns, context: ExtensionContext) =>
   context.isIdle() ? guideRuns.current() : guideRuns.snapshot();
@@ -237,26 +241,20 @@ const registerCommand = (
     handler: async (_arguments, context) => {
       const snapshot = await commandSnapshot(guideRuns, context);
 
-      const mode = commandMode(snapshot);
-      const outcome = commandOutcome(mode, language, await guideRuns.usesCodingSet());
+      const usesCodingSet = await guideRuns.usesCodingSet();
+
+      const outcome = commandOutcome<BundleSnapshot>(snapshot, language, usesCodingSet);
 
       if (outcome.kind === 'notice') {
-        const declaredLabel = mode.kind === 'project' ? labels[mode.declared] : '';
-        const text = noticeTexts[outcome.reason](label, declaredLabel);
+        context.ui.notify(noticeText(outcome, label), outcome.level);
 
-        context.ui.notify(text, outcome.level);
-
-        return;
-      }
-
-      if (snapshot.kind !== 'bundle') {
         return;
       }
 
       activate(pi, language, state);
 
       if (!context.isIdle()) {
-        sendRules(pi, language, rulesText(snapshot, language));
+        sendRules(pi, language, rulesText(outcome.bundle, language));
       }
 
       context.ui.notify(`${label} rules are active.`, 'info');
@@ -266,7 +264,11 @@ const registerCommand = (
 
 export const registerLanguageRules = (pi: ExtensionAPI, guideRuns: GuideRuns): void => {
   const states: Record<GuideLanguage, RulesState> = {
-    typescript: { active: false, systemPromptLoaded: false, requestLoaded: false },
+    typescript: {
+      active: false,
+      systemPromptLoaded: false,
+      requestLoaded: false,
+    },
     rust: { active: false, systemPromptLoaded: false, requestLoaded: false },
   };
 

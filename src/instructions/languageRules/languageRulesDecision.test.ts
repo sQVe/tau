@@ -13,26 +13,96 @@ import {
 
 type Decision = ReturnType<typeof languageToolDecision>;
 
-const activate = (language: GuideLanguage): Decision => ({ kind: 'activate', language });
-const block = (language: GuideLanguage): Decision => ({ kind: 'block', language });
+const activate = (language: GuideLanguage): Decision => ({
+  kind: 'activate',
+  language,
+});
+
+const block = (language: GuideLanguage): Decision => ({
+  kind: 'block',
+  language,
+});
+
 const ignore: Decision = { kind: 'ignore' };
 const none: ReadonlySet<GuideLanguage> = new Set();
+
 const loadedTypeScript: ReadonlySet<GuideLanguage> = new Set<GuideLanguage>(['typescript']);
+
 const loadedRust: ReadonlySet<GuideLanguage> = new Set<GuideLanguage>(['rust']);
 
 it.for([
-  { tool: 'read', path: 'src/main.ts', loaded: none, expected: activate('typescript') },
-  { tool: 'read', path: 'view.tsx', loaded: none, expected: activate('typescript') },
-  { tool: 'read', path: 'module.mts', loaded: none, expected: activate('typescript') },
-  { tool: 'read', path: 'module.cts', loaded: none, expected: activate('typescript') },
-  { tool: 'write', path: 'main.ts', loaded: none, expected: block('typescript') },
-  { tool: 'edit', path: 'main.ts', loaded: none, expected: block('typescript') },
-  { tool: 'write', path: 'main.ts', loaded: loadedTypeScript, expected: activate('typescript') },
-  { tool: 'edit', path: 'main.ts', loaded: loadedTypeScript, expected: activate('typescript') },
-  { tool: 'read', path: 'main.ts', loaded: loadedTypeScript, expected: activate('typescript') },
-  { tool: 'read', path: 'node_modules/package/main.ts', loaded: none, expected: ignore },
-  { tool: 'read', path: '/repo/node_modules/main.ts', loaded: none, expected: ignore },
-  { tool: 'read', path: 'C:\\repo\\node_modules\\main.ts', loaded: none, expected: ignore },
+  {
+    tool: 'read',
+    path: 'src/main.ts',
+    loaded: none,
+    expected: activate('typescript'),
+  },
+  {
+    tool: 'read',
+    path: 'view.tsx',
+    loaded: none,
+    expected: activate('typescript'),
+  },
+  {
+    tool: 'read',
+    path: 'module.mts',
+    loaded: none,
+    expected: activate('typescript'),
+  },
+  {
+    tool: 'read',
+    path: 'module.cts',
+    loaded: none,
+    expected: activate('typescript'),
+  },
+  {
+    tool: 'write',
+    path: 'main.ts',
+    loaded: none,
+    expected: block('typescript'),
+  },
+  {
+    tool: 'edit',
+    path: 'main.ts',
+    loaded: none,
+    expected: block('typescript'),
+  },
+  {
+    tool: 'write',
+    path: 'main.ts',
+    loaded: loadedTypeScript,
+    expected: activate('typescript'),
+  },
+  {
+    tool: 'edit',
+    path: 'main.ts',
+    loaded: loadedTypeScript,
+    expected: activate('typescript'),
+  },
+  {
+    tool: 'read',
+    path: 'main.ts',
+    loaded: loadedTypeScript,
+    expected: activate('typescript'),
+  },
+  {
+    tool: 'read',
+    path: 'node_modules/package/main.ts',
+    loaded: none,
+    expected: ignore,
+  },
+  {
+    tool: 'read',
+    path: '/repo/node_modules/main.ts',
+    loaded: none,
+    expected: ignore,
+  },
+  {
+    tool: 'read',
+    path: 'C:\\repo\\node_modules\\main.ts',
+    loaded: none,
+    expected: ignore,
+  },
   {
     tool: 'read',
     path: 'node_modules-extra/main.ts',
@@ -42,33 +112,108 @@ it.for([
   { tool: 'read', path: 'main.d.ts', loaded: none, expected: ignore },
   { tool: 'read', path: 'main.d.mts', loaded: none, expected: ignore },
   { tool: 'read', path: 'main.d.cts', loaded: none, expected: ignore },
-  { tool: 'read', path: 'main.d.ts.source.ts', loaded: none, expected: activate('typescript') },
+  {
+    tool: 'read',
+    path: 'main.d.ts.source.ts',
+    loaded: none,
+    expected: activate('typescript'),
+  },
   { tool: 'read', path: 'main.js', loaded: none, expected: ignore },
   { tool: 'read', path: 'ts', loaded: none, expected: ignore },
   { tool: 'read', path: 'main.ts.txt', loaded: none, expected: ignore },
   { tool: 'bash', path: 'main.ts', loaded: none, expected: ignore },
-  { tool: 'read', path: 'src/lib.rs', loaded: none, expected: activate('rust') },
+  {
+    tool: 'read',
+    path: 'src/lib.rs',
+    loaded: none,
+    expected: activate('rust'),
+  },
   { tool: 'write', path: 'src/lib.rs', loaded: none, expected: block('rust') },
   { tool: 'edit', path: 'src/lib.rs', loaded: none, expected: block('rust') },
-  { tool: 'write', path: 'src/lib.rs', loaded: loadedRust, expected: activate('rust') },
-  { tool: 'edit', path: 'src/lib.rs', loaded: loadedRust, expected: activate('rust') },
-  { tool: 'read', path: 'src/lib.rs', loaded: loadedRust, expected: activate('rust') },
-  { tool: 'write', path: 'src/lib.rs', loaded: loadedTypeScript, expected: block('rust') },
-  { tool: 'write', path: 'main.ts', loaded: loadedRust, expected: block('typescript') },
-  { tool: 'read', path: 'target/debug/build/out.rs', loaded: none, expected: ignore },
-  { tool: 'read', path: '/repo/target/generated.rs', loaded: none, expected: ignore },
-  { tool: 'read', path: 'C:\\repo\\target\\generated.rs', loaded: none, expected: ignore },
-  { tool: 'read', path: 'target-extra/lib.rs', loaded: none, expected: activate('rust') },
-  { tool: 'read', path: 'src/target.rs', loaded: none, expected: activate('rust') },
-  { tool: 'read', path: 'node_modules/crate/lib.rs', loaded: none, expected: activate('rust') },
-  { tool: 'read', path: 'target/main.ts', loaded: none, expected: activate('typescript') },
+  {
+    tool: 'write',
+    path: 'src/lib.rs',
+    loaded: loadedRust,
+    expected: activate('rust'),
+  },
+  {
+    tool: 'edit',
+    path: 'src/lib.rs',
+    loaded: loadedRust,
+    expected: activate('rust'),
+  },
+  {
+    tool: 'read',
+    path: 'src/lib.rs',
+    loaded: loadedRust,
+    expected: activate('rust'),
+  },
+  {
+    tool: 'write',
+    path: 'src/lib.rs',
+    loaded: loadedTypeScript,
+    expected: block('rust'),
+  },
+  {
+    tool: 'write',
+    path: 'main.ts',
+    loaded: loadedRust,
+    expected: block('typescript'),
+  },
+  {
+    tool: 'read',
+    path: 'target/debug/build/out.rs',
+    loaded: none,
+    expected: ignore,
+  },
+  {
+    tool: 'read',
+    path: '/repo/target/generated.rs',
+    loaded: none,
+    expected: ignore,
+  },
+  {
+    tool: 'read',
+    path: 'C:\\repo\\target\\generated.rs',
+    loaded: none,
+    expected: ignore,
+  },
+  {
+    tool: 'read',
+    path: 'target-extra/lib.rs',
+    loaded: none,
+    expected: activate('rust'),
+  },
+  {
+    tool: 'read',
+    path: 'src/target.rs',
+    loaded: none,
+    expected: activate('rust'),
+  },
+  {
+    tool: 'read',
+    path: 'node_modules/crate/lib.rs',
+    loaded: none,
+    expected: activate('rust'),
+  },
+  {
+    tool: 'read',
+    path: 'target/main.ts',
+    loaded: none,
+    expected: activate('typescript'),
+  },
   { tool: 'read', path: 'lib.rs.txt', loaded: none, expected: ignore },
   { tool: 'read', path: 'rs', loaded: none, expected: ignore },
   { tool: 'bash', path: 'src/lib.rs', loaded: none, expected: ignore },
   { tool: 'read', path: 'asset.constructor', loaded: none, expected: ignore },
   { tool: 'write', path: 'asset.constructor', loaded: none, expected: ignore },
   { tool: 'read', path: 'asset.toString', loaded: none, expected: ignore },
-  { tool: 'read', path: 'asset.hasOwnProperty', loaded: none, expected: ignore },
+  {
+    tool: 'read',
+    path: 'asset.hasOwnProperty',
+    loaded: none,
+    expected: ignore,
+  },
   { tool: 'read', path: 'asset.__proto__', loaded: none, expected: ignore },
   { tool: 'read', path: undefined, loaded: none, expected: ignore },
   { tool: 'read', path: 42, loaded: none, expected: ignore },
@@ -118,7 +263,12 @@ const unreadableCases = (language: GuideLanguage) => {
   return [
     { name: 'missing', entries: [], active: false, unreadable: [] },
     { name: 'null entry', entries: [null], active: false, unreadable: [] },
-    { name: 'primitive entry', entries: ['activation'], active: false, unreadable: [] },
+    {
+      name: 'primitive entry',
+      entries: ['activation'],
+      active: false,
+      unreadable: [],
+    },
     { name: 'primitive data', entries: entry('activation'), ...malformed },
     {
       name: 'current after malformed and newer entries',
@@ -158,7 +308,11 @@ const unreadableCases = (language: GuideLanguage) => {
       active: false,
       unreadable: [{ kind: 'newer', version: 3 }],
     },
-    { name: 'malformed', entries: [activationFixture(language, 'malformed')], ...malformed },
+    {
+      name: 'malformed',
+      entries: [activationFixture(language, 'malformed')],
+      ...malformed,
+    },
     {
       name: 'missing data',
       entries: [{ type: 'custom', customType: languageRulesTypes[language] }],
@@ -166,10 +320,22 @@ const unreadableCases = (language: GuideLanguage) => {
     },
     { name: 'null data', entries: entry(null), ...malformed },
     { name: 'missing version', entries: entry({}), ...malformed },
-    { name: 'noninteger version', entries: entry({ version: 2.5 }), ...malformed },
-    { name: 'infinite version', entries: entry({ version: Infinity }), ...malformed },
+    {
+      name: 'noninteger version',
+      entries: entry({ version: 2.5 }),
+      ...malformed,
+    },
+    {
+      name: 'infinite version',
+      entries: entry({ version: Infinity }),
+      ...malformed,
+    },
     { name: 'zero version', entries: entry({ version: 0 }), ...malformed },
-    { name: 'extra fields', entries: entry({ version: 1, extra: true }), ...malformed },
+    {
+      name: 'extra fields',
+      entries: entry({ version: 1, extra: true }),
+      ...malformed,
+    },
     {
       name: 'other entry',
       entries: [{ type: 'custom', customType: 'other', data: { version: 1 } }],
@@ -179,7 +345,11 @@ const unreadableCases = (language: GuideLanguage) => {
     {
       name: 'message',
       entries: [
-        { type: 'message', customType: languageRulesTypes[language], data: { version: 1 } },
+        {
+          type: 'message',
+          customType: languageRulesTypes[language],
+          data: { version: 1 },
+        },
       ],
       active: false,
       unreadable: [],
@@ -191,7 +361,10 @@ for (const language of languages) {
   it.for(unreadableCases(language))(
     `rebuilds ${language} activation from $name evidence`,
     ({ entries, active, unreadable }) => {
-      expect(classifyLanguageActivation(entries, language)).toEqual({ active, unreadable });
+      expect(classifyLanguageActivation(entries, language)).toEqual({
+        active,
+        unreadable,
+      });
     },
   );
 }
@@ -205,70 +378,85 @@ it('keeps activation entries of the other language apart', () => {
   });
 });
 
-const notice = (
-  reason: 'broken' | 'no-coding-set' | 'other-language' | 'loaded',
-  level: 'info' | 'warning',
-) => ({ kind: 'notice', reason, level });
+const bundle = { kind: 'bundle', root: '/bundle' } as const;
+
+const notice = (reason: 'broken' | 'no-coding-set' | 'loaded', level: 'info' | 'warning') => ({
+  kind: 'notice',
+  reason,
+  level,
+});
+
+const otherLanguage = (declared: GuideLanguage) => ({
+  kind: 'notice',
+  reason: 'other-language',
+  level: 'warning',
+  declared,
+});
 
 it.for([
-  { mode: { kind: 'bundle' }, requested: 'rust', coding: true, expected: { kind: 'activate' } },
   {
-    mode: { kind: 'bundle' },
-    requested: 'typescript',
-    coding: false,
-    expected: { kind: 'activate' },
+    snapshot: bundle,
+    requested: 'rust',
+    coding: true,
+    expected: { kind: 'activate', bundle },
   },
   {
-    mode: { kind: 'broken' },
+    snapshot: bundle,
+    requested: 'typescript',
+    coding: false,
+    expected: { kind: 'activate', bundle },
+  },
+  {
+    snapshot: { kind: 'broken' },
     requested: 'rust',
     coding: true,
     expected: notice('broken', 'warning'),
   },
   {
-    mode: { kind: 'broken' },
+    snapshot: { kind: 'broken' },
     requested: 'rust',
     coding: false,
     expected: notice('broken', 'warning'),
   },
   {
-    mode: { kind: 'project', declared: 'rust' },
+    snapshot: { kind: 'project', language: 'rust' },
     requested: 'rust',
     coding: true,
     expected: notice('loaded', 'info'),
   },
   {
-    mode: { kind: 'project', declared: 'typescript' },
+    snapshot: { kind: 'project', language: 'typescript' },
     requested: 'typescript',
     coding: true,
     expected: notice('loaded', 'info'),
   },
   {
-    mode: { kind: 'project', declared: 'rust' },
+    snapshot: { kind: 'project', language: 'rust' },
     requested: 'typescript',
     coding: true,
-    expected: notice('other-language', 'warning'),
+    expected: otherLanguage('rust'),
   },
   {
-    mode: { kind: 'project', declared: 'typescript' },
+    snapshot: { kind: 'project', language: 'typescript' },
     requested: 'rust',
     coding: true,
-    expected: notice('other-language', 'warning'),
+    expected: otherLanguage('typescript'),
   },
   {
-    mode: { kind: 'project', declared: 'rust' },
+    snapshot: { kind: 'project', language: 'rust' },
     requested: 'rust',
     coding: false,
     expected: notice('no-coding-set', 'warning'),
   },
   {
-    mode: { kind: 'project', declared: 'rust' },
+    snapshot: { kind: 'project', language: 'rust' },
     requested: 'typescript',
     coding: false,
     expected: notice('no-coding-set', 'warning'),
   },
 ] as const)(
-  'decides the command outcome in $mode.kind mode for $requested with coding set $coding',
-  ({ mode, requested, coding, expected }) => {
-    expect(commandOutcome(mode, requested, coding)).toEqual(expected);
+  'decides the command outcome in $snapshot.kind mode for $requested with coding set $coding',
+  ({ snapshot, requested, coding, expected }) => {
+    expect(commandOutcome<typeof bundle>(snapshot, requested, coding)).toEqual(expected);
   },
 );

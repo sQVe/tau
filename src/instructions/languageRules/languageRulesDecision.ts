@@ -6,17 +6,23 @@ type LanguageToolDecision =
   | { kind: 'ignore' }
   | { kind: 'activate' | 'block'; language: GuideLanguage };
 
-export type CommandMode =
-  | { kind: 'bundle' }
+type CommandSnapshot<Bundle extends { kind: 'bundle' }> =
+  | Bundle
   | { kind: 'broken' }
-  | { kind: 'project'; declared: GuideLanguage };
+  | { kind: 'project'; language: GuideLanguage };
 
-export type CommandOutcome =
-  | { kind: 'activate' }
+export type CommandOutcome<Bundle extends { kind: 'bundle' }> =
+  | { kind: 'activate'; bundle: Bundle }
   | {
       kind: 'notice';
-      reason: 'broken' | 'no-coding-set' | 'other-language' | 'loaded';
+      reason: 'broken' | 'no-coding-set' | 'loaded';
       level: 'info' | 'warning';
+    }
+  | {
+      kind: 'notice';
+      reason: 'other-language';
+      level: 'warning';
+      declared: GuideLanguage;
     };
 
 export const languageRulesTypes: Readonly<Record<GuideLanguage, string>> = {
@@ -139,16 +145,16 @@ export const classifyLanguageActivation = (
   return { active, unreadable };
 };
 
-export const commandOutcome = (
-  mode: CommandMode,
+export const commandOutcome = <Bundle extends { kind: 'bundle' }>(
+  snapshot: CommandSnapshot<Bundle>,
   requested: GuideLanguage,
   usesCodingSet: boolean,
-): CommandOutcome => {
-  if (mode.kind === 'bundle') {
-    return { kind: 'activate' };
+): CommandOutcome<Bundle> => {
+  if (snapshot.kind === 'bundle') {
+    return { kind: 'activate', bundle: snapshot };
   }
 
-  if (mode.kind === 'broken') {
+  if (snapshot.kind === 'broken') {
     return { kind: 'notice', reason: 'broken', level: 'warning' };
   }
 
@@ -156,8 +162,13 @@ export const commandOutcome = (
     return { kind: 'notice', reason: 'no-coding-set', level: 'warning' };
   }
 
-  if (mode.declared !== requested) {
-    return { kind: 'notice', reason: 'other-language', level: 'warning' };
+  if (snapshot.language !== requested) {
+    return {
+      kind: 'notice',
+      reason: 'other-language',
+      level: 'warning',
+      declared: snapshot.language,
+    };
   }
 
   return { kind: 'notice', reason: 'loaded', level: 'info' };
