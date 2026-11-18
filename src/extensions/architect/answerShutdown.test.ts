@@ -18,8 +18,12 @@ import type { ArchitectSession } from './session.js';
 import { createArchitectAnswerTool } from './tool.js';
 
 type Cleanup = typeof onTestFinished;
+
 type FirstSend = Parameters<typeof startCapturingInbox>[2];
+
 type AnswerHc = Pick<HcFake, 'exec' | 'connect'>;
+
+const isRoot = process.getuid?.() === 0;
 
 const closeNote = (askId: string): string =>
   `Ask ${askId} got no answer: the architect closed. Call architect ask again.`;
@@ -196,36 +200,37 @@ it('shutdown settles a delivered answer whose record write failed as answered an
   expect(notify).not.toHaveBeenCalled();
 });
 
-it('shutdown reports a delivered answer it cannot settle and still sends no close note', async ({
-  onTestFinished: cleanup,
-}) => {
-  let root = '';
+it.skipIf(isRoot)(
+  'shutdown reports a delivered answer it cannot settle and still sends no close note',
+  async ({ onTestFinished: cleanup }) => {
+    let root = '';
 
-  const closing = await closingArchitect(
-    cleanup,
-    'reply',
-    breakAnswerRecordWrite(() => root),
-  );
+    const closing = await closingArchitect(
+      cleanup,
+      'reply',
+      breakAnswerRecordWrite(() => root),
+    );
 
-  const { lead, record, answer, end, notify } = closing;
+    const { lead, record, answer, end, notify } = closing;
 
-  root = closing.root;
+    root = closing.root;
 
-  await answer();
-  await restoreRecord(root, record);
-  await chmod(askRecordDirectory(root), 0o500);
+    await answer();
+    await restoreRecord(root, record);
+    await chmod(askRecordDirectory(root), 0o500);
 
-  cleanup(async () => {
-    await chmod(askRecordDirectory(root), 0o700);
-  });
+    cleanup(async () => {
+      await chmod(askRecordDirectory(root), 0o700);
+    });
 
-  await end();
+    await end();
 
-  expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'queued' });
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
-  expect(notify).toHaveBeenCalledTimes(1);
-  expect(notify.mock.calls[0]?.[0]).toContain(`Ask ${record.askId} was answered`);
-});
+    expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'queued' });
+    expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify.mock.calls[0]?.[0]).toContain(`Ask ${record.askId} was answered`);
+  },
+);
 
 it('shutdown still fails an open ask that was never answered', async ({
   onTestFinished: cleanup,
