@@ -103,14 +103,18 @@ This list is the one approval rule; other skills link here.
      and ask if the team lacks that state.
    - Cancel: call `ticket` `cancel`. Its confirm supplies approval. Report the returned status.
    - Done: only for a merged PR's ticket that the merge left open. Read the PR with
-     `gh pr view <number> --repo <repo> --json state,mergedAt,body`. Stop and report the gap when
-     the read fails, `state` is not `MERGED`, or `mergedAt` is unset. Read each acceptance item of
-     the ticket and the PR body's deferred verification section, and treat a failed or empty read as
-     every item still open. Stop and name the blocker when an item is unchecked, not met, or has no
-     evidence, or when a check is deferred, including a deployment check that no acceptance item
-     names. Otherwise run `linear issue update <ticket> --state Done --no-input`, then read the
-     state back with `linear issue view <ticket> --json --no-pager`. Stop and report a state that is
-     not `Done`.
+     `gh pr view <number> --repo <repo> --json state,mergedAt,mergeCommit,headRefOid,body`. Stop and
+     report the gap when the read fails, `state` is not `MERGED`, or `mergedAt` is unset. Read each
+     acceptance item of the ticket and the PR body's deferred verification section. Treat a failed
+     or empty read as every item still open, and an omitted deferred section as no deferred checks.
+     Stop and name the blocker when an item is unchecked, not met, or has no evidence, or when a
+     check is deferred, including a deployment check that no acceptance item names. Each check,
+     audit, or verdict you rely on must name `mergeCommit` or the PR's final `headRefOid`; stop and
+     name the stale evidence otherwise. Right before the write, run
+     `linear issue view <ticket> --json --no-pager` and stop unless `state.name` is neither `Done`
+     nor `Canceled`; this narrows the race with a concurrent change and does not close it. Then run
+     `linear issue update <ticket> --state Done --no-input` and read the state back the same way.
+     Report a state that is not `Done`. When the read-back fails, report the result as unverified.
 
 7. Link the ticket from the PR. Write `Fixes <id>` only for the ticket the PR completes, such as the
    slice, and `Related to <id>` for the rest. Never list an agent ticket or a container as fixed.
