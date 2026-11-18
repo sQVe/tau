@@ -56,7 +56,10 @@ export const holdLock = async (root: string, checkout: string): Promise<void> =>
 
 export const releaseLock = (root: string): Promise<void> => rm(heldLockPath(root));
 
-export const recordSession = async (root: string): Promise<string> => {
+export const recordSession = async (
+  root: string,
+  terminal: string | null = null,
+): Promise<string> => {
   const sessionFile = join(root, 'architect-session.jsonl');
 
   await writeFile(sessionFile, '');
@@ -64,7 +67,7 @@ export const recordSession = async (root: string): Promise<string> => {
   await writeArchitectRecord(root, {
     version: 1,
     sessionFile,
-    terminal: null,
+    terminal,
     leadTerminal: 't-lead',
     updatedAt: new Date().toISOString(),
   });

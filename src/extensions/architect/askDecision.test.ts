@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { askOutcome } from './askDecision.js';
+import { askOutcome, askRoute } from './askDecision.js';
 
 it.each([
   {
@@ -35,4 +35,29 @@ it.each([
   },
 ] as const)('$name', ({ facts, expected }) => {
   expect(askOutcome(facts)).toBe(expected);
+});
+
+it.each([
+  {
+    name: 'no live holder asks in a hidden terminal',
+    facts: { root: '/repo', holderCheckout: undefined, architectTerminal: 't-arch' },
+    expected: { kind: 'hidden' },
+  },
+  {
+    name: 'a live architect in this checkout gets the question in its inbox',
+    facts: { root: '/repo', holderCheckout: '/repo', architectTerminal: 't-arch' },
+    expected: { kind: 'live', terminal: 't-arch' },
+  },
+  {
+    name: 'a live architect without a recorded terminal is needsOpen',
+    facts: { root: '/repo', holderCheckout: '/repo', architectTerminal: null },
+    expected: { kind: 'needsOpen' },
+  },
+  {
+    name: 'a holder in another checkout is needsOpen',
+    facts: { root: '/repo', holderCheckout: '/other', architectTerminal: 't-arch' },
+    expected: { kind: 'needsOpen' },
+  },
+] as const)('$name', ({ facts, expected }) => {
+  expect(askRoute(facts)).toMatchObject(expected);
 });

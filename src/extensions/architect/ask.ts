@@ -6,8 +6,9 @@ import { readRoleModel } from '../../config/roleModels.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { get, kill, run, wait } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { sendInboxMessage } from '../../inbox/inbox.js';
 import { piArguments } from '../../piStart/piArguments.js';
-import { askOutcome } from './askDecision.js';
+import { askOutcome, askRoute } from './askDecision.js';
 import { architectLockPath } from './lock.js';
 import {
   askRecordPath,
@@ -29,6 +30,7 @@ export interface AskRequest {
 
 export type AskResult =
   | { status: 'needsOpen'; reason: string }
+  | { status: 'queued'; terminal: string; messageId: string; note: string }
   | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
 
@@ -63,24 +65,33 @@ const requireModel = (request: AskRequest): string => {
 
 const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason });
 
-export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
-  const architect = await readArchitectRecord(request.root);
-  const sessionFile = architect?.sessionFile ?? undefined;
+const liveAskMessage = (question: string, leadTerminal: string): string =>
+  `The lead in terminal ${leadTerminal} asks: "${question}". Answer the question, update the ticket if the answer changes it, then send the answer to ${leadTerminal} with handover send. If you need the user, ask the user directly.`;
 
-  if (sessionFile === undefined) {
-    return needsOpen(
-      'No architect session is recorded for this checkout. Call architect open first.',
-    );
+const askLiveArchitect = async (request: AskRequest, terminal: string): Promise<AskResult> => {
+  const sent = await sendInboxMessage({
+    hc: request.hc,
+    target: terminal,
+    body: {
+      family: 'handover',
+      payload: { text: liveAskMessage(request.question, request.leadTerminal) },
+    },
+    refusal: 'Nothing was queued. Switch to the architect pane to talk to it.',
+  });
+
+  if (sent.status === 'unknown') {
+    return needsOpen(`${sent.note ?? ''} Switch to the architect pane to talk to it.`.trim());
   }
 
-  const holder = await readLiveLockHolder(architectLockPath(request.root));
+  return {
+    status: 'queued',
+    terminal: sent.terminal,
+    messageId: sent.messageId,
+    note: `The question is in the inbox of the live architect in ${sent.terminal}. The answer arrives in your inbox as a handover message.`,
+  };
+};
 
-  if (holder !== undefined) {
-    return needsOpen(
-      `The architect is already running in ${holder.checkout}. Call architect open to talk to it.`,
-    );
-  }
-
+const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Promise<AskResult> => {
   const running = await liveRunningAsk(request.root, request.hc);
 
   if (running !== undefined) {
@@ -178,4 +189,33 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     askId,
     reason: 'The ask terminal failed before the architect answered. Call architect open instead.',
   };
+};
+
+export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
+  const architect = await readArchitectRecord(request.root);
+  const sessionFile = architect?.sessionFile ?? undefined;
+
+  if (sessionFile === undefined) {
+    return needsOpen(
+      'No architect session is recorded for this checkout. Call architect open first.',
+    );
+  }
+
+  const holder = await readLiveLockHolder(architectLockPath(request.root));
+
+  const route = askRoute({
+    root: request.root,
+    holderCheckout: holder?.checkout,
+    architectTerminal: architect?.terminal ?? null,
+  });
+
+  if (route.kind === 'needsOpen') {
+    return needsOpen(route.reason);
+  }
+
+  if (route.kind === 'live') {
+    return askLiveArchitect(request, route.terminal);
+  }
+
+  return askHiddenArchitect(request, sessionFile);
 };

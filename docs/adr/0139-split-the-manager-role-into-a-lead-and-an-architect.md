@@ -28,15 +28,19 @@ refuses a launch or follow-up of an editing profile from an architect session. A
 
 The lead opens the architect with the `architect` tool. `open` starts or resumes the checkout's
 architect to the left of the lead when the lead terminal has a `herdr.space` label, and in a new
-named space when it has none. `ask` does not follow that placement rule. It resumes the same saved
-session in a hidden terminal with one question and a deadline. The architect answers, updates the
-ticket if needed, sends the answer to the lead's inbox, and ends. `gate` classifies a user request
-that no skill covers.
+named space when it has none. `ask` does not follow that placement rule. It sends one question to
+the architect and has two paths. While the architect is live in this checkout, `ask` puts the
+question in that session's inbox and returns at once. The architect answers, updates the ticket if
+needed, and sends the answer with `handover` `send` to the lead terminal, so the answer arrives in
+the lead's inbox. Otherwise `ask` resumes the same saved session in a hidden terminal with one
+question and a deadline; the architect answers, updates the ticket if needed, sends the answer to
+the lead's inbox, and ends. `gate` classifies a user request that no skill covers.
 
 The architect is a Pi session resumed by its saved session file. It can ask the user directly and
 keeps its earlier design context and approvals. The checkout records the session file. A lock file
 stops two sessions from writing one session file. `open` reports the live visible architect instead
-of refusing, and `ask` and a second start still refuse while a live holder keeps the lock.
+of refusing, and `ask` refuses only when a live holder in another checkout keeps the lock, because
+a question in the inbox of a live architect in this checkout needs no second writer.
 
 ### The lead's tab
 
@@ -70,7 +74,7 @@ the work.
 ### Negative
 
 - A lead that starts from Pi's default model warns instead of switching to `roles.lead.model`.
-- Each ask resumes a large architect session, so its prompt cache cost can return.
+- A hidden ask resumes a large architect session, so its prompt cache cost can return.
 - The split adds a role-specific prompt and model setting to maintain.
 - A lead that ignores a skill marker can still decide a design choice itself.
 - The user switches tabs to watch a worker or a review.

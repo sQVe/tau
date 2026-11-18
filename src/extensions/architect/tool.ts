@@ -122,7 +122,7 @@ export const createArchitectTool = (
     label: 'Architect',
     description: `Open, ask, or gate the checkout's architect.
 - action open: with request, starts the architect in a pane beside the lead, or resumes its recorded session. Returns {status, sessionFile}, or {status: "running", terminal} for a live architect; send it the request with handover. Refuses while another architect holds the lock.
-- action ask: resumes the architect in a hidden terminal with question. Returns {status, askId, answer} when the architect answers. Refuses while an architect runs or another ask is live. A deadline returns {status: "needsOpen"}; call open instead.
+- action ask: if the architect is live here, queues question in its inbox and returns {status: "queued", note}; the answer arrives in your inbox. Else resumes it in a hidden terminal and returns {status, askId, answer}, or {status: "needsOpen"} on a deadline or no answer. Refuses only when a live architect in another checkout holds the lock.
 - action gate: classifies request and restatement with typesafe/jev-latest. Returns {decision, label, confidence, recordPath}. Follow specified; on open, call architect open; on uncertain, ask the user whether to brief a worker or open the architect.
 Every gate call writes a record under .tau/lead/gate.`,
     promptSnippet: 'Open, ask, or gate the checkout architect.',

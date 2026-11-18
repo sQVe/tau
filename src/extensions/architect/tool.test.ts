@@ -1,10 +1,12 @@
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
 import { contextOf, holdLock, recordSession, setup } from '../../../tests/architectToolHarness.js';
 import { createHcFake } from '../../../tests/hcFake.js';
+import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { askDeadlineSeconds } from './ask.js';
 import { gateClassifier } from './gate.js';
 import {
@@ -39,7 +41,7 @@ it('ask refuses without a recorded session file', async ({ onTestFinished: clean
   expect((result.details as { reason: string }).reason).toContain('architect open');
 });
 
-it('ask refuses while the lock is held', async ({ onTestFinished: cleanup }) => {
+it('ask refuses while another checkout holds the lock', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
   const hc = createHcFake();
   const tool = createArchitectTool({ ...hc, cwd: root });
@@ -57,6 +59,69 @@ it('ask refuses while the lock is held', async ({ onTestFinished: cleanup }) => 
 
   expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
   expect((result.details as { reason: string }).reason).toContain('/other/checkout');
+});
+
+const socketRoot = (cleanup: (cleanup: () => void) => void): string => {
+  const root = mkdtempSync('/tmp/tau-architect-');
+
+  chmodSync(root, 0o700);
+
+  cleanup(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  return root;
+};
+
+it('ask queues the question in the inbox of a live architect in this checkout', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  const tool = createArchitectTool({ ...hc, cwd: root });
+  const sockets = socketRoot(cleanup);
+  const receiver = await startHandoverReceiver(cleanup, sockets, 't-architect');
+
+  await recordSession(root, 't-architect');
+  await holdLock(root, root);
+
+  hc.reply(
+    'get',
+    JSON.stringify({
+      address: 't-architect',
+      name: null,
+      state: 'live',
+      labels: { 'tau.inbox': `rpc1:${receiver.path}` },
+    }),
+  );
+
+  const result = await tool.execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(result.details).toMatchObject({
+    action: 'ask',
+    status: 'queued',
+    terminal: 't-architect',
+  });
+
+  const { messageId } = result.details as { messageId: string };
+
+  const saved = await readFile(
+    join(sockets, 'records', receiver.sessionId, `${messageId}.json`),
+    'utf8',
+  );
+
+  const text = (JSON.parse(saved) as { payload: { text: string } }).payload.text;
+
+  expect(text).toContain('Which flag name?');
+  expect(text).toContain('t-lead');
+  expect(text).toContain('handover send');
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
 });
 
 it('a second ask while one runs is refused', async ({ onTestFinished: cleanup }) => {
