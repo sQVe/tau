@@ -1,5 +1,5 @@
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
@@ -16,8 +16,17 @@ const copiedFiles = [
   'instructions/typescriptRules.ts',
   'instructions/typescriptRulesDecision.ts',
   'schema.ts',
-  'role.ts',
+  'role/role.ts',
 ];
+
+const copySourceFiles = async (workingDirectory: string) => {
+  for (const copiedFile of copiedFiles) {
+    const destination = join(workingDirectory, copiedFile);
+
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(new URL(`../src/${copiedFile}`, import.meta.url), destination);
+  }
+};
 
 for (const instructionSet of instructionSets) {
   it(`rejects invalid ${instructionSet} instructions and reads them again on reload`, async ({
@@ -32,12 +41,7 @@ for (const instructionSet of instructionSets) {
     await mkdir(join(workingDirectory, 'extensions'));
     await mkdir(join(workingDirectory, 'instructions'));
 
-    for (const copiedFile of copiedFiles) {
-      await copyFile(
-        new URL(`../src/${copiedFile}`, import.meta.url),
-        join(workingDirectory, copiedFile),
-      );
-    }
+    await copySourceFiles(workingDirectory);
 
     for (const otherSet of instructionSets) {
       await writeFile(join(workingDirectory, 'instructions', `${otherSet}.md`), `# ${otherSet}\n`);
@@ -98,12 +102,7 @@ it.for([
     await mkdir(join(workingDirectory, 'extensions'));
     await mkdir(join(workingDirectory, 'instructions'));
 
-    for (const copiedFile of copiedFiles) {
-      await copyFile(
-        new URL(`../src/${copiedFile}`, import.meta.url),
-        join(workingDirectory, copiedFile),
-      );
-    }
+    await copySourceFiles(workingDirectory);
 
     for (const instructionSet of instructionSets) {
       await writeFile(
