@@ -34,11 +34,18 @@ export type GuideSelection =
     }
   | { kind: 'broken'; root: string; reason: string };
 
-interface Pin {
+type BrokenSelection = Extract<GuideSelection, { kind: 'broken' }>;
+
+export interface Pin {
   version: string;
   language: GuideLanguage;
   layers: string[];
 }
+
+export type GuidePlan =
+  | { kind: 'readProject'; root: string; pin: Pin }
+  | { kind: 'readBundle'; bundleRoot: string }
+  | BrokenSelection;
 
 type Table = Readonly<Record<string, unknown>>;
 
@@ -57,7 +64,7 @@ const isLanguage = (value: unknown): value is GuideLanguage =>
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 
-const brokenAt = (root: string, reason: string): GuideSelection => ({
+const brokenAt = (root: string, reason: string): BrokenSelection => ({
   kind: 'broken',
   root,
   reason,
@@ -128,26 +135,35 @@ const readPin = (text: string): Pin => {
   return { version, language, layers: layers.toSorted() };
 };
 
-const decideProject = (
-  root: string,
-  text: string,
-  synced: SyncedGuides | undefined,
-): GuideSelection => {
-  const file = join(root, configName);
-  let pin: Pin;
-
+const planProject = (root: string, text: string): GuidePlan => {
   try {
-    pin = readPin(text);
+    return { kind: 'readProject', root, pin: readPin(text) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
-    return brokenAt(root, `${file} ${message}`);
+    return brokenAt(root, `${join(root, configName)} ${message}`);
+  }
+};
+
+export const planGuides = (config: ConfigFact): GuidePlan => {
+  if (config.kind === 'missing') {
+    return { kind: 'readBundle', bundleRoot: config.bundleRoot };
   }
 
-  if (synced === undefined) {
-    return brokenAt(root, `The guides of ${root} were not read`);
+  if (config.kind === 'unreadable') {
+    const file = join(config.root, configName);
+
+    return brokenAt(config.root, `${file} cannot be read: ${config.error}`);
   }
 
+  return planProject(config.root, config.text);
+};
+
+export const selectProjectGuides = (
+  root: string,
+  pin: Pin,
+  synced: SyncedGuides,
+): GuideSelection => {
   if (synced.kind === 'broken') {
     return brokenAt(root, synced.reason);
   }
@@ -177,11 +193,7 @@ const decideProject = (
   return { kind: 'project', root, ...pin, guides: lookup.guides };
 };
 
-const decideBundle = (bundleRoot: string, bundle: SyncedGuides | undefined): GuideSelection => {
-  if (bundle === undefined) {
-    return brokenAt(bundleRoot, 'The bundle was not read');
-  }
-
+export const selectBundleGuides = (bundleRoot: string, bundle: SyncedGuides): GuideSelection => {
   if (bundle.kind === 'broken') {
     return brokenAt(bundleRoot, bundle.reason);
   }
@@ -209,22 +221,4 @@ const decideBundle = (bundleRoot: string, bundle: SyncedGuides | undefined): Gui
     guides: [general],
     languageGuides: { rust, typescript },
   };
-};
-
-export const decideGuides = (
-  config: ConfigFact,
-  synced: SyncedGuides | undefined,
-  bundle: SyncedGuides | undefined,
-): GuideSelection => {
-  if (config.kind === 'missing') {
-    return decideBundle(config.bundleRoot, bundle);
-  }
-
-  if (config.kind === 'unreadable') {
-    const file = join(config.root, configName);
-
-    return brokenAt(config.root, `${file} cannot be read: ${config.error}`);
-  }
-
-  return decideProject(config.root, config.text, synced);
 };
