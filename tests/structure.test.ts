@@ -602,7 +602,7 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
     'src/models/models.ts',
     'src/models/models.test.ts',
     'src/models/allowedModels.ts',
-    'src/instructions/coding.md',
+    'src/instructions/writing.md',
     'src/skills/pr/SKILL.md',
     'src/extensions/themes.ts',
     'src/extensions/commit/commit.ts',

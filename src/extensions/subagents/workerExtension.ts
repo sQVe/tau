@@ -23,7 +23,10 @@ import { currentTerminalAddress, readCurrentTerminal } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { setAcceptCheck } from '../../inbox/inbox.js';
 import { answeredQuestionId } from '../../inbox/receiptDecision.js';
-import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
+import { trackGuideRuns } from '../../instructions/guideRuns.js';
+import type { GuideRuns } from '../../instructions/guideRuns.js';
+import { instructionTexts, readInstructionSections } from '../../instructions/instructions.js';
+import type { InstructionSection } from '../../instructions/instructions.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
 import { registerTypeScriptRules } from '../../instructions/typescriptRules.js';
 import { isWorkerProcess } from '../../role/role.js';
@@ -60,6 +63,11 @@ interface WorkerState {
   branch: () => readonly SessionEntry[];
 }
 
+interface WorkerPromptParts {
+  loadout: Loadout;
+  sections: InstructionSection[];
+}
+
 const inOrder = <Result>(state: WorkerState, step: () => Promise<Result>): Promise<Result> => {
   const next = state.steps.then(step, step);
 
@@ -68,26 +76,29 @@ const inOrder = <Result>(state: WorkerState, step: () => Promise<Result>): Promi
   return next;
 };
 
-const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> => {
-  const instructionSetReads = instructionSetNames
-    .filter((name) => loadout.instructionSets.includes(name))
-    .map((name) => readInstructionSet(name));
-
-  return Promise.all(instructionSetReads);
-};
-
 const workerCodemodeGuidelines = (loadout: Loadout): string[] =>
   loadout.tools.includes('codemode') ? [guidelineLines(codemodeGuidelines)] : [];
 
-export const workerSystemPrompt = async (loadout: Loadout): Promise<string> => {
-  const instructionSets = await readLoadoutInstructionSets(loadout);
+const readWorkerPromptParts = async (loadout: Loadout): Promise<WorkerPromptParts> => ({
+  loadout,
+  sections: await readInstructionSections(loadout.instructionSets),
+});
+
+const workerPromptText = async (
+  parts: WorkerPromptParts,
+  guideRuns: GuideRuns,
+): Promise<string> => {
+  const instructionSets = await instructionTexts(parts.sections, guideRuns);
 
   return [
-    workerInstructions(loadout),
+    workerInstructions(parts.loadout),
     ...instructionSets,
-    ...workerCodemodeGuidelines(loadout),
+    ...workerCodemodeGuidelines(parts.loadout),
   ].join('\n\n');
 };
+
+export const workerSystemPrompt = async (loadout: Loadout, guideRuns: GuideRuns): Promise<string> =>
+  workerPromptText(await readWorkerPromptParts(loadout), guideRuns);
 
 const callsReportAlone = (
   assistant: ReturnType<ExtensionContext['sessionManager']['getBranch']>[number] | undefined,
@@ -240,15 +251,17 @@ const registerToolCallHandler = (pi: ExtensionAPI): void => {
 };
 
 const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerState): void => {
-  // Read once, so every turn gets the same text even if the checkout changes.
-  let systemPrompt: Promise<string> | undefined;
+  const guideRuns = trackGuideRuns(pi);
+  // Read the instruction files once, so a changed checkout does not change them. The stomme guides
+  // are read again at each run.
+  let parts: Promise<WorkerPromptParts> | undefined;
 
   pi.on('before_agent_start', async (event) => {
     await state.ready;
 
     if (state.target !== undefined) {
-      systemPrompt ??= workerSystemPrompt(state.target.assignment.loadout);
-      appendSystemPrompt(event, await systemPrompt);
+      parts ??= readWorkerPromptParts(state.target.assignment.loadout);
+      appendSystemPrompt(event, await workerPromptText(await parts, guideRuns));
     }
   });
 };

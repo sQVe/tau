@@ -176,7 +176,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
   );
 
   const codingInstructions = await readFile(
-    join(packageRoot, 'src/instructions/coding.md'),
+    join(packageRoot, 'vendor/stomme/shared/coding.md'),
     'utf8',
   );
 
@@ -187,7 +187,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
   expect(writingInstructions).toContain('Write for readers who use English as a second language.');
 
-  expect(codingInstructions).toContain('Separate the logical steps in every function');
+  expect(codingInstructions).toContain('Apply these rules to every file you write or edit');
 
   const prSkill = await readFile(join(packageRoot, 'src/skills/pr/SKILL.md'), 'utf8');
 

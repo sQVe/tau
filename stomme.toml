@@ -525,6 +525,7 @@ imports = ["errors", "fileLock", "hc", "record", "schema", "wake"]
 [modules.instructions]
 entry = "src/instructions/instructions.ts"
 public = [
+  "src/instructions/guideRuns.ts",
   "src/instructions/stommeGuides/stommeGuides.ts",
   "src/instructions/systemPrompt.ts",
   "src/instructions/typescriptRules.ts",

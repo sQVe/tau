@@ -7,7 +7,7 @@
   writing skills and the tools they call.
 - [Architecture decisions](./adr/README.md): technical choices and their benefits and costs.
 - [Agent writing instructions](../src/instructions/writing.md): rules loaded into Pi.
-- [Agent coding instructions](../src/instructions/coding.md): code rules loaded into Pi.
+- [Agent coding instructions](./stomme/shared/coding.md): code rules loaded into Pi.
 - [Agent workflow instructions](../src/instructions/workflow.md): rules for how the agent works,
   loaded into Pi.
 

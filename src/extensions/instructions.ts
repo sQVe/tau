@@ -1,12 +1,17 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { defaultInstructionSetNames, readInstructionSet } from '../instructions/instructions.js';
+import { trackGuideRuns } from '../instructions/guideRuns.js';
+import {
+  defaultInstructionSetNames,
+  instructionTexts,
+  readInstructionSections,
+} from '../instructions/instructions.js';
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
 import { registerTypeScriptRules } from '../instructions/typescriptRules.js';
 import { isWorkerProcess } from '../role/role.js';
 
 export default async function instructionsExtension(pi: ExtensionAPI): Promise<void> {
-  const instructionSets = await Promise.all(defaultInstructionSetNames.map(readInstructionSet));
+  const sections = await readInstructionSections(defaultInstructionSetNames);
 
   // A worker appends the instruction sets its saved task lists.
   if (isWorkerProcess()) {
@@ -15,9 +20,11 @@ export default async function instructionsExtension(pi: ExtensionAPI): Promise<v
 
   registerTypeScriptRules(pi);
 
-  for (const instructions of instructionSets) {
-    pi.on('before_agent_start', (event) => {
-      appendSystemPrompt(event, instructions);
-    });
-  }
+  const guideRuns = trackGuideRuns(pi);
+
+  pi.on('before_agent_start', async (event) => {
+    for (const text of await instructionTexts(sections, guideRuns)) {
+      appendSystemPrompt(event, text);
+    }
+  });
 }

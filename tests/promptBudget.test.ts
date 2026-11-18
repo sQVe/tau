@@ -14,6 +14,7 @@ import workerExtension, {
 } from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
+import { resolveStommeGuides } from '../src/instructions/stommeGuides/stommeGuides.js';
 import type { RoleKind } from '../src/role/role.js';
 import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
@@ -29,11 +30,11 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // Each ceiling caps a session at about its measured size, so a cut must lower it. The target is
 // beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  lead: 57_907, // target 38,000
-  architect: 54_293,
-  worker: 22_387, // target 14,000
-  reviewer: 17_841, // target 11,000
-  checker: 17_994,
+  lead: 58_455, // target 38,000
+  architect: 54_833,
+  worker: 22_942, // target 14,000
+  reviewer: 18_396, // target 11,000
+  checker: 18_549,
   qa: 14_670, // target 9,000
   browser: 12_828, // target 9,000
   scout: 12_387, // target 9,000
@@ -91,7 +92,7 @@ const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) =
   };
 
   for (const handler of fake.handlers.get('before_agent_start') ?? []) {
-    await handler(event as never, {} as ExtensionContext);
+    await handler(event as never, { cwd: agentDirectory } as ExtensionContext);
   }
 
   const prompt = event.systemPromptOptions.appendSystemPrompt;
@@ -142,7 +143,10 @@ const workerSession = async (profileName: string, directory: string) => {
   }
 
   const tools = [...fake.tools.values()].filter((tool) => names.has(tool.name));
-  const prompt = await workerSystemPrompt(loadout);
+
+  const prompt = await workerSystemPrompt(loadout, {
+    snapshot: () => resolveStommeGuides(directory),
+  });
 
   return { tools, size: prompt.length + toolsSize(tools), prompt };
 };
