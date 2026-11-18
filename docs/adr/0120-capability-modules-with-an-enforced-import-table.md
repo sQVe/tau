@@ -29,13 +29,55 @@ and `passiveWait` became `waitPassive`.
 
 ## Decision
 
-Shared code under `src/` follows [shared ADR 0002](../stomme/shared/adr/0002-capability-modules.md)
-for capability modules, the import table, and dependency direction, and
+Tau adopts [shared ADR 0002](../stomme/shared/adr/0002-capability-modules.md) as its default for
+capability modules, the import table, and dependency direction, and
 [shared ADR 0003](../stomme/shared/adr/0003-owner-folders-and-file-names.md) for folders, entry
-files, and file names. The module list and import table live in `stomme.toml`. Until
-`@sqve/stomme-ts-imports` ships, `tau/module-boundaries` in `lint/rules/moduleBoundaries.ts`
-enforces the table, and `tests/stommeModules.test.ts` keeps the table and the rule's module list
-equal.
+files, and file names. Shared code under `src/` follows them, except for the differences below. The
+module list and import table live in `stomme.toml`.
+
+### Differences from shared ADR 0002
+
+Tau differs from shared ADR 0002 in two places today.
+
+1. **The table is mirrored.** Tau keeps the module list and import table twice: as `[modules.*]` in
+   `stomme.toml`, and as `moduleList` and `importTable` in `lint/rules/moduleBoundaries.ts`. The
+   `tau/module-boundaries` rule enforces the second copy, because `@sqve/stomme-ts-imports` does not
+   ship yet. `tests/stommeModules.test.ts` keeps the two copies equal. The mirror ends when Tau
+   adopts that package.
+2. **Some I/O modules import each other directly.** Shared ADR 0002 says I/O modules use pure
+   modules, and reach each other through records of functions. The import table allows the edges
+   below between two I/O modules.
+
+A module is an I/O module when at least one of its files reads or writes the filesystem, starts a
+process, uses the network or a socket, reads the clock or the environment, or draws the terminal UI.
+A module with no such file is a pure module. A module that runs a command through an injected `exec`
+function starts a process, so it is an I/O module.
+
+The pure modules are `errors`, `schema`, `shell`, and `wake`. None of their files does I/O by this
+criterion. Every other module in `importTable` is an I/O module. Each of its edges to a pure module
+follows the shared rule and is not listed.
+
+Each line names a module and the I/O modules it may import:
+
+- `checkRecord`: `git`, `record`
+- `classifier`: `config`
+- `config`: `role`
+- `dialog`: `role`
+- `fileLock`: `process`
+- `github`: `command`, `git`
+- `hc`: `command`
+- `improvement`: `command`, `fileLock`, `git`, `github`, `record`, `tauDirectory`
+- `inbox`: `fileLock`, `hc`, `record`
+- `linear`: `command`
+- `piStart`: `command`, `config`, `tauDirectory`
+- `record`: `tauDirectory`
+- `reviewBots`: `command`, `config`, `github`
+- `reviewCapture`: `command`, `git`, `github`, `record`, `tauDirectory`
+- `tauDirectory`: `git`
+- `verification`: `record`, `tauDirectory`
+
+This list records deviations, as shared ADR 0002's "Existing projects" section describes. It may
+only shrink.
 
 ### Tau's structure
 
@@ -81,6 +123,9 @@ equal.
 - A new shared module needs a table row, which adds a step for small helpers.
 - A module's second file moves its first file, which touches every import of it.
 - Which noun names a concept still needs judgment in review. Only registry order is checked.
+- The mirrored table can drift until `@sqve/stomme-ts-imports` replaces it. A test catches a
+  difference between the two copies.
+- The edges listed above stay allowed between I/O modules until each is removed.
 
 ## Alternatives considered
 
