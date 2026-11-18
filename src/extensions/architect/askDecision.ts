@@ -42,11 +42,6 @@ export const askOutcome = (facts: AskOutcomeFacts): AskOutcome => {
   return facts.exitCode === 0 ? 'needsOpen' : 'failed';
 };
 
-// A live architect in this checkout takes the question in its inbox only while its recorded lock
-// token matches the holder. A recorded route without the lock is still starting, so the lead asks
-// again instead of calling open, which the lock would refuse. A hidden ask holds the lock too, and
-// a second question would reach a session that answers only the first. Without a live holder, the
-// ask resumes the recorded session in a hidden terminal.
 export const askRoute = (facts: AskRouteFacts): AskRoute => {
   if (facts.holder !== undefined && facts.holder.checkout !== facts.root) {
     return {

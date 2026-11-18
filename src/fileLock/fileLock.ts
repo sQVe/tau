@@ -37,7 +37,6 @@ export interface FileLockOptions {
   onWaiting: (holder: LockOwner | undefined) => void;
   // Runs between reading the holder and linking the next generation. Tests use it to stall a session.
   beforeLink?: () => Promise<void>;
-  // Names the owner in the lock file. Without it, the lock makes a token.
   token?: string;
 }
 

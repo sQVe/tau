@@ -1,7 +1,5 @@
 import type { AcceptCheck } from '../../inbox/inbox.js';
 
-// A reload keeps the session ID, so only the lock token shows that this process still owns the
-// route the lead read.
 export const acceptArchitectAsk =
   (heldToken: () => string | undefined): AcceptCheck =>
   async (request, save) => {

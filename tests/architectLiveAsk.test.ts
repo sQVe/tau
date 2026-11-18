@@ -86,8 +86,6 @@ const runHandlers = async (fake: FakeApi, name: string, context: ExtensionContex
   }
 };
 
-// Loads the visible architect as its own process would and starts its session with a real lock.
-// The lead terminal is current again afterwards.
 const startVisibleArchitect = async (root: string, hc: HcFake) => {
   const fake = fakeExtensionApi({ exec: hc.exec });
   const context = architectContext(root);
@@ -142,7 +140,6 @@ const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> => {
   );
 };
 
-// Runs the lead's ask against a live architect and returns the ask ID the architect inbox saved.
 const askLiveArchitect = async (root: string, hc: HcFake) => {
   const { fake, check } = await startVisibleArchitect(root, hc);
   const architectInbox = await startArchitectInbox(check);
@@ -201,7 +198,6 @@ it('the lead session that asked receives the live architect answer in its inbox'
   const { askId, leadSockets, leadSocket, answer } = await askLiveArchitect(root, hc);
   const lockToken = (await readArchitectRecord(root))?.owner?.lockToken;
 
-  // One process holds one inbox, so the lead inbox starts after the architect inbox closes.
   const lead = await startHandoverReceiver(onTestFinished, leadSockets, 't-lead', {
     sessionId: 'session-lead',
   });

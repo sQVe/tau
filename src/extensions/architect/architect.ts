@@ -60,7 +60,6 @@ export default function architectExtension(pi: ExtensionAPI): void {
     session = await startArchitectSession(context, held);
   });
 
-  // Clearing the session first makes the architect-ask check refuse before the lock is released.
   pi.on('session_shutdown', async () => {
     const ending = session;
 

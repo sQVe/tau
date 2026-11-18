@@ -26,7 +26,6 @@ export interface HcFake {
   messages: HcRequestMessage[];
   connectCalls: HcRequestMessage[][];
   reply: (command: HcCommand, stdout: string) => void;
-  // Answers `hc get` for one terminal. Other terminals get the shared `get` reply.
   replyGet: (address: string, stdout: string) => void;
   fail: (command: HcCommand, stderr: string, code: number) => void;
   replyConnect: (method: string, id: number, result: unknown) => void;

@@ -63,8 +63,6 @@ const getTargets = (hc: HcFake): (string | undefined)[] =>
     .filter((call) => call.commandArguments[0] === 'get')
     .map((call) => call.commandArguments.at(-1));
 
-// A real receiver behind a socket the test controls. The first frame is captured and either
-// dropped or held until the test releases it, so a slow reply can be ordered against other writes.
 const startCapturingInbox = async (
   cleanup: Cleanup,
   sessionId: string,

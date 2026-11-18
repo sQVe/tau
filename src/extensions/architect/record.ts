@@ -32,7 +32,6 @@ export interface AskRecordChange {
 }
 
 export interface ChangeAskOptions {
-  // Tests stall the window between the read and the write to order two writers.
   afterRead?: () => Promise<void>;
 }
 

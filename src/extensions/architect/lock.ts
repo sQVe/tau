@@ -12,9 +12,6 @@ export interface ArchitectLock {
 
 export const architectLockPath = (root: string): string => join(root, '.tau', 'architect', 'lock');
 
-// Holds the checkout's architect lock until the returned release runs. A live holder refuses at
-// once, so the caller can tell the user and shut down instead of queueing. The token names this
-// holder in the architect record, so a lead can tell its route from a newer one.
 export const holdArchitectLock = async (root: string): Promise<ArchitectLock> => {
   const directory = await ensureTauDirectory(root, 'architect');
   const token = randomUUID();
