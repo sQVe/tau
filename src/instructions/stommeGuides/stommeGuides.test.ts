@@ -31,7 +31,6 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   return {
     ...actual,
     default: actual,
-    // The cast keeps the overloads of `stat` that the hook does not change.
     stat: (async (path: string) => {
       const result = await actual.stat(path);
       await swap.afterStat?.(path);

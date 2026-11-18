@@ -61,7 +61,6 @@ const readVersion = (version: unknown): string => {
 const readFileEntries = (files: unknown): [string, unknown][] => {
   const isObject = typeof files === 'object' && files !== null;
 
-  // A TOML date is an object too.
   if (!isObject || Array.isArray(files) || files instanceof Date) {
     throw new Error('has no `[files]` table; run stomme sync');
   }
@@ -93,7 +92,6 @@ const requireContainedPath = (path: string) => {
   }
 };
 
-// A previous record's keys start at the project root, and it lists the managed AGENTS.md block.
 const previousPath = (path: string): string | undefined => {
   if (path === managedBlockFile) {
     return undefined;

@@ -3,7 +3,6 @@ import { readFile } from 'node:fs/promises';
 import { codingSetText } from './guideRuns.js';
 import type { GuideRuns } from './guideRuns.js';
 
-// The coding set comes from the stomme guides of each run, so only the other sets have a file.
 type InstructionFileName = Exclude<InstructionSetName, 'coding'>;
 
 export type InstructionSection = { kind: 'file'; text: string } | { kind: 'coding' };
@@ -31,7 +30,6 @@ export const readInstructionSet = async (name: InstructionFileName): Promise<str
   return trimmedInstructions;
 };
 
-// Reads the sets in the order of `instructionSetNames`.
 export const readInstructionSections = (
   names: readonly InstructionSetName[],
 ): Promise<InstructionSection[]> => {

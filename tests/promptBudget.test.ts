@@ -174,18 +174,14 @@ const measureSessions = async (projectDirectory: string): Promise<Sessions> => {
   return measured;
 };
 
-// A session without the coding set loads no guides, so its prompt cannot depend on the project.
 const sessionsWithoutCoding = ['qa', 'browser', 'scout'];
 
-// An empty folder has no `stomme.toml`, so the sessions load the bundled guides. The adopted
-// project pins TypeScript and the pi layer, so they load its synced guides.
 const bundledSessions: Sessions = new Map();
 const adoptedSessions: Sessions = new Map();
 let directory = '';
 let adoptedDirectory = '';
 
 beforeAll(async () => {
-  // Every test shares both directories, so `afterAll` removes them.
   directory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-'));
   adoptedDirectory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-adopted-'));
   await writeStommeProject(adoptedDirectory, { language: 'typescript', layers: ['pi'] });

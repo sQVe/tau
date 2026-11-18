@@ -122,8 +122,6 @@ const registerLifecycle = (
   pi.on('context', async (event) => {
     const snapshot = await bundleSnapshot(guideRuns);
 
-    // A language whose guide is in the append section does not need its saved rules message. Outside
-    // bundle mode no rules message belongs in the request.
     const supersededLanguages = languages.filter(
       (language) => snapshot === undefined || states[language].systemPromptLoaded,
     );
@@ -189,7 +187,6 @@ const gateLanguageTool = async (
   return undefined;
 };
 
-// Returns before any await for an ignored call, so other tool_call handlers keep their order.
 const registerToolGate = (
   pi: ExtensionAPI,
   guideRuns: GuideRuns,
@@ -224,8 +221,6 @@ const commandMode = (snapshot: GuideSnapshot): CommandMode =>
     ? { kind: 'project', declared: snapshot.language }
     : { kind: snapshot.kind };
 
-// A busy session keeps the run's snapshot, so the command does not mix two guide versions. An idle
-// session has no run to keep, so it reads the guides now.
 const commandSnapshot = (guideRuns: GuideRuns, context: ExtensionContext) =>
   context.isIdle() ? guideRuns.current() : guideRuns.snapshot();
 
@@ -269,7 +264,6 @@ const registerCommand = (
   });
 };
 
-// Register after `trackGuideRuns`, so each handler reads the snapshot of the run that just started.
 export const registerLanguageRules = (pi: ExtensionAPI, guideRuns: GuideRuns): void => {
   const states: Record<GuideLanguage, RulesState> = {
     typescript: { active: false, systemPromptLoaded: false, requestLoaded: false },

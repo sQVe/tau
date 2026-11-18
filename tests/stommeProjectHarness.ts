@@ -60,8 +60,6 @@ const configText = (version: string, language: GuideLanguage, layers: string[]):
   ].join('\n');
 };
 
-// Writes a stomme project that `stomme sync` would leave: the shared guides, the language guide,
-// the selected and recorded layer guides, a matching record, and `stomme.toml`.
 export const writeStommeProject = async (
   directory: string,
   options: StommeProjectOptions,

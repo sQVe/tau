@@ -88,7 +88,6 @@ const lookUp = (files: ReadonlyMap<string, string>, paths: readonly string[]): G
 const missingFromBundle = (bundleRoot: string, path: string): GuideSelection =>
   brokenAt(bundleRoot, `The bundle has no ${path} in its record; regenerate it`);
 
-// Every message completes a sentence that starts with the configuration's path.
 const parseTable = (text: string): Table => {
   try {
     return parse(text, { integersAsBigInt: true });

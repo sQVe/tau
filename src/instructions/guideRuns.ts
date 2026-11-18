@@ -14,7 +14,6 @@ export interface GuideRuns {
 }
 
 interface GuideRunOptions {
-  // Only a session that loads the coding set shows a notice for broken guides.
   usesCodingSet?: () => Promise<boolean>;
   resolve?: typeof resolveStommeGuides;
 }
@@ -31,8 +30,6 @@ const guideFolder = (snapshot: UsableSnapshot): string =>
     ? `from ${join(snapshot.root, 'docs', 'stomme')}/`
     : 'bundled with Tau';
 
-// A project guide links relative to `docs/stomme/` in the project. A bundled guide links relative to
-// the bundle, so its source names the bundle's real folder.
 const sourceFolder = (snapshot: UsableSnapshot): string =>
   snapshot.kind === 'project' ? 'docs/stomme' : snapshot.root;
 

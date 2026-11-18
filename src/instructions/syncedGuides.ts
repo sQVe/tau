@@ -30,7 +30,6 @@ const urlScheme = /^[a-z][a-z\d+.-]*:/i;
 
 const broken = (reason: string): SyncedGuides => ({ kind: 'broken', reason });
 
-// stomme hashes the file bytes, so Tau must too.
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 const readText = async (file: string, fileSystem: GuideFileSystem): Promise<TextRead> => {
@@ -47,7 +46,6 @@ const readText = async (file: string, fileSystem: GuideFileSystem): Promise<Text
   }
 };
 
-// A symbolic link on a parent folder would read a guide from outside the synced folder.
 const linkedFolder = async (
   directory: string,
   path: string,
@@ -108,7 +106,6 @@ const linkTargets = (markdown: string): string[] =>
     return angleTarget ?? plainTarget ?? [];
   });
 
-// Names what is wrong with one link target, or nothing when it resolves to a recorded file.
 const linkProblem = (
   path: string,
   target: string,
@@ -189,7 +186,6 @@ const readAgainstRecord = async (
   return readRecordedGuides(directory, record, fileSystem);
 };
 
-// Returns nothing when the record changed during the read, so the result may mix two syncs.
 const readOnce = async (
   directory: string,
   fileSystem: GuideFileSystem,

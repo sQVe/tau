@@ -29,7 +29,6 @@ const copiedFiles = [
   'role/role.ts',
 ];
 
-// Keeps the extension's relative imports, its package imports, and the instruction files' path.
 const copySources = async (workingDirectory: string): Promise<void> => {
   await mkdir(join(workingDirectory, 'extensions'));
   await mkdir(join(workingDirectory, 'instructions', 'stommeGuides'), { recursive: true });

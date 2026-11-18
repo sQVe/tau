@@ -32,8 +32,6 @@ const isPresent = async (path: string): Promise<boolean> => {
   }
 };
 
-// Finds the top of the repository by probing `.git` upward, and stops at the first one. A probe
-// that fails for another reason than a missing entry rejects.
 const findRepositoryTop = async (folder: string): Promise<string | undefined> => {
   if (await isPresent(join(folder, '.git'))) {
     return folder;
@@ -47,8 +45,6 @@ const findRepositoryTop = async (folder: string): Promise<string | undefined> =>
 const foldersBetween = (start: string, top: string): string[] =>
   start === top ? [start] : [start, ...foldersBetween(dirname(start), top)];
 
-// Lists the folders to search, from the working directory up to the top of its repository. Outside
-// a repository only the working directory counts.
 const searchedFolders = async (cwd: string): Promise<string[]> => {
   const top = await findRepositoryTop(cwd);
 
@@ -78,7 +74,6 @@ const readConfigText = async (root: string): Promise<ConfigFact> => {
   }
 };
 
-// A present entry that cannot be used is an error. Only an absent entry lets the walk go on.
 const readConfig = async (root: string): Promise<ConfigFact | undefined> => {
   try {
     if (!(await isPresent(join(root, configName)))) {

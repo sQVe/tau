@@ -251,7 +251,6 @@ it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) 
   }
 });
 
-// Returns the next text on each read of the record, and repeats the last one.
 const changingRecord = (versions: readonly string[]): GuideFileSystem => {
   let reads = 0;
 
