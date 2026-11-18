@@ -153,6 +153,39 @@ it.for([
       ].join('\n'),
     },
   },
+  {
+    name: 'lines that look like a label followed by text',
+    files: {
+      ...guides,
+      'shared/rules.md': '[Note]: this is important\n[x]: done and more words\n',
+    },
+  },
+  {
+    name: 'a label line whose first word is a missing file',
+    files: { ...guides, 'shared/rules.md': '[a]: ./missing.md trailing words\n' },
+  },
+  {
+    name: 'a label line whose first word is a present file',
+    files: {
+      ...guides,
+      'shared/present.md': '# Present\n',
+      'shared/rules.md': '[a]: ./present.md trailing words\n',
+    },
+  },
+  {
+    name: 'reference definitions with each title form',
+    files: {
+      ...guides,
+      'shared/present.md': '# Present\n',
+      'shared/rules.md': [
+        '[a]: ./present.md "Title"',
+        "[b]: ./present.md 'Title'",
+        '[c]: ./present.md (Title) ',
+        '[d]: <./present.md>\t"Title"',
+        '',
+      ].join('\n'),
+    },
+  },
 ])('reads $name as valid', async ({ files }) => {
   const result = await readSyncedGuides(writeGuides(files));
 
@@ -292,6 +325,11 @@ const brokenRows: BrokenRow[] = [
       'shared/rules.md': '```\n[a]: ./fenced.md\n```\n[b]: <./gone file.md>\n',
     },
     reason: ['shared/rules.md', 'links to ./gone file.md, which is not a synced file'],
+  },
+  {
+    name: 'a dangling reference definition with a title',
+    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]: ./missing.md "Title"\n' },
+    reason: ['shared/rules.md', 'links to ./missing.md, which is not a synced file'],
   },
 ];
 
