@@ -98,9 +98,3 @@ profiles.
 
 Rejected. A rename changes importers, tests, and registry entries, so it widens the merge surface of
 the very feature work that overlaps other branches.
-
-### Move only when the first extension user lands
-
-Keep the two-extension threshold strict, and move shared code inside the first slice that imports
-it. Rejected for planned work because it mixes a file move into a behavior slice and makes that
-slice harder to review.
