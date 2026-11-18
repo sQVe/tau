@@ -192,10 +192,14 @@ it('a failed swap names the created pane and terminal and where the architect ru
   ).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain('p-new');
-  expect((failure as Error).message).toContain('t-new');
-  expect((failure as Error).message).toContain('right of pane p-lead');
-  expect((failure as Error).message).toContain('no such pane');
+  const { message, cause } = failure as Error;
+
+  expect(message).toContain('pane p-new (terminal t-new)');
+  expect(message).toContain('but the swap did not finish');
+  expect(message).toContain('no such pane');
+  expect(message).not.toContain('p-lead');
+  expect(cause).toBeInstanceOf(Error);
+  expect((cause as Error).message).toContain('no such pane');
   expect(fake.calls).toHaveLength(2);
 });
 

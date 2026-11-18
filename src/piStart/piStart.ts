@@ -119,7 +119,7 @@ const startInPane = async (
     );
   } catch (error) {
     throw new Error(
-      `The session runs in pane ${created.pane} (terminal ${created.terminal}) to the right of pane ${pane}, because the swap did not finish: ${errorMessage(error)}`,
+      `The session runs in pane ${created.pane} (terminal ${created.terminal}), but the swap did not finish: ${errorMessage(error)}`,
       { cause: error },
     );
   }
