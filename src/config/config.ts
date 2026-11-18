@@ -85,6 +85,7 @@ export const readTauConfig = ({
 const topLevelKeys: Readonly<Record<string, string>> = {
   allowedModels: 'models',
   browser: 'browser',
+  fallbackModels: 'modelFallback',
   fullCheck: 'fullCheck',
   mutation: 'fullCheck',
   profiles: 'subagents',
