@@ -6,7 +6,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
 import { architectLockPath } from '../src/extensions/architect/lock.js';
-import { readLiveLockHolder, withFileLock } from '../src/fileLock/fileLock.js';
+import { readLiveLockHolder } from '../src/fileLock/fileLock.js';
 import { socketDirectoryFor, socketPathFor } from '../src/inbox/endpoint.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
 import tauExtension from '../src/tau.js';
@@ -23,8 +23,6 @@ interface Registration {
   handler: Handler;
   stack: string;
 }
-
-const withdrawalDelayMilliseconds = 300;
 
 const requireRegistration = (
   registration: Registration | undefined,
@@ -61,8 +59,9 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   const sessionId = 'shutdown-test-session';
   const socketPath = socketPathFor(socketDirectoryFor(uid), sessionId);
   const lockPath = architectLockPath(root);
-  const releaseEndpointLock = Promise.withResolvers<undefined>();
-  const endpointLockHeld = Promise.withResolvers<undefined>();
+  const withdrawalStarted = Promise.withResolvers<undefined>();
+  const releaseWithdrawal = Promise.withResolvers<undefined>();
+  let holdWithdrawal = false;
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
   vi.stubEnv('TAU_ROLE', 'architect');
@@ -70,7 +69,13 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
   const fake = fakeExtensionApi({
-    exec: async () => {
+    exec: async (_command, commandArguments) => {
+      if (holdWithdrawal && commandArguments[0] === 'get') {
+        holdWithdrawal = false;
+        withdrawalStarted.resolve(undefined);
+        await releaseWithdrawal.promise;
+      }
+
       const labels = { 'tau.inbox': `rpc1:${socketPath}` };
       const terminal = { address: 't-architect', state: 'live', labels };
 
@@ -135,52 +140,34 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   expect(existsSync(socketPath)).toBe(true);
   expect(await readLiveLockHolder(lockPath)).toBeDefined();
 
-  // Holding the endpoint lock keeps the inbox socket open while its shutdown waits, so a handler
-  // that stops awaiting withdrawal leaves the socket open when the architect releases its lock.
-  const holding = withFileLock(
-    {
-      lockPath: `${socketPath}.lock`,
-      checkout: socketPath,
-      signal: undefined,
-      pollMilliseconds: 10,
-      cancelled: () => new Error('Waiting for the inbox endpoint lock was cancelled.'),
-      onWaiting: () => undefined,
-    },
-    async () => {
-      endpointLockHeld.resolve(undefined);
-      await releaseEndpointLock.promise;
-    },
-  );
-
-  const timer = setTimeout(() => {
-    releaseEndpointLock.resolve(undefined);
-  }, withdrawalDelayMilliseconds);
-
+  // The inbox removes its label during withdrawal. Holding that read gives an explicit signal
+  // that withdrawal is running, so the architect must not release its lock before it.
   onTestFinished(async () => {
-    clearTimeout(timer);
-    releaseEndpointLock.resolve(undefined);
-    await holding;
+    releaseWithdrawal.resolve(undefined);
     await waitForMissing(socketPath);
     releaseRegistration();
     vi.unstubAllEnvs();
   });
 
-  await endpointLockHeld.promise;
+  expect(inboxShutdown.index).toBeLessThan(architectShutdown.index);
 
-  const ordered = [inboxShutdown, architectShutdown].toSorted(
-    (left, right) => left.index - right.index,
-  );
+  holdWithdrawal = true;
 
-  const observations: { lockReleased?: boolean; socketClosed?: boolean } = {};
+  const inboxDone = Promise.resolve(inboxShutdown.handler({} as never, context));
 
-  for (const registration of ordered) {
-    await registration.handler({} as never, context);
+  const outcome = await Promise.race([
+    withdrawalStarted.promise.then(() => 'withdrawal'),
+    inboxDone.then(() => 'done'),
+  ]);
 
-    if (registration === architectShutdown) {
-      observations.socketClosed = !existsSync(socketPath);
-      observations.lockReleased = (await readLiveLockHolder(lockPath)) === undefined;
-    }
-  }
+  expect(outcome).toBe('withdrawal');
+  expect(existsSync(socketPath)).toBe(false);
+  expect(await readLiveLockHolder(lockPath)).toBeDefined();
 
-  expect(observations).toEqual({ socketClosed: true, lockReleased: true });
+  releaseWithdrawal.resolve(undefined);
+  await inboxDone;
+  await architectShutdown.handler({} as never, context);
+
+  expect(existsSync(socketPath)).toBe(false);
+  expect(await readLiveLockHolder(lockPath)).toBeUndefined();
 });

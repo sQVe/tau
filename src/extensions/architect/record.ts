@@ -32,7 +32,10 @@ export interface AskRecordChange {
 }
 
 export interface ChangeAskOptions {
+  // Tests stall the window between the read and the write to order two writers.
   afterRead?: () => Promise<void>;
+  // Tests observe that a writer waits for the lock another writer holds.
+  onWaiting?: () => void;
 }
 
 const choiceOutcomeSchema = Type.Union([
@@ -304,7 +307,7 @@ export const changeAskRecord = async (
       pollMilliseconds: 10,
       signal: undefined,
       cancelled: () => new Error(`The ask lock for ${askId} was cancelled.`),
-      onWaiting: () => undefined,
+      onWaiting: options.onWaiting ?? (() => undefined),
     },
     async () => {
       const current = await readAskRecord(root, askId);

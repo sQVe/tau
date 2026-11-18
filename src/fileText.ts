@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { hasErrorCode, isMissingFile } from './errors.js';
+import { isMissingFile } from './errors.js';
 
 export interface TextFileRules {
   label: string;
@@ -25,24 +25,12 @@ export const resolveTextFile = async (
   }
 };
 
-const openTextFile = async (realFile: string, file: string, rules: TextFileRules) => {
-  try {
-    return await open(realFile, constants.O_RDONLY | constants.O_NONBLOCK);
-  } catch (error) {
-    if (hasErrorCode(error, 'EISDIR')) {
-      throw new Error(`${rules.label} is not a regular file: ${file}`, { cause: error });
-    }
-
-    throw error;
-  }
-};
-
 export const readCheckedText = async (
   realFile: string,
   file: string,
   rules: TextFileRules,
 ): Promise<string> => {
-  const handle = await openTextFile(realFile, file, rules);
+  const handle = await open(realFile, constants.O_RDONLY | constants.O_NONBLOCK);
 
   try {
     const stats = await handle.stat();

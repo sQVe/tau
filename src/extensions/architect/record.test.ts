@@ -271,36 +271,30 @@ it.for(['answered', 'failed'] as const)(
 
     await read.promise;
 
-    let secondDone = false;
+    const waiting = Promise.withResolvers<undefined>();
 
-    const second = changeAskRecord(root, askId, (current) =>
-      isOpenLiveAsk(current) ? { ...current, status, answer: 'Use --dry-run.' } : undefined,
-    );
-
-    const observed = second.then(
-      () => {
-        secondDone = true;
-
-        return undefined;
-      },
-      () => {
-        secondDone = true;
-
-        return undefined;
+    const second = changeAskRecord(
+      root,
+      askId,
+      (current) =>
+        isOpenLiveAsk(current) ? { ...current, status, answer: 'Use --dry-run.' } : undefined,
+      {
+        onWaiting: () => {
+          waiting.resolve(undefined);
+        },
       },
     );
 
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
-    });
+    const outcome = await Promise.race([
+      waiting.promise.then(() => 'waiting'),
+      second.then(() => 'done'),
+    ]);
 
-    expect(secondDone).toBe(false);
+    expect(outcome).toBe('waiting');
 
     release.resolve(undefined);
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
-
-    await observed;
 
     expect(firstResult?.changed).toBe(true);
     expect(secondResult?.changed).toBe(true);
@@ -481,4 +475,28 @@ it('lists open live asks beside a malformed file', async () => {
   );
 
   expect(await snapshotDirectory(askRecordDirectory(root))).toEqual(before);
+});
+
+it('returns undefined when the ask record disappears before its change', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const askId = '0190c1d2-0000-7000-8000-000000000705';
+
+  await expect(
+    changeAskRecord(root, askId, (current) => ({ ...current, status: 'failed' })),
+  ).resolves.toBeUndefined();
+
+  await expect(readAskRecord(root, askId)).resolves.toBeUndefined();
+});
+
+it('returns changed false and leaves the record when the change declines', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const askId = '0190c1d2-0000-7000-8000-000000000706';
+  const record = { ...askRecordV2Live, askId, status: 'answered' as const };
+
+  await writeAskRecord(root, record);
+
+  const result = await changeAskRecord(root, askId, () => undefined);
+
+  expect(result).toMatchObject({ changed: false, record });
+  expect(await readAskRecord(root, askId)).toEqual(record);
 });

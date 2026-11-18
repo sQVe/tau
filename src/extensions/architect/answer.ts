@@ -15,7 +15,7 @@ export interface AnswerRequest {
 }
 
 export type AnswerResult =
-  | { status: 'queued'; askId: string }
+  | { status: 'queued'; askId: string; note?: string }
   | { status: 'unknown'; askId: string; note: string };
 
 const answerableRecord = async (request: AnswerRequest): Promise<LiveAskRecord> => {
@@ -98,9 +98,9 @@ export const answerLiveAsk = async (request: AnswerRequest): Promise<AnswerResul
 
   if (settled?.changed === false) {
     return {
-      status: 'unknown',
+      status: 'queued',
       askId,
-      note: `The ask is already ${settled.record.status}, so its record was left unchanged. The answer may already be in the lead inbox; call answer again with askId ${askId} and the same file.`,
+      note: `The answer reached the lead inbox. The ask is already ${settled.record.status}, so its record was left unchanged.`,
     };
   }
 

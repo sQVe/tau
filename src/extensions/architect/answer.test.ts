@@ -10,7 +10,10 @@ import type { onTestFinished } from 'vitest';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
-import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
+import type {
+  HandoverReceiver,
+  HandoverReceiverOptions,
+} from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { contextOf, setup } from './fixtures/toolHarness.js';
 import { askRecordDirectory, askRecordPath, readAskRecord, writeAskRecord } from './record.js';
@@ -60,7 +63,7 @@ const hiddenRecord = (askId: string): HiddenAskRecord => ({
   answer: null,
 });
 
-const answering = async (cleanup: Cleanup) => {
+const answering = async (cleanup: Cleanup, options: HandoverReceiverOptions = {}) => {
   const { root } = await setup(cleanup);
 
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
@@ -70,6 +73,7 @@ const answering = async (cleanup: Cleanup) => {
 
   const lead = await startHandoverReceiver(cleanup, sockets, 't-lead', {
     sessionId: 'session-lead',
+    ...options,
   });
 
   replyTerminal(hc, 't-lead', lead.path);
@@ -265,3 +269,74 @@ it.for([
     expect(hc.calls).toEqual([]);
   },
 );
+
+it('answer keeps a confirmed delivery when the ask closed before its record update', async ({
+  onTestFinished: cleanup,
+}) => {
+  let root = '';
+  let askId = '';
+
+  const configured = await answering(cleanup, {
+    accepts: {
+      handover: async (_request, save) => {
+        const reply = await save();
+
+        await writeAskRecord(root, {
+          ...liveRecord('failed'),
+          askId,
+          status: 'failed',
+          detail: 'The architect closed before it answered.',
+        });
+
+        return reply;
+      },
+    },
+  });
+
+  root = configured.root;
+
+  const record = liveRecord('queued');
+
+  askId = record.askId;
+  await writeAskRecord(root, record);
+
+  const result = await configured.answer(record.askId);
+
+  expect(result.details).toMatchObject({ action: 'answer', status: 'queued', askId });
+  expect((result.details as { note: string }).note).toContain('left unchanged');
+  expect((result.details as { note: string }).note).not.toContain('answer again');
+  expect(savedFiles(configured.lead)).toEqual([`session-lead/${askId}.json`]);
+  expect(await readAskRecord(root, askId)).toMatchObject({ status: 'failed' });
+});
+
+it('answer keeps a confirmed delivery when its record disappeared', async ({
+  onTestFinished: cleanup,
+}) => {
+  let root = '';
+  let askId = '';
+
+  const configured = await answering(cleanup, {
+    accepts: {
+      handover: async (_request, save) => {
+        const reply = await save();
+
+        await rm(askRecordPath(root, askId), { force: true });
+
+        return reply;
+      },
+    },
+  });
+
+  root = configured.root;
+
+  const record = liveRecord('queued');
+
+  askId = record.askId;
+  await writeAskRecord(root, record);
+
+  const result = await configured.answer(record.askId);
+
+  expect(result.details).toMatchObject({ action: 'answer', status: 'queued', askId });
+  await expect(readAskRecord(root, askId)).resolves.toBeUndefined();
+  expect(savedFiles(configured.lead)).toEqual([`session-lead/${askId}.json`]);
+});

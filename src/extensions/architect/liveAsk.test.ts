@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { rm, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -66,7 +66,8 @@ const getTargets = (hc: HcFake): (string | undefined)[] =>
 const startCapturingInbox = async (
   cleanup: Cleanup,
   sessionId: string,
-  first: 'suppress' | 'hold',
+  first: 'suppress' | 'hold' | 'reply',
+  beforeReply?: (messageId: string) => Promise<void>,
 ): Promise<CapturingInbox> => {
   const directory = join(temporaryDirectory(cleanup, 'tau-capturing-'), 'sockets');
   const records = join(directory, '..', 'records');
@@ -103,7 +104,7 @@ const startCapturingInbox = async (
     socket.on('end', () => {
       frames.push(data);
 
-      if (frames.length === 1) {
+      if (frames.length === 1 && first !== 'reply') {
         const finish = (): void => {
           socket.end();
         };
@@ -119,6 +120,10 @@ const startCapturingInbox = async (
 
       (async () => {
         const decision = decodeRequest(Buffer.from(data));
+
+        if (decision.kind === 'frame') {
+          await beforeReply?.(decision.value.messageId);
+        }
 
         const reply =
           decision.kind === 'frame'
@@ -503,6 +508,84 @@ it('a close that lands before the lead send returns keeps the ask failed', async
 
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
   expect(lead.savedRecords().filter((name) => name.endsWith('.json'))).toHaveLength(1);
+});
+
+it('a live ask reports a confirmed send when the ask closed before its record update', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  let askId = '';
+
+  const inbox = await startCapturingInbox(
+    cleanup,
+    'session-architect',
+    'reply',
+    async (messageId) => {
+      askId = messageId;
+
+      await writeAskRecord(root, {
+        ...liveRecord('failed'),
+        askId,
+        status: 'failed',
+        detail: 'The architect closed before it answered.',
+      });
+    },
+  );
+
+  await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
+  await holdLock(root, root);
+  replyTerminal(hc, 't-lead', leadLabel());
+  replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
+
+  const result = await createArchitectTool({ ...hc, cwd: root }).execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(result.details).toMatchObject({ action: 'ask', status: 'queued', askId });
+  expect((result.details as { note: string }).note).toContain('left unchanged');
+  expect(await readAskRecord(root, askId)).toMatchObject({ status: 'failed' });
+  expect(inbox.saved()).toEqual([`${askId}.json`]);
+});
+
+it('a live ask reports a confirmed send when its record disappeared', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  let askId = '';
+
+  const inbox = await startCapturingInbox(
+    cleanup,
+    'session-architect',
+    'reply',
+    async (messageId) => {
+      askId = messageId;
+
+      await rm(askRecordPath(root, askId), { force: true });
+    },
+  );
+
+  await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
+  await holdLock(root, root);
+  replyTerminal(hc, 't-lead', leadLabel());
+  replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
+
+  const result = await createArchitectTool({ ...hc, cwd: root }).execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(result.details).toMatchObject({ action: 'ask', status: 'queued', askId });
+  await expect(readAskRecord(root, askId)).resolves.toBeUndefined();
+  expect(inbox.saved()).toEqual([`${askId}.json`]);
 });
 
 it.for([

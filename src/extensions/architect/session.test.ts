@@ -370,3 +370,32 @@ it('clears the held token when startup fails after the lock', async ({ onTestFin
   expect(held.current()).toBeUndefined();
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
+
+it('ending a visible architect does not note an ask that is already closed', async ({
+  onTestFinished,
+}) => {
+  const { root, session } = await visibleArchitect(onTestFinished);
+  const hc = createHcFake();
+  const sockets = temporaryDirectory(onTestFinished, 'tau-architect-closed-');
+
+  const lead = await startHandoverReceiver(onTestFinished, sockets, 't-lead', {
+    sessionId: 'session-lead',
+  });
+
+  hc.replyGet(
+    't-lead',
+    JSON.stringify({
+      address: 't-lead',
+      state: 'live',
+      labels: { 'tau.inbox': `rpc1:${lead.path}` },
+    }),
+  );
+
+  await writeAskRecord(root, liveAsk('answered', 'answered'));
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  await endArchitectSession(session, hcRuntime(hc));
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+
+  expect(lead.savedRecords()).toEqual([]);
+  expect(await readAskRecord(root, liveIds.answered)).toMatchObject({ status: 'answered' });
+});
