@@ -39,6 +39,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     name: 'config',
     entry: 'config/config',
     publicFiles: [
+      'config/fallbackModels',
       'config/models',
       'config/repositoryCommand',
       'config/repositoryEntry',

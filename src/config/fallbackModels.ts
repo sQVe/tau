@@ -4,7 +4,7 @@ import { readUserOnlyKey } from './config.js';
 import type { ConfigFile, ConfigLocation } from './config.js';
 import { parseModelReference } from './models.js';
 
-interface FallbackModel {
+export interface FallbackModel {
   name: string;
   primary: string;
   fallback: string;
