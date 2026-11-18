@@ -51,8 +51,9 @@ run, and reads those records instead of parsing QA prose.
   main checkout, and its linked worktrees use that same main checkout. A linked worktree backed by a
   separate bare repository uses the bare repository root. Every worktree and the main checkout of
   one repository read the same runs, and sibling repositories stay apart.
-- The launching checkout stops its own run. Stop runs in that checkout and reads its tree identity,
-  so the proof names the tree the run tested. A run does not store which checkout launched it.
+- Callers must stop a run from the checkout that launched it. Stop runs in that checkout and reads
+  its tree identity, so the proof names the tree the run tested. Tau does not record or check which
+  checkout launched the run.
 - Stop never deletes a run directory, so the proof survives cleanup.
 - Runs made before this location stay in their checkouts and are not migrated. Tau no longer
   discovers a run outside the shared root, while a run already under the shared root remains
