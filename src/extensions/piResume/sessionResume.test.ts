@@ -1,5 +1,5 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
@@ -7,6 +7,10 @@ import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import type { Exec } from '../../command.js';
 import piResumeExtension from './piResume.js';
+
+// Every test file in a Vitest worker shares one process when isolation is off, and other files leave
+// signal listeners that kill the process. Deliver the signal only to listeners added during the test.
+type SignalUnderTest = 'SIGTERM' | 'SIGHUP';
 
 const defaultSessionFile = '/sessions/a.jsonl';
 
@@ -47,14 +51,58 @@ const labelCalls = (fake: HcFake): string[][] =>
     .filter((call) => call.commandArguments[0] === 'label')
     .map((call) => call.commandArguments.slice(3));
 
-// signal-exit kills the process with the signal when its own listener is the only one left.
-const keepProcessAlive = () => {};
-
-const emitSignal = (signal: 'SIGTERM' | 'SIGHUP') => {
-  process.on(signal, keepProcessAlive);
-  process.emit(signal);
-  process.off(signal, keepProcessAlive);
+let listenersBeforeTest: Record<SignalUnderTest, NodeJS.SignalsListener[]> = {
+  SIGTERM: [],
+  SIGHUP: [],
 };
+
+beforeEach(() => {
+  listenersBeforeTest = {
+    SIGTERM: process.listeners('SIGTERM'),
+    SIGHUP: process.listeners('SIGHUP'),
+  };
+});
+
+const emitSignal = (signal: SignalUnderTest) => {
+  const addedByTest = process
+    .listeners(signal)
+    .filter((listener) => !listenersBeforeTest[signal].includes(listener));
+
+  for (const listener of addedByTest) {
+    listener(signal);
+  }
+};
+
+describe('a signal sent to the session', () => {
+  const unrelatedListeners = {
+    SIGTERM: vi.fn<() => void>(),
+    SIGHUP: vi.fn<() => void>(),
+  };
+
+  beforeAll(() => {
+    process.on('SIGTERM', unrelatedListeners.SIGTERM);
+    process.on('SIGHUP', unrelatedListeners.SIGHUP);
+  });
+
+  afterAll(() => {
+    process.off('SIGTERM', unrelatedListeners.SIGTERM);
+    process.off('SIGHUP', unrelatedListeners.SIGHUP);
+  });
+
+  it.each(['SIGTERM', 'SIGHUP'] as const)(
+    'does not reach a %s listener that was there before the test',
+    async (signal) => {
+      vi.stubEnv('HC_TERMINAL_ID', 't7');
+      const resume = mount(createHcFake());
+
+      await resume.start();
+      emitSignal(signal);
+      await resume.shutdown();
+
+      expect(unrelatedListeners[signal]).not.toHaveBeenCalled();
+    },
+  );
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
