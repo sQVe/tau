@@ -18,9 +18,7 @@ export interface FallbackModelsRead {
   warnings: string[];
 }
 
-type EntryRead =
-  | { kind: 'model'; model: FallbackModel; warnings: string[] }
-  | { kind: 'invalid'; problem: string };
+type EntryRead = { kind: 'model'; model: FallbackModel } | { kind: 'invalid'; problem: string };
 
 const namePattern = /^[a-z0-9][a-z0-9-]*$/u;
 
@@ -80,12 +78,15 @@ const readEntry = (source: string, name: string, value: unknown): EntryRead => {
     );
   }
 
-  const warnings = findUnknownKeys(value, knownEntryKeys, '').map((key) =>
-    invalid(source, `${field} has unknown key ${key}.`),
-  );
-
-  return { kind: 'model', model: { name, primary, fallback, fallbackAtRetry }, warnings };
+  return { kind: 'model', model: { name, primary, fallback, fallbackAtRetry } };
 };
+
+const unknownKeyWarnings = (source: string, name: string, value: unknown): string[] =>
+  isRecord(value)
+    ? findUnknownKeys(value, knownEntryKeys, '').map((key) =>
+        invalid(source, `fallbackModels.${name} has unknown key ${key}.`),
+      )
+    : [];
 
 export const readFallbackModels = (location: ConfigLocation): FallbackModelsRead => {
   let user: ConfigFile | undefined;
@@ -122,6 +123,8 @@ export const readFallbackModels = (location: ConfigLocation): FallbackModelsRead
   for (const [name, entry] of Object.entries(value)) {
     const read = readEntry(source, name, entry);
 
+    warnings.push(...unknownKeyWarnings(source, name, entry));
+
     if (read.kind === 'invalid') {
       problems.push(read.problem);
 
@@ -129,7 +132,6 @@ export const readFallbackModels = (location: ConfigLocation): FallbackModelsRead
     }
 
     models.push(read.model);
-    warnings.push(...read.warnings);
   }
 
   return { models, problems, warnings };

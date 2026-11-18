@@ -212,3 +212,34 @@ it('warns about an unknown entry key', ({ onTestFinished }) => {
     warnings: [`Invalid Tau config ${userFile}: fallbackModels.bad has unknown key extra.`],
   });
 });
+
+it('warns about an unknown key on a refused entry and keeps the valid sibling', ({
+  onTestFinished,
+}) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-fallback-models-',
+  );
+
+  writeUser({
+    fallbackModels: {
+      bad: { ...validModel, fallbackAtRetry: 0, extra: true },
+      'deepseek-flash': validModel,
+    },
+  });
+
+  expect(readUser(location)).toEqual({
+    models: [
+      {
+        name: 'deepseek-flash',
+        primary: 'a/primary',
+        fallback: 'b/fallback',
+        fallbackAtRetry: 5,
+      },
+    ],
+    problems: [
+      `Invalid Tau config ${userFile}: fallbackModels.bad.fallbackAtRetry 0 must be a whole number of at least 1.`,
+    ],
+    warnings: [`Invalid Tau config ${userFile}: fallbackModels.bad has unknown key extra.`],
+  });
+});
