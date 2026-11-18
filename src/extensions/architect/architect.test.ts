@@ -8,7 +8,10 @@ import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import architectExtension from './architect.js';
 import { architectLockPath } from './lock.js';
 
-const registerSession = (cleanup: (cleanup: () => void) => void, role: 'lead' | 'architect') => {
+const registerSession = (
+  cleanup: (cleanup: () => void) => void,
+  role: 'lead' | 'architect' | undefined,
+) => {
   vi.stubEnv('TAU_ARCHITECT_ASK', '');
   vi.stubEnv('TAU_ROLE', role);
 
@@ -110,3 +113,21 @@ it('a lead session does not shut down after a queued handover', ({ onTestFinishe
 
   expect(shutdown).not.toHaveBeenCalled();
 });
+
+const roleCases: readonly {
+  case: string;
+  role: 'lead' | 'architect' | undefined;
+  tools: string[];
+}[] = [
+  { case: 'TAU_ROLE is unset', role: undefined, tools: ['architect'] },
+  { case: 'TAU_ROLE is lead', role: 'lead', tools: ['architect'] },
+  { case: 'TAU_ROLE is architect', role: 'architect', tools: [] },
+];
+
+for (const { case: description, role, tools } of roleCases) {
+  it(`registers the architect tool when ${description}`, ({ onTestFinished }) => {
+    const fake = registerSession(onTestFinished, role);
+
+    expect([...fake.tools.keys()]).toEqual(tools);
+  });
+}
