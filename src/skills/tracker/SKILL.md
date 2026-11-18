@@ -108,9 +108,14 @@ This list is the one approval rule; other skills link here.
      acceptance item of the ticket and the PR body's deferred verification section. Treat a failed
      or empty read as every item still open, and an omitted deferred section as no deferred checks.
      Stop and name the blocker when an item is unchecked, not met, or has no evidence, or when a
-     check is deferred, including a deployment check that no acceptance item names. Each check,
-     audit, or verdict you rely on must name `mergeCommit` or the PR's final `headRefOid`; stop and
-     name the stale evidence otherwise. Right before the write, run
+     check is deferred, including a deployment check that no acceptance item names. Rely only on
+     saved sources that record the covered revision, never on the PR body's Verification section
+     alone, which holds no SHA. Look in the `full_check` record `.tau/checks/*.json`, whose `tree`
+     must equal `git rev-parse <revision>^{tree}`; the review capture
+     `.tau/workers/review-*/capture.json`, whose `head` or `endpoint.tree` must match; and the
+     slice's `finish.md`, whose `Audited commit:` line must match. The revision is `mergeCommit` or
+     the PR's final `headRefOid`. Stop and name each source that is missing or records another
+     revision as stale evidence. Right before the write, run
      `linear issue view <ticket> --json --no-pager` and stop unless `state.name` is neither `Done`
      nor `Canceled`; this narrows the race with a concurrent change and does not close it. Then run
      `linear issue update <ticket> --state Done --no-input` and read the state back the same way.
