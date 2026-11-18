@@ -15,3 +15,16 @@ export const reportFallbackModels = (ui: ConfigWarnings, read: FallbackModelsRea
     notifyOnce(ui, source, warning, warning, 'warning');
   }
 };
+
+export const writeFallbackModelsReport = (
+  write: (text: string) => void,
+  read: FallbackModelsRead,
+): void => {
+  for (const problem of read.problems) {
+    write(`Error: ${problem}\n`);
+  }
+
+  for (const warning of read.warnings) {
+    write(`Warning: ${warning}\n`);
+  }
+};

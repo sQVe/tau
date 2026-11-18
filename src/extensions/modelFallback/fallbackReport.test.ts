@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 
 import type { ConfigWarnings } from '../../config/config.js';
 import type { FallbackModelsRead } from './fallbackConfig.js';
-import { reportFallbackModels } from './fallbackReport.js';
+import { reportFallbackModels, writeFallbackModelsReport } from './fallbackReport.js';
 
 const createUi = () => {
   const notify = vi.fn<ConfigWarnings['notify']>();
@@ -40,4 +40,27 @@ it('reports nothing for a clean read', () => {
   reportFallbackModels(ui, cleanRead);
 
   expect(notify).not.toHaveBeenCalled();
+});
+
+it('writes problems and warnings as Pi diagnostics', () => {
+  const written: string[] = [];
+
+  writeFallbackModelsReport((text) => written.push(text), {
+    models: [],
+    problems: ['Invalid Tau config /agent/tau.json: fallbackModels must be an object.'],
+    warnings: ['Invalid Tau config /agent/tau.json: fallbackModels.a has unknown key extra.'],
+  });
+
+  expect(written).toEqual([
+    'Error: Invalid Tau config /agent/tau.json: fallbackModels must be an object.\n',
+    'Warning: Invalid Tau config /agent/tau.json: fallbackModels.a has unknown key extra.\n',
+  ]);
+});
+
+it('writes nothing for a clean read at startup', () => {
+  const written: string[] = [];
+
+  writeFallbackModelsReport((text) => written.push(text), cleanRead);
+
+  expect(written).toEqual([]);
 });
