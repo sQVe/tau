@@ -46,12 +46,30 @@ const leadInboxWorks = async (request: LiveAskRequest): Promise<boolean> => {
   return advertisedSession(terminal.labels ?? {}) === request.leadSessionId;
 };
 
+type SentSettlement =
+  | { kind: 'settled'; change: Awaited<ReturnType<typeof settleOpenAsk>> }
+  | { kind: 'failed'; error: unknown };
+
 const settleOpenAsk = (
   root: string,
   askId: string,
   update: (record: LiveAskRecord) => LiveAskRecord,
 ) =>
   changeAskRecord(root, askId, (current) => (isOpenLiveAsk(current) ? update(current) : undefined));
+
+const settleSentAsk = async (
+  root: string,
+  askId: string,
+  status: 'queued' | 'unknown',
+): Promise<SentSettlement> => {
+  try {
+    const change = await settleOpenAsk(root, askId, (current) => ({ ...current, status }));
+
+    return { kind: 'settled', change };
+  } catch (error) {
+    return { kind: 'failed', error };
+  }
+};
 
 const sendQuestion = async (
   root: string,
@@ -81,17 +99,23 @@ const sendQuestion = async (
   const { askId } = record;
 
   if (sent.status === 'unknown') {
-    const settled = await settleOpenAsk(root, askId, (current) => ({
-      ...current,
-      status: 'unknown',
-    }));
+    const settled = await settleSentAsk(root, askId, 'unknown');
 
-    if (settled?.changed === false) {
+    if (settled.kind === 'failed') {
       return {
         status: 'unknown',
         askId,
         terminal: sent.terminal,
-        note: `The saved ask is already ${settled.record.status}, so its record was left unchanged.`,
+        note: `The question may already be in the inbox of the live architect in ${sent.terminal}, but the ask record could not be updated: ${errorMessage(settled.error)}. Retry with architect ask and askId ${askId}. Do not ask the question again as new.`,
+      };
+    }
+
+    if (settled.change?.changed === false) {
+      return {
+        status: 'unknown',
+        askId,
+        terminal: sent.terminal,
+        note: `The saved ask is already ${settled.change.record.status}, so its record was left unchanged.`,
       };
     }
 
@@ -103,17 +127,23 @@ const sendQuestion = async (
     };
   }
 
-  const settled = await settleOpenAsk(root, askId, (current) => ({
-    ...current,
-    status: 'queued',
-  }));
+  const settled = await settleSentAsk(root, askId, 'queued');
 
-  if (settled?.changed === false) {
+  if (settled.kind === 'failed') {
     return {
       status: 'queued',
       askId,
       terminal: sent.terminal,
-      note: `The saved ask is already ${settled.record.status}, so its record was left unchanged.`,
+      note: `The question reached the live architect in ${sent.terminal}, but the ask record could not be updated: ${errorMessage(settled.error)}. Do not ask the question again as new.`,
+    };
+  }
+
+  if (settled.change?.changed === false) {
+    return {
+      status: 'queued',
+      askId,
+      terminal: sent.terminal,
+      note: `The saved ask is already ${settled.change.record.status}, so its record was left unchanged.`,
     };
   }
 

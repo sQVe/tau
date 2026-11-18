@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
@@ -467,6 +467,80 @@ it('a live ask reports a confirmed send when the ask closed before its record up
   expect((result.details as { note: string }).note).toContain('left unchanged');
   expect(await readAskRecord(root, askId)).toMatchObject({ status: 'failed' });
   expect(inbox.saved()).toEqual([`${askId}.json`]);
+});
+
+const breakRecord = async (root: string, askId: string): Promise<void> => {
+  await rm(askRecordPath(root, askId), { force: true });
+  await mkdir(askRecordPath(root, askId));
+};
+
+it('a live ask returns its ask ID with a note when the record write fails after a confirmed send', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  let askId = '';
+
+  const inbox = await startCapturingInbox(
+    cleanup,
+    'session-architect',
+    'reply',
+    async (messageId) => {
+      askId = messageId;
+
+      await breakRecord(root, askId);
+    },
+  );
+
+  await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
+  await holdLock(root, root);
+  replyTerminal(hc, 't-lead', leadLabel());
+  replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
+
+  const result = await createArchitectTool({ ...hc, cwd: root }).execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  const { note } = result.details as { note: string };
+
+  expect(result.details).toMatchObject({
+    action: 'ask',
+    status: 'queued',
+    askId,
+    terminal: 't-architect',
+  });
+
+  expect(note).toContain('could not be updated');
+  expect(note).toContain('EISDIR');
+  expect(note).toContain('Do not ask the question again as new');
+  expect(inbox.saved()).toEqual([`${askId}.json`]);
+});
+
+it('a live ask returns unknown with its ask ID and a note when the record write fails after a lost reply', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, inbox, asking, record } = await startHeldQuestion(cleanup);
+
+  await breakRecord(root, record.askId);
+  inbox.releaseFirst();
+
+  const asked = await asking;
+  const { note } = asked.details as { note: string };
+
+  expect(asked.details).toMatchObject({
+    action: 'ask',
+    status: 'unknown',
+    askId: record.askId,
+    terminal: 't-architect',
+  });
+
+  expect(note).toContain(`Retry with architect ask and askId ${record.askId}`);
+  expect(note).toContain('could not be updated');
+  expect(note).toContain('EISDIR');
 });
 
 it('a live ask reports a confirmed send when its record disappeared', async ({
