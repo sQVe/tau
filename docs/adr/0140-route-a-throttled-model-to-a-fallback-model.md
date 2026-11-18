@@ -69,8 +69,9 @@ and print mode has no notice sink. A refused entry would stay invisible without 
 
 Accepted limits:
 
-- An interactive start with a bad entry shows the problem twice: on stderr above the TUI and as the
-  notice.
+- An interactive start with a bad entry reports it on stderr and as the notice. In fullscreen mode,
+  the default, the stderr line stays on the main screen and shows after Pi exits. In main-screen
+  mode it shows above the TUI.
 - A first load inside a running session, such as after an install and `/reload`, writes into the
   TUI.
 - Print mode does not show a trusted repository file that sets `fallbackModels`, because only the
