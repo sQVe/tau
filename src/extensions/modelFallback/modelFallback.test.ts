@@ -61,7 +61,9 @@ it('reports a refused entry once per process', async ({ onTestFinished }) => {
   expect(first.ids).toEqual(['deepseek-flash']);
   expect(second.ids).toEqual(['deepseek-flash']);
 
-  expect(write.mock.calls.map(([text]) => text).join('')).toBe(
+  const stderrText = write.mock.calls.map(([text]) => text).join('');
+
+  expect(stderrText).toBe(
     `Error: Invalid Tau config ${configPath}: fallbackModels.bad.fallbackAtRetry 0 must be a whole number of at least 1.\n`,
   );
 });
