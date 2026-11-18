@@ -12,6 +12,7 @@ const previousKeys = new Set(['version', 'files']);
 const previousRoot = 'docs/stomme/';
 const managedBlockFile = 'AGENTS.md';
 const sha256Hex = /^[\da-f]{64}$/;
+const repair = 'fix the record or run stomme sync';
 
 // Every message completes a sentence that starts with the record's path.
 const parseTable = (text: string): Table => {
@@ -21,7 +22,7 @@ const parseTable = (text: string): Table => {
     const rawMessage = error instanceof Error ? error.message : error;
     const [firstLine = ''] = String(rawMessage).split('\n');
 
-    throw new Error(`is not valid TOML: ${firstLine}`, { cause: error });
+    throw new Error(`is not valid TOML: ${firstLine}; ${repair}`, { cause: error });
   }
 };
 
@@ -31,7 +32,7 @@ const requireReadableSchema = (schema: unknown) => {
   }
 
   if (schema !== 1n) {
-    throw new Error('has an unreadable `schema`; Tau reads `schema = 1`');
+    throw new Error(`has an unreadable \`schema\`; Tau reads \`schema = 1\`, so ${repair}`);
   }
 };
 
@@ -39,13 +40,19 @@ const requireKnownKeys = (table: Table, known: ReadonlySet<string>) => {
   const unknown = Object.keys(table).find((key) => !known.has(key));
 
   if (unknown !== undefined) {
-    throw new Error(`has the unknown key \`${unknown}\``);
+    throw new Error(`has the unknown key \`${unknown}\`; remove it or run stomme sync`);
+  }
+};
+
+const requireTextAgents = (agents: unknown) => {
+  if (typeof agents !== 'string') {
+    throw new TypeError('has an `agents` value that is not a string; run stomme sync');
   }
 };
 
 const readVersion = (version: unknown): string => {
   if (typeof version !== 'string' || version === '') {
-    throw new Error('has no `version`');
+    throw new Error('has no `version`; run stomme sync');
   }
 
   return version;
@@ -56,7 +63,7 @@ const readFileEntries = (files: unknown): [string, unknown][] => {
 
   // A TOML date is an object too.
   if (!isObject || Array.isArray(files) || files instanceof Date) {
-    throw new Error('has no `[files]` table');
+    throw new Error('has no `[files]` table; run stomme sync');
   }
 
   return Object.entries(files);
@@ -64,7 +71,9 @@ const readFileEntries = (files: unknown): [string, unknown][] => {
 
 const readHash = (path: string, hash: unknown): string => {
   if (typeof hash !== 'string' || !sha256Hex.test(hash)) {
-    throw new Error(`has a hash for ${path} that is not 64 lowercase hex characters`);
+    throw new Error(
+      `has a hash for ${path} that is not 64 lowercase hex characters; run stomme sync`,
+    );
   }
 
   return hash;
@@ -72,15 +81,15 @@ const readHash = (path: string, hash: unknown): string => {
 
 const requireContainedPath = (path: string) => {
   if (path.startsWith('/')) {
-    throw new Error(`has the absolute path ${path}`);
+    throw new Error(`has the absolute path ${path}; run stomme sync`);
   }
 
   if (path.split('/').includes('..')) {
-    throw new Error(`has the path ${path}, which holds \`..\``);
+    throw new Error(`has the path ${path}, which holds \`..\`; run stomme sync`);
   }
 
   if (path.includes('\\')) {
-    throw new Error(`has the path ${path}, which holds a backslash`);
+    throw new Error(`has the path ${path}, which holds a backslash; run stomme sync`);
   }
 };
 
@@ -91,7 +100,7 @@ const previousPath = (path: string): string | undefined => {
   }
 
   if (!path.startsWith(previousRoot)) {
-    throw new Error(`has the path ${path}, which is outside ${previousRoot}`);
+    throw new Error(`has the path ${path}, which is outside ${previousRoot}; run stomme sync`);
   }
 
   return path.slice(previousRoot.length);
@@ -129,6 +138,10 @@ export const parseSyncRecord = (text: string): SyncRecord => {
   const knownKeys = isPrevious ? previousKeys : currentKeys;
 
   requireKnownKeys(table, knownKeys);
+
+  if ('agents' in table) {
+    requireTextAgents(table.agents);
+  }
 
   const version = readVersion(table.version);
   const files = readFiles(readFileEntries(table.files), isPrevious);

@@ -7,7 +7,7 @@ import { parseSyncRecord } from './syncRecord.js';
 import type { SyncRecord } from './syncRecord.js';
 
 export interface GuideFileSystem {
-  readFile: (path: string, encoding: 'utf8') => Promise<string>;
+  readFile: (path: string) => Promise<Uint8Array>;
   lstat: (path: string) => Promise<{ isFile: () => boolean; isSymbolicLink: () => boolean }>;
 }
 
@@ -15,40 +15,71 @@ export type SyncedGuides =
   | { kind: 'valid'; version: string; files: ReadonlyMap<string, string> }
   | { kind: 'broken'; reason: string };
 
-type TextRead = { text: string } | { reason: string };
+type TextRead = { text: string; bytes: Uint8Array } | { reason: string };
 
 const recordName = '.sync-record.toml';
 const fix = 'run stomme sync';
 
-// Text in these spans is not rendered as a link.
-const fencedCode = /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))/gm;
-const htmlComment = /<!--[\s\S]*?(?:-->|(?![\s\S]))/g;
-const inlineCode = /(`+)[\s\S]*?\1/g;
+// Matches the spans that are not rendered as a link, in document order, so one span cannot hide
+// another: a fence inside an HTML comment stays comment text, and a link after it still renders.
+const markdownToken =
+  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)[\s\S]*?\2|\]\(\s*(?:<([^>\n]*)>|([^)\s]+))/gm;
 
-const inlineLink = /\]\(\s*<?([^)\s>]+)/g;
 const urlScheme = /^[a-z][a-z\d+.-]*:/i;
 
 const broken = (reason: string): SyncedGuides => ({ kind: 'broken', reason });
 
-const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+// stomme hashes the file bytes, so Tau must too.
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 const readText = async (file: string, fileSystem: GuideFileSystem): Promise<TextRead> => {
   try {
-    return { text: await fileSystem.readFile(file, 'utf8') };
+    const bytes = await fileSystem.readFile(file);
+
+    return { bytes, text: new TextDecoder().decode(bytes) };
   } catch (error) {
     const reason = isMissingFile(error)
       ? `${file} is missing; ${fix}`
-      : `${file} cannot be read: ${errorMessage(error)}`;
+      : `${file} cannot be read: ${errorMessage(error)}; ${fix}`;
 
     return { reason };
   }
 };
 
+// A symbolic link on a parent folder would read a guide from outside the synced folder.
+const linkedFolder = async (
+  directory: string,
+  path: string,
+  fileSystem: GuideFileSystem,
+): Promise<string | undefined> => {
+  const segments = path.split('/').slice(0, -1);
+  const folders = segments.map((_, index) => join(directory, ...segments.slice(0, index + 1)));
+
+  const stats = await Promise.all(
+    folders.map((folder) => fileSystem.lstat(folder).catch(() => undefined)),
+  );
+
+  const linkIndex = stats.findIndex((folderStats) => folderStats?.isSymbolicLink() === true);
+  const link = folders[linkIndex];
+
+  return link === undefined
+    ? undefined
+    : `${link} is a symbolic link; replace it with the folder and ${fix}`;
+};
+
 const readGuide = async (
-  file: string,
+  directory: string,
+  path: string,
   hash: string,
   fileSystem: GuideFileSystem,
 ): Promise<TextRead> => {
+  const linked = await linkedFolder(directory, path, fileSystem);
+
+  if (linked !== undefined) {
+    return { reason: linked };
+  }
+
+  const file = join(directory, path);
   const stats = await fileSystem.lstat(file).catch(() => undefined);
 
   if (stats?.isSymbolicLink() === true) {
@@ -61,21 +92,20 @@ const readGuide = async (
 
   const read = await readText(file, fileSystem);
 
-  if ('text' in read && sha256(read.text) !== hash) {
+  if ('text' in read && sha256(read.bytes) !== hash) {
     return { reason: `${file} differs from its record; ${fix}` };
   }
 
   return read;
 };
 
-const linkTargets = (markdown: string): string[] => {
-  const rendered = markdown
-    .replaceAll(fencedCode, '')
-    .replaceAll(htmlComment, '')
-    .replaceAll(inlineCode, '');
+const linkTargets = (markdown: string): string[] =>
+  [...markdown.matchAll(markdownToken)].flatMap((match) => {
+    const angleTarget = match[3];
+    const plainTarget = match[4];
 
-  return [...rendered.matchAll(inlineLink)].flatMap(([, target]) => target ?? []);
-};
+    return angleTarget ?? plainTarget ?? [];
+  });
 
 // Names what is wrong with one link target, or nothing when it resolves to a recorded file.
 const linkProblem = (
@@ -126,7 +156,7 @@ const readRecordedGuides = async (
 
   for (const [path, hash] of record.files) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- The first broken file ends the read.
-    const guide = await readGuide(join(directory, path), hash, fileSystem);
+    const guide = await readGuide(directory, path, hash, fileSystem);
 
     if ('reason' in guide) {
       return broken(guide.reason);
@@ -172,9 +202,12 @@ const readOnce = async (
 
   const guides = await readAgainstRecord(directory, before.text, fileSystem);
   const after = await readText(recordFile, fileSystem);
-  const isUnchanged = 'text' in after && after.text === before.text;
 
-  return isUnchanged ? guides : undefined;
+  if ('reason' in after) {
+    return broken(after.reason);
+  }
+
+  return after.text === before.text ? guides : undefined;
 };
 
 const nodeFileSystem: GuideFileSystem = { readFile, lstat };

@@ -3,6 +3,7 @@ import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -88,6 +89,32 @@ it('reads a folder that matches its record', async () => {
   });
 });
 
+it.for([
+  {
+    name: 'a link target in angle brackets with a space',
+    files: {
+      ...guides,
+      'shared/a b.md': '# A\n',
+      'shared/rules.md': '[space](<./a b.md>)\n',
+    },
+  },
+  {
+    name: 'a link after a fence inside an HTML comment',
+    files: {
+      ...guides,
+      'shared/rules.md': '<!--\n```markdown\n-->\n[the rules](./rules.md)\n',
+    },
+  },
+])('reads $name as valid', async ({ files }) => {
+  const result = await readSyncedGuides(writeGuides(files));
+
+  expect(result).toEqual({
+    kind: 'valid',
+    version: '0.2.0',
+    files: new Map(Object.entries(files)),
+  });
+});
+
 const brokenRows: BrokenRow[] = [
   {
     name: 'a missing record',
@@ -127,6 +154,14 @@ const brokenRows: BrokenRow[] = [
     reason: ['shared/rules.md', 'symbolic link'],
   },
   {
+    name: 'a symbolic link on a parent folder',
+    change: (directory) => {
+      renameSync(join(directory, 'shared'), join(directory, 'shared-copy'));
+      symlinkSync(join(directory, 'shared-copy'), join(directory, 'shared'));
+    },
+    reason: ['shared', 'symbolic link'],
+  },
+  {
     name: 'a folder in place of a file',
     change: (directory) => {
       rmSync(join(directory, 'shared/rules.md'));
@@ -146,6 +181,16 @@ const brokenRows: BrokenRow[] = [
       writeFile(directory, 'notes.md', '# First\n');
     },
     reason: ['shared/rules.md', '../notes.md#first'],
+  },
+  {
+    name: 'a link after a fence inside an HTML comment',
+    files: { ...guides, 'shared/rules.md': '<!--\n```markdown\n-->\n[gone](./gone.md)\n' },
+    reason: ['shared/rules.md', './gone.md'],
+  },
+  {
+    name: 'a link to the parent folder',
+    files: { ...guides, 'shared/rules.md': '[the parent](../..)\n' },
+    reason: ['shared/rules.md', 'links to ../..', 'leaves'],
   },
   {
     name: 'a link that leaves the folder',
@@ -184,7 +229,7 @@ const changingRecord = (versions: readonly string[]): GuideFileSystem => {
 
       reads += 1;
 
-      return Promise.resolve(recordText(version, {}));
+      return Promise.resolve(new TextEncoder().encode(recordText(version, {})));
     },
     lstat: () => Promise.reject(new Error('no file is recorded')),
   };
@@ -203,4 +248,42 @@ it('starts over once when the record changes while it is read', async () => {
   const result = await readSyncedGuides('guides', changingRecord(['1', '2']));
 
   expect(result).toEqual({ kind: 'valid', version: '2', files: new Map() });
+});
+
+it('hashes the raw bytes of a recorded file', async () => {
+  const directory = writeGuides(guides);
+  const bytes = Uint8Array.from([0x23, 0xff, 0xfe]);
+  const decoded = new TextDecoder().decode(bytes);
+
+  writeFileSync(join(directory, 'shared/rules.md'), bytes);
+
+  writeFile(directory, recordName, recordText('0.2.0', { ...guides, 'shared/rules.md': decoded }));
+
+  const result = await readSyncedGuides(directory);
+
+  expect(result).toEqual({
+    kind: 'broken',
+    reason: expect.stringContaining('shared/rules.md differs') as unknown,
+  });
+});
+
+it('keeps the error of a record that cannot be read again', async () => {
+  let reads = 0;
+
+  const fileSystem: GuideFileSystem = {
+    readFile: () => {
+      reads += 1;
+
+      return reads === 2
+        ? Promise.reject(new Error('the disk went away'))
+        : Promise.resolve(new TextEncoder().encode(recordText('1', {})));
+    },
+    lstat: () => Promise.reject(new Error('no file is recorded')),
+  };
+
+  const result = await readSyncedGuides('guides', fileSystem);
+  const reason = result.kind === 'broken' ? result.reason : 'the result is valid';
+
+  expect(reason).toContain('the disk went away');
+  expect(reason).toContain('run stomme sync');
 });

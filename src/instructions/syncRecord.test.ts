@@ -82,6 +82,11 @@ const rows: Row[] = [
     expected: refused('has the unknown key `agents`'),
   },
   {
+    name: 'an agents value that is not text',
+    text: current('', 'schema = 1\nversion = "0.2.0"\nagents = 1'),
+    expected: refused('has an `agents` value that is not a string'),
+  },
+  {
     name: 'a missing version',
     text: current('', 'schema = 1'),
     expected: refused('has no `version`'),
@@ -176,5 +181,19 @@ const outcome = (text: string) => {
 it('reads each sync record shape', () => {
   for (const { name, text, expected } of rows) {
     expect(outcome(text), name).toEqual(expected);
+  }
+});
+
+it('names the repair in each refusal', () => {
+  const refusals = rows.flatMap(({ name, text }) => {
+    const result = outcome(text);
+
+    return 'error' in result ? [{ name, error: result.error }] : [];
+  });
+
+  expect(refusals.length).toBeGreaterThan(10);
+
+  for (const { name, error } of refusals) {
+    expect(error, name).toMatch(/stomme sync|update Tau/);
   }
 });
