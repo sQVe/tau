@@ -1,8 +1,7 @@
-import { join } from 'node:path';
-
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { runDirectoryPath } from '../../verification/verification.js';
 import { findRunDirectory } from './runDirectory.js';
 
 const failureMessage = async (promise: Promise<unknown>): Promise<string> =>
@@ -25,6 +24,6 @@ it('finds the run directory below .tau/verification', async () => {
   expect(await findRunDirectory(root, 'delegate-a-check', 'verification')).toEqual({
     checkoutRoot: root,
     recordRoot: root,
-    directory: join(root, '.tau', 'verification', 'delegate-a-check'),
+    directory: runDirectoryPath(root, 'delegate-a-check'),
   });
 });

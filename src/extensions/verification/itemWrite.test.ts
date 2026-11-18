@@ -8,7 +8,12 @@ import { git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { isMissingFile } from '../../errors.js';
 import type { RunRecord } from '../../verification/records.js';
-import { itemRecordPath, readItemRecord, readRuns } from '../../verification/verification.js';
+import {
+  itemRecordPath,
+  readItemRecord,
+  readRuns,
+  verificationDirectoryPath,
+} from '../../verification/verification.js';
 import { createRunDirectory } from './fixtures/runDirectory.js';
 import { recordItem } from './itemWrite.js';
 import type { RecordInput } from './recordParameters.js';
@@ -286,7 +291,7 @@ it('records an item from a linked worktree under the shared root', async () => {
   const saved = await recordItem(worktree, validInput());
 
   expect(saved).toEqual({ run, item, path: itemRecordPath(directory, item) });
-  expect(saved.path.startsWith(join(root, '.tau', 'verification'))).toBe(true);
+  expect(saved.path.startsWith(verificationDirectoryPath(root))).toBe(true);
 
   expect(await readItemRecord(saved.path)).toMatchObject({
     status: 'valid',
@@ -304,8 +309,8 @@ it('refuses an item when the shared verification folder is a symlink', async () 
 
   const outside = temporaryDirectory(onTestFinished, 'tau-item-outside-');
 
-  await rename(join(root, '.tau', 'verification'), join(outside, 'verification'));
-  await symlink(join(outside, 'verification'), join(root, '.tau', 'verification'));
+  await rename(verificationDirectoryPath(root), join(outside, 'verification'));
+  await symlink(join(outside, 'verification'), verificationDirectoryPath(root));
 
   const failure = await failureMessage(recordItem(root, validInput()));
 
@@ -330,7 +335,7 @@ it('saves two items recorded at once', async () => {
 
   await Promise.all(items.map(({ item: name }) => recordItem(root, input(name))));
 
-  const [result] = await readRuns(join(root, '.tau', 'verification'));
+  const [result] = await readRuns(verificationDirectoryPath(root));
 
   expect(
     result?.items.map(({ item: name, read }) => ({ item: name, status: read.status })),

@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
@@ -23,7 +21,7 @@ import type { Freshness } from '../../verification/freshness.js';
 import type { RunRead } from '../../verification/records.js';
 import { listRecordProblems, selectEvidence } from '../../verification/selection.js';
 import type { SelectedResult } from '../../verification/selection.js';
-import { readRuns } from '../../verification/verification.js';
+import { readRuns, verificationDirectoryPath } from '../../verification/verification.js';
 import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainEvidence } from './evidenceChain.js';
@@ -271,7 +269,7 @@ const readVerification = async (root: string, evidence: PublicationEvidence) => 
   let runs: RunRead[];
 
   try {
-    runs = await readRuns(join(recordRoot, '.tau', 'verification'));
+    runs = await readRuns(verificationDirectoryPath(recordRoot));
   } catch (error) {
     evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
 

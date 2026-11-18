@@ -4,7 +4,7 @@ import type { VerificationTarget } from '../../config/verificationTargets.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import type { RunRecord } from '../../verification/records.js';
 import { runRecordVersion } from '../../verification/records.js';
-import { writeRunRecord } from '../../verification/verification.js';
+import { verificationDirectoryName, writeRunRecord } from '../../verification/verification.js';
 import { runCommand } from './command.js';
 import type { CommandOutcome } from './command.js';
 import type { RunFacts } from './runFacts.js';
@@ -76,7 +76,7 @@ const runStep = (
 export const launchRun = async (context: LaunchContext): Promise<LaunchResult> => {
   const directory = await createFreshTauDirectory(
     context.recordRoot,
-    'verification',
+    verificationDirectoryName,
     `${context.target}-`,
   );
 

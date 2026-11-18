@@ -21,10 +21,15 @@ const outcomeSchemaByStatus = new Map<unknown, TSchema>(Object.entries(stepOutco
 
 const stepSchemaByStatus = new Map<unknown, TSchema>(Object.entries(stepSchemas));
 
+export const verificationDirectoryName = 'verification';
+
 export const runRecordPath = (runDirectory: string): string => join(runDirectory, 'run.json');
 
+export const verificationDirectoryPath = (root: string): string =>
+  join(root, '.tau', verificationDirectoryName);
+
 export const runDirectoryPath = (root: string, run: string): string =>
-  join(root, '.tau', 'verification', run);
+  join(verificationDirectoryPath(root), run);
 
 export const itemRecordPath = (runDirectory: string, item: string): string =>
   join(runDirectory, 'items', `${item}.json`);
