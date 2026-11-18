@@ -223,3 +223,32 @@ it('a cancel after the split skips the swap and names the created pane', async (
   expect((failure as Error).message).toContain('t-new');
   expect(fake.calls).toHaveLength(1);
 });
+
+it('a left-of start in a folder that is not a Git checkout runs no command', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+  const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-');
+
+  await expect(
+    startPiSessionLeftOf({ exec: fake.exec, cwd: root }, { ...paneRequest(root), folder }),
+  ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('a left-of start with an aborted signal runs no command', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+
+  controller.abort(new Error('cancelled before start'));
+
+  await expect(
+    startPiSessionLeftOf(
+      { exec: fake.exec, cwd: root, signal: controller.signal },
+      paneRequest(root),
+    ),
+  ).rejects.toThrow('cancelled before start');
+
+  expect(fake.calls).toEqual([]);
+});

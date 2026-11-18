@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -36,8 +36,10 @@ export const setup = async (cleanup: (cleanup: () => void) => void): Promise<{ r
   return { root };
 };
 
+const heldLockPath = (root: string): string => `${architectLockPath(root)}.1`;
+
 export const holdLock = async (root: string, checkout: string): Promise<void> => {
-  const path = `${architectLockPath(root)}.1`;
+  const path = heldLockPath(root);
 
   await mkdir(dirname(path), { recursive: true });
 
@@ -51,6 +53,8 @@ export const holdLock = async (root: string, checkout: string): Promise<void> =>
     }),
   );
 };
+
+export const releaseLock = (root: string): Promise<void> => rm(heldLockPath(root));
 
 export const recordSession = async (root: string): Promise<string> => {
   const sessionFile = join(root, 'architect-session.jsonl');

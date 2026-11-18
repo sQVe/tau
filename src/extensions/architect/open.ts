@@ -171,18 +171,34 @@ const startArchitect = async (
   return session;
 };
 
+const runningTerminal = async (
+  request: OpenRequest,
+  recordedTerminal: string | null | undefined,
+): Promise<string | undefined> => {
+  const lockPath = architectLockPath(request.root);
+  const holder = await readLiveLockHolder(lockPath);
+
+  if (holder === undefined) {
+    return undefined;
+  }
+
+  const reuse = await reuseOf(request, recordedTerminal, holder);
+
+  if (reuse.kind === 'refuse') {
+    throw new Error(`The architect is already running in ${reuse.checkout}.`);
+  }
+
+  const stillHeld = (await readLiveLockHolder(lockPath)) !== undefined;
+
+  return stillHeld ? reuse.terminal : undefined;
+};
+
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);
-  const holder = await readLiveLockHolder(architectLockPath(request.root));
+  const running = await runningTerminal(request, record?.terminal);
 
-  if (holder !== undefined) {
-    const reuse = await reuseOf(request, record?.terminal, holder);
-
-    if (reuse.kind === 'refuse') {
-      throw new Error(`The architect is already running in ${reuse.checkout}.`);
-    }
-
-    return { status: 'running', terminal: reuse.terminal };
+  if (running !== undefined) {
+    return { status: 'running', terminal: running };
   }
 
   const session = await startArchitect(request, record?.sessionFile ?? undefined);

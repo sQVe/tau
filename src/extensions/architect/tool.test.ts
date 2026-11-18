@@ -1,7 +1,7 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it } from 'vitest';
 
 import { contextOf, holdLock, recordSession, setup } from '../../../tests/architectToolHarness.js';
 import { createHcFake } from '../../../tests/hcFake.js';
@@ -239,23 +239,4 @@ it('gate records an uncertain decision below the cutoff', async ({ onTestFinishe
   const record = name === undefined ? undefined : await readGateRecord(root, name);
 
   expect(record?.decision).toBe('uncertain');
-});
-
-it.each([
-  { input: { action: 'open', request: 'Start', question: 'Why?' }, rejected: 'question' },
-  { input: { action: 'open', request: 'Start', restatement: 'Do it' }, rejected: 'restatement' },
-  { input: { action: 'ask', question: 'Why?', request: 'Start' }, rejected: 'request' },
-])('$input.action rejects $rejected', async ({ input, rejected }) => {
-  const { root } = await setup((cleanup) => {
-    onTestFinished(cleanup);
-  });
-
-  const hc = createHcFake();
-  const tool = createArchitectTool({ ...hc, cwd: root });
-
-  await expect(
-    tool.execute('call', input as never, undefined, undefined, contextOf(root)),
-  ).rejects.toThrow(`does not take ${rejected}.`);
-
-  expect(hc.calls).toEqual([]);
 });

@@ -3,7 +3,13 @@ import { basename, dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { contextOf, holdLock, recordSession, setup } from '../../../tests/architectToolHarness.js';
+import {
+  contextOf,
+  holdLock,
+  recordSession,
+  releaseLock,
+  setup,
+} from '../../../tests/architectToolHarness.js';
 import {
   argumentAfter,
   createExecFake,
@@ -46,8 +52,13 @@ const appFake = () =>
   });
 
 const routedExec =
-  (hc: HcFake, app: ExecFake<AppKey>, terminals: Map<string, ExecResult>): Exec =>
-  (command, commandArguments, options) => {
+  (
+    hc: HcFake,
+    app: ExecFake<AppKey>,
+    terminals: Map<string, ExecResult>,
+    afterTerminalLookup: () => Promise<void>,
+  ): Exec =>
+  async (command, commandArguments, options) => {
     if (command === 'herdr-app') {
       return app.exec(command, commandArguments, options);
     }
@@ -55,7 +66,9 @@ const routedExec =
     const terminalReply = terminals.get(commandArguments.at(-1) ?? '');
 
     if (commandArguments[0] === 'get' && terminalReply !== undefined) {
-      return Promise.resolve(terminalReply);
+      await afterTerminalLookup();
+
+      return terminalReply;
     }
 
     return hc.exec(command, commandArguments, options);
@@ -74,7 +87,11 @@ const leadInSpace = (hc: HcFake, space: string | undefined): void => {
 
 const openRequest = 'Start ME-1540';
 
-const openTool = (root: string, lead?: { space: string | undefined }) => {
+const openTool = (
+  root: string,
+  lead?: { space: string | undefined },
+  afterTerminalLookup: () => Promise<void> = () => Promise.resolve(),
+) => {
   const hc = createHcFake();
   const app = appFake();
 
@@ -82,7 +99,11 @@ const openTool = (root: string, lead?: { space: string | undefined }) => {
 
   leadInSpace(hc, lead === undefined ? 'space-1' : lead.space);
 
-  const tool = createArchitectTool({ ...hc, exec: routedExec(hc, app, terminals), cwd: root });
+  const tool = createArchitectTool({
+    ...hc,
+    exec: routedExec(hc, app, terminals, afterTerminalLookup),
+    cwd: root,
+  });
 
   return { hc, app, terminals, tool };
 };
@@ -141,6 +162,7 @@ it('open starts the architect in the pane of the lead terminal', async ({
   const split = app.calls.find((call) => call.commandArguments[1] === 'pane.split');
 
   expect(argumentAfter(split?.commandArguments ?? [], '--pane')).toBe('p-lead');
+  expect(app.calls).toHaveLength(3);
 });
 
 it('open passes the task as the pi message in the split argv, with no task flag', async ({
@@ -378,6 +400,24 @@ it('open splits when no live holder keeps the lock, even if the recorded termina
 
   expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
   expect(appCommands(app)).toContain('pane.split');
+  expect(app.calls).toHaveLength(3);
+});
+
+it('open starts the architect beside the lead when the lock is released during the terminal lookup', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const { app, terminals, tool } = openTool(root, undefined, () => releaseLock(root));
+
+  await holdLock(root, root);
+  await recordTerminal(root, 't-architect');
+  terminals.set('t-architect', terminalState('live'));
+
+  const result = await open(tool, root, { request: openRequest });
+
+  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+  expect(appCommands(app)).toContain('pane.split');
+  expect(app.calls).toHaveLength(3);
 });
 
 it('open starts a new space only when the lead terminal has no herdr.space label', async ({
@@ -390,11 +430,24 @@ it('open starts a new space only when the lead terminal has no herdr.space label
 
   expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
   expect(appCommands(app)).toEqual(['space.new']);
+  expect(app.calls).toHaveLength(1);
 
   const args = app.calls[0]?.commandArguments ?? [];
 
   expect(argumentAfter(args, '--name')).toBe(`architect-${basename(root)}`);
   expect(argumentAfter(args, '--task')).toContain(openRequest);
+});
+
+it('open starts a new space when the lead terminal has an empty herdr.space label', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const { app, tool } = openTool(root, { space: '' });
+
+  const result = await open(tool, root, { request: openRequest });
+
+  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+  expect(appCommands(app)).toEqual(['space.new']);
 });
 
 it('open refuses when herdr-app shows no pane for the lead terminal', async ({
@@ -410,4 +463,22 @@ it('open refuses when herdr-app shows no pane for the lead terminal', async ({
   );
 
   expect(appCommands(app)).toEqual(['ls']);
+});
+
+it.each([
+  { input: { action: 'open', request: 'Start', question: 'Why?' }, rejected: 'question' },
+  { input: { action: 'open', request: 'Start', restatement: 'Do it' }, rejected: 'restatement' },
+  { input: { action: 'ask', question: 'Why?', request: 'Start' }, rejected: 'request' },
+])('$input.action rejects $rejected and runs no herdr command', async ({ input, rejected }) => {
+  const { root } = await setup((cleanup) => {
+    onTestFinished(cleanup);
+  });
+
+  const { app, tool } = openTool(root);
+
+  await expect(
+    tool.execute('call', input as never, undefined, undefined, contextOf(root)),
+  ).rejects.toThrow(`does not take ${rejected}.`);
+
+  expect(app.calls).toEqual([]);
 });
