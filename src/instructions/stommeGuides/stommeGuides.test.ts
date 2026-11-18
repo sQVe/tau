@@ -22,7 +22,7 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { resolveStommeGuides } from './stommeGuides.js';
 
 const swap = vi.hoisted(() => ({
-  afterStat: undefined as undefined | ((path: string) => Promise<void>),
+  afterLstat: undefined as undefined | ((path: string) => Promise<void>),
 }));
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
@@ -31,12 +31,12 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   return {
     ...actual,
     default: actual,
-    stat: (async (path: string) => {
-      const result = await actual.stat(path);
-      await swap.afterStat?.(path);
+    lstat: (async (path: string) => {
+      const result = await actual.lstat(path);
+      await swap.afterLstat?.(path);
 
       return result;
-    }) as typeof actual.stat,
+    }) as typeof actual.lstat,
   };
 });
 
@@ -349,25 +349,33 @@ it('resolves a project whose layer is both selected and recorded', async ({ onTe
   expect(snapshot).toMatchObject({ kind: 'project', layers: ['react'] });
 });
 
-it('does not stall when the config becomes a pipe after its type check', async ({
+it('reports a config that becomes a pipe after its presence check as unreadable', async ({
   onTestFinished,
 }) => {
   const repository = await createTemporaryRepository(onTestFinished);
   await writeStommeProject(repository, { language: 'rust' });
   const config = join(repository, 'stomme.toml');
+  let swapped = false;
 
-  swap.afterStat = async (path) => {
+  swap.afterLstat = async (path) => {
     if (path === config) {
+      swapped = true;
       await rm(config);
       await makePipe(config, onTestFinished);
     }
   };
 
   onTestFinished(() => {
-    swap.afterStat = undefined;
+    swap.afterLstat = undefined;
   });
 
   const snapshot = await resolveStommeGuides(repository);
 
-  expect(snapshot.kind).not.toBe('bundle');
+  expect(swapped).toBe(true);
+
+  expect(snapshot).toEqual({
+    kind: 'broken',
+    root: repository,
+    reason: `${config} cannot be read: it is not a regular file`,
+  });
 }, 2000);

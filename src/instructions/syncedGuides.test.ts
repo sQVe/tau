@@ -1,8 +1,11 @@
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
+  closeSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -10,6 +13,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
@@ -348,3 +352,23 @@ it('keeps the byte order mark in the text of a guide', async () => {
 
   expect(found).toBe(text);
 });
+
+it('reports a named pipe in place of the record as broken instead of waiting for a writer', async () => {
+  const directory = writeGuides(guides);
+  const recordFile = join(directory, recordName);
+
+  rmSync(recordFile);
+  await promisify(execFile)('mkfifo', [recordFile]);
+
+  // A reader that opens a named pipe waits for a writer. Opening it for writing ends a stuck read.
+  onTestFinished(() => {
+    closeSync(openSync(recordFile, 'r+'));
+  });
+
+  const result = await readSyncedGuides(directory);
+
+  expect(result).toEqual({
+    kind: 'broken',
+    reason: `${recordFile} cannot be read: it is not a regular file; run stomme sync`,
+  });
+}, 2000);

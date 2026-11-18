@@ -1,14 +1,12 @@
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
-import { lstat, open } from 'node:fs/promises';
-import type { FileHandle } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
+import { readRegularFile } from '../regularFile.js';
 import { readSyncedGuides } from '../syncedGuides.js';
-import type { SyncedGuides } from '../syncedGuides.js';
-import { decideGuides } from './stommeGuidesDecision.js';
+import { planGuides, selectBundleGuides, selectProjectGuides } from './stommeGuidesDecision.js';
 import type { ConfigFact, Guide, GuideSelection } from './stommeGuidesDecision.js';
 
 export type GuideSnapshot =
@@ -52,25 +50,12 @@ const searchedFolders = async (cwd: string): Promise<string[]> => {
 };
 
 const readConfigText = async (root: string): Promise<ConfigFact> => {
-  const file = join(root, configName);
-  let handle: FileHandle | undefined;
-
   try {
-    // A pipe opens without a writer only in non-blocking mode. The type check and the read use
-    // this one handle, so the path cannot change between them.
-    handle = await open(file, constants.O_RDONLY | constants.O_NONBLOCK);
+    const bytes = await readRegularFile(join(root, configName));
 
-    const stats = await handle.stat();
-
-    if (!stats.isFile()) {
-      return { kind: 'unreadable', root, error: 'it is not a regular file' };
-    }
-
-    return { kind: 'text', root, text: await handle.readFile('utf8') };
+    return { kind: 'text', root, text: bytes.toString('utf8') };
   } catch (error) {
     return { kind: 'unreadable', root, error: errorMessage(error) };
-  } finally {
-    await handle?.close();
   }
 };
 
@@ -103,19 +88,19 @@ const findConfig = async (cwd: string, bundleRoot: string): Promise<ConfigFact> 
   findConfigIn(await searchedFolders(cwd), bundleRoot);
 
 const readSelection = async (cwd: string, bundleRoot: string): Promise<GuideSelection> => {
-  const config = await findConfig(cwd, bundleRoot);
-  let synced: SyncedGuides | undefined;
-  let bundle: SyncedGuides | undefined;
+  const plan = planGuides(await findConfig(cwd, bundleRoot));
 
-  if (config.kind === 'text') {
-    synced = await readSyncedGuides(join(config.root, 'docs', 'stomme'));
+  if (plan.kind === 'readProject') {
+    const synced = await readSyncedGuides(join(plan.root, 'docs', 'stomme'));
+
+    return selectProjectGuides(plan.root, plan.pin, synced);
   }
 
-  if (config.kind === 'missing') {
-    bundle = await readSyncedGuides(bundleRoot);
+  if (plan.kind === 'readBundle') {
+    return selectBundleGuides(plan.bundleRoot, await readSyncedGuides(plan.bundleRoot));
   }
 
-  return decideGuides(config, synced, bundle);
+  return plan;
 };
 
 const frame = (value: string): string => `${Buffer.byteLength(value)}:${value}`;

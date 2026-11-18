@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { lstat, readFile } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
+import { readRegularFile } from './regularFile.js';
 import { parseSyncRecord } from './syncRecord.js';
 import type { SyncRecord } from './syncRecord.js';
 
@@ -207,7 +208,7 @@ const readOnce = async (
   return after.text === before.text ? guides : undefined;
 };
 
-const nodeFileSystem: GuideFileSystem = { readFile, lstat };
+const nodeFileSystem: GuideFileSystem = { readFile: readRegularFile, lstat };
 
 export const readSyncedGuides = async (
   directory: string,
