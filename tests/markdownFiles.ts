@@ -64,7 +64,7 @@ const historyFiles = new Set(['CHANGELOG.md']);
 const syncedDocumentPrefix = 'docs/stomme/';
 
 // Top-level directories that Tau no longer has, so a path below one is stale rather than a name.
-const formerRoots = new Set(['extensions', 'skills', 'vendor']);
+const formerRoots = new Set(['extensions', 'skills']);
 
 const withoutFences = (markdown: string) => markdown.replaceAll(fencedCodeBlock, '');
 
@@ -311,8 +311,9 @@ export const findDocumentProblems = (
 ): DocumentProblem[] => {
   const allFiles = [...new Set(listRepositoryFiles(root))];
 
+  // stomme generates vendor/, and its guides name paths of the projects that sync them.
   const documents = allFiles
-    .filter((file) => file.endsWith('.md'))
+    .filter((file) => file.endsWith('.md') && !file.startsWith('vendor/'))
     .map((file) => ({ file, markdown: readFileSync(join(root, file), 'utf8') }));
 
   return documentProblems(root, documents, allFiles, allowedPaths);
