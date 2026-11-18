@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { onTestFinished } from 'vitest';
@@ -41,7 +41,11 @@ export const createToolRepository = async (
   options: FixtureOptions = {},
 ): Promise<ToolRepository> => {
   const directory = temporaryDirectory(registerCleanup, 'tau-verification-tool-');
-  const root = await createTemporaryRepository(registerCleanup, 'tau-verification-tool-repo-');
+
+  const root = await realpath(
+    await createTemporaryRepository(registerCleanup, 'tau-verification-tool-repo-'),
+  );
+
   const seen = join(directory, 'seen.txt');
   const marker = join(directory, 'stopped');
 

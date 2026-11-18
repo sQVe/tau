@@ -73,7 +73,7 @@ it('lists a worktree run as fresh from the main checkout before and after the wo
     return;
   }
 
-  expect(launch.directory).toBe(join(root, '.tau', 'verification', launch.run));
+  expect(launch.directory).toBe(join(await realpath(root), '.tau', 'verification', launch.run));
 
   await verification.execute(
     'call',

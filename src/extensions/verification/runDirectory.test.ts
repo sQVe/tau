@@ -1,3 +1,5 @@
+import { realpath } from 'node:fs/promises';
+
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
@@ -20,10 +22,11 @@ it.each(['../run', 'a/b'])('refuses run name %s', async (run) => {
 
 it('finds the run directory below .tau/verification', async () => {
   const root = await createTemporaryRepository(onTestFinished);
+  const canonicalRoot = await realpath(root);
 
   expect(await findRunDirectory(root, 'delegate-a-check', 'verification')).toEqual({
-    checkoutRoot: root,
-    recordRoot: root,
-    directory: runDirectoryPath(root, 'delegate-a-check'),
+    checkoutRoot: canonicalRoot,
+    recordRoot: canonicalRoot,
+    directory: runDirectoryPath(canonicalRoot, 'delegate-a-check'),
   });
 });
