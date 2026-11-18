@@ -37,17 +37,16 @@ question and a deadline; the architect answers, updates the ticket if needed, se
 the lead's inbox, and ends. `gate` classifies a user request that no skill covers.
 
 `ask` refuses while a hidden ask runs, because the hidden architect answers one question and ends.
-The live path needs no saved session file; the hidden path refuses without one. An inbox delivery
-that gets no reply is `unknown`: the question may already be saved, so the lead waits for the answer
-instead of asking again. A live architect that holds the lock before it records its terminal is
-still starting, so the lead asks again shortly.
+It also refuses while a live holder in another checkout keeps the lock. The live path needs no saved
+session file; the hidden path refuses without one. An inbox delivery that gets no reply is
+`unknown`: the question may already be saved, so the lead waits for the answer instead of asking
+again. A live architect that holds the lock before it records its terminal is still starting, so the
+lead asks again shortly.
 
 The architect is a Pi session resumed by its saved session file. It can ask the user directly and
 keeps its earlier design context and approvals. The checkout records the session file. A lock file
 stops two sessions from writing one session file. `open` reports the live visible architect instead
-of refusing, and `ask` refuses while a hidden ask runs, or when a live holder in another checkout
-keeps the lock, because a question in the inbox of a live architect in this checkout needs no second
-writer.
+of refusing. A question in the inbox of a live architect in this checkout needs no second writer.
 
 ### The lead's tab
 

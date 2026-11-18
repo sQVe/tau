@@ -216,7 +216,7 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
   const running = await liveRunningAsk(request.root, request.hc);
 
   if (running !== undefined) {
-    return needsOpen(`Ask ${running.askId} is still running. Wait for it, or call architect open.`);
+    return needsOpen(`Ask ${running.askId} is still running. Wait for it to answer.`);
   }
 
   if (route.kind === 'live') {

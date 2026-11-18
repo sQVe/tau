@@ -7,7 +7,11 @@ import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { architectLockPath } from '../src/extensions/architect/lock.js';
-import { askRecordDirectory, writeArchitectRecord } from '../src/extensions/architect/record.js';
+import {
+  askRecordDirectory,
+  readAskRecords,
+  writeArchitectRecord,
+} from '../src/extensions/architect/record.js';
 import { createArchitectTool } from '../src/extensions/architect/tool.js';
 import { sendHandover } from '../src/extensions/handover/send.js';
 import { createTemporaryRepository } from './gitRepository.js';
@@ -141,6 +145,8 @@ it('the lead receives the answer of a live architect in its inbox', async () => 
     terminal: 't-architect',
   });
 
+  expect(question).toContain('Which flag name?');
+  expect(question).toContain('t-lead');
   expect(question).toContain('handover send');
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
 
@@ -206,8 +212,17 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
     contextOf(root),
   );
 
+  const reason = (asked.details as { reason: string }).reason;
+
   expect(asked.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect((asked.details as { reason: string }).reason).toContain('ask-1');
+  expect(reason).toContain('ask-1');
+  expect(reason).toContain('Wait for it');
+  expect(reason).not.toContain('architect open');
+
+  await expect(readAskRecords(root)).resolves.toMatchObject([
+    { askId: 'ask-1', status: 'running' },
+  ]);
+
   expect(receiver.savedRecords()).toEqual([]);
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
 });

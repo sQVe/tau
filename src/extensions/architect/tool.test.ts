@@ -9,7 +9,6 @@ import { askDeadlineSeconds } from './ask.js';
 import { gateClassifier } from './gate.js';
 import { architectLockPath } from './lock.js';
 import {
-  askRecordDirectory,
   gateRecordDirectory,
   readAskRecords,
   readArchitectRecord,
@@ -98,51 +97,6 @@ it('ask reports an inbox that does not answer', async ({ onTestFinished: cleanup
   ).rejects.toThrow(/did not answer.*Nothing was queued/);
 
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
-});
-
-it('a second ask while one runs is refused', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const tool = createArchitectTool({ ...hc, cwd: root });
-
-  await recordSession(root, 't-architect');
-  await holdLock(root, root);
-  await mkdir(askRecordDirectory(root), { recursive: true });
-
-  await writeFile(
-    join(askRecordDirectory(root), 'ask-1.json'),
-    JSON.stringify({
-      version: 1,
-      askId: 'ask-1',
-      createdAt: new Date().toISOString(),
-      question: 'Earlier question',
-      sessionFile: join(root, 'architect-session.jsonl'),
-      terminal: 't-ask',
-      leadTerminal: 't-lead',
-      deadline: Date.now() + 1000,
-      status: 'running',
-      detail: null,
-      answer: null,
-    }),
-  );
-
-  hc.reply('get', JSON.stringify({ address: 't-ask', state: 'live' }));
-
-  const result = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect((result.details as { reason: string }).reason).toContain('ask-1');
-  expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
-
-  await expect(readAskRecords(root)).resolves.toMatchObject([
-    { askId: 'ask-1', status: 'running' },
-  ]);
 });
 
 it('an ask deadline returns needsOpen and kills the terminal', async ({
