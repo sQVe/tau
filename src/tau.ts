@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import { forgetReportedWarnings } from './config/config.js';
 import architectExtension from './extensions/architect/architect.js';
 import askUserQuestionExtension from './extensions/askUserQuestion/askUserQuestion.js';
 import bareRootExtension from './extensions/bareRoot.js';
@@ -18,6 +19,7 @@ import improvementExtension from './extensions/improvement/improvement.js';
 import inboxExtension from './extensions/inbox/inbox.js';
 import instructionsExtension from './extensions/instructions.js';
 import mergeWatchExtension from './extensions/mergeWatch/mergeWatch.js';
+import modelFallbackExtension from './extensions/modelFallback/modelFallback.js';
 import piResumeExtension from './extensions/piResume/piResume.js';
 import prExtension from './extensions/pr/pr.js';
 import prFeedbackExtension from './extensions/prFeedback/prFeedback.js';
@@ -37,6 +39,12 @@ const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
 const checkoutDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
+  // Features report config notices in their own session_start handlers, so the new session must
+  // forget the old notices before any of them runs.
+  pi.on('session_start', (_event, context) => {
+    forgetReportedWarnings(context.ui);
+  });
+
   // Pi stops at the first blocking hook, so capacity refusal must run before other guards.
   const capacityRefusal = registerCapacityRefusal(pi);
 
@@ -48,6 +56,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   tddExtension(pi);
   askUserQuestionExtension(pi);
   webAccessExtension(pi);
+  modelFallbackExtension(pi);
   snippetsExtension(pi);
   sliceExtension(pi);
   fullCheckExtension(pi);

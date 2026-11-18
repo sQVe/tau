@@ -208,6 +208,53 @@ Tau fails a model outside the list and never falls back to another model.
 { "allowedModels": ["openai-codex/gpt-5.6-luna", "claude-bridge/claude-opus-5-5"] }
 ```
 
+### `fallbackModels` (user file)
+
+`fallbackModels` maps a name to a primary model, a fallback model, and the retry at which Tau
+switches. Tau registers the name as the virtual model `tau/<name>`.
+
+```json
+{
+  "fallbackModels": {
+    "deepseek-flash": {
+      "primary": "morph/morph-dsv41flash-1017",
+      "fallback": "openrouter/deepseek/deepseek-v4.1-flash-1017",
+      "fallbackAtRetry": 5
+    }
+  }
+}
+```
+
+A name starts with a lower-case letter or digit and uses only lower-case letters, digits, and
+hyphens. The primary and the fallback are each a physical model as `provider/model-id`, and they
+differ. Neither may name another `tau/<name>`; such an entry is an error. `fallbackAtRetry` is a
+whole number of at least 1. It must be at most Pi's `retry.maxRetries`, or the retry that would
+switch never runs.
+
+A user message goes to the primary. Pi decides from the error text whether to retry a failed
+request. Tau never reads the error text; it counts each request that Pi sends as a retry. Every such
+retry counts, including the retry after a context overflow recovery. Below the configured retry, a
+retry stays on the primary. From that retry on, every retry goes to the fallback. The next user
+message returns to the primary.
+
+A request outside the agent loop, such as a compaction summary, goes to the fallback only when the
+latest successful answer came from the fallback. Otherwise it goes to the primary, also when no
+answer exists yet.
+
+A route that names an unknown or disallowed model fails the request and names the model.
+
+Only the user file may set `fallbackModels`. A repository file that sets it is an error and supplies
+no models. When `allowedModels` is set, each selection path checks a different model:
+
+- Each route checks the physical model it picks. The list must hold the primary, and the fallback
+  for the switch to work.
+- A Tau worker launch checks the selected model. The list must hold `tau/<name>` to launch a worker
+  on it.
+
+Pi's `--model` and `enabledModels` scope Pi's own model selection, apart from `allowedModels`.
+Explicit `--model` selects from the full model catalog. `enabledModels` limits Pi's scoped model
+selection, such as model cycling, so it must list `tau/<name>` only for that selection.
+
 ### Web search
 
 Search providers and the default answer model belong to

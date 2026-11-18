@@ -97,6 +97,7 @@ const pureModules = [
   'src/extensions/mergeWatch/mergeOffer.ts',
   'src/extensions/mergeWatch/watchOutcome.ts',
   'src/extensions/mergeWatch/watchStart.ts',
+  'src/extensions/modelFallback/fallbackRoute.ts',
   'src/extensions/piResume/sessionDecision.ts',
   'src/extensions/pr/evidenceDecisions.ts',
   'src/extensions/pr/reuseDecisions.ts',
@@ -262,6 +263,7 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 
 // The outside libraries a registered module may import, by module path.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
+  'src/extensions/modelFallback/fallbackRoute.ts': ['typebox', 'typebox/value'],
   'src/extensions/improvement/recordRequest.ts': ['node:path', 'typebox'],
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/projectPath.ts': ['node:path'],
@@ -450,6 +452,11 @@ it('keeps registered pure modules free of reads and effects', () => {
 });
 
 const versionedRecords = [
+  {
+    writer: 'src/extensions/modelFallback/fallbackRoute.ts',
+    fixtures: 'src/extensions/modelFallback/fixtures/routeState',
+    names: ['current.json', 'newer.json', 'malformed.json'],
+  },
   {
     writer: 'src/inbox/store.ts',
     fixtures: 'src/inbox/fixtures/handover',

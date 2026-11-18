@@ -6,11 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 
 import { isNestedControlCall, nestedControlCallReason } from '../../codemode/controlTools.js';
 import { piExec } from '../../command.js';
-import {
-  forgetReportedWarnings,
-  readTauConfig,
-  warnUnknownTopLevelKeys,
-} from '../../config/config.js';
+import { readTauConfig, warnUnknownTopLevelKeys } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
 import { connect } from '../../hc/connect.js';
 import { subscribeEvents } from '../../hc/events.js';
@@ -376,7 +372,6 @@ export default function subagentsExtension(
       sessionId: context.sessionManager.getSessionId(),
     };
 
-    forgetReportedWarnings(context.ui);
     warnUnknownConfigKeys(context);
 
     const profiles = launchProfiles(context);

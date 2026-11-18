@@ -52,6 +52,7 @@ export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}): FakeExt
     registerMessageRenderer: (customType: string, renderer: MessageRenderer) => {
       messageRenderers.set(customType, renderer);
     },
+    registerVirtualModel: vi.fn<ExtensionAPI['registerVirtualModel']>(),
     sendUserMessage,
     sendMessage,
     exec: declinedExec,
