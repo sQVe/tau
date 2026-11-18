@@ -223,7 +223,7 @@ const runningTerminal = async (
 };
 
 const recordedTerminal = (record: SavedArchitectRecord | undefined): string | null | undefined =>
-  record?.version === 2 ? record.owner?.terminal : undefined;
+  record?.version === 2 ? record.owner?.terminal : record?.terminal;
 
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);

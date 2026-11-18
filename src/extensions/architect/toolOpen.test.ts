@@ -18,6 +18,7 @@ import {
   openRequest,
   openTool,
   recordTerminal,
+  recordTerminalV1,
   terminalState,
   writeAsk,
 } from './fixtures/openHarness.js';
@@ -198,6 +199,40 @@ it('open reports a live architect terminal while a live holder keeps the lock', 
 
   expect(result.details).toEqual({ action: 'open', status: 'running', terminal: 't-architect' });
   expect(appCommands(app)).toEqual(['ls']);
+});
+
+it('open reports the terminal a version 1 record names while a live holder keeps the lock', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const { app, terminals, tool } = openTool(root);
+
+  await holdLock(root, root);
+  await recordTerminalV1(root, 't-architect');
+  terminals.set('t-architect', terminalState('live'));
+
+  const result = await open(tool, root, { request: openRequest });
+
+  expect(result.details).toEqual({ action: 'open', status: 'running', terminal: 't-architect' });
+  expect(appCommands(app)).toEqual(['ls']);
+});
+
+it('open refuses while a version 1 record names a terminal that carries the ask label', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const { app, terminals, tool } = openTool(root);
+
+  await holdLock(root, '/other/checkout');
+  await recordTerminalV1(root, 't-architect');
+  await writeAsk(root, null, 'running');
+  terminals.set('t-architect', terminalState('live', { 'tau.architect.ask': 'ask-1' }));
+
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
+    'The architect is already running in /other/checkout.',
+  );
+
+  expect(app.calls).toEqual([]);
 });
 
 const parkedLayout = JSON.stringify({
