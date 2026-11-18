@@ -140,8 +140,6 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   expect(existsSync(socketPath)).toBe(true);
   expect(await readLiveLockHolder(lockPath)).toBeDefined();
 
-  // The inbox removes its label during withdrawal. Holding that read gives an explicit signal
-  // that withdrawal is running, so the architect must not release its lock before it.
   onTestFinished(async () => {
     releaseWithdrawal.resolve(undefined);
     await waitForMissing(socketPath);
