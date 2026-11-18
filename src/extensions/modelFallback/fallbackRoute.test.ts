@@ -95,6 +95,26 @@ const table: {
     expected: { target: 'primary', state: state(1, false) },
   },
   {
+    name: 'a retry with a missing key and an extra key counts one retry on the primary',
+    facts: routeFacts({ state: { version: 1, consecutiveRetries: 4, extra: true } }),
+    expected: { target: 'primary', state: state(1, false) },
+  },
+  {
+    name: 'a retry with a fractional retry count counts one retry on the primary',
+    facts: routeFacts({ state: { version: 1, consecutiveRetries: 1.5, onFallback: false } }),
+    expected: { target: 'primary', state: state(1, false) },
+  },
+  {
+    name: 'a retry with a text retry count counts one retry on the primary',
+    facts: routeFacts({ state: { version: 1, consecutiveRetries: '4', onFallback: false } }),
+    expected: { target: 'primary', state: state(1, false) },
+  },
+  {
+    name: 'a retry with a non-boolean fallback flag counts one retry on the primary',
+    facts: routeFacts({ state: { version: 1, consecutiveRetries: 0, onFallback: 'yes' } }),
+    expected: { target: 'primary', state: state(1, false) },
+  },
+  {
     name: 'a retry with a text state counts one retry on the primary',
     facts: routeFacts({ state: 'text' }),
     expected: { target: 'primary', state: state(1, false) },

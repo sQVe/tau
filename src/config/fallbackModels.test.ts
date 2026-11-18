@@ -104,6 +104,21 @@ it.for<[string, Record<string, unknown>, string]>([
     { bad: { ...validModel, fallbackAtRetry: 0 } },
     'fallbackModels.bad.fallbackAtRetry 0 must be a whole number of at least 1.',
   ],
+  [
+    'a primary that is not a string',
+    { bad: { ...validModel, primary: ['a/primary'] } },
+    'fallbackModels.bad.primary ["a/primary"] is not provider/model-id.',
+  ],
+  [
+    'a fallbackAtRetry that is not a number',
+    { bad: { ...validModel, fallbackAtRetry: '5' } },
+    'fallbackModels.bad.fallbackAtRetry "5" must be a whole number of at least 1.',
+  ],
+  [
+    'a fallbackAtRetry that is not an integer',
+    { bad: { ...validModel, fallbackAtRetry: 1.5 } },
+    'fallbackModels.bad.fallbackAtRetry 1.5 must be a whole number of at least 1.',
+  ],
 ])('reports %s and keeps the other entry', ([, bad, message], { onTestFinished }) => {
   const { location, userFile, writeUser } = temporaryTauConfig(
     onTestFinished,
@@ -122,6 +137,27 @@ it.for<[string, Record<string, unknown>, string]>([
       },
     ],
     problems: [`Invalid Tau config ${userFile}: ${message}`],
+    warnings: [],
+  });
+});
+
+it('accepts fallbackAtRetry 1', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-fallback-models-');
+
+  writeUser({
+    fallbackModels: { 'deepseek-flash': { ...validModel, fallbackAtRetry: 1 } },
+  });
+
+  expect(readUser(location)).toEqual({
+    models: [
+      {
+        name: 'deepseek-flash',
+        primary: 'a/primary',
+        fallback: 'b/fallback',
+        fallbackAtRetry: 1,
+      },
+    ],
+    problems: [],
     warnings: [],
   });
 });
