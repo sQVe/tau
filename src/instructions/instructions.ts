@@ -53,7 +53,7 @@ const needsGuides = (sections: readonly InstructionSection[]): boolean =>
 
 export const instructionTexts = async (
   sections: readonly InstructionSection[],
-  guideRuns: GuideRuns,
+  guideRuns: Pick<GuideRuns, 'snapshot'>,
 ): Promise<string[]> => {
   const codingText = needsGuides(sections) ? codingSetText(await guideRuns.snapshot()) : '';
 

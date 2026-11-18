@@ -18,6 +18,8 @@ interface RulesState {
 
 type BundleSnapshot = Extract<Awaited<ReturnType<GuideRuns['snapshot']>>, { kind: 'bundle' }>;
 
+type UsableSnapshot = Exclude<Awaited<ReturnType<GuideRuns['snapshot']>>, { kind: 'broken' }>;
+
 const languages: readonly GuideLanguage[] = ['typescript', 'rust'];
 
 const labels: Readonly<Record<GuideLanguage, string>> = {
@@ -33,19 +35,8 @@ const commandNames: Readonly<Record<GuideLanguage, string>> = {
 const rulesText = (snapshot: BundleSnapshot, language: GuideLanguage): string =>
   guideSection(snapshot, snapshot.languageGuides[language]);
 
-const isRulesMessage = (
-  message: ContextEvent['messages'][number],
-  language?: GuideLanguage,
-): boolean => {
-  if (message.role !== 'custom') {
-    return false;
-  }
-
-  const types =
-    language === undefined ? Object.values(languageRulesTypes) : [languageRulesTypes[language]];
-
-  return types.includes(message.customType);
-};
+const isRulesMessage = (message: ContextEvent['messages'][number], language: GuideLanguage) =>
+  message.role === 'custom' && message.customType === languageRulesTypes[language];
 
 const sendRules = (pi: ExtensionAPI, language: GuideLanguage, rules: string): void => {
   pi.sendMessage(
@@ -128,20 +119,26 @@ const registerLifecycle = (
   pi.on('context', async (event) => {
     const snapshot = await bundleSnapshot(guideRuns);
 
-    if (snapshot === undefined) {
-      const kept = event.messages.filter((message) => !isRulesMessage(message));
+    // A language whose guide is in the append section does not need its saved rules message. Outside
+    // bundle mode no rules message belongs in the request.
+    const supersededLanguages = languages.filter(
+      (language) => snapshot === undefined || states[language].systemPromptLoaded,
+    );
 
-      return kept.length === event.messages.length ? undefined : { messages: kept };
+    const kept = event.messages.filter(
+      (message) => !supersededLanguages.some((language) => isRulesMessage(message, language)),
+    );
+
+    if (snapshot !== undefined) {
+      for (const language of languages) {
+        const state = states[language];
+        const messageLoaded = event.messages.some((message) => isRulesMessage(message, language));
+
+        state.requestLoaded = state.systemPromptLoaded || messageLoaded;
+      }
     }
 
-    for (const language of languages) {
-      const state = states[language];
-      const messageLoaded = event.messages.some((message) => isRulesMessage(message, language));
-
-      state.requestLoaded = state.systemPromptLoaded || messageLoaded;
-    }
-
-    return undefined;
+    return kept.length === event.messages.length ? undefined : { messages: kept };
   });
 
   pi.on('session_compact', async (_event, context) => {
@@ -208,6 +205,38 @@ const registerToolGate = (
   });
 };
 
+const projectNotice = (
+  snapshot: Extract<UsableSnapshot, { kind: 'project' }>,
+  language: GuideLanguage,
+  usesCodingSet: boolean,
+): { text: string; level: 'info' | 'warning' } => {
+  const label = labels[language];
+
+  if (!usesCodingSet) {
+    return {
+      text: `This session does not load the coding guides, so it has no ${label} guide.`,
+      level: 'warning',
+    };
+  }
+
+  if (snapshot.language !== language) {
+    return {
+      text: `The project declares ${labels[snapshot.language]}, so Tau loads no ${label} guide.`,
+      level: 'warning',
+    };
+  }
+
+  return {
+    text: `The project's ${label} guide already loads with the coding guides.`,
+    level: 'info',
+  };
+};
+
+// A busy session keeps the run's snapshot, so the command does not mix two guide versions. An idle
+// session has no run to keep, so it reads the guides now.
+const commandSnapshot = (guideRuns: GuideRuns, context: ExtensionContext) =>
+  context.isIdle() ? guideRuns.current() : guideRuns.snapshot();
+
 const registerCommand = (
   pi: ExtensionAPI,
   guideRuns: GuideRuns,
@@ -219,13 +248,12 @@ const registerCommand = (
   pi.registerCommand(commandNames[language], {
     description: `Load ${label} rules before shell-only ${label} work`,
     handler: async (_arguments, context) => {
-      const snapshot = await guideRuns.snapshot();
+      const snapshot = await commandSnapshot(guideRuns, context);
 
       if (snapshot.kind === 'project') {
-        context.ui.notify(
-          `The project's ${label} guide already loads with the coding guides.`,
-          'info',
-        );
+        const notice = projectNotice(snapshot, language, await guideRuns.usesCodingSet());
+
+        context.ui.notify(notice.text, notice.level);
 
         return;
       }

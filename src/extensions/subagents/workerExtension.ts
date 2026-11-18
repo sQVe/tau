@@ -86,7 +86,7 @@ const readWorkerPromptParts = async (loadout: Loadout): Promise<WorkerPromptPart
 
 const workerPromptText = async (
   parts: WorkerPromptParts,
-  guideRuns: GuideRuns,
+  guideRuns: Pick<GuideRuns, 'snapshot'>,
 ): Promise<string> => {
   const instructionSets = await instructionTexts(parts.sections, guideRuns);
 
@@ -97,8 +97,10 @@ const workerPromptText = async (
   ].join('\n\n');
 };
 
-export const workerSystemPrompt = async (loadout: Loadout, guideRuns: GuideRuns): Promise<string> =>
-  workerPromptText(await readWorkerPromptParts(loadout), guideRuns);
+export const workerSystemPrompt = async (
+  loadout: Loadout,
+  guideRuns: Pick<GuideRuns, 'snapshot'>,
+): Promise<string> => workerPromptText(await readWorkerPromptParts(loadout), guideRuns);
 
 const callsReportAlone = (
   assistant: ReturnType<ExtensionContext['sessionManager']['getBranch']>[number] | undefined,

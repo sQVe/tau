@@ -26,6 +26,10 @@ interface Case {
   command: string;
 }
 
+interface SetupOptions {
+  usesCodingSet?: () => Promise<boolean>;
+}
+
 const cases: Case[] = [
   {
     language: 'typescript',
@@ -52,7 +56,7 @@ const bundledRules = (language: GuideLanguage): string => {
   return `Source: ${bundleDirectory}/${path}\n\n${text.trim()}`;
 };
 
-const setup = async (onTestFinished: TestContext['onTestFinished']) => {
+const setup = async (onTestFinished: TestContext['onTestFinished'], options: SetupOptions = {}) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-language-rules-');
   const sessionManager = SessionManager.inMemory();
 
@@ -71,7 +75,7 @@ const setup = async (onTestFinished: TestContext['onTestFinished']) => {
     ui: { notify },
   } as unknown as ExtensionContext;
 
-  const guideRuns = trackGuideRuns(api.pi);
+  const guideRuns = trackGuideRuns(api.pi, options);
 
   registerLanguageRules(api.pi, guideRuns);
 
@@ -100,9 +104,9 @@ const setup = async (onTestFinished: TestContext['onTestFinished']) => {
       systemPromptOptions: { appendSystemPrompt: '', selectedTools: ['read', 'edit', 'write'] },
     });
 
-    const options = event['systemPromptOptions'] as { appendSystemPrompt: string };
+    const promptOptions = event['systemPromptOptions'] as { appendSystemPrompt: string };
 
-    return options.appendSystemPrompt;
+    return promptOptions.appendSystemPrompt;
   };
 
   const request = async (messages: unknown[] = []) => (await emit('context', { messages })).event;
@@ -122,6 +126,10 @@ const setup = async (onTestFinished: TestContext['onTestFinished']) => {
     prompt,
     request,
   };
+};
+
+const runCommand = async (fixture: Awaited<ReturnType<typeof setup>>, command: string) => {
+  await fixture.api.commands.get(command)?.handler('', fixture.context as ExtensionCommandContext);
 };
 
 const delivered = (customType: string, content: string) => ({
@@ -225,6 +233,7 @@ for (const { language, label, customType, path, command } of cases) {
     fixture.api.sendMessage.mockClear();
     await fixture.emit('session_compact');
     expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+    expect(await fixture.prompt()).toBe(rules);
   });
 
   it(`rebuilds ${label} activation when moving to another branch`, async ({ onTestFinished }) => {
@@ -248,7 +257,12 @@ for (const { language, label, customType, path, command } of cases) {
       expect(registered).toBeDefined();
       await registered?.handler('', fixture.context as ExtensionCommandContext);
       expect(fixture.appendEntry).toHaveBeenCalledExactlyOnceWith(customType, { version: 1 });
-      expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(`${label} rules are active.`, 'info');
+
+      expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining(label),
+        'info',
+      );
+
       const messageCount = idle ? 0 : 1;
 
       expect(fixture.api.sendMessage).toHaveBeenCalledTimes(messageCount);
@@ -257,11 +271,11 @@ for (const { language, label, customType, path, command } of cases) {
   );
 
   it.for([
-    { kind: 'newer', data: { version: 2 }, notice: /newer version 2.*restart/iu },
-    { kind: 'malformed', data: { version: '1' }, notice: /malformed/iu },
+    { kind: 'newer', data: { version: 2 }, detail: '2' },
+    { kind: 'malformed', data: { version: '1' }, detail: label },
   ])(
     `reports $kind ${label} activation evidence without activating`,
-    async ({ data, notice }, { onTestFinished }) => {
+    async ({ data, detail }, { onTestFinished }) => {
       const fixture = await setup(onTestFinished);
 
       fixture.sessionManager.appendCustomEntry(customType, data);
@@ -274,13 +288,92 @@ for (const { language, label, customType, path, command } of cases) {
         'warning',
       );
 
-      expect(fixture.notify).toHaveBeenCalledWith(expect.stringMatching(notice), 'warning');
+      expect(fixture.notify).toHaveBeenCalledWith(expect.stringContaining(detail), 'warning');
       expect(await fixture.prompt()).toBe('');
       expect(fixture.sessionManager.getBranch()).toEqual(branch);
       expect(fixture.appendEntry).not.toHaveBeenCalled();
       expect(fixture.api.sendMessage).not.toHaveBeenCalled();
     },
   );
+
+  it.for(['session_start', 'session_tree'])(
+    `reports unreadable ${label} activation evidence on %s without losing valid activation`,
+    async (event, { onTestFinished }) => {
+      const fixture = await setup(onTestFinished);
+
+      fixture.sessionManager.appendCustomEntry(customType, { version: 2 });
+      fixture.sessionManager.appendCustomEntry(customType, { version: '1' });
+      fixture.sessionManager.appendCustomEntry(customType, { version: 1 });
+      const branch = fixture.sessionManager.getBranch();
+
+      await fixture.emit(event);
+
+      expect(fixture.notify).toHaveBeenCalledTimes(2);
+      expect(fixture.notify).toHaveBeenCalledWith(expect.stringContaining('2'), 'warning');
+      expect(fixture.notify).toHaveBeenCalledWith(expect.stringContaining(label), 'warning');
+      expect(await fixture.prompt()).toBe(rules);
+      expect(fixture.sessionManager.getBranch()).toEqual(branch);
+      expect(fixture.appendEntry).not.toHaveBeenCalled();
+      expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+    },
+  );
+
+  it(`resets ${label} request state when a session starts`, async ({ onTestFinished }) => {
+    const fixture = await setup(onTestFinished);
+
+    await fixture.request([ruleMessage]);
+    await fixture.emit('session_start', { reason: 'new' });
+
+    expect(await fixture.call('edit', path)).toEqual([expect.objectContaining({ block: true })]);
+  });
+
+  it.for(['session_start', 'session_tree'])(
+    `drops the previous ${label} system prompt state on %s`,
+    async (event, { onTestFinished }) => {
+      const fixture = await setup(onTestFinished);
+
+      await fixture.call('read', path);
+      await fixture.prompt();
+      await fixture.request();
+      fixture.sessionManager.resetLeaf();
+      await fixture.emit(event);
+      await fixture.request();
+
+      expect(await fixture.call('edit', path)).toEqual([expect.objectContaining({ block: true })]);
+    },
+  );
+
+  it(`removes the saved ${label} rules message from a resumed request and keeps history`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setup(onTestFinished);
+
+    fixture.sessionManager.appendCustomEntry(customType, { version: 1 });
+    await fixture.emit('session_start', { reason: 'resume' });
+    const branch = fixture.sessionManager.getBranch();
+    const messages = [ruleMessage, { role: 'user', content: 'Continue.' }];
+
+    expect(await fixture.prompt()).toBe(rules);
+
+    const sent = await fixture.request(messages);
+
+    expect(sent['messages']).toEqual([messages[1]]);
+    expect(messages).toHaveLength(2);
+    expect(fixture.sessionManager.getBranch()).toEqual(branch);
+  });
+
+  it(`keeps the ${label} rules message of the activation run in the request`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setup(onTestFinished);
+
+    expect(await fixture.prompt()).toBe('');
+    await fixture.call('read', path);
+
+    const sent = await fixture.request([ruleMessage]);
+
+    expect(sent['messages']).toEqual([ruleMessage]);
+  });
 
   it(`leaves ${label} first-access rules off in a stomme project`, async ({ onTestFinished }) => {
     const fixture = await setup(onTestFinished);
@@ -321,22 +414,82 @@ for (const { language, label, customType, path, command } of cases) {
     expect(later['messages']).toEqual([kept]);
   });
 
-  it(`tells a stomme project that its ${label} guide already loads`, async ({ onTestFinished }) => {
+  it(`reports a stomme project's ${label} guide as loaded without activating rules`, async ({
+    onTestFinished,
+  }) => {
     const fixture = await setup(onTestFinished);
 
     await writeStommeProject(fixture.directory, { language });
     await fixture.prompt();
+    await runCommand(fixture, command);
 
-    await fixture.api.commands
-      .get(command)
-      ?.handler('', fixture.context as ExtensionCommandContext);
+    expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(label), 'info');
+
+    expect(fixture.appendEntry).not.toHaveBeenCalled();
+    expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it(`names the declared language when a project has no ${label} guide`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setup(onTestFinished);
+    const declared = cases.find((candidate) => candidate.language !== language) ?? cases[0];
+
+    await writeStommeProject(fixture.directory, { language: declared?.language ?? language });
+    await fixture.prompt();
+    await runCommand(fixture, command);
 
     expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(
-      expect.stringMatching(/project.*guide.*already loads/isu),
-      'info',
+      expect.stringContaining(declared?.label ?? label),
+      'warning',
     );
 
     expect(fixture.appendEntry).not.toHaveBeenCalled();
+    expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it(`warns that a session without the coding set has no ${label} guide in a project`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setup(onTestFinished, { usesCodingSet: () => Promise.resolve(false) });
+
+    await writeStommeProject(fixture.directory, { language });
+    await fixture.prompt();
+    await runCommand(fixture, command);
+
+    expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(expect.any(String), 'warning');
+    expect(fixture.appendEntry).not.toHaveBeenCalled();
+    expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it(`leaves ${label} rules off when an idle command finds a project that appeared`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setup(onTestFinished);
+
+    await fixture.prompt();
+    await writeStommeProject(fixture.directory, { language });
+    fixture.idle.mockReturnValue(true);
+    await runCommand(fixture, command);
+
+    expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(expect.any(String), 'info');
+    expect(fixture.appendEntry).not.toHaveBeenCalled();
+    expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it(`keeps the run's bundle snapshot for a busy ${label} command`, async ({ onTestFinished }) => {
+    const fixture = await setup(onTestFinished);
+
+    await fixture.prompt();
+    await writeStommeProject(fixture.directory, { language });
+    fixture.idle.mockReturnValue(false);
+    await runCommand(fixture, command);
+
+    expect(fixture.appendEntry).toHaveBeenCalledExactlyOnceWith(customType, { version: 1 });
+
+    expect(fixture.api.sendMessage).toHaveBeenCalledExactlyOnceWith(delivered(customType, rules), {
+      deliverAs: 'steer',
+    });
   });
 }
 

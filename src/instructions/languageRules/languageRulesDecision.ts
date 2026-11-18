@@ -11,13 +11,13 @@ export const languageRulesTypes: Readonly<Record<GuideLanguage, string>> = {
   rust: 'tau-rust-rules',
 };
 
-const languageByExtension: Readonly<Record<string, GuideLanguage>> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  mts: 'typescript',
-  cts: 'typescript',
-  rs: 'rust',
-};
+const languageByExtension: ReadonlyMap<string, GuideLanguage> = new Map([
+  ['ts', 'typescript'],
+  ['tsx', 'typescript'],
+  ['mts', 'typescript'],
+  ['cts', 'typescript'],
+  ['rs', 'rust'],
+]);
 
 const ignoredFolder: Readonly<Record<GuideLanguage, string>> = {
   typescript: 'node_modules',
@@ -30,7 +30,7 @@ export const languageForPath = (path: unknown): GuideLanguage | undefined => {
   }
 
   const extension = /\.([^./\\]+)$/u.exec(path)?.[1] ?? '';
-  const language = languageByExtension[extension];
+  const language = languageByExtension.get(extension);
 
   if (language === undefined) {
     return undefined;

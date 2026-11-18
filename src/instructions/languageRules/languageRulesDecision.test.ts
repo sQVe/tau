@@ -64,6 +64,11 @@ it.for([
   { tool: 'read', path: 'lib.rs.txt', loaded: none, expected: ignore },
   { tool: 'read', path: 'rs', loaded: none, expected: ignore },
   { tool: 'bash', path: 'src/lib.rs', loaded: none, expected: ignore },
+  { tool: 'read', path: 'asset.constructor', loaded: none, expected: ignore },
+  { tool: 'write', path: 'asset.constructor', loaded: none, expected: ignore },
+  { tool: 'read', path: 'asset.toString', loaded: none, expected: ignore },
+  { tool: 'read', path: 'asset.hasOwnProperty', loaded: none, expected: ignore },
+  { tool: 'read', path: 'asset.__proto__', loaded: none, expected: ignore },
   { tool: 'read', path: undefined, loaded: none, expected: ignore },
   { tool: 'read', path: 42, loaded: none, expected: ignore },
 ])(
@@ -79,6 +84,8 @@ it.for([
   { path: 'target/lib.rs', expected: undefined },
   { path: 'main.d.ts', expected: undefined },
   { path: 'README.md', expected: undefined },
+  { path: 'asset.constructor', expected: undefined },
+  { path: 'asset.valueOf', expected: undefined },
   { path: 7, expected: undefined },
 ])('finds the language of $path', ({ path, expected }) => {
   expect(languageForPath(path)).toBe(expected);

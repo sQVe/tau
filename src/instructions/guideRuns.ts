@@ -8,6 +8,9 @@ import type { Guide } from './stommeGuides/stommeGuidesDecision.js';
 
 export interface GuideRuns {
   snapshot: () => Promise<GuideSnapshot>;
+  // Reads the guides now and leaves the run's snapshot as it is.
+  current: () => Promise<GuideSnapshot>;
+  usesCodingSet: () => Promise<boolean>;
 }
 
 interface GuideRunOptions {
@@ -86,6 +89,9 @@ export const trackGuideRuns = (
   });
 
   return {
+    usesCodingSet,
+    current: () =>
+      sessionDirectory === undefined ? sessionNotStarted() : resolve(sessionDirectory),
     snapshot: () => {
       if (run === undefined && sessionDirectory !== undefined) {
         run = resolve(sessionDirectory);
