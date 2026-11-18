@@ -63,7 +63,6 @@ const appFake = () =>
     },
   });
 
-// The tool runs hc and herdr-app through one exec, so the test routes each command to its fake.
 const routedExec =
   (hc: HcFake, app: ExecFake<AppKey>, terminals: Map<string, ExecResult>): Exec =>
   (command, commandArguments, options) => {

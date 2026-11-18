@@ -20,7 +20,6 @@ const herdrLayoutSchema = Type.Object({
   ),
 });
 
-// herdr-app addresses panes by pane ID, not by the hc terminal address.
 export const findPane = async (
   runtime: CommandRuntime,
   terminal: string,

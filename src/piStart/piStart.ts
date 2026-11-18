@@ -9,8 +9,6 @@ import { errorMessage, isMissingFile } from '../errors.js';
 import { existingEntry, isBareRoot } from '../tauDirectory.js';
 import { piArguments } from './piArguments.js';
 
-// A pane target splits the pane to its right and swaps the new pane into its place, so the session
-// starts to the left of that pane.
 export type PiStartTarget = { space: string } | { name: string } | { pane: string };
 
 export interface PiStartRequest {
@@ -62,7 +60,6 @@ const spaceArguments = (request: PiStartRequest, name: string): string[] => [
   'false',
 ];
 
-// pane.split has no folder and no task, so the argv starts in the folder and carries the task.
 const splitArguments = (request: PiStartRequest, pane: string): string[] => [
   'do',
   'pane.split',

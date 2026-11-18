@@ -11,9 +11,6 @@ export type OpenPlacement =
   | { kind: 'pane' }
   | { kind: 'newSpace' };
 
-// A live lock holder means an architect runs. Its live recorded terminal is reused unless an ask
-// runs there. Without a live holder no architect runs, even when the recorded terminal lives, so
-// the architect starts beside the lead, or in a space of its own when the lead has no space.
 export const openPlacement = (facts: OpenPlacementFacts): OpenPlacement => {
   if (facts.holder !== undefined) {
     const { liveTerminal } = facts;

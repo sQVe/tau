@@ -139,9 +139,6 @@ const paneTarget = async (request: OpenRequest): Promise<PiStartTarget> => {
   return { pane };
 };
 
-// Opens the checkout's architect beside the lead, or resumes its recorded session. A live lock
-// holder means an architect runs. Its live recorded terminal is reported, not started again, unless
-// an ask runs there. Any other live holder refuses instead of starting a second architect.
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);
   const placement = await placementOf(request, record?.terminal);
