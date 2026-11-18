@@ -1,24 +1,24 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { notifyOnce, userConfigPath } from '../../config/config.js';
-import { readRoleModel } from '../../config/roleModels.js';
-import { readLiveLockHolder } from '../../fileLock/fileLock.js';
-import { get, kill, run, wait } from '../../hc/hc.js';
-import type { HcRuntime } from '../../hc/hc.js';
-import { piArguments } from '../../piStart/piArguments.js';
-import { askOutcome, askRoute } from './askDecision.js';
-import { askLiveArchitect } from './liveAsk.js';
-import type { LiveAskResult } from './liveAsk.js';
-import { architectLockPath } from './lock.js';
+import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
+import { notifyOnce, userConfigPath } from '../../../config/config.js';
+import { readRoleModel } from '../../../config/roleModels.js';
+import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
+import { get, kill, run, wait } from '../../../hc/hc.js';
+import type { HcRuntime } from '../../../hc/hc.js';
+import { piArguments } from '../../../piStart/piArguments.js';
+import { askLiveArchitect } from '../liveAsk.js';
+import type { LiveAskResult } from '../liveAsk.js';
+import { architectLockPath } from '../lock.js';
 import {
   askRecordPath,
   readArchitectRecord,
   readAskRecord,
   readAskRecords,
   writeAskRecord,
-} from './record.js';
-import type { AskRecordGap, HiddenAskRecord } from './record.js';
+} from '../record.js';
+import type { AskRecordGap, HiddenAskRecord } from '../record.js';
+import { askOutcome, askRoute } from './askDecision.js';
 
 export interface AskRequest {
   root: string;

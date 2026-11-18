@@ -4,18 +4,18 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import type { Mock } from 'vitest';
 
-import { createHcFake } from '../../../tests/hcFake.js';
-import { askDeadlineSeconds } from './ask.js';
-import { contextOf, holdLock, recordSession, setup } from './fixtures/toolHarness.js';
-import { architectLockPath } from './lock.js';
+import { createHcFake } from '../../../../tests/hcFake.js';
+import { contextOf, holdLock, recordSession, setup } from '../fixtures/toolHarness.js';
+import { architectLockPath } from '../lock.js';
 import {
   askRecordDirectory,
   readArchitectRecord,
   readAskRecords,
   writeAskRecord,
-} from './record.js';
-import type { HiddenAskRecord, LiveAskRecord } from './record.js';
-import { createArchitectTool } from './tool.js';
+} from '../record.js';
+import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
+import { createArchitectTool } from '../tool.js';
+import { askDeadlineSeconds } from './ask.js';
 
 const hiddenAsk = (
   askId: string,

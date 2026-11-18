@@ -1,20 +1,20 @@
 import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
-import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { userConfigPath } from '../../config/config.js';
-import { readRoleModel } from '../../config/roleModels.js';
-import { errorMessage, isMissingFile } from '../../errors.js';
-import { readLiveLockHolder } from '../../fileLock/fileLock.js';
-import type { LiveLockHolder } from '../../fileLock/fileLock.js';
-import { get } from '../../hc/hc.js';
-import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
-import { findPane } from '../../piStart/herdrPane.js';
-import { startPiSession, startPiSessionLeftOf } from '../../piStart/piStart.js';
-import { architectLockPath } from './lock.js';
+import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
+import { userConfigPath } from '../../../config/config.js';
+import { readRoleModel } from '../../../config/roleModels.js';
+import { errorMessage, isMissingFile } from '../../../errors.js';
+import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
+import type { LiveLockHolder } from '../../../fileLock/fileLock.js';
+import { get } from '../../../hc/hc.js';
+import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
+import { findPane } from '../../../piStart/herdrPane.js';
+import { startPiSession, startPiSessionLeftOf } from '../../../piStart/piStart.js';
+import { architectLockPath } from '../lock.js';
+import { readArchitectRecord, readAskRecords } from '../record.js';
 import { eligibleTerminal, openCandidate, openReuse } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
-import { readArchitectRecord, readAskRecords } from './record.js';
 
 export interface OpenRequest {
   root: string;

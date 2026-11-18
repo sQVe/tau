@@ -4,11 +4,11 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { fakeExtensionApi } from '../../../../tests/extensionApi.js';
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { readAskRecordAt, writeAskRecordAt } from '../record.js';
+import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
 import { askModePrompt, registerAskMode } from './askMode.js';
-import { readAskRecordAt, writeAskRecordAt } from './record.js';
-import type { HiddenAskRecord, LiveAskRecord } from './record.js';
 
 const askRecord = (): HiddenAskRecord => ({
   version: 2,

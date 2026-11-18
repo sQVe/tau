@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
+import type { ArchitectOwner } from '../record.js';
 import { askOutcome, askRoute } from './askDecision.js';
-import type { ArchitectOwner } from './record.js';
 
 it.each([
   {

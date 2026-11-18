@@ -1,4 +1,4 @@
-import type { ArchitectOwner, AskStatus } from './record.js';
+import type { ArchitectOwner, AskStatus } from '../record.js';
 
 export interface AskOutcomeFacts {
   status: AskStatus;

@@ -10,13 +10,13 @@ import { isUuid } from '../../inbox/inbox.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { answerLiveAsk } from './answer.js';
 import type { AnswerResult } from './answer.js';
-import { askArchitect } from './ask.js';
-import type { AskResult } from './ask.js';
+import { askArchitect } from './ask/ask.js';
+import type { AskResult } from './ask/ask.js';
 import { runGate } from './gate.js';
 import type { GateResult } from './gate.js';
 import { retryLiveAsk } from './liveAsk.js';
-import { openArchitect } from './open.js';
-import type { OpenResult } from './open.js';
+import { openArchitect } from './open/open.js';
+import type { OpenResult } from './open/open.js';
 
 type ArchitectDetails =
   | ({ action: 'open' } & OpenResult)

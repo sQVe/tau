@@ -15,7 +15,7 @@ import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { architectLockPath } from './lock.js';
-import { failOpenLiveAsks } from './openLiveAsks.js';
+import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import {
   askRecordDirectory,
   askRecordPath,

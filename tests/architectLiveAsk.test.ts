@@ -6,7 +6,7 @@ import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import architectExtension from '../src/extensions/architect/architect.js';
-import { acceptArchitectAsk } from '../src/extensions/architect/askAcceptance.js';
+import { acceptArchitectAsk } from '../src/extensions/architect/ask/askAcceptance.js';
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import {
   askRecordDirectory,
@@ -25,6 +25,7 @@ import { createInboxExtension } from '../src/extensions/inbox/inbox.js';
 import { readLiveLockHolder } from '../src/fileLock/fileLock.js';
 import { acceptChecks, sendInboxMessage } from '../src/inbox/inbox.js';
 import type { AcceptCheck } from '../src/inbox/inbox.js';
+import type { MessageBody } from '../src/inbox/protocol.js';
 import { fakeExtensionApi } from './extensionApi.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { createHcFake } from './hcFake.js';
@@ -248,7 +249,7 @@ it('an architect-ask is saved only while the architect holds the lock token it n
   replyTerminal(hc, 't-architect', inbox.path);
 
   const send = (text: string, lockToken?: string) => {
-    const body =
+    const body: MessageBody =
       lockToken === undefined
         ? { family: 'handover', payload: { text } }
         : { family: 'architect-ask', payload: { text, lockToken } };

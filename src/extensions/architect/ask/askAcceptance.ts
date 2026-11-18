@@ -1,4 +1,4 @@
-import type { AcceptCheck } from '../../inbox/inbox.js';
+import type { AcceptCheck } from '../../../inbox/inbox.js';
 
 export const acceptArchitectAsk =
   (heldToken: () => string | undefined): AcceptCheck =>

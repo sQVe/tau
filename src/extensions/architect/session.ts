@@ -10,7 +10,7 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
-import { failOpenLiveAsks } from './openLiveAsks.js';
+import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import { readAskRecords, writeArchitectRecord, writeAskRecord } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
 
