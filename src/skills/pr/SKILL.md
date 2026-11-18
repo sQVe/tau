@@ -262,9 +262,11 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      Bookkeeping, record matching, and unrelated issues belong in the session report.
    - Issues: internal ticket references follow the repository's rule. Link Linear tickets as the
      [tracker skill](../tracker/SKILL.md) says where the repository allows them, and leave them out
-     where it forbids them. For other issues, use `Fixes <issue>` only for issues this PR completes;
-     use `Related to <issue>` for others. A slice with an open acceptance item gets `Related to`,
-     since `Fixes` closes it on merge.
+     where it forbids them. A Linear ticket this PR completes gets `Fixes <id>`, so the merge closes
+     it; the others get `Related to <id>`. For other issues, use `Fixes <issue>` only for issues
+     this PR completes; use `Related to <issue>` for others. A slice with an open acceptance item
+     gets `Related to`, since `Fixes` closes it on merge. When a merge leaves a ticket open anyway,
+     the [tracker skill's Hard rules](../tracker/SKILL.md#hard-rules) say when Done is allowed.
    - Repository template: map these rules to matching sections. Omit empty optional sections; keep
      required headings with the shortest true content, such as "None". Changes holds only parts,
      decisions, and unrelated changes. Keep the template's checklist intact; the required-action

@@ -2,7 +2,7 @@
 name: tracker
 description:
   Write Linear tickets by Tau's rules. Pick the type and template, route it, search for duplicates,
-  and use checked tools for ticket writes and the two allowed status changes. Use it for "file a
+  and use checked tools for ticket writes and the three allowed status changes. Use it for "file a
   bug", "create a ticket", or "add a follow-up ticket". It does not split designs or start slices.
 metadata:
   required-for: creating or updating a Linear ticket, its relations, or its status
@@ -30,9 +30,15 @@ This list is the one approval rule; other skills link here.
   `linear api 'query($id: String!) { viewer { id } issue(id: $id) { assignee { id } creator { id } } }' --variable id=<ticket>`.
   A failed read or unsettled IDs mean another person's ticket. Check each existing ticket a write
   changes before writing without asking, including `slice` `apply`.
-- Make only two status changes: move a slice to In Progress when it starts, and cancel a ticket
-  after the user approves a preview that shows it. Linear's GitHub integration moves a ticket to
-  Done when its PR merges. Never close, reopen, or set any other status.
+- Make only three status changes: move a slice to In Progress when it starts, cancel a ticket after
+  the user approves a preview that shows it, and set a merged PR's ticket to Done as below. Never
+  close, reopen, or set any other status.
+- Done: Linear's GitHub integration moves a ticket to Done when its PR merges, so this applies to a
+  ticket the merge left open. Read the merged PR and its body, then each acceptance item of the
+  ticket. When an item is unchecked or not met, or its check is deferred, keep the ticket's state
+  and name that item. Otherwise run `linear issue update <ticket> --state Done --no-input`, then
+  read the state back with `linear issue view <ticket> --json --no-pager` and check that
+  `state.name` is `Done`. Report a state that is not `Done`.
 - Take teams and projects only from the prompt's tracker lines. Never guess them or a label.
 
 ## Procedure
