@@ -76,8 +76,8 @@ export const forgetAcceptCheck = (family: Family): void => {
   const slot = globalThis.tauInboxSlot;
 
   if (slot !== undefined) {
-    slot.checks = Object.fromEntries(
-      Object.entries(slot.checks).filter(([name]) => name !== family),
-    );
+    const remaining = Object.entries(slot.checks).filter(([name]) => name !== family);
+
+    slot.checks = Object.fromEntries(remaining);
   }
 };

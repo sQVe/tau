@@ -513,7 +513,9 @@ it('a close that lands before the lead send returns keeps the ask failed', async
   expect(asked.details).toMatchObject({ action: 'ask', status: 'unknown', askId: record.askId });
   expect((asked.details as { note: string }).note).not.toContain('Retry');
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
-  expect(lead.savedRecords().filter((name) => name.endsWith('.json'))).toHaveLength(1);
+  const savedNames = lead.savedRecords().filter((name) => name.endsWith('.json'));
+
+  expect(savedNames).toHaveLength(1);
 });
 
 it('a lost reply on a deleted ask returns unknown and leaves no record', async ({

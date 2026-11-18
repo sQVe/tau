@@ -92,15 +92,17 @@ it.for([
     const { root } = await setup(onTestFinished);
     const hc = createHcFake();
 
-    await expect(
-      createArchitectTool({ ...hc, cwd: root }).execute(
-        'call',
-        { ...input, askId: '0190c1d2-0000-7000-8000-000000000501' },
-        undefined,
-        undefined,
-        contextOf(root),
-      ),
-    ).rejects.toThrow(`action ${action} does not take askId.`);
+    const tool = createArchitectTool({ ...hc, cwd: root });
+
+    const called = tool.execute(
+      'call',
+      { ...input, askId: '0190c1d2-0000-7000-8000-000000000501' },
+      undefined,
+      undefined,
+      contextOf(root),
+    );
+
+    await expect(called).rejects.toThrow(`action ${action} does not take askId.`);
 
     expect(hc.calls).toEqual([]);
     await expect(readdir(gateRecordDirectory(root))).rejects.toThrow(/ENOENT/);

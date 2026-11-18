@@ -375,10 +375,9 @@ it('keeps valid asks beside a malformed and newer file', async () => {
 
   expect(records.map((record) => record.askId)).toEqual(['0190c1d2-0000-7000-8000-000000000102']);
 
-  expect(gaps.map((gap) => basename(gap.path)).toSorted()).toEqual([
-    'malformed.json',
-    'newer.json',
-  ]);
+  const gapNames = gaps.map((gap) => basename(gap.path)).toSorted();
+
+  expect(gapNames).toEqual(['malformed.json', 'newer.json']);
 
   expect(gaps.map((gap) => gap.reason.length > 0)).toEqual([true, true]);
 });

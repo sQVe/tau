@@ -247,17 +247,20 @@ it('an architect-ask is saved only while the architect holds the lock token it n
 
   replyTerminal(hc, 't-architect', inbox.path);
 
-  const send = (text: string, lockToken?: string) =>
-    sendInboxMessage({
+  const send = (text: string, lockToken?: string) => {
+    const body =
+      lockToken === undefined
+        ? { family: 'handover', payload: { text } }
+        : { family: 'architect-ask', payload: { text, lockToken } };
+
+    return sendInboxMessage({
       hc: { ...hc, cwd: root },
       target: 't-architect',
       sessionId: 'session-architect',
-      body:
-        lockToken === undefined
-          ? { family: 'handover', payload: { text } }
-          : { family: 'architect-ask', payload: { text, lockToken } },
+      body,
       refusal: 'Nothing was queued.',
     });
+  };
 
   const refusal = `This architect does not hold lock ${tokenOne} now. It restarted or closed. Call architect ask again. Nothing was queued.`;
 
@@ -493,15 +496,17 @@ it('ask refuses a changed architect session', async () => {
   replyTerminal(hc, 't-lead', '/tmp/tau-lead/session-lead.sock');
   replyTerminal(hc, 't-architect', architect.path);
 
-  await expect(
-    createArchitectTool({ ...hc, cwd: root }).execute(
-      'call',
-      { action: 'ask', question: 'Which flag name?' },
-      undefined,
-      undefined,
-      toolContext(root, 'session-lead'),
-    ),
-  ).rejects.toThrow(/changed session/);
+  const tool = createArchitectTool({ ...hc, cwd: root });
+
+  const asked = tool.execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    toolContext(root, 'session-lead'),
+  );
+
+  await expect(asked).rejects.toThrow(/changed session/);
 
   expect(architect.savedRecords()).toEqual([]);
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');

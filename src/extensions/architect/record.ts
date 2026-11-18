@@ -337,21 +337,21 @@ export const readAskRecords = async (root: string): Promise<AskRecordScan> => {
     throw error;
   });
 
-  const entries = await Promise.all(
-    names
-      .filter((name) => name.endsWith('.json'))
-      .map(async (name): Promise<AskEntry> => {
-        const path = join(askRecordDirectory(root), name);
+  const fileReads = names
+    .filter((name) => name.endsWith('.json'))
+    .map(async (name): Promise<AskEntry> => {
+      const path = join(askRecordDirectory(root), name);
 
-        try {
-          const record = await readAskRecordAt(path);
+      try {
+        const record = await readAskRecordAt(path);
 
-          return record === undefined ? undefined : { record };
-        } catch (error) {
-          return { gap: { path, reason: errorMessage(error) } };
-        }
-      }),
-  );
+        return record === undefined ? undefined : { record };
+      } catch (error) {
+        return { gap: { path, reason: errorMessage(error) } };
+      }
+    });
+
+  const entries = await Promise.all(fileReads);
 
   const records: AskRecord[] = [];
   const gaps: AskRecordGap[] = [];

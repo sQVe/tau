@@ -179,9 +179,12 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
   const architect = await readArchitectRecord(request.root);
   const holder = await readLiveLockHolder(architectLockPath(request.root));
 
+  const holderFacts =
+    holder === undefined ? undefined : { checkout: holder.checkout, token: holder.token };
+
   const route = askRoute({
     root: request.root,
-    holder: holder === undefined ? undefined : { checkout: holder.checkout, token: holder.token },
+    holder: holderFacts,
     owner: architect?.owner ?? null,
     sessionFile: architect?.sessionFile ?? null,
   });
