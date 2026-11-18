@@ -43,6 +43,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0128: Support Linux and macOS only](./0128-support-linux-and-macos-only.md)
 - [0135: Record improvement events in each project root](./0135-record-improvement-events-in-each-project-root.md)
 - [0139: Split the manager role into a lead and an architect](./0139-split-the-manager-role-into-a-lead-and-an-architect.md)
+- [0140: Route a throttled model to a fallback model](./0140-route-a-throttled-model-to-a-fallback-model.md)
 
 ### Documentation and writing
 

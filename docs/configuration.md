@@ -208,6 +208,36 @@ Tau fails a model outside the list and never falls back to another model.
 { "allowedModels": ["openai-codex/gpt-5.6-luna", "claude-bridge/claude-opus-5-5"] }
 ```
 
+### `fallbackModels` (user file)
+
+`fallbackModels` maps a name to a primary model, a fallback model, and the retry at which Tau
+switches. Tau registers the name as the virtual model `tau/<name>`.
+
+```json
+{
+  "fallbackModels": {
+    "deepseek-flash": {
+      "primary": "morph/morph-dsv41flash-1017",
+      "fallback": "openrouter/deepseek/deepseek-v4.1-flash-1017",
+      "fallbackAtRetry": 5
+    }
+  }
+}
+```
+
+A name uses lower-case letters, digits, and hyphens. Each model is `provider/model-id`, and the
+primary and fallback differ. `fallbackAtRetry` is a whole number of at least 1. It must be at most
+Pi's `retry.maxRetries`, or the retry that would switch never runs.
+
+A user message goes to the primary. Each failed retry stays on the primary until the configured
+retry, and every retry from then on goes to the fallback. A request outside the agent loop goes to
+the model that answered last. The next user message returns to the primary. A route that names an
+unknown or disallowed model fails the request and names the model.
+
+Only the user file may set `fallbackModels`. A repository file that sets it is an error and supplies
+no models. When `allowedModels` is set, it must list `tau/<name>`, the primary, and the fallback.
+When Pi's `enabledModels` is set, it must list `tau/<name>`.
+
 ### Web search
 
 Search providers and the default answer model belong to
