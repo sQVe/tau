@@ -31,14 +31,8 @@ This list is the one approval rule; other skills link here.
   A failed read or unsettled IDs mean another person's ticket. Check each existing ticket a write
   changes before writing without asking, including `slice` `apply`.
 - Make only three status changes: move a slice to In Progress when it starts, cancel a ticket after
-  the user approves a preview that shows it, and set a merged PR's ticket to Done as below. Never
-  close, reopen, or set any other status.
-- Done: Linear's GitHub integration moves a ticket to Done when its PR merges, so this applies to a
-  ticket the merge left open. Read the merged PR and its body, then each acceptance item of the
-  ticket. When an item is unchecked or not met, or its check is deferred, keep the ticket's state
-  and name that item. Otherwise run `linear issue update <ticket> --state Done --no-input`, then
-  read the state back with `linear issue view <ticket> --json --no-pager` and check that
-  `state.name` is `Done`. Report a state that is not `Done`.
+  the user approves a preview that shows it, and set a merged PR's ticket to Done under step 6's
+  rule. Never close, reopen, or set any other status.
 - Take teams and projects only from the prompt's tracker lines. Never guess them or a label.
 
 ## Procedure
@@ -108,6 +102,15 @@ This list is the one approval rule; other skills link here.
      move the slice. It skips `In Progress`; every other state, `In Review` included, moves. Stop
      and ask if the team lacks that state.
    - Cancel: call `ticket` `cancel`. Its confirm supplies approval. Report the returned status.
+   - Done: only for a merged PR's ticket that the merge left open. Read the PR with
+     `gh pr view <number> --repo <repo> --json state,mergedAt,body`. Stop and report the gap when
+     the read fails, `state` is not `MERGED`, or `mergedAt` is unset. Read each acceptance item of
+     the ticket and the PR body's deferred verification section, and treat a failed or empty read as
+     every item still open. Stop and name the blocker when an item is unchecked, not met, or has no
+     evidence, or when a check is deferred, including a deployment check that no acceptance item
+     names. Otherwise run `linear issue update <ticket> --state Done --no-input`, then read the
+     state back with `linear issue view <ticket> --json --no-pager`. Stop and report a state that is
+     not `Done`.
 
 7. Link the ticket from the PR. Write `Fixes <id>` only for the ticket the PR completes, such as the
    slice, and `Related to <id>` for the rest. Never list an agent ticket or a container as fixed.

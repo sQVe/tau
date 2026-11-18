@@ -2,6 +2,6 @@
 'tau': patch
 ---
 
-The tracker skill allows the manager to set a merged PR's ticket to Done only after it reads the PR
-and finds no open acceptance item or deferred check, and the pr skill writes `Fixes` for the ticket
-a PR completes.
+The tracker skill allows a merged PR's ticket to move to Done only after an affirmative read that
+the PR is merged, no open acceptance item and no deferred check, and a read-back of the new state;
+the pr skill points at that rule.
