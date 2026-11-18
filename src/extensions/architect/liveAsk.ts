@@ -106,7 +106,7 @@ const sendQuestion = async (
         status: 'unknown',
         askId,
         terminal: sent.terminal,
-        note: `The question may already be in the inbox of the live architect in ${sent.terminal}, but the ask record could not be updated: ${errorMessage(settled.error)}. Retry with architect ask and askId ${askId}. Do not ask the question again as new.`,
+        note: `The question may already be in the inbox of the live architect in ${sent.terminal}, but the ask record could not be updated: ${errorMessage(settled.error)}. Do not ask the question again as new.`,
       };
     }
 

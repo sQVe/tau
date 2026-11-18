@@ -538,9 +538,11 @@ it('a live ask returns unknown with its ask ID and a note when the record write 
     terminal: 't-architect',
   });
 
-  expect(note).toContain(`Retry with architect ask and askId ${record.askId}`);
   expect(note).toContain('could not be updated');
   expect(note).toContain('EISDIR');
+  expect(note).toContain('Do not ask the question again as new');
+  expect(note).not.toContain('Retry');
+  expect(note).not.toContain('askId');
 });
 
 it('a live ask reports a confirmed send when its record disappeared', async ({
