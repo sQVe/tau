@@ -251,8 +251,9 @@ no models. When `allowedModels` is set, each selection path checks a different m
 - A Tau worker launch checks the selected model. The list must hold `tau/<name>` to launch a worker
   on it.
 
-Pi's `--model` and Pi's `enabledModels` scope Pi's own model selection, apart from `allowedModels`.
-When `enabledModels` is set, it must list `tau/<name>` to select the virtual model in Pi.
+Pi's `--model` and `enabledModels` scope Pi's own model selection, apart from `allowedModels`.
+Explicit `--model` selects from the full model catalog. `enabledModels` limits Pi's scoped model
+selection, such as model cycling, so it must list `tau/<name>` only for that selection.
 
 ### Web search
 

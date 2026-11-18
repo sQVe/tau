@@ -53,8 +53,9 @@ Each selection path checks `allowedModels`, when set, against its own model:
 
 - The router checks the physical model it picks, so the list must hold the primary and the fallback.
 - A Tau worker launch checks the selected model, so the list must hold `tau/<name>` for a worker.
-- Pi's `--model` and `enabledModels` scope Pi's own selection apart from `allowedModels`. When
-  `enabledModels` is set, it must list `tau/<name>`.
+- Pi's `--model` and `enabledModels` scope Pi's own selection apart from `allowedModels`. Explicit
+  `--model` selects from the full catalog. `enabledModels` limits scoped selection, such as model
+  cycling, so it must list `tau/<name>` only for that selection.
 
 ## Consequences
 
