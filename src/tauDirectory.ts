@@ -120,12 +120,17 @@ const rejectSymlinks = async (root: string, relativePaths: readonly string[]) =>
 };
 
 // A hard link shares its file with another path, maybe outside the checkout, so an append to
-// .tau/.gitignore would change that file too.
-const rejectHardLinkedIgnoreFile = async (root: string) => {
+// .tau/.gitignore would change that file too. A read of a FIFO or another non-regular file can wait
+// for a writer forever.
+const rejectLinkedIgnoreFile = async (root: string) => {
   const path = '.tau/.gitignore';
 
   try {
     const stats = await lstat(join(root, path));
+
+    if (!stats.isFile()) {
+      throw new Error(`Refusing to write through a file that is not a regular file: ${path}`);
+    }
 
     if (stats.nlink > 1) {
       throw new Error(`Refusing to write through a file with another hard link: ${path}`);
@@ -304,14 +309,24 @@ export const findSharedRepositoryRoot = async (
   return root;
 };
 
+const rejectParsedSymlinks = async (root: string, segments: readonly string[]): Promise<void> => {
+  await rejectSymlinks(root, writtenPaths(segments));
+};
+
+// Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink. Follows no
+// linked path, so a caller can run it before it reads anything below `.tau`.
+export const rejectTauSymlinks = async (root: string, path: string): Promise<void> => {
+  await rejectParsedSymlinks(root, parseSegments(path));
+};
+
 // Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
 // `.tau/.gitignore` has another hard link, since either could send writes outside the repository,
 // or when Git would not ignore files in it. Changes nothing, so a read can run it.
 export const checkTauDirectory = async (root: string, path: string): Promise<void> => {
   const segments = parseSegments(path);
 
-  await rejectSymlinks(root, writtenPaths(segments));
-  await rejectHardLinkedIgnoreFile(root);
+  await rejectParsedSymlinks(root, segments);
+  await rejectLinkedIgnoreFile(root);
   await rejectLaterExceptions(root);
 
   if (await isBareRoot(root)) {
@@ -335,8 +350,8 @@ export const checkTauDirectory = async (root: string, path: string): Promise<voi
 export const ensureTauDirectory = async (root: string, path: string): Promise<string> => {
   const segments = parseSegments(path);
 
-  await rejectSymlinks(root, writtenPaths(segments));
-  await rejectHardLinkedIgnoreFile(root);
+  await rejectParsedSymlinks(root, segments);
+  await rejectLinkedIgnoreFile(root);
 
   if (await isBareRoot(root)) {
     await rejectLaterExceptions(root);

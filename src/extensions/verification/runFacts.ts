@@ -4,6 +4,7 @@ import { withIgnoredNote } from '../../config/repositoryCommand.js';
 import { readVerificationTarget } from '../../config/verificationTargets.js';
 import type { VerificationTarget } from '../../config/verificationTargets.js';
 import { readGit, runGit } from '../../git.js';
+import { existingEntry } from '../../tauDirectory.js';
 import type { RunRecord } from '../../verification/records.js';
 import { readRun, runRecordPath } from '../../verification/verification.js';
 
@@ -40,6 +41,24 @@ export const readRunFacts = async (root: string): Promise<RunFacts> => {
   };
 };
 
+const missingRunRecordMessage = (path: string, run: string) =>
+  `The run ${run} has no run record at ${path}.`;
+
+// Reads metadata only, so a run record that is not a regular file is refused before anything opens
+// it.
+export const requireRunRecordFile = async (directory: string, run: string): Promise<void> => {
+  const path = runRecordPath(directory);
+  const entry = await existingEntry(path);
+
+  if (entry === undefined) {
+    throw new Error(missingRunRecordMessage(path, run));
+  }
+
+  if (!entry.isFile()) {
+    throw new Error(`Refusing to read a run record that is not a regular file: ${path}`);
+  }
+};
+
 export const readRunRecordOrThrow = async (directory: string, run: string): Promise<RunRecord> => {
   const path = runRecordPath(directory);
   const read = await readRun(directory);
@@ -49,7 +68,7 @@ export const readRunRecordOrThrow = async (directory: string, run: string): Prom
   }
 
   if (read.status === 'missing') {
-    throw new Error(`The run ${run} has no run record at ${path}.`);
+    throw new Error(missingRunRecordMessage(path, run));
   }
 
   throw new Error(`The run record ${path} is malformed: ${read.problem}`);

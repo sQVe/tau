@@ -1,14 +1,32 @@
-import { findTauRoot } from '../../tauDirectory.js';
+import { join, relative, sep } from 'node:path';
+
+import {
+  checkTauDirectory,
+  findSharedRepositoryRoot,
+  findTauRoot,
+  rejectTauSymlinks,
+} from '../../tauDirectory.js';
 import { isRunName } from '../../verification/records.js';
 import { runDirectoryPath } from '../../verification/verification.js';
 
-export interface RunDirectory {
-  root: string;
+export interface VerificationRoots {
+  checkoutRoot: string;
+  recordRoot: string;
+}
+
+export interface RunDirectory extends VerificationRoots {
   directory: string;
 }
 
-export const findVerificationRoot = (cwd: string, toolName: string): Promise<string> =>
-  findTauRoot(cwd, toolName);
+export const findVerificationRoots = async (
+  cwd: string,
+  toolName: string,
+): Promise<VerificationRoots> => {
+  const checkoutRoot = await findTauRoot(cwd, toolName);
+  const recordRoot = await findSharedRepositoryRoot(cwd);
+
+  return { checkoutRoot, recordRoot };
+};
 
 export const findRunDirectory = async (
   cwd: string,
@@ -19,7 +37,21 @@ export const findRunDirectory = async (
     throw new Error(`Run name ${run} is not a verification run name.`);
   }
 
-  const root = await findVerificationRoot(cwd, toolName);
+  const { checkoutRoot, recordRoot } = await findVerificationRoots(cwd, toolName);
 
-  return { root, directory: runDirectoryPath(root, run) };
+  return { checkoutRoot, recordRoot, directory: runDirectoryPath(recordRoot, run) };
+};
+
+const recordFolder = (recordRoot: string, directory: string) =>
+  relative(join(recordRoot, '.tau'), directory).split(sep).join('/');
+
+export const checkRecordSymlinks = async (recordRoot: string, directory: string): Promise<void> => {
+  await rejectTauSymlinks(recordRoot, recordFolder(recordRoot, directory));
+};
+
+export const checkRecordDirectory = async (
+  recordRoot: string,
+  directory: string,
+): Promise<void> => {
+  await checkTauDirectory(recordRoot, recordFolder(recordRoot, directory));
 };

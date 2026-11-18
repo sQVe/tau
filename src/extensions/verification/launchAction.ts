@@ -4,14 +4,15 @@ import type { VerificationTarget } from '../../config/verificationTargets.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import type { RunRecord } from '../../verification/records.js';
 import { runRecordVersion } from '../../verification/records.js';
-import { writeRunRecord } from '../../verification/verification.js';
+import { verificationDirectoryName, writeRunRecord } from '../../verification/verification.js';
 import { runCommand } from './command.js';
 import type { CommandOutcome } from './command.js';
 import type { RunFacts } from './runFacts.js';
 import { stopRun } from './stopAction.js';
 
 export interface LaunchContext {
-  root: string;
+  checkoutRoot: string;
+  recordRoot: string;
   deadlineMilliseconds: number;
   signal: AbortSignal | undefined;
   target: string;
@@ -65,7 +66,7 @@ const runStep = (
 ): Promise<CommandOutcome> =>
   runCommand({
     argv,
-    cwd: context.root,
+    cwd: context.checkoutRoot,
     logPath: join(directory, logPath),
     environment,
     deadlineMilliseconds: context.deadlineMilliseconds,
@@ -74,8 +75,8 @@ const runStep = (
 
 export const launchRun = async (context: LaunchContext): Promise<LaunchResult> => {
   const directory = await createFreshTauDirectory(
-    context.root,
-    'verification',
+    context.recordRoot,
+    verificationDirectoryName,
     `${context.target}-`,
   );
 
@@ -117,7 +118,7 @@ export const launchRun = async (context: LaunchContext): Promise<LaunchResult> =
 
   if (launchOutcome.kind === 'stopped') {
     await stopRun({
-      root: context.root,
+      checkoutRoot: context.checkoutRoot,
       directory,
       deadlineMilliseconds: context.deadlineMilliseconds,
       signal: undefined,

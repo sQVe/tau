@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
@@ -18,11 +16,12 @@ import {
   inspectReview,
   readOwnership,
 } from '../../reviewCapture/reviewCapture.js';
+import { findSharedRepositoryRoot } from '../../tauDirectory.js';
 import type { Freshness } from '../../verification/freshness.js';
 import type { RunRead } from '../../verification/records.js';
 import { listRecordProblems, selectEvidence } from '../../verification/selection.js';
 import type { SelectedResult } from '../../verification/selection.js';
-import { readRuns } from '../../verification/verification.js';
+import { readRuns, verificationDirectoryPath } from '../../verification/verification.js';
 import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainEvidence } from './evidenceChain.js';
@@ -246,6 +245,16 @@ const toVerificationEvidence = ({
 });
 
 const readVerification = async (root: string, evidence: PublicationEvidence) => {
+  let recordRoot: string;
+
+  try {
+    recordRoot = await findSharedRepositoryRoot(root);
+  } catch (error) {
+    evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
+
+    return;
+  }
+
   let tree: string | null;
 
   try {
@@ -260,7 +269,7 @@ const readVerification = async (root: string, evidence: PublicationEvidence) => 
   let runs: RunRead[];
 
   try {
-    runs = await readRuns(join(root, '.tau', 'verification'));
+    runs = await readRuns(verificationDirectoryPath(recordRoot));
   } catch (error) {
     evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
 

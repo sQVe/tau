@@ -81,7 +81,7 @@ export const createEvidenceRepository = async (
   const run = (request: PublicationRequest = defaultRequest, projectTrusted = true) =>
     readPublicationEvidence({ exec: fake.exec, cwd: root, signal: undefined }, root, request, {
       ...config,
-      location: { ...config.location, projectTrusted },
+      location: { ...config.location, cwd: root, projectTrusted },
     });
 
   return { root, directory, mergeBase, fake, run };

@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { realpath, writeFile } from 'node:fs/promises';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { ensureTauDirectory } from '../../../tauDirectory.js';
@@ -36,7 +36,7 @@ export const createRunDirectory = async (
   run: string,
   options: RunDirectoryOptions,
 ): Promise<RunDirectory> => {
-  const root = await createTemporaryRepository(registerCleanup);
+  const root = await realpath(await createTemporaryRepository(registerCleanup));
   const directory = await ensureTauDirectory(root, `verification/${run}`);
 
   await writeFile(

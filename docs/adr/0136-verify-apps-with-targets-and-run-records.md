@@ -43,9 +43,21 @@ run, and reads those records instead of parsing QA prose.
 
 ### Run directory and writers
 
-- Repository roots come from `findSharedRepositoryRoot` in `src/tauDirectory.ts`.
-- Each run lives in `.tau/verification/<run>/`, and stop never deletes it, so the proof survives
-  cleanup.
+- Tau uses two roots. The checkout root comes from `findTauRoot`, and it serves target
+  configuration, command working directories, and tree identity. The shared repository root comes
+  from `findSharedRepositoryRoot` in `src/tauDirectory.ts`, and it serves the run directory and item
+  records.
+- Each run lives in `<shared repository root>/.tau/verification/<run>/`. A normal clone shares its
+  main checkout, and its linked worktrees use that same main checkout. A linked worktree backed by a
+  separate bare repository uses the bare repository root. Every worktree and the main checkout of
+  one repository read the same runs, and sibling repositories stay apart.
+- Callers must stop a run from the checkout that launched it. Stop runs in that checkout and reads
+  its tree identity, so the proof names the tree the run tested. Tau does not record or check which
+  checkout launched the run.
+- Stop never deletes a run directory, so the proof survives cleanup.
+- Runs made before this location stay in their checkouts and are not migrated. Tau no longer
+  discovers a run outside the shared root, while a run already under the shared root remains
+  visible.
 - Only the manager's tool writes `run.json`. Each item result is its own file, `items/<item>.json`,
   written by the `qa` worker's tool. No two writers share a file, so no lock is needed.
 - The write-once check is not atomic. Two workers that record the same item in one run can race, and

@@ -1,10 +1,11 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
 import { readCheckState } from '../../checkRecord/identity.js';
+import { verificationDirectoryPath } from '../../verification/verification.js';
 import { createEvidenceRepository } from './fixtures/evidenceRepository.js';
 
 const runName = 'run-a';
@@ -30,7 +31,7 @@ const writeJson = async (path: string, value: unknown): Promise<void> => {
 };
 
 const writeRun = async (root: string, tree: string): Promise<void> => {
-  const directory = join(root, '.tau', 'verification', runName);
+  const directory = join(verificationDirectoryPath(root), runName);
 
   await writeJson(join(directory, 'run.json'), {
     version: 1,
@@ -129,11 +130,28 @@ it('keeps the result fresh after a commit of identical content', async () => {
   ]);
 });
 
+it('reports a failed shared-root resolution as a verification gap', async () => {
+  const { root, run } = await setUp();
+
+  await rm(join(root, '.git'), { recursive: true, force: true });
+
+  const evidence = await run();
+
+  expect(evidence.verification).toBeNull();
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'verification',
+    reason: expect.stringContaining(
+      'git rev-parse --path-format=absolute --git-common-dir failed',
+    ) as unknown,
+  });
+});
+
 it('reports a malformed run.json as a gap', async () => {
   const { root, run } = await setUp();
 
-  await mkdir(join(root, '.tau', 'verification', 'broken'), { recursive: true });
-  await writeFile(join(root, '.tau', 'verification', 'broken', 'run.json'), '{');
+  await mkdir(join(verificationDirectoryPath(root), 'broken'), { recursive: true });
+  await writeFile(join(verificationDirectoryPath(root), 'broken', 'run.json'), '{');
 
   const evidence = await run();
 
@@ -151,7 +169,7 @@ it('reports a failed runs read as a verification gap', async () => {
   const { root, run } = await setUp();
 
   await mkdir(join(root, '.tau'), { recursive: true });
-  await writeFile(join(root, '.tau', 'verification'), 'not a directory\n');
+  await writeFile(verificationDirectoryPath(root), 'not a directory\n');
 
   const evidence = await run();
 

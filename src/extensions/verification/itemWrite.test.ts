@@ -1,12 +1,19 @@
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, rename, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { isMissingFile } from '../../errors.js';
 import type { RunRecord } from '../../verification/records.js';
-import { itemRecordPath, readItemRecord, readRuns } from '../../verification/verification.js';
+import {
+  itemRecordPath,
+  readItemRecord,
+  readRuns,
+  verificationDirectoryPath,
+} from '../../verification/verification.js';
 import { createRunDirectory } from './fixtures/runDirectory.js';
 import { recordItem } from './itemWrite.js';
 import type { RecordInput } from './recordParameters.js';
@@ -266,6 +273,51 @@ it.each(refusalCases)('refuses $name and writes no item file', async (refusal) =
   });
 });
 
+it('records an item from a linked worktree under the shared root', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+  });
+
+  await mkdir(join(directory, 'screenshots'), { recursive: true });
+  await writeFile(join(directory, 'screenshots', 'step-1.png'), 'png');
+  await writeFile(join(root, 'tracked.txt'), 'one\n');
+  await git(root, 'add', 'tracked.txt');
+  await git(root, 'commit', '--quiet', '-m', 'first');
+
+  const worktree = join(temporaryDirectory(onTestFinished, 'tau-item-worktree-'), 'worktree');
+
+  await git(root, 'worktree', 'add', '--quiet', worktree, 'HEAD');
+
+  const saved = await recordItem(worktree, validInput());
+
+  expect(saved).toEqual({ run, item, path: itemRecordPath(directory, item) });
+  expect(saved.path.startsWith(verificationDirectoryPath(root))).toBe(true);
+
+  expect(await readItemRecord(saved.path)).toMatchObject({
+    status: 'valid',
+    record: { run, item },
+  });
+});
+
+it('refuses an item when the shared verification folder is a symlink', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+  });
+
+  await mkdir(join(directory, 'screenshots'), { recursive: true });
+  await writeFile(join(directory, 'screenshots', 'step-1.png'), 'png');
+
+  const outside = temporaryDirectory(onTestFinished, 'tau-item-outside-');
+
+  await rename(verificationDirectoryPath(root), join(outside, 'verification'));
+  await symlink(join(outside, 'verification'), verificationDirectoryPath(root));
+
+  const failure = await failureMessage(recordItem(root, validInput()));
+
+  expect(failure).toBe('Refusing to write through a symlink: .tau/verification');
+  expect(existsSync(itemRecordPath(directory, item))).toBe(false);
+});
+
 it('saves two items recorded at once', async () => {
   const items = [
     { item: 'journeys/one', steps: 1 },
@@ -283,7 +335,7 @@ it('saves two items recorded at once', async () => {
 
   await Promise.all(items.map(({ item: name }) => recordItem(root, input(name))));
 
-  const [result] = await readRuns(join(root, '.tau', 'verification'));
+  const [result] = await readRuns(verificationDirectoryPath(root));
 
   expect(
     result?.items.map(({ item: name, read }) => ({ item: name, status: read.status })),
