@@ -8,6 +8,7 @@ import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
+import type { AnswerTracker } from './answer.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
@@ -148,7 +149,11 @@ const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> 
   );
 };
 
-const closeLiveAsks = async (session: ArchitectSession, hc: HcRuntime): Promise<void> => {
+const closeLiveAsks = async (
+  session: ArchitectSession,
+  hc: HcRuntime,
+  answers: AnswerTracker,
+): Promise<void> => {
   if (session.owner.mode !== 'visible') {
     return;
   }
@@ -156,6 +161,8 @@ const closeLiveAsks = async (session: ArchitectSession, hc: HcRuntime): Promise<
   const report = (message: string): void => {
     session.ui.notify(message, 'warning');
   };
+
+  await answers.close();
 
   await failOpenLiveAsks(
     { root: session.root, sessionId: session.owner.sessionId },
@@ -169,11 +176,12 @@ const closeLiveAsks = async (session: ArchitectSession, hc: HcRuntime): Promise<
 export const endArchitectSession = async (
   session: ArchitectSession,
   hc: HcRuntime,
+  answers: AnswerTracker,
 ): Promise<void> => {
   session.held.set(undefined);
 
   try {
-    await closeLiveAsks(session, hc);
+    await closeLiveAsks(session, hc, answers);
     await session.release();
   } finally {
     await failRunningAsks(session.root, session.ui);

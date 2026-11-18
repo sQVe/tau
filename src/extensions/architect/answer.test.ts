@@ -16,6 +16,7 @@ import type {
 } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { encodeMessageFrame } from '../../inbox/inbox.js';
+import { createAnswerTracker } from './answer.js';
 import { contextOf, setup } from './fixtures/toolHarness.js';
 import { askRecordDirectory, askRecordPath, readAskRecord, writeAskRecord } from './record.js';
 import type { HiddenAskRecord, LiveAskRecord } from './record.js';
@@ -81,7 +82,7 @@ const answering = async (cleanup: Cleanup, options: HandoverReceiverOptions = {}
   await writeFile(join(root, 'answer.md'), 'Use --dry-run.\n');
 
   const answer = (askId: string) =>
-    createArchitectAnswerTool({ ...hc, cwd: root }).execute(
+    createArchitectAnswerTool({ ...hc, cwd: root }, createAnswerTracker()).execute(
       'call',
       { action: 'answer', askId, file: 'answer.md' },
       undefined,

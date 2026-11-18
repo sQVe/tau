@@ -18,9 +18,54 @@ export type AnswerResult =
   | { status: 'queued'; askId: string; note?: string }
   | { status: 'unknown'; askId: string; note: string };
 
+export interface AnswerTracker {
+  run: <Result>(answer: () => Promise<Result>) => Promise<Result>;
+  close: () => Promise<void>;
+}
+
 type Settlement =
   | { kind: 'settled'; change: AskRecordChange | undefined }
   | { kind: 'failed'; error: unknown };
+
+const closeLimitMilliseconds = 10_000;
+
+export const createAnswerTracker = (): AnswerTracker => {
+  const inFlight = new Set<Promise<unknown>>();
+  let closed = false;
+
+  return {
+    run: async (answer) => {
+      if (closed) {
+        throw new Error('The architect is closing. Nothing was sent.');
+      }
+
+      const running = answer();
+
+      inFlight.add(running);
+
+      try {
+        return await running;
+      } finally {
+        inFlight.delete(running);
+      }
+    },
+    close: async () => {
+      closed = true;
+
+      const expired = Promise.withResolvers<undefined>();
+
+      const timer = setTimeout(() => {
+        expired.resolve(undefined);
+      }, closeLimitMilliseconds);
+
+      try {
+        await Promise.race([Promise.allSettled(inFlight), expired.promise]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+};
 
 const answerableRecord = async (request: AnswerRequest): Promise<LiveAskRecord> => {
   const { askId } = request;

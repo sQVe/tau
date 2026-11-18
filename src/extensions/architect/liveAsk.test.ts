@@ -1,19 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { rm, readFile, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 import type { onTestFinished } from 'vitest';
 
-import { createReceiptStore, createReceiver } from '../../../src/inbox/inbox.js';
-import { decodeRequest, encodeFrame, refusedReply } from '../../../src/inbox/protocol.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { createAnswerTracker } from './answer.js';
+import { startCapturingInbox } from './fixtures/capturingInbox.js';
 import { contextOf, holdLock, recordSession, setup } from './fixtures/toolHarness.js';
 import {
   askRecordDirectory,
@@ -28,21 +27,6 @@ import type { ArchitectSession } from './session.js';
 import { createArchitectAnswerTool, createArchitectTool } from './tool.js';
 
 type Cleanup = typeof onTestFinished;
-
-interface CapturingInbox {
-  path: string;
-  frames: string[];
-  saved: () => string[];
-  releaseFirst: () => void;
-}
-
-const readdirSyncSafe = (path: string): string[] => {
-  try {
-    return readdirSync(path).map(String);
-  } catch {
-    return [];
-  }
-};
 
 const leadLabel = (sessionId = 'session-lead'): string => `rpc1:/tmp/tau-lead/${sessionId}.sock`;
 
@@ -62,98 +46,6 @@ const getTargets = (hc: HcFake): (string | undefined)[] =>
   hc.calls
     .filter((call) => call.commandArguments[0] === 'get')
     .map((call) => call.commandArguments.at(-1));
-
-const startCapturingInbox = async (
-  cleanup: Cleanup,
-  sessionId: string,
-  first: 'suppress' | 'hold' | 'reply',
-  beforeReply?: (messageId: string) => Promise<void>,
-): Promise<CapturingInbox> => {
-  const directory = join(temporaryDirectory(cleanup, 'tau-capturing-'), 'sockets');
-  const records = join(directory, '..', 'records');
-  const frames: string[] = [];
-  let release: (() => void) | undefined;
-
-  const receiver = createReceiver({
-    directory: join(records, sessionId),
-    terminal: 't-architect',
-    sessionId,
-    accepts: {
-      handover: (_request, save) => save(),
-      'architect-ask': (_request, save) => save(),
-    },
-    receipts: createReceiptStore(sessionId),
-    entries: () => [],
-    wake: () => true,
-    notify: () => undefined,
-  });
-
-  mkdirSync(directory, { recursive: true });
-
-  const path = join(directory, `${sessionId}.sock`);
-
-  const server = createServer({ allowHalfOpen: true }, (socket) => {
-    let data = '';
-
-    socket.setEncoding('utf8');
-
-    socket.on('data', (chunk: string) => {
-      data += chunk;
-    });
-
-    socket.on('end', () => {
-      frames.push(data);
-
-      if (frames.length === 1 && first !== 'reply') {
-        const finish = (): void => {
-          socket.end();
-        };
-
-        if (first === 'hold') {
-          release = finish;
-        } else {
-          finish();
-        }
-
-        return;
-      }
-
-      (async () => {
-        const decision = decodeRequest(Buffer.from(data));
-
-        if (decision.kind === 'frame') {
-          await beforeReply?.(decision.value.messageId);
-        }
-
-        const reply =
-          decision.kind === 'frame'
-            ? await receiver.accept(decision.value)
-            : refusedReply(decision.reason);
-
-        socket.end(encodeFrame(reply));
-      })().catch(() => {
-        socket.destroy();
-      });
-    });
-  });
-
-  await new Promise<void>((resolve) => {
-    server.listen(path, resolve);
-  });
-
-  cleanup(() => {
-    server.close();
-  });
-
-  return {
-    path,
-    frames,
-    saved: () => readdirSyncSafe(join(records, sessionId)).filter((name) => name.endsWith('.json')),
-    releaseFirst: () => {
-      release?.();
-    },
-  };
-};
 
 const liveArchitect = async (cleanup: Cleanup) => {
   const { root } = await setup(cleanup);
@@ -461,7 +353,10 @@ it('an answer that lands before the lead send returns keeps the ask answered', a
   await writeFile(join(root, 'answer.md'), 'Use --dry-run.\n');
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
-  const answered = await createArchitectAnswerTool({ ...hc, cwd: root }).execute(
+  const answered = await createArchitectAnswerTool(
+    { ...hc, cwd: root },
+    createAnswerTracker(),
+  ).execute(
     'call',
     { action: 'answer', askId: record.askId, file: 'answer.md' },
     undefined,
@@ -501,7 +396,7 @@ it('a close that lands before the lead send returns keeps the ask failed', async
   };
 
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  await endArchitectSession(session, { ...hc, cwd: root });
+  await endArchitectSession(session, { ...hc, cwd: root }, createAnswerTracker());
   vi.stubEnv('HC_TERMINAL_ID', 't-lead');
 
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });

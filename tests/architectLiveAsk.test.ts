@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { createAnswerTracker } from '../src/extensions/architect/answer.js';
 import architectExtension from '../src/extensions/architect/architect.js';
 import { acceptArchitectAsk } from '../src/extensions/architect/ask/askAcceptance.js';
 import { readArchitectOwner } from '../src/extensions/architect/fixtures/toolHarness.js';
@@ -371,7 +372,11 @@ it('an architect-ask sent after the record is published but before startup retur
 
   expect(session).toBeDefined();
 
-  await endArchitectSession(session as NonNullable<typeof session>, { ...hc, cwd: root });
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    { ...hc, cwd: root },
+    createAnswerTracker(),
+  );
 
   expect(held.current()).toBeUndefined();
 });

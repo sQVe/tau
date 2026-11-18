@@ -14,6 +14,7 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { createAnswerTracker } from './answer.js';
 import { readArchitectOwner } from './fixtures/toolHarness.js';
 import { architectLockPath } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
@@ -111,7 +112,11 @@ it('a released lock starts the architect and writes its record', async ({ onTest
   expect(holder?.token).toMatch(/^[0-9a-f-]{36}$/);
   expect(holder?.token).toBe(owner?.lockToken);
 
-  await endArchitectSession(session as NonNullable<typeof session>, hcRuntime(createHcFake()));
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    createAnswerTracker(),
+  );
 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
@@ -126,7 +131,11 @@ it('an ask session records ask mode', async ({ onTestFinished }) => {
 
   expect((await readArchitectOwner(root))?.mode).toBe('ask');
 
-  await endArchitectSession(session as NonNullable<typeof session>, hcRuntime(createHcFake()));
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    createAnswerTracker(),
+  );
 });
 
 it('an empty ask path records visible mode', async ({ onTestFinished }) => {
@@ -139,7 +148,11 @@ it('an empty ask path records visible mode', async ({ onTestFinished }) => {
 
   expect((await readArchitectOwner(root))?.mode).toBe('visible');
 
-  await endArchitectSession(session as NonNullable<typeof session>, hcRuntime(createHcFake()));
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    createAnswerTracker(),
+  );
 });
 
 const hiddenIds = {
@@ -207,7 +220,11 @@ it('ending fails only running hidden asks', async ({ onTestFinished }) => {
 
   const notify = vi.fn<(message: string, level?: string) => void>();
 
-  await endArchitectSession(hiddenSession(root, notify), hcRuntime(createHcFake()));
+  await endArchitectSession(
+    hiddenSession(root, notify),
+    hcRuntime(createHcFake()),
+    createAnswerTracker(),
+  );
 
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
   expect(await readAskRecord(root, hiddenIds.sent)).toMatchObject({ status: 'sent' });
@@ -222,7 +239,11 @@ it('ending reports a bad ask file and still fails the running ask', async ({ onT
   await mkdir(askRecordDirectory(root), { recursive: true });
   await writeFile(join(askRecordDirectory(root), 'malformed.json'), '{"version":2');
 
-  await endArchitectSession(hiddenSession(root, notify), hcRuntime(createHcFake()));
+  await endArchitectSession(
+    hiddenSession(root, notify),
+    hcRuntime(createHcFake()),
+    createAnswerTracker(),
+  );
 
   expect(notify).toHaveBeenCalledWith(expect.stringContaining('Malformed ask record'), 'warning');
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
@@ -278,7 +299,7 @@ it('ending a visible architect fails its open live ask and tells the lead to ask
 
   await writeAskRecord(root, liveAsk('open', 'queued'));
   await writeAskRecord(root, liveAsk('answered', 'answered'));
-  await endArchitectSession(session, hcRuntime(hc));
+  await endArchitectSession(session, hcRuntime(hc), createAnswerTracker());
 
   const directory = join(sockets, 'records', 'session-lead');
   const names = await readdir(directory);
@@ -316,7 +337,7 @@ it('ending a visible architect releases its lock when the close note cannot be s
   await writeAskRecord(root, liveAsk('open', 'unknown'));
   const notify = session.ui.notify as unknown as Mock;
 
-  await endArchitectSession(session, hcRuntime(hc));
+  await endArchitectSession(session, hcRuntime(hc), createAnswerTracker());
 
   expect(notify).toHaveBeenCalledWith(
     expect.stringContaining(`The lead got no close note for ask ${liveIds.open}:`),
@@ -354,7 +375,11 @@ it('holds the lock token from the lock, before the record and startup return', a
 
   expect(session).toBeDefined();
 
-  await endArchitectSession(session as NonNullable<typeof session>, hcRuntime(createHcFake()));
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    createAnswerTracker(),
+  );
 
   expect(held.current()).toBeUndefined();
 });
@@ -397,7 +422,7 @@ it('ending a visible architect does not note an ask that is already closed', asy
 
   await writeAskRecord(root, liveAsk('answered', 'answered'));
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  await endArchitectSession(session, hcRuntime(hc));
+  await endArchitectSession(session, hcRuntime(hc), createAnswerTracker());
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
   expect(lead.savedRecords()).toEqual([]);

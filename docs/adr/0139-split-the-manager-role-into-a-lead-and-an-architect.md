@@ -60,8 +60,9 @@ message. A delivery refusal marks the ask failed. A lead terminal that runs a ne
 the answer, and the architect tells the user.
 
 The architect cannot send its final handover while an ask to its session is open. When it closes
-anyway, its inbox stops before it releases the lock. It then marks each open ask failed and sends
-the lead a note to ask again.
+anyway, its inbox stops before it releases the lock. It then waits up to 10 seconds for an answer
+that is still sending, so a delivered answer is not failed. A later `answer` call refuses. The
+architect marks each ask that is still open failed and sends the lead a note to ask again.
 
 Without a live holder, `ask` resumes the saved session in a hidden terminal with one question and a
 deadline. This path needs the recorded session file. The architect answers, updates the ticket if

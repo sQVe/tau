@@ -6,6 +6,8 @@ import type { HcRuntime } from '../../hc/hc.js';
 import { setAcceptCheck } from '../../inbox/inbox.js';
 import { currentRole } from '../../role/role.js';
 import { roleRegistersTool } from '../../role/roleTools.js';
+import { createAnswerTracker } from './answer.js';
+import type { AnswerTracker } from './answer.js';
 import { acceptArchitectAsk } from './ask/askAcceptance.js';
 import { registerAskMode } from './ask/askMode.js';
 import { blockFinalHandover } from './open/openLiveAsks.js';
@@ -19,8 +21,9 @@ const registerVisibleArchitect = (
   hc: HcRuntime,
   current: () => ArchitectSession | undefined,
   held: HeldLockToken,
+  answers: AnswerTracker,
 ): void => {
-  pi.registerTool(createArchitectAnswerTool(hc));
+  pi.registerTool(createArchitectAnswerTool(hc, answers));
 
   setAcceptCheck('architect-ask', acceptArchitectAsk(held.current));
 
@@ -44,12 +47,13 @@ export default function architectExtension(pi: ExtensionAPI): void {
   const askRecordPath = process.env.TAU_ARCHITECT_ASK;
   const hc: HcRuntime = { exec: piExec(pi), connect, cwd: process.cwd() };
   const held = createHeldLockToken();
+  const answers = createAnswerTracker();
   let session: ArchitectSession | undefined;
 
   if (askRecordPath !== undefined && askRecordPath !== '') {
     registerAskMode(pi, askRecordPath);
   } else if (currentRole() === 'architect') {
-    registerVisibleArchitect(pi, hc, () => session, held);
+    registerVisibleArchitect(pi, hc, () => session, held, answers);
   }
 
   if (roleRegistersTool(currentRole(), 'architect')) {
@@ -66,7 +70,7 @@ export default function architectExtension(pi: ExtensionAPI): void {
     session = undefined;
 
     if (ending !== undefined) {
-      await endArchitectSession(ending, hc);
+      await endArchitectSession(ending, hc, answers);
     }
   });
 }

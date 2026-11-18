@@ -9,7 +9,7 @@ import type { HcRuntime } from '../../hc/hc.js';
 import { isUuid } from '../../inbox/inbox.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { answerLiveAsk } from './answer.js';
-import type { AnswerResult } from './answer.js';
+import type { AnswerResult, AnswerTracker } from './answer.js';
 import { askArchitect } from './ask/ask.js';
 import type { AskResult } from './ask/ask.js';
 import { runGate } from './gate.js';
@@ -180,6 +180,7 @@ const answerParameters = Type.Object({
 
 export const createArchitectAnswerTool = (
   hc: HcRuntime,
+  answers: AnswerTracker,
 ): ToolDefinition<typeof answerParameters, AnswerDetails> =>
   defineTool({
     name: 'architect',
@@ -194,14 +195,16 @@ export const createArchitectAnswerTool = (
 
       const root = await findTauRoot(context.cwd, 'architect');
 
-      const result = await answerLiveAsk({
-        root,
-        cwd: context.cwd,
-        askId: requireAskId(input.askId),
-        file: input.file,
-        architectSessionId: context.sessionManager.getSessionId(),
-        hc: { ...hc, signal },
-      });
+      const result = await answers.run(() =>
+        answerLiveAsk({
+          root,
+          cwd: context.cwd,
+          askId: requireAskId(input.askId),
+          file: input.file,
+          architectSessionId: context.sessionManager.getSessionId(),
+          hc: { ...hc, signal },
+        }),
+      );
 
       const details: AnswerDetails = { action: 'answer', ...result };
 
