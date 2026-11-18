@@ -4,7 +4,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { readFallbackModels } from './fallbackConfig.js';
 import { registerFallbackModels } from './fallbackRegistration.js';
 import { reportFallbackModels, writeFallbackModelsReport } from './fallbackReport.js';
-import { shouldReportAtStartup } from './startupReport.js';
+import { claimStartupReport } from './startupReport.js';
 
 export default function modelFallbackExtension(pi: ExtensionAPI): void {
   const registered = readFallbackModels({
@@ -15,13 +15,7 @@ export default function modelFallbackExtension(pi: ExtensionAPI): void {
 
   registerFallbackModels(pi, registered.models);
 
-  if (
-    shouldReportAtStartup({
-      argv: process.argv.slice(2),
-      stdinIsTerminal: process.stdin.isTTY,
-      stdoutIsTerminal: process.stdout.isTTY,
-    })
-  ) {
+  if (claimStartupReport()) {
     writeFallbackModelsReport((text) => {
       process.stderr.write(text);
     }, registered);

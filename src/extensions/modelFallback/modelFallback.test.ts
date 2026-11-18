@@ -8,9 +8,21 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import modelFallbackExtension from './modelFallback.js';
 
-it('writes the refused entry to stderr in list mode and registers the valid model', ({
-  onTestFinished,
-}) => {
+const startupReportKey = Symbol.for('tau.modelFallback.startupReported');
+
+const fakeRegistration = () => {
+  const ids: string[] = [];
+
+  const registerVirtualModel = vi.fn<ExtensionAPI['registerVirtualModel']>((model) => {
+    ids.push(model.id);
+  });
+
+  return { ids, pi: fakeExtensionApi({ registerVirtualModel }).pi };
+};
+
+it('reports a refused entry once per process', async ({ onTestFinished }) => {
+  Reflect.deleteProperty(globalThis, startupReportKey);
+
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-fallback-startup-');
   const configPath = join(agentDirectory, 'tau.json');
   const valid = { primary: 'a/primary', fallback: 'b/fallback', fallbackAtRetry: 5 };
@@ -27,26 +39,27 @@ it('writes the refused entry to stderr in list mode and registers the valid mode
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
-  const argv = process.argv;
-  const registered: string[] = [];
-
-  const registerVirtualModel = vi.fn<ExtensionAPI['registerVirtualModel']>((model) => {
-    registered.push(model.id);
-  });
-
   const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-  process.argv = [...argv, '--list-models'];
-
   onTestFinished(() => {
-    process.argv = argv;
+    Reflect.deleteProperty(globalThis, startupReportKey);
     write.mockRestore();
     vi.unstubAllEnvs();
   });
 
-  modelFallbackExtension(fakeExtensionApi({ registerVirtualModel }).pi);
+  const first = fakeRegistration();
 
-  expect(registered).toEqual(['deepseek-flash']);
+  modelFallbackExtension(first.pi);
+
+  vi.resetModules();
+
+  const { default: reloaded } = await import('./modelFallback.js');
+  const second = fakeRegistration();
+
+  reloaded(second.pi);
+
+  expect(first.ids).toEqual(['deepseek-flash']);
+  expect(second.ids).toEqual(['deepseek-flash']);
 
   expect(write.mock.calls.map(([text]) => text).join('')).toBe(
     `Error: Invalid Tau config ${configPath}: fallbackModels.bad.fallbackAtRetry 0 must be a whole number of at least 1.\n`,
