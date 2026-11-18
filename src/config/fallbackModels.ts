@@ -14,11 +14,12 @@ interface FallbackModel {
 export interface FallbackModelsRead {
   models: FallbackModel[];
   problems: string[];
+  warnings: string[];
 }
 
 type EntryRead =
-  | { kind: 'model'; model: FallbackModel; problems: string[] }
-  | { kind: 'invalid'; problems: string[] };
+  | { kind: 'model'; model: FallbackModel; warnings: string[] }
+  | { kind: 'invalid'; problem: string };
 
 const namePattern = /^[a-z0-9][a-z0-9-]*$/u;
 
@@ -29,7 +30,7 @@ const invalid = (source: string, message: string): string =>
 
 const invalidEntry = (source: string, message: string): EntryRead => ({
   kind: 'invalid',
-  problems: [invalid(source, message)],
+  problem: invalid(source, message),
 });
 
 const isModelReference = (value: unknown): value is string =>
@@ -78,11 +79,11 @@ const readEntry = (source: string, name: string, value: unknown): EntryRead => {
     );
   }
 
-  const problems = findUnknownKeys(value, knownEntryKeys, '').map((key) =>
+  const warnings = findUnknownKeys(value, knownEntryKeys, '').map((key) =>
     invalid(source, `${field} has unknown key ${key}.`),
   );
 
-  return { kind: 'model', model: { name, primary, fallback, fallbackAtRetry }, problems };
+  return { kind: 'model', model: { name, primary, fallback, fallbackAtRetry }, warnings };
 };
 
 const problemMessage = (error: unknown): string =>
@@ -94,11 +95,11 @@ export const readFallbackModels = (location: ConfigLocation): FallbackModelsRead
   try {
     user = readUserOnlyKey(location, 'fallbackModels');
   } catch (error) {
-    return { models: [], problems: [problemMessage(error)] };
+    return { models: [], problems: [problemMessage(error)], warnings: [] };
   }
 
   if (user === undefined) {
-    return { models: [], problems: [] };
+    return { models: [], problems: [], warnings: [] };
   }
 
   const { source, value } = user;
@@ -112,11 +113,14 @@ export const readFallbackModels = (location: ConfigLocation): FallbackModelsRead
           'fallbackModels must be an object that maps names to {"primary", "fallback", "fallbackAtRetry"}.',
         ),
       ],
+      warnings: [],
     };
   }
 
   const reads = Object.entries(value).map(([name, entry]) => readEntry(source, name, entry));
   const models = reads.flatMap((read) => (read.kind === 'model' ? [read.model] : []));
+  const problems = reads.flatMap((read) => (read.kind === 'invalid' ? [read.problem] : []));
+  const warnings = reads.flatMap((read) => (read.kind === 'model' ? read.warnings : []));
 
-  return { models, problems: reads.flatMap((read) => read.problems) };
+  return { models, problems, warnings };
 };

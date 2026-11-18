@@ -25,17 +25,18 @@ it('reads a valid user entry', ({ onTestFinished }) => {
       },
     ],
     problems: [],
+    warnings: [],
   });
 });
 
 it('returns nothing without the key', ({ onTestFinished }) => {
   const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-fallback-models-');
 
-  expect(readUser(location)).toEqual({ models: [], problems: [] });
+  expect(readUser(location)).toEqual({ models: [], problems: [], warnings: [] });
 
   writeUser({ browser: {} });
 
-  expect(readUser(location)).toEqual({ models: [], problems: [] });
+  expect(readUser(location)).toEqual({ models: [], problems: [], warnings: [] });
 });
 
 it('ignores the repository file', ({ onTestFinished }) => {
@@ -43,7 +44,7 @@ it('ignores the repository file', ({ onTestFinished }) => {
 
   writeRepository({ fallbackModels: { 'deepseek-flash': validModel } });
 
-  expect(readUser(location)).toEqual({ models: [], problems: [] });
+  expect(readUser(location)).toEqual({ models: [], problems: [], warnings: [] });
 });
 
 it('reports a malformed file', ({ onTestFinished }) => {
@@ -51,11 +52,12 @@ it('reports a malformed file', ({ onTestFinished }) => {
 
   writeFileSync(userFile, '{');
 
-  const { models, problems } = readUser(location);
+  const { models, problems, warnings } = readUser(location);
 
   expect(models).toEqual([]);
+  expect(warnings).toEqual([]);
   expect(problems).toHaveLength(1);
-  expect(problems[0]).toContain(userFile);
+  expect(problems[0]?.startsWith(`Invalid Tau config ${userFile}: not valid JSON (`)).toBe(true);
 });
 
 it('reports a non-object fallbackModels and returns no models', ({ onTestFinished }) => {
@@ -71,6 +73,7 @@ it('reports a non-object fallbackModels and returns no models', ({ onTestFinishe
     problems: [
       `Invalid Tau config ${userFile}: fallbackModels must be an object that maps names to {"primary", "fallback", "fallbackAtRetry"}.`,
     ],
+    warnings: [],
   });
 });
 
@@ -119,16 +122,40 @@ it.for<[string, Record<string, unknown>, string]>([
       },
     ],
     problems: [`Invalid Tau config ${userFile}: ${message}`],
+    warnings: [],
   });
 });
 
-it('reports an unknown key and keeps the entry', ({ onTestFinished }) => {
+it('reports the key in a trusted repository file', ({ onTestFinished }) => {
+  const { location, userFile, repositoryFile, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-fallback-models-',
+  );
+
+  writeUser({ fallbackModels: { 'deepseek-flash': validModel } });
+  writeRepository({ fallbackModels: { 'deepseek-flash': validModel } });
+
+  expect(readFallbackModels(location)).toEqual({
+    models: [],
+    problems: [
+      `Invalid Tau config ${repositoryFile}: fallbackModels may be set only in the user file ${userFile}. Remove fallbackModels from ${repositoryFile}.`,
+    ],
+    warnings: [],
+  });
+});
+
+it('warns about an unknown entry key', ({ onTestFinished }) => {
   const { location, userFile, writeUser } = temporaryTauConfig(
     onTestFinished,
     'tau-fallback-models-',
   );
 
-  writeUser({ fallbackModels: { bad: { ...validModel, extra: true } } });
+  writeUser({
+    fallbackModels: {
+      bad: { ...validModel, extra: true },
+      'deepseek-flash': validModel,
+    },
+  });
 
   expect(readUser(location)).toEqual({
     models: [
@@ -138,7 +165,14 @@ it('reports an unknown key and keeps the entry', ({ onTestFinished }) => {
         fallback: 'b/fallback',
         fallbackAtRetry: 5,
       },
+      {
+        name: 'deepseek-flash',
+        primary: 'a/primary',
+        fallback: 'b/fallback',
+        fallbackAtRetry: 5,
+      },
     ],
-    problems: [`Invalid Tau config ${userFile}: fallbackModels.bad has unknown key extra.`],
+    problems: [],
+    warnings: [`Invalid Tau config ${userFile}: fallbackModels.bad has unknown key extra.`],
   });
 });
