@@ -1,11 +1,10 @@
 import { existsSync } from 'node:fs';
-import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { readCheckState } from '../src/checkRecord/identity.js';
-import { createEvidenceRepository } from '../src/extensions/pr/fixtures/evidenceRepository.js';
 import { createPrTool } from '../src/extensions/pr/tool.js';
 import type { LaunchResult } from '../src/extensions/verification/launchAction.js';
 import type { StopResult } from '../src/extensions/verification/stopAction.js';
@@ -13,7 +12,8 @@ import { createVerificationTool } from '../src/extensions/verification/tool.js';
 import workerRecordExtension from '../src/extensions/verification/workerRecord.js';
 import { readRunRecord } from '../src/verification/verification.js';
 import { fakeExtensionApi } from './extensionApi.js';
-import { git } from './gitRepository.js';
+import { createTemporaryRepository, git } from './gitRepository.js';
+import { createGhFake } from './prGhFake.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 import { noUiContext } from './toolContext.js';
 
@@ -31,12 +31,14 @@ const configFor = (logPath: string) => ({
 const contextFor = (cwd: string) => ({ ...noUiContext(cwd), isProjectTrusted: () => true });
 
 it('lists a worktree run as fresh from the main checkout before and after the worktree is removed', async () => {
-  const { root, directory: review, fake } = await createEvidenceRepository(onTestFinished);
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createGhFake();
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-verification-pr-agent-');
   const logs = temporaryDirectory(onTestFinished, 'tau-verification-pr-logs-');
   const mainLog = join(logs, 'main.txt');
   const worktreeLog = join(logs, 'worktree.txt');
 
+  await mkdir(join(root, '.pi'));
   await writeFile(join(root, '.pi', 'tau.json'), JSON.stringify(configFor(mainLog)));
   await writeFile(join(root, 'tracked.txt'), 'main\n');
   await git(root, 'add', '.pi/tau.json', 'tracked.txt');
@@ -160,7 +162,7 @@ it('lists a worktree run as fresh from the main checkout before and after the wo
   const readVerification = async () => {
     const result = await prTool.execute(
       'call',
-      { action: 'evidence', review },
+      { action: 'evidence' },
       undefined,
       undefined,
       contextFor(root),
