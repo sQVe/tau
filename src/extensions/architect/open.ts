@@ -6,13 +6,14 @@ import { userConfigPath } from '../../config/config.js';
 import { readRoleModel } from '../../config/roleModels.js';
 import { isMissingFile } from '../../errors.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
+import type { LiveLockHolder } from '../../fileLock/fileLock.js';
 import { get } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { findPane } from '../../piStart/herdrPane.js';
 import { startPiSession, startPiSessionLeftOf } from '../../piStart/piStart.js';
 import { architectLockPath } from './lock.js';
-import { openReuse } from './openReuseDecision.js';
-import type { OpenReuse } from './openReuseDecision.js';
+import { openCandidate, openReuse } from './openReuseDecision.js';
+import type { OpenCandidate } from './openReuseDecision.js';
 import { readArchitectRecord, readAskRecords } from './record.js';
 
 export interface OpenRequest {
@@ -102,16 +103,16 @@ const terminalRunsAsk = async (root: string, terminal: string | undefined): Prom
   return asks.some((ask) => ask.status === 'running' && ask.terminal === terminal);
 };
 
-const reuseOf = async (
+const candidateOf = async (
   request: OpenRequest,
   recordedTerminal: string | null | undefined,
-  holder: { checkout: string },
-): Promise<OpenReuse> => {
+  holder: LiveLockHolder,
+): Promise<OpenCandidate> => {
   const found = await readLiveTerminal(request.hc, recordedTerminal);
   const liveTerminal = found === undefined ? undefined : (recordedTerminal ?? undefined);
 
-  return openReuse({
-    checkout: holder.checkout,
+  return openCandidate({
+    holder,
     liveTerminal,
     terminalRunsAsk: await terminalRunsAsk(request.root, liveTerminal),
     terminalLabeledAsk: found?.labels?.[askLabel] !== undefined,
@@ -171,6 +172,9 @@ const startArchitect = async (
   return session;
 };
 
+const refusal = (checkout: string): Error =>
+  new Error(`The architect is already running in ${checkout}.`);
+
 const runningTerminal = async (
   request: OpenRequest,
   recordedTerminal: string | null | undefined,
@@ -182,15 +186,20 @@ const runningTerminal = async (
     return undefined;
   }
 
-  const reuse = await reuseOf(request, recordedTerminal, holder);
+  const candidate = await candidateOf(request, recordedTerminal, holder);
 
-  if (reuse.kind === 'refuse') {
-    throw new Error(`The architect is already running in ${reuse.checkout}.`);
+  if (candidate.kind === 'refuse') {
+    throw refusal(candidate.checkout);
   }
 
-  const stillHeld = (await readLiveLockHolder(lockPath)) !== undefined;
+  const currentHolder = await readLiveLockHolder(lockPath);
+  const reuse = openReuse({ holder, currentHolder, terminal: candidate.terminal });
 
-  return stillHeld ? reuse.terminal : undefined;
+  if (reuse.kind === 'refuse') {
+    throw refusal(reuse.checkout);
+  }
+
+  return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {

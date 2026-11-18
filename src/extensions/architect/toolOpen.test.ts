@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
   contextOf,
@@ -10,118 +10,50 @@ import {
   releaseLock,
   setup,
 } from '../../../tests/architectToolHarness.js';
+import { argumentAfter, failedResult, succeededResult } from '../../../tests/execFake.js';
 import {
-  argumentAfter,
-  createExecFake,
-  failedResult,
-  succeededResult,
-} from '../../../tests/execFake.js';
-import type { ExecFake, ExecResult } from '../../../tests/execFake.js';
-import { createHcFake } from '../../../tests/hcFake.js';
-import type { HcFake } from '../../../tests/hcFake.js';
-import type { Exec } from '../../command.js';
-import { writeArchitectRecord, writeAskRecord } from './record.js';
-import { createArchitectTool } from './tool.js';
+  appCommands,
+  architectArgv,
+  open,
+  openRequest,
+  openTool,
+  recordTerminal,
+  terminalState,
+  writeAsk,
+} from './fixtures/openHarness.js';
+import { architectLockPath } from './lock.js';
+import { writeArchitectRecord } from './record.js';
 
-type AppKey = 'ls' | 'pane.split' | 'pane.swap' | 'space.new';
+const lockReads = vi.hoisted(() => ({
+  directory: undefined as string | undefined,
+  count: 0,
+  failFrom: Number.POSITIVE_INFINITY,
+}));
 
-const appFake = () =>
-  createExecFake<AppKey>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  return {
+    ...original,
+    readdir: (async (...parameters: Parameters<typeof original.readdir>) => {
+      if (parameters[0] === lockReads.directory) {
+        lockReads.count += 1;
+
+        if (lockReads.count >= lockReads.failFrom) {
+          throw new Error('EIO: the lock directory is unreadable');
+        }
       }
 
-      return commandArguments[0] === 'ls' ? 'ls' : (commandArguments[1] as AppKey);
-    },
-    handlerFor: (key) => () => {
-      if (key === 'ls') {
-        return succeededResult(
-          JSON.stringify({
-            spaces: [{ tabs: [{ terminals: [{ terminal: 't-lead', pane: 'p-lead' }] }] }],
-          }),
-        );
-      }
-
-      if (key === 'pane.split') {
-        return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
-      }
-
-      return succeededResult('{"ok":true}');
-    },
-  });
-
-const routedExec =
-  (
-    hc: HcFake,
-    app: ExecFake<AppKey>,
-    terminals: Map<string, ExecResult>,
-    afterTerminalLookup: () => Promise<void>,
-  ): Exec =>
-  async (command, commandArguments, options) => {
-    if (command === 'herdr-app') {
-      return app.exec(command, commandArguments, options);
-    }
-
-    const terminalReply = terminals.get(commandArguments.at(-1) ?? '');
-
-    if (commandArguments[0] === 'get' && terminalReply !== undefined) {
-      await afterTerminalLookup();
-
-      return terminalReply;
-    }
-
-    return hc.exec(command, commandArguments, options);
+      return original.readdir(...parameters);
+    }) as typeof original.readdir,
   };
+});
 
-const leadInSpace = (hc: HcFake, space: string | undefined): void => {
-  hc.reply(
-    'get',
-    JSON.stringify({
-      address: 't-lead',
-      state: 'live',
-      ...(space === undefined ? {} : { labels: { 'herdr.space': space } }),
-    }),
-  );
-};
-
-const openRequest = 'Start ME-1540';
-
-const openTool = (
-  root: string,
-  lead?: { space: string | undefined },
-  afterTerminalLookup: () => Promise<void> = () => Promise.resolve(),
-) => {
-  const hc = createHcFake();
-  const app = appFake();
-
-  const terminals = new Map<string, ExecResult>();
-
-  leadInSpace(hc, lead === undefined ? 'space-1' : lead.space);
-
-  const tool = createArchitectTool({
-    ...hc,
-    exec: routedExec(hc, app, terminals, afterTerminalLookup),
-    cwd: root,
-  });
-
-  return { hc, app, terminals, tool };
-};
-
-const open = (
-  tool: ReturnType<typeof openTool>['tool'],
-  root: string,
-  input: { request?: string },
-) => tool.execute('call', { action: 'open', ...input }, undefined, undefined, contextOf(root));
-
-const appCommands = (app: ExecFake<AppKey>): string[] =>
-  app.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0] ?? '');
-
-const architectArgv = (app: ExecFake<AppKey>): string[] => {
-  const split = app.calls.find((call) => call.commandArguments[1] === 'pane.split');
-
-  return JSON.parse(argumentAfter(split?.commandArguments ?? [], '--argv') ?? '[]') as string[];
-};
+afterEach(() => {
+  lockReads.directory = undefined;
+  lockReads.count = 0;
+  lockReads.failFrom = Number.POSITIVE_INFINITY;
+});
 
 it('open refuses while a live holder holds the lock', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
@@ -251,39 +183,6 @@ it('open starts a fresh session when the recorded session file is gone', async (
   expect(argv).not.toContain('--session');
   expect(argv).not.toContain(missingSession);
 });
-
-const recordTerminal = (root: string, terminal: string): Promise<void> =>
-  writeArchitectRecord(root, {
-    version: 1,
-    sessionFile: null,
-    terminal,
-    leadTerminal: 't-lead',
-    updatedAt: new Date().toISOString(),
-  });
-
-const terminalState = (state: string, labels?: Record<string, string>): ExecResult =>
-  succeededResult(
-    JSON.stringify({ address: 't-architect', state, ...(labels === undefined ? {} : { labels }) }),
-  );
-
-const writeAsk = (
-  root: string,
-  terminal: string | null,
-  status: 'running' | 'sent',
-): Promise<void> =>
-  writeAskRecord(root, {
-    version: 1,
-    askId: 'ask-1',
-    createdAt: new Date().toISOString(),
-    question: 'Which flag name?',
-    sessionFile: join(root, 'architect-session.jsonl'),
-    terminal,
-    leadTerminal: 't-lead',
-    deadline: Date.now() + 1000,
-    status,
-    detail: null,
-    answer: null,
-  });
 
 it('open reports a live architect terminal while a live holder keeps the lock', async ({
   onTestFinished: cleanup,
@@ -420,35 +319,74 @@ it('open starts the architect beside the lead when the lock is released during t
   expect(app.calls).toHaveLength(3);
 });
 
-it('open starts a new space only when the lead terminal has no herdr.space label', async ({
+it('open refuses and starts nothing when a different holder takes the lock during the terminal lookup', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
-  const { app, tool } = openTool(root, { space: undefined });
 
-  const result = await open(tool, root, { request: openRequest });
+  const swapHolder = async (): Promise<void> => {
+    await releaseLock(root);
+    await holdLock(root, '/other/checkout');
+  };
 
-  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
-  expect(appCommands(app)).toEqual(['space.new']);
-  expect(app.calls).toHaveLength(1);
+  const { app, terminals, tool } = openTool(root, undefined, swapHolder);
 
-  const args = app.calls[0]?.commandArguments ?? [];
+  await holdLock(root, '/first/checkout');
+  await recordTerminal(root, 't-architect');
+  terminals.set('t-architect', terminalState('live'));
 
-  expect(argumentAfter(args, '--name')).toBe(`architect-${basename(root)}`);
-  expect(argumentAfter(args, '--task')).toContain(openRequest);
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
+    'The architect is already running in /other/checkout.',
+  );
+
+  expect(app.calls).toEqual([]);
 });
 
-it('open starts a new space when the lead terminal has an empty herdr.space label', async ({
+it('open refuses an unreusable terminal without reading the lock again', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
-  const { app, tool } = openTool(root, { space: '' });
+  const { app, terminals, tool } = openTool(root);
 
-  const result = await open(tool, root, { request: openRequest });
+  await holdLock(root, '/other/checkout');
+  await recordTerminal(root, 't-architect');
+  terminals.set('t-architect', terminalState('finished'));
 
-  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
-  expect(appCommands(app)).toEqual(['space.new']);
+  lockReads.directory = dirname(architectLockPath(root));
+  lockReads.failFrom = 2;
+
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
+    'The architect is already running in /other/checkout.',
+  );
+
+  expect(lockReads.count).toBe(1);
+  expect(app.calls).toEqual([]);
 });
+
+it.each([
+  { name: 'no', space: undefined },
+  { name: 'an empty', space: '' },
+])(
+  'open starts a new space when the lead terminal has $name herdr.space label',
+  async ({ space }) => {
+    const { root } = await setup((cleanup) => {
+      onTestFinished(cleanup);
+    });
+
+    const { app, tool } = openTool(root, { space });
+
+    const result = await open(tool, root, { request: openRequest });
+
+    expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+    expect(appCommands(app)).toEqual(['space.new']);
+    expect(app.calls).toHaveLength(1);
+
+    const args = app.calls[0]?.commandArguments ?? [];
+
+    expect(argumentAfter(args, '--name')).toBe(`architect-${basename(root)}`);
+    expect(argumentAfter(args, '--task')).toContain(openRequest);
+  },
+);
 
 it('open refuses when herdr-app shows no pane for the lead terminal', async ({
   onTestFinished: cleanup,
