@@ -15,6 +15,7 @@ const candidateFacts: OpenCandidateFacts = {
   liveTerminal: 't-architect',
   terminalRunsAsk: false,
   terminalLabeledAsk: false,
+  terminalHasPane: true,
 };
 
 it.each<{ name: string; facts: OpenCandidateFacts; expected: OpenCandidate }>([
@@ -41,6 +42,25 @@ it.each<{ name: string; facts: OpenCandidateFacts; expected: OpenCandidate }>([
   {
     name: 'no live terminal is refused',
     facts: { ...candidateFacts, liveTerminal: undefined },
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'a live terminal without a pane is parked',
+    facts: { ...candidateFacts, terminalHasPane: false },
+    expected: {
+      kind: 'parked',
+      message:
+        'The architect terminal t-architect is parked: it still runs but has no pane. Give it a pane with herdr-app do terminal.keep --terminal t-architect, then call architect open again.',
+    },
+  },
+  {
+    name: 'an ask terminal without a pane is refused as running, not parked',
+    facts: { ...candidateFacts, terminalRunsAsk: true, terminalHasPane: false },
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'no live terminal and no pane is refused as running, not parked',
+    facts: { ...candidateFacts, liveTerminal: undefined, terminalHasPane: false },
     expected: { kind: 'refuse', checkout: '/checkout' },
   },
 ])('candidate: $name', ({ facts, expected }) => {

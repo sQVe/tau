@@ -3,15 +3,20 @@ interface OpenLockHolder {
   checkout: string;
 }
 
-export interface OpenCandidateFacts {
-  holder: OpenLockHolder;
+interface EligibilityFacts {
   liveTerminal: string | undefined;
   terminalRunsAsk: boolean;
   terminalLabeledAsk: boolean;
 }
 
+export interface OpenCandidateFacts extends EligibilityFacts {
+  holder: OpenLockHolder;
+  terminalHasPane: boolean;
+}
+
 export type OpenCandidate =
   | { kind: 'candidate'; terminal: string }
+  | { kind: 'parked'; message: string }
   | { kind: 'refuse'; checkout: string };
 
 export interface OpenReuseFacts {
@@ -28,12 +33,24 @@ export type OpenReuse =
 const isSameHolder = (first: OpenLockHolder, second: OpenLockHolder): boolean =>
   first.pid === second.pid && first.checkout === second.checkout;
 
-export const openCandidate = (facts: OpenCandidateFacts): OpenCandidate => {
-  const { liveTerminal } = facts;
+export const eligibleTerminal = (facts: EligibilityFacts): string | undefined => {
   const isAskTerminal = facts.terminalRunsAsk || facts.terminalLabeledAsk;
 
-  if (liveTerminal === undefined || isAskTerminal) {
+  return isAskTerminal ? undefined : facts.liveTerminal;
+};
+
+export const openCandidate = (facts: OpenCandidateFacts): OpenCandidate => {
+  const liveTerminal = eligibleTerminal(facts);
+
+  if (liveTerminal === undefined) {
     return { kind: 'refuse', checkout: facts.holder.checkout };
+  }
+
+  if (!facts.terminalHasPane) {
+    return {
+      kind: 'parked',
+      message: `The architect terminal ${liveTerminal} is parked: it still runs but has no pane. Give it a pane with herdr-app do terminal.keep --terminal ${liveTerminal}, then call architect open again.`,
+    };
   }
 
   return { kind: 'candidate', terminal: liveTerminal };

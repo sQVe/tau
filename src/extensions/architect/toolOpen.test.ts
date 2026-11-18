@@ -197,7 +197,15 @@ it('open reports a live architect terminal while a live holder keeps the lock', 
   const result = await open(tool, root, { request: openRequest });
 
   expect(result.details).toEqual({ action: 'open', status: 'running', terminal: 't-architect' });
-  expect(app.calls).toEqual([]);
+  expect(appCommands(app)).toEqual(['ls']);
+});
+
+const parkedLayout = JSON.stringify({
+  spaces: [
+    {
+      tabs: [{ terminals: [{ terminal: 't-lead', pane: 'p-lead' }, { terminal: 't-architect' }] }],
+    },
+  ],
 });
 
 it('open refuses while a running ask names the live recorded terminal', async ({
@@ -232,7 +240,7 @@ it('open reuses the recorded terminal while a running ask names a different term
   const result = await open(tool, root, { request: openRequest });
 
   expect(result.details).toEqual({ action: 'open', status: 'running', terminal: 't-architect' });
-  expect(app.calls).toEqual([]);
+  expect(appCommands(app)).toEqual(['ls']);
 });
 
 it.each([
@@ -316,7 +324,7 @@ it('open starts the architect beside the lead when the lock is released during t
 
   expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
   expect(appCommands(app)).toContain('pane.split');
-  expect(app.calls).toHaveLength(3);
+  expect(app.calls).toHaveLength(4);
 });
 
 it('open refuses and starts nothing when a different holder takes the lock during the terminal lookup', async ({
@@ -339,27 +347,83 @@ it('open refuses and starts nothing when a different holder takes the lock durin
     'The architect is already running in /other/checkout.',
   );
 
-  expect(app.calls).toEqual([]);
+  expect(appCommands(app)).toEqual(['ls']);
 });
 
-it('open refuses an unreusable terminal without reading the lock again', async ({
+it.each([
+  {
+    name: 'a finished terminal',
+    state: 'finished',
+    layout: undefined,
+    message: 'The architect is already running in /other/checkout.',
+  },
+  {
+    name: 'a parked terminal',
+    state: 'live',
+    layout: parkedLayout,
+    message:
+      'The architect terminal t-architect is parked: it still runs but has no pane. Give it a pane with herdr-app do terminal.keep --terminal t-architect, then call architect open again.',
+  },
+])('open refuses $name without reading the lock again', async ({ state, layout, message }) => {
+  const { root } = await setup((cleanup) => {
+    onTestFinished(cleanup);
+  });
+
+  const { app, terminals, tool } = openTool(root);
+
+  await holdLock(root, '/other/checkout');
+  await recordTerminal(root, 't-architect');
+  terminals.set('t-architect', terminalState(state));
+
+  if (layout !== undefined) {
+    app.overrideOutput('ls', layout);
+  }
+
+  lockReads.directory = dirname(architectLockPath(root));
+  lockReads.failFrom = 2;
+
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(message);
+
+  expect(lockReads.count).toBe(1);
+  expect(app.calls.every((call) => call.commandArguments[0] === 'ls')).toBe(true);
+});
+
+it('open refuses and starts nothing when the pane of a live architect terminal cannot be read', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
   const { app, terminals, tool } = openTool(root);
 
+  await holdLock(root, root);
+  await recordTerminal(root, 't-architect');
+  terminals.set('t-architect', terminalState('live'));
+  app.failCommand('ls', 'herdr-app is unavailable');
+
+  const failure = await open(tool, root, { request: openRequest }).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('The architect terminal t-architect is live');
+  expect((failure as Error).message).toContain('pane could not be read');
+  expect((failure as Error).message).toContain('herdr-app is unavailable');
+  expect((failure as Error).cause).toBeInstanceOf(Error);
+  expect(appCommands(app)).toEqual(['ls']);
+});
+
+it('open treats a recorded terminal that hc does not know as not live', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const afterTerminalLookup = vi.fn<() => Promise<void>>(() => Promise.resolve());
+  const { app, tool } = openTool(root, undefined, afterTerminalLookup);
+
   await holdLock(root, '/other/checkout');
   await recordTerminal(root, 't-architect');
-  terminals.set('t-architect', terminalState('finished'));
-
-  lockReads.directory = dirname(architectLockPath(root));
-  lockReads.failFrom = 2;
 
   await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
     'The architect is already running in /other/checkout.',
   );
 
-  expect(lockReads.count).toBe(1);
+  expect(afterTerminalLookup).not.toHaveBeenCalled();
   expect(app.calls).toEqual([]);
 });
 

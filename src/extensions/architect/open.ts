@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { userConfigPath } from '../../config/config.js';
 import { readRoleModel } from '../../config/roleModels.js';
-import { isMissingFile } from '../../errors.js';
+import { errorMessage, isMissingFile } from '../../errors.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../fileLock/fileLock.js';
 import { get } from '../../hc/hc.js';
@@ -12,7 +12,7 @@ import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { findPane } from '../../piStart/herdrPane.js';
 import { startPiSession, startPiSessionLeftOf } from '../../piStart/piStart.js';
 import { architectLockPath } from './lock.js';
-import { openCandidate, openReuse } from './openReuseDecision.js';
+import { eligibleTerminal, openCandidate, openReuse } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 import { readArchitectRecord, readAskRecords } from './record.js';
 
@@ -103,6 +103,17 @@ const terminalRunsAsk = async (root: string, terminal: string | undefined): Prom
   return asks.some((ask) => ask.status === 'running' && ask.terminal === terminal);
 };
 
+const readPane = async (request: OpenRequest, terminal: string): Promise<string | undefined> => {
+  try {
+    return await findPane(request.hc, terminal);
+  } catch (error) {
+    throw new Error(
+      `The architect terminal ${terminal} is live, but its pane could not be read, so it may not be visible: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+};
+
 const candidateOf = async (
   request: OpenRequest,
   recordedTerminal: string | null | undefined,
@@ -111,12 +122,14 @@ const candidateOf = async (
   const found = await readLiveTerminal(request.hc, recordedTerminal);
   const liveTerminal = found === undefined ? undefined : (recordedTerminal ?? undefined);
 
-  return openCandidate({
-    holder,
-    liveTerminal,
-    terminalRunsAsk: await terminalRunsAsk(request.root, liveTerminal),
-    terminalLabeledAsk: found?.labels?.[askLabel] !== undefined,
-  });
+  const runsAsk = await terminalRunsAsk(request.root, liveTerminal);
+  const labeledAsk = found?.labels?.[askLabel] !== undefined;
+  const eligibility = { liveTerminal, terminalRunsAsk: runsAsk, terminalLabeledAsk: labeledAsk };
+
+  const eligible = eligibleTerminal(eligibility);
+  const pane = eligible === undefined ? undefined : await readPane(request, eligible);
+
+  return openCandidate({ holder, ...eligibility, terminalHasPane: pane !== undefined });
 };
 
 const readLeadSpace = async (request: OpenRequest): Promise<string | undefined> => {
@@ -190,6 +203,10 @@ const runningTerminal = async (
 
   if (candidate.kind === 'refuse') {
     throw refusal(candidate.checkout);
+  }
+
+  if (candidate.kind === 'parked') {
+    throw new Error(candidate.message);
   }
 
   const currentHolder = await readLiveLockHolder(lockPath);

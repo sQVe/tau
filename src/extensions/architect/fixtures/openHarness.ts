@@ -1,7 +1,12 @@
 import { join } from 'node:path';
 
 import { contextOf } from '../../../../tests/architectToolHarness.js';
-import { argumentAfter, createExecFake, succeededResult } from '../../../../tests/execFake.js';
+import {
+  argumentAfter,
+  createExecFake,
+  failedResult,
+  succeededResult,
+} from '../../../../tests/execFake.js';
 import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
@@ -31,7 +36,18 @@ const appFake = (): ExecFake<AppKey> =>
       if (key === 'ls') {
         return succeededResult(
           JSON.stringify({
-            spaces: [{ tabs: [{ terminals: [{ terminal: 't-lead', pane: 'p-lead' }] }] }],
+            spaces: [
+              {
+                tabs: [
+                  {
+                    terminals: [
+                      { terminal: 't-lead', pane: 'p-lead' },
+                      { terminal: 't-architect', pane: 'p-shown' },
+                    ],
+                  },
+                ],
+              },
+            ],
           }),
         );
       }
@@ -43,6 +59,8 @@ const appFake = (): ExecFake<AppKey> =>
       return succeededResult('{"ok":true}');
     },
   });
+
+const leadTerminal = 't-lead';
 
 const routedExec =
   (
@@ -56,22 +74,31 @@ const routedExec =
       return app.exec(command, commandArguments, options);
     }
 
-    const terminalReply = terminals.get(commandArguments.at(-1) ?? '');
+    if (commandArguments[0] !== 'get') {
+      return hc.exec(command, commandArguments, options);
+    }
 
-    if (commandArguments[0] === 'get' && terminalReply !== undefined) {
+    const address = commandArguments.at(-1) ?? '';
+    const terminalReply = terminals.get(address);
+
+    if (terminalReply !== undefined) {
       await afterTerminalLookup();
 
       return terminalReply;
     }
 
-    return hc.exec(command, commandArguments, options);
+    if (address === leadTerminal) {
+      return hc.exec(command, commandArguments, options);
+    }
+
+    return failedResult(`no such terminal: ${address}`);
   };
 
 const leadInSpace = (hc: HcFake, space: string | undefined): void => {
   hc.reply(
     'get',
     JSON.stringify({
-      address: 't-lead',
+      address: leadTerminal,
       state: 'live',
       ...(space === undefined ? {} : { labels: { 'herdr.space': space } }),
     }),
