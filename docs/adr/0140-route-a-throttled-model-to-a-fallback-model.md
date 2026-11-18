@@ -57,6 +57,25 @@ Each selection path checks `allowedModels`, when set, against its own model:
   `--model` selects from the full catalog. `enabledModels` limits scoped selection, such as model
   cycling, so it must list `tau/<name>` only for that selection.
 
+### Startup diagnostics
+
+Tau writes the problems and warnings of the initial read to stderr once per process, on the first
+load of the extension, in every mode. A `globalThis` flag stops `/reload`, `/new`, `/resume`, and
+`/fork` from writing again. The `session_start` notice stays, so a terminal session also shows the
+problems beside the session.
+
+Pi can exit before `session_start` binds a UI. `--list-models` and the no-model exit happen earlier,
+and print mode has no notice sink. A refused entry would stay invisible without the startup write.
+
+Accepted limits:
+
+- An interactive start with a bad entry shows the problem twice: on stderr above the TUI and as the
+  notice.
+- A first load inside a running session, such as after an install and `/reload`, writes into the
+  TUI.
+- Print mode does not show a trusted repository file that sets `fallbackModels`, because only the
+  `session_start` read sees project trust. The user's models still work.
+
 ## Consequences
 
 ### Positive
@@ -89,6 +108,23 @@ default retry budget.
 
 Shorten or hide the error text in a `message_end` handler. Rejected because Pi matches that text to
 decide whether to retry, so a rewrite could stop retries.
+
+### Guess the app mode from arguments or terminal flags
+
+Read `--mode`, `--print`, `--list-models`, and the stream terminals to decide when to write.
+Rejected because each copy of Pi's argument grammar missed a case, and an extension cannot see the
+mode Pi resolves.
+
+### Keep the report flag in module state
+
+Record the first load in a module-level variable. Rejected because Pi loads extensions with
+`moduleCache: false`, so `/reload` resets the variable and writes again.
+
+### Report only through session notices
+
+Leave the startup read silent and report at `session_start`. Rejected because `--list-models` and
+the no-model exit happen before `session_start`, and print mode has no notice sink, so a refused
+entry would stay invisible.
 
 ### Pick the model inside Pi
 
