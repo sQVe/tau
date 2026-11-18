@@ -9,8 +9,13 @@ import { launchRun } from './launchAction.js';
 import type { LaunchResult } from './launchAction.js';
 import { registerItems } from './registerAction.js';
 import type { RegisterResult } from './registerAction.js';
-import { findRunDirectory, findVerificationRoots } from './runDirectory.js';
-import { readRunFacts, readTarget } from './runFacts.js';
+import {
+  checkRecordDirectory,
+  checkRecordSymlinks,
+  findRunDirectory,
+  findVerificationRoots,
+} from './runDirectory.js';
+import { readRunFacts, readTarget, requireRunRecordFile } from './runFacts.js';
 import { stopRun } from './stopAction.js';
 import type { StopResult } from './stopAction.js';
 
@@ -132,11 +137,15 @@ const execute = async (
     return toToolResult(details);
   }
 
-  const { checkoutRoot, directory } = await findRunDirectory(
+  const { checkoutRoot, recordRoot, directory } = await findRunDirectory(
     context.cwd,
     parsed.run,
     'verification',
   );
+
+  await checkRecordSymlinks(recordRoot, directory);
+  await requireRunRecordFile(directory, parsed.run);
+  await checkRecordDirectory(recordRoot, directory);
 
   if (parsed.action === 'register') {
     const details = await registerItems(

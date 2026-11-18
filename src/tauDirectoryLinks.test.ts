@@ -223,3 +223,17 @@ it('existingEntry throws an error that is not a missing file', async () => {
     code: 'ENOTDIR',
   });
 });
+
+it('check refuses a .tau/.gitignore that is not a regular file', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await mkdir(join(root, '.tau'));
+  await promisify(execFile)('mkfifo', [join(root, '.tau', '.gitignore')]);
+
+  await expect(checkTauDirectory(root, 'slices')).rejects.toThrow(
+    'Refusing to write through a file that is not a regular file: .tau/.gitignore',
+  );
+
+  expect((await lstat(join(root, '.tau', '.gitignore'))).isFIFO()).toBe(true);
+  expect(await readdir(join(root, '.tau'))).toEqual(['.gitignore']);
+});

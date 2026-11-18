@@ -1,9 +1,9 @@
 import { mkdir, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { writeRecord } from '../../record.js';
-import { checkTauDirectory, climbsOut, existingEntry } from '../../tauDirectory.js';
+import { climbsOut, existingEntry } from '../../tauDirectory.js';
 import { isItemName, itemRecordVersion } from '../../verification/records.js';
 import type { ItemRecord } from '../../verification/records.js';
 import {
@@ -15,7 +15,7 @@ import {
 import { decideItemWrite } from './itemDecision.js';
 import type { ArtifactFact } from './itemDecision.js';
 import type { RecordInput } from './recordParameters.js';
-import { findRunDirectory } from './runDirectory.js';
+import { checkRecordDirectory, findRunDirectory } from './runDirectory.js';
 
 const artifactLocation = async (
   directory: string,
@@ -89,9 +89,7 @@ export const recordItem = async (
 
   validateItemRecord(path, record);
 
-  const folder = relative(join(recordRoot, '.tau'), dirname(path)).split(sep).join('/');
-
-  await checkTauDirectory(recordRoot, folder);
+  await checkRecordDirectory(recordRoot, dirname(path));
   await mkdir(dirname(path), { recursive: true });
   await writeRecord(path, record);
 

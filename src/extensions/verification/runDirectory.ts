@@ -1,4 +1,11 @@
-import { findSharedRepositoryRoot, findTauRoot } from '../../tauDirectory.js';
+import { join, relative, sep } from 'node:path';
+
+import {
+  checkTauDirectory,
+  findSharedRepositoryRoot,
+  findTauRoot,
+  rejectTauSymlinks,
+} from '../../tauDirectory.js';
 import { isRunName } from '../../verification/records.js';
 import { runDirectoryPath } from '../../verification/verification.js';
 
@@ -33,4 +40,18 @@ export const findRunDirectory = async (
   const { checkoutRoot, recordRoot } = await findVerificationRoots(cwd, toolName);
 
   return { checkoutRoot, recordRoot, directory: runDirectoryPath(recordRoot, run) };
+};
+
+const recordFolder = (recordRoot: string, directory: string) =>
+  relative(join(recordRoot, '.tau'), directory).split(sep).join('/');
+
+export const checkRecordSymlinks = async (recordRoot: string, directory: string): Promise<void> => {
+  await rejectTauSymlinks(recordRoot, recordFolder(recordRoot, directory));
+};
+
+export const checkRecordDirectory = async (
+  recordRoot: string,
+  directory: string,
+): Promise<void> => {
+  await checkTauDirectory(recordRoot, recordFolder(recordRoot, directory));
 };

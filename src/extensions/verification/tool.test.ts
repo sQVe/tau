@@ -1,10 +1,23 @@
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative } from 'node:path';
+import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readRunRecord, runRecordPath } from '../../verification/verification.js';
 import { createToolRepository } from './fixtures/toolRepository.js';
 import type { LaunchResult } from './launchAction.js';
@@ -265,4 +278,71 @@ it.each([
   const { run } = await createToolRepository(onTestFinished);
 
   await expect(run(input)).rejects.toThrow(message);
+});
+
+const registerSymlinkTargets = [
+  { name: '.tau', target: '.tau' },
+  { name: '.tau/verification', target: '.tau/verification' },
+];
+
+it.each(registerSymlinkTargets)(
+  'refuses to register when $name is a symlink',
+  async ({ target }) => {
+    const { root, run } = await createToolRepository(onTestFinished);
+    const launch = (await run({ action: 'launch', target: 'app' })).details as LaunchResult;
+    const outside = temporaryDirectory(onTestFinished, 'tau-register-outside-');
+    const moved = join(outside, target);
+
+    const movedRun = join(outside, relative(root, launch.directory));
+
+    await mkdir(dirname(moved), { recursive: true });
+    await rename(join(root, target), moved);
+    await symlink(moved, join(root, target));
+
+    const before = {
+      entries: await readdir(outside, { recursive: true }),
+      record: await readFile(runRecordPath(movedRun), 'utf8'),
+    };
+
+    const failure = await run({
+      action: 'register',
+      run: launch.run,
+      items: [{ item: 'login', steps: 1 }],
+    }).then(
+      () => 'no error',
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+    expect({
+      failure,
+      entries: await readdir(outside, { recursive: true }),
+      record: await readFile(runRecordPath(movedRun), 'utf8'),
+    }).toEqual({
+      failure: `Refusing to write through a symlink: ${target}`,
+      ...before,
+    });
+  },
+);
+
+it('refuses to register when the run record is not a regular file', async () => {
+  const { run } = await createToolRepository(onTestFinished);
+  const launch = (await run({ action: 'launch', target: 'app' })).details as LaunchResult;
+  const recordPath = runRecordPath(launch.directory);
+
+  await rm(recordPath);
+  await promisify(execFile)('mkfifo', [recordPath]);
+
+  const failure = await run({
+    action: 'register',
+    run: launch.run,
+    items: [{ item: 'login', steps: 1 }],
+  }).then(
+    () => 'no error',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  expect({ failure, recordIsFifo: (await lstat(recordPath)).isFIFO() }).toEqual({
+    failure: `Refusing to read a run record that is not a regular file: ${recordPath}`,
+    recordIsFifo: true,
+  });
 });

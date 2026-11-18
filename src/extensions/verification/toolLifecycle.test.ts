@@ -1,9 +1,13 @@
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { lstat, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
+import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { ensureTauDirectory } from '../../tauDirectory.js';
 import { readRunRecord, runDirectoryPath, runRecordPath } from '../../verification/verification.js';
 import { createToolRepository } from './fixtures/toolRepository.js';
 import type { LaunchResult } from './launchAction.js';
@@ -181,12 +185,22 @@ it('refuses a command that cannot start and a later stop succeeds', async () => 
   expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
 });
 
-it('refuses to stop a run whose directory has no run record', async () => {
+it('refuses to stop a run with no record when .tau has no ignore rule', async () => {
   const { root, run } = await createToolRepository(onTestFinished);
   const runName = 'orphan';
   const directory = runDirectoryPath(root, runName);
 
   await mkdir(directory, { recursive: true });
+
+  await expect(run({ action: 'stop', run: runName })).rejects.toThrow(
+    `The run ${runName} has no run record at ${join(directory, 'run.json')}.`,
+  );
+});
+
+it('refuses to stop a run whose directory has no run record', async () => {
+  const { root, run } = await createToolRepository(onTestFinished);
+  const runName = 'orphan';
+  const directory = await ensureTauDirectory(root, `verification/${runName}`);
 
   await expect(run({ action: 'stop', run: runName })).rejects.toThrow(
     `The run ${runName} has no run record at ${join(directory, 'run.json')}.`,
@@ -222,4 +236,66 @@ it('refuses to stop a run whose record names another run', async () => {
   expect(existsSync(marker)).toBe(false);
   expect(await readFile(runRecordPath(first.directory), 'utf8')).toBe(otherRecord);
   expect(await readdir(first.directory)).not.toContain('stop.log');
+});
+
+const stopSymlinkTargets = [
+  { name: '.tau', target: '.tau' },
+  { name: '.tau/verification', target: '.tau/verification' },
+];
+
+it.each(stopSymlinkTargets)('refuses to stop when $name is a symlink', async ({ target }) => {
+  const { root, marker, run } = await createToolRepository(onTestFinished);
+  const launch = (await run({ action: 'launch', target: 'app' })).details as LaunchResult;
+  const outside = temporaryDirectory(onTestFinished, 'tau-stop-outside-');
+  const moved = join(outside, target);
+  const movedRun = join(outside, relative(root, launch.directory));
+
+  await mkdir(dirname(moved), { recursive: true });
+  await rename(join(root, target), moved);
+  await symlink(moved, join(root, target));
+
+  const before = {
+    entries: await readdir(outside, { recursive: true }),
+    record: await readFile(runRecordPath(movedRun), 'utf8'),
+  };
+
+  const failure = await run({ action: 'stop', run: launch.run }).then(
+    () => 'no error',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  expect({
+    failure,
+    entries: await readdir(outside, { recursive: true }),
+    record: await readFile(runRecordPath(movedRun), 'utf8'),
+    stopped: existsSync(marker),
+  }).toEqual({
+    failure: `Refusing to write through a symlink: ${target}`,
+    ...before,
+    stopped: false,
+  });
+});
+
+it('refuses to stop when the run record is not a regular file', async () => {
+  const { marker, run } = await createToolRepository(onTestFinished);
+  const launch = (await run({ action: 'launch', target: 'app' })).details as LaunchResult;
+  const recordPath = runRecordPath(launch.directory);
+
+  await rm(recordPath);
+  await promisify(execFile)('mkfifo', [recordPath]);
+
+  const failure = await run({ action: 'stop', run: launch.run }).then(
+    () => 'no error',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  expect({
+    failure,
+    recordIsFifo: (await lstat(recordPath)).isFIFO(),
+    stopped: existsSync(marker),
+  }).toEqual({
+    failure: `Refusing to read a run record that is not a regular file: ${recordPath}`,
+    recordIsFifo: true,
+    stopped: false,
+  });
 });
