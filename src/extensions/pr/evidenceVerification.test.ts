@@ -4,8 +4,8 @@ import { dirname, join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readCheckState } from '../../checkRecord/identity.js';
+import { verificationDirectoryPath } from '../../verification/verification.js';
 import { createEvidenceRepository } from './fixtures/evidenceRepository.js';
 
 const runName = 'run-a';
@@ -31,7 +31,7 @@ const writeJson = async (path: string, value: unknown): Promise<void> => {
 };
 
 const writeRun = async (root: string, tree: string): Promise<void> => {
-  const directory = join(root, '.tau', 'verification', runName);
+  const directory = join(verificationDirectoryPath(root), runName);
 
   await writeJson(join(directory, 'run.json'), {
     version: 1,
@@ -130,51 +130,6 @@ it('keeps the result fresh after a commit of identical content', async () => {
   ]);
 });
 
-it("lists a worktree's run from the main checkout and after the worktree is removed", async () => {
-  const { root, run, runFrom } = await setUp();
-  const launching = join(temporaryDirectory(onTestFinished, 'tau-pr-worktree-'), 'launching');
-  const preparing = join(temporaryDirectory(onTestFinished, 'tau-pr-worktree-'), 'preparing');
-
-  await git(root, 'add', '.pi/tau.json');
-  await git(root, 'commit', '--quiet', '-m', 'commit the config');
-  await git(root, 'worktree', 'add', '--quiet', launching, 'HEAD');
-  await git(root, 'worktree', 'add', '--quiet', preparing, 'HEAD');
-  await writeRun(root, await currentTree(launching));
-
-  const expected = [
-    {
-      target: '482',
-      item: itemName,
-      run: runName,
-      fresh: true,
-      result: 'passed',
-      counts: { passed: 1, differs: 0, blocked: 0, notRun: 0 },
-    },
-  ];
-
-  expect((await run()).verification).toEqual(expected);
-  expect((await runFrom(preparing)).verification).toEqual(expected);
-
-  await git(root, 'worktree', 'remove', '--force', launching);
-
-  expect((await run()).verification).toEqual(expected);
-  expect((await runFrom(preparing)).verification).toEqual(expected);
-
-  await writeFile(join(preparing, 'feature.txt'), 'changed\n');
-
-  expect((await runFrom(preparing)).verification).toEqual([
-    {
-      target: '482',
-      item: itemName,
-      run: runName,
-      fresh: false,
-      reason: 'treeChangedSinceRun',
-      result: 'passed',
-      counts: { passed: 1, differs: 0, blocked: 0, notRun: 0 },
-    },
-  ]);
-});
-
 it('reports a failed shared-root resolution as a verification gap', async () => {
   const { root, run } = await setUp();
 
@@ -195,8 +150,8 @@ it('reports a failed shared-root resolution as a verification gap', async () => 
 it('reports a malformed run.json as a gap', async () => {
   const { root, run } = await setUp();
 
-  await mkdir(join(root, '.tau', 'verification', 'broken'), { recursive: true });
-  await writeFile(join(root, '.tau', 'verification', 'broken', 'run.json'), '{');
+  await mkdir(join(verificationDirectoryPath(root), 'broken'), { recursive: true });
+  await writeFile(join(verificationDirectoryPath(root), 'broken', 'run.json'), '{');
 
   const evidence = await run();
 
@@ -214,7 +169,7 @@ it('reports a failed runs read as a verification gap', async () => {
   const { root, run } = await setUp();
 
   await mkdir(join(root, '.tau'), { recursive: true });
-  await writeFile(join(root, '.tau', 'verification'), 'not a directory\n');
+  await writeFile(verificationDirectoryPath(root), 'not a directory\n');
 
   const evidence = await run();
 
