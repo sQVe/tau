@@ -14,8 +14,8 @@ import workerExtension, {
 } from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
-import type { RoleKind } from '../src/role.js';
-import { managerGuidelines } from '../src/roleGuidelines.js';
+import type { RoleKind } from '../src/role/role.js';
+import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
 import tauExtension from '../src/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';

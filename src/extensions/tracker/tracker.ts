@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { forgetReportedWarnings } from '../../config/config.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
-import { isWorkerProcess } from '../../role.js';
+import { isWorkerProcess } from '../../role/role.js';
 import { readSessionPromptLines } from './sessionPrompt.js';
 import { createTicketTool } from './ticketTool.js';
 import { createTrackerEvidenceTool } from './tool.js';

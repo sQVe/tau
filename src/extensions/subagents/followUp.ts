@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { currentTerminalAddress, ls } from '../../hc/hc.js';
-import { currentRole } from '../../role.js';
+import { currentRole } from '../../role/role.js';
 import { readSkillTools as readCurrentSkillTools } from '../../skillTools.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { assignmentPath, readAssignment, writeFollowUpAssignment } from './assignment.js';

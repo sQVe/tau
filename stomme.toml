@@ -395,11 +395,6 @@ rule = "typescript-owner-folder"
 key = "recordRead.ts"
 
 [[violations]]
-path = "src/role.ts"
-rule = "typescript-owner-folder"
-key = "roleGuidelines.ts"
-
-[[violations]]
 path = "src/tau.ts"
 rule = "typescript-owner-folder"
 key = "tauDirectory.ts"
@@ -563,19 +558,9 @@ public = ["src/reviewCapture/evidence.ts", "src/reviewCapture/reports.ts"]
 imports = ["command", "errors", "git", "github", "record", "schema", "tauDirectory"]
 
 [modules.role]
-entry = "src/role.ts"
-public = []
+entry = "src/role/role.ts"
+public = ["src/role/roleGuidelines.ts", "src/role/roleTools.ts"]
 imports = ["schema"]
-
-[modules.roleGuidelines]
-entry = "src/roleGuidelines.ts"
-public = []
-imports = []
-
-[modules.roleTools]
-entry = "src/roleTools.ts"
-public = []
-imports = ["role"]
 
 [modules.schema]
 entry = "src/schema.ts"

@@ -4,7 +4,7 @@ import { readConfigLocation, notifyOnce, userConfigPath } from '../../config/con
 import { readRoleModel } from '../../config/roleModels.js';
 import { errorMessage } from '../../errors.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
-import { currentRole } from '../../role.js';
+import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';

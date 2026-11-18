@@ -2,8 +2,8 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { piExec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
-import { currentRole } from '../../role.js';
-import { roleRegistersTool } from '../../roleTools.js';
+import { currentRole } from '../../role/role.js';
+import { roleRegistersTool } from '../../role/roleTools.js';
 import { registerAskMode } from './askMode.js';
 import { isFinalHandover } from './queuedHandover.js';
 import { endArchitectSession, startArchitectSession } from './session.js';

@@ -1,4 +1,4 @@
-import type { RoleKind } from '../../role.js';
+import type { RoleKind } from '../../role/role.js';
 
 export interface LeadModelFacts {
   role: RoleKind;

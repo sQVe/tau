@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import type { RoleKind } from '../../role.js';
+import type { RoleKind } from '../../role/role.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 
 const allowedCases: readonly {

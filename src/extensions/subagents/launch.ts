@@ -7,7 +7,7 @@ import { errorMessage } from '../../errors.js';
 import { runWithEnvironment } from '../../hc/connect.js';
 import { currentTerminalAddress, get, HcError, ls, readCurrentTerminal } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
-import { currentRole } from '../../role.js';
+import { currentRole } from '../../role/role.js';
 import type { SkillTools } from '../../skillTools.js';
 import { readSkillTools as readCurrentSkillTools } from '../../skillTools.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';

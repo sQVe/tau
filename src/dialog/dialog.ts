@@ -3,7 +3,7 @@ import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { Container, matchesKey, Spacer, Text, truncateToWidth } from '@earendil-works/pi-tui';
 import type { Component } from '@earendil-works/pi-tui';
 
-import { isWorkerProcess } from '../role.js';
+import { isWorkerProcess } from '../role/role.js';
 import { customWithBlockedStatus } from './blockedStatus.js';
 import { confirmationRefusal } from './eligibility.js';
 import { isBottom, isDown, isTop, isUp } from './keys.js';

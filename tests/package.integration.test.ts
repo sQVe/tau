@@ -20,7 +20,7 @@ import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
 import { qaGuidePath } from '../src/extensions/subagents/qaBrief.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
 import { readInstructionSet } from '../src/instructions/instructions.js';
-import { managerGuidelines } from '../src/roleGuidelines.js';
+import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { emptySessionRefusal, installHcCommand } from './hcCommandHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';

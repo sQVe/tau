@@ -1,5 +1,5 @@
-import type { RoleKind } from '../../role.js';
-import { roleRegistersTool } from '../../roleTools.js';
+import type { RoleKind } from '../../role/role.js';
+import { roleRegistersTool } from '../../role/roleTools.js';
 import type { SkillTools } from '../../skillTools.js';
 
 const reloadInstruction = 'Run /reload, then launch again.';

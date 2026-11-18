@@ -8,7 +8,7 @@ import type { Exec } from '../../command.js';
 import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
 import { isViewersTicket } from '../../linear/ownership.js';
-import { isWorkerProcess } from '../../role.js';
+import { isWorkerProcess } from '../../role/role.js';
 import { ensureTauDirectory, findTauRoot, isSymlink } from '../../tauDirectory.js';
 import { decideCommentTarget } from './commentTarget.js';
 import type { TicketComment } from './commentTarget.js';

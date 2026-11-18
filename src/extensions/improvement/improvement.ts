@@ -5,7 +5,7 @@ import type { Exec } from '../../command.js';
 import { piExec } from '../../command.js';
 import { readImprovementStatus } from '../../improvement/status.js';
 import { runSweep } from '../../improvement/sweep.js';
-import { isWorkerProcess } from '../../role.js';
+import { isWorkerProcess } from '../../role/role.js';
 import { runCorrect } from './correctAction.js';
 import type { CorrectResult } from './correctAction.js';
 import { runHistory } from './historyAction.js';

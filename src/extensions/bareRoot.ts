@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { runGit } from '../git.js';
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
-import { isWorkerProcess } from '../role.js';
+import { isWorkerProcess } from '../role/role.js';
 
 const bareRootRules = [
   'This session runs in the bare repository root, not a worktree. Use it to read, answer ' +
