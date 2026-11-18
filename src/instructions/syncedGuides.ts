@@ -22,8 +22,9 @@ const fix = 'run stomme sync';
 
 // Matches the spans that are not rendered as a link, in document order, so one span cannot hide
 // another: a fence inside an HTML comment stays comment text, and a link after it still renders.
+// Inline code ends at a blank line or a fence, so it cannot reach into a later block.
 const markdownToken =
-  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)[\s\S]*?\2|\]\(\s*(?:<([^>\n]*)>|([^)\s]+))/gm;
+  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)(?:(?!\n[ \t]*(?:\n|`{3,}|~{3,}))[\s\S])*?\2|\]\(\s*(?:<([^>\n]*)>|([^)\s]+))/gm;
 
 const urlScheme = /^[a-z][a-z\d+.-]*:/i;
 
@@ -36,7 +37,7 @@ const readText = async (file: string, fileSystem: GuideFileSystem): Promise<Text
   try {
     const bytes = await fileSystem.readFile(file);
 
-    return { bytes, text: new TextDecoder().decode(bytes) };
+    return { bytes, text: new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes) };
   } catch (error) {
     const reason = isMissingFile(error)
       ? `${file} is missing; ${fix}`

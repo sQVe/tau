@@ -105,6 +105,13 @@ it.for([
       'shared/rules.md': '<!--\n```markdown\n-->\n[the rules](./rules.md)\n',
     },
   },
+  {
+    name: 'a lone backtick before an HTML comment with a link',
+    files: {
+      ...guides,
+      'shared/rules.md': 'A literal `\n\n<!-- `\n[ignored](./gone.md)\n-->\n',
+    },
+  },
 ])('reads $name as valid', async ({ files }) => {
   const result = await readSyncedGuides(writeGuides(files));
 
@@ -286,4 +293,14 @@ it('keeps the error of a record that cannot be read again', async () => {
 
   expect(reason).toContain('the disk went away');
   expect(reason).toContain('run stomme sync');
+});
+
+it('keeps the byte order mark in the text of a guide', async () => {
+  const text = '\uFEFF# Heading\n';
+  const directory = writeGuides({ ...guides, 'shared/rules.md': text });
+
+  const result = await readSyncedGuides(directory);
+  const found = result.kind === 'valid' ? result.files.get('shared/rules.md') : undefined;
+
+  expect(found).toBe(text);
 });
