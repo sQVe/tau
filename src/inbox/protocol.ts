@@ -16,6 +16,13 @@ export type InboxLabel =
   | { kind: 'socket'; path: string }
   | { kind: 'unsupported'; protocol: string };
 
+export interface MessageFrameFields {
+  messageId: string;
+  targetTerminal: string;
+  targetSessionId: string;
+  body: MessageBody;
+}
+
 const protocolName = 'rpc1';
 
 export const savableFamilies = ['handover', 'answer'] as const;
@@ -271,6 +278,16 @@ export const decodeReply = (bytes: Uint8Array): FrameDecision<MessageReply> =>
 
 export const encodeFrame = (value: MessageRequest | MessageReply): string =>
   `${JSON.stringify(value)}\n`;
+
+export const encodeMessageFrame = (fields: MessageFrameFields): string =>
+  encodeFrame({
+    protocol: 'rpc1',
+    kind: 'message',
+    messageId: fields.messageId,
+    targetTerminal: fields.targetTerminal,
+    targetSessionId: fields.targetSessionId,
+    ...fields.body,
+  });
 
 export const formatInboxLabel = (path: string): string => `${protocolName}:${path}`;
 

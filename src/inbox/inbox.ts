@@ -5,7 +5,15 @@ import type { Family, MessageReply, MessageRequest } from './protocol.js';
 import type { AcceptCheck } from './receive.js';
 
 export { socketDirectoryFor } from './endpoint.js';
-export { formatInboxLabel, inboxLabelKey, isUuid } from './protocol.js';
+
+export {
+  encodeMessageFrame,
+  formatInboxLabel,
+  inboxLabelKey,
+  isUuid,
+  requestByteLimit,
+} from './protocol.js';
+
 export type { MessageRequest } from './protocol.js';
 export { createReceiver } from './receive.js';
 export type { AcceptCheck, Receiver, ReceiverOptions } from './receive.js';
