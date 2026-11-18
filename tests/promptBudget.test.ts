@@ -20,6 +20,9 @@ import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
 import tauExtension from '../src/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
+import { writeStommeProject } from './stommeProjectHarness.js';
+
+type Sessions = Map<string, { tools: ToolDefinition[]; size: number; prompt: string }>;
 
 const oneActionBudget = 1000;
 const multiActionBudget = 3000;
@@ -27,14 +30,14 @@ const multiActionBudget = 3000;
 // Tools over budget today, each with its current description length as its own ceiling.
 const descriptionExceptions: Readonly<Record<string, number>> = {};
 
-// Each ceiling caps a session at about its measured size, so a cut must lower it. The target is
-// beside each ceiling.
+// Each ceiling caps a session at its larger measured size, the empty folder or the adopted project,
+// so a cut must lower it. The target is beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  lead: 58_470, // target 38,000
-  architect: 54_856,
-  worker: 22_950, // target 14,000
-  reviewer: 18_404, // target 11,000
-  checker: 18_557,
+  lead: 60_736, // target 38,000
+  architect: 57_129,
+  worker: 25_240, // target 14,000
+  reviewer: 20_694, // target 11,000
+  checker: 20_847,
   qa: 14_670, // target 9,000
   browser: 12_828, // target 9,000
   scout: 12_387, // target 9,000
@@ -158,26 +161,51 @@ const workerSession = async (profileName: string, directory: string) => {
   return { tools, size: prompt.length + toolsSize(tools), prompt };
 };
 
-const sessions = new Map<string, { tools: ToolDefinition[]; size: number; prompt: string }>();
-let directory = '';
-
-beforeAll(async () => {
-  // The directory is shared by every test, so `afterAll` removes it.
-  directory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-'));
-  sessions.set('lead', await roleSession('lead', directory));
-  sessions.set('architect', await roleSession('architect', directory));
+const measureSessions = async (projectDirectory: string): Promise<Sessions> => {
+  const measured: Sessions = new Map([
+    ['lead', await roleSession('lead', projectDirectory)],
+    ['architect', await roleSession('architect', projectDirectory)],
+  ]);
 
   for (const name of profileNames) {
-    sessions.set(name, await workerSession(name, directory));
+    measured.set(name, await workerSession(name, projectDirectory));
+  }
+
+  return measured;
+};
+
+// A session without the coding set loads no guides, so its prompt cannot depend on the project.
+const sessionsWithoutCoding = ['qa', 'browser', 'scout'];
+
+// An empty folder has no `stomme.toml`, so the sessions load the bundled guides. The adopted
+// project pins TypeScript and the pi layer, so they load its synced guides.
+const bundledSessions: Sessions = new Map();
+const adoptedSessions: Sessions = new Map();
+let directory = '';
+let adoptedDirectory = '';
+
+beforeAll(async () => {
+  // Every test shares both directories, so `afterAll` removes them.
+  directory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-'));
+  adoptedDirectory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-adopted-'));
+  await writeStommeProject(adoptedDirectory, { language: 'typescript', layers: ['pi'] });
+
+  for (const [name, session] of await measureSessions(directory)) {
+    bundledSessions.set(name, session);
+  }
+
+  for (const [name, session] of await measureSessions(adoptedDirectory)) {
+    adoptedSessions.set(name, session);
   }
 });
 
 afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
+  rmSync(adoptedDirectory, { recursive: true, force: true });
 });
 
 const allTools = (): ToolDefinition[] => {
-  const toolEntries = [...sessions.values()]
+  const toolEntries = [...bundledSessions.values(), ...adoptedSessions.values()]
     .flatMap((session) => session.tools)
     .map((tool) => [tool.name, tool] as const);
 
@@ -186,7 +214,7 @@ const allTools = (): ToolDefinition[] => {
 
 describe('prompt budget', () => {
   it('a lead prompt holds the lead rules and no architect rules', () => {
-    const prompt = sessions.get('lead')?.prompt ?? '';
+    const prompt = bundledSessions.get('lead')?.prompt ?? '';
     const lead = managerGuidelines('lead', roleOptions);
     const architect = managerGuidelines('architect', roleOptions);
     const architectOnly = architect.filter((guideline) => !lead.includes(guideline));
@@ -196,7 +224,7 @@ describe('prompt budget', () => {
   });
 
   it('an architect prompt holds the architect rules', () => {
-    const prompt = sessions.get('architect')?.prompt ?? '';
+    const prompt = bundledSessions.get('architect')?.prompt ?? '';
     const lead = managerGuidelines('lead', roleOptions);
     const architect = managerGuidelines('architect', roleOptions);
     const leadOnly = lead.filter((guideline) => !architect.includes(guideline));
@@ -234,14 +262,24 @@ describe('prompt budget', () => {
     expect(over).toEqual([]);
   });
 
-  it('keeps each session within its ceiling', () => {
+  it.each([
+    ['an empty folder', bundledSessions],
+    ['an adopted project', adoptedSessions],
+  ])('keeps each session within its ceiling in %s', (_case, measured) => {
     const sessionCeilingNames = Object.keys(sessionCeilings).toSorted();
-    expect([...sessions.keys()].toSorted()).toEqual(sessionCeilingNames);
+    expect([...measured.keys()].toSorted()).toEqual(sessionCeilingNames);
 
-    const over = [...sessions]
+    const over = [...measured]
       .filter(([name, { size }]) => size > (sessionCeilings[name] ?? 0))
       .map(([name, { size }]) => `${name}: ${size} characters, ceiling ${sessionCeilings[name]}`);
 
     expect(over).toEqual([]);
+  });
+
+  it('measures a session without the coding set the same in both projects', () => {
+    const sizes = (measured: Sessions) =>
+      sessionsWithoutCoding.map((name) => [name, measured.get(name)?.size]);
+
+    expect(sizes(adoptedSessions)).toEqual(sizes(bundledSessions));
   });
 });

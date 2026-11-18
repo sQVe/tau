@@ -32,6 +32,13 @@ file in Tau. The set keeps its name, so profiles and saved loadouts stay valid.
   its relative links resolve. A project guide's line names its path under `docs/stomme/`. A bundled
   guide's line names its real path in Tau's bundle.
 
+### Which record shapes it reads
+
+- Tau reads both shapes of the sync record in `docs/stomme/`: the stomme 0.1.0 shape, which has no
+  `schema`, and the `schema = 1` shape.
+- Tau deletes the 0.1.0 shape reader once no adopted project pins stomme 0.1.0. Tau and greppa pin
+  it today.
+
 ### When it loads
 
 - Tau reads the guides once per Pi run, on `before_agent_start`. A run never reads them again
