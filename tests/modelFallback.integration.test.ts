@@ -2,7 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
-import type { AssistantMessage, FauxProviderHandle } from '@earendil-works/pi-ai';
+import type { Api, AssistantMessage, FauxProviderHandle, Model } from '@earendil-works/pi-ai';
+import { convertToLlm } from '@earendil-works/pi-coding-agent';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
@@ -141,6 +142,52 @@ it('returns to the primary on the next user message', async ({ onTestFinished })
   expect(answer.provider).toBe('tau-primary');
   expect(answer.model).toBe('primary-model');
   expect(textOf(answer)).toBe('primary ok');
+});
+
+const directTarget = async (session: AgentSession): Promise<string> => {
+  const model: Model<Api> | undefined = session.model;
+
+  if (model === undefined) {
+    throw new Error('The session has no model.');
+  }
+
+  const route = await session.modelRuntime.resolveModel(model, convertToLlm(session.messages), {
+    reason: 'direct',
+    thinkingLevel: 'off',
+  });
+
+  return `${route.model.provider}/${route.model.id}`;
+};
+
+it('routes a direct request after a fallback answer to the fallback', async ({
+  onTestFinished,
+}) => {
+  const { session, primary, fallback } = await createHarness(onTestFinished);
+
+  primary.setResponses(overloadedResponses());
+  fallback.setResponses([fauxAssistantMessage('fallback ok')]);
+
+  await session.prompt('Start the task.');
+
+  expect(await directTarget(session)).toBe('tau-fallback/fallback-model');
+});
+
+it('routes a direct request after a primary answer to the primary', async ({ onTestFinished }) => {
+  const { session, primary } = await createHarness(onTestFinished);
+
+  primary.setResponses([fauxAssistantMessage('primary ok')]);
+
+  await session.prompt('Start the task.');
+
+  expect(await directTarget(session)).toBe('tau-primary/primary-model');
+});
+
+it('routes a direct request without an earlier answer to the primary', async ({
+  onTestFinished,
+}) => {
+  const { session } = await createHarness(onTestFinished);
+
+  expect(await directTarget(session)).toBe('tau-primary/primary-model');
 });
 
 it('fails a route to an unknown model', async ({ onTestFinished }) => {
