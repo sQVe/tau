@@ -1,14 +1,9 @@
 import type { ModelRouteReason } from '@earendil-works/pi-coding-agent';
-
-import { isRecord } from '../../schema.js';
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
 
 type FallbackTarget = 'primary' | 'fallback';
-
-export interface FallbackRouteState {
-  version: 1;
-  consecutiveRetries: number;
-  onFallback: boolean;
-}
 
 export interface FallbackRouteFacts {
   reason: ModelRouteReason;
@@ -22,34 +17,31 @@ export interface FallbackRouteDecision {
   state?: FallbackRouteState;
 }
 
-const stateKeys = ['version', 'consecutiveRetries', 'onFallback'] as const;
+const fallbackRouteStateSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    consecutiveRetries: Type.Integer({ minimum: 0 }),
+    onFallback: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
 
-const hasStateKeys = (value: Record<string, unknown>): boolean =>
-  Object.keys(value).length === stateKeys.length &&
-  stateKeys.every((key) => Object.hasOwn(value, key));
+export type FallbackRouteState = Static<typeof fallbackRouteStateSchema>;
 
-const isRetryCount = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isInteger(value) && value >= 0;
-
-const parseFallbackRouteState = (value: unknown): FallbackRouteState | undefined => {
-  if (!isRecord(value) || !hasStateKeys(value)) {
-    return undefined;
-  }
-
-  const { version, consecutiveRetries, onFallback } = value;
-
-  if (version !== 1 || !isRetryCount(consecutiveRetries) || typeof onFallback !== 'boolean') {
-    return undefined;
-  }
-
-  return { version, consecutiveRetries, onFallback };
-};
+const parseFallbackRouteState = (value: unknown): FallbackRouteState | undefined =>
+  Value.Check(fallbackRouteStateSchema, value) ? value : undefined;
 
 const primaryState = (): FallbackRouteState => ({
   version: 1,
   consecutiveRetries: 0,
   onFallback: false,
 });
+
+const isPrimaryState = (state: FallbackRouteState | undefined): boolean =>
+  state?.consecutiveRetries === 0 && !state.onFallback;
+
+const decideUser = (current: FallbackRouteState | undefined): FallbackRouteDecision =>
+  isPrimaryState(current) ? { target: 'primary' } : { target: 'primary', state: primaryState() };
 
 const targetOf = (onFallback: boolean): FallbackTarget => (onFallback ? 'fallback' : 'primary');
 
@@ -87,7 +79,7 @@ export const decideFallbackRoute = ({
 
   switch (reason) {
     case 'user':
-      return { target: 'primary', state: primaryState() };
+      return decideUser(current);
     case 'retry':
       return decideRetry(current ?? primaryState(), fallbackAtRetry);
     case 'continuation':

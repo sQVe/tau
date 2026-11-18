@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { expect, it } from 'vitest';
 
 import { decideFallbackRoute } from './fallbackRoute.js';
@@ -25,6 +28,34 @@ const table: {
   {
     name: 'a user request returns to the primary and clears the state',
     facts: routeFacts({ reason: 'user', state: state(3, true) }),
+    expected: { target: 'primary', state: state(0, false) },
+  },
+  {
+    name: 'a user request on an already reset state writes no state',
+    facts: routeFacts({ reason: 'user', state: state(0, false) }),
+    expected: { target: 'primary' },
+  },
+  {
+    name: 'a user request after a retry on the primary clears the retry count',
+    facts: routeFacts({ reason: 'user', state: state(2, false) }),
+    expected: { target: 'primary', state: state(0, false) },
+  },
+  {
+    name: 'a user request on the fallback with no retries returns to the primary',
+    facts: routeFacts({ reason: 'user', state: state(0, true) }),
+    expected: { target: 'primary', state: state(0, false) },
+  },
+  {
+    name: 'a user request without state writes the reset state',
+    facts: routeFacts({ reason: 'user', state: undefined }),
+    expected: { target: 'primary', state: state(0, false) },
+  },
+  {
+    name: 'a user request with malformed state writes the reset state',
+    facts: routeFacts({
+      reason: 'user',
+      state: { version: 1, consecutiveRetries: '0', onFallback: false },
+    }),
     expected: { target: 'primary', state: state(0, false) },
   },
   {
@@ -143,4 +174,17 @@ const table: {
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { facts, expected }) => {
   expect(decideFallbackRoute(facts)).toStrictEqual(expected);
+});
+
+const savedState = (name: string): unknown =>
+  JSON.parse(
+    readFileSync(join(import.meta.dirname, 'fixtures', 'routeState', name), 'utf8'),
+  ) as unknown;
+
+it.each([
+  ['current.json', { target: 'primary', state: state(3, false) }],
+  ['newer.json', { target: 'primary', state: state(1, false) }],
+  ['malformed.json', { target: 'primary', state: state(1, false) }],
+] as const)('a retry reads the saved %s route state', (name, expected) => {
+  expect(decideFallbackRoute(routeFacts({ state: savedState(name) }))).toStrictEqual(expected);
 });
