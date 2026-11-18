@@ -28,8 +28,9 @@ file in Tau. The set keeps its name, so profiles and saved loadouts stay valid.
   the guides of the selected layers from the project's `docs/stomme/`.
 - Without `stomme.toml`, the set loads the general guide bundled with Tau. Language guides then load
   on first file access ([ADR 0131](./0131-load-language-rules-on-first-file-access.md)).
-- The text names the stomme version and the guide folder. Each guide follows a `Source:` line with
-  its path under `docs/stomme/`, so its relative links resolve.
+- The text names the stomme version and the guide folder. Each guide follows a `Source:` line, so
+  its relative links resolve. A project guide's line names its path under `docs/stomme/`. A bundled
+  guide's line names its real path in Tau's bundle.
 
 ### When it loads
 
@@ -42,7 +43,8 @@ file in Tau. The set keeps its name, so profiles and saved loadouts stay valid.
 
 - When the project's guides cannot be used, the set sends one line: Tau could not load the stomme
   coding guides, the reason, and an instruction to tell the user before changing code.
-- Tau shows an error notice with the reason once per new reason. A usable run clears it.
+- Tau shows an error notice with the reason once per new reason. A usable run clears it. Only a
+  session that loads the coding set shows it, so a worker without `coding` stays quiet.
 - A broken project never falls back to the bundled guides.
 
 ## Consequences

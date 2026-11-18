@@ -27,6 +27,7 @@ export type GuideSelection =
     }
   | {
       kind: 'bundle';
+      root: string;
       version: string;
       guides: Guide[];
       languageGuides: Record<GuideLanguage, Guide>;
@@ -204,6 +205,7 @@ const decideBundle = (bundleRoot: string, bundle: SyncedGuides | undefined): Gui
 
   return {
     kind: 'bundle',
+    root: bundleRoot,
     version: bundle.version,
     guides: [general],
     languageGuides: { rust, typescript },

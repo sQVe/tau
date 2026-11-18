@@ -112,6 +112,7 @@ const table: {
     bundle: synced('0.2.0', allGuides),
     expected: {
       kind: 'bundle',
+      root: bundleRoot,
       version: '0.2.0',
       guides: [guide('shared/coding.md')],
       languageGuides: {

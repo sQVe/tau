@@ -21,7 +21,8 @@ import type { Loadout } from '../src/extensions/subagents/types.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerStartMessage } from '../src/extensions/subagents/workerStart.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
-import { codingSetText } from '../src/instructions/guideRuns.js';
+import { codingSetText, trackGuideRuns } from '../src/instructions/guideRuns.js';
+import type { GuideRuns } from '../src/instructions/guideRuns.js';
 import { resolveStommeGuides } from '../src/instructions/stommeGuides/stommeGuides.js';
 import { skillTools } from '../src/skillTools.js';
 import { createHcFake } from './hcFake.js';
@@ -31,6 +32,11 @@ import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface PromptSession {
   run: () => Promise<string>;
+  notices: string[];
+}
+
+interface WorkerRun {
+  prompt: string;
   notices: string[];
 }
 
@@ -271,7 +277,7 @@ const runWorker = async (
   onTestFinished: TestContext['onTestFinished'],
   cwd: string,
   instructionSets: Loadout['instructionSets'],
-): Promise<string> => {
+): Promise<WorkerRun> => {
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-guides-agent-');
 
   onTestFinished(() => {
@@ -367,9 +373,7 @@ const runWorker = async (
 
   await session.prompt(workerStartMessage);
 
-  expect(notices).toEqual([]);
-
-  return appended[0] ?? '';
+  return { prompt: appended[0] ?? '', notices };
 };
 
 it('main session and worker load the same stomme guides', async ({ onTestFinished }) => {
@@ -380,13 +384,14 @@ it('main session and worker load the same stomme guides', async ({ onTestFinishe
   const snapshot = await resolveStommeGuides(project);
   const main = await startMainSession(onTestFinished, project);
   const mainPrompt = await main.run();
-  const workerPrompt = await runWorker(onTestFinished, project, ['writing', 'coding', 'workflow']);
+  const worker = await runWorker(onTestFinished, project, ['writing', 'coding', 'workflow']);
   const again = await resolveStommeGuides(project);
 
   expect(snapshot.kind).toBe('project');
   expect(again).toEqual(snapshot);
   expect(mainPrompt.split(codingSetText(snapshot))).toHaveLength(2);
-  expect(workerPrompt.split(codingSetText(snapshot))).toHaveLength(2);
+  expect(worker.notices).toEqual([]);
+  expect(worker.prompt.split(codingSetText(snapshot))).toHaveLength(2);
 });
 
 const bundleGuide = async (path: string): Promise<string> =>
@@ -480,9 +485,60 @@ it('leaves stomme guides out of a worker without coding', async ({ onTestFinishe
   await writeStommeProject(project, { language: 'typescript' });
 
   const sharedGuide = await bundleGuide('shared/coding.md');
-  const prompt = await runWorker(onTestFinished, project, ['writing', 'workflow']);
+  const { prompt, notices } = await runWorker(onTestFinished, project, ['writing', 'workflow']);
 
+  expect(notices).toEqual([]);
   expect(prompt).toContain('Work on the assigned task.');
   expect(prompt).not.toContain('# Stomme');
   expect(prompt).not.toContain(sharedGuide);
+});
+
+it('shows no broken-guide notice in a worker without coding', async ({ onTestFinished }) => {
+  const project = temporaryDirectory(onTestFinished, 'tau-guides-broken-scout-');
+
+  await writeStommeProject(project, { language: 'typescript' });
+  await writeFile(join(project, 'docs', 'stomme', 'shared', 'coding.md'), '# Edited by hand\n');
+
+  const { prompt, notices } = await runWorker(onTestFinished, project, ['writing', 'workflow']);
+
+  expect(notices).toEqual([]);
+  expect(prompt).toContain('Work on the assigned task.');
+  expect(prompt).not.toContain('stomme coding guides');
+});
+
+it('reads the session working directory before the first run', async ({ onTestFinished }) => {
+  const project = temporaryDirectory(onTestFinished, 'tau-guides-before-run-');
+  const provider = fauxProvider({ provider: 'tau-guides-before-run' });
+  let guideRuns: GuideRuns | undefined;
+
+  await writeStommeProject(project, { language: 'rust', version: '0.3.0' });
+
+  const { session } = await createPiSession(onTestFinished, {
+    cwd: project,
+    agentDirectory: join(project, '.agent'),
+    providers: [provider],
+    extensionFactories: [
+      (pi) => {
+        guideRuns = trackGuideRuns(pi);
+      },
+    ],
+  });
+
+  await session.bindExtensions({});
+
+  const snapshot = await guideRuns?.snapshot();
+
+  expect(process.cwd()).not.toBe(project);
+  expect(snapshot).toEqual(await resolveStommeGuides(project));
+});
+
+it('names the real bundle folder in the source line of a bundled guide', async ({
+  onTestFinished,
+}) => {
+  const folder = temporaryDirectory(onTestFinished, 'tau-guides-bundle-source-');
+
+  const prompt = await (await startMainSession(onTestFinished, folder)).run();
+
+  expect(prompt).toContain(`Source: ${join(bundleDirectory, 'shared', 'coding.md')}\n`);
+  expect(prompt).not.toContain('Source: docs/stomme/');
 });

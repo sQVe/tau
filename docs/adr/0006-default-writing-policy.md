@@ -22,16 +22,17 @@ or whether a comment earns its place.
 
 ## Decision
 
-Tau keeps its rules in instruction sets, one Markdown file per concern under `src/instructions/`,
-and appends them to the system prompt before each ordinary agent run. One file per concern keeps a
-code rule from being read as a prose rule, and loading by default means no skill has to be loaded
-first.
+Tau keeps its rules in instruction sets, one set per concern, and appends them to the system prompt
+before each ordinary agent run. The writing, workflow, and browser sets are Markdown files under
+`src/instructions/`. The coding set loads the stomme guides
+([ADR 0140](./0140-load-coding-guides-from-stomme.md)). One set per concern keeps a code rule from
+being read as a prose rule, and loading by default means no skill has to be loaded first.
 
 ### The sets
 
 - `writing.md` governs text the agent writes: replies, commit and PR text, tickets, docs, and the
   wording of code comments.
-- `coding.md` governs code the agent writes, including whether a comment should exist.
+- `coding` governs code the agent writes, including whether a comment should exist.
 - `workflow.md` governs how the agent carries out a task: the commands it runs, the checkouts it
   touches, the scope it keeps, and when it stops.
 - `browser.md` is opt-in for workers that drive a browser

@@ -251,7 +251,13 @@ const registerToolCallHandler = (pi: ExtensionAPI): void => {
 };
 
 const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerState): void => {
-  const guideRuns = trackGuideRuns(pi);
+  const usesCodingSet = async (): Promise<boolean> => {
+    await state.ready;
+
+    return state.target?.assignment.loadout.instructionSets.includes('coding') === true;
+  };
+
+  const guideRuns = trackGuideRuns(pi, { usesCodingSet });
   // Read the instruction files once, so a changed checkout does not change them. The stomme guides
   // are read again at each run.
   let parts: Promise<WorkerPromptParts> | undefined;
