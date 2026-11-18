@@ -63,14 +63,29 @@ const table: {
     expected: { target: 'primary', state: state(0, false) },
   },
   {
+    name: 'a continuation with a zero retry count on the primary writes no state',
+    facts: routeFacts({ reason: 'continuation', state: state(0, false) }),
+    expected: { target: 'primary' },
+  },
+  {
+    name: 'a continuation with a zero retry count on the fallback writes no state',
+    facts: routeFacts({ reason: 'continuation', state: state(0, true) }),
+    expected: { target: 'fallback' },
+  },
+  {
     name: 'a direct request after a fallback response routes to the fallback',
     facts: routeFacts({ reason: 'direct', state: undefined, previousOnFallback: true }),
-    expected: { target: 'fallback', state: state(0, false) },
+    expected: { target: 'fallback' },
   },
   {
     name: 'a direct request after a primary response routes to the primary',
     facts: routeFacts({ reason: 'direct', state: undefined, previousOnFallback: false }),
-    expected: { target: 'primary', state: state(0, false) },
+    expected: { target: 'primary' },
+  },
+  {
+    name: 'a direct request ignores the saved state',
+    facts: routeFacts({ reason: 'direct', state: state(3, true), previousOnFallback: false }),
+    expected: { target: 'primary' },
   },
   {
     name: 'a retry with a state of version 2 counts one retry on the primary',

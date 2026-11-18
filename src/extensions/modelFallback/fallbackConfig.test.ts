@@ -2,8 +2,8 @@ import { writeFileSync } from 'node:fs';
 
 import { expect, it } from 'vitest';
 
-import { temporaryTauConfig } from '../../tests/tauConfigHarness.js';
-import { readFallbackModels } from './fallbackModels.js';
+import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
+import { readFallbackModels } from './fallbackConfig.js';
 
 const validModel = { primary: 'a/primary', fallback: 'b/fallback', fallbackAtRetry: 5 };
 

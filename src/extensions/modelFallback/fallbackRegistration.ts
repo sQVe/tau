@@ -1,11 +1,20 @@
+import type { ModelThinkingLevel } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ModelRouteRequest } from '@earendil-works/pi-coding-agent';
 
-import type { FallbackModel } from '../../config/fallbackModels.js';
 import { resolveAllowedModel } from '../../config/models.js';
+import type { FallbackModel } from './fallbackConfig.js';
 import { decideFallbackRoute } from './fallbackRoute.js';
 import type { FallbackRouteState } from './fallbackRoute.js';
 
-const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+const thinkingLevels = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const satisfies readonly ModelThinkingLevel[];
 
 const referenceOf = (model: { provider: string; id: string }): string =>
   `${model.provider}/${model.id}`;
@@ -34,7 +43,11 @@ export const registerFallbackModels = (
         const reference = decision.target === 'fallback' ? model.fallback : model.primary;
         const routed = resolveAllowedModel(context, reference);
 
-        return { model: routed, thinkingLevel: request.thinkingLevel, state: decision.state };
+        return {
+          model: routed,
+          thinkingLevel: request.thinkingLevel,
+          ...(decision.state === undefined ? {} : { state: decision.state }),
+        };
       },
     });
   }

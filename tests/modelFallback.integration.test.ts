@@ -7,8 +7,7 @@ import type { AgentSession } from '@earendil-works/pi-coding-agent';
 import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
 
-import type { FallbackModel } from '../src/config/fallbackModels.js';
-import { registerFallbackModels } from '../src/extensions/modelFallback/fallbackRegistration.js';
+import modelFallbackExtension from '../src/extensions/modelFallback/modelFallback.js';
 import { createBoundSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -69,19 +68,20 @@ const createHarness = async (
     models: [{ id: 'fallback-model' }],
   });
 
-  const model: FallbackModel = {
-    name: 'deepseek-flash',
+  const name = 'deepseek-flash';
+
+  const model = {
     primary: 'tau-primary/primary-model',
     fallback: options.fallback ?? 'tau-fallback/fallback-model',
     fallbackAtRetry: 5,
   };
 
-  if (options.allowedModels !== undefined) {
-    writeFileSync(
-      join(agentDirectory, 'tau.json'),
-      JSON.stringify({ allowedModels: options.allowedModels }),
-    );
-  }
+  const tauConfig = {
+    fallbackModels: { [name]: model },
+    ...(options.allowedModels === undefined ? {} : { allowedModels: options.allowedModels }),
+  };
+
+  writeFileSync(join(agentDirectory, 'tau.json'), JSON.stringify(tauConfig));
 
   const { session } = await createBoundSession(onTestFinished, {
     cwd: directory,
@@ -91,17 +91,13 @@ const createHarness = async (
       compaction: { enabled: false },
       retry: { maxRetries: 6, baseDelayMs: 1, maxAgentDelayMs: 1 },
     },
-    extensionFactories: [
-      (pi) => {
-        registerFallbackModels(pi, [model]);
-      },
-    ],
+    extensionFactories: [modelFallbackExtension],
   });
 
-  const virtual = session.modelRuntime.getModel('tau', model.name);
+  const virtual = session.modelRuntime.getModel('tau', name);
 
   if (virtual === undefined) {
-    throw new Error(`The extension did not register tau/${model.name}.`);
+    throw new Error(`The extension did not register tau/${name}.`);
   }
 
   // The credential check of a routed model reads the availability snapshot, which Pi fills in the

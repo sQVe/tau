@@ -1,6 +1,6 @@
-import { isRecord } from '../../schema.js';
+import type { ModelRouteReason } from '@earendil-works/pi-coding-agent';
 
-type FallbackRouteReason = 'user' | 'continuation' | 'retry' | 'direct';
+import { isRecord } from '../../schema.js';
 
 type FallbackTarget = 'primary' | 'fallback';
 
@@ -11,7 +11,7 @@ export interface FallbackRouteState {
 }
 
 export interface FallbackRouteFacts {
-  reason: FallbackRouteReason;
+  reason: ModelRouteReason;
   state: unknown;
   previousOnFallback: boolean;
   fallbackAtRetry: number;
@@ -19,7 +19,7 @@ export interface FallbackRouteFacts {
 
 export interface FallbackRouteDecision {
   target: FallbackTarget;
-  state: FallbackRouteState;
+  state?: FallbackRouteState;
 }
 
 const stateKeys = ['version', 'consecutiveRetries', 'onFallback'] as const;
@@ -63,10 +63,19 @@ const decideRetry = (
   return { target: targetOf(onFallback), state: { version: 1, consecutiveRetries, onFallback } };
 };
 
-const decideContinuation = (current: FallbackRouteState): FallbackRouteDecision => ({
-  target: targetOf(current.onFallback),
-  state: { version: 1, consecutiveRetries: 0, onFallback: current.onFallback },
-});
+const decideContinuation = (current: FallbackRouteState | undefined): FallbackRouteDecision => {
+  if (current === undefined) {
+    return { target: 'primary', state: primaryState() };
+  }
+
+  const target = targetOf(current.onFallback);
+
+  if (current.consecutiveRetries === 0) {
+    return { target };
+  }
+
+  return { target, state: { version: 1, consecutiveRetries: 0, onFallback: current.onFallback } };
+};
 
 export const decideFallbackRoute = ({
   reason,
@@ -74,17 +83,17 @@ export const decideFallbackRoute = ({
   previousOnFallback,
   fallbackAtRetry,
 }: FallbackRouteFacts): FallbackRouteDecision => {
-  const current = parseFallbackRouteState(state) ?? primaryState();
+  const current = parseFallbackRouteState(state);
 
   switch (reason) {
     case 'user':
       return { target: 'primary', state: primaryState() };
     case 'retry':
-      return decideRetry(current, fallbackAtRetry);
+      return decideRetry(current ?? primaryState(), fallbackAtRetry);
     case 'continuation':
       return decideContinuation(current);
     case 'direct':
-      return { target: targetOf(previousOnFallback), state: current };
+      return { target: targetOf(previousOnFallback) };
     default:
       return reason satisfies never;
   }

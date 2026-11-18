@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 
 import type { ConfigWarnings } from '../../config/config.js';
-import type { FallbackModelsRead } from '../../config/fallbackModels.js';
+import type { FallbackModelsRead } from './fallbackConfig.js';
 import { reportFallbackModels } from './fallbackReport.js';
 
 const createUi = () => {

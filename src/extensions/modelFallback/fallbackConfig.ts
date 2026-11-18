@@ -1,8 +1,9 @@
-import { findUnknownKeys, isRecord } from '../schema.js';
-import type { KnownKeys } from '../schema.js';
-import { readUserOnlyKey } from './config.js';
-import type { ConfigFile, ConfigLocation } from './config.js';
-import { parseModelReference } from './models.js';
+import { readUserOnlyKey } from '../../config/config.js';
+import type { ConfigFile, ConfigLocation } from '../../config/config.js';
+import { parseModelReference } from '../../config/models.js';
+import { errorMessage } from '../../errors.js';
+import { findUnknownKeys, isRecord } from '../../schema.js';
+import type { KnownKeys } from '../../schema.js';
 
 export interface FallbackModel {
   name: string;
@@ -86,16 +87,13 @@ const readEntry = (source: string, name: string, value: unknown): EntryRead => {
   return { kind: 'model', model: { name, primary, fallback, fallbackAtRetry }, warnings };
 };
 
-const problemMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 export const readFallbackModels = (location: ConfigLocation): FallbackModelsRead => {
   let user: ConfigFile | undefined;
 
   try {
     user = readUserOnlyKey(location, 'fallbackModels');
   } catch (error) {
-    return { models: [], problems: [problemMessage(error)], warnings: [] };
+    return { models: [], problems: [errorMessage(error)], warnings: [] };
   }
 
   if (user === undefined) {
@@ -117,10 +115,22 @@ export const readFallbackModels = (location: ConfigLocation): FallbackModelsRead
     };
   }
 
-  const reads = Object.entries(value).map(([name, entry]) => readEntry(source, name, entry));
-  const models = reads.flatMap((read) => (read.kind === 'model' ? [read.model] : []));
-  const problems = reads.flatMap((read) => (read.kind === 'invalid' ? [read.problem] : []));
-  const warnings = reads.flatMap((read) => (read.kind === 'model' ? read.warnings : []));
+  const models: FallbackModel[] = [];
+  const problems: string[] = [];
+  const warnings: string[] = [];
+
+  for (const [name, entry] of Object.entries(value)) {
+    const read = readEntry(source, name, entry);
+
+    if (read.kind === 'invalid') {
+      problems.push(read.problem);
+
+      continue;
+    }
+
+    models.push(read.model);
+    warnings.push(...read.warnings);
+  }
 
   return { models, problems, warnings };
 };
