@@ -31,6 +31,13 @@ export interface AskRequest {
 export type AskResult =
   | { status: 'needsOpen'; reason: string }
   | { status: 'queued'; terminal: string; messageId: string; note: string }
+  | {
+      status: 'unknown';
+      terminal: string;
+      sessionId: string;
+      messageId: string;
+      note: string;
+    }
   | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
 
@@ -80,7 +87,13 @@ const askLiveArchitect = async (request: AskRequest, terminal: string): Promise<
   });
 
   if (sent.status === 'unknown') {
-    return needsOpen(`${sent.note ?? ''} Switch to the architect pane to talk to it.`.trim());
+    return {
+      status: 'unknown',
+      terminal: sent.terminal,
+      sessionId: sent.sessionId,
+      messageId: sent.messageId,
+      note: `The question may already be in the inbox of the live architect in ${sent.terminal}. Wait for the answer in your inbox, and do not ask the same question again.`,
+    };
   }
 
   return {
@@ -92,12 +105,6 @@ const askLiveArchitect = async (request: AskRequest, terminal: string): Promise<
 };
 
 const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Promise<AskResult> => {
-  const running = await liveRunningAsk(request.root, request.hc);
-
-  if (running !== undefined) {
-    return needsOpen(`Ask ${running.askId} is still running. Wait for it, or call architect open.`);
-  }
-
   const model = requireModel(request);
   const askId = randomUUID();
   const recordPath = askRecordPath(request.root, askId);
@@ -193,29 +200,28 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
 
 export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
   const architect = await readArchitectRecord(request.root);
-  const sessionFile = architect?.sessionFile ?? undefined;
-
-  if (sessionFile === undefined) {
-    return needsOpen(
-      'No architect session is recorded for this checkout. Call architect open first.',
-    );
-  }
-
   const holder = await readLiveLockHolder(architectLockPath(request.root));
 
   const route = askRoute({
     root: request.root,
     holderCheckout: holder?.checkout,
     architectTerminal: architect?.terminal ?? null,
+    sessionFile: architect?.sessionFile ?? null,
   });
 
   if (route.kind === 'needsOpen') {
     return needsOpen(route.reason);
   }
 
+  const running = await liveRunningAsk(request.root, request.hc);
+
+  if (running !== undefined) {
+    return needsOpen(`Ask ${running.askId} is still running. Wait for it, or call architect open.`);
+  }
+
   if (route.kind === 'live') {
     return askLiveArchitect(request, route.terminal);
   }
 
-  return askHiddenArchitect(request, sessionFile);
+  return askHiddenArchitect(request, route.sessionFile);
 };

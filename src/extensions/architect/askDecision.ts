@@ -12,10 +12,11 @@ export interface AskRouteFacts {
   root: string;
   holderCheckout: string | undefined;
   architectTerminal: string | null;
+  sessionFile: string | null;
 }
 
 export type AskRoute =
-  | { kind: 'hidden' }
+  | { kind: 'hidden'; sessionFile: string }
   | { kind: 'live'; terminal: string }
   | { kind: 'needsOpen'; reason: string };
 
@@ -42,26 +43,31 @@ export const askOutcome = (facts: AskOutcomeFacts): AskOutcome => {
 };
 
 // A live architect in this checkout takes the question in its inbox, so no second Pi process
-// writes its session file. Without a live holder, the ask resumes the session in a hidden terminal.
+// writes its session file. Without a live holder, the ask resumes the recorded session in a hidden
+// terminal. A live architect that has not recorded its terminal yet holds the lock before it
+// writes the record, so the lead asks again instead of calling open, which the lock would refuse.
 export const askRoute = (facts: AskRouteFacts): AskRoute => {
-  if (facts.holderCheckout === undefined) {
-    return { kind: 'hidden' };
-  }
-
-  if (facts.holderCheckout !== facts.root) {
+  if (facts.holderCheckout !== undefined && facts.holderCheckout !== facts.root) {
     return {
       kind: 'needsOpen',
       reason: `The architect is already running in ${facts.holderCheckout}. Call architect open to talk to it.`,
     };
   }
 
-  if (facts.architectTerminal === null) {
+  if (facts.holderCheckout === facts.root) {
+    if (facts.architectTerminal === null) {
+      return { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' };
+    }
+
+    return { kind: 'live', terminal: facts.architectTerminal };
+  }
+
+  if (facts.sessionFile === null) {
     return {
       kind: 'needsOpen',
-      reason:
-        'The live architect recorded no terminal. Switch to the architect pane to talk to it.',
+      reason: 'No architect session is recorded for this checkout. Call architect open first.',
     };
   }
 
-  return { kind: 'live', terminal: facts.architectTerminal };
+  return { kind: 'hidden', sessionFile: facts.sessionFile };
 };

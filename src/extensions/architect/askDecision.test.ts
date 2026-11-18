@@ -40,24 +40,64 @@ it.each([
 it.each([
   {
     name: 'no live holder asks in a hidden terminal',
-    facts: { root: '/repo', holderCheckout: undefined, architectTerminal: 't-arch' },
-    expected: { kind: 'hidden' },
+    facts: {
+      root: '/repo',
+      holderCheckout: undefined,
+      architectTerminal: 't-arch',
+      sessionFile: '/repo/architect.jsonl',
+    },
+    expected: { kind: 'hidden', sessionFile: '/repo/architect.jsonl' },
   },
   {
     name: 'a live architect in this checkout gets the question in its inbox',
-    facts: { root: '/repo', holderCheckout: '/repo', architectTerminal: 't-arch' },
+    facts: {
+      root: '/repo',
+      holderCheckout: '/repo',
+      architectTerminal: 't-arch',
+      sessionFile: '/repo/architect.jsonl',
+    },
     expected: { kind: 'live', terminal: 't-arch' },
   },
   {
-    name: 'a live architect without a recorded terminal is needsOpen',
-    facts: { root: '/repo', holderCheckout: '/repo', architectTerminal: null },
-    expected: { kind: 'needsOpen' },
+    name: 'a live architect needs no recorded session file',
+    facts: {
+      root: '/repo',
+      holderCheckout: '/repo',
+      architectTerminal: 't-arch',
+      sessionFile: null,
+    },
+    expected: { kind: 'live', terminal: 't-arch' },
+  },
+  {
+    name: 'a live architect that is still starting says to ask again shortly',
+    facts: { root: '/repo', holderCheckout: '/repo', architectTerminal: null, sessionFile: null },
+    expected: { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' },
+    reasonExcludes: 'architect open',
+  },
+  {
+    name: 'a hidden ask needs a recorded session file',
+    facts: { root: '/repo', holderCheckout: undefined, architectTerminal: null, sessionFile: null },
+    expected: {
+      kind: 'needsOpen',
+      reason: 'No architect session is recorded for this checkout. Call architect open first.',
+    },
   },
   {
     name: 'a holder in another checkout is needsOpen',
-    facts: { root: '/repo', holderCheckout: '/other', architectTerminal: 't-arch' },
+    facts: {
+      root: '/repo',
+      holderCheckout: '/other',
+      architectTerminal: 't-arch',
+      sessionFile: '/repo/architect.jsonl',
+    },
     expected: { kind: 'needsOpen' },
   },
-] as const)('$name', ({ facts, expected }) => {
-  expect(askRoute(facts)).toMatchObject(expected);
+] as const)('$name', ({ facts, expected, ...rest }) => {
+  const result = askRoute(facts);
+  const reason = 'reason' in result ? result.reason : '';
+  const excluded = 'reasonExcludes' in rest ? rest.reasonExcludes : undefined;
+  const mentionsExcluded = excluded !== undefined && reason.includes(excluded);
+
+  expect(result).toMatchObject(expected);
+  expect(mentionsExcluded).toBe(false);
 });
