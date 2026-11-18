@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import { forgetReportedWarnings } from './config/config.js';
 import architectExtension from './extensions/architect/architect.js';
 import askUserQuestionExtension from './extensions/askUserQuestion/askUserQuestion.js';
 import bareRootExtension from './extensions/bareRoot.js';
@@ -38,6 +39,12 @@ const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
 const checkoutDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
+  // Features report config notices in their own session_start handlers, so the new session must
+  // forget the old notices before any of them runs.
+  pi.on('session_start', (_event, context) => {
+    forgetReportedWarnings(context.ui);
+  });
+
   // Pi stops at the first blocking hook, so capacity refusal must run before other guards.
   const capacityRefusal = registerCapacityRefusal(pi);
 

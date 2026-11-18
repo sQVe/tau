@@ -704,7 +704,7 @@ it('shows the malformed config warning in the new session after a stale lookup f
   });
 });
 
-it('reports an unknown config key again for the same ui after session_start', async ({
+it('keeps an unknown config key reported once when its session_start runs later', async ({
   onTestFinished,
 }) => {
   const { cwd, writeProject } = await configFixture(onTestFinished);
@@ -722,7 +722,7 @@ it('reports an unknown config key again for the same ui after session_start', as
   await application.emit('session_start', cwd, { reason: 'new' });
   await application.emit('tool_result', cwd, writeEvent('src/value.ts'));
 
-  expect(warnings()).toBe(2);
+  expect(warnings()).toBe(1);
 });
 
 it.for<[string, Record<string, unknown>, boolean]>([
