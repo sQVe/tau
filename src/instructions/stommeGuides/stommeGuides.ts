@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat, readFile } from 'node:fs/promises';
+import { lstat, readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,7 +16,7 @@ export type GuideSnapshot =
 const configName = 'stomme.toml';
 const defaultBundleDirectory = fileURLToPath(new URL('../../../vendor/stomme', import.meta.url));
 
-const exists = async (path: string): Promise<boolean> => {
+const isPresent = async (path: string): Promise<boolean> => {
   try {
     await lstat(path);
 
@@ -30,44 +30,76 @@ const exists = async (path: string): Promise<boolean> => {
   }
 };
 
-const ancestors = (start: string): string[] => {
-  const folders = [start];
-
-  for (let parent = dirname(start); parent !== folders.at(-1); parent = dirname(parent)) {
-    folders.push(parent);
+// Finds the top of the repository by probing `.git` upward, and stops at the first one. A probe
+// that fails for another reason than a missing entry rejects.
+const findRepositoryTop = async (folder: string): Promise<string | undefined> => {
+  if (await isPresent(join(folder, '.git'))) {
+    return folder;
   }
 
-  return folders;
+  const parent = dirname(folder);
+
+  return parent === folder ? undefined : findRepositoryTop(parent);
+};
+
+const foldersBetween = (start: string, top: string): string[] => {
+  const parent = dirname(start);
+
+  return start === top || parent === start ? [start] : [start, ...foldersBetween(parent, top)];
 };
 
 // Lists the folders to search, from the working directory up to the top of its repository. Outside
 // a repository only the working directory counts.
 const searchedFolders = async (cwd: string): Promise<string[]> => {
-  const folders = ancestors(cwd);
-  const holdsGit = await Promise.all(folders.map((folder) => exists(join(folder, '.git'))));
-  const topIndex = holdsGit.indexOf(true);
+  const top = await findRepositoryTop(cwd);
 
-  return topIndex === -1 ? [cwd] : folders.slice(0, topIndex + 1);
+  return top === undefined ? [cwd] : foldersBetween(cwd, top);
 };
 
-const readConfig = async (root: string): Promise<ConfigFact | undefined> => {
+const readConfigText = async (root: string): Promise<ConfigFact> => {
+  const file = join(root, configName);
+
   try {
-    return { kind: 'text', root, text: await readFile(join(root, configName), 'utf8') };
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
+    const stats = await stat(file);
+
+    if (!stats.isFile()) {
+      return { kind: 'unreadable', root, error: 'it is not a regular file' };
     }
 
+    return { kind: 'text', root, text: await readFile(file, 'utf8') };
+  } catch (error) {
     return { kind: 'unreadable', root, error: errorMessage(error) };
   }
 };
 
-const findConfig = async (cwd: string, bundleRoot: string): Promise<ConfigFact> => {
-  const folders = await searchedFolders(cwd);
-  const configs = await Promise.all(folders.map(readConfig));
+// A present entry that cannot be used is an error. Only an absent entry lets the walk go on.
+const readConfig = async (root: string): Promise<ConfigFact | undefined> => {
+  try {
+    if (!(await isPresent(join(root, configName)))) {
+      return undefined;
+    }
+  } catch (error) {
+    return { kind: 'unreadable', root, error: errorMessage(error) };
+  }
 
-  return configs.find((config) => config !== undefined) ?? { kind: 'missing', bundleRoot };
+  return readConfigText(root);
 };
+
+const findConfigIn = async (
+  folders: readonly string[],
+  bundleRoot: string,
+): Promise<ConfigFact> => {
+  const [folder, ...rest] = folders;
+
+  if (folder === undefined) {
+    return { kind: 'missing', bundleRoot };
+  }
+
+  return (await readConfig(folder)) ?? findConfigIn(rest, bundleRoot);
+};
+
+const findConfig = async (cwd: string, bundleRoot: string): Promise<ConfigFact> =>
+  findConfigIn(await searchedFolders(cwd), bundleRoot);
 
 const readSelection = async (cwd: string, bundleRoot: string): Promise<GuideSelection> => {
   const config = await findConfig(cwd, bundleRoot);
@@ -127,11 +159,17 @@ export const resolveStommeGuides = async (
   cwd: string,
   bundleDirectory: string = defaultBundleDirectory,
 ): Promise<GuideSnapshot> => {
-  const selection = await readSelection(resolve(cwd), bundleDirectory);
+  const start = resolve(cwd);
 
-  if (selection.kind === 'broken') {
-    return selection;
+  try {
+    const selection = await readSelection(start, bundleDirectory);
+
+    return selection.kind === 'broken' ? selection : { ...selection, digest: digestOf(selection) };
+  } catch (error) {
+    return {
+      kind: 'broken',
+      root: start,
+      reason: `${start} cannot be read: ${errorMessage(error)}`,
+    };
   }
-
-  return { ...selection, digest: digestOf(selection) };
 };

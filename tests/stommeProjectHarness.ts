@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,12 +23,16 @@ const listFiles = async (directory: string): Promise<string[]> => {
     .toSorted();
 };
 
-const recordText = async (directory: string, version: string): Promise<string> => {
+const recordText = async (
+  syncedDirectory: string,
+  version: string,
+  guides: readonly string[],
+): Promise<string> => {
   const lines = ['schema = 1', `version = "${version}"`, '', '[files]'];
 
-  for (const path of await listFiles(directory)) {
+  for (const path of guides.toSorted()) {
     const hash = createHash('sha256')
-      .update(await readFile(join(directory, path)))
+      .update(await readFile(join(syncedDirectory, path)))
       .digest('hex');
 
     lines.push(`"${path}" = "${hash}"`);
@@ -75,13 +79,15 @@ export const writeStommeProject = async (
 
   const guides = [...sharedGuides, join('languages', language, 'guide.md'), ...layerGuides];
 
+  await rm(syncedDirectory, { recursive: true, force: true });
+
   for (const path of guides) {
     await copyGuide(path, syncedDirectory);
   }
 
   await writeFile(
     join(syncedDirectory, '.sync-record.toml'),
-    await recordText(syncedDirectory, version),
+    await recordText(syncedDirectory, version, guides),
   );
 
   await writeFile(join(directory, 'stomme.toml'), configText(version, language, layers));

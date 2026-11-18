@@ -119,7 +119,13 @@ const readPin = (text: string): Pin => {
     throw new Error('needs `layers` to be an array of strings');
   }
 
-  return { version, language, layers: [...new Set(layers)].toSorted() };
+  const repeated = layers.find((layer, index) => layers.indexOf(layer) !== index);
+
+  if (repeated !== undefined) {
+    throw new Error(`lists the layer \`${repeated}\` more than once`);
+  }
+
+  return { version, language, layers: layers.toSorted() };
 };
 
 const decideProject = (

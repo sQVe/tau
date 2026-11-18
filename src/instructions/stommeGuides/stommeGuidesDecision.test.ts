@@ -187,6 +187,22 @@ const table: {
     expected: broken('/project/stomme.toml needs `layers` to be an array of strings'),
   },
   {
+    name: 'rejects duplicate layers',
+    config: rustConfig('layers = ["gpui", "react", "gpui"]'),
+    synced: synced('0.2.0', allGuides),
+    expected: broken('/project/stomme.toml lists the layer `gpui` more than once'),
+  },
+  {
+    name: 'rejects invalid TOML',
+    config: config('schema = ='),
+    synced: synced('0.2.0', allGuides),
+    expected: {
+      kind: 'broken',
+      root,
+      reason: expect.stringMatching(/^\/project\/stomme\.toml is not valid TOML: \S/) as string,
+    },
+  },
+  {
     name: 'passes a broken synced folder through',
     config: rustConfig(),
     synced: { kind: 'broken', reason: '/project/docs/stomme is damaged' },
@@ -254,14 +270,4 @@ it('decides the guide selection', () => {
   for (const row of table) {
     expect(decideGuides(row.config, row.synced, row.bundle), row.name).toEqual(row.expected);
   }
-});
-
-it('rejects invalid TOML with the parser message', () => {
-  const selection = decideGuides(config('schema = ='), synced('0.2.0', allGuides), undefined);
-
-  expect(selection).toMatchObject({ kind: 'broken', root });
-
-  const reason = selection.kind === 'broken' ? selection.reason : '';
-
-  expect(reason).toMatch(/^\/project\/stomme\.toml is not valid TOML: \S/);
 });
