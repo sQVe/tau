@@ -1,13 +1,13 @@
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../tests/execFake.js';
+import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
   createTemporaryRepository,
 } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { startPiSession } from './piStart.js';
+import { startPiSession, startPiSessionLeftOf } from './piStart.js';
 
 const createAppFake = (): ExecFake<'app'> =>
   createExecFake<'app'>({
@@ -93,6 +93,166 @@ it('a folder that is not a Git checkout is refused', async () => {
       },
     ),
   ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(fake.calls).toEqual([]);
+});
+
+const paneAppFake = (splitReply: string): ExecFake<'split' | 'swap'> =>
+  createExecFake<'split' | 'swap'>({
+    keyOf: (command, commandArguments) => {
+      if (command !== 'herdr-app') {
+        return undefined;
+      }
+
+      return commandArguments[1] === 'pane.split' ? 'split' : 'swap';
+    },
+    handlerFor: (key) => () => succeededResult(key === 'split' ? splitReply : '{"ok":true}'),
+  });
+
+it('a left-of start splits right with the task in the argv, then swaps the new pane left', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSessionLeftOf(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      pane: 'p-lead',
+      task: 'Design this',
+      model: undefined,
+      session: undefined,
+      environment: { TAU_ROLE: 'architect' },
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+
+  expect(fake.calls.map((call) => call.commandArguments)).toEqual([
+    [
+      'do',
+      'pane.split',
+      '--direction',
+      'right',
+      '--pane',
+      'p-lead',
+      '--argv',
+      JSON.stringify(['env', '-C', root, 'env', 'TAU_ROLE=architect', 'pi', 'Design this']),
+    ],
+    ['do', 'pane.swap', '--pane', 'p-new', '--target', 'p-lead'],
+  ]);
+});
+
+it('a pane split reply without a pane ends the start before the swap', async () => {
+  const fake = paneAppFake('{"terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(
+    startPiSessionLeftOf(
+      { exec: fake.exec, cwd: root },
+      {
+        folder: root,
+        pane: 'p-lead',
+        task: 'Design this',
+        model: undefined,
+        session: undefined,
+        environment: undefined,
+      },
+    ),
+  ).rejects.toThrow('herdr-app do pane.split printed unexpected output');
+
+  expect(fake.calls).toHaveLength(1);
+});
+
+const failingSwapFake = (): ExecFake<'split' | 'swap'> =>
+  createExecFake<'split' | 'swap'>({
+    keyOf: (command, commandArguments) =>
+      command === 'herdr-app' && commandArguments[1] === 'pane.split' ? 'split' : 'swap',
+    handlerFor: (key) => () =>
+      key === 'split'
+        ? succeededResult('{"pane":"p-new","terminal":"t-new"}')
+        : failedResult('no such pane'),
+  });
+
+const paneRequest = (root: string) => ({
+  folder: root,
+  pane: 'p-lead',
+  task: 'Design this',
+  model: undefined,
+  session: undefined,
+  environment: undefined,
+});
+
+it('a failed swap names the created pane and terminal and where the architect runs', async () => {
+  const fake = failingSwapFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const failure = await startPiSessionLeftOf(
+    { exec: fake.exec, cwd: root },
+    paneRequest(root),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  const { message, cause } = failure as Error;
+
+  expect(message).toContain('pane p-new (terminal t-new)');
+  expect(message).toContain('but the swap did not finish');
+  expect(message).toContain('no such pane');
+  expect(message).not.toContain('p-lead');
+  expect(cause).toBeInstanceOf(Error);
+  expect((cause as Error).message).toContain('no such pane');
+  expect(fake.calls).toHaveLength(2);
+});
+
+it('a cancel after the split skips the swap and names the created pane', async () => {
+  const controller = new AbortController();
+
+  const fake = createExecFake<'split'>({
+    keyOf: () => 'split',
+    handlerFor: () => () => {
+      controller.abort();
+
+      return succeededResult('{"pane":"p-new","terminal":"t-new"}');
+    },
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const failure = await startPiSessionLeftOf(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    paneRequest(root),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('p-new');
+  expect((failure as Error).message).toContain('t-new');
+  expect(fake.calls).toHaveLength(1);
+});
+
+it('a left-of start in a folder that is not a Git checkout runs no command', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+  const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-');
+
+  await expect(
+    startPiSessionLeftOf({ exec: fake.exec, cwd: root }, { ...paneRequest(root), folder }),
+  ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('a left-of start with an aborted signal runs no command', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+
+  controller.abort(new Error('cancelled before start'));
+
+  await expect(
+    startPiSessionLeftOf(
+      { exec: fake.exec, cwd: root, signal: controller.signal },
+      paneRequest(root),
+    ),
+  ).rejects.toThrow('cancelled before start');
 
   expect(fake.calls).toEqual([]);
 });

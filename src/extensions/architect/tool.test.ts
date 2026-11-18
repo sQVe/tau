@@ -1,23 +1,18 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 
-import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
-import { argumentAfter, createExecFake, succeededResult } from '../../../tests/execFake.js';
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { contextOf, holdLock, recordSession, setup } from '../../../tests/architectToolHarness.js';
 import { createHcFake } from '../../../tests/hcFake.js';
-import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import { askDeadlineSeconds } from './ask.js';
 import { gateClassifier } from './gate.js';
-import { architectLockPath } from './lock.js';
 import {
   askRecordDirectory,
   gateRecordDirectory,
   readAskRecords,
   readArchitectRecord,
   readGateRecord,
-  writeArchitectRecord,
   writeAskRecord,
 } from './record.js';
 import { createArchitectTool } from './tool.js';
@@ -25,202 +20,6 @@ import { createArchitectTool } from './tool.js';
 const classifyAsSpecified = async () => ({
   stopReason: 'stop',
   answers: { choice: { type: 'choice', choice: 'specified', confidence: 0.9 } },
-});
-
-const appFake = () =>
-  createExecFake<'app'>({
-    keyOf: (command) => (command === 'herdr-app' ? 'app' : undefined),
-    handlerFor: () => () => succeededResult('{"ok":true}'),
-  });
-
-const contextOf = (root: string, modelRegistry: unknown = {}): ExtensionToolContext =>
-  ({
-    cwd: root,
-    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
-    isProjectTrusted: () => true,
-    modelRegistry,
-  }) as unknown as ExtensionToolContext;
-
-const stubEnvironment = (cleanup: (cleanup: () => void) => void, agentDirectory: string): void => {
-  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
-  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
-
-  cleanup(() => {
-    vi.unstubAllEnvs();
-  });
-};
-
-const setup = async (cleanup: (cleanup: () => void) => void) => {
-  const root = await createTemporaryRepository(cleanup);
-  const config = temporaryTauConfig(cleanup, 'tau-architect-tool-');
-
-  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
-  stubEnvironment(cleanup, config.location.agentDirectory);
-
-  return { root, config };
-};
-
-const holdLock = async (root: string, checkout: string): Promise<void> => {
-  const path = `${architectLockPath(root)}.1`;
-
-  await mkdir(dirname(path), { recursive: true });
-
-  await writeFile(
-    path,
-    JSON.stringify({
-      pid: process.pid,
-      checkout,
-      startedAt: new Date().toISOString(),
-      token: 'live',
-    }),
-  );
-};
-
-const recordSession = async (root: string): Promise<string> => {
-  const sessionFile = join(root, 'architect-session.jsonl');
-
-  await writeFile(sessionFile, '');
-
-  await writeArchitectRecord(root, {
-    version: 1,
-    sessionFile,
-    terminal: null,
-    leadTerminal: 't-lead',
-    updatedAt: new Date().toISOString(),
-  });
-
-  return sessionFile;
-};
-
-it('open refuses while a live holder holds the lock', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const app = appFake();
-  const tool = createArchitectTool({ ...hc, exec: app.exec, cwd: root });
-
-  await holdLock(root, '/other/checkout');
-
-  await expect(
-    tool.execute('call', { action: 'open' }, undefined, undefined, contextOf(root)),
-  ).rejects.toThrow('The architect is already running in /other/checkout.');
-
-  expect(app.calls).toEqual([]);
-});
-
-it('open starts a fresh architect on roles.architect.model', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const app = appFake();
-  const tool = createArchitectTool({ ...hc, exec: app.exec, cwd: root });
-  const design = join(root, '.tau', 'slices', basename(root), 'design.md');
-
-  await mkdir(dirname(design), { recursive: true });
-  await writeFile(design, '# Design\n');
-
-  const result = await tool.execute(
-    'call',
-    { action: 'open' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
-
-  const [call] = app.calls;
-  const args = call?.commandArguments ?? [];
-  const serialized = JSON.stringify(args);
-
-  expect(call?.command).toBe('herdr-app');
-  expect(args).toContain('space.new');
-  expect(args).toContain(`architect-${basename(root)}`);
-  expect(serialized).toContain('TAU_ROLE=architect');
-  expect(serialized).toContain('TAU_LEAD_TERMINAL=t-lead');
-  expect(serialized).toContain('--provider');
-  expect(serialized).toContain('--model');
-  expect(serialized).toContain('architect');
-  expect(serialized).toContain(design);
-  expect(argumentAfter(args, '--task')).toContain('t-lead');
-});
-
-it('open seeds a fresh architect with AGENTS.md when the root has no own slice design', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const app = appFake();
-  const tool = createArchitectTool({ ...hc, exec: app.exec, cwd: root });
-  const otherDesign = join(root, '.tau', 'slices', 'me-1', 'design.md');
-
-  await mkdir(dirname(otherDesign), { recursive: true });
-  await writeFile(otherDesign, '# Design\n');
-
-  await tool.execute('call', { action: 'open' }, undefined, undefined, contextOf(root));
-
-  const args = app.calls[0]?.commandArguments ?? [];
-  const task = argumentAfter(args, '--task') ?? '';
-
-  expect(task).toContain('AGENTS.md');
-  expect(task).not.toContain(otherDesign);
-});
-
-it('open resumes the recorded architect session', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const app = appFake();
-  const tool = createArchitectTool({ ...hc, exec: app.exec, cwd: root });
-  const sessionFile = await recordSession(root);
-
-  const result = await tool.execute(
-    'call',
-    { action: 'open' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toEqual({ action: 'open', status: 'resumed', sessionFile });
-
-  const serialized = JSON.stringify(app.calls[0]?.commandArguments ?? []);
-
-  expect(serialized).toContain('--session');
-  expect(serialized).toContain(sessionFile);
-  expect(argumentAfter(app.calls[0]?.commandArguments ?? [], '--task')).toContain('t-lead');
-});
-
-it('open starts a fresh session when the recorded session file is gone', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const app = appFake();
-  const tool = createArchitectTool({ ...hc, exec: app.exec, cwd: root });
-  const missingSession = join(root, 'missing-session.jsonl');
-
-  await writeArchitectRecord(root, {
-    version: 1,
-    sessionFile: missingSession,
-    terminal: null,
-    leadTerminal: 't-lead',
-    updatedAt: new Date().toISOString(),
-  });
-
-  const result = await tool.execute(
-    'call',
-    { action: 'open' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
-
-  const serialized = JSON.stringify(app.calls[0]?.commandArguments ?? []);
-
-  expect(serialized).not.toContain('--session');
-  expect(serialized).not.toContain(missingSession);
 });
 
 it('ask refuses without a recorded session file', async ({ onTestFinished: cleanup }) => {

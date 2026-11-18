@@ -1,0 +1,178 @@
+import { join } from 'node:path';
+
+import { contextOf } from '../../../../tests/architectToolHarness.js';
+import {
+  argumentAfter,
+  createExecFake,
+  failedResult,
+  succeededResult,
+} from '../../../../tests/execFake.js';
+import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
+import { createHcFake } from '../../../../tests/hcFake.js';
+import type { HcFake } from '../../../../tests/hcFake.js';
+import type { Exec } from '../../../command.js';
+import { writeArchitectRecord, writeAskRecord } from '../record.js';
+import { createArchitectTool } from '../tool.js';
+
+export type AppKey = 'ls' | 'pane.split' | 'pane.swap' | 'space.new';
+
+interface OpenTool {
+  hc: HcFake;
+  app: ExecFake<AppKey>;
+  terminals: Map<string, ExecResult>;
+  tool: ReturnType<typeof createArchitectTool>;
+}
+
+const appFake = (): ExecFake<AppKey> =>
+  createExecFake<AppKey>({
+    keyOf: (command, commandArguments) => {
+      if (command !== 'herdr-app') {
+        return undefined;
+      }
+
+      return commandArguments[0] === 'ls' ? 'ls' : (commandArguments[1] as AppKey);
+    },
+    handlerFor: (key) => () => {
+      if (key === 'ls') {
+        return succeededResult(
+          JSON.stringify({
+            spaces: [
+              {
+                tabs: [
+                  {
+                    terminals: [
+                      { terminal: 't-lead', pane: 'p-lead' },
+                      { terminal: 't-architect', pane: 'p-shown' },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      }
+
+      if (key === 'pane.split') {
+        return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+      }
+
+      return succeededResult('{"ok":true}');
+    },
+  });
+
+const leadTerminal = 't-lead';
+
+const routedExec =
+  (
+    hc: HcFake,
+    app: ExecFake<AppKey>,
+    terminals: Map<string, ExecResult>,
+    afterTerminalLookup: () => Promise<void>,
+  ): Exec =>
+  async (command, commandArguments, options) => {
+    if (command === 'herdr-app') {
+      return app.exec(command, commandArguments, options);
+    }
+
+    if (commandArguments[0] !== 'get') {
+      return hc.exec(command, commandArguments, options);
+    }
+
+    const address = commandArguments.at(-1) ?? '';
+    const terminalReply = terminals.get(address);
+
+    if (terminalReply !== undefined) {
+      await afterTerminalLookup();
+
+      return terminalReply;
+    }
+
+    if (address === leadTerminal) {
+      return hc.exec(command, commandArguments, options);
+    }
+
+    return failedResult(`no such terminal: ${address}`);
+  };
+
+const leadInSpace = (hc: HcFake, space: string | undefined): void => {
+  hc.reply(
+    'get',
+    JSON.stringify({
+      address: leadTerminal,
+      state: 'live',
+      ...(space === undefined ? {} : { labels: { 'herdr.space': space } }),
+    }),
+  );
+};
+
+export const openRequest = 'Start ME-1540';
+
+export const openTool = (
+  root: string,
+  lead?: { space: string | undefined },
+  afterTerminalLookup: () => Promise<void> = () => Promise.resolve(),
+): OpenTool => {
+  const hc = createHcFake();
+  const app = appFake();
+
+  const terminals = new Map<string, ExecResult>();
+
+  leadInSpace(hc, lead === undefined ? 'space-1' : lead.space);
+
+  const tool = createArchitectTool({
+    ...hc,
+    exec: routedExec(hc, app, terminals, afterTerminalLookup),
+    cwd: root,
+  });
+
+  return { hc, app, terminals, tool };
+};
+
+export const open = (
+  tool: OpenTool['tool'],
+  root: string,
+  input: { request?: string },
+): ReturnType<OpenTool['tool']['execute']> =>
+  tool.execute('call', { action: 'open', ...input }, undefined, undefined, contextOf(root));
+
+export const appCommands = (app: ExecFake<AppKey>): string[] =>
+  app.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0] ?? '');
+
+export const architectArgv = (app: ExecFake<AppKey>): string[] => {
+  const split = app.calls.find((call) => call.commandArguments[1] === 'pane.split');
+
+  return JSON.parse(argumentAfter(split?.commandArguments ?? [], '--argv') ?? '[]') as string[];
+};
+
+export const recordTerminal = (root: string, terminal: string): Promise<void> =>
+  writeArchitectRecord(root, {
+    version: 1,
+    sessionFile: null,
+    terminal,
+    leadTerminal: 't-lead',
+    updatedAt: new Date().toISOString(),
+  });
+
+export const terminalState = (state: string, labels?: Record<string, string>): ExecResult =>
+  succeededResult(
+    JSON.stringify({ address: 't-architect', state, ...(labels === undefined ? {} : { labels }) }),
+  );
+
+export const writeAsk = (
+  root: string,
+  terminal: string | null,
+  status: 'running' | 'sent',
+): Promise<void> =>
+  writeAskRecord(root, {
+    version: 1,
+    askId: 'ask-1',
+    createdAt: new Date().toISOString(),
+    question: 'Which flag name?',
+    sessionFile: join(root, 'architect-session.jsonl'),
+    terminal,
+    leadTerminal: 't-lead',
+    deadline: Date.now() + 1000,
+    status,
+    detail: null,
+    answer: null,
+  });

@@ -119,7 +119,11 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'linear/linear',
     publicFiles: ['linear/descriptionMatch', 'linear/ownership'],
   },
-  { name: 'piStart', entry: 'piStart/piStart', publicFiles: ['piStart/piArguments'] },
+  {
+    name: 'piStart',
+    entry: 'piStart/piStart',
+    publicFiles: ['piStart/herdrPane', 'piStart/piArguments'],
+  },
   { name: 'process', entry: 'process/process', publicFiles: [] },
   { name: 'record', entry: 'record', publicFiles: [] },
   { name: 'reviewBots', entry: 'reviewBots/reviewBots', publicFiles: [] },
