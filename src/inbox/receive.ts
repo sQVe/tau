@@ -98,7 +98,7 @@ const save = async (options: ReceiverOptions, request: MessageRequest): Promise<
 
 const accept = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
   const { messageId, family } = request;
-  const check = options.accepts[family];
+  const check = Object.hasOwn(options.accepts, family) ? options.accepts[family] : undefined;
 
   if (check === undefined) {
     return refusedReply(`This session does not accept ${family} messages.`, messageId);

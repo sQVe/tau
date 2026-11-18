@@ -86,6 +86,26 @@ it('refuses a message its family check rejects and saves nothing', async () => {
   expect(existsSync(join(root, 'records', sessionId))).toBe(false);
 });
 
+it('refuses a family name that only the object prototype defines and saves nothing', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const { receiver, woken } = directReceiver(sessionId, {});
+
+  const request: MessageRequest = Object.assign(messageRequest(sessionId, messageId), {
+    family: 'toString',
+  });
+
+  await expect(receiver.accept(request)).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'This session does not accept toString messages.',
+    messageId,
+  });
+
+  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+  expect(woken).toEqual([]);
+});
+
 it('refuses to save an answer-request message and saves nothing', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
