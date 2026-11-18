@@ -23,6 +23,7 @@ import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot.js';
 import { piPackageManager } from './piPackageManager.js';
+import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
 import { placementLabels } from './workerPlacement.js';
@@ -375,6 +376,7 @@ export const executeLaunch = async (
   context: ExtensionContext,
 ): Promise<ToolResult<LaunchStatus | undefined>> => {
   try {
+    const launchingRole = currentRole();
     const currentSkillTools = (runtime.readSkillTools ?? readCurrentSkillTools)();
     const registeredNames = runtime.pi.getAllTools().map((tool) => tool.name);
     const registeredToolNames = new Set(registeredNames);
@@ -382,7 +384,7 @@ export const executeLaunch = async (
     const skillToolsRefused = skillToolsRefusal(
       currentSkillTools,
       registeredToolNames,
-      currentRole(),
+      launchingRole,
     );
 
     if (skillToolsRefused !== undefined) {
@@ -390,8 +392,14 @@ export const executeLaunch = async (
     }
 
     const loadout = resolveLoadout(request.parameters, context, runtime.pi.getCommands(), {
-      launchingRole: currentRole(),
+      launchingRole,
     });
+
+    const roleRefusal = roleLaunchRefusal(launchingRole, loadout);
+
+    if (roleRefusal !== undefined) {
+      throw new Error(roleRefusal);
+    }
 
     const refusal = acceptanceRefusal(loadout.role, request.parameters.acceptance);
 

@@ -131,6 +131,7 @@ const pureModules = [
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/launchEnvironment.ts',
   'src/extensions/subagents/qaBrief.ts',
+  'src/extensions/subagents/roleLaunchRefusal.ts',
   'src/extensions/subagents/sessionUse.ts',
   'src/extensions/subagents/skillToolsRefusal.ts',
   'src/extensions/subagents/summaryLength.ts',

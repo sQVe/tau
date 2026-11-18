@@ -268,11 +268,34 @@ it('refuses a follow-up when the skill tool map cannot be read', async () => {
   expect(assignmentFolders(directory)).toEqual(before);
 });
 
-it('resumes a worker from an architect session when the skill table lists the architect tool', async () => {
+it('refuses an architect follow-up of an editing worker', async () => {
   const { directory, fake, runtime } = setup();
   const source = sourceAssignment(directory);
 
   await writeAssignment(source);
+
+  vi.stubEnv('TAU_ROLE', 'architect');
+
+  runtime.readSkillTools = () => ({ slice: ['architect'] });
+
+  runtime.pi = {
+    getCommands: () => [],
+    getAllTools: () => [{ name: 'read' }],
+  } as unknown as ExtensionAPI;
+
+  const before = assignmentFolders(directory);
+  const result = await followUp(runtime, source.assignmentId, { acceptance: ['a'] });
+
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(assignmentFolders(directory)).toEqual(before);
+});
+
+it('resumes a worker from an architect session when the skill table lists the architect tool', async () => {
+  const { directory, fake, runtime } = setup();
+  const source = sourceAssignment(directory);
+
+  await writeAssignment({ ...source, loadout: { ...source.loadout, role: 'investigation' } });
 
   vi.stubEnv('TAU_ROLE', 'architect');
 

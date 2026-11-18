@@ -291,11 +291,36 @@ it('launches from an architect session when the skill table lists the architect 
     getAllTools: () => [{ name: 'read' }],
   } as unknown as ExtensionAPI;
 
-  vi.mocked(loadouts.resolveLoadout).mockReturnValue(loadout);
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({
+    ...loadout,
+    role: 'investigation',
+    profile: 'scout',
+  });
 
   const result = await launch(runtime, {});
 
   expect(result.isError).not.toBe(true);
+});
+
+it('refuses an editing launch from an architect session', async () => {
+  const { fake, runtime } = setup();
+
+  vi.stubEnv('TAU_ROLE', 'architect');
+
+  runtime.readSkillTools = () => ({ slice: ['architect'] });
+
+  runtime.pi = {
+    getCommands: () => [],
+    getAllTools: () => [{ name: 'read' }],
+  } as unknown as ExtensionAPI;
+
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue(loadout);
+
+  const result = await launch(runtime, { acceptance: ['a'] });
+
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('investigation workers');
+  expect(fake.connectCalls).toEqual([]);
 });
 
 it('refuses an editing launch without acceptance criteria', async () => {

@@ -20,7 +20,8 @@ a worker.
 
 The lead owns the user conversation, worker briefs, integration, and commits. It makes no design
 choice. The architect owns design, plans, acceptance criteria, and worker briefs. It does not edit
-code and launches no editing worker; it may launch investigation `scout` workers. A session without
+code and launches no editing worker; it may launch investigation workers, such as `scout`. Tau
+refuses a launch or follow-up of an editing profile from an architect session. A session without
 `TAU_ROLE` is a lead, so the user starts all work in the lead. Workers keep their `worker` kind.
 
 ### The architect session

@@ -73,7 +73,7 @@ it('an architect guideline set names the architect rules and no lead rule', () =
   );
 
   expect(guidelines).toContain(
-    'You may launch an investigation `scout` to answer a design question.',
+    'You may launch investigation workers, such as `scout`, to answer a design question.',
   );
 
   expect(guidelines.some((guideline) => guideline.includes('You are the lead.'))).toBe(false);
