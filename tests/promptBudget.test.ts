@@ -30,11 +30,11 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // Each ceiling caps a session at about its measured size, so a cut must lower it. The target is
 // beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  lead: 58_494, // target 38,000
-  architect: 54_872,
-  worker: 22_981, // target 14,000
-  reviewer: 18_435, // target 11,000
-  checker: 18_588,
+  lead: 58_470, // target 38,000
+  architect: 54_856,
+  worker: 22_950, // target 14,000
+  reviewer: 18_404, // target 11,000
+  checker: 18_557,
   qa: 14_670, // target 9,000
   browser: 12_828, // target 9,000
   scout: 12_387, // target 9,000
@@ -42,6 +42,11 @@ const sessionCeilings: Readonly<Record<string, number>> = {
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];
 const skillsDirectory = fileURLToPath(new URL('../src/skills/', import.meta.url));
+const checkoutDirectory = fileURLToPath(new URL('../', import.meta.url));
+
+// A bundled guide's source line names its absolute path, so a fixed token stands in for the
+// checkout. Otherwise the measured size would depend on where Tau is checked out.
+const measuredPrompt = (prompt: string): string => prompt.replaceAll(checkoutDirectory, '<tau>/');
 
 const isMultiAction = (tool: ToolDefinition): boolean =>
   Object.hasOwn((tool.parameters as { properties?: object }).properties ?? {}, 'action');
@@ -95,7 +100,7 @@ const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) =
     await handler(event as never, { cwd: agentDirectory } as ExtensionContext);
   }
 
-  const prompt = event.systemPromptOptions.appendSystemPrompt;
+  const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt);
   const guidelines = managerGuidelines(role, roleOptions);
   const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
 
@@ -144,9 +149,11 @@ const workerSession = async (profileName: string, directory: string) => {
 
   const tools = [...fake.tools.values()].filter((tool) => names.has(tool.name));
 
-  const prompt = await workerSystemPrompt(loadout, {
+  const systemPrompt = await workerSystemPrompt(loadout, {
     snapshot: () => resolveStommeGuides(directory),
   });
+
+  const prompt = measuredPrompt(systemPrompt);
 
   return { tools, size: prompt.length + toolsSize(tools), prompt };
 };

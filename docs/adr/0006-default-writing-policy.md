@@ -48,10 +48,13 @@ A rule goes in exactly one set. The task and repository rules come before the se
   run, so it does not build up.
 - A worker appends the sets its profile lists instead
   ([ADR 0067](./0067-give-workers-only-their-profile-tools-and-skills.md)).
-- Reject a missing, unreadable, or blank default set when Tau loads. A visible load failure is
-  better than a session that runs without its rules. A worker's selected sets, including `browser`,
-  are read on its first `before_agent_start`, so a missing, unreadable, or blank one fails that
-  hook.
+- Reject a missing, unreadable, or blank file-backed default set (`writing` or `workflow`) when Tau
+  loads. A visible load failure is better than a session that runs without its rules. A worker's
+  selected file-backed sets, including `browser`, are read on its first `before_agent_start`, so a
+  missing, unreadable, or blank one fails that hook.
+- The `coding` set has no file. It reads the stomme guides at each run, and a broken installation
+  gives a notice and a prompt line instead of a load failure
+  ([ADR 0140](./0140-load-coding-guides-from-stomme.md)).
 
 ### Not covered
 
@@ -63,14 +66,15 @@ may replace the prompt.
 ### Positive
 
 - Ordinary runs get the rules without loading a skill.
-- Each concern has one file, and contributors can read the same file the agent reads.
+- Each file-backed set is one file, and contributors can read the same file the agent reads. The
+  `coding` set is the stomme guides the project syncs or Tau bundles.
 
 ### Negative
 
 - Each loaded set costs prompt space on every run.
 - Prompt rules cannot guarantee good writing or readable code.
-- A broken or blank default set stops Tau from loading.
-- A broken or blank worker set fails that worker's first `before_agent_start`.
+- A broken or blank file-backed default set stops Tau from loading.
+- A broken or blank file-backed worker set fails that worker's first `before_agent_start`.
 - Rules near a boundary, such as comments, can drift between two sets.
 
 ## Alternatives considered
