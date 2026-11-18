@@ -65,6 +65,11 @@ rule = "typescript-owner-folder"
 key = "gateDecision.ts"
 
 [[violations]]
+path = "src/extensions/architect/open.ts"
+rule = "typescript-owner-folder"
+key = "openReuseDecision.ts"
+
+[[violations]]
 path = "src/extensions/commit/types.ts"
 rule = "typescript-catch-all-name"
 key = "types.ts"
@@ -534,7 +539,7 @@ imports = ["command", "errors"]
 
 [modules.piStart]
 entry = "src/piStart/piStart.ts"
-public = ["src/piStart/piArguments.ts"]
+public = ["src/piStart/herdrPane.ts", "src/piStart/piArguments.ts"]
 imports = ["command", "config", "errors", "tauDirectory"]
 
 [modules.process]

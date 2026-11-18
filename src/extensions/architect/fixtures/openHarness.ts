@@ -117,7 +117,9 @@ export const openTool = (
 
   const terminals = new Map<string, ExecResult>();
 
-  leadInSpace(hc, lead === undefined ? 'space-1' : lead.space);
+  const leadSpace = lead === undefined ? 'space-1' : lead.space;
+
+  leadInSpace(hc, leadSpace);
 
   const tool = createArchitectTool({
     ...hc,

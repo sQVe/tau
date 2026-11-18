@@ -381,8 +381,10 @@ const environmentReads = (path: string, source: string) => {
 // Folders that group files under src/ without forming a module.
 const groupingFolders = new Set(['src', 'src/extensions', 'src/skills']);
 
+const isTypeScriptFile = (path: string) => path.endsWith('.ts') && !path.endsWith('.d.ts');
+
 const isProductionSource = (path: string) =>
-  path.endsWith('.ts') && !isTest(path) && !isFixture(path);
+  isTypeScriptFile(path) && !isTest(path) && !isFixture(path);
 
 const parentFolders = (path: string) =>
   path
@@ -399,8 +401,15 @@ const moduleFolderOf = (path: string) => {
   return segments.length > depth && !groupingFolders.has(folder) ? folder : undefined;
 };
 
+const isStommeSource = (path: string) =>
+  /\.tsx?$/.test(path) && !path.endsWith('.d.ts') && !isFixture(path);
+
 const layoutProblems = (paths: readonly string[]) => {
   const sources = paths.filter(isProductionSource);
+
+  const indexFiles = paths
+    .filter((path) => basename(path).startsWith('index.') && !isStommeSource(path))
+    .map((path) => `${path}: index file`);
 
   const folders = [...new Set(paths.flatMap(parentFolders))].filter(
     (folder) => !groupingFolders.has(folder),
@@ -416,11 +425,11 @@ const layoutProblems = (paths: readonly string[]) => {
     .filter((folder) => !sources.includes(`${folder}/${basename(folder)}.ts`))
     .map((folder) => `${folder}/: no entry file ${basename(folder)}.ts`);
 
-  return [...oneFileFolders, ...missingEntries];
+  return [...indexFiles, ...oneFileFolders, ...missingEntries];
 };
 
 const layoutAdvice =
-  'Name a folder module entry after its folder, and keep a module with one production source file as a flat file beside its siblings.';
+  'Keep source folders free of index files, name a folder module entry after its folder, and keep a module with one production source file as a flat file beside its siblings.';
 
 it('keeps fixtures out of production modules', () => {
   const importers = sourceFiles
@@ -572,7 +581,7 @@ it('keeps src/ free of one-file folders and folder modules without an entry', ()
   expect(layoutProblems(paths), layoutAdvice).toEqual([]);
 });
 
-it('refuses one-file folders and missing entries but allows flat files and assets', () => {
+it('refuses index files, one-file folders, and missing entries but allows flat files and assets', () => {
   const allowed = [
     'src/tau.ts',
     'src/keys.ts',
@@ -595,6 +604,8 @@ it('refuses one-file folders and missing entries but allows flat files and asset
   ];
 
   const refused = [
+    'src/skills/pr/index.md',
+    'src/models/index.d.ts',
     'src/errors/errors.ts',
     'src/errors/errors.test.ts',
     'src/extensions/bareRoot/bareRoot.ts',
@@ -605,6 +616,8 @@ it('refuses one-file folders and missing entries but allows flat files and asset
   expect(layoutProblems(allowed)).toEqual([]);
 
   expect(layoutProblems(refused)).toEqual([
+    'src/skills/pr/index.md: index file',
+    'src/models/index.d.ts: index file',
     'src/errors/: one production source file',
     'src/extensions/bareRoot/: one production source file',
     'src/extensions/tdd/: one production source file',

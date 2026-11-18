@@ -29,8 +29,9 @@ fail a check, a skill step, or a merge.
 - Tau's Stryker config names its mutated files, excluded modules, timeouts, and test runner. It
   turns on Vitest related-test mode, so Stryker runs only the tests that relate to the mutated
   files.
-- In `changed` mode the script exits 2 when mutants survive. In `audit` mode it exits 0 with
-  survivors. It exits 1 when any file stays unmutated, so a skipped file never looks like a pass.
+- In `changed` mode the script exits 2 to mark survivors. Exit 2 is advice, not a failure: every
+  caller, including CI, accepts it. In `audit` mode it exits 0 with survivors. It exits 1 when any
+  file stays unmutated, so a skipped file never looks like a pass.
 
 ### The command and reuse
 

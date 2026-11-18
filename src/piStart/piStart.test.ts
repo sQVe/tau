@@ -106,7 +106,11 @@ const paneAppFake = (splitReply: string): ExecFake<'split' | 'swap'> =>
 
       return commandArguments[1] === 'pane.split' ? 'split' : 'swap';
     },
-    handlerFor: (key) => () => succeededResult(key === 'split' ? splitReply : '{"ok":true}'),
+    handlerFor: (key) => () => {
+      const reply = key === 'split' ? splitReply : '{"ok":true}';
+
+      return succeededResult(reply);
+    },
   });
 
 it('a left-of start splits right with the task in the argv, then swaps the new pane left', async () => {
