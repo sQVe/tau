@@ -98,9 +98,11 @@ const terminalRunsAsk = async (root: string, terminal: string | undefined): Prom
     return false;
   }
 
-  const asks = await readAskRecords(root);
+  const { records } = await readAskRecords(root);
 
-  return asks.some((ask) => ask.status === 'running' && ask.terminal === terminal);
+  return records.some(
+    (ask) => ask.route === 'hidden' && ask.status === 'running' && ask.terminal === terminal,
+  );
 };
 
 const readPane = async (request: OpenRequest, terminal: string): Promise<string | undefined> => {
@@ -221,7 +223,7 @@ const runningTerminal = async (
 
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);
-  const running = await runningTerminal(request, record?.terminal);
+  const running = await runningTerminal(request, record?.owner?.terminal);
 
   if (running !== undefined) {
     return { status: 'running', terminal: running };

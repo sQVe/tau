@@ -167,10 +167,10 @@ it('open starts a fresh session when the recorded session file is gone', async (
   const missingSession = join(root, 'missing-session.jsonl');
 
   await writeArchitectRecord(root, {
-    version: 1,
+    version: 2,
     sessionFile: missingSession,
-    terminal: null,
     leadTerminal: 't-lead',
+    owner: null,
     updatedAt: new Date().toISOString(),
   });
 

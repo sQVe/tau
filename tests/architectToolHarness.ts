@@ -65,10 +65,10 @@ export const recordSession = async (
   await writeFile(sessionFile, '');
 
   await writeArchitectRecord(root, {
-    version: 1,
+    version: 2,
     sessionFile,
-    terminal,
     leadTerminal: 't-lead',
+    owner: { lockToken: 'live', mode: 'visible', terminal, sessionId: 'session-architect' },
     updatedAt: new Date().toISOString(),
   });
 

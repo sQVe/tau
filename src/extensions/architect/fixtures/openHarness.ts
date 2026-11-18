@@ -148,10 +148,10 @@ export const architectArgv = (app: ExecFake<AppKey>): string[] => {
 
 export const recordTerminal = (root: string, terminal: string): Promise<void> =>
   writeArchitectRecord(root, {
-    version: 1,
+    version: 2,
     sessionFile: null,
-    terminal,
     leadTerminal: 't-lead',
+    owner: { lockToken: 'live', mode: 'visible', terminal, sessionId: 'session-architect' },
     updatedAt: new Date().toISOString(),
   });
 
@@ -166,8 +166,9 @@ export const writeAsk = (
   status: 'running' | 'sent',
 ): Promise<void> =>
   writeAskRecord(root, {
-    version: 1,
-    askId: 'ask-1',
+    version: 2,
+    route: 'hidden',
+    askId: '11111111-1111-1111-1111-111111111111',
     createdAt: new Date().toISOString(),
     question: 'Which flag name?',
     sessionFile: join(root, 'architect-session.jsonl'),
