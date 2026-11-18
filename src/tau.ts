@@ -18,6 +18,7 @@ import improvementExtension from './extensions/improvement/improvement.js';
 import inboxExtension from './extensions/inbox/inbox.js';
 import instructionsExtension from './extensions/instructions.js';
 import mergeWatchExtension from './extensions/mergeWatch/mergeWatch.js';
+import modelFallbackExtension from './extensions/modelFallback/modelFallback.js';
 import piResumeExtension from './extensions/piResume/piResume.js';
 import prExtension from './extensions/pr/pr.js';
 import prFeedbackExtension from './extensions/prFeedback/prFeedback.js';
@@ -48,6 +49,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   tddExtension(pi);
   askUserQuestionExtension(pi);
   webAccessExtension(pi);
+  modelFallbackExtension(pi);
   snippetsExtension(pi);
   sliceExtension(pi);
   fullCheckExtension(pi);
