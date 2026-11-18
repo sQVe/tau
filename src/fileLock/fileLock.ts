@@ -12,6 +12,7 @@ export interface LiveLockHolder {
   pid: number;
   checkout: string;
   terminal: string | undefined;
+  token: string;
 }
 
 interface LockOwner {
@@ -36,12 +37,16 @@ export interface FileLockOptions {
   onWaiting: (holder: LockOwner | undefined) => void;
   // Runs between reading the holder and linking the next generation. Tests use it to stall a session.
   beforeLink?: () => Promise<void>;
+  // Names the owner in the lock file. Without it, the lock makes a token.
+  token?: string;
 }
 
 export interface HoldFileLockOptions {
   lockPath: string;
   checkout: string;
   terminal: string | undefined;
+  // Names the owner in the lock file. Without it, the lock makes a token.
+  token?: string;
 }
 
 export type HeldFileLock =
@@ -240,6 +245,7 @@ const toLiveHolder = (owner: LockOwner): LiveLockHolder => ({
   pid: owner.pid,
   checkout: owner.checkout,
   terminal: owner.terminal,
+  token: owner.token,
 });
 
 // Returns the holder only while its session or command is alive. A released, missing, or dead
@@ -336,7 +342,7 @@ export const withFileLock = async <T>(
   run: (recordCommandGroup: (groupId: number) => Promise<void>) => Promise<T>,
 ): Promise<T> => {
   const { lockPath, checkout, cancelled, terminal } = options;
-  const token = newToken();
+  const token = options.token ?? newToken();
 
   const owner: LockOwner = {
     pid: process.pid,
@@ -378,13 +384,14 @@ export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFi
 
   const state: { refusal: { holder: LockOwner | undefined } | undefined } = { refusal: undefined };
 
-  const { lockPath, checkout, terminal } = options;
+  const { lockPath, checkout, terminal, token } = options;
 
   const holding = withFileLock(
     {
       lockPath,
       checkout,
       ...(terminal === undefined ? {} : { terminal }),
+      ...(token === undefined ? {} : { token }),
       pollMilliseconds: 250,
       signal: controller.signal,
       cancelled: () => new Error('The lock is held by another session.'),

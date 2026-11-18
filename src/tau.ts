@@ -70,8 +70,10 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   sliceExtension(pi);
   fullCheckExtension(pi);
   handoverExtension(pi);
-  architectExtension(pi);
+  // Pi runs session_shutdown handlers in registration order. The inbox must stop taking messages
+  // before the architect releases its lock.
   inboxExtension(pi);
+  architectExtension(pi);
   draftReviewExtension(pi);
   trackerExtension(pi);
   verificationExtension(pi);

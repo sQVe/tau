@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { userConfigPath } from '../../config/config.js';
+import { notifyOnce, userConfigPath } from '../../config/config.js';
 import { readRoleModel } from '../../config/roleModels.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { get, kill, run, wait } from '../../hc/hc.js';
@@ -17,7 +17,7 @@ import {
   readAskRecords,
   writeAskRecord,
 } from './record.js';
-import type { AskRecord } from './record.js';
+import type { AskRecordGap, HiddenAskRecord } from './record.js';
 
 export interface AskRequest {
   root: string;
@@ -45,9 +45,22 @@ export const askDeadlineSeconds = 900;
 
 const millisecondsPerSecond = 1000;
 
-const liveRunningAsk = async (root: string, hc: HcRuntime): Promise<AskRecord | undefined> => {
-  const records = await readAskRecords(root);
-  const newest = records.at(-1);
+const reportAskGaps = (ui: ConfigWarnings, gaps: AskRecordGap[]): void => {
+  for (const gap of gaps) {
+    notifyOnce(ui, gap.path, 'ask-record', gap.reason, 'warning');
+  }
+};
+
+const liveRunningAsk = async (
+  root: string,
+  hc: HcRuntime,
+  ui: ConfigWarnings,
+): Promise<HiddenAskRecord | undefined> => {
+  const { records, gaps } = await readAskRecords(root);
+
+  reportAskGaps(ui, gaps);
+
+  const newest = records.findLast((record): record is HiddenAskRecord => record.route === 'hidden');
 
   if (newest?.status !== 'running' || newest.terminal === null) {
     return undefined;
@@ -75,10 +88,15 @@ const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason 
 const liveAskMessage = (question: string, leadTerminal: string): string =>
   `The lead in terminal ${leadTerminal} asks: "${question}". Answer the question, update the ticket if the answer changes it, then send the answer to ${leadTerminal} with handover send. If you need the user, ask the user directly.`;
 
-const askLiveArchitect = async (request: AskRequest, terminal: string): Promise<AskResult> => {
+const askLiveArchitect = async (
+  request: AskRequest,
+  terminal: string,
+  sessionId: string,
+): Promise<AskResult> => {
   const sent = await sendInboxMessage({
     hc: request.hc,
     target: terminal,
+    sessionId,
     body: {
       family: 'handover',
       payload: { text: liveAskMessage(request.question, request.leadTerminal) },
@@ -109,8 +127,9 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
   const askId = randomUUID();
   const recordPath = askRecordPath(request.root, askId);
 
-  const initial: AskRecord = {
-    version: 1,
+  const initial: HiddenAskRecord = {
+    version: 2,
+    route: 'hidden',
     askId,
     createdAt: new Date().toISOString(),
     question: request.question,
@@ -143,7 +162,7 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
     labels: { 'tau.architect.ask': askId },
   });
 
-  const started: AskRecord = { ...initial, terminal: terminal.address };
+  const started: HiddenAskRecord = { ...initial, terminal: terminal.address };
 
   await writeAskRecord(request.root, started);
 
@@ -161,7 +180,8 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
     return needsOpen('The ask reached its deadline. Call architect open to talk to the architect.');
   }
 
-  const latest = (await readAskRecord(request.root, askId)) ?? started;
+  const recorded = await readAskRecord(request.root, askId);
+  const latest: HiddenAskRecord = recorded?.route === 'hidden' ? recorded : started;
 
   const outcome = askOutcome({
     status: latest.status,
@@ -204,8 +224,8 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
 
   const route = askRoute({
     root: request.root,
-    holderCheckout: holder?.checkout,
-    architectTerminal: architect?.terminal ?? null,
+    holder: holder === undefined ? undefined : { checkout: holder.checkout, token: holder.token },
+    owner: architect?.owner ?? null,
     sessionFile: architect?.sessionFile ?? null,
   });
 
@@ -213,14 +233,14 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     return needsOpen(route.reason);
   }
 
-  const running = await liveRunningAsk(request.root, request.hc);
+  const running = await liveRunningAsk(request.root, request.hc, request.ui);
 
   if (running !== undefined) {
     return needsOpen(`Ask ${running.askId} is still running. Wait for it to answer.`);
   }
 
   if (route.kind === 'live') {
-    return askLiveArchitect(request, route.terminal);
+    return askLiveArchitect(request, route.terminal, route.sessionId);
   }
 
   return askHiddenArchitect(request, route.sessionFile);

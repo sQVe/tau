@@ -50,7 +50,10 @@ const sessionContext = (cwd: string) => {
     ui: { notify },
     shutdown,
     isProjectTrusted: () => true,
-    sessionManager: { getSessionFile: () => '/sessions/architect.jsonl' },
+    sessionManager: {
+      getSessionFile: () => '/sessions/architect.jsonl',
+      getSessionId: () => 'session-architect',
+    },
   } as unknown as ExtensionContext;
 
   return { context, notify, shutdown };

@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "route": "hidden",
+  "askId": "ask-hidden",
+  "createdAt": "2026-11-17T10:00:00.000Z",
+  "question": "Which flag name?",
+  "sessionFile": "/sessions/architect.jsonl",
+  "terminal": "t-ask",
+  "leadTerminal": "t-lead",
+  "deadline": 1900000000000,
+  "status": "running",
+  "detail": null,
+  "answer": null
+}

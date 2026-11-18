@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { askOutcome, askRoute } from './askDecision.js';
+import type { ArchitectOwner } from './record.js';
 
 it.each([
   {
@@ -37,67 +38,132 @@ it.each([
   expect(askOutcome(facts)).toBe(expected);
 });
 
+const owner = (overrides: Partial<ArchitectOwner> = {}): ArchitectOwner => ({
+  lockToken: 'live',
+  mode: 'visible',
+  terminal: 't-architect',
+  sessionId: 'session-architect',
+  ...overrides,
+});
+
 it.each([
   {
-    name: 'no live holder asks in a hidden terminal',
+    name: 'a foreign holder asks to open',
     facts: {
       root: '/repo',
-      holderCheckout: undefined,
-      architectTerminal: 't-arch',
+      holder: { checkout: '/other', token: 'live' },
+      owner: owner(),
       sessionFile: '/repo/architect.jsonl',
     },
-    expected: { kind: 'hidden', sessionFile: '/repo/architect.jsonl' },
+    expected: {
+      kind: 'needsOpen',
+      reason: 'The architect is already running in /other. Call architect open to talk to it.',
+    },
   },
   {
-    name: 'a live architect in this checkout gets the question in its inbox',
+    name: 'an ownerless holder is starting',
     facts: {
       root: '/repo',
-      holderCheckout: '/repo',
-      architectTerminal: 't-arch',
+      holder: { checkout: '/repo', token: 'live' },
+      owner: null,
       sessionFile: '/repo/architect.jsonl',
     },
-    expected: { kind: 'live', terminal: 't-arch' },
+    expected: { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' },
   },
   {
-    name: 'a live architect needs no recorded session file',
+    name: 'a token mismatch is starting',
     facts: {
       root: '/repo',
-      holderCheckout: '/repo',
-      architectTerminal: 't-arch',
+      holder: { checkout: '/repo', token: 'live' },
+      owner: owner({ lockToken: 'recorded' }),
+      sessionFile: '/repo/architect.jsonl',
+    },
+    expected: { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' },
+  },
+  {
+    name: 'ask mode waits for the answer',
+    facts: {
+      root: '/repo',
+      holder: { checkout: '/repo', token: 'live' },
+      owner: owner({ mode: 'ask' }),
+      sessionFile: '/repo/architect.jsonl',
+    },
+    expected: {
+      kind: 'needsOpen',
+      reason: 'A hidden ask is running. Wait for its answer.',
+    },
+  },
+  {
+    name: 'no hc terminal needs the pane',
+    facts: {
+      root: '/repo',
+      holder: { checkout: '/repo', token: 'live' },
+      owner: owner({ terminal: null }),
+      sessionFile: '/repo/architect.jsonl',
+    },
+    expected: {
+      kind: 'needsOpen',
+      reason: 'The live architect runs outside an hc terminal. Switch to its pane to talk to it.',
+    },
+  },
+  {
+    name: 'a matching visible owner is live',
+    facts: {
+      root: '/repo',
+      holder: { checkout: '/repo', token: 'live' },
+      owner: owner(),
+      sessionFile: '/repo/architect.jsonl',
+    },
+    expected: { kind: 'live', terminal: 't-architect', sessionId: 'session-architect' },
+  },
+  {
+    name: 'a live owner needs no session file',
+    facts: {
+      root: '/repo',
+      holder: { checkout: '/repo', token: 'live' },
+      owner: owner(),
       sessionFile: null,
     },
-    expected: { kind: 'live', terminal: 't-arch' },
+    expected: { kind: 'live', terminal: 't-architect', sessionId: 'session-architect' },
   },
   {
-    name: 'a live architect that is still starting says to ask again shortly',
-    facts: { root: '/repo', holderCheckout: '/repo', architectTerminal: null, sessionFile: null },
+    name: 'an ownerless holder needs no session file',
+    facts: {
+      root: '/repo',
+      holder: { checkout: '/repo', token: 'live' },
+      owner: null,
+      sessionFile: null,
+    },
     expected: { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' },
-    reasonExcludes: 'architect open',
   },
   {
-    name: 'a hidden ask needs a recorded session file',
-    facts: { root: '/repo', holderCheckout: undefined, architectTerminal: null, sessionFile: null },
+    name: 'no holder and no session asks to open',
+    facts: { root: '/repo', holder: undefined, owner: null, sessionFile: null },
     expected: {
       kind: 'needsOpen',
       reason: 'No architect session is recorded for this checkout. Call architect open first.',
     },
   },
   {
-    name: 'a holder in another checkout is needsOpen',
+    name: 'no holder asks hidden',
     facts: {
       root: '/repo',
-      holderCheckout: '/other',
-      architectTerminal: 't-arch',
+      holder: undefined,
+      owner: null,
       sessionFile: '/repo/architect.jsonl',
     },
-    expected: { kind: 'needsOpen' },
+    expected: { kind: 'hidden', sessionFile: '/repo/architect.jsonl' },
   },
-] as const)('$name', ({ facts, expected, ...rest }) => {
-  const result = askRoute(facts);
-  const reason = 'reason' in result ? result.reason : '';
-  const excluded = 'reasonExcludes' in rest ? rest.reasonExcludes : undefined;
-  const mentionsExcluded = excluded !== undefined && reason.includes(excluded);
-
-  expect(result).toMatchObject(expected);
-  expect(mentionsExcluded).toBe(false);
+  {
+    name: 'a stale owner without a holder asks hidden',
+    facts: {
+      root: '/repo',
+      holder: undefined,
+      owner: owner(),
+      sessionFile: '/repo/architect.jsonl',
+    },
+    expected: { kind: 'hidden', sessionFile: '/repo/architect.jsonl' },
+  },
+])('$name', ({ facts, expected }) => {
+  expect(askRoute(facts)).toMatchObject(expected);
 });

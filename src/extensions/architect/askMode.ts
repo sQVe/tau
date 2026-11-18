@@ -72,7 +72,7 @@ export const registerAskMode = (pi: ExtensionAPI, recordPath: string): void => {
     const record = await readAskRecordAt(recordPath);
     const file = handoverFile(event);
 
-    if (record === undefined || file === undefined) {
+    if (record?.route !== 'hidden' || file === undefined) {
       return;
     }
 

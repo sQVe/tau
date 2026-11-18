@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "route": "live",
+  "askId": "ask-live",
+  "createdAt": "2026-11-17T10:00:00.000Z",
+  "question": "Which flag name?",
+  "leadTerminal": "t-lead",
+  "leadSessionId": "session-lead",
+  "architectTerminal": "t-architect",
+  "architectSessionId": "session-architect",
+  "status": "queued",
+  "detail": null,
+  "answer": null
+}

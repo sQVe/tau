@@ -1,4 +1,4 @@
-import type { AskStatus } from './record.js';
+import type { ArchitectOwner, AskStatus } from './record.js';
 
 export interface AskOutcomeFacts {
   status: AskStatus;
@@ -10,14 +10,14 @@ export type AskOutcome = 'answered' | 'needsOpen' | 'failed';
 
 export interface AskRouteFacts {
   root: string;
-  holderCheckout: string | undefined;
-  architectTerminal: string | null;
+  holder: { checkout: string; token: string } | undefined;
+  owner: ArchitectOwner | null;
   sessionFile: string | null;
 }
 
 export type AskRoute =
   | { kind: 'hidden'; sessionFile: string }
-  | { kind: 'live'; terminal: string }
+  | { kind: 'live'; terminal: string; sessionId: string }
   | { kind: 'needsOpen'; reason: string };
 
 // A sent answer is the only answered outcome. A timeout, or an ended ask that never sent, tells
@@ -42,24 +42,39 @@ export const askOutcome = (facts: AskOutcomeFacts): AskOutcome => {
   return facts.exitCode === 0 ? 'needsOpen' : 'failed';
 };
 
-// A live architect in this checkout takes the question in its inbox, so no second Pi process
-// writes its session file. Without a live holder, the ask resumes the recorded session in a hidden
-// terminal. A live architect that has not recorded its terminal yet holds the lock before it
-// writes the record, so the lead asks again instead of calling open, which the lock would refuse.
+// A live architect in this checkout takes the question in its inbox only while its recorded lock
+// token matches the holder. A recorded route without the lock is still starting, so the lead asks
+// again instead of calling open, which the lock would refuse. A hidden ask holds the lock too, and
+// a second question would reach a session that answers only the first. Without a live holder, the
+// ask resumes the recorded session in a hidden terminal.
 export const askRoute = (facts: AskRouteFacts): AskRoute => {
-  if (facts.holderCheckout !== undefined && facts.holderCheckout !== facts.root) {
+  if (facts.holder !== undefined && facts.holder.checkout !== facts.root) {
     return {
       kind: 'needsOpen',
-      reason: `The architect is already running in ${facts.holderCheckout}. Call architect open to talk to it.`,
+      reason: `The architect is already running in ${facts.holder.checkout}. Call architect open to talk to it.`,
     };
   }
 
-  if (facts.holderCheckout === facts.root) {
-    if (facts.architectTerminal === null) {
+  if (facts.holder !== undefined) {
+    const { owner } = facts;
+    const ownsLock = owner !== null && owner.lockToken === facts.holder.token;
+
+    if (!ownsLock) {
       return { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' };
     }
 
-    return { kind: 'live', terminal: facts.architectTerminal };
+    if (owner.mode === 'ask') {
+      return { kind: 'needsOpen', reason: 'A hidden ask is running. Wait for its answer.' };
+    }
+
+    if (owner.terminal === null) {
+      return {
+        kind: 'needsOpen',
+        reason: 'The live architect runs outside an hc terminal. Switch to its pane to talk to it.',
+      };
+    }
+
+    return { kind: 'live', terminal: owner.terminal, sessionId: owner.sessionId };
   }
 
   if (facts.sessionFile === null) {

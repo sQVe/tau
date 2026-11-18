@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "askId": "ask-v1",
+  "createdAt": "2026-11-17T10:00:00.000Z",
+  "question": "Which flag name?",
+  "sessionFile": "/sessions/architect.jsonl",
+  "terminal": "t-ask",
+  "leadTerminal": "t-lead",
+  "deadline": 1900000000000,
+  "status": "sent",
+  "detail": null,
+  "answer": "Use --quick."
+}

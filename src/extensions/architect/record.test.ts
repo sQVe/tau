@@ -1,34 +1,125 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { basename, dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { copyFile, mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import {
   architectRecordPath,
+  askRecordDirectory,
   readArchitectRecord,
   readAskRecord,
+  readAskRecordAt,
   readAskRecords,
   readGateRecord,
+  readOpenLiveAsks,
   writeArchitectRecord,
   writeAskRecord,
+  writeAskRecordAt,
   writeGateRecord,
 } from './record.js';
+import type { LiveAskRecord } from './record.js';
 
-const architectRecord = {
-  version: 1,
+const fixturePath = (name: string): string =>
+  fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+
+const copyFixture = async (name: string, path: string): Promise<void> => {
+  await mkdir(dirname(path), { recursive: true });
+  await copyFile(fixturePath(name), path);
+};
+
+const snapshotDirectory = async (path: string): Promise<Record<string, string>> => {
+  const names = await readdir(path).catch(() => []);
+
+  const entries = await Promise.all(
+    names.map(async (name) => [name, await readFile(join(path, name), 'utf8')] as const),
+  );
+
+  return Object.fromEntries(entries);
+};
+
+const architectRecordV1AsV2 = {
+  version: 2,
   sessionFile: '/sessions/architect.jsonl',
-  terminal: 't-architect',
   leadTerminal: 't-lead',
+  owner: null,
   updatedAt: '2026-11-17T10:00:00.000Z',
 } as const;
 
-it('reads a version 1 architect record it wrote', async () => {
+const architectRecordV2 = {
+  version: 2,
+  sessionFile: '/sessions/architect.jsonl',
+  leadTerminal: 't-lead',
+  owner: {
+    lockToken: 'lock-token',
+    mode: 'visible',
+    terminal: 't-architect',
+    sessionId: 'session-architect',
+  },
+  updatedAt: '2026-11-17T10:00:00.000Z',
+} as const;
+
+const askRecordV1AsHidden = {
+  version: 2,
+  route: 'hidden',
+  askId: 'ask-v1',
+  createdAt: '2026-11-17T10:00:00.000Z',
+  question: 'Which flag name?',
+  sessionFile: '/sessions/architect.jsonl',
+  terminal: 't-ask',
+  leadTerminal: 't-lead',
+  deadline: 1900000000000,
+  status: 'sent',
+  detail: null,
+  answer: 'Use --quick.',
+} as const;
+
+const askRecordV2Hidden = {
+  version: 2,
+  route: 'hidden',
+  askId: 'ask-hidden',
+  createdAt: '2026-11-17T10:00:00.000Z',
+  question: 'Which flag name?',
+  sessionFile: '/sessions/architect.jsonl',
+  terminal: 't-ask',
+  leadTerminal: 't-lead',
+  deadline: 1900000000000,
+  status: 'running',
+  detail: null,
+  answer: null,
+} as const;
+
+const askRecordV2Live = {
+  version: 2,
+  route: 'live',
+  askId: 'ask-live',
+  createdAt: '2026-11-17T10:00:00.000Z',
+  question: 'Which flag name?',
+  leadTerminal: 't-lead',
+  leadSessionId: 'session-lead',
+  architectTerminal: 't-architect',
+  architectSessionId: 'session-architect',
+  status: 'queued',
+  detail: null,
+  answer: null,
+} as const;
+
+it('reads a version 1 architect fixture as a version 2 record without an owner', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await writeArchitectRecord(root, architectRecord);
+  await copyFixture('architect-record-v1.json', architectRecordPath(root));
 
-  expect(await readArchitectRecord(root)).toEqual(architectRecord);
+  expect(await readArchitectRecord(root)).toEqual(architectRecordV1AsV2);
+});
+
+it('reads a version 2 architect fixture as saved', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await copyFixture('architect-record-v2.json', architectRecordPath(root));
+
+  expect(await readArchitectRecord(root)).toEqual(architectRecordV2);
 });
 
 it('reads a missing architect record as undefined', async () => {
@@ -41,10 +132,27 @@ it('refuses a malformed architect record', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const path = architectRecordPath(root);
 
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, '{"version":1,"sessionFile":3}');
+  await copyFixture('architect-record-malformed.json', path);
 
   await expect(readArchitectRecord(root)).rejects.toThrow(`Malformed architect record ${path}`);
+});
+
+it('refuses a version 2 architect record with an unknown field', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const path = architectRecordPath(root);
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify({ ...architectRecordV2, extra: true }));
+
+  await expect(readArchitectRecord(root)).rejects.toThrow(`Malformed architect record ${path}`);
+});
+
+it('writes a version 2 architect record and reads it back', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeArchitectRecord(root, architectRecordV2);
+
+  expect(await readArchitectRecord(root)).toEqual(architectRecordV2);
 });
 
 it('writes one gate record per call and reads it back', async () => {
@@ -69,35 +177,193 @@ it('writes one gate record per call and reads it back', async () => {
   expect(await readGateRecord(root, basename(second))).toEqual(record);
 });
 
+it('reads a version 1 ask fixture as a hidden version 2 record', async () => {
+  expect(await readAskRecordAt(fixturePath('ask-record-v1.json'))).toEqual(askRecordV1AsHidden);
+});
+
+it('drops unknown fields from a version 1 ask', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const path = join(root, 'ask.json');
+  const v1 = { ...askRecordV1AsHidden, version: 1, extra: 'unknown' };
+
+  await writeFile(path, JSON.stringify(v1));
+
+  const record = await readAskRecordAt(path);
+
+  expect(record).toEqual(askRecordV1AsHidden);
+
+  await writeAskRecordAt(path, record as NonNullable<typeof record>);
+
+  expect(await readAskRecordAt(path)).toEqual(askRecordV1AsHidden);
+});
+
+it('reads a hidden version 2 ask fixture as saved', async () => {
+  expect(await readAskRecordAt(fixturePath('ask-record-v2-hidden.json'))).toEqual(
+    askRecordV2Hidden,
+  );
+});
+
+it('reads a live version 2 ask fixture as saved', async () => {
+  expect(await readAskRecordAt(fixturePath('ask-record-v2-live.json'))).toEqual(askRecordV2Live);
+});
+
+it('reads a missing ask record as undefined', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  expect(await readAskRecord(root, 'missing')).toBeUndefined();
+});
+
+it('refuses a malformed ask record', async () => {
+  const path = fixturePath('ask-record-malformed.json');
+
+  await expect(readAskRecordAt(path)).rejects.toThrow(`Malformed ask record ${path}`);
+});
+
+it('refuses a version 2 live ask with an unknown field', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const path = join(root, 'ask.json');
+
+  await writeFile(path, JSON.stringify({ ...askRecordV2Live, extra: true }));
+
+  await expect(readAskRecordAt(path)).rejects.toThrow(`Malformed ask record ${path}`);
+});
+
+it('refuses a version 2 hidden ask with an unknown field', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const path = join(root, 'ask.json');
+
+  await writeFile(path, JSON.stringify({ ...askRecordV2Hidden, extra: true }));
+
+  await expect(readAskRecordAt(path)).rejects.toThrow(`Malformed ask record ${path}`);
+});
+
 it('lists ask records oldest first and reads one by id', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const base = {
-    version: 1,
-    question: 'Which flag name?',
-    sessionFile: '/sessions/architect.jsonl',
-    terminal: 't-ask',
-    leadTerminal: 't-lead',
-    deadline: 1,
-    status: 'sent',
-    detail: null,
-    answer: 'Use --quick.',
+  const later = {
+    ...askRecordV2Hidden,
+    askId: 'b',
+    createdAt: '2026-11-17T10:00:01.000Z',
   } as const;
 
-  const later = { ...base, askId: 'b', createdAt: '2026-11-17T10:00:01.000Z' } as const;
-  const earlier = { ...base, askId: 'a', createdAt: '2026-11-17T10:00:00.000Z' } as const;
+  const earlier = {
+    ...askRecordV2Hidden,
+    askId: 'a',
+    createdAt: '2026-11-17T10:00:00.000Z',
+  } as const;
 
   await writeAskRecord(root, later);
   await writeAskRecord(root, earlier);
 
-  expect((await readAskRecords(root)).map((record) => record.askId)).toEqual(['a', 'b']);
+  expect((await readAskRecords(root)).records.map((record) => record.askId)).toEqual(['a', 'b']);
   expect(await readAskRecord(root, 'b')).toEqual(later);
   expect(await readAskRecord(root, 'missing')).toBeUndefined();
+});
+
+it('keeps valid asks beside a malformed and newer file', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeAskRecord(root, askRecordV2Hidden);
+  await mkdir(askRecordDirectory(root), { recursive: true });
+
+  const malformed = join(askRecordDirectory(root), 'malformed.json');
+  const newer = join(askRecordDirectory(root), 'newer.json');
+
+  await writeFile(malformed, '{"version":2,"route":"live"}');
+  await writeFile(newer, JSON.stringify({ version: 3, askId: 'newer' }));
+
+  const { records, gaps } = await readAskRecords(root);
+
+  expect(records.map((record) => record.askId)).toEqual(['ask-hidden']);
+
+  expect(gaps.map((gap) => basename(gap.path)).toSorted()).toEqual([
+    'malformed.json',
+    'newer.json',
+  ]);
+
+  expect(gaps.map((gap) => gap.reason.length > 0)).toEqual([true, true]);
+});
+
+it('skips a listed ask file that disappeared', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeAskRecord(root, askRecordV2Hidden);
+
+  await symlink(
+    join(askRecordDirectory(root), 'missing.json'),
+    join(askRecordDirectory(root), 'gone.json'),
+  );
+
+  const { records, gaps } = await readAskRecords(root);
+
+  expect(records.map((record) => record.askId)).toEqual(['ask-hidden']);
+  expect(gaps).toEqual([]);
 });
 
 it('lists no ask records before the directory exists', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  expect(await readAskRecords(root)).toEqual([]);
-  expect(await readAskRecord(root, 'missing')).toBeUndefined();
+  expect(await readAskRecords(root)).toEqual({ records: [], gaps: [] });
+});
+
+const liveAsk = (
+  askId: string,
+  createdAt: string,
+  status: LiveAskRecord['status'],
+  architectSessionId = 'session-architect',
+): LiveAskRecord => ({
+  version: 2,
+  route: 'live',
+  askId,
+  createdAt,
+  question: `Question ${askId}?`,
+  leadTerminal: 't-lead',
+  leadSessionId: 'session-lead',
+  architectTerminal: 't-architect',
+  architectSessionId,
+  status,
+  detail: null,
+  answer: null,
+});
+
+it('lists open live asks for one architect session oldest first', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeAskRecord(root, liveAsk('closed', '2026-11-17T10:00:00.000Z', 'answered'));
+  await writeAskRecord(root, liveAsk('queued', '2026-11-17T10:00:02.000Z', 'queued'));
+  await writeAskRecord(root, liveAsk('other', '2026-11-17T10:00:01.000Z', 'queued', 'other'));
+  await writeAskRecord(root, liveAsk('sending', '2026-11-17T10:00:01.000Z', 'sending'));
+  await writeAskRecord(root, liveAsk('unknown', '2026-11-17T10:00:03.000Z', 'unknown'));
+  await writeAskRecord(root, liveAsk('failed', '2026-11-17T10:00:04.000Z', 'failed'));
+  await writeAskRecord(root, askRecordV2Hidden);
+
+  const before = await snapshotDirectory(askRecordDirectory(root));
+
+  expect((await readOpenLiveAsks(root, 'session-architect')).map((record) => record.askId)).toEqual(
+    ['sending', 'queued', 'unknown'],
+  );
+
+  expect(await snapshotDirectory(askRecordDirectory(root))).toEqual(before);
+});
+
+it('lists no open live asks before the directory exists', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  expect(await readOpenLiveAsks(root, 'session-architect')).toEqual([]);
+  expect(existsSync(askRecordDirectory(root))).toBe(false);
+});
+
+it('lists open live asks beside a malformed file', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeAskRecord(root, liveAsk('queued', '2026-11-17T10:00:02.000Z', 'queued'));
+  await writeFile(join(askRecordDirectory(root), 'malformed.json'), '{"version":2');
+
+  const before = await snapshotDirectory(askRecordDirectory(root));
+
+  expect((await readOpenLiveAsks(root, 'session-architect')).map((record) => record.askId)).toEqual(
+    ['queued'],
+  );
+
+  expect(await snapshotDirectory(askRecordDirectory(root))).toEqual(before);
 });

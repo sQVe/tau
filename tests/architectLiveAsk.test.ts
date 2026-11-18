@@ -56,7 +56,10 @@ const contextOf = (root: string): ExtensionToolContext =>
     modelRegistry: {},
   }) as unknown as ExtensionToolContext;
 
-const recordLiveArchitect = async (root: string): Promise<void> => {
+const recordLiveArchitect = async (
+  root: string,
+  architectSessionId = 'session-architect',
+): Promise<void> => {
   const lockPath = `${architectLockPath(root)}.1`;
   const sessionFile = join(root, 'architect-session.jsonl');
 
@@ -75,10 +78,15 @@ const recordLiveArchitect = async (root: string): Promise<void> => {
   await writeFile(sessionFile, '');
 
   await writeArchitectRecord(root, {
-    version: 1,
+    version: 2,
     sessionFile,
-    terminal: 't-architect',
     leadTerminal: 't-lead',
+    owner: {
+      lockToken: 'live',
+      mode: 'visible',
+      terminal: 't-architect',
+      sessionId: architectSessionId,
+    },
     updatedAt: new Date().toISOString(),
   });
 };
@@ -124,7 +132,7 @@ it('the lead receives the answer of a live architect in its inbox', async () => 
     vi.unstubAllEnvs();
   });
 
-  await recordLiveArchitect(root);
+  await recordLiveArchitect(root, architect.sessionId);
   replyTerminal(hc, 't-architect', architect);
 
   const asked = await createArchitectTool({ ...hc, cwd: root }).execute(
@@ -188,7 +196,8 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
   await writeFile(
     join(askRecordDirectory(root), 'ask-1.json'),
     JSON.stringify({
-      version: 1,
+      version: 2,
+      route: 'hidden',
       askId: 'ask-1',
       createdAt: new Date().toISOString(),
       question: 'Earlier question',
@@ -219,11 +228,43 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
   expect(reason).toContain('Wait for it');
   expect(reason).not.toContain('architect open');
 
-  await expect(readAskRecords(root)).resolves.toMatchObject([
-    { askId: 'ask-1', status: 'running' },
-  ]);
+  await expect(readAskRecords(root)).resolves.toMatchObject({
+    records: [{ askId: 'ask-1', status: 'running' }],
+  });
 
   expect(receiver.savedRecords()).toEqual([]);
+  expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
+});
+
+it('ask refuses a changed architect session', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const config = temporaryTauConfig(onTestFinished, 'tau-architect-changed-session-');
+  const hc = createHcFake();
+  const sockets = socketRoot();
+  const architect = await startHandoverReceiver(onTestFinished, sockets, 't-architect');
+
+  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
+  vi.stubEnv('PI_CODING_AGENT_DIR', config.location.agentDirectory);
+  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  await recordLiveArchitect(root, 'recorded-session');
+  replyTerminal(hc, 't-architect', architect);
+
+  await expect(
+    createArchitectTool({ ...hc, cwd: root }).execute(
+      'call',
+      { action: 'ask', question: 'Which flag name?' },
+      undefined,
+      undefined,
+      contextOf(root),
+    ),
+  ).rejects.toThrow(/changed session/);
+
+  expect(architect.savedRecords()).toEqual([]);
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
 });
 
@@ -241,7 +282,7 @@ it('an unknown inbox delivery keeps the message ID and asks the lead to wait', a
     vi.unstubAllEnvs();
   });
 
-  await recordLiveArchitect(root);
+  await recordLiveArchitect(root, 'silent');
 
   hc.reply(
     'get',

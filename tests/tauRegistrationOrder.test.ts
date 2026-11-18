@@ -1,0 +1,186 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { expect, it, vi } from 'vitest';
+
+import { architectLockPath } from '../src/extensions/architect/lock.js';
+import { readLiveLockHolder, withFileLock } from '../src/fileLock/fileLock.js';
+import { socketDirectoryFor, socketPathFor } from '../src/inbox/endpoint.js';
+import { releaseRegistration } from '../src/inbox/inbox.js';
+import tauExtension from '../src/tau.js';
+import { succeededResult } from './execFake.js';
+import { fakeExtensionApi } from './extensionApi.js';
+import { createTemporaryRepository } from './gitRepository.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+
+type Handler = (event: never, context: ExtensionContext) => unknown;
+
+interface Registration {
+  index: number;
+  name: string;
+  handler: Handler;
+  stack: string;
+}
+
+const withdrawalDelayMilliseconds = 300;
+
+const requireRegistration = (
+  registration: Registration | undefined,
+  name: string,
+): Registration => {
+  if (registration === undefined) {
+    throw new Error(`Tau did not register ${name}.`);
+  }
+
+  return registration;
+};
+
+const waitForMissing = async (path: string): Promise<void> => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (!existsSync(path)) {
+      return;
+    }
+
+    await sleep(10);
+  }
+};
+
+it('inbox closes before the lock frees', async ({ onTestFinished }) => {
+  releaseRegistration();
+
+  const uid = process.getuid?.();
+
+  if (uid === undefined) {
+    throw new Error('The inbox shutdown test needs a POSIX user ID.');
+  }
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-shutdown-');
+  const sessionId = 'shutdown-test-session';
+  const socketPath = socketPathFor(socketDirectoryFor(uid), sessionId);
+  const lockPath = architectLockPath(root);
+  const releaseEndpointLock = Promise.withResolvers<undefined>();
+  const endpointLockHeld = Promise.withResolvers<undefined>();
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+  vi.stubEnv('TAU_ROLE', 'architect');
+  vi.stubEnv('TAU_ARCHITECT_ASK', '');
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+
+  const fake = fakeExtensionApi({
+    exec: async () => {
+      const labels = { 'tau.inbox': `rpc1:${socketPath}` };
+      const terminal = { address: 't-architect', state: 'live', labels };
+
+      return succeededResult(JSON.stringify(terminal));
+    },
+  });
+
+  const registered: Registration[] = [];
+  const on = fake.pi.on.bind(fake.pi) as (name: string, handler: Handler) => unknown;
+
+  fake.pi.on = ((name: string, handler: Handler) => {
+    registered.push({
+      index: registered.length,
+      name,
+      handler,
+      stack: new Error('handler registration').stack ?? '',
+    });
+
+    on(name, handler);
+  }) as unknown as typeof fake.pi.on;
+
+  await tauExtension(fake.pi);
+
+  const fromFile = (name: string, file: string): Registration[] =>
+    registered.filter((entry) => entry.name === name && entry.stack.includes(file));
+
+  const inboxStart = requireRegistration(
+    fromFile('session_start', 'extensions/inbox/lifecycle.ts')[0],
+    'the inbox session start',
+  );
+
+  const architectStart = requireRegistration(
+    fromFile('session_start', 'extensions/architect/architect.ts')[0],
+    'the architect session start',
+  );
+
+  const inboxShutdown = requireRegistration(
+    fromFile('session_shutdown', 'extensions/inbox/lifecycle.ts')[0],
+    'the inbox session shutdown',
+  );
+
+  const architectShutdown = requireRegistration(
+    fromFile('session_shutdown', 'extensions/architect/architect.ts')[0],
+    'the architect session shutdown',
+  );
+
+  const context = {
+    cwd: root,
+    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
+    shutdown: vi.fn<() => void>(),
+    isProjectTrusted: (): boolean => true,
+    sessionManager: {
+      getSessionFile: () => join(root, 'architect-session.jsonl'),
+      getSessionId: () => sessionId,
+      getEntries: () => [],
+    },
+  } as unknown as ExtensionContext;
+
+  await inboxStart.handler({} as never, context);
+  await architectStart.handler({} as never, context);
+
+  expect(existsSync(socketPath)).toBe(true);
+  expect(await readLiveLockHolder(lockPath)).toBeDefined();
+
+  // Holding the endpoint lock keeps the inbox socket open while its shutdown waits, so a handler
+  // that stops awaiting withdrawal leaves the socket open when the architect releases its lock.
+  const holding = withFileLock(
+    {
+      lockPath: `${socketPath}.lock`,
+      checkout: socketPath,
+      signal: undefined,
+      pollMilliseconds: 10,
+      cancelled: () => new Error('Waiting for the inbox endpoint lock was cancelled.'),
+      onWaiting: () => undefined,
+    },
+    async () => {
+      endpointLockHeld.resolve(undefined);
+      await releaseEndpointLock.promise;
+    },
+  );
+
+  const timer = setTimeout(() => {
+    releaseEndpointLock.resolve(undefined);
+  }, withdrawalDelayMilliseconds);
+
+  onTestFinished(async () => {
+    clearTimeout(timer);
+    releaseEndpointLock.resolve(undefined);
+    await holding;
+    await waitForMissing(socketPath);
+    releaseRegistration();
+    vi.unstubAllEnvs();
+  });
+
+  await endpointLockHeld.promise;
+
+  const ordered = [inboxShutdown, architectShutdown].toSorted(
+    (left, right) => left.index - right.index,
+  );
+
+  const observations: { lockReleased?: boolean; socketClosed?: boolean } = {};
+
+  for (const registration of ordered) {
+    await registration.handler({} as never, context);
+
+    if (registration === architectShutdown) {
+      observations.socketClosed = !existsSync(socketPath);
+      observations.lockReleased = (await readLiveLockHolder(lockPath)) === undefined;
+    }
+  }
+
+  expect(observations).toEqual({ socketClosed: true, lockReleased: true });
+});

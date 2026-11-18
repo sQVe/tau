@@ -1,6 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { readConfigLocation, notifyOnce, userConfigPath } from '../../config/config.js';
+import type { ConfigWarnings } from '../../config/config.js';
 import { readRoleModel } from '../../config/roleModels.js';
 import { errorMessage } from '../../errors.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
@@ -9,10 +10,12 @@ import { findTauRoot } from '../../tauDirectory.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { readAskRecords, writeArchitectRecord, writeAskRecord } from './record.js';
+import type { ArchitectOwner, HiddenAskRecord } from './record.js';
 
 export interface ArchitectSession {
   root: string;
   release: () => Promise<void>;
+  ui: ConfigWarnings;
 }
 
 const modelReference = (context: ExtensionContext): string | undefined =>
@@ -37,19 +40,31 @@ const warnLeadModel = (context: ExtensionContext): void => {
   }
 };
 
+const architectMode = (): ArchitectOwner['mode'] => {
+  // oxlint-disable-next-line node/no-process-env -- The ask terminal receives its record path in its environment.
+  const askRecordPath = process.env.TAU_ARCHITECT_ASK;
+
+  return askRecordPath !== undefined && askRecordPath !== '' ? 'ask' : 'visible';
+};
+
 const startArchitect = async (context: ExtensionContext): Promise<ArchitectSession | undefined> => {
   const root = await findTauRoot(context.cwd, 'architect');
 
   try {
-    const release = await holdArchitectLock(root);
+    const { release, token } = await holdArchitectLock(root);
 
     try {
       await writeArchitectRecord(root, {
-        version: 1,
+        version: 2,
         sessionFile: context.sessionManager.getSessionFile() ?? null,
-        terminal: currentTerminalAddress() ?? null,
         // oxlint-disable-next-line node/no-process-env -- The lead passes its address in the pane environment.
         leadTerminal: process.env.TAU_LEAD_TERMINAL ?? null,
+        owner: {
+          lockToken: token,
+          mode: architectMode(),
+          terminal: currentTerminalAddress() ?? null,
+          sessionId: context.sessionManager.getSessionId(),
+        },
         updatedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -58,7 +73,7 @@ const startArchitect = async (context: ExtensionContext): Promise<ArchitectSessi
       throw error;
     }
 
-    return { root, release };
+    return { root, release, ui: context.ui };
   } catch (error) {
     notifyOnce(context.ui, root, 'architect-start', errorMessage(error), 'error');
     context.shutdown();
@@ -81,9 +96,16 @@ export const startArchitectSession = async (
   return role === 'architect' ? startArchitect(context) : undefined;
 };
 
-const failRunningAsks = async (root: string): Promise<void> => {
-  const records = await readAskRecords(root);
-  const running = records.filter((record) => record.status === 'running');
+const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> => {
+  const { records, gaps } = await readAskRecords(root);
+
+  for (const gap of gaps) {
+    notifyOnce(ui, gap.path, 'ask-record', gap.reason, 'warning');
+  }
+
+  const running = records.filter(
+    (record): record is HiddenAskRecord => record.route === 'hidden' && record.status === 'running',
+  );
 
   await Promise.all(
     running.map((record) =>
@@ -100,6 +122,6 @@ export const endArchitectSession = async (session: ArchitectSession): Promise<vo
   try {
     await session.release();
   } finally {
-    await failRunningAsks(session.root);
+    await failRunningAsks(session.root, session.ui);
   }
 };
