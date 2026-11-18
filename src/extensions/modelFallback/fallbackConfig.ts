@@ -20,6 +20,10 @@ export interface FallbackModelsRead {
 
 type EntryRead = { kind: 'model'; model: FallbackModel } | { kind: 'invalid'; problem: string };
 
+type ParsedReference = NonNullable<ReturnType<typeof parseModelReference>> & {
+  reference: string;
+};
+
 export const virtualModelProvider = 'tau';
 
 const namePattern = /^[a-z0-9][a-z0-9-]*$/u;
@@ -34,16 +38,28 @@ const invalidEntry = (source: string, message: string): EntryRead => ({
   problem: invalid(source, message),
 });
 
-const isModelReference = (value: unknown): value is string =>
-  typeof value === 'string' && parseModelReference(value) !== undefined;
+const parseReference = (value: unknown): ParsedReference | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
 
-const isVirtualModel = (reference: string): boolean =>
-  parseModelReference(reference)?.provider === virtualModelProvider;
+  const parsed = parseModelReference(value);
+
+  return parsed === undefined ? undefined : { ...parsed, reference: value };
+};
+
+const namesVirtualModel = (parsed: ParsedReference, entryNames: ReadonlySet<string>): boolean =>
+  parsed.provider === virtualModelProvider && entryNames.has(parsed.id);
 
 const isRetryCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 1;
 
-const readEntry = (source: string, name: string, value: unknown): EntryRead => {
+const readEntry = (
+  source: string,
+  name: string,
+  value: unknown,
+  entryNames: ReadonlySet<string>,
+): EntryRead => {
   if (!namePattern.test(name)) {
     return invalidEntry(
       source,
@@ -56,30 +72,37 @@ const readEntry = (source: string, name: string, value: unknown): EntryRead => {
   }
 
   const field = `fallbackModels.${name}`;
-  const { primary, fallback, fallbackAtRetry } = value;
+  const { fallbackAtRetry } = value;
+  const parsedPrimary = parseReference(value.primary);
 
-  if (!isModelReference(primary)) {
+  if (parsedPrimary === undefined) {
     return invalidEntry(
       source,
-      `${field}.primary ${JSON.stringify(primary)} is not provider/model-id.`,
+      `${field}.primary ${JSON.stringify(value.primary)} is not provider/model-id.`,
     );
   }
 
-  if (isVirtualModel(primary)) {
+  const { reference: primary } = parsedPrimary;
+
+  if (namesVirtualModel(parsedPrimary, entryNames)) {
     return invalidEntry(
       source,
       `${field}.primary ${JSON.stringify(primary)} names a Tau virtual model; use a physical model.`,
     );
   }
 
-  if (!isModelReference(fallback)) {
+  const parsedFallback = parseReference(value.fallback);
+
+  if (parsedFallback === undefined) {
     return invalidEntry(
       source,
-      `${field}.fallback ${JSON.stringify(fallback)} is not provider/model-id.`,
+      `${field}.fallback ${JSON.stringify(value.fallback)} is not provider/model-id.`,
     );
   }
 
-  if (isVirtualModel(fallback)) {
+  const { reference: fallback } = parsedFallback;
+
+  if (namesVirtualModel(parsedFallback, entryNames)) {
     return invalidEntry(
       source,
       `${field}.fallback ${JSON.stringify(fallback)} names a Tau virtual model; use a physical model.`,
@@ -138,9 +161,10 @@ export const readFallbackModels = (location: ConfigLocation): FallbackModelsRead
   const models: FallbackModel[] = [];
   const problems: string[] = [];
   const warnings: string[] = [];
+  const entryNames = new Set(Object.keys(value));
 
   for (const [name, entry] of Object.entries(value)) {
-    const read = readEntry(source, name, entry);
+    const read = readEntry(source, name, entry, entryNames);
 
     warnings.push(...unknownKeyWarnings(source, name, entry));
 
