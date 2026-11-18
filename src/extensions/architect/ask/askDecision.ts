@@ -8,10 +8,15 @@ export interface AskOutcomeFacts {
 
 export type AskOutcome = 'answered' | 'needsOpen' | 'failed';
 
+export type ArchitectPublication =
+  | { kind: 'none' }
+  | { kind: 'version1'; updatedAt: number }
+  | { kind: 'owner'; owner: ArchitectOwner };
+
 export interface AskRouteFacts {
   root: string;
-  holder: { checkout: string; token: string } | undefined;
-  owner: ArchitectOwner | null;
+  holder: { checkout: string; token: string; startedAt: number } | undefined;
+  publication: ArchitectPublication;
   sessionFile: string | null;
 }
 
@@ -51,12 +56,21 @@ export const askRoute = (facts: AskRouteFacts): AskRoute => {
   }
 
   if (facts.holder !== undefined) {
-    const { owner } = facts;
-    const ownsLock = owner !== null && owner.lockToken === facts.holder.token;
+    const { publication, holder } = facts;
 
-    if (!ownsLock) {
+    if (publication.kind === 'version1' && publication.updatedAt >= holder.startedAt) {
+      return {
+        kind: 'needsOpen',
+        reason:
+          'The architect in this checkout runs an older Tau version without live asks. Wait until it closes, then call architect ask again. If it runs in a pane, the user can talk to it there.',
+      };
+    }
+
+    if (publication.kind !== 'owner' || publication.owner.lockToken !== holder.token) {
       return { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' };
     }
+
+    const { owner } = publication;
 
     if (owner.mode === 'ask') {
       return { kind: 'needsOpen', reason: 'A hidden ask is running. Wait for its answer.' };

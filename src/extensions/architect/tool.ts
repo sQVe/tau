@@ -28,7 +28,7 @@ type AnswerDetails = { action: 'answer' } & AnswerResult;
 const parameters = Type.Object({
   action: Type.Union([Type.Literal('open'), Type.Literal('ask'), Type.Literal('gate')]),
   question: Type.Optional(Type.String({ description: 'ask: the question for the architect.' })),
-  askId: Type.Optional(Type.String({ description: 'ask: retry an unknown ask by askId.' })),
+  askId: Type.Optional(Type.String()),
   request: Type.Optional(
     Type.String({ description: 'open, gate: the user request, in the user words.' }),
   ),
@@ -154,7 +154,7 @@ export const createArchitectTool = (
     label: 'Architect',
     description: `Open, ask, or gate the checkout's architect.
 - action open: with request, starts the architect in a pane beside the lead, or resumes its recorded session. Returns {status, sessionFile}, or {status: "running", terminal} for a live architect; send it the request with handover. Refuses while another architect holds the lock.
-- action ask: if the architect is live here, queues question in its inbox: {status: "queued", askId, note} or {status: "unknown", askId, note}; retry an unknown ask with askId. Follow the note. Refuses while a hidden ask runs, or when a live architect in another checkout holds the lock. Else resumes it hidden: {status, askId, answer} or {status: "needsOpen"}.
+- action ask: live architect in this checkout: queues question {queued|unknown, askId, note}; follow note, retry unknown by askId. Else hidden: {askId, answer} or needsOpen. Refuses during a hidden ask or another checkout's lock.
 - action gate: classifies request and restatement with typesafe/jev-latest. Returns {decision, label, confidence, recordPath}. Follow specified; on open, call architect open; on uncertain, ask the user whether to brief a worker or open the architect.
 Every gate call writes a record under .tau/lead/gate.`,
     promptSnippet: 'Open, ask, or gate the checkout architect.',
@@ -184,9 +184,9 @@ export const createArchitectAnswerTool = (
   defineTool({
     name: 'architect',
     label: 'Architect',
-    description: `Answer a lead question "Ask <askId> from the lead".
-- action answer: sends file to the lead session that asked. Returns {status: "queued" or "unknown", askId, note}. Follow the note. An error means nothing was queued: tell the user.`,
-    promptSnippet: 'Answer a lead question with its askId.',
+    description: `Answer an "Ask <askId> from the lead".
+- answer: sends file to that lead: {status: queued|unknown, askId, note}; follow note. After a local file error, fix it and call answer again with the same askId. Tell the user only after a delivery refusal.`,
+    promptSnippet: 'Answer a lead question.',
     parameters: answerParameters,
     executionMode: 'sequential',
     async execute(_toolCallId, input, signal, _onUpdate, context) {

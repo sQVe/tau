@@ -35,11 +35,17 @@ An architect that takes the checkout lock records its route: the lock token, its
 and its Pi session ID. The mode is visible, or ask for a hidden ask. `ask` takes the live path only
 when the recorded token matches the live lock holder and the mode is visible. The send names the
 recorded session, so the inbox refuses the question when that terminal now runs another session. A
-holder without a matching route is still starting, and the lead asks again shortly. The question
-also carries the lock token, and the architect saves it only while it holds that token. A reload or
-restart between the lead's read and the send therefore refuses the question, even when the terminal
-keeps its session. A holder in ask mode is a running hidden ask, and `ask` refuses until it ends. A
-live holder in another checkout also refuses.
+holder without a matching route is still starting, and the lead asks again shortly. An architect
+from a Tau release before routes is the exception. It writes a version 1 record without a route
+after it takes the lock, so that record is never older than its lock. The lock stamps its start when
+a claim wins, after the old holder is gone, so a newer architect's lock is never older than the
+version 1 record it replaces. For an older architect, `ask` tells the lead to wait until it closes,
+because it takes no live asks and may be a hidden ask without a pane. A running hidden ask comes
+before both messages, and the lead waits for its answer. The question also carries the lock token,
+and the architect saves it only while it holds that token. A reload or restart between the lead's
+read and the send therefore refuses the question, even when the terminal keeps its session. A holder
+in ask mode is a running hidden ask, and `ask` refuses until it ends. A live holder in another
+checkout also refuses.
 
 On the live path, the lead must have a working inbox for its own session, or `ask` refuses before it
 sends. `ask` saves an ask record with an ask ID, the lead's terminal and session, and the
@@ -47,8 +53,11 @@ architect's session. It sends the question with the ask ID as the message ID and
 inbox replies. A missing reply makes the result `unknown`. The lead then retries with the ask ID,
 which sends the same text with the same message ID and never starts a hidden ask. The architect
 answers with `architect` `answer` and the ask ID. The action sends the answer to the lead's recorded
-terminal and session, starts it with the ask ID, and marks the ask answered. A lead terminal that
-runs a new session refuses the answer, and the architect tells the user.
+terminal and session, starts it with the ask ID, and marks the ask answered. A local error in the
+answer leaves the ask open, so the architect fixes the file and calls `answer` again with the same
+ask ID. Local errors include a missing, empty, or oversized file, or an answer larger than one inbox
+message. A delivery refusal marks the ask failed. A lead terminal that runs a new session refuses
+the answer, and the architect tells the user.
 
 The architect cannot send its final handover while an ask to its session is open. When it closes
 anyway, its inbox stops before it releases the lock. It then marks each open ask failed and sends

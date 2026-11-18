@@ -15,6 +15,7 @@ import type {
   HandoverReceiverOptions,
 } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { encodeMessageFrame } from '../../inbox/inbox.js';
 import { contextOf, setup } from './fixtures/toolHarness.js';
 import { askRecordDirectory, askRecordPath, readAskRecord, writeAskRecord } from './record.js';
 import type { HiddenAskRecord, LiveAskRecord } from './record.js';
@@ -200,6 +201,42 @@ it.for<[string, string, RegExp]>([
   },
 );
 
+it('answer queues an answer whose frame is exactly the inbox limit and refuses one byte more', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, lead, answer } = await answering(cleanup);
+  const record = liveRecord('queued');
+
+  const frameBytes = (fill: number): number =>
+    Buffer.byteLength(
+      encodeMessageFrame({
+        messageId: record.askId,
+        targetTerminal: 't-lead',
+        targetSessionId: 'session-lead',
+        body: {
+          family: 'handover',
+          payload: { text: `Answer to ask ${record.askId}:\n\n${'a'.repeat(fill)}` },
+        },
+      }),
+    );
+
+  const exactFill = 102_400 - frameBytes(0);
+
+  expect(frameBytes(exactFill)).toBe(102_400);
+
+  await writeAskRecord(root, record);
+  await writeFile(join(root, 'answer.md'), 'a'.repeat(exactFill + 1));
+
+  await expect(answer(record.askId)).rejects.toThrow(/102401 bytes, limit 102400/);
+
+  await writeFile(join(root, 'answer.md'), 'a'.repeat(exactFill));
+
+  const result = await answer(record.askId);
+
+  expect(result.details).toEqual({ action: 'answer', status: 'queued', askId: record.askId });
+  expect(savedFiles(lead)).toEqual([`session-lead/${record.askId}.json`]);
+});
+
 it('answer refuses an ask ID that is not a UUID', async ({ onTestFinished: cleanup }) => {
   const { hc, answer } = await answering(cleanup);
 
@@ -207,45 +244,124 @@ it('answer refuses an ask ID that is not a UUID', async ({ onTestFinished: clean
   expect(hc.calls).toEqual([]);
 });
 
-it('answer refuses a non-regular file and fails the ask without sending', async ({
+const answerFileCases = [
+  {
+    name: 'a missing file',
+    arrange: (path: string) => rm(path),
+    error: 'answer file does not exist: answer.md',
+  },
+  {
+    name: 'a non-regular file',
+    arrange: async (path: string) => {
+      await rm(path);
+      await mkdir(path);
+    },
+    error: 'answer file is not a regular file: answer.md',
+  },
+  {
+    name: 'an empty file',
+    arrange: (path: string) => writeFile(path, ''),
+    error: 'answer file is empty: answer.md',
+  },
+  {
+    name: 'an oversized file',
+    arrange: (path: string) => writeFile(path, 'a'.repeat(102_401)),
+    error: 'answer file is larger than 102400 bytes: answer.md',
+  },
+];
+
+it.for(answerFileCases)(
+  'answer with $name throws its own error, sends nothing, and leaves the ask record unchanged',
+  async ({ arrange, error }, { onTestFinished: cleanup }) => {
+    const { root, hc, lead, answer } = await answering(cleanup);
+    const record = liveRecord('queued');
+    const path = askRecordPath(root, record.askId);
+
+    await writeAskRecord(root, record);
+
+    const bytesBefore = await readFile(path, 'utf8');
+
+    await arrange(join(root, 'answer.md'));
+
+    await expect(answer(record.askId)).rejects.toThrow(error);
+
+    await expect(readFile(path, 'utf8')).resolves.toBe(bytesBefore);
+    expect(savedFiles(lead)).toEqual([]);
+    expect(hc.calls).toEqual([]);
+  },
+);
+
+it.for(answerFileCases)(
+  'answer with a valid file after $name queues the answer and marks the ask answered',
+  async ({ arrange, error }, { onTestFinished: cleanup }) => {
+    const { root, lead, answer } = await answering(cleanup);
+    const record = liveRecord('queued');
+
+    await writeAskRecord(root, record);
+    await arrange(join(root, 'answer.md'));
+    await expect(answer(record.askId)).rejects.toThrow(error);
+
+    await rm(join(root, 'answer.md'), { recursive: true, force: true });
+    await writeFile(join(root, 'answer.md'), 'Use --dry-run.\n');
+
+    const retried = await answer(record.askId);
+
+    expect(retried.details).toEqual({ action: 'answer', status: 'queued', askId: record.askId });
+    expect(savedFiles(lead)).toEqual([`session-lead/${record.askId}.json`]);
+
+    expect(await readAskRecord(root, record.askId)).toEqual({
+      ...record,
+      status: 'answered',
+      answer: `Answer to ask ${record.askId}:\n\nUse --dry-run.\n`,
+    });
+  },
+);
+
+const oversizedFrameCases = [
+  { name: 'a plain file near the read limit', text: 'a'.repeat(102_400) },
+  { name: 'a smaller file that JSON escaping expands', text: '"'.repeat(60_000) },
+];
+
+it.for(oversizedFrameCases)(
+  'answer with $name throws the frame size error, sends nothing, and leaves the record unchanged',
+  async ({ text }, { onTestFinished: cleanup }) => {
+    const { root, hc, lead, answer } = await answering(cleanup);
+    const record = liveRecord('queued');
+    const path = askRecordPath(root, record.askId);
+
+    await writeAskRecord(root, record);
+
+    const bytesBefore = await readFile(path, 'utf8');
+
+    await writeFile(join(root, 'answer.md'), text);
+
+    await expect(answer(record.askId)).rejects.toThrow(
+      /^The answer is too large for one inbox message: \d+ bytes, limit 102400\. Shorten the answer file and call architect answer again\.$/,
+    );
+
+    await expect(readFile(path, 'utf8')).resolves.toBe(bytesBefore);
+    expect(savedFiles(lead)).toEqual([]);
+    expect(hc.calls).toEqual([]);
+  },
+);
+
+it('answer with a shorter file after a frame size error queues it and marks the ask answered', async ({
   onTestFinished: cleanup,
 }) => {
-  const { root, hc, lead, answer } = await answering(cleanup);
+  const { root, lead, answer } = await answering(cleanup);
   const record = liveRecord('queued');
 
   await writeAskRecord(root, record);
-  await rm(join(root, 'answer.md'));
-  await mkdir(join(root, 'answer.md'));
+  await writeFile(join(root, 'answer.md'), '"'.repeat(60_000));
+  await expect(answer(record.askId)).rejects.toThrow(/too large for one inbox message/);
 
-  await expect(answer(record.askId)).rejects.toThrow(
-    'answer file is not a regular file: answer.md',
-  );
+  await writeFile(join(root, 'answer.md'), '"'.repeat(1000));
 
-  expect(await readAskRecord(root, record.askId)).toMatchObject({
-    status: 'failed',
-    detail: 'answer file is not a regular file: answer.md',
-  });
+  const retried = await answer(record.askId);
 
-  expect(savedFiles(lead)).toEqual([]);
-  expect(hc.calls).toEqual([]);
-});
-
-it('answer refuses an oversized file and fails the ask without sending', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root, hc, lead, answer } = await answering(cleanup);
-  const record = liveRecord('queued');
-
-  await writeAskRecord(root, record);
-  await writeFile(join(root, 'answer.md'), 'a'.repeat(102_401));
-
-  await expect(answer(record.askId)).rejects.toThrow(
-    'answer file is larger than 102400 bytes: answer.md',
-  );
-
-  expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
-  expect(savedFiles(lead)).toEqual([]);
-  expect(hc.calls).toEqual([]);
+  expect(retried.details).toEqual({ action: 'answer', status: 'queued', askId: record.askId });
+  expect(savedFiles(lead)).toEqual([`session-lead/${record.askId}.json`]);
+  expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'answered' });
 });
 
 it.for([
@@ -307,6 +423,44 @@ it('answer keeps a confirmed delivery when the ask closed before its record upda
   expect((result.details as { note: string }).note).not.toContain('answer again');
   expect(savedFiles(configured.lead)).toEqual([`session-lead/${askId}.json`]);
   expect(await readAskRecord(root, askId)).toMatchObject({ status: 'failed' });
+});
+
+it('answer keeps a confirmed delivery when the record update fails and reports the failure', async ({
+  onTestFinished: cleanup,
+}) => {
+  let root = '';
+  let askId = '';
+
+  const configured = await answering(cleanup, {
+    accepts: {
+      handover: async (_request, save) => {
+        const reply = await save();
+
+        await rm(askRecordPath(root, askId), { force: true });
+        await mkdir(askRecordPath(root, askId));
+
+        return reply;
+      },
+    },
+  });
+
+  root = configured.root;
+
+  const record = liveRecord('queued');
+
+  askId = record.askId;
+  await writeAskRecord(root, record);
+
+  const result = await configured.answer(askId);
+  const { note } = result.details as { note: string };
+
+  expect(result.details).toMatchObject({ action: 'answer', status: 'queued', askId });
+  expect(note).toContain('The answer reached the lead inbox');
+  expect(note).toContain('could not be updated');
+  expect(note).toContain('EISDIR');
+  expect(note).toContain('Do not send it again');
+  expect(note).not.toContain('answer again');
+  expect(savedFiles(configured.lead)).toEqual([`session-lead/${askId}.json`]);
 });
 
 it('answer keeps a confirmed delivery when its record disappeared', async ({

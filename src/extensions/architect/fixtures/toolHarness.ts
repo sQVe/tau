@@ -7,7 +7,8 @@ import { vi } from 'vitest';
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { temporaryTauConfig } from '../../../../tests/tauConfigHarness.js';
 import { architectLockPath } from '../lock.js';
-import { writeArchitectRecord } from '../record.js';
+import { readArchitectRecord, writeArchitectRecord } from '../record.js';
+import type { ArchitectRecord } from '../record.js';
 
 export interface RecordSessionOptions {
   terminal?: string | null;
@@ -15,6 +16,12 @@ export interface RecordSessionOptions {
   sessionId?: string;
   token?: string;
 }
+
+export const readArchitectOwner = async (root: string): Promise<ArchitectRecord['owner']> => {
+  const record = await readArchitectRecord(root);
+
+  return record?.version === 2 ? record.owner : null;
+};
 
 export const contextOf = (
   root: string,

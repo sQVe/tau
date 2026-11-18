@@ -13,6 +13,7 @@ import { findPane } from '../../../piStart/herdrPane.js';
 import { startPiSession, startPiSessionLeftOf } from '../../../piStart/piStart.js';
 import { architectLockPath } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
+import type { SavedArchitectRecord } from '../record.js';
 import { eligibleTerminal, openCandidate, openReuse } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 
@@ -221,9 +222,12 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
+const recordedTerminal = (record: SavedArchitectRecord | undefined): string | null | undefined =>
+  record?.version === 2 ? record.owner?.terminal : undefined;
+
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);
-  const running = await runningTerminal(request, record?.owner?.terminal);
+  const running = await runningTerminal(request, recordedTerminal(record));
 
   if (running !== undefined) {
     return { status: 'running', terminal: running };

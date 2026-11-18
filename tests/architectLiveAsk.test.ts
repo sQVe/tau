@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -7,10 +7,11 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import architectExtension from '../src/extensions/architect/architect.js';
 import { acceptArchitectAsk } from '../src/extensions/architect/ask/askAcceptance.js';
+import { readArchitectOwner } from '../src/extensions/architect/fixtures/toolHarness.js';
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import {
+  architectRecordPath,
   askRecordDirectory,
-  readArchitectRecord,
   readAskRecord,
   readAskRecords,
   writeArchitectRecord,
@@ -37,7 +38,7 @@ import { temporaryTauConfig } from './tauConfigHarness.js';
 type FakeApi = ReturnType<typeof fakeExtensionApi>;
 
 const socketRoot = (): string => {
-  const root = mkdtempSync('/tmp/tau-live-ask-');
+  const root = realpathSync(mkdtempSync('/tmp/tau-live-ask-'));
 
   chmodSync(root, 0o700);
 
@@ -142,7 +143,7 @@ const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> => {
 };
 
 const askLiveArchitect = async (root: string, hc: HcFake) => {
-  const { fake, check } = await startVisibleArchitect(root, hc);
+  const { fake, context, check } = await startVisibleArchitect(root, hc);
   const architectInbox = await startArchitectInbox(check);
   const leadSockets = socketRoot();
   const leadSocket = join(leadSockets, 'sockets', 'session-lead.sock');
@@ -187,7 +188,7 @@ const askLiveArchitect = async (root: string, hc: HcFake) => {
     );
   };
 
-  return { askId, leadSockets, leadSocket, answer };
+  return { askId, leadSockets, leadSocket, answer, fake, context };
 };
 
 it('the lead session that asked receives the live architect answer in its inbox', async () => {
@@ -197,7 +198,7 @@ it('the lead session that asked receives the live architect answer in its inbox'
   stubLead();
 
   const { askId, leadSockets, leadSocket, answer } = await askLiveArchitect(root, hc);
-  const lockToken = (await readArchitectRecord(root))?.owner?.lockToken;
+  const lockToken = (await readArchitectOwner(root))?.lockToken;
 
   const lead = await startHandoverReceiver(onTestFinished, leadSockets, 't-lead', {
     sessionId: 'session-lead',
@@ -215,6 +216,34 @@ it('the lead session that asked receives the live architect answer in its inbox'
   expect(await readAskRecord(root, askId)).toMatchObject({ status: 'answered' });
   expect((await readLiveLockHolder(architectLockPath(root)))?.token).toBe(lockToken);
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
+});
+
+it('the visible architect still blocks a final handover after an answer file fails', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+
+  stubLead();
+
+  const { askId, answer, fake, context } = await askLiveArchitect(root, hc);
+
+  await writeFile(join(root, 'answer.md'), '');
+  await expect(answer()).rejects.toThrow('answer file is empty: answer.md');
+
+  const [blocked] = await Promise.all(
+    (fake.handlers.get('tool_call') ?? []).map((handler) =>
+      handler(
+        {
+          toolName: 'handover',
+          input: { action: 'send', terminal: 't-lead', file: 'note.md', final: true },
+        } as never,
+        context,
+      ),
+    ),
+  );
+
+  expect(blocked).toMatchObject({ block: true });
+  expect((blocked as { reason: string }).reason).toContain(`ask ${askId}`);
+  expect(await readAskRecord(root, askId)).toMatchObject({ status: 'queued' });
 });
 
 it('an answer to a lead terminal that started a new session saves nothing and fails', async () => {
@@ -244,7 +273,7 @@ it('an architect-ask is saved only while the architect holds the lock token it n
 
   const { fake, context, check } = await startVisibleArchitect(root, hc);
   const inbox = await startArchitectInbox(check);
-  const tokenOne = (await readArchitectRecord(root))?.owner?.lockToken ?? '';
+  const tokenOne = (await readArchitectOwner(root))?.lockToken ?? '';
 
   replyTerminal(hc, 't-architect', inbox.path);
 
@@ -279,7 +308,7 @@ it('an architect-ask is saved only while the architect holds the lock token it n
   vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HC_TERMINAL_ID', 't-lead');
 
-  const tokenTwo = (await readArchitectRecord(root))?.owner?.lockToken ?? '';
+  const tokenTwo = (await readArchitectOwner(root))?.lockToken ?? '';
 
   expect(tokenTwo).not.toBe(tokenOne);
   await expect(send('restarted ask', tokenOne)).rejects.toThrow(refusal);
@@ -400,12 +429,8 @@ it.for([
   await expect(readdir(join(sockets, 'records'))).rejects.toThrow(/ENOENT/);
 });
 
-const recordLiveArchitect = async (
-  root: string,
-  architectSessionId = 'session-architect',
-): Promise<void> => {
+const holdArchitectLock = async (root: string, startedAt = new Date()): Promise<void> => {
   const lockPath = `${architectLockPath(root)}.1`;
-  const sessionFile = join(root, 'architect-session.jsonl');
 
   await mkdir(dirname(lockPath), { recursive: true });
 
@@ -414,10 +439,19 @@ const recordLiveArchitect = async (
     JSON.stringify({
       pid: process.pid,
       checkout: root,
-      startedAt: new Date().toISOString(),
+      startedAt: startedAt.toISOString(),
       token: 'live',
     }),
   );
+};
+
+const recordLiveArchitect = async (
+  root: string,
+  architectSessionId = 'session-architect',
+): Promise<void> => {
+  const sessionFile = join(root, 'architect-session.jsonl');
+
+  await holdArchitectLock(root);
 
   await writeFile(sessionFile, '');
 
@@ -511,4 +545,117 @@ it('ask refuses a changed architect session', async () => {
 
   expect(architect.savedRecords()).toEqual([]);
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
+});
+
+const versionOneReason =
+  'The architect in this checkout runs an older Tau version without live asks. Wait until it closes, then call architect ask again. If it runs in a pane, the user can talk to it there.';
+
+const writeVersionOneArchitect = async (root: string, startedAt: Date): Promise<void> => {
+  await holdArchitectLock(root, startedAt);
+  await mkdir(dirname(architectRecordPath(root)), { recursive: true });
+
+  await writeFile(
+    architectRecordPath(root),
+    JSON.stringify({
+      version: 1,
+      sessionFile: join(root, 'architect-session.jsonl'),
+      terminal: 't-architect',
+      leadTerminal: 't-lead',
+      updatedAt: new Date(startedAt.getTime() + 1000).toISOString(),
+    }),
+  );
+};
+
+const askQuestion = (root: string, hc: HcFake) =>
+  createArchitectTool({ ...hc, cwd: root }).execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    toolContext(root, 'session-lead'),
+  );
+
+it('ask reports an older architect and makes no hc call at all', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+
+  stubLead();
+  await writeVersionOneArchitect(root, new Date());
+
+  const asked = await askQuestion(root, hc);
+
+  expect(asked.details).toMatchObject({
+    action: 'ask',
+    status: 'needsOpen',
+    reason: versionOneReason,
+  });
+
+  expect(hc.calls).toEqual([]);
+});
+
+it('ask waits for a running older hidden ask before it reports the older architect', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+  const architect = await startHandoverReceiver(onTestFinished, socketRoot(), 't-architect');
+  const askId = '0190c1d2-0000-7000-8000-000000000120';
+
+  stubLead();
+  await writeVersionOneArchitect(root, new Date());
+  await mkdir(askRecordDirectory(root), { recursive: true });
+
+  await writeFile(
+    join(askRecordDirectory(root), `${askId}.json`),
+    JSON.stringify({
+      version: 1,
+      askId,
+      createdAt: new Date().toISOString(),
+      question: 'Earlier question',
+      sessionFile: join(root, 'architect-session.jsonl'),
+      terminal: 't-ask',
+      leadTerminal: 't-lead',
+      deadline: Date.now() + 1000,
+      status: 'running',
+      detail: null,
+      answer: null,
+    }),
+  );
+
+  hc.replyGet('t-ask', JSON.stringify({ address: 't-ask', name: null, state: 'live' }));
+
+  const asked = await askQuestion(root, hc);
+
+  expect(asked.details).toMatchObject({
+    action: 'ask',
+    status: 'needsOpen',
+    reason: `Ask ${askId} is still running. Wait for it to answer.`,
+  });
+
+  expect(architect.savedRecords()).toEqual([]);
+  expect(hc.calls.map((call) => call.commandArguments)).toEqual([['get', '--json', '--', 't-ask']]);
+});
+
+it('ask says the architect is starting when its record has no owner', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+
+  stubLead();
+  await holdArchitectLock(root);
+
+  await writeArchitectRecord(root, {
+    version: 2,
+    sessionFile: join(root, 'architect-session.jsonl'),
+    leadTerminal: 't-lead',
+    owner: null,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const asked = await askQuestion(root, hc);
+
+  expect(asked.details).toEqual({
+    action: 'ask',
+    status: 'needsOpen',
+    reason: 'The architect is starting. Ask again shortly.',
+  });
+
+  expect(hc.calls).toEqual([]);
 });

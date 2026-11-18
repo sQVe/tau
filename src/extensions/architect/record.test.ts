@@ -43,11 +43,11 @@ const snapshotDirectory = async (path: string): Promise<Record<string, string>> 
   return Object.fromEntries(entries);
 };
 
-const architectRecordV1AsV2 = {
-  version: 2,
+const architectRecordV1 = {
+  version: 1,
   sessionFile: '/sessions/architect.jsonl',
+  terminal: 't-architect',
   leadTerminal: 't-lead',
-  owner: null,
   updatedAt: '2026-11-17T10:00:00.000Z',
 } as const;
 
@@ -110,12 +110,12 @@ const askRecordV2Live = {
   answer: null,
 } as const;
 
-it('reads a version 1 architect fixture as a version 2 record without an owner', async () => {
+it('reads a version 1 architect fixture as a version 1 record', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
   await copyFixture('architect-record-v1.json', architectRecordPath(root));
 
-  expect(await readArchitectRecord(root)).toEqual(architectRecordV1AsV2);
+  expect(await readArchitectRecord(root)).toEqual(architectRecordV1);
 });
 
 it('reads a version 2 architect fixture as saved', async () => {

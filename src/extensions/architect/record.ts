@@ -82,16 +82,7 @@ const architectRecordSchema = Type.Union([architectRecordV1Schema, architectReco
 
 export type ArchitectRecord = Static<typeof architectRecordV2Schema>;
 
-const toArchitectRecord = (record: Static<typeof architectRecordSchema>): ArchitectRecord =>
-  record.version === 1
-    ? {
-        version: 2,
-        sessionFile: record.sessionFile,
-        leadTerminal: record.leadTerminal,
-        owner: null,
-        updatedAt: record.updatedAt,
-      }
-    : record;
+export type SavedArchitectRecord = Static<typeof architectRecordSchema>;
 
 const gateRecordSchema = Type.Object({
   version: Type.Literal(1),
@@ -215,11 +206,8 @@ const recordOptions = {
   schema: architectRecordSchema,
 } as const;
 
-export const readArchitectRecord = async (root: string): Promise<ArchitectRecord | undefined> => {
-  const record = await readVersionedRecord(architectRecordPath(root), recordOptions);
-
-  return record === undefined ? undefined : toArchitectRecord(record);
-};
+export const readArchitectRecord = (root: string): Promise<SavedArchitectRecord | undefined> =>
+  readVersionedRecord(architectRecordPath(root), recordOptions);
 
 export const writeArchitectRecord = async (
   root: string,

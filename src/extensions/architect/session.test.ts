@@ -14,6 +14,7 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { readArchitectOwner } from './fixtures/toolHarness.js';
 import { architectLockPath } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import {
@@ -102,13 +103,13 @@ it('a released lock starts the architect and writes its record', async ({ onTest
   });
 
   const holder = await readLiveLockHolder(architectLockPath(root));
-  const record = await readArchitectRecord(root);
+  const owner = await readArchitectOwner(root);
 
   expect(holder?.pid).toBe(process.pid);
   expect(holder?.checkout).toBe(root);
   expect(holder?.terminal).toBe('t-architect');
   expect(holder?.token).toMatch(/^[0-9a-f-]{36}$/);
-  expect(holder?.token).toBe(record?.owner?.lockToken);
+  expect(holder?.token).toBe(owner?.lockToken);
 
   await endArchitectSession(session as NonNullable<typeof session>, hcRuntime(createHcFake()));
 
@@ -123,7 +124,7 @@ it('an ask session records ask mode', async ({ onTestFinished }) => {
   const { context } = sessionContext(root);
   const session = await startArchitectSession(context, createHeldLockToken());
 
-  expect((await readArchitectRecord(root))?.owner?.mode).toBe('ask');
+  expect((await readArchitectOwner(root))?.mode).toBe('ask');
 
   await endArchitectSession(session as NonNullable<typeof session>, hcRuntime(createHcFake()));
 });
@@ -136,7 +137,7 @@ it('an empty ask path records visible mode', async ({ onTestFinished }) => {
   const { context } = sessionContext(root);
   const session = await startArchitectSession(context, createHeldLockToken());
 
-  expect((await readArchitectRecord(root))?.owner?.mode).toBe('visible');
+  expect((await readArchitectOwner(root))?.mode).toBe('visible');
 
   await endArchitectSession(session as NonNullable<typeof session>, hcRuntime(createHcFake()));
 });
@@ -345,7 +346,7 @@ it('holds the lock token from the lock, before the record and startup return', a
   await published.promise;
 
   expect(held.current()).toMatch(/^[0-9a-f-]{36}$/);
-  expect((await readArchitectRecord(root))?.owner?.lockToken).toBe(held.current());
+  expect((await readArchitectOwner(root))?.lockToken).toBe(held.current());
 
   resume.resolve(undefined);
 

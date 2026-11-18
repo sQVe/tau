@@ -17,8 +17,9 @@ import {
   readAskRecords,
   writeAskRecord,
 } from '../record.js';
-import type { AskRecordGap, HiddenAskRecord } from '../record.js';
+import type { AskRecordGap, HiddenAskRecord, SavedArchitectRecord } from '../record.js';
 import { askOutcome, askRoute } from './askDecision.js';
+import type { ArchitectPublication } from './askDecision.js';
 
 export interface AskRequest {
   root: string;
@@ -175,28 +176,44 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
   };
 };
 
+const architectPublication = (
+  architect: SavedArchitectRecord | undefined,
+): ArchitectPublication => {
+  if (architect === undefined) {
+    return { kind: 'none' };
+  }
+
+  if (architect.version === 1) {
+    return { kind: 'version1', updatedAt: Date.parse(architect.updatedAt) };
+  }
+
+  return architect.owner === null ? { kind: 'none' } : { kind: 'owner', owner: architect.owner };
+};
+
 export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
+  const running = await liveRunningAsk(request.root, request.hc, request.ui);
+
+  if (running !== undefined) {
+    return needsOpen(`Ask ${running.askId} is still running. Wait for it to answer.`);
+  }
+
   const architect = await readArchitectRecord(request.root);
   const holder = await readLiveLockHolder(architectLockPath(request.root));
 
   const holderFacts =
-    holder === undefined ? undefined : { checkout: holder.checkout, token: holder.token };
+    holder === undefined
+      ? undefined
+      : { checkout: holder.checkout, token: holder.token, startedAt: Date.parse(holder.startedAt) };
 
   const route = askRoute({
     root: request.root,
     holder: holderFacts,
-    owner: architect?.owner ?? null,
+    publication: architectPublication(architect),
     sessionFile: architect?.sessionFile ?? null,
   });
 
   if (route.kind === 'needsOpen') {
     return needsOpen(route.reason);
-  }
-
-  const running = await liveRunningAsk(request.root, request.hc, request.ui);
-
-  if (running !== undefined) {
-    return needsOpen(`Ask ${running.askId} is still running. Wait for it to answer.`);
   }
 
   if (route.kind === 'live') {
