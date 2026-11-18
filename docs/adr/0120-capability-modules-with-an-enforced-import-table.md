@@ -49,11 +49,11 @@ Tau differs from shared ADR 0002 in two places today.
    below between two I/O modules.
 
 A module is an I/O module when at least one of its files reads or writes the filesystem, starts a
-process, uses the network or a socket, reads the clock or the environment, or draws the terminal UI.
-A module with no such file is a pure module. A module that runs a command through an injected `exec`
-function starts a process, so it is an I/O module.
+process, uses the network or a socket, reads the clock or the environment, sends a message into the
+Pi session, or draws the terminal UI. A module with no such file is a pure module. A module that
+runs a command through an injected `exec` function starts a process, so it is an I/O module.
 
-The pure modules are `errors`, `schema`, `shell`, and `wake`. None of their files does I/O by this
+The pure modules are `errors`, `schema`, and `shell`. None of their files does I/O by this
 criterion. Every other module in `importTable` is an I/O module. Each of its edges to a pure module
 follows the shared rule and is not listed.
 
@@ -67,7 +67,7 @@ Each line names a module and the I/O modules it may import:
 - `github`: `command`, `git`
 - `hc`: `command`
 - `improvement`: `command`, `fileLock`, `git`, `github`, `record`, `tauDirectory`
-- `inbox`: `fileLock`, `hc`, `record`
+- `inbox`: `fileLock`, `hc`, `record`, `wake`
 - `linear`: `command`
 - `piStart`: `command`, `config`, `tauDirectory`
 - `record`: `tauDirectory`
