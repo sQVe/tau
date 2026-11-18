@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 
+import { roleRegistersTool } from '../../role/roleTools.js';
 import { skillTools as bundledSkillTools } from '../../skillTools.js';
 import { workerTools } from './workerTools.js';
 
@@ -34,6 +35,36 @@ it.each([
     'subagent_question',
     ...expected,
   ]);
+});
+
+it('drops a skill tool the worker role never registers', () => {
+  const loadout = {
+    tools: ['read'],
+    skills: ['/skills/slice/SKILL.md'],
+    role: 'investigation' as const,
+  };
+
+  const tools = workerTools(loadout, { slice: ['slice', 'architect'] });
+
+  expect(tools).toContain('slice');
+  expect(tools).not.toContain('architect');
+});
+
+it('drops a role-gated tool the profile lists', () => {
+  const tools = workerTools(
+    { tools: ['read', 'architect'], skills: [], role: 'investigation' },
+    bundledSkillTools,
+  );
+
+  expect(tools).not.toContain('architect');
+  expect(tools).toContain('read');
+});
+
+it('gives no bundled skill a tool the worker role never registers', () => {
+  const skills = Object.keys(bundledSkillTools).map((name) => `/skills/${name}/SKILL.md`);
+  const tools = workerTools({ tools: [], skills, role: 'editing' }, bundledSkillTools);
+
+  expect(tools.every((tool) => roleRegistersTool('worker', tool))).toBe(true);
 });
 
 it('an editing worker keeps full_check and an investigator does not', () => {

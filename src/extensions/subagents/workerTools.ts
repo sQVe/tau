@@ -1,3 +1,4 @@
+import { roleRegistersTool } from '../../role/roleTools.js';
 import type { Loadout } from './types.js';
 
 export const workerTools = (
@@ -27,5 +28,5 @@ export const workerTools = (
     tools.delete('full_check');
   }
 
-  return [...tools];
+  return [...tools].filter((tool) => roleRegistersTool('worker', tool));
 };
