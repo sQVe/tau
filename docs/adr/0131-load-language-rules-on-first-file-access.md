@@ -2,7 +2,7 @@
 
 **Date**: 2026-11-10\
 **Status**: Accepted\
-**Related**: [ADR 0140 (Load coding guides from stomme)](./0140-load-coding-guides-from-stomme.md),
+**Related**: [ADR 0141 (Load coding guides from stomme)](./0141-load-coding-guides-from-stomme.md),
 [ADR 0066 (Add Tau's prompt text to Pi's append section)](./0066-add-taus-prompt-text-to-pis-append-section.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
 

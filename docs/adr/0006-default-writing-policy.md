@@ -25,7 +25,7 @@ or whether a comment earns its place.
 Tau keeps its rules in instruction sets, one set per concern, and appends them to the system prompt
 before each ordinary agent run. The writing, workflow, and browser sets are Markdown files under
 `src/instructions/`. The coding set loads the stomme guides
-([ADR 0140](./0140-load-coding-guides-from-stomme.md)). One set per concern keeps a code rule from
+([ADR 0141](./0141-load-coding-guides-from-stomme.md)). One set per concern keeps a code rule from
 being read as a prose rule, and loading by default means no skill has to be loaded first.
 
 ### The sets
@@ -54,7 +54,7 @@ A rule goes in exactly one set. The task and repository rules come before the se
   missing, unreadable, or blank one fails that hook.
 - The `coding` set has no file. It reads the stomme guides at each run, and a broken installation
   gives a notice and a prompt line instead of a load failure
-  ([ADR 0140](./0140-load-coding-guides-from-stomme.md)).
+  ([ADR 0141](./0141-load-coding-guides-from-stomme.md)).
 
 ### Not covered
 
