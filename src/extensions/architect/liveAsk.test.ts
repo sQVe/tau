@@ -473,8 +473,11 @@ it('an answer that lands before the lead send returns keeps the ask answered', a
   expect(answered.details).toEqual({ action: 'answer', status: 'queued', askId: record.askId });
 
   inbox.releaseFirst();
-  await asking;
 
+  const asked = await asking;
+
+  expect(asked.details).toMatchObject({ action: 'ask', status: 'unknown', askId: record.askId });
+  expect((asked.details as { note: string }).note).not.toContain('Retry');
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'answered' });
 });
 
@@ -504,10 +507,27 @@ it('a close that lands before the lead send returns keeps the ask failed', async
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
 
   inbox.releaseFirst();
-  await asking;
 
+  const asked = await asking;
+
+  expect(asked.details).toMatchObject({ action: 'ask', status: 'unknown', askId: record.askId });
+  expect((asked.details as { note: string }).note).not.toContain('Retry');
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
   expect(lead.savedRecords().filter((name) => name.endsWith('.json'))).toHaveLength(1);
+});
+
+it('a lost reply on a deleted ask returns unknown and leaves no record', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, inbox, asking, record } = await startHeldQuestion(cleanup);
+
+  await rm(askRecordPath(root, record.askId), { force: true });
+  inbox.releaseFirst();
+
+  const asked = await asking;
+
+  expect(asked.details).toMatchObject({ action: 'ask', status: 'unknown', askId: record.askId });
+  await expect(readAskRecord(root, record.askId)).resolves.toBeUndefined();
 });
 
 it('a live ask reports a confirmed send when the ask closed before its record update', async ({

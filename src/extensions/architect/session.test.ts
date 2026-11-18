@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
@@ -9,13 +9,16 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
+import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { readLiveLockHolder } from '../../fileLock/fileLock.js';
+import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { architectLockPath } from './lock.js';
+import { failOpenLiveAsks } from './openLiveAsks.js';
 import {
   askRecordDirectory,
+  askRecordPath,
   readArchitectRecord,
   readAskRecord,
   writeAskRecord,
@@ -398,4 +401,133 @@ it('ending a visible architect does not note an ask that is already closed', asy
 
   expect(lead.savedRecords()).toEqual([]);
   expect(await readAskRecord(root, liveIds.answered)).toMatchObject({ status: 'answered' });
+});
+
+const holdAskLock = async (
+  cleanup: (cleanup: () => Promise<void> | void) => void,
+  root: string,
+  askId: string,
+) => {
+  const held = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+
+  const holding = withFileLock(
+    {
+      lockPath: `${askRecordPath(root, askId)}.lock`,
+      checkout: root,
+      signal: undefined,
+      pollMilliseconds: 10,
+      cancelled: () => new Error('Waiting for the ask lock was cancelled.'),
+      onWaiting: () => undefined,
+    },
+    async () => {
+      held.resolve(undefined);
+      await release.promise;
+    },
+  );
+
+  await held.promise;
+
+  cleanup(async () => {
+    release.resolve(undefined);
+    await holding;
+  });
+
+  return {
+    release: () => {
+      release.resolve(undefined);
+    },
+    holding,
+  };
+};
+
+const leadTerminal = (hc: HcFake, lead: HandoverReceiver): void => {
+  hc.replyGet(
+    't-lead',
+    JSON.stringify({
+      address: 't-lead',
+      state: 'live',
+      labels: { 'tau.inbox': `rpc1:${lead.path}` },
+    }),
+  );
+};
+
+it('ending does not note an ask that closes after the scan', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+
+  const lead = await startHandoverReceiver(
+    onTestFinished,
+    temporaryDirectory(onTestFinished, 'tau-architect-late-close-'),
+    't-lead',
+    { sessionId: 'session-lead' },
+  );
+
+  leadTerminal(hc, lead);
+  await writeAskRecord(root, liveAsk('open', 'unknown'));
+
+  const lock = await holdAskLock(onTestFinished, root, liveIds.open);
+  const waiting = Promise.withResolvers<undefined>();
+  const warnings: string[] = [];
+
+  const closing = failOpenLiveAsks(
+    { root, sessionId: 'session-architect' },
+    hcRuntime(hc),
+    (message) => warnings.push(message),
+    {
+      onWaiting: () => {
+        waiting.resolve(undefined);
+      },
+    },
+  );
+
+  await waiting.promise;
+  await writeAskRecord(root, liveAsk('open', 'answered'));
+  lock.release();
+  await closing;
+  await lock.holding;
+
+  expect(lead.savedRecords()).toEqual([]);
+  expect(warnings).toEqual([]);
+  expect(await readAskRecord(root, liveIds.open)).toMatchObject({ status: 'answered' });
+});
+
+it('ending does not note an ask that disappears after the scan', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+
+  const lead = await startHandoverReceiver(
+    onTestFinished,
+    temporaryDirectory(onTestFinished, 'tau-architect-late-delete-'),
+    't-lead',
+    { sessionId: 'session-lead' },
+  );
+
+  leadTerminal(hc, lead);
+  await writeAskRecord(root, liveAsk('open', 'unknown'));
+
+  const lock = await holdAskLock(onTestFinished, root, liveIds.open);
+  const waiting = Promise.withResolvers<undefined>();
+  const warnings: string[] = [];
+
+  const closing = failOpenLiveAsks(
+    { root, sessionId: 'session-architect' },
+    hcRuntime(hc),
+    (message) => warnings.push(message),
+    {
+      onWaiting: () => {
+        waiting.resolve(undefined);
+      },
+    },
+  );
+
+  await waiting.promise;
+  await rm(askRecordPath(root, liveIds.open), { force: true });
+  lock.release();
+  await closing;
+  await lock.holding;
+
+  expect(lead.savedRecords()).toEqual([]);
+  expect(warnings).toEqual([]);
+  await expect(readAskRecord(root, liveIds.open)).resolves.toBeUndefined();
 });

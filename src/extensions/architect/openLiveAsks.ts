@@ -5,7 +5,7 @@ import type { HcRuntime } from '../../hc/hc.js';
 import { sendInboxMessage } from '../../inbox/inbox.js';
 import { decideFinalHandover, isFinalHandoverSend } from './finalHandoverDecision.js';
 import { changeAskRecord, isOpenLiveAsk, readOpenLiveAsks } from './record.js';
-import type { LiveAskRecord } from './record.js';
+import type { ChangeAskOptions, LiveAskRecord } from './record.js';
 
 export interface OpenAskOwner {
   root: string;
@@ -53,15 +53,20 @@ export const failOpenLiveAsks = async (
   owner: OpenAskOwner,
   hc: HcRuntime,
   report: (message: string) => void,
+  options: ChangeAskOptions = {},
 ): Promise<void> => {
   const open = await readOpenLiveAsks(owner.root, owner.sessionId);
 
   await Promise.all(
     open.map(async (ask) => {
-      const changed = await changeAskRecord(owner.root, ask.askId, (current) =>
-        isOpenLiveAsk(current)
-          ? { ...current, status: 'failed', detail: 'The architect closed before it answered.' }
-          : undefined,
+      const changed = await changeAskRecord(
+        owner.root,
+        ask.askId,
+        (current) =>
+          isOpenLiveAsk(current)
+            ? { ...current, status: 'failed', detail: 'The architect closed before it answered.' }
+            : undefined,
+        options,
       );
 
       if (changed?.changed !== true) {

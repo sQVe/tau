@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { mkdir, open, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -48,17 +49,27 @@ it('refuses a FIFO with no writer without hanging', async ({ onTestFinished }) =
 
   await mkfifo('mkfifo', [file]);
 
+  const reader = readCheckedText(file, file, rules).then(
+    () => 'read',
+    (error: unknown) => (error instanceof Error ? error.message : 'error'),
+  );
+
   const outcome = await Promise.race([
-    readCheckedText(file, file, rules).then(
-      () => 'read',
-      (error: unknown) => (error instanceof Error ? error.message : 'error'),
-    ),
+    reader,
     new Promise<string>((resolve) => {
       setTimeout(() => {
         resolve('timeout');
       }, 1000);
     }),
   ]);
+
+  if (outcome === 'timeout') {
+    // A blocking open waits for a writer. Opening one releases it, so the test run still ends.
+    const writer = await open(file, constants.O_WRONLY);
+
+    await writer.close();
+    await reader;
+  }
 
   expect(outcome).toContain('text file is not a regular file:');
 });
