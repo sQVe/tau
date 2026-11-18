@@ -4,11 +4,13 @@ Set up a checkout, try Tau in Pi, and check changes before release.
 
 ## Local setup
 
+Install [mise](https://mise.jdx.dev/getting-started.html), which installs the pinned stomme binary.
 Use Node.js 24.21.0 or later and the pnpm version specified by `packageManager` in
 [package.json](../package.json). Development needs a newer Node.js than `engines.node` because
 `@sqve/stomme-ts-style` requires 24.21.0. Run these commands from the Tau checkout:
 
 ```sh
+mise trust
 mise install
 pnpm install --frozen-lockfile
 pnpm check
