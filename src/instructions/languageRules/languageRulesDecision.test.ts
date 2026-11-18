@@ -92,6 +92,11 @@ it.for([
   expect(languageForPath(path)).toBe(expected);
 });
 
+it('ignores a path that is not a string, even when it prints like a file name', () => {
+  expect(languageForPath(['main.ts'])).toBeUndefined();
+  expect(languageToolDecision('read', ['main.ts'], none)).toEqual(ignore);
+});
+
 const languages: readonly GuideLanguage[] = ['typescript', 'rust'];
 
 const activationFixture = (language: GuideLanguage, name: string): unknown => {

@@ -158,7 +158,7 @@ const brokenRows: BrokenRow[] = [
       rmSync(join(directory, 'shared/rules.md'));
       symlinkSync(join(directory, 'rules-copy.md'), join(directory, 'shared/rules.md'));
     },
-    reason: ['shared/rules.md', 'symbolic link'],
+    reason: ['shared/rules.md', 'symbolic link', 'with the file'],
   },
   {
     name: 'a symbolic link on a parent folder',
@@ -166,7 +166,32 @@ const brokenRows: BrokenRow[] = [
       renameSync(join(directory, 'shared'), join(directory, 'shared-copy'));
       symlinkSync(join(directory, 'shared-copy'), join(directory, 'shared'));
     },
-    reason: ['shared', 'symbolic link'],
+    reason: ['shared', 'symbolic link', 'with the folder'],
+  },
+  {
+    name: 'a symbolic link on the top folder of a nested file',
+    files: { 'top/inner/note.md': '# Note\n' },
+    change: (directory) => {
+      renameSync(join(directory, 'top'), join(directory, 'top-copy'));
+      symlinkSync(join(directory, 'top-copy'), join(directory, 'top'));
+    },
+    reason: ['top is a symbolic link', 'with the folder'],
+  },
+  {
+    name: 'a symbolic link on the inner folder of a nested file',
+    files: { 'top/inner/note.md': '# Note\n' },
+    change: (directory) => {
+      renameSync(join(directory, 'top/inner'), join(directory, 'top/inner-copy'));
+      symlinkSync(join(directory, 'top/inner-copy'), join(directory, 'top/inner'));
+    },
+    reason: ['top/inner is a symbolic link', 'with the folder'],
+  },
+  {
+    name: 'a missing folder of a recorded file',
+    change: (directory) => {
+      rmSync(join(directory, 'shared'), { recursive: true });
+    },
+    reason: ['shared/coding.md', 'is missing'],
   },
   {
     name: 'a folder in place of a file',
@@ -293,6 +318,26 @@ it('keeps the error of a record that cannot be read again', async () => {
 
   expect(reason).toContain('the disk went away');
   expect(reason).toContain('run stomme sync');
+});
+
+it('keeps the error of a record that cannot be read at first', async () => {
+  let reads = 0;
+
+  const fileSystem: GuideFileSystem = {
+    readFile: () => {
+      reads += 1;
+
+      return reads === 1
+        ? Promise.reject(new Error('the disk went away'))
+        : Promise.resolve(new TextEncoder().encode(recordText('1', {})));
+    },
+    lstat: () => Promise.reject(new Error('no file is recorded')),
+  };
+
+  const result = await readSyncedGuides('guides', fileSystem);
+  const reason = result.kind === 'broken' ? result.reason : 'the result is valid';
+
+  expect(reason).toContain('the disk went away');
 });
 
 it('keeps the byte order mark in the text of a guide', async () => {

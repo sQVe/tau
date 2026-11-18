@@ -67,6 +67,16 @@ const rows: Row[] = [
     expected: refused('has an unreadable `schema`'),
   },
   {
+    name: 'a float schema above one',
+    text: current('', 'schema = 2.5\nversion = "0.2.0"'),
+    expected: refused('has an unreadable `schema`'),
+  },
+  {
+    name: 'a text schema above one',
+    text: current('', 'schema = "2"\nversion = "0.2.0"'),
+    expected: refused('has an unreadable `schema`'),
+  },
+  {
     name: 'a text schema',
     text: current('', 'schema = "1"\nversion = "0.2.0"'),
     expected: refused('has an unreadable `schema`'),
@@ -142,6 +152,11 @@ const rows: Row[] = [
     expected: refused('has a hash for shared/coding.md that is not'),
   },
   {
+    name: 'a hash that is an integer of 64 digits',
+    text: current(`"shared/coding.md" = ${'1'.repeat(64)}`),
+    expected: refused('has a hash for shared/coding.md that is not'),
+  },
+  {
     name: 'an absolute path',
     text: current(`"/etc/passwd" = "${hash}"`),
     expected: refused('has the absolute path /etc/passwd'),
@@ -182,6 +197,12 @@ it('reads each sync record shape', () => {
   for (const { name, text, expected } of rows) {
     expect(outcome(text), name).toEqual(expected);
   }
+});
+
+it('reports the whole first line of the TOML error', () => {
+  expect(outcome('schema = = 1')).toEqual({
+    error: expect.stringMatching(/is not valid TOML: [^\n]{2,}; /) as unknown,
+  });
 });
 
 it('names the repair in each refusal', () => {

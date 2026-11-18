@@ -44,11 +44,8 @@ const findRepositoryTop = async (folder: string): Promise<string | undefined> =>
   return parent === folder ? undefined : findRepositoryTop(parent);
 };
 
-const foldersBetween = (start: string, top: string): string[] => {
-  const parent = dirname(start);
-
-  return start === top || parent === start ? [start] : [start, ...foldersBetween(parent, top)];
-};
+const foldersBetween = (start: string, top: string): string[] =>
+  start === top ? [start] : [start, ...foldersBetween(dirname(start), top)];
 
 // Lists the folders to search, from the working directory up to the top of its repository. Outside
 // a repository only the working directory counts.

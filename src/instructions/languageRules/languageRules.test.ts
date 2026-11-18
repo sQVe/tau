@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -463,9 +464,49 @@ for (const { language, label, customType, path, command } of cases) {
     await fixture.prompt();
     await runCommand(fixture, command);
 
-    expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(expect.any(String), 'warning');
+    expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(label),
+      'warning',
+    );
+
     expect(fixture.appendEntry).not.toHaveBeenCalled();
     expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it(`warns that ${label} rules are off when the project guides are broken`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setup(onTestFinished);
+
+    await writeStommeProject(fixture.directory, { language });
+    await rm(join(fixture.directory, 'docs', 'stomme', '.sync-record.toml'));
+    await fixture.prompt();
+    await runCommand(fixture, command);
+
+    const warnings = fixture.notify.mock.calls.filter(([, level]) => level === 'warning');
+
+    expect(warnings).toEqual([[expect.stringContaining(label), 'warning']]);
+    expect(fixture.appendEntry).not.toHaveBeenCalled();
+    expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it(`describes the ${label} command by its language`, async ({ onTestFinished }) => {
+    const fixture = await setup(onTestFinished);
+
+    expect(fixture.api.commands.get(command)?.description).toContain(label);
+  });
+
+  it(`blocks a ${label} write again when a new run starts before a request sees the rules`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setup(onTestFinished);
+
+    await fixture.call('read', path);
+    await fixture.prompt();
+    await fixture.request([ruleMessage]);
+    await fixture.prompt();
+
+    expect(await fixture.call('write', path)).toEqual([expect.objectContaining({ block: true })]);
   });
 
   it(`leaves ${label} rules off when an idle command finds a project that appeared`, async ({
@@ -498,6 +539,16 @@ for (const { language, label, customType, path, command } of cases) {
     });
   });
 }
+
+it('leaves a request without rules messages unchanged', async ({ onTestFinished }) => {
+  const fixture = await setup(onTestFinished);
+
+  const { results } = await fixture.emit('context', {
+    messages: [{ role: 'user', content: 'Continue.' }],
+  });
+
+  expect(results).toEqual([undefined]);
+});
 
 it('does not treat an unrelated custom message as loaded rules', async ({ onTestFinished }) => {
   const fixture = await setup(onTestFinished);

@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   appendFile,
+  chmod,
   mkdir,
   open,
   readFile,
@@ -9,7 +11,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, vi } from 'vitest';
@@ -72,6 +74,66 @@ const digestOf = async (cwd: string): Promise<string> => {
 
   return snapshot.kind === 'broken' ? snapshot.reason : snapshot.digest;
 };
+
+const writeBundle = async (directory: string, texts: Record<string, string> = {}) => {
+  const files: Record<string, string> = {
+    'shared/coding.md': '# General\n',
+    'languages/rust/guide.md': '# Rust\n',
+    'languages/typescript/guide.md': '# TypeScript\n',
+    ...texts,
+  };
+
+  const hashes = Object.entries(files).map(([path, text]) => {
+    const hash = createHash('sha256').update(text).digest('hex');
+
+    return `"${path}" = "${hash}"`;
+  });
+
+  for (const [path, text] of Object.entries(files)) {
+    await mkdir(dirname(join(directory, path)), { recursive: true });
+    await writeFile(join(directory, path), text);
+  }
+
+  const record = ['schema = 1', 'version = "0.2.0"', '', '[files]', ...hashes, ''].join('\n');
+
+  await writeFile(join(directory, '.sync-record.toml'), record);
+};
+
+const bundleDigestOf = async (
+  onTestFinished: Parameters<typeof temporaryDirectory>[0],
+  texts: Record<string, string> = {},
+): Promise<string> => {
+  const bundle = temporaryDirectory(onTestFinished, 'tau-stomme-bundle-');
+  const repository = await createTemporaryRepository(onTestFinished);
+
+  await writeBundle(bundle, texts);
+
+  const snapshot = await resolveStommeGuides(repository, bundle);
+
+  expect(snapshot.kind).toBe('bundle');
+
+  return snapshot.kind === 'broken' ? snapshot.reason : snapshot.digest;
+};
+
+it('gives equal bundles one digest', async ({ onTestFinished }) => {
+  const first = await bundleDigestOf(onTestFinished);
+
+  expect(first).toMatch(sha256Hex);
+  expect(await bundleDigestOf(onTestFinished)).toBe(first);
+});
+
+it.for([
+  { name: 'general', path: 'shared/coding.md' },
+  { name: 'Rust', path: 'languages/rust/guide.md' },
+  { name: 'TypeScript', path: 'languages/typescript/guide.md' },
+])(
+  'changes the bundle digest when the $name guide changes',
+  async ({ path }, { onTestFinished }) => {
+    const original = await bundleDigestOf(onTestFinished);
+
+    expect(await bundleDigestOf(onTestFinished, { [path]: '# Changed\n' })).not.toBe(original);
+  },
+);
 
 it('finds stomme.toml from a subfolder of the repository', async ({ onTestFinished }) => {
   const repository = await createTemporaryRepository(onTestFinished);
@@ -235,8 +297,25 @@ it('reports a working directory it cannot probe as broken instead of rejecting',
 
   const snapshot = await resolveStommeGuides(join(file, 'inside'));
 
-  expect(snapshot.kind).toBe('broken');
+  expect(snapshot).toMatchObject({ kind: 'broken', root: join(file, 'inside') });
+  expect(reasonOf(snapshot)).toContain(join(file, 'inside'));
 });
+
+it.skipIf(process.getuid?.() === 0)(
+  'reports a stomme.toml that cannot be opened as broken',
+  async ({ onTestFinished }) => {
+    const repository = await createTemporaryRepository(onTestFinished);
+    const config = join(repository, 'stomme.toml');
+
+    await writeFile(config, 'schema = 1\n');
+    await chmod(config, 0);
+
+    const snapshot = await resolveStommeGuides(repository);
+
+    expect(snapshot).toMatchObject({ kind: 'broken', root: repository });
+    expect(reasonOf(snapshot)).toContain('EACCES');
+  },
+);
 
 it('resolves a project again after its version and layers change', async ({ onTestFinished }) => {
   const repository = await createTemporaryRepository(onTestFinished);

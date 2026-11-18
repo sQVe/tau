@@ -200,7 +200,9 @@ const table: {
     expected: {
       kind: 'broken',
       root,
-      reason: expect.stringMatching(/^\/project\/stomme\.toml is not valid TOML: \S/) as string,
+      reason: expect.stringMatching(
+        /^\/project\/stomme\.toml is not valid TOML: [^\n]{2,}$/,
+      ) as string,
     },
   },
   {
@@ -253,6 +255,26 @@ const table: {
       kind: 'broken',
       root: bundleRoot,
       reason: 'The bundle has no languages/rust/guide.md in its record; regenerate it',
+    },
+  },
+  {
+    name: 'rejects a bundle without the general guide',
+    config: missingConfig,
+    bundle: synced('0.2.0', without('shared/coding.md')),
+    expected: {
+      kind: 'broken',
+      root: bundleRoot,
+      reason: 'The bundle has no shared/coding.md in its record; regenerate it',
+    },
+  },
+  {
+    name: 'rejects a bundle without the TypeScript guide',
+    config: missingConfig,
+    bundle: synced('0.2.0', without('languages/typescript/guide.md')),
+    expected: {
+      kind: 'broken',
+      root: bundleRoot,
+      reason: 'The bundle has no languages/typescript/guide.md in its record; regenerate it',
     },
   },
   {
