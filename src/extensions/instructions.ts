@@ -6,8 +6,8 @@ import {
   instructionTexts,
   readInstructionSections,
 } from '../instructions/instructions.js';
+import { registerLanguageRules } from '../instructions/languageRules/languageRules.js';
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
-import { registerTypeScriptRules } from '../instructions/typescriptRules.js';
 import { isWorkerProcess } from '../role/role.js';
 
 export default async function instructionsExtension(pi: ExtensionAPI): Promise<void> {
@@ -18,9 +18,9 @@ export default async function instructionsExtension(pi: ExtensionAPI): Promise<v
     return;
   }
 
-  registerTypeScriptRules(pi);
-
   const guideRuns = trackGuideRuns(pi);
+
+  registerLanguageRules(pi, guideRuns);
 
   pi.on('before_agent_start', async (event) => {
     for (const text of await instructionTexts(sections, guideRuns)) {

@@ -23,9 +23,8 @@ const copiedFiles = [
   'instructions/syncRecord.ts',
   'instructions/syncedGuides.ts',
   'instructions/systemPrompt.ts',
-  'instructions/typescript.md',
-  'instructions/typescriptRules.ts',
-  'instructions/typescriptRulesDecision.ts',
+  'instructions/languageRules/languageRules.ts',
+  'instructions/languageRules/languageRulesDecision.ts',
   'schema.ts',
   'role/role.ts',
 ];
@@ -34,6 +33,7 @@ const copiedFiles = [
 const copySources = async (workingDirectory: string): Promise<void> => {
   await mkdir(join(workingDirectory, 'extensions'));
   await mkdir(join(workingDirectory, 'instructions', 'stommeGuides'), { recursive: true });
+  await mkdir(join(workingDirectory, 'instructions', 'languageRules'), { recursive: true });
 
   await symlink(
     fileURLToPath(new URL('../node_modules', import.meta.url)),

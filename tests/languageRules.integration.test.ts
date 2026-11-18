@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   fauxAssistantMessage,
@@ -14,7 +15,17 @@ import instructionsExtension from '../src/extensions/instructions.js';
 import { createBoundSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
-const rules = readFileSync(new URL('../src/instructions/typescript.md', import.meta.url), 'utf8');
+const bundleDirectory = fileURLToPath(new URL('../vendor/stomme', import.meta.url));
+
+const bundledRules = (language: string): string => {
+  const path = `languages/${language}/guide.md`;
+  const text = readFileSync(join(bundleDirectory, path), 'utf8');
+
+  return `Source: ${bundleDirectory}/${path}\n\n${text.trim()}`;
+};
+
+const rules = bundledRules('typescript');
+const guideHeading = '# TypeScript coding guide';
 
 const setup = async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-typescript-rules-');
@@ -26,6 +37,8 @@ const setup = async () => {
   });
 
   writeFileSync(join(directory, 'source.ts'), 'original');
+  mkdirSync(join(directory, 'src'));
+  writeFileSync(join(directory, 'src', 'lib.rs'), 'fn main() {}');
   const provider = fauxProvider({ provider: 'tau-typescript-rules' });
 
   const errors: unknown[] = [];
@@ -77,8 +90,8 @@ it.for(['direct', 'nested'])(
     await session.prompt('Read the source.');
 
     expect(requests).toHaveLength(2);
-    expect(requests[0]).not.toContain('Tau TypeScript instructions');
-    expect(requests[1]).toContain('Tau TypeScript instructions');
+    expect(requests[0]).not.toContain(guideHeading);
+    expect(requests[1]).toContain(guideHeading);
     const customMessages = session.state.messages.filter((message) => message.role === 'custom');
 
     expect(customMessages).toContainEqual(
@@ -115,7 +128,7 @@ it('blocks sibling TypeScript changes from an uninformed request and allows a re
 
   expect(snapshots).toEqual(['original']);
   expect(requests[0]).toMatch(/reconsider/iu);
-  expect(requests[0]).toContain('Tau TypeScript instructions');
+  expect(requests[0]).toContain(guideHeading);
   expect(readFileSync(join(directory, 'source.ts'), 'utf8')).toBe('reconsidered');
 });
 
@@ -190,9 +203,41 @@ it('keeps a real non-TypeScript session free of TypeScript rules', async () => {
   await session.prompt('Read the documentation.');
 
   expect(requests).toHaveLength(1);
-  expect(requests[0]).not.toContain('Tau TypeScript instructions');
+  expect(requests[0]).not.toContain(guideHeading);
 
   expect(session.sessionManager.getBranch()).not.toContainEqual(
     expect.objectContaining({ customType: 'tau-typescript-rules' }),
+  );
+});
+
+it('delivers Rust rules before the next model request after a read', async () => {
+  const { provider, session } = await setup();
+  const requests: string[] = [];
+
+  provider.setResponses([
+    (context) => {
+      requests.push(JSON.stringify(context.messages));
+
+      return fauxAssistantMessage([fauxToolCall('read', { path: 'src/lib.rs' })]);
+    },
+    (context) => {
+      requests.push(JSON.stringify(context.messages));
+
+      return fauxAssistantMessage('Done.');
+    },
+  ]);
+
+  await session.prompt('Read the library.');
+
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).not.toContain('# Rust coding guide');
+  expect(requests[1]).toContain('# Rust coding guide');
+
+  expect(session.state.messages.filter((message) => message.role === 'custom')).toContainEqual(
+    expect.objectContaining({ customType: 'tau-rust-rules', content: bundledRules('rust') }),
+  );
+
+  expect(session.sessionManager.getBranch()).toContainEqual(
+    expect.objectContaining({ customType: 'tau-rust-rules', data: { version: 1 } }),
   );
 });

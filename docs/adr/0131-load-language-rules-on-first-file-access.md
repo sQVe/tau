@@ -2,7 +2,8 @@
 
 **Date**: 2026-11-10\
 **Status**: Accepted\
-**Related**: [ADR 0066 (Add Tau's prompt text to Pi's append section)](./0066-add-taus-prompt-text-to-pis-append-section.md),
+**Related**: [ADR 0140 (Load coding guides from stomme)](./0140-load-coding-guides-from-stomme.md),
+[ADR 0066 (Add Tau's prompt text to Pi's append section)](./0066-add-taus-prompt-text-to-pis-append-section.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
 
 ## Context
@@ -23,10 +24,15 @@ text replacement must not lose. Neither path is a reliable place for standing in
 Load language rules on the first relevant file access, deliver them separately, and refuse changes
 from requests that have not received them.
 
-The file extension selects the rules. Dependency files and declaration files do not activate
-TypeScript rules because inspecting them does not imply work on the repository's TypeScript source.
-A separate custom message reaches the next model request even when a nested read returns no output.
-Later runs use the append section, so direct providers and the bridge receive the same rules.
+This applies without `stomme.toml`. A stomme project already loads its language guide with the
+coding guides, so the first-access rules stay off there, and any rules message from an earlier run
+leaves the request. The rules are the bundled stomme guide of the language.
+
+The file extension selects the rules and covers TypeScript and Rust. Dependency, build output, and
+declaration files do not activate rules (`node_modules`, `target`, `.d.ts`) because inspecting them
+does not imply work on the repository's source. A separate custom message reaches the next model
+request even when a nested read returns no output. Later runs use the append section, so direct
+providers and the bridge receive the same rules.
 
 The gate tracks what the current model request received, not only whether the session is active.
 This keeps sibling changes from passing just because an earlier call activated the rules. A refused

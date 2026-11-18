@@ -1,50 +1,72 @@
+import type { GuideLanguage } from '../stommeGuides/stommeGuidesDecision.js';
+
 type UnreadableActivation = { kind: 'newer'; version: number } | { kind: 'malformed' };
 
-export const typeScriptRulesType = 'tau-typescript-rules';
+type LanguageToolDecision =
+  | { kind: 'ignore' }
+  | { kind: 'activate' | 'block'; language: GuideLanguage };
 
-const languageByExtension: Readonly<Record<string, string>> = {
+export const languageRulesTypes: Readonly<Record<GuideLanguage, string>> = {
+  typescript: 'tau-typescript-rules',
+  rust: 'tau-rust-rules',
+};
+
+const languageByExtension: Readonly<Record<string, GuideLanguage>> = {
   ts: 'typescript',
   tsx: 'typescript',
   mts: 'typescript',
   cts: 'typescript',
+  rs: 'rust',
 };
 
-const isTypeScriptPath = (path: unknown): boolean => {
+const ignoredFolder: Readonly<Record<GuideLanguage, string>> = {
+  typescript: 'node_modules',
+  rust: 'target',
+};
+
+export const languageForPath = (path: unknown): GuideLanguage | undefined => {
   if (typeof path !== 'string') {
-    return false;
-  }
-
-  if (path.split(/[\\/]/u).includes('node_modules')) {
-    return false;
-  }
-
-  if (/\.d\.(?:ts|mts|cts)$/u.test(path)) {
-    return false;
+    return undefined;
   }
 
   const extension = /\.([^./\\]+)$/u.exec(path)?.[1] ?? '';
+  const language = languageByExtension[extension];
 
-  return languageByExtension[extension] === 'typescript';
+  if (language === undefined) {
+    return undefined;
+  }
+
+  if (path.split(/[\\/]/u).includes(ignoredFolder[language])) {
+    return undefined;
+  }
+
+  if (language === 'typescript' && /\.d\.(?:ts|mts|cts)$/u.test(path)) {
+    return undefined;
+  }
+
+  return language;
 };
 
-export const typeScriptToolDecision = (
+export const languageToolDecision = (
   tool: string,
   path: unknown,
-  loaded: boolean,
-): 'ignore' | 'activate' | 'block' => {
+  loaded: ReadonlySet<GuideLanguage>,
+): LanguageToolDecision => {
   if (!['read', 'edit', 'write'].includes(tool)) {
-    return 'ignore';
+    return { kind: 'ignore' };
   }
 
-  if (!isTypeScriptPath(path)) {
-    return 'ignore';
+  const language = languageForPath(path);
+
+  if (language === undefined) {
+    return { kind: 'ignore' };
   }
 
-  if (tool !== 'read' && !loaded) {
-    return 'block';
+  if (tool !== 'read' && !loaded.has(language)) {
+    return { kind: 'block', language };
   }
 
-  return 'activate';
+  return { kind: 'activate', language };
 };
 
 const classifyActivationData = (data: unknown): { kind: 'current' } | UnreadableActivation => {
@@ -71,8 +93,9 @@ const classifyActivationData = (data: unknown): { kind: 'current' } | Unreadable
   return { kind: 'current' };
 };
 
-export const classifyTypeScriptActivation = (
+export const classifyLanguageActivation = (
   entries: readonly unknown[],
+  language: GuideLanguage,
 ): { active: boolean; unreadable: UnreadableActivation[] } => {
   let active = false;
   const unreadable: UnreadableActivation[] = [];
@@ -86,7 +109,7 @@ export const classifyTypeScriptActivation = (
       continue;
     }
 
-    if (!('customType' in entry) || entry.customType !== typeScriptRulesType) {
+    if (!('customType' in entry) || entry.customType !== languageRulesTypes[language]) {
       continue;
     }
 

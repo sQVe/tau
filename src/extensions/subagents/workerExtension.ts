@@ -27,8 +27,8 @@ import { trackGuideRuns } from '../../instructions/guideRuns.js';
 import type { GuideRuns } from '../../instructions/guideRuns.js';
 import { instructionTexts, readInstructionSections } from '../../instructions/instructions.js';
 import type { InstructionSection } from '../../instructions/instructions.js';
+import { registerLanguageRules } from '../../instructions/languageRules/languageRules.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
-import { registerTypeScriptRules } from '../../instructions/typescriptRules.js';
 import { isWorkerProcess } from '../../role/role.js';
 import { skillTools } from '../../skillTools.js';
 import { findTauRoot } from '../../tauDirectory.js';
@@ -258,6 +258,9 @@ const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerState): void
   };
 
   const guideRuns = trackGuideRuns(pi, { usesCodingSet });
+
+  registerLanguageRules(pi, guideRuns);
+
   // Read the instruction files once, so a changed checkout does not change them. The stomme guides
   // are read again at each run.
   let parts: Promise<WorkerPromptParts> | undefined;
@@ -432,8 +435,6 @@ export default function workerExtension(pi: ExtensionAPI): void {
   if (!isWorkerProcess()) {
     return;
   }
-
-  registerTypeScriptRules(pi);
 
   const state: WorkerState = {
     hc: { exec: pi.exec.bind(pi), connect, cwd: process.cwd() },

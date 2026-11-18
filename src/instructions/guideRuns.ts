@@ -33,8 +33,8 @@ const guideFolder = (snapshot: UsableSnapshot): string =>
 const sourceFolder = (snapshot: UsableSnapshot): string =>
   snapshot.kind === 'project' ? 'docs/stomme' : snapshot.root;
 
-const guideSection = (folder: string, guide: Guide): string =>
-  `Source: ${folder}/${guide.path}\n\n${guide.text.trim()}`;
+export const guideSection = (snapshot: UsableSnapshot, guide: Guide): string =>
+  `Source: ${sourceFolder(snapshot)}/${guide.path}\n\n${guide.text.trim()}`;
 
 export const codingSetText = (snapshot: GuideSnapshot): string => {
   if (snapshot.kind === 'broken') {
@@ -42,8 +42,7 @@ export const codingSetText = (snapshot: GuideSnapshot): string => {
   }
 
   const heading = `# Stomme ${snapshot.version} coding guides, ${guideFolder(snapshot)}`;
-  const folder = sourceFolder(snapshot);
-  const sections = snapshot.guides.map((guide) => guideSection(folder, guide));
+  const sections = snapshot.guides.map((guide) => guideSection(snapshot, guide));
 
   return [heading, ...sections].join('\n\n');
 };
