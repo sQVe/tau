@@ -23,9 +23,10 @@ const fix = 'run stomme sync';
 
 // Matches the spans that are not rendered as a link, in document order, so one span cannot hide
 // another: a fence inside an HTML comment stays comment text, and a link after it still renders.
-// Inline code ends at a blank line or a fence, so it cannot reach into a later block.
+// Inline code ends at a blank line or a fence, so it cannot reach into a later block. The last two
+// alternatives capture an inline link target and a reference definition target.
 const markdownToken =
-  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)(?:(?!\n[ \t]*(?:\n|`{3,}|~{3,}))[\s\S])*?\2|\]\(\s*(?:<([^>\n]*)>|([^)\s]+))/gm;
+  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)(?:(?!\n[ \t]*(?:\n|`{3,}|~{3,}))[\s\S])*?\2|\]\(\s*(?:<([^>\n]*)>|([^)\s]+))|^ {0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:<([^>\n]*)>|(\S+))/gm;
 
 const urlScheme = /^[a-z][a-z\d+.-]*:/i;
 
@@ -101,10 +102,10 @@ const readGuide = async (
 
 const linkTargets = (markdown: string): string[] =>
   [...markdown.matchAll(markdownToken)].flatMap((match) => {
-    const angleTarget = match[3];
-    const plainTarget = match[4];
+    const inlineTarget = match[3] ?? match[4];
+    const definitionTarget = match[5] ?? match[6];
 
-    return angleTarget ?? plainTarget ?? [];
+    return inlineTarget ?? definitionTarget ?? [];
   });
 
 const linkProblem = (

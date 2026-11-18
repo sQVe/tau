@@ -116,6 +116,43 @@ it.for([
       'shared/rules.md': 'A literal `\n\n<!-- `\n[ignored](./gone.md)\n-->\n',
     },
   },
+  {
+    name: 'a reference definition with an angle-bracket target and a title',
+    files: {
+      ...guides,
+      'shared/a b.md': '# A\n',
+      'shared/rules.md': '[rules][adr]\n\n   [adr]: <./a b.md> "Title"\n',
+    },
+  },
+  {
+    name: 'a reference definition with a plain target and a title',
+    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]: ./coding.md "Title"\n' },
+  },
+  {
+    name: 'reference definitions with a URL, an anchor, and a footnote',
+    files: {
+      ...guides,
+      'shared/rules.md':
+        '[a]: https://example.com/gone.md\n[b]: #rules\n[c]: ./coding.md#top\n[^1]: A note.\n',
+    },
+  },
+  {
+    name: 'reference definitions inside a fence, a code span, and an HTML comment',
+    files: {
+      ...guides,
+      'shared/rules.md': [
+        '```markdown',
+        '[a]: ./gone.md',
+        '```',
+        '`[b]: ./gone.md`',
+        '<!--',
+        '[c]: ./gone.md',
+        '-->',
+        '    [d]: ./gone.md',
+        '',
+      ].join('\n'),
+    },
+  },
 ])('reads $name as valid', async ({ files }) => {
   const result = await readSyncedGuides(writeGuides(files));
 
@@ -237,6 +274,24 @@ const brokenRows: BrokenRow[] = [
     name: 'an absolute link',
     files: { ...guides, 'shared/rules.md': '[outside](/shared/coding.md)\n' },
     reason: ['shared/rules.md', '/shared/coding.md', 'leaves'],
+  },
+  {
+    name: 'a dangling reference definition',
+    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]: ./missing.md\n' },
+    reason: ['shared/rules.md', 'links to ./missing.md, which is not a synced file'],
+  },
+  {
+    name: 'a reference definition that leaves the folder',
+    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n  [adr]: ../../outside.md\n' },
+    reason: ['shared/rules.md', 'links to ../../outside.md, which leaves the synced folder'],
+  },
+  {
+    name: 'a dangling reference definition after a fenced one',
+    files: {
+      ...guides,
+      'shared/rules.md': '```\n[a]: ./fenced.md\n```\n[b]: <./gone file.md>\n',
+    },
+    reason: ['shared/rules.md', 'links to ./gone file.md, which is not a synced file'],
   },
 ];
 
