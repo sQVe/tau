@@ -12,12 +12,32 @@ import {
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository, initializeRepository } from '../../../tests/gitRepository.js';
 import { writeStommeProject } from '../../../tests/stommeProjectHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { resolveStommeGuides } from './stommeGuides.js';
+
+const swap = vi.hoisted(() => ({
+  afterStat: undefined as undefined | ((path: string) => Promise<void>),
+}));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    default: actual,
+    // The cast keeps the overloads of `stat` that the hook does not change.
+    stat: (async (path: string) => {
+      const result = await actual.stat(path);
+      await swap.afterStat?.(path);
+
+      return result;
+    }) as typeof actual.stat,
+  };
+});
 
 const sha256Hex = /^[\da-f]{64}$/;
 
@@ -236,3 +256,40 @@ it('resolves a project again after its version and layers change', async ({ onTe
     layers: ['react'],
   });
 });
+
+it('resolves a project whose layer is both selected and recorded', async ({ onTestFinished }) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+
+  await writeStommeProject(repository, {
+    language: 'typescript',
+    layers: ['react'],
+    recordedLayers: ['react'],
+  });
+
+  const snapshot = await resolveStommeGuides(repository);
+
+  expect(snapshot).toMatchObject({ kind: 'project', layers: ['react'] });
+});
+
+it('does not stall when the config becomes a pipe after its type check', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  await writeStommeProject(repository, { language: 'rust' });
+  const config = join(repository, 'stomme.toml');
+
+  swap.afterStat = async (path) => {
+    if (path === config) {
+      await rm(config);
+      await makePipe(config, onTestFinished);
+    }
+  };
+
+  onTestFinished(() => {
+    swap.afterStat = undefined;
+  });
+
+  const snapshot = await resolveStommeGuides(repository);
+
+  expect(snapshot.kind).not.toBe('bundle');
+}, 2000);

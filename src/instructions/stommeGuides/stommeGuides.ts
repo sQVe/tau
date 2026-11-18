@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
-import { lstat, readFile, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,17 +60,24 @@ const searchedFolders = async (cwd: string): Promise<string[]> => {
 
 const readConfigText = async (root: string): Promise<ConfigFact> => {
   const file = join(root, configName);
+  let handle: FileHandle | undefined;
 
   try {
-    const stats = await stat(file);
+    // A pipe opens without a writer only in non-blocking mode. The type check and the read use
+    // this one handle, so the path cannot change between them.
+    handle = await open(file, constants.O_RDONLY | constants.O_NONBLOCK);
+
+    const stats = await handle.stat();
 
     if (!stats.isFile()) {
       return { kind: 'unreadable', root, error: 'it is not a regular file' };
     }
 
-    return { kind: 'text', root, text: await readFile(file, 'utf8') };
+    return { kind: 'text', root, text: await handle.readFile('utf8') };
   } catch (error) {
     return { kind: 'unreadable', root, error: errorMessage(error) };
+  } finally {
+    await handle?.close();
   }
 };
 

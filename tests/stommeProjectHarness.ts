@@ -77,7 +77,9 @@ export const writeStommeProject = async (
     join('layers', layer, 'guide.md'),
   );
 
-  const guides = [...sharedGuides, join('languages', language, 'guide.md'), ...layerGuides];
+  const guides = [
+    ...new Set([...sharedGuides, join('languages', language, 'guide.md'), ...layerGuides]),
+  ];
 
   await rm(syncedDirectory, { recursive: true, force: true });
 
