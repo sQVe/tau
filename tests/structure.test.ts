@@ -211,6 +211,7 @@ const pureModules = [
   'src/reviewCapture/predecessorDecision.ts',
   'src/reviewCapture/reports.ts',
   'src/roleGuidelines.ts',
+  'src/roleTools.ts',
   'src/schema.ts',
   'src/shell.ts',
   'src/verification/freshness.ts',

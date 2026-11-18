@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { currentTerminalAddress, ls } from '../../hc/hc.js';
+import { currentRole } from '../../role.js';
 import { readSkillTools as readCurrentSkillTools } from '../../skillTools.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { assignmentPath, readAssignment, writeFollowUpAssignment } from './assignment.js';
@@ -166,7 +167,7 @@ export const executeFollowUp = async (
     const skillTools = (runtime.readSkillTools ?? readCurrentSkillTools)();
     const registeredNames = runtime.pi.getAllTools().map((tool) => tool.name);
     const registeredToolNames = new Set(registeredNames);
-    const skillToolsRefused = skillToolsRefusal(skillTools, registeredToolNames);
+    const skillToolsRefused = skillToolsRefusal(skillTools, registeredToolNames, currentRole());
 
     if (skillToolsRefused !== undefined) {
       throw new Error(skillToolsRefused);

@@ -572,6 +572,11 @@ entry = "src/roleGuidelines.ts"
 public = []
 imports = []
 
+[modules.roleTools]
+entry = "src/roleTools.ts"
+public = []
+imports = ["role"]
+
 [modules.schema]
 entry = "src/schema.ts"
 public = []

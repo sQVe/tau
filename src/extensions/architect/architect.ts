@@ -3,6 +3,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { piExec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { currentRole } from '../../role.js';
+import { roleRegistersTool } from '../../roleTools.js';
 import { registerAskMode } from './askMode.js';
 import { isFinalHandover } from './queuedHandover.js';
 import { endArchitectSession, startArchitectSession } from './session.js';
@@ -23,7 +24,7 @@ export default function architectExtension(pi: ExtensionAPI): void {
     });
   }
 
-  if (currentRole() === 'lead') {
+  if (roleRegistersTool(currentRole(), 'architect')) {
     pi.registerTool(createArchitectTool({ exec: piExec(pi), connect, cwd: process.cwd() }));
   }
 

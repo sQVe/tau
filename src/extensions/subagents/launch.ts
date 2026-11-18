@@ -378,7 +378,12 @@ export const executeLaunch = async (
     const currentSkillTools = (runtime.readSkillTools ?? readCurrentSkillTools)();
     const registeredNames = runtime.pi.getAllTools().map((tool) => tool.name);
     const registeredToolNames = new Set(registeredNames);
-    const skillToolsRefused = skillToolsRefusal(currentSkillTools, registeredToolNames);
+
+    const skillToolsRefused = skillToolsRefusal(
+      currentSkillTools,
+      registeredToolNames,
+      currentRole(),
+    );
 
     if (skillToolsRefused !== undefined) {
       throw new Error(skillToolsRefused);
