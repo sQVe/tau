@@ -41,6 +41,8 @@ folder, and replies before the sender reports success.
   reply is missing.
 - A sender refuses a missing label, an unknown protocol, and a refused connection before it writes
   anything.
+- A sender that must reach one session, such as an architect's answer to the lead that asked, passes
+  that session's ID. The send refuses when the terminal advertises another session.
 - When the reply is missing after the message was written, the result is `unknown`, because the
   receiver may have saved it. A retry reuses the message ID, so the receiver saves it once.
 
@@ -48,6 +50,9 @@ folder, and replies before the sender reports success.
 
 - The receiver checks each message for its family, then saves the record in its own folder and
   replies `queued`. Only the receiver deletes a record.
+- A family can carry a fact the receiver must still hold when it saves, such as the lock token of an
+  `architect-ask`. The receiver checks that fact in the family's accept check, before the save, and
+  refuses on a mismatch. A session ID alone cannot show this, because a reload keeps it.
 - After a best-effort startup gate, the receiver wakes its session with the message, saves a receipt
   in the session, and then deletes the record. A receipt stops a repeated delivery after a reload.
 - Delivery is at least once. A crash after the message is shown but before Pi saves the session can

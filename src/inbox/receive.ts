@@ -61,6 +61,8 @@ const bodyOf = (request: MessageRequest): SavableMessageBody | undefined => {
       return { family: 'handover', payload: request.payload };
     case 'answer':
       return { family: 'answer', payload: request.payload };
+    case 'architect-ask':
+      return { family: 'handover', payload: { text: request.payload.text } };
     case 'answer-request':
       return undefined;
     default:

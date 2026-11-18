@@ -6,11 +6,17 @@ import type { onTestFinished } from 'vitest';
 
 import { createReceiptStore, createReceiver, startInbox } from '../src/inbox/inbox.js';
 import type { ReceiverOptions } from '../src/inbox/inbox.js';
+import type { Family } from '../src/inbox/protocol.js';
 
 export interface HandoverReceiver {
   sessionId: string;
   path: string;
   savedRecords: () => string[];
+}
+
+export interface HandoverReceiverOptions {
+  accepts?: ReceiverOptions['accepts'];
+  sessionId?: string;
 }
 
 const acceptHandovers: ReceiverOptions['accepts'] = { handover: (_request, save) => save() };
@@ -19,9 +25,9 @@ export const startHandoverReceiver = async (
   finished: typeof onTestFinished,
   root: string,
   terminal: string,
-  accepts = acceptHandovers,
+  options: HandoverReceiverOptions = {},
 ): Promise<HandoverReceiver> => {
-  const sessionId = randomUUID();
+  const { accepts = acceptHandovers, sessionId = randomUUID() } = options;
   const records = join(root, 'records');
   const paths: string[] = [];
 
@@ -63,4 +69,15 @@ export const startHandoverReceiver = async (
   };
 
   return { sessionId, path: paths[0] ?? '', savedRecords };
+};
+
+// Accept checks live in the process-wide inbox slot, so a test that registers one removes it after.
+export const forgetAcceptCheck = (family: Family): void => {
+  const slot = globalThis.tauInboxSlot;
+
+  if (slot !== undefined) {
+    slot.checks = Object.fromEntries(
+      Object.entries(slot.checks).filter(([name]) => name !== family),
+    );
+  }
 };

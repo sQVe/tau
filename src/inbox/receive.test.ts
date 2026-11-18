@@ -159,6 +159,52 @@ it('accepts a handover while an answer-request check is still waiting', async ()
   });
 });
 
+it('saves an accepted architect-ask as a handover with its text', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {
+    'architect-ask': (_request, save) => save(),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'architect-ask',
+    payload: { text: 'Ask text', lockToken: 'lock-1' },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+  await receiver.deliver(new AbortController().signal);
+
+  expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
+    version: 1,
+    messageId,
+    family: 'handover',
+    payload: { text: 'Ask text' },
+  });
+
+  expect(woken).toMatchObject([{ content: 'Ask text', details: { family: 'handover' } }]);
+});
+
+it('saves an architect-ask retry of a saved message once', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver } = directReceiver(sessionId, {
+    'architect-ask': (_request, save) => save(),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'architect-ask',
+    payload: { text: 'Ask text', lockToken: 'lock-1' },
+  };
+
+  await receiver.accept(request);
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+});
+
 it('saves an accepted answer and wakes with its answer text', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
 import { setAcceptCheck } from '../../inbox/inbox.js';
 import { createInboxExtension } from './inbox.js';
@@ -237,6 +238,12 @@ const answerRequestTo = (sessionId: string, messageId = randomUUID()) => ({
   },
 });
 
+const architectAskTo = (sessionId: string, messageId = randomUUID()) => ({
+  ...handoverTo(sessionId, messageId),
+  family: 'architect-ask',
+  payload: { text: 'Ask text', lockToken: 'lock-1' },
+});
+
 const settle = () =>
   new Promise((resolve) => {
     setTimeout(resolve, 20);
@@ -426,6 +433,52 @@ it.each([
     });
   },
 );
+
+it.each(['', 'architect', 'worker'])(
+  'passes a registered architect-ask check in a session with role "%s"',
+  async (role) => {
+    vi.stubEnv('TAU_ROLE', role);
+
+    const harness = startHarness();
+    const sessionId = randomUUID();
+    const messageId = randomUUID();
+
+    setAcceptCheck('architect-ask', async () => 'Not this lock.');
+
+    cleanups.push(() => {
+      forgetAcceptCheck('architect-ask');
+    });
+
+    await harness.start(sessionId);
+    cleanups.push(() => harness.shutdown(sessionId));
+
+    await expect(
+      exchange(socketOf(sessionId), architectAskTo(sessionId, messageId)),
+    ).resolves.toEqual({ protocol: 'rpc1', kind: 'refused', reason: 'Not this lock.', messageId });
+  },
+);
+
+it('refuses an architect-ask without a registered check and saves nothing', async () => {
+  forgetAcceptCheck('architect-ask');
+
+  const harness = startHarness();
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  await expect(
+    exchange(socketOf(sessionId), architectAskTo(sessionId, messageId)),
+  ).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'This session does not accept architect-ask messages.',
+    messageId,
+  });
+
+  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+});
 
 it('refuses a message addressed to another session', async () => {
   const harness = startHarness();

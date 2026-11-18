@@ -26,6 +26,8 @@ export interface HcFake {
   messages: HcRequestMessage[];
   connectCalls: HcRequestMessage[][];
   reply: (command: HcCommand, stdout: string) => void;
+  // Answers `hc get` for one terminal. Other terminals get the shared `get` reply.
+  replyGet: (address: string, stdout: string) => void;
   fail: (command: HcCommand, stderr: string, code: number) => void;
   replyConnect: (method: string, id: number, result: unknown) => void;
   failConnect: (method: string, id: number, error: unknown) => void;
@@ -83,6 +85,7 @@ const replyLine = (expectation: ConnectExpectation): string => {
 export const createHcFake = (): HcFake => {
   const replies = new Map<HcCommand, string>();
   const failures = new Map<HcCommand, { stderr: string; code: number }>();
+  const terminalReplies = new Map<string, string>();
 
   const execFake = createExecFake<HcCommand>({
     keyOf: (command, commandArguments) => {
@@ -94,14 +97,16 @@ export const createHcFake = (): HcFake => {
 
       return isCommand(first) ? first : undefined;
     },
-    handlerFor: (key) => () => {
+    handlerFor: (key) => (commandArguments) => {
       const failure = failures.get(key);
 
       if (failure !== undefined) {
         return failedResult(failure.stderr, failure.code);
       }
 
-      const reply = replies.get(key);
+      const address = key === 'get' ? commandArguments.at(-1) : undefined;
+      const terminalReply = address === undefined ? undefined : terminalReplies.get(address);
+      const reply = terminalReply ?? replies.get(key);
 
       return reply === undefined ? failedResult(`unknown command: ${key}`) : succeededResult(reply);
     },
@@ -191,6 +196,7 @@ export const createHcFake = (): HcFake => {
       entry.handlers.onClose(reason);
     },
     reply: (command, stdout) => replies.set(command, stdout),
+    replyGet: (address, stdout) => terminalReplies.set(address, stdout),
     fail: (command, stderr, code) => failures.set(command, { stderr, code }),
     replyConnect: (method, id, result) => {
       expectations.push({ method, id, reply: { result } });

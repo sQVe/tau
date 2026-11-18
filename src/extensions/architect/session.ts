@@ -5,18 +5,38 @@ import type { ConfigWarnings } from '../../config/config.js';
 import { readRoleModel } from '../../config/roleModels.js';
 import { errorMessage } from '../../errors.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
+import type { HcRuntime } from '../../hc/hc.js';
 import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
+import { failOpenLiveAsks } from './openLiveAsks.js';
 import { readAskRecords, writeArchitectRecord, writeAskRecord } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
+
+export interface HeldLockToken {
+  current: () => string | undefined;
+  set: (token: string | undefined) => void;
+}
 
 export interface ArchitectSession {
   root: string;
   release: () => Promise<void>;
   ui: ConfigWarnings;
+  owner: ArchitectOwner;
+  held: HeldLockToken;
 }
+
+export const createHeldLockToken = (): HeldLockToken => {
+  let token: string | undefined;
+
+  return {
+    current: () => token,
+    set: (next) => {
+      token = next;
+    },
+  };
+};
 
 const modelReference = (context: ExtensionContext): string | undefined =>
   context.model === undefined ? undefined : `${context.model.provider}/${context.model.id}`;
@@ -47,34 +67,42 @@ const architectMode = (): ArchitectOwner['mode'] => {
   return askRecordPath !== undefined && askRecordPath !== '' ? 'ask' : 'visible';
 };
 
-const startArchitect = async (context: ExtensionContext): Promise<ArchitectSession | undefined> => {
+const startArchitect = async (
+  context: ExtensionContext,
+  held: HeldLockToken,
+  afterPublish?: () => Promise<void>,
+): Promise<ArchitectSession | undefined> => {
   const root = await findTauRoot(context.cwd, 'architect');
+  let release: (() => Promise<void>) | undefined;
 
   try {
-    const { release, token } = await holdArchitectLock(root);
+    const lock = await holdArchitectLock(root);
 
-    try {
-      await writeArchitectRecord(root, {
-        version: 2,
-        sessionFile: context.sessionManager.getSessionFile() ?? null,
-        // oxlint-disable-next-line node/no-process-env -- The lead passes its address in the pane environment.
-        leadTerminal: process.env.TAU_LEAD_TERMINAL ?? null,
-        owner: {
-          lockToken: token,
-          mode: architectMode(),
-          terminal: currentTerminalAddress() ?? null,
-          sessionId: context.sessionManager.getSessionId(),
-        },
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      await release();
+    release = lock.release;
+    held.set(lock.token);
 
-      throw error;
-    }
+    const owner: ArchitectOwner = {
+      lockToken: lock.token,
+      mode: architectMode(),
+      terminal: currentTerminalAddress() ?? null,
+      sessionId: context.sessionManager.getSessionId(),
+    };
 
-    return { root, release, ui: context.ui };
+    await writeArchitectRecord(root, {
+      version: 2,
+      sessionFile: context.sessionManager.getSessionFile() ?? null,
+      // oxlint-disable-next-line node/no-process-env -- The lead passes its address in the pane environment.
+      leadTerminal: process.env.TAU_LEAD_TERMINAL ?? null,
+      owner,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await afterPublish?.();
+
+    return { root, release: lock.release, ui: context.ui, owner, held };
   } catch (error) {
+    held.set(undefined);
+    await release?.();
     notifyOnce(context.ui, root, 'architect-start', errorMessage(error), 'error');
     context.shutdown();
 
@@ -84,6 +112,8 @@ const startArchitect = async (context: ExtensionContext): Promise<ArchitectSessi
 
 export const startArchitectSession = async (
   context: ExtensionContext,
+  held: HeldLockToken,
+  afterPublish?: () => Promise<void>,
 ): Promise<ArchitectSession | undefined> => {
   const role = currentRole();
 
@@ -93,7 +123,7 @@ export const startArchitectSession = async (
     return undefined;
   }
 
-  return role === 'architect' ? startArchitect(context) : undefined;
+  return role === 'architect' ? startArchitect(context, held, afterPublish) : undefined;
 };
 
 const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> => {
@@ -118,8 +148,32 @@ const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> 
   );
 };
 
-export const endArchitectSession = async (session: ArchitectSession): Promise<void> => {
+const closeLiveAsks = async (session: ArchitectSession, hc: HcRuntime): Promise<void> => {
+  if (session.owner.mode !== 'visible') {
+    return;
+  }
+
+  const report = (message: string): void => {
+    session.ui.notify(message, 'warning');
+  };
+
+  await failOpenLiveAsks(
+    { root: session.root, sessionId: session.owner.sessionId },
+    hc,
+    report,
+  ).catch((error: unknown) => {
+    report(`The architect could not close its open asks: ${errorMessage(error)}`);
+  });
+};
+
+export const endArchitectSession = async (
+  session: ArchitectSession,
+  hc: HcRuntime,
+): Promise<void> => {
+  session.held.set(undefined);
+
   try {
+    await closeLiveAsks(session, hc);
     await session.release();
   } finally {
     await failRunningAsks(session.root, session.ui);

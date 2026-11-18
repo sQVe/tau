@@ -5,8 +5,6 @@ import { expect, it } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createHcFake } from '../../../tests/hcFake.js';
-import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { askDeadlineSeconds } from './ask.js';
 import { contextOf, holdLock, recordSession, setup } from './fixtures/toolHarness.js';
 import { architectLockPath } from './lock.js';
@@ -48,6 +46,7 @@ const liveAsk = (askId: string, createdAt: string): LiveAskRecord => ({
   leadSessionId: 'session-lead',
   architectTerminal: 't-architect',
   architectSessionId: 'session-architect',
+  architectLockToken: 'live',
   status: 'queued',
   detail: null,
   answer: null,
@@ -161,6 +160,15 @@ it('ask reports an inbox that does not answer', async ({ onTestFinished: cleanup
   await recordSession(root, { terminal: 't-architect', sessionId: 'absent-inbox' });
   await holdLock(root, root);
 
+  hc.replyGet(
+    't-lead',
+    JSON.stringify({
+      address: 't-lead',
+      state: 'live',
+      labels: { 'tau.inbox': 'rpc1:/tmp/tau-lead/session-lead.sock' },
+    }),
+  );
+
   hc.reply(
     'get',
     JSON.stringify({
@@ -265,8 +273,16 @@ it('a newer live record does not hide a running ask', async ({ onTestFinished: c
   const tool = createArchitectTool({ ...hc, cwd: root });
 
   await recordSession(root);
-  await writeAskRecord(root, hiddenAsk('ask-hidden', '2026-11-17T10:00:00.000Z'));
-  await writeAskRecord(root, liveAsk('ask-live', '2026-11-17T10:00:01.000Z'));
+
+  await writeAskRecord(
+    root,
+    hiddenAsk('0190c1d2-0000-7000-8000-000000000108', '2026-11-17T10:00:00.000Z'),
+  );
+
+  await writeAskRecord(
+    root,
+    liveAsk('0190c1d2-0000-7000-8000-000000000109', '2026-11-17T10:00:01.000Z'),
+  );
 
   hc.reply('get', JSON.stringify({ address: 't-ask', state: 'live' }));
 
@@ -279,7 +295,11 @@ it('a newer live record does not hide a running ask', async ({ onTestFinished: c
   );
 
   expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect((result.details as { reason: string }).reason).toContain('ask-hidden');
+
+  expect((result.details as { reason: string }).reason).toContain(
+    '0190c1d2-0000-7000-8000-000000000108',
+  );
+
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
 });
 
@@ -378,7 +398,12 @@ it('ask reports a bad ask file and keeps the running ask', async ({ onTestFinish
   const notify = context.ui.notify as unknown as Mock;
 
   await recordSession(root);
-  await writeAskRecord(root, hiddenAsk('ask-hidden', '2026-11-17T10:00:00.000Z'));
+
+  await writeAskRecord(
+    root,
+    hiddenAsk('0190c1d2-0000-7000-8000-000000000108', '2026-11-17T10:00:00.000Z'),
+  );
+
   await writeFile(join(askRecordDirectory(root), 'malformed.json'), '{"version":2');
   hc.reply('get', JSON.stringify({ address: 't-ask', state: 'live' }));
 
@@ -391,39 +416,10 @@ it('ask reports a bad ask file and keeps the running ask', async ({ onTestFinish
   );
 
   expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect((result.details as { reason: string }).reason).toContain('ask-hidden');
+
+  expect((result.details as { reason: string }).reason).toContain(
+    '0190c1d2-0000-7000-8000-000000000108',
+  );
+
   expect(notify).toHaveBeenCalledWith(expect.stringContaining('Malformed ask record'), 'warning');
-});
-
-it('a queued live ask names the answer in the lead inbox', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const sockets = temporaryDirectory(cleanup, 'tau-ask-socket-');
-  const receiver = await startHandoverReceiver(cleanup, sockets, 't-architect');
-
-  await recordSession(root, { terminal: 't-architect', sessionId: receiver.sessionId });
-  await holdLock(root, root);
-
-  hc.reply(
-    'get',
-    JSON.stringify({
-      address: 't-architect',
-      state: 'live',
-      labels: { 'tau.inbox': `rpc1:${receiver.path}` },
-    }),
-  );
-
-  const result = await createArchitectTool({ ...hc, cwd: root }).execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toMatchObject({ action: 'ask', status: 'queued' });
-
-  expect((result.details as { note: string }).note).toContain(
-    'The answer arrives in your inbox as a handover message.',
-  );
 });

@@ -5,12 +5,13 @@ import type { Family, MessageReply, MessageRequest } from './protocol.js';
 import type { AcceptCheck } from './receive.js';
 
 export { socketDirectoryFor } from './endpoint.js';
-export { formatInboxLabel, inboxLabelKey } from './protocol.js';
+export { formatInboxLabel, inboxLabelKey, isUuid } from './protocol.js';
 export type { MessageRequest } from './protocol.js';
 export { createReceiver } from './receive.js';
 export type { AcceptCheck, Receiver, ReceiverOptions } from './receive.js';
 export { createReceiptStore } from './receipts.js';
 export { sendInboxMessage } from './send.js';
+export { advertisedSession } from './targetDecision.js';
 export type { InboxSendRequest, InboxSendResult } from './send.js';
 
 export interface InboxStartOptions {

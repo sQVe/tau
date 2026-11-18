@@ -20,7 +20,7 @@ const protocolName = 'rpc1';
 
 export const savableFamilies = ['handover', 'answer'] as const;
 
-const families = [...savableFamilies, 'answer-request'] as const;
+const families = [...savableFamilies, 'answer-request', 'architect-ask'] as const;
 
 export type SavableFamily = (typeof savableFamilies)[number];
 
@@ -83,12 +83,24 @@ const answerRequestBody = {
   ),
 };
 
+const architectAskBody = {
+  family: Type.Literal('architect-ask'),
+  payload: Type.Object(
+    { text: Type.String({ minLength: 1 }), lockToken: Type.String({ minLength: 1 }) },
+    strict,
+  ),
+};
+
 const savableBodySchema = Type.Union([
   Type.Object(handoverBody, strict),
   Type.Object(answerBody, strict),
 ]);
 
-const bodySchema = Type.Union([savableBodySchema, Type.Object(answerRequestBody, strict)]);
+const bodySchema = Type.Union([
+  savableBodySchema,
+  Type.Object(answerRequestBody, strict),
+  Type.Object(architectAskBody, strict),
+]);
 
 export type SavableMessageBody = Static<typeof savableBodySchema>;
 
@@ -101,6 +113,7 @@ type WithRequestBody<Fields extends TProperties> = TUnion<
     TObject<Fields & typeof handoverBody>,
     TObject<Fields & typeof answerBody>,
     TObject<Fields & typeof answerRequestBody>,
+    TObject<Fields & typeof architectAskBody>,
   ]
 >;
 
@@ -115,6 +128,7 @@ const withBody = <Fields extends TProperties>(fields: Fields): WithRequestBody<F
     Type.Object({ ...fields, ...handoverBody }, strict),
     Type.Object({ ...fields, ...answerBody }, strict),
     Type.Object({ ...fields, ...answerRequestBody }, strict),
+    Type.Object({ ...fields, ...architectAskBody }, strict),
   ]);
 
 const requestSchema = withBody({

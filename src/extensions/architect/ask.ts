@@ -6,9 +6,10 @@ import { readRoleModel } from '../../config/roleModels.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { get, kill, run, wait } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { sendInboxMessage } from '../../inbox/inbox.js';
 import { piArguments } from '../../piStart/piArguments.js';
 import { askOutcome, askRoute } from './askDecision.js';
+import { askLiveArchitect } from './liveAsk.js';
+import type { LiveAskResult } from './liveAsk.js';
 import { architectLockPath } from './lock.js';
 import {
   askRecordPath,
@@ -23,21 +24,14 @@ export interface AskRequest {
   root: string;
   question: string;
   leadTerminal: string;
+  leadSessionId: string;
   location: ConfigLocation;
   ui: ConfigWarnings;
   hc: HcRuntime;
 }
 
 export type AskResult =
-  | { status: 'needsOpen'; reason: string }
-  | { status: 'queued'; terminal: string; messageId: string; note: string }
-  | {
-      status: 'unknown';
-      terminal: string;
-      sessionId: string;
-      messageId: string;
-      note: string;
-    }
+  | LiveAskResult
   | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
 
@@ -84,43 +78,6 @@ const requireModel = (request: AskRequest): string => {
 };
 
 const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason });
-
-const liveAskMessage = (question: string, leadTerminal: string): string =>
-  `The lead in terminal ${leadTerminal} asks: "${question}". Answer the question, update the ticket if the answer changes it, then send the answer to ${leadTerminal} with handover send. If you need the user, ask the user directly.`;
-
-const askLiveArchitect = async (
-  request: AskRequest,
-  terminal: string,
-  sessionId: string,
-): Promise<AskResult> => {
-  const sent = await sendInboxMessage({
-    hc: request.hc,
-    target: terminal,
-    sessionId,
-    body: {
-      family: 'handover',
-      payload: { text: liveAskMessage(request.question, request.leadTerminal) },
-    },
-    refusal: 'Nothing was queued. Switch to the architect pane to talk to it.',
-  });
-
-  if (sent.status === 'unknown') {
-    return {
-      status: 'unknown',
-      terminal: sent.terminal,
-      sessionId: sent.sessionId,
-      messageId: sent.messageId,
-      note: `The question may already be in the inbox of the live architect in ${sent.terminal}. Wait for the answer in your inbox, and do not ask the same question again.`,
-    };
-  }
-
-  return {
-    status: 'queued',
-    terminal: sent.terminal,
-    messageId: sent.messageId,
-    note: `The question is in the inbox of the live architect in ${sent.terminal}. The answer arrives in your inbox as a handover message.`,
-  };
-};
 
 const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Promise<AskResult> => {
   const model = requireModel(request);
@@ -240,7 +197,7 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
   }
 
   if (route.kind === 'live') {
-    return askLiveArchitect(request, route.terminal, route.sessionId);
+    return askLiveArchitect(request, route);
   }
 
   return askHiddenArchitect(request, route.sessionFile);

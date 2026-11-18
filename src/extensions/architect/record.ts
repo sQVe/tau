@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
+import { withFileLock } from '../../fileLock/fileLock.js';
+import { isUuid } from '../../inbox/inbox.js';
 import { readVersionedRecord, writeRecord } from '../../record.js';
+import { isRecord } from '../../schema.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
 
 export type AskRecord = HiddenAskRecord | LiveAskRecord;
@@ -22,6 +25,16 @@ export interface AskRecordScan {
 }
 
 type AskEntry = { record: AskRecord } | { gap: AskRecordGap } | undefined;
+
+export interface AskRecordChange {
+  record: AskRecord;
+  changed: boolean;
+}
+
+export interface ChangeAskOptions {
+  // Tests stall the window between the read and the write to order two writers.
+  afterRead?: () => Promise<void>;
+}
 
 const choiceOutcomeSchema = Type.Union([
   Type.Object({
@@ -154,6 +167,7 @@ const liveAskRecordSchema = Type.Object(
     leadSessionId: Type.String(),
     architectTerminal: Type.String(),
     architectSessionId: Type.String(),
+    architectLockToken: Type.String(),
     status: liveAskStatusSchema,
     detail: Type.Union([Type.String(), Type.Null()]),
     answer: Type.Union([Type.String(), Type.Null()]),
@@ -232,11 +246,32 @@ export const writeGateRecord = async (root: string, record: GateRecord): Promise
   return path;
 };
 
+const askRecordProblem = (path: string, value: unknown): string | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const askId = value['askId'];
+
+  if (typeof askId !== 'string') {
+    return undefined;
+  }
+
+  if (!isUuid(askId)) {
+    return `askId ${askId} is not a UUID`;
+  }
+
+  const name = basename(path, '.json');
+
+  return name === askId ? undefined : `askId ${askId} does not match file name ${name}.json`;
+};
+
 export const readAskRecordAt = async (path: string): Promise<AskRecord | undefined> => {
   const record = await readVersionedRecord(path, {
     label: 'ask record',
     version: 2,
     schema: askRecordSchema,
+    check: (value) => askRecordProblem(path, value),
   });
 
   return record === undefined ? undefined : toAskRecord(record);
@@ -252,6 +287,46 @@ export const writeAskRecord = async (root: string, record: AskRecord): Promise<v
   await ensureTauDirectory(root, 'lead/ask');
   await writeAskRecordAt(askRecordPath(root, record.askId), record);
 };
+
+const askLockPath = (root: string, askId: string): string => `${askRecordPath(root, askId)}.lock`;
+
+// One ask changes under its own cross-process lock, so a writer never reopens a record that
+// another process answered or failed after this writer read it.
+export const changeAskRecord = async (
+  root: string,
+  askId: string,
+  change: (current: AskRecord) => AskRecord | undefined,
+  options: ChangeAskOptions = {},
+): Promise<AskRecordChange | undefined> =>
+  withFileLock(
+    {
+      lockPath: askLockPath(root, askId),
+      checkout: root,
+      pollMilliseconds: 10,
+      signal: undefined,
+      cancelled: () => new Error(`The ask lock for ${askId} was cancelled.`),
+      onWaiting: () => undefined,
+    },
+    async () => {
+      const current = await readAskRecord(root, askId);
+
+      if (current === undefined) {
+        return undefined;
+      }
+
+      await options.afterRead?.();
+
+      const next = change(current);
+
+      if (next === undefined) {
+        return { record: current, changed: false };
+      }
+
+      await writeAskRecord(root, next);
+
+      return { record: next, changed: true };
+    },
+  );
 
 export const readAskRecords = async (root: string): Promise<AskRecordScan> => {
   const names = await readdir(askRecordDirectory(root)).catch((error: unknown) => {
@@ -304,6 +379,12 @@ export const readAskRecords = async (root: string): Promise<AskRecordScan> => {
 
 const openLiveAskStatuses = new Set<LiveAskStatus>(['sending', 'queued', 'unknown']);
 
+export const isOpenLiveAskStatus = (status: LiveAskStatus): boolean =>
+  openLiveAskStatuses.has(status);
+
+export const isOpenLiveAsk = (record: AskRecord): record is LiveAskRecord =>
+  record.route === 'live' && isOpenLiveAskStatus(record.status);
+
 export const readOpenLiveAsks = async (
   root: string,
   architectSessionId: string,
@@ -312,8 +393,6 @@ export const readOpenLiveAsks = async (
 
   return records.filter(
     (record): record is LiveAskRecord =>
-      record.route === 'live' &&
-      record.architectSessionId === architectSessionId &&
-      openLiveAskStatuses.has(record.status),
+      isOpenLiveAsk(record) && record.architectSessionId === architectSessionId,
   );
 };

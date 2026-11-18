@@ -56,3 +56,15 @@ it('refuses a repeated connect call after the setup is consumed', async () => {
     'unexpected connect request: hello',
   );
 });
+
+it('answers hc get for a terminal with its own reply before the shared one', async () => {
+  const fake = createHcFake();
+
+  fake.reply('get', '{"address":"shared"}');
+  fake.replyGet('t-lead', '{"address":"t-lead"}');
+
+  const lead = await fake.exec('hc', ['get', '--json', '--', 't-lead']);
+  const other = await fake.exec('hc', ['get', '--json', '--', 't-other']);
+
+  expect([lead.stdout, other.stdout]).toEqual(['{"address":"t-lead"}', '{"address":"shared"}']);
+});

@@ -75,6 +75,7 @@ const pureModules = [
   'src/config/repositoryEntry.ts',
   'src/dialog/eligibility.ts',
   'src/extensions/architect/askDecision.ts',
+  'src/extensions/architect/finalHandoverDecision.ts',
   'src/extensions/architect/gateDecision.ts',
   'src/extensions/architect/openReuseDecision.ts',
   'src/extensions/architect/queuedHandover.ts',

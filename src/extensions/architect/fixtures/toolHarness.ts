@@ -16,9 +16,14 @@ export interface RecordSessionOptions {
   token?: string;
 }
 
-export const contextOf = (root: string, modelRegistry: unknown = {}): ExtensionToolContext =>
+export const contextOf = (
+  root: string,
+  modelRegistry: unknown = {},
+  sessionId = 'session-lead',
+): ExtensionToolContext =>
   ({
     cwd: root,
+    sessionManager: { getSessionId: (): string => sessionId },
     ui: { notify: vi.fn<(message: string, level?: string) => void>() },
     isProjectTrusted: (): boolean => true,
     modelRegistry,

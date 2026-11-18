@@ -29,19 +29,34 @@ refuses a launch or follow-up of an editing profile from an architect session. A
 The lead opens the architect with the `architect` tool. `open` starts or resumes the checkout's
 architect to the left of the lead when the lead terminal has a `herdr.space` label, and in a new
 named space when it has none. `ask` does not follow that placement rule. It sends one question to
-the architect and has two paths. While the architect is live in this checkout, `ask` puts the
-question in that session's inbox and returns at once. The architect answers, updates the ticket if
-needed, and sends the answer with `handover` `send` to the lead terminal, so the answer arrives in
-the lead's inbox. Otherwise `ask` resumes the same saved session in a hidden terminal with one
-question and a deadline; the architect answers, updates the ticket if needed, sends the answer to
-the lead's inbox, and ends. `gate` classifies a user request that no skill covers.
+the architect and has two paths. `gate` classifies a user request that no skill covers.
 
-`ask` refuses while a hidden ask runs, because the hidden architect answers one question and ends.
-It also refuses while a live holder in another checkout keeps the lock. The live path needs no saved
-session file; the hidden path refuses without one. An inbox delivery that gets no reply is
-`unknown`: the question may already be saved, so the lead waits for the answer instead of asking
-again. A live architect that holds the lock before it records its terminal is still starting, so the
-lead asks again shortly.
+An architect that takes the checkout lock records its route: the lock token, its mode, its terminal,
+and its Pi session ID. The mode is visible, or ask for a hidden ask. `ask` takes the live path only
+when the recorded token matches the live lock holder and the mode is visible. The send names the
+recorded session, so the inbox refuses the question when that terminal now runs another session. A
+holder without a matching route is still starting, and the lead asks again shortly. The question
+also carries the lock token, and the architect saves it only while it holds that token. A reload or
+restart between the lead's read and the send therefore refuses the question, even when the terminal
+keeps its session. A holder in ask mode is a running hidden ask, and `ask` refuses until it ends. A
+live holder in another checkout also refuses.
+
+On the live path, the lead must have a working inbox for its own session, or `ask` refuses before it
+sends. `ask` saves an ask record with an ask ID, the lead's terminal and session, and the
+architect's session. It sends the question with the ask ID as the message ID and returns when the
+inbox replies. A missing reply makes the result `unknown`. The lead then retries with the ask ID,
+which sends the same text with the same message ID and never starts a hidden ask. The architect
+answers with `architect` `answer` and the ask ID. The action sends the answer to the lead's recorded
+terminal and session, starts it with the ask ID, and marks the ask answered. A lead terminal that
+runs a new session refuses the answer, and the architect tells the user.
+
+The architect cannot send its final handover while an ask to its session is open. When it closes
+anyway, its inbox stops before it releases the lock. It then marks each open ask failed and sends
+the lead a note to ask again.
+
+Without a live holder, `ask` resumes the saved session in a hidden terminal with one question and a
+deadline. This path needs the recorded session file. The architect answers, updates the ticket if
+needed, sends the answer to the lead's inbox, and ends.
 
 The architect is a Pi session resumed by its saved session file. It can ask the user directly and
 keeps its earlier design context and approvals. The checkout records the session file. A lock file
@@ -84,6 +99,8 @@ the work.
 - The split adds a role-specific prompt and model setting to maintain.
 - A lead that ignores a skill marker can still decide a design choice itself.
 - The user switches tabs to watch a worker or a review.
+- A question saved just before the architect's inbox closes shows only when that session resumes.
+  The lead gets a note to ask again.
 
 ## Alternatives considered
 

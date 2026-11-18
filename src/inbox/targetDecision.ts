@@ -21,6 +21,18 @@ const socketSession = (path: string): string | undefined => {
   return name.endsWith('.sock') && isSessionId(sessionId) ? sessionId : undefined;
 };
 
+export const advertisedSession = (labels: Readonly<Record<string, string>>): string | undefined => {
+  const label = labels[inboxLabelKey];
+
+  if (label === undefined) {
+    return undefined;
+  }
+
+  const parsed = parseInboxLabel(label);
+
+  return parsed.kind === 'socket' ? socketSession(parsed.path) : undefined;
+};
+
 export const decideTarget = (facts: TargetFacts): TargetDecision => {
   const { address } = facts;
 

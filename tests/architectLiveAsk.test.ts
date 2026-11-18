@@ -1,25 +1,39 @@
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import architectExtension from '../src/extensions/architect/architect.js';
+import { acceptArchitectAsk } from '../src/extensions/architect/askAcceptance.js';
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import {
   askRecordDirectory,
+  readArchitectRecord,
+  readAskRecord,
   readAskRecords,
   writeArchitectRecord,
 } from '../src/extensions/architect/record.js';
+import {
+  createHeldLockToken,
+  endArchitectSession,
+  startArchitectSession,
+} from '../src/extensions/architect/session.js';
 import { createArchitectTool } from '../src/extensions/architect/tool.js';
-import { sendHandover } from '../src/extensions/handover/send.js';
+import { createInboxExtension } from '../src/extensions/inbox/inbox.js';
+import { readLiveLockHolder } from '../src/fileLock/fileLock.js';
+import { acceptChecks, sendInboxMessage } from '../src/inbox/inbox.js';
+import type { AcceptCheck } from '../src/inbox/inbox.js';
+import { fakeExtensionApi } from './extensionApi.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { createHcFake } from './hcFake.js';
 import type { HcFake } from './hcFake.js';
-import { startHandoverReceiver } from './inboxReceiverHarness.js';
+import { forgetAcceptCheck, startHandoverReceiver } from './inboxReceiverHarness.js';
 import type { HandoverReceiver } from './inboxReceiverHarness.js';
 import { temporaryTauConfig } from './tauConfigHarness.js';
+
+type FakeApi = ReturnType<typeof fakeExtensionApi>;
 
 const socketRoot = (): string => {
   const root = mkdtempSync('/tmp/tau-live-ask-');
@@ -33,28 +47,358 @@ const socketRoot = (): string => {
   return root;
 };
 
-const startSilentInbox = async (): Promise<string> => {
-  const path = join(socketRoot(), 'silent.sock');
-  const server = createServer((socket) => socket.end());
+const stubLead = (): void => {
+  const config = temporaryTauConfig(onTestFinished, 'tau-architect-live-ask-');
 
-  await new Promise<void>((resolve) => {
-    server.listen(path, resolve);
-  });
+  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
+  vi.stubEnv('PI_CODING_AGENT_DIR', config.location.agentDirectory);
+  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
 
   onTestFinished(() => {
-    server.close();
+    vi.unstubAllEnvs();
   });
-
-  return path;
 };
 
-const contextOf = (root: string): ExtensionToolContext =>
+const toolContext = (root: string, sessionId: string): ExtensionToolContext =>
   ({
     cwd: root,
     ui: { notify: vi.fn<(message: string, level?: string) => void>() },
     isProjectTrusted: () => true,
     modelRegistry: {},
+    sessionManager: { getSessionId: () => sessionId },
   }) as unknown as ExtensionToolContext;
+
+const architectContext = (root: string): ExtensionContext =>
+  ({
+    cwd: root,
+    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
+    shutdown: vi.fn<() => void>(),
+    isProjectTrusted: () => true,
+    sessionManager: {
+      getSessionFile: () => join(root, 'architect-session.jsonl'),
+      getSessionId: () => 'session-architect',
+    },
+  }) as unknown as ExtensionContext;
+
+const runHandlers = async (fake: FakeApi, name: string, context: ExtensionContext) => {
+  for (const handler of fake.handlers.get(name) ?? []) {
+    await handler({ reason: 'startup' } as never, context);
+  }
+};
+
+// Loads the visible architect as its own process would and starts its session with a real lock.
+// The lead terminal is current again afterwards.
+const startVisibleArchitect = async (root: string, hc: HcFake) => {
+  const fake = fakeExtensionApi({ exec: hc.exec });
+  const context = architectContext(root);
+
+  vi.stubEnv('TAU_ROLE', 'architect');
+  vi.stubEnv('TAU_ARCHITECT_ASK', '');
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  architectExtension(fake.pi);
+  await runHandlers(fake, 'session_start', context);
+  vi.stubEnv('TAU_ROLE', '');
+  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
+
+  onTestFinished(async () => {
+    await runHandlers(fake, 'session_shutdown', context);
+    forgetAcceptCheck('architect-ask');
+  });
+
+  const check = acceptChecks()['architect-ask'];
+
+  if (check === undefined) {
+    throw new Error('The visible architect registered no architect-ask check.');
+  }
+
+  return { fake, context, check };
+};
+
+const startArchitectInbox = (check: AcceptCheck): Promise<HandoverReceiver> =>
+  startHandoverReceiver(onTestFinished, socketRoot(), 't-architect', {
+    sessionId: 'session-architect',
+    accepts: { handover: (_request, save) => save(), 'architect-ask': check },
+  });
+
+const replyTerminal = (hc: HcFake, address: string, path: string): void => {
+  hc.replyGet(
+    address,
+    JSON.stringify({ address, name: null, state: 'live', labels: { 'tau.inbox': `rpc1:${path}` } }),
+  );
+};
+
+const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> => {
+  const directory = join(dirname(dirname(receiver.path)), 'records', receiver.sessionId);
+  const names = await readdir(directory).catch(() => []);
+
+  return Promise.all(
+    names.map(async (name) => {
+      const saved = JSON.parse(await readFile(join(directory, name), 'utf8')) as {
+        payload: { text: string };
+      };
+
+      return saved.payload.text;
+    }),
+  );
+};
+
+// Runs the lead's ask against a live architect and returns the ask ID the architect inbox saved.
+const askLiveArchitect = async (root: string, hc: HcFake) => {
+  const { fake, check } = await startVisibleArchitect(root, hc);
+  const architectInbox = await startArchitectInbox(check);
+  const leadSockets = socketRoot();
+  const leadSocket = join(leadSockets, 'sockets', 'session-lead.sock');
+
+  replyTerminal(hc, 't-lead', leadSocket);
+  replyTerminal(hc, 't-architect', architectInbox.path);
+
+  const asked = await createArchitectTool({ ...hc, cwd: root }).execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    toolContext(root, 'session-lead'),
+  );
+
+  expect(asked.details).toMatchObject({ action: 'ask', status: 'queued', terminal: 't-architect' });
+
+  const [question = ''] = await savedTexts(architectInbox);
+  const askId = /^Ask (?<askId>\S+) from the lead/v.exec(question)?.groups?.['askId'] ?? '';
+
+  expect(question).toContain('"Which flag name?"');
+  expect(question).toContain(`architect answer and askId ${askId}`);
+  expect(asked.details).toMatchObject({ askId });
+
+  await writeFile(join(root, 'answer.md'), 'Use --dry-run.\n');
+
+  const answer = () => {
+    const tool = fake.tools.get('architect');
+
+    if (tool === undefined) {
+      throw new Error('The visible architect registered no architect tool.');
+    }
+
+    vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+
+    return tool.execute(
+      'call',
+      { action: 'answer', askId, file: 'answer.md' },
+      undefined,
+      undefined,
+      toolContext(root, 'session-architect'),
+    );
+  };
+
+  return { askId, leadSockets, leadSocket, answer };
+};
+
+it('the lead session that asked receives the live architect answer in its inbox', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+
+  stubLead();
+
+  const { askId, leadSockets, leadSocket, answer } = await askLiveArchitect(root, hc);
+  const lockToken = (await readArchitectRecord(root))?.owner?.lockToken;
+
+  // One process holds one inbox, so the lead inbox starts after the architect inbox closes.
+  const lead = await startHandoverReceiver(onTestFinished, leadSockets, 't-lead', {
+    sessionId: 'session-lead',
+  });
+
+  expect(lead.path).toBe(leadSocket);
+
+  const answered = await answer();
+  const texts = await savedTexts(lead);
+
+  expect(answered.details).toEqual({ action: 'answer', status: 'queued', askId });
+  expect(texts).toHaveLength(1);
+  expect(texts[0]?.startsWith(`Answer to ask ${askId}`)).toBe(true);
+  expect(texts[0]).toContain('Use --dry-run.');
+  expect(await readAskRecord(root, askId)).toMatchObject({ status: 'answered' });
+  expect((await readLiveLockHolder(architectLockPath(root)))?.token).toBe(lockToken);
+  expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
+});
+
+it('an answer to a lead terminal that started a new session saves nothing and fails', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+
+  stubLead();
+
+  const { askId, leadSockets, answer } = await askLiveArchitect(root, hc);
+
+  const newSession = await startHandoverReceiver(onTestFinished, leadSockets, 't-lead', {
+    sessionId: 'session-lead-new',
+  });
+
+  replyTerminal(hc, 't-lead', newSession.path);
+
+  await expect(answer()).rejects.toThrow(/changed session/);
+  await expect(savedTexts(newSession)).resolves.toEqual([]);
+  expect(await readAskRecord(root, askId)).toMatchObject({ status: 'failed' });
+});
+
+it('an architect-ask is saved only while the architect holds the lock token it names', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+
+  stubLead();
+
+  const { fake, context, check } = await startVisibleArchitect(root, hc);
+  const inbox = await startArchitectInbox(check);
+  const tokenOne = (await readArchitectRecord(root))?.owner?.lockToken ?? '';
+
+  replyTerminal(hc, 't-architect', inbox.path);
+
+  const send = (text: string, lockToken?: string) =>
+    sendInboxMessage({
+      hc: { ...hc, cwd: root },
+      target: 't-architect',
+      sessionId: 'session-architect',
+      body:
+        lockToken === undefined
+          ? { family: 'handover', payload: { text } }
+          : { family: 'architect-ask', payload: { text, lockToken } },
+      refusal: 'Nothing was queued.',
+    });
+
+  const refusal = `This architect does not hold lock ${tokenOne} now. It restarted or closed. Call architect ask again. Nothing was queued.`;
+
+  await expect(send('held ask', tokenOne)).resolves.toMatchObject({ status: 'queued' });
+  await expect(send('held handover')).resolves.toMatchObject({ status: 'queued' });
+
+  await runHandlers(fake, 'session_shutdown', context);
+
+  await expect(send('closed ask', tokenOne)).rejects.toThrow(refusal);
+  await expect(send('closed handover')).resolves.toMatchObject({ status: 'queued' });
+
+  vi.stubEnv('TAU_ROLE', 'architect');
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  await runHandlers(fake, 'session_start', context);
+  vi.stubEnv('TAU_ROLE', '');
+  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
+
+  const tokenTwo = (await readArchitectRecord(root))?.owner?.lockToken ?? '';
+
+  expect(tokenTwo).not.toBe(tokenOne);
+  await expect(send('restarted ask', tokenOne)).rejects.toThrow(refusal);
+  await expect(send('new ask', tokenTwo)).resolves.toMatchObject({ status: 'queued' });
+  await expect(send('restarted handover')).resolves.toMatchObject({ status: 'queued' });
+
+  expect((await savedTexts(inbox)).toSorted()).toEqual(
+    ['closed handover', 'held ask', 'held handover', 'new ask', 'restarted handover'].toSorted(),
+  );
+});
+
+it('an architect-ask sent after the record is published but before startup returns is saved', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+  const held = createHeldLockToken();
+
+  const inbox = await startHandoverReceiver(onTestFinished, socketRoot(), 't-architect', {
+    sessionId: 'session-architect',
+    accepts: {
+      handover: (_request, save) => save(),
+      'architect-ask': acceptArchitectAsk(held.current),
+    },
+  });
+
+  stubLead();
+  replyTerminal(hc, 't-architect', inbox.path);
+  vi.stubEnv('TAU_ROLE', 'architect');
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+
+  const published = Promise.withResolvers<undefined>();
+  const resume = Promise.withResolvers<undefined>();
+
+  const starting = startArchitectSession(architectContext(root), held, async () => {
+    published.resolve(undefined);
+    await resume.promise;
+  });
+
+  await published.promise;
+
+  const token = held.current() ?? '';
+
+  expect(token).not.toBe('');
+  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
+
+  await expect(
+    sendInboxMessage({
+      hc: { ...hc, cwd: root },
+      target: 't-architect',
+      sessionId: 'session-architect',
+      body: { family: 'architect-ask', payload: { text: 'startup ask', lockToken: token } },
+      refusal: 'Nothing was queued.',
+    }),
+  ).resolves.toMatchObject({ status: 'queued' });
+
+  await expect(savedTexts(inbox)).resolves.toEqual(['startup ask']);
+
+  resume.resolve(undefined);
+
+  const session = await starting;
+
+  expect(session).toBeDefined();
+
+  await endArchitectSession(session as NonNullable<typeof session>, { ...hc, cwd: root });
+
+  expect(held.current()).toBeUndefined();
+});
+
+it.for([
+  { name: 'a lead session', role: 'lead', askPath: '' },
+  { name: 'a hidden ask session', role: 'architect', askPath: '/tmp/tau-ask/ask.json' },
+])('$name refuses an architect-ask and saves nothing', async ({ role, askPath }) => {
+  const sockets = socketRoot();
+  const hc = createHcFake();
+  const inbox = fakeExtensionApi();
+  const terminal = JSON.stringify({ address: 't-session', name: null, state: 'live', labels: {} });
+
+  forgetAcceptCheck('architect-ask');
+  stubLead();
+  vi.stubEnv('TAU_ROLE', role);
+  vi.stubEnv('TAU_ARCHITECT_ASK', askPath);
+  vi.stubEnv('HC_TERMINAL_ID', 't-session');
+  architectExtension(fakeExtensionApi().pi);
+  hc.reply('label', terminal);
+  hc.reply('get', terminal);
+
+  createInboxExtension({
+    hc: { ...hc, cwd: sockets },
+    socketDirectory: () => join(sockets, 'sockets'),
+    inboxDirectory: () => join(sockets, 'records'),
+  })(inbox.pi);
+
+  const context = {
+    sessionManager: { getSessionId: () => 'session-x', getEntries: () => [] },
+    ui: { notify: vi.fn<(message: string) => void>() },
+    isIdle: () => true,
+    signal: undefined,
+  } as unknown as ExtensionContext;
+
+  await runHandlers(inbox, 'session_start', context);
+
+  onTestFinished(async () => {
+    await runHandlers(inbox, 'session_shutdown', context);
+  });
+
+  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
+  replyTerminal(hc, 't-session', join(sockets, 'sockets', 'session-x.sock'));
+
+  await expect(
+    sendInboxMessage({
+      hc: { ...hc, cwd: sockets },
+      target: 't-session',
+      sessionId: 'session-x',
+      body: { family: 'architect-ask', payload: { text: 'Ask text', lockToken: 'lock-1' } },
+      refusal: 'Nothing was queued.',
+    }),
+  ).rejects.toThrow('This session does not accept architect-ask messages. Nothing was queued.');
+
+  await expect(readdir(join(sockets, 'records'))).rejects.toThrow(/ENOENT/);
+});
 
 const recordLiveArchitect = async (
   root: string,
@@ -91,114 +435,21 @@ const recordLiveArchitect = async (
   });
 };
 
-const replyTerminal = (hc: HcFake, address: string, receiver: HandoverReceiver): void => {
-  hc.reply(
-    'get',
-    JSON.stringify({
-      address,
-      name: null,
-      state: 'live',
-      labels: { 'tau.inbox': `rpc1:${receiver.path}` },
-    }),
-  );
-};
-
-const savedText = async (
-  sockets: string,
-  receiver: HandoverReceiver,
-  messageId: string,
-): Promise<string> => {
-  const saved = await readFile(
-    join(sockets, 'records', receiver.sessionId, `${messageId}.json`),
-    'utf8',
-  );
-
-  return (JSON.parse(saved) as { payload: { text: string } }).payload.text;
-};
-
-it('the lead receives the answer of a live architect in its inbox', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const config = temporaryTauConfig(onTestFinished, 'tau-architect-live-ask-');
-  const hc = createHcFake();
-  const architectSockets = socketRoot();
-  const leadSockets = socketRoot();
-  const architect = await startHandoverReceiver(onTestFinished, architectSockets, 't-architect');
-
-  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
-  vi.stubEnv('PI_CODING_AGENT_DIR', config.location.agentDirectory);
-  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  await recordLiveArchitect(root, architect.sessionId);
-  replyTerminal(hc, 't-architect', architect);
-
-  const asked = await createArchitectTool({ ...hc, cwd: root }).execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  const { messageId } = asked.details as { messageId: string };
-  const question = await savedText(architectSockets, architect, messageId);
-  const answerFile = join(root, '.tau', 'handovers', 'answer.md');
-
-  expect(asked.details).toMatchObject({
-    action: 'ask',
-    status: 'queued',
-    terminal: 't-architect',
-  });
-
-  expect(question).toContain('Which flag name?');
-  expect(question).toContain('t-lead');
-  expect(question).toContain('handover send');
-  expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
-
-  await mkdir(dirname(answerFile), { recursive: true });
-  await writeFile(answerFile, 'Use --dry-run.\n');
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  // One process holds one inbox, so the lead inbox starts after the architect inbox closes.
-  const lead = await startHandoverReceiver(onTestFinished, leadSockets, 't-lead');
-
-  replyTerminal(hc, 't-lead', lead);
-
-  const answered = await sendHandover(
-    { exec: hc.exec, connect: hc.connect, cwd: root },
-    { cwd: root, terminal: 't-lead', file: answerFile },
-  );
-
-  expect(answered).toMatchObject({ status: 'queued', terminal: 't-lead' });
-  await expect(savedText(leadSockets, lead, answered.messageId)).resolves.toBe('Use --dry-run.\n');
-});
-
 it('a second ask refuses while a hidden ask runs, even with this checkout holding the lock', async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const config = temporaryTauConfig(onTestFinished, 'tau-architect-hidden-ask-');
   const hc = createHcFake();
-  const sockets = socketRoot();
-  const receiver = await startHandoverReceiver(onTestFinished, sockets, 't-ask');
+  const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), 't-ask');
 
-  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
-  vi.stubEnv('PI_CODING_AGENT_DIR', config.location.agentDirectory);
-  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
+  stubLead();
   await recordLiveArchitect(root);
   await mkdir(askRecordDirectory(root), { recursive: true });
 
   await writeFile(
-    join(askRecordDirectory(root), 'ask-1.json'),
+    join(askRecordDirectory(root), '0190c1d2-0000-7000-8000-000000000110.json'),
     JSON.stringify({
       version: 2,
       route: 'hidden',
-      askId: 'ask-1',
+      askId: '0190c1d2-0000-7000-8000-000000000110',
       createdAt: new Date().toISOString(),
       question: 'Earlier question',
       sessionFile: join(root, 'architect-session.jsonl'),
@@ -211,25 +462,25 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
     }),
   );
 
-  replyTerminal(hc, 't-ask', receiver);
+  replyTerminal(hc, 't-ask', receiver.path);
 
   const asked = await createArchitectTool({ ...hc, cwd: root }).execute(
     'call',
     { action: 'ask', question: 'Which flag name?' },
     undefined,
     undefined,
-    contextOf(root),
+    toolContext(root, 'session-lead'),
   );
 
   const reason = (asked.details as { reason: string }).reason;
 
   expect(asked.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect(reason).toContain('ask-1');
+  expect(reason).toContain('0190c1d2-0000-7000-8000-000000000110');
   expect(reason).toContain('Wait for it');
   expect(reason).not.toContain('architect open');
 
   await expect(readAskRecords(root)).resolves.toMatchObject({
-    records: [{ askId: 'ask-1', status: 'running' }],
+    records: [{ askId: '0190c1d2-0000-7000-8000-000000000110', status: 'running' }],
   });
 
   expect(receiver.savedRecords()).toEqual([]);
@@ -238,21 +489,13 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
 
 it('ask refuses a changed architect session', async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const config = temporaryTauConfig(onTestFinished, 'tau-architect-changed-session-');
   const hc = createHcFake();
-  const sockets = socketRoot();
-  const architect = await startHandoverReceiver(onTestFinished, sockets, 't-architect');
+  const architect = await startHandoverReceiver(onTestFinished, socketRoot(), 't-architect');
 
-  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
-  vi.stubEnv('PI_CODING_AGENT_DIR', config.location.agentDirectory);
-  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
+  stubLead();
   await recordLiveArchitect(root, 'recorded-session');
-  replyTerminal(hc, 't-architect', architect);
+  replyTerminal(hc, 't-lead', '/tmp/tau-lead/session-lead.sock');
+  replyTerminal(hc, 't-architect', architect.path);
 
   await expect(
     createArchitectTool({ ...hc, cwd: root }).execute(
@@ -260,61 +503,10 @@ it('ask refuses a changed architect session', async () => {
       { action: 'ask', question: 'Which flag name?' },
       undefined,
       undefined,
-      contextOf(root),
+      toolContext(root, 'session-lead'),
     ),
   ).rejects.toThrow(/changed session/);
 
   expect(architect.savedRecords()).toEqual([]);
   expect(hc.calls.map((call) => call.commandArguments[0])).not.toContain('run');
-});
-
-it('an unknown inbox delivery keeps the message ID and asks the lead to wait', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const config = temporaryTauConfig(onTestFinished, 'tau-architect-unknown-ask-');
-  const hc = createHcFake();
-  const silent = await startSilentInbox();
-
-  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
-  vi.stubEnv('PI_CODING_AGENT_DIR', config.location.agentDirectory);
-  vi.stubEnv('HC_TERMINAL_ID', 't-lead');
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  await recordLiveArchitect(root, 'silent');
-
-  hc.reply(
-    'get',
-    JSON.stringify({
-      address: 't-architect',
-      name: null,
-      state: 'live',
-      labels: { 'tau.inbox': `rpc1:${silent}` },
-    }),
-  );
-
-  const asked = await createArchitectTool({ ...hc, cwd: root }).execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  const details = asked.details as { status: string; messageId: string; note: string };
-
-  expect(details).toMatchObject({
-    action: 'ask',
-    status: 'unknown',
-    terminal: 't-architect',
-    sessionId: 'silent',
-  });
-
-  expect(details.messageId).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-  );
-
-  expect(details.note).toContain('may already be in the inbox');
-  expect(details.note).toContain('do not ask the same question again');
 });

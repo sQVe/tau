@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { decideTarget } from './targetDecision.js';
+import { advertisedSession, decideTarget } from './targetDecision.js';
 import type { TargetFacts } from './targetDecision.js';
 
 const sessionId = '0190c1d2-0000-7000-8000-000000000002';
@@ -83,4 +83,16 @@ const targetCases: [string, TargetFacts, ReturnType<typeof decideTarget>][] = [
 
 it.each(targetCases)('decides a target for %s', (_name, facts, expected) => {
   expect(decideTarget(facts)).toEqual(expected);
+});
+
+const advertisedCases: [string, Record<string, string>, string | undefined][] = [
+  ['an rpc1 label', { 'tau.inbox': `rpc1:/tmp/tau-1000/${sessionId}.sock` }, sessionId],
+  ['no label', {}, undefined],
+  ['an empty label', { 'tau.inbox': '' }, undefined],
+  ['another protocol', { 'tau.inbox': `rpc2:/tmp/tau-1000/${sessionId}.sock` }, undefined],
+  ['a socket without a session', { 'tau.inbox': 'rpc1:/tmp/tau-1000/inbox' }, undefined],
+];
+
+it.each(advertisedCases)('reads the advertised session of %s', (_name, labels, expected) => {
+  expect(advertisedSession(labels)).toBe(expected);
 });

@@ -51,9 +51,12 @@ const familyChecks = () => {
     return acceptChecks();
   }
 
-  const answerRequest = acceptChecks()['answer-request'];
+  const { 'answer-request': answerRequest, 'architect-ask': architectAsk } = acceptChecks();
 
-  return answerRequest === undefined ? {} : { 'answer-request': answerRequest };
+  return {
+    ...(answerRequest === undefined ? {} : { 'answer-request': answerRequest }),
+    ...(architectAsk === undefined ? {} : { 'architect-ask': architectAsk }),
+  };
 };
 
 const notifyError = (context: ExtensionContext, message: string): void => {

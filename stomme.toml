@@ -471,6 +471,11 @@ entry = "src/fileLock/fileLock.ts"
 public = []
 imports = ["errors", "process", "schema"]
 
+[modules.fileText]
+entry = "src/fileText.ts"
+public = []
+imports = ["errors"]
+
 [modules.git]
 entry = "src/git.ts"
 public = []

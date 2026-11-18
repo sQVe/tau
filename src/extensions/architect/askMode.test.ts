@@ -13,7 +13,7 @@ import type { HiddenAskRecord, LiveAskRecord } from './record.js';
 const askRecord = (): HiddenAskRecord => ({
   version: 2,
   route: 'hidden',
-  askId: 'ask-1',
+  askId: '0190c1d2-0000-7000-8000-000000000105',
   createdAt: '2026-11-17T10:00:00.000Z',
   question: 'Which flag name should replace --fast?',
   sessionFile: '/sessions/architect.jsonl',
@@ -28,13 +28,14 @@ const askRecord = (): HiddenAskRecord => ({
 const liveRecord = (): LiveAskRecord => ({
   version: 2,
   route: 'live',
-  askId: 'ask-live',
+  askId: '0190c1d2-0000-7000-8000-000000000106',
   createdAt: '2026-11-17T10:00:00.000Z',
   question: 'Which flag name should replace --fast?',
   leadTerminal: 't-lead',
   leadSessionId: 'session-lead',
   architectTerminal: 't-architect',
   architectSessionId: 'session-architect',
+  architectLockToken: 'live',
   status: 'queued',
   detail: null,
   answer: null,
@@ -44,7 +45,7 @@ const askFile = async (
   cleanup: (cleanup: () => void) => void,
 ): Promise<{ directory: string; path: string; record: HiddenAskRecord }> => {
   const directory = temporaryDirectory(cleanup, 'tau-ask-mode-');
-  const path = join(directory, 'ask.json');
+  const path = join(directory, `${askRecord().askId}.json`);
   const record = askRecord();
 
   await writeAskRecordAt(path, record);
@@ -129,7 +130,7 @@ it('ask mode blocks a handover send to a terminal that is not the lead', async (
 
 it('ask mode leaves a live record alone', async ({ onTestFinished }) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-ask-mode-');
-  const path = join(directory, 'ask.json');
+  const path = join(directory, `${liveRecord().askId}.json`);
   const record = liveRecord();
   const file = await writeHandover(directory, 'Use --quick.');
   const fake = fakeExtensionApi();

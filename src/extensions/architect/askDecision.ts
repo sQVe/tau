@@ -17,7 +17,7 @@ export interface AskRouteFacts {
 
 export type AskRoute =
   | { kind: 'hidden'; sessionFile: string }
-  | { kind: 'live'; terminal: string; sessionId: string }
+  | { kind: 'live'; terminal: string; sessionId: string; lockToken: string }
   | { kind: 'needsOpen'; reason: string };
 
 // A sent answer is the only answered outcome. A timeout, or an ended ask that never sent, tells
@@ -74,7 +74,12 @@ export const askRoute = (facts: AskRouteFacts): AskRoute => {
       };
     }
 
-    return { kind: 'live', terminal: owner.terminal, sessionId: owner.sessionId };
+    return {
+      kind: 'live',
+      terminal: owner.terminal,
+      sessionId: owner.sessionId,
+      lockToken: owner.lockToken,
+    };
   }
 
   if (facts.sessionFile === null) {

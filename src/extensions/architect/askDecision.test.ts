@@ -114,7 +114,12 @@ it.each([
       owner: owner(),
       sessionFile: '/repo/architect.jsonl',
     },
-    expected: { kind: 'live', terminal: 't-architect', sessionId: 'session-architect' },
+    expected: {
+      kind: 'live',
+      terminal: 't-architect',
+      sessionId: 'session-architect',
+      lockToken: 'live',
+    },
   },
   {
     name: 'a live owner needs no session file',
@@ -124,7 +129,12 @@ it.each([
       owner: owner(),
       sessionFile: null,
     },
-    expected: { kind: 'live', terminal: 't-architect', sessionId: 'session-architect' },
+    expected: {
+      kind: 'live',
+      terminal: 't-architect',
+      sessionId: 'session-architect',
+      lockToken: 'live',
+    },
   },
   {
     name: 'an ownerless holder needs no session file',
