@@ -26,7 +26,7 @@ import { answeredQuestionId } from '../../inbox/receiptDecision.js';
 import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
 import { registerTypeScriptRules } from '../../instructions/typescriptRules.js';
-import { isWorkerProcess } from '../../role.js';
+import { isWorkerProcess } from '../../role/role.js';
 import { skillTools } from '../../skillTools.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { createWake } from '../../wake/wake.js';

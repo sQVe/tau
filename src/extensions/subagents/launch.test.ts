@@ -279,6 +279,55 @@ it('refuses a launch when the fresh skill table needs an unregistered tool', asy
   expect(result.content[0]?.text).toContain('review_new_unregistered_tool');
 });
 
+it('launches from an architect session when the skill table lists the architect tool', async () => {
+  const { runtime } = setup();
+
+  vi.stubEnv('TAU_ROLE', 'architect');
+
+  runtime.readSkillTools = () => ({ slice: ['architect'] });
+
+  runtime.pi = {
+    getCommands: () => [],
+    getAllTools: () => [{ name: 'read' }],
+  } as unknown as ExtensionAPI;
+
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({
+    ...loadout,
+    role: 'investigation',
+    profile: 'scout',
+  });
+
+  const result = await launch(runtime, {});
+
+  expect(result.isError).not.toBe(true);
+});
+
+it('refuses an editing launch from an architect session', async () => {
+  const { fake, runtime } = setup();
+
+  vi.stubEnv('TAU_ROLE', 'architect');
+
+  runtime.readSkillTools = () => ({ slice: ['architect'] });
+
+  runtime.pi = {
+    getCommands: () => [],
+    getAllTools: () => [{ name: 'read' }],
+  } as unknown as ExtensionAPI;
+
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue(loadout);
+
+  const result = await launch(runtime, { acceptance: [] });
+
+  expect(result.isError).toBe(true);
+
+  expect(result.content[0]?.text).toContain(
+    'An architect session launches only investigation workers',
+  );
+
+  expect(existsSync(join(runtime.agentDirectory, 'tau'))).toBe(false);
+  expect(fake.connectCalls).toEqual([]);
+});
+
 it('refuses an editing launch without acceptance criteria', async () => {
   const { runtime } = setup();
   const result = await launch(runtime, { acceptance: [] });

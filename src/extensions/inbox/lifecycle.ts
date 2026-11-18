@@ -14,7 +14,7 @@ import {
   startInbox,
 } from '../../inbox/inbox.js';
 import type { InboxListener, Receiver } from '../../inbox/inbox.js';
-import { isWorkerProcess } from '../../role.js';
+import { isWorkerProcess } from '../../role/role.js';
 import type { Wake } from '../../wake/wake.js';
 import { holdsArrival } from './arrivalDecision.js';
 import type { ArrivalFacts } from './arrivalDecision.js';

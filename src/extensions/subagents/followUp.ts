@@ -4,6 +4,8 @@ import { existsSync } from 'node:fs';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { currentTerminalAddress, ls } from '../../hc/hc.js';
+import { currentRole } from '../../role/role.js';
+import type { RoleKind } from '../../role/role.js';
 import { readSkillTools as readCurrentSkillTools } from '../../skillTools.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { assignmentPath, readAssignment, writeFollowUpAssignment } from './assignment.js';
@@ -14,6 +16,7 @@ import type { ToolResult } from './errorResult.js';
 import type { FollowUpParameters } from './followUpParameters.js';
 import { capacityRefusal, startReservedWorker } from './launch.js';
 import type { LaunchRuntime, LaunchStatus } from './launch.js';
+import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { decideSessionUse } from './sessionUse.js';
 import type { SessionUse, SessionUseTerminal } from './sessionUse.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
@@ -104,6 +107,7 @@ const followUpAssignment = (
 const followUpSource = async (
   parameters: FollowUpParameters,
   parentSession: string,
+  launchingRole: RoleKind,
 ): Promise<{ source: Assignment; extensionPackages: { source: string; path: string }[] }> => {
   const sourcePath = assignmentPath(parameters.sourceAssignmentId);
   const source = await readAssignment(sourcePath);
@@ -114,6 +118,12 @@ const followUpSource = async (
 
   if (source.parentSession !== parentSession) {
     throw new Error(`Assignment ${source.assignmentId} belongs to another manager session.`);
+  }
+
+  const roleRefusal = roleLaunchRefusal(launchingRole, source.loadout);
+
+  if (roleRefusal !== undefined) {
+    throw new Error(roleRefusal);
   }
 
   const acceptanceProblem = acceptanceRefusal(source.loadout.role, parameters.acceptance);
@@ -154,8 +164,15 @@ export const executeFollowUp = async (
   _context: ExtensionContext,
 ): Promise<ToolResult<LaunchStatus | undefined>> => {
   try {
+    const launchingRole = currentRole();
     const parameters = request.parameters;
-    const { source, extensionPackages } = await followUpSource(parameters, request.parentSession);
+
+    const { source, extensionPackages } = await followUpSource(
+      parameters,
+      request.parentSession,
+      launchingRole,
+    );
+
     const parentTerminal = currentTerminalAddress();
 
     if (parentTerminal === undefined) {
@@ -166,7 +183,7 @@ export const executeFollowUp = async (
     const skillTools = (runtime.readSkillTools ?? readCurrentSkillTools)();
     const registeredNames = runtime.pi.getAllTools().map((tool) => tool.name);
     const registeredToolNames = new Set(registeredNames);
-    const skillToolsRefused = skillToolsRefusal(skillTools, registeredToolNames);
+    const skillToolsRefused = skillToolsRefusal(skillTools, registeredToolNames, launchingRole);
 
     if (skillToolsRefused !== undefined) {
       throw new Error(skillToolsRefused);

@@ -19,7 +19,7 @@ import {
   requireAllowedModel,
 } from '../../config/models.js';
 import { readRoleProfileModel } from '../../config/roleModels.js';
-import type { RoleKind } from '../../role.js';
+import type { RoleKind } from '../../role/role.js';
 import { readProfileModel, readProfileThinking } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
 import type { Loadout, Profile, ThinkingLevel } from './types.js';

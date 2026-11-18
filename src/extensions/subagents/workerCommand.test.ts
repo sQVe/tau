@@ -90,6 +90,21 @@ it.each([
   expect(workerEnvironment(input, agentDirectory)[variable]).toBe(expected);
 });
 
+it('passes no lead-only tool to a worker that loads the slice skill', () => {
+  const commandLine = workerArguments(
+    sessionFile,
+    { ...fixtureLoadout('/tmp'), skills: ['/skills/slice/SKILL.md'] },
+    [],
+    skillTools,
+  );
+
+  const toolsValue = commandLine[commandLine.indexOf('--tools') + 1] ?? '';
+  const tools = toolsValue.split(',');
+
+  expect(tools).toContain('slice');
+  expect(tools).not.toContain('architect');
+});
+
 it('starts the worker without waiting for an approval prompt', () => {
   expect(workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools)).toContain(
     '--approve',

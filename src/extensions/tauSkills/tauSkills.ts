@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
-import { isWorkerProcess } from '../../role.js';
+import { isWorkerProcess } from '../../role/role.js';
 import { buildSkillMessage, loadSkillCatalog } from './skillCatalog.js';
 
 export default function tauSkillsExtension(pi: ExtensionAPI, skillsDirectory: string): void {

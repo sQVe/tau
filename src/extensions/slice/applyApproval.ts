@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { confirmWithUser } from '../../dialog/dialog.js';
-import { isWorkerProcess } from '../../role.js';
+import { isWorkerProcess } from '../../role/role.js';
 import type { Draft } from './draft.js';
 import { readDraft } from './draft.js';
 import { decideForeignWrites } from './foreignWrites.js';

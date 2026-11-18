@@ -11,7 +11,7 @@ import { errorMessage } from '../../errors.js';
 import { createIssue, readRouteIds, updateIssue } from '../../linear/linear.js';
 import { isViewersTicket } from '../../linear/ownership.js';
 import { readOptionalText } from '../../record.js';
-import { isWorkerProcess } from '../../role.js';
+import { isWorkerProcess } from '../../role/role.js';
 import {
   checkTauDirectory,
   findTauRoot,

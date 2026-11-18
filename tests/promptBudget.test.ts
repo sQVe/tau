@@ -14,8 +14,8 @@ import workerExtension, {
 } from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
-import type { RoleKind } from '../src/role.js';
-import { managerGuidelines } from '../src/roleGuidelines.js';
+import type { RoleKind } from '../src/role/role.js';
+import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
 import tauExtension from '../src/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -30,7 +30,7 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 57_907, // target 38,000
-  architect: 54_278,
+  architect: 54_293,
   worker: 22_387, // target 14,000
   reviewer: 17_841, // target 11,000
   checker: 17_994,

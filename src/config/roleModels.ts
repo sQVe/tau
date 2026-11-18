@@ -1,4 +1,4 @@
-import type { RoleKind } from '../role.js';
+import type { RoleKind } from '../role/role.js';
 import { isRecord } from '../schema.js';
 import type { KnownKeys } from '../schema.js';
 import { readUserOnlyKey, warnUnknownKeys } from './config.js';
