@@ -284,9 +284,14 @@ it('refuses an architect follow-up of an editing worker', async () => {
   } as unknown as ExtensionAPI;
 
   const before = assignmentFolders(directory);
-  const result = await followUp(runtime, source.assignmentId, { acceptance: ['a'] });
+  const result = await followUp(runtime, source.assignmentId, { acceptance: [] });
 
   expect(result.isError).toBe(true);
+
+  expect(result.content[0]?.text).toContain(
+    'An architect session launches only investigation workers',
+  );
+
   expect(terminalRun(fake)).toBeUndefined();
   expect(assignmentFolders(directory)).toEqual(before);
 });

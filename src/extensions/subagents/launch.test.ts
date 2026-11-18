@@ -316,10 +316,15 @@ it('refuses an editing launch from an architect session', async () => {
 
   vi.mocked(loadouts.resolveLoadout).mockReturnValue(loadout);
 
-  const result = await launch(runtime, { acceptance: ['a'] });
+  const result = await launch(runtime, { acceptance: [] });
 
   expect(result.isError).toBe(true);
-  expect(result.content[0]?.text).toContain('investigation workers');
+
+  expect(result.content[0]?.text).toContain(
+    'An architect session launches only investigation workers',
+  );
+
+  expect(existsSync(join(runtime.agentDirectory, 'tau'))).toBe(false);
   expect(fake.connectCalls).toEqual([]);
 });
 
