@@ -3,7 +3,7 @@ import { access, constants, lstat, realpath, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
-import { runGit } from '../git.js';
+import { createProbeCache, readProbe, runGit } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { keepAddedLines } from './evidenceDecisions.js';
 import { hasOnlyLineEndingWarnings } from './lineEndingWarning.js';
@@ -778,7 +778,7 @@ const captureWholeFiles = async (
 
 // The object format cannot change while the repository exists, so one probe per root serves the
 // whole process. A failed probe leaves no entry, so the next call asks Git again.
-const objectFormatProbes = new Map<string, Promise<ObjectFormatRead>>();
+const objectFormatProbes = createProbeCache<ObjectFormatRead>();
 
 const probeObjectFormat = async (root: string): Promise<ObjectFormatRead> => {
   const commandArguments = ['rev-parse', '--show-object-format'];
@@ -795,25 +795,13 @@ const probeObjectFormat = async (root: string): Promise<ObjectFormatRead> => {
   return { status: 'read', format };
 };
 
-const readObjectFormat = async (root: string): Promise<ObjectFormatRead> => {
-  const cached = objectFormatProbes.get(root);
-
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const probe = probeObjectFormat(root);
-
-  objectFormatProbes.set(root, probe);
-
-  const read = await probe;
-
-  if (read.status === 'failed' && objectFormatProbes.get(root) === probe) {
-    objectFormatProbes.delete(root);
-  }
-
-  return read;
-};
+const readObjectFormat = (root: string): Promise<ObjectFormatRead> =>
+  readProbe(
+    objectFormatProbes,
+    root,
+    () => probeObjectFormat(root),
+    (read) => read.status === 'read',
+  );
 
 export const hashBytes = async (root: string, bytes: Buffer): Promise<HashedBytes> => {
   const read = await readObjectFormat(root);

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { runGit } from '../git.js';
+import { isBareRoot } from '../git.js';
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../role/role.js';
 
@@ -17,14 +17,6 @@ const bareRootRules = [
 ];
 
 const rule = bareRootRules.map((policy) => `- ${policy}`).join('\n');
-
-const isBareRoot = async (cwd: string) => {
-  const result = await runGit(cwd, ['rev-parse', '--is-bare-repository'], {
-    timeoutMilliseconds: 5000,
-  });
-
-  return result.exitCode === 0 && result.stdout.toString('utf8').trim() === 'true';
-};
 
 export default function bareRootExtension(pi: ExtensionAPI): void {
   let bareRoot = false;

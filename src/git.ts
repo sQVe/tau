@@ -15,7 +15,40 @@ export interface GitOptions {
   environment?: Record<string, string>;
 }
 
+export type ProbeCache<Value> = Map<string, Promise<Value>>;
+
+export type BareProbe = { status: 'read'; bare: boolean } | { status: 'failed' };
+
 const scopedEnvironment = new AsyncLocalStorage<Record<string, string>>();
+
+export const createProbeCache = <Value>(): ProbeCache<Value> => new Map();
+
+// Shares one in-flight probe per key within the cache's scope. Drops an entry whose result the
+// keep test rejects, so the next call asks again.
+export const readProbe = async <Value>(
+  cache: ProbeCache<Value>,
+  key: string,
+  probe: () => Promise<Value>,
+  keep: (value: Value) => boolean,
+): Promise<Value> => {
+  const cached = cache.get(key);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const read = probe();
+
+  cache.set(key, read);
+
+  const value = await read;
+
+  if (!keep(value) && cache.get(key) === read) {
+    cache.delete(key);
+  }
+
+  return value;
+};
 
 export const withGitEnvironment = <Value>(
   environment: Record<string, string>,
@@ -206,4 +239,40 @@ export const findCheckoutRoot = async (
   }
 
   return root;
+};
+
+const bareProbeCaches = new AsyncLocalStorage<ProbeCache<BareProbe>>();
+
+// A read or write keeps one bare-state answer across its nested directory checks. Outside such an
+// operation, each call asks Git again so a core.bare change takes effect at once.
+export const withBareProbeCache = <Value>(run: () => Promise<Value>): Promise<Value> =>
+  bareProbeCaches.run(createProbeCache(), run);
+
+export const currentBareProbeCache = (): ProbeCache<BareProbe> =>
+  bareProbeCaches.getStore() ?? createProbeCache();
+
+const probeBareRoot = async (root: string): Promise<BareProbe> => {
+  const result = await runGit(root, ['rev-parse', '--is-bare-repository'], {
+    timeoutMilliseconds: 5000,
+  });
+
+  if (result.exitCode !== 0) {
+    return { status: 'failed' };
+  }
+
+  return { status: 'read', bare: result.stdout.toString('utf8').trim() === 'true' };
+};
+
+export const isBareRoot = async (
+  root: string,
+  cache: ProbeCache<BareProbe> = currentBareProbeCache(),
+): Promise<boolean> => {
+  const read = await readProbe(
+    cache,
+    root,
+    () => probeBareRoot(root),
+    (result) => result.status === 'read',
+  );
+
+  return read.status === 'read' && read.bare;
 };

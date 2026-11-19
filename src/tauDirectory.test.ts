@@ -7,7 +7,12 @@ import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
 import { installCommandShim, logCommandCalls } from '../tests/commandShimFake.ts';
 import { createTemporaryBareRoot, createTemporaryRepository, git } from '../tests/gitRepository.ts';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.ts';
-import { checkTauDirectory, findSharedRepositoryRoot, isBareRoot } from './tauDirectory.ts';
+import {
+  checkTauDirectory,
+  ensureTauDirectory,
+  findSharedRepositoryRoot,
+  isBareRoot,
+} from './tauDirectory.ts';
 
 const cleanups: (() => Promise<void>)[] = [];
 
@@ -106,7 +111,7 @@ const countCalls = async (logPath: string, command: string): Promise<number> => 
   return text.split('\n').filter((line) => line === command).length;
 };
 
-it('asks Git once whether a root is bare across directory checks', async () => {
+it('asks Git again whether a root is bare in the next directory check', async () => {
   const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
   const logPath = join(temporaryDirectory(onTestFinished, 'tau-bare-git-calls-'), 'calls.log');
 
@@ -121,6 +126,24 @@ it('asks Git once whether a root is bare across directory checks', async () => {
 
   await checkTauDirectory(root, 'workers');
   await checkTauDirectory(root, 'workers');
+
+  expect(await countCalls(logPath, 'rev-parse --is-bare-repository')).toBe(2);
+});
+
+it('asks Git once whether a root is bare within one directory write', async () => {
+  const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+  const logPath = join(temporaryDirectory(onTestFinished, 'tau-bare-git-calls-'), 'calls.log');
+
+  await mkdir(join(root, '.tau'), { recursive: true });
+  await writeFile(join(root, '.tau', '.gitignore'), '*\n');
+  await writeFile(logPath, '');
+
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [logCommandCalls(logPath)],
+  });
+
+  await ensureTauDirectory(root, 'workers');
 
   expect(await countCalls(logPath, 'rev-parse --is-bare-repository')).toBe(1);
 });
