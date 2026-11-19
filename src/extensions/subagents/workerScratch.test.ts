@@ -12,7 +12,7 @@ import {
   scratchRootFor,
 } from './workerScratch.js';
 
-it.each(['..', 'a/b'])(
+it.each(['', '.', '..', 'a/b'])(
   'refuses to remove a scratch name that escapes the root: %s',
   async (name) => {
     const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-name-');
@@ -23,6 +23,8 @@ it.each(['..', 'a/b'])(
     writeFileSync(marker, 'keep');
 
     const error = await removeScratchDirectory(agentDirectory, name);
+
+    expect(error).toContain(`Invalid temporary folder name ${JSON.stringify(name)}`);
 
     expect(error).toContain('Cleanup refused');
     expect(existsSync(marker)).toBe(true);
@@ -59,9 +61,11 @@ it.each(['root', 'tmp'] as const)(
       symlinkSync(elsewhere, scratchRootFor(agentDirectory));
     }
 
+    const rootName = redirected === 'tmp' ? 'tmp' : 'tau-worker-scratch';
+
     await expect(
       createScratchDirectory(agentDirectory, '11111111-1111-1111-1111-111111111111'),
-    ).rejects.toThrow('redirected');
+    ).rejects.toThrow(`Temporary root ${rootName} is redirected`);
 
     expect(readdirSync(elsewhere)).toEqual([]);
   },

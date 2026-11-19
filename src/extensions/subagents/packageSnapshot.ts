@@ -24,8 +24,11 @@ class SnapshotError extends Error {
 
 const snapshotRootName = 'tau-worker-packages';
 
+export const snapshotRootFor = (agentDirectory: string): string =>
+  join(agentDirectory, 'tmp', snapshotRootName);
+
 export const snapshotDirectoryFor = (agentDirectory: string, launchId: string): string =>
-  join(agentDirectory, 'tmp', snapshotRootName, launchId);
+  join(snapshotRootFor(agentDirectory), launchId);
 
 const npmUnitFolder = (source: string, packageRoot: string): string => {
   const marker = `${sep}node_modules${sep}`;

@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readdirSync,
   renameSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,9 +20,10 @@ import type { Connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
 import type { HcTerminal } from '../../hc/hc.js';
 import { assignmentDirectory, writeAssignment } from './assignment.js';
+import { savedAssignment } from './fixtures/deliveryManager.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
-import { Admission, executeLaunch } from './launch.js';
+import { Admission, executeLaunch, startReservedWorker } from './launch.js';
 import type { LaunchRuntime } from './launch.js';
 import type { LaunchParameters } from './launchParameters.js';
 import * as loadouts from './loadout.js';
@@ -616,6 +618,107 @@ it('creates the scratch folder before the worker starts', async () => {
   expect(request?.env.TAU_ASSIGNMENT_DIRECTORY).toBe(assignmentDirectory(launchedId));
   expect([request?.env.TMP, request?.env.TEMP]).toEqual([scratch, scratch]);
   expect(scratchNames(runtime.agentDirectory)).toHaveLength(1);
+});
+
+const hourInMilliseconds = 3_600_000;
+
+// The capacity count lists first; the sweep lists second.
+const failSweepList = (runtime: LaunchRuntime): { count: number } => {
+  const calls = { count: 0 };
+  const realExec = runtime.hc.exec;
+
+  runtime.hc.exec = (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments.includes('--all')) {
+      calls.count += 1;
+
+      if (calls.count === 2) {
+        return Promise.resolve({
+          code: 1,
+          killed: false,
+          truncated: false,
+          stdout: '',
+          stderr: 'boom',
+        });
+      }
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  return calls;
+};
+
+const fakeDateAfter = (path: string, milliseconds: number): void => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  vi.setSystemTime(statSync(path).birthtimeMs + milliseconds);
+};
+
+it('launches when the sweep cannot read the hc list', async () => {
+  const { runtime, scratchExistedAtRun } = setup();
+  const calls = failSweepList(runtime);
+
+  const result = await launch(runtime, {});
+
+  expect(calls.count).toBe(2);
+  expect(result.isError).not.toBe(true);
+  expect(scratchExistedAtRun()).toBe(true);
+});
+
+it('launches when the sweep throws', async () => {
+  const { runtime, scratchExistedAtRun } = setup();
+  const snapshotRoot = join(runtime.agentDirectory, 'tmp', 'tau-worker-packages');
+
+  mkdirSync(join(runtime.agentDirectory, 'tmp'), { recursive: true });
+  writeFileSync(snapshotRoot, 'not a folder');
+
+  const result = await launch(runtime, {});
+
+  expect(result.isError).not.toBe(true);
+  expect(scratchExistedAtRun()).toBe(true);
+});
+
+it('removes the scratch folder of an ended worker before it creates its own', async () => {
+  const { runtime } = setup();
+  const stale = join(scratchRootFor(runtime.agentDirectory), 'ended-assignment');
+
+  mkdirSync(stale, { recursive: true });
+  fakeDateAfter(stale, 2 * 60_000);
+
+  const result = await launch(runtime, {});
+
+  expect(result.isError).not.toBe(true);
+  expect(scratchNames(runtime.agentDirectory)).toHaveLength(1);
+  expect(existsSync(stale)).toBe(false);
+});
+
+it('keeps the old snapshot a starting follow-up reuses', async () => {
+  const { runtime } = setup();
+  const snapshotRoot = join(runtime.agentDirectory, 'tmp', 'tau-worker-packages');
+  const reused = join(snapshotRoot, 'source-launch');
+  const unused = join(snapshotRoot, 'unused-launch');
+
+  mkdirSync(reused, { recursive: true });
+  mkdirSync(unused, { recursive: true });
+  fakeDateAfter(reused, 25 * hourInMilliseconds);
+
+  const result = await startReservedWorker(runtime, {
+    assignment: { ...savedAssignment(runtime.agentDirectory, null), packageSnapshot: reused },
+    task: 'Follow up.',
+    label: undefined,
+    extensionPackages: [],
+    skillTools: {},
+    modelReason: 'Reused.',
+    signal: undefined,
+  });
+
+  expect(result.isError).not.toBe(true);
+  expect(existsSync(reused)).toBe(true);
+  expect(existsSync(unused)).toBe(false);
 });
 
 it('removes the scratch folder after a definite launch failure', async () => {

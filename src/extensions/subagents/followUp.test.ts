@@ -392,7 +392,7 @@ it('refuses a follow-up when the session use is unknown', async () => {
   expect(assignmentFolders(directory)).toEqual(before);
 });
 
-it('starts a follow-up without reading finished terminals', async () => {
+it('reads a finished terminal once, for the folder sweep, when it starts a follow-up', async () => {
   const { directory, fake, runtime } = setup();
   const source = sourceAssignment(directory);
 
@@ -415,7 +415,7 @@ it('starts a follow-up without reading finished terminals', async () => {
   const reads = fake.calls.filter((call) => call.commandArguments.includes('t-old'));
 
   expect(result.isError).not.toBe(true);
-  expect(reads).toEqual([]);
+  expect(reads).toHaveLength(1);
 });
 
 it('places a follow-up of an investigation worker in the workers tab of the manager', async () => {

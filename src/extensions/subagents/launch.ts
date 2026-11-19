@@ -26,6 +26,7 @@ import { piPackageManager } from './piPackageManager.js';
 import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
+import { sweepWorkerFolders } from './workerFolderSweep.js';
 import { placementLabels } from './workerPlacement.js';
 import {
   createScratchDirectory,
@@ -314,6 +315,22 @@ const startAssignmentWorker = async (
   );
 };
 
+const sweepBeforeLaunch = async (runtime: LaunchRuntime, assignment: Assignment): Promise<void> => {
+  const snapshot = assignment.packageSnapshot;
+
+  const starting = {
+    assignmentId: assignment.assignmentId,
+    running: true,
+    packageSnapshot: snapshot === null ? null : basename(snapshot),
+  };
+
+  try {
+    await sweepWorkerFolders(runtime.hc, runtime.agentDirectory, Date.now(), [starting]);
+  } catch {
+    // A sweep failure never fails a launch. The next scan reports it.
+  }
+};
+
 export const startReservedWorker = async (
   runtime: LaunchRuntime,
   facts: WorkerStart,
@@ -327,6 +344,7 @@ export const startReservedWorker = async (
   try {
     facts.signal?.throwIfAborted();
 
+    await sweepBeforeLaunch(runtime, assignment);
     await createScratchDirectory(runtime.agentDirectory, assignmentId);
 
     const manager = await readCurrentTerminal(runtime.hc);

@@ -21,6 +21,7 @@ import {
   waitForQuestion,
   waitForReport,
 } from './subagentSessionHarness.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface SentMessage {
   customType?: unknown;
@@ -180,7 +181,12 @@ it('shows a real worker question once and carries the subagent_answer reply into
   const context = deliveryContext(entries);
 
   const tracked = completionTracked(
-    createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline),
+    createWorkerScan(
+      hc.runtime,
+      createWorkerDelivery(pi),
+      noDeadline,
+      temporaryDirectory(onTestFinished, 'tau-sweep-'),
+    ),
   );
 
   registerWorkerScan(pi, tracked.scan, { start: () => undefined, stop: () => undefined });
@@ -280,7 +286,12 @@ it('shows a question once across repeated delivery scans', async () => {
   const { pi } = recordingExtension(messages, entries);
   const context = deliveryContext(entries);
 
-  await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(context);
+  await createWorkerScan(
+    hc.runtime,
+    createWorkerDelivery(pi),
+    noDeadline,
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  ).scan(context);
 
   expect(messages).toHaveLength(1);
 
@@ -289,7 +300,12 @@ it('shows a question once across repeated delivery scans', async () => {
     questionId: question.questionId,
   });
 
-  await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(context);
+  await createWorkerScan(
+    hc.runtime,
+    createWorkerDelivery(pi),
+    noDeadline,
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  ).scan(context);
 
   expect(messages).toHaveLength(1);
 });

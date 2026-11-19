@@ -46,6 +46,16 @@ const table: { name: string; facts: WorkerFolderFacts; expected: WorkerFolderRem
     expected: { scratch: [], snapshots: [] },
   },
   {
+    name: 'removes the scratch folder of a finished worker inside the launch grace',
+    facts: {
+      now,
+      scratch: [folder('assignment-a', 5 * second)],
+      snapshots: [],
+      terminals: [terminal('assignment-a', false, null)],
+    },
+    expected: { scratch: ['assignment-a'], snapshots: [] },
+  },
+  {
     name: 'keeps a scratch folder inside the launch grace',
     facts: {
       now,

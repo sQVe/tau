@@ -342,7 +342,7 @@ export default function subagentsExtension(
 
   const delivery = createWorkerDelivery(pi);
   const watchdog = createDeadlineWatchdog(hc, delivery);
-  const scan = createWorkerScan(hc, delivery, watchdog);
+  const scan = createWorkerScan(hc, delivery, watchdog, getAgentDir());
   const events = createEventWatch(subscribeEvents, scan);
 
   const launchRuntime = (capacity: number): LaunchRuntime => ({

@@ -32,8 +32,16 @@ const ageAtLeast = (folder: WorkerFolder, now: number, limit: number): boolean =
 const runningTerminals = (terminals: readonly WorkerTerminalFact[]): WorkerTerminalFact[] =>
   terminals.filter((terminal) => terminal.running);
 
-const isRunningAssignment = (running: readonly WorkerTerminalFact[], name: string): boolean =>
-  running.some((terminal) => terminal.assignmentId === name);
+const namesAssignment = (terminals: readonly WorkerTerminalFact[], name: string): boolean =>
+  terminals.some((terminal) => terminal.assignmentId === name);
+
+// The launch grace protects only a folder that no terminal names.
+const isStaleScratch = (
+  folder: WorkerFolder,
+  terminals: readonly WorkerTerminalFact[],
+  now: number,
+): boolean =>
+  namesAssignment(terminals, folder.name) || ageAtLeast(folder, now, scratchLaunchGrace);
 
 const hasUnreadSnapshot = (running: readonly WorkerTerminalFact[]): boolean =>
   running.some((terminal) => terminal.packageSnapshot === 'unread');
@@ -46,13 +54,13 @@ export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolde
     return { scratch: [], snapshots: [] };
   }
 
-  const running = runningTerminals(facts.terminals);
+  const { terminals } = facts;
+  const running = runningTerminals(terminals);
 
   const scratch = facts.scratch
     .filter(
       (folder) =>
-        !isRunningAssignment(running, folder.name) &&
-        ageAtLeast(folder, facts.now, scratchLaunchGrace),
+        !namesAssignment(running, folder.name) && isStaleScratch(folder, terminals, facts.now),
     )
     .map((folder) => folder.name);
 

@@ -91,6 +91,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0125: Run workers as hc children with one assignment file each](./0125-run-workers-as-hc-children-with-assignment-files.md)
 - [0129: Deliver agent messages through each session's inbox socket](./0129-deliver-agent-messages-through-inbox-sockets.md)
 - [0138: Answer a worker question from outside the manager session](./0138-answer-a-worker-question-from-outside-the-manager-session.md)
+- [0143: Give workers a Tau-owned TMPDIR, removed by a liveness sweep](./0143-give-workers-a-tau-owned-tmpdir-removed-by-a-liveness-sweep.md)
 - [0132: Keep QA journeys in separate files](./0132-keep-qa-journeys-in-separate-files.md)
 
 ### Manager sessions

@@ -20,6 +20,7 @@ import {
   managerSessionFile,
   waitForReport,
 } from './subagentSessionHarness.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface SentReportMessage {
   customType?: unknown;
@@ -157,8 +158,19 @@ it('shows a real worker report once before it gives the worker the manager envir
 
   const { pi, messages, entries, context: deliveryContext } = recordingManager();
 
-  await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(deliveryContext);
-  await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(deliveryContext);
+  await createWorkerScan(
+    hc.runtime,
+    createWorkerDelivery(pi),
+    noDeadline,
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  ).scan(deliveryContext);
+
+  await createWorkerScan(
+    hc.runtime,
+    createWorkerDelivery(pi),
+    noDeadline,
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  ).scan(deliveryContext);
 
   expect(messages).toHaveLength(1);
   expect(entries).toHaveLength(1);
@@ -185,7 +197,13 @@ it('delivers one worker report through the real hc event watch', async () => {
     await import('../src/extensions/subagents/fixtures/controlledProvider.js');
 
   const { pi, messages, context } = recordingManager();
-  const scan = createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline);
+
+  const scan = createWorkerScan(
+    hc.runtime,
+    createWorkerDelivery(pi),
+    noDeadline,
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  );
 
   const readiness = Promise.withResolvers<undefined>();
   let completedScans = 0;

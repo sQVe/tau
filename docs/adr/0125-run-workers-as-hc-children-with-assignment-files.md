@@ -63,8 +63,8 @@ only the worker writes its report and its questions into it.
 - Tau never retries an unclear launch. When `hc` does not confirm a launch, Tau looks up the
   worker's name. If the lookup fails, the slot stays reserved and Tau reports that the launch is
   unclear.
-- A failed launch removes its package snapshot. A worker that ends keeps its snapshot and session
-  file.
+- A failed launch removes its package snapshot. A worker that ends keeps its session file. A package
+  snapshot that no running worker names is removed after 24 hours.
 - Every worker takes the manager's herdr space and a tab named `<manager tab>-workers`. A manager
   without both labels gives its workers no herdr labels. Tau has no `visibility` parameter.
 - A worker's first run starts from a fixed start message that Tau passes on the Pi command line. The
