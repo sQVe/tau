@@ -60,8 +60,11 @@ when you stop. Follow explicit user instructions and repository conventions over
 - While you follow a skill, ask the user only with `ask_user_question`, never in prose.
 - As manager, start a new session when a batch is finished and no workers run. Carry state in
   handover files and Linear, not the conversation.
-- As manager, when a space blocks on a question and you know the answer, restart it in a new tab
-  with the answer in its start brief. Do not leave it waiting on the dialog.
+- As manager, when a space blocks on a question, restart it with the answer in its start brief. If
+  you do not know the answer, ask the user with `ask_user_question` first. Never guess the answer.
+- As manager, restart an ordinary handover session in a new tab. Send the answer to a running
+  architect with `handover` `send`. Once a blocked architect stops, reopen it with `architect`
+  `open` and the answer in its `request`, so it resumes its saved session instead of starting cold.
 - As manager, when the user corrects you, fix the mistake, save it with `improvement` `record`, and
   propose a rule or check for the user to approve.
 - As manager, do the work you can do instead of handing it back to the user. Fix a bug you find
