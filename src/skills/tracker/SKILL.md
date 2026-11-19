@@ -109,21 +109,27 @@ This list is the one approval rule; other skills link here.
        revision is `mergeCommit` or the PR's final `headRefOid`.
      - Read each acceptance item of the ticket and the PR body's deferred verification section.
        Treat a failed or empty read as every item still open, and an omitted deferred section as no
-       deferred checks. Stop and name the blocker when an item is unchecked, not met, or has no
-       evidence, or when a check is deferred, including a deployment check that no acceptance item
-       names.
-     - Support each item with the saved source it needs, and require only that source. The PR body's
-       Verification section alone is not evidence, because it holds no SHA.
-       - Passing check: a `full_check` record in `.tau/checks/*.json` with `passed` set to `true`
-         and a `tree` equal to `git rev-parse <revision>^{tree}`. A record for that tree with
-         `passed` set to `false` is a failed required check. Name it as a blocker.
-       - Clean review: in `.tau/workers/review-*/capture.json`, `head` or `endpoint.tree` must match
-         the revision. It pins the revision and shows no outcome. Read the outcome in the same
-         directory, in `report.md` or in `reviewer.md` (or `finder.md` and `checker.md`). The report
-         must be complete and list no open finding. A file in the report's `Unread files` section is
-         not reviewed. A fix review counts when each review in the `target.review` chain covers its
-         part.
-       - Slice audit: the slice's `finish.md`, whose `Audited commit:` line must match.
+       deferred checks. Ticket checkboxes are not evidence, because the tracker flow leaves them
+       unchecked. Stop and name the blocker when a check is deferred, including a deployment check
+       that no acceptance item names.
+     - An item counts as met only when the saved source it needs shows it met. Require only that
+       source. Stop and name the blocker when an item has no such evidence, or when the evidence
+       shows it not met. The PR body's Verification section alone is not evidence, because it holds
+       no SHA.
+       - Passing check: among the `full_check` records in `.tau/checks/*.json` whose `tree` equals
+         `git rev-parse <revision>^{tree}`, the newest decides. Newest is the last filename in
+         sorted order, because each filename starts with a timestamp. A newest record with `passed`
+         set to `true` shows the item met. A newest record with `passed` set to `false` is a failed
+         required check. Name it as a blocker.
+       - Clean review: in `.tau/workers/review-*/capture.json`, `head` must equal the revision's
+         commit SHA, or `endpoint.tree` must equal `git rev-parse <revision>^{tree}`. It pins the
+         revision and shows no outcome. Read the outcome in the same directory, in `report.md` or in
+         `reviewer.md` (or `finder.md` and `checker.md`). The report must be complete and list no
+         open finding. A file in the report's `Unread files` section is not reviewed. A fix review
+         counts when each review in the `target.review` chain covers its part.
+       - Slice audit: the slice's `finish.md`, whose `Audited commit:` line must match. The item's
+         verdict in the audit table must be `met`. `deferred`, `not met`, and `not run` stop the
+         step.
      - A source that no item needs, such as `finish.md` for a ticket with no slice audit, is not
        required, and its absence does not stop the step. Stop and name each needed source that is
        missing, unfinished, or records another revision as stale evidence.
