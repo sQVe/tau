@@ -114,6 +114,105 @@ it('returns a cyclic object unchanged instead of looping', () => {
   expect(patch?.details).toMatchObject({ value: '[redacted]' });
 });
 
+it('redacts every path to an object that details references twice', () => {
+  const shared = { value: secret };
+
+  const patch = redactToolResult(
+    { content: [], details: { first: shared, second: shared }, structuredContent: undefined },
+    [secret],
+  );
+
+  expect(patch?.details).toEqual({
+    first: { value: '[redacted]' },
+    second: { value: '[redacted]' },
+  });
+});
+
+it('redacts every path to an array that details references twice', () => {
+  const shared = [`a ${secret}`];
+
+  const patch = redactToolResult(
+    { content: [], details: { first: shared, second: shared }, structuredContent: undefined },
+    [secret],
+  );
+
+  expect(patch?.details).toEqual({ first: ['a [redacted]'], second: ['a [redacted]'] });
+});
+
+it('redacts an object that details and structured content both reference', () => {
+  const shared = { value: secret };
+
+  const patch = redactToolResult(
+    { content: [], details: { shared }, structuredContent: { shared } },
+    [secret],
+  );
+
+  expect(patch?.details).toEqual({ shared: { value: '[redacted]' } });
+  expect(patch?.structuredContent).toEqual({ shared: { value: '[redacted]' } });
+});
+
+it('gives repeated references to one object a single redacted clone', () => {
+  const shared = { value: secret };
+
+  const patch = redactToolResult(
+    { content: [], details: { first: shared, second: shared }, structuredContent: undefined },
+    [secret],
+  );
+
+  const details = patch?.details as { first: unknown; second: unknown };
+
+  expect(details.first).not.toBe(shared);
+  expect(details.second).toBe(details.first);
+});
+
+it('keeps the cycle in the clone of a cyclic object with no secret left', () => {
+  const details: Record<string, unknown> = { value: secret };
+  details.self = details;
+
+  const patch = redactToolResult({ content: [], details, structuredContent: undefined }, [secret]);
+  const clone = patch?.details as Record<string, unknown>;
+
+  expect(clone).not.toBe(details);
+  expect(clone.self).toBe(clone);
+  expect(clone.value).toBe('[redacted]');
+});
+
+it('keeps the cycle in the clone of a cyclic array with no secret left', () => {
+  const details: unknown[] = [secret];
+  details.push(details);
+
+  const patch = redactToolResult({ content: [], details, structuredContent: undefined }, [secret]);
+  const clone = patch?.details as unknown[];
+
+  expect(clone).not.toBe(details);
+  expect(clone[1]).toBe(clone);
+  expect(clone[0]).toBe('[redacted]');
+});
+
+it('gives the cloned properties the descriptor of an ordinary property', () => {
+  const details = JSON.parse(`{"__proto__": "${secret}", "plain": "${secret}"}`) as unknown;
+
+  const patch = redactToolResult({ content: [], details, structuredContent: undefined }, [secret]);
+  const clone = patch?.details as object;
+  const descriptors = Object.getOwnPropertyDescriptors(clone);
+
+  expect(Object.keys(descriptors)).toEqual(['__proto__', 'plain']);
+
+  expect(descriptors.__proto__).toEqual({
+    value: '[redacted]',
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
+
+  expect(descriptors.plain).toEqual({
+    value: '[redacted]',
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
+});
+
 it('keeps a value of exactly 8 characters and drops one of 7', () => {
   const values = secretValues({ EIGHT_TOKEN: 'fake-8ch', SEVEN_TOKEN: 'fake-7c' });
 

@@ -2,7 +2,7 @@ import type { ToolResultEvent, ToolResultEventResult } from '@earendil-works/pi-
 
 interface Redaction {
   secrets: readonly string[];
-  visited: WeakSet<object>;
+  clones: WeakMap<object, unknown>;
   changed: boolean;
 }
 
@@ -80,21 +80,40 @@ const redactValue = (value: unknown, redaction: Redaction): unknown => {
     return redactString(value, redaction);
   }
 
-  const isWalked = Array.isArray(value) || isPlainObject(value);
-
-  if (!isWalked || redaction.visited.has(value)) {
+  if (!Array.isArray(value) && !isPlainObject(value)) {
     return value;
   }
 
-  redaction.visited.add(value);
-
-  if (Array.isArray(value)) {
-    return value.map((item: unknown) => redactValue(item, redaction));
+  if (redaction.clones.has(value)) {
+    return redaction.clones.get(value);
   }
 
-  const entries = Object.entries(value).map(([key, item]) => [key, redactValue(item, redaction)]);
+  if (Array.isArray(value)) {
+    const clone: unknown[] = [];
 
-  return Object.fromEntries(entries);
+    redaction.clones.set(value, clone);
+
+    for (const item of value) {
+      clone.push(redactValue(item, redaction));
+    }
+
+    return clone;
+  }
+
+  const clone: Record<string, unknown> = {};
+
+  redaction.clones.set(value, clone);
+
+  for (const [key, item] of Object.entries(value)) {
+    Object.defineProperty(clone, key, {
+      value: redactValue(item, redaction),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+
+  return clone;
 };
 
 const redactContentItem = (item: ContentItem, redaction: Redaction): ContentItem =>
@@ -104,7 +123,7 @@ export const redactToolResult = (
   result: ToolResultFacts,
   secrets: readonly string[],
 ): ToolResultEventResult | undefined => {
-  const redaction: Redaction = { secrets, visited: new WeakSet(), changed: false };
+  const redaction: Redaction = { secrets, clones: new WeakMap(), changed: false };
   const content = result.content.map((item) => redactContentItem(item, redaction));
   const details = redactValue(result.details, redaction);
   const structuredContent = redactValue(result.structuredContent, redaction);
