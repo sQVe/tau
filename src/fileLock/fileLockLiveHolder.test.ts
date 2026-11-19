@@ -32,3 +32,33 @@ it('does not read a missing lock', async () => {
 
   expect(await readLiveLockHolder(lockPath)).toBeUndefined();
 });
+
+it("reads the holder's terminal", async () => {
+  const { lockPath } = fixture();
+  const record = JSON.parse(ownerJson('live')) as Record<string, unknown>;
+
+  await writeOwner(lockPath, JSON.stringify({ ...record, terminal: 't7' }));
+
+  expect(await readLiveLockHolder(lockPath)).toHaveProperty('terminal', 't7');
+
+  await writeOwner(lockPath, ownerJson('live'));
+
+  expect(await readLiveLockHolder(lockPath)).toHaveProperty('terminal', undefined);
+});
+
+it.each([
+  { name: 'an empty string', terminal: '' },
+  { name: 'a number', terminal: 7 },
+  { name: 'null', terminal: null },
+])('reads a live holder with $name as its terminal without a terminal', async ({ terminal }) => {
+  const { lockPath } = fixture();
+  const record = JSON.parse(ownerJson('live')) as Record<string, unknown>;
+
+  await writeOwner(lockPath, JSON.stringify({ ...record, terminal }));
+
+  expect(await readLiveLockHolder(lockPath)).toEqual({
+    pid: process.pid,
+    checkout: '/other',
+    terminal: undefined,
+  });
+});

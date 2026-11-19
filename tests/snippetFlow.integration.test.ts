@@ -19,6 +19,7 @@ import { expect, it, vi } from 'vitest';
 
 import { loadSnippets } from '../src/extensions/snippets/snippet.js';
 import tauExtension from '../src/tau.js';
+import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -135,6 +136,8 @@ const createScriptedUI = (session: AgentSession, cwd: string) => {
 const createHarness = async (registerCleanup: RegisterCleanup, options: HarnessOptions = {}) => {
   const directory = temporaryDirectory(registerCleanup, 'tau-snippet-flow-');
   const agentDirectory = temporaryDirectory(registerCleanup, 'tau-snippet-agent-');
+
+  isolateWebAccessConfig(agentDirectory, registerCleanup);
 
   const faux = fauxProvider({ provider: 'tau-snippet-test' });
 

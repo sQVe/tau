@@ -27,8 +27,8 @@ verification.
   tested with a decision table like `src/extensions/subagents/workerDecision.test.ts`. The caller
   reads records, the clock, and the environment, and passes the values in as facts
   ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
-- Change a saved record format with a new version and fixtures
-  ([ADR 0053](docs/adr/0053-version-each-saved-record-format.md)).
+- Change a saved record format with a new version and fixtures, except the lock owner record, which
+  stays unversioned ([ADR 0053](docs/adr/0053-version-each-saved-record-format.md)).
 - Keep an extension's registration root, any file Pi loads as an extension, to registration, wiring,
   and order that must stay central. Put each action's policy and execution in a behavior owner file
   that the root calls, and keep coupled state changes in one owner

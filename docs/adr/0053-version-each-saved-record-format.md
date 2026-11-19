@@ -25,6 +25,14 @@ write-only diagnostic file that no Tau reader parses, such as the `run.json` of 
 version or fixtures. Its readers are people and agents who inspect it. Once Tau code starts to read
 such a file, it becomes a record and gets a version with that change.
 
+### Leave the lock owner record unversioned
+
+The file lock owner record, in `src/fileLock/fileLock.ts`, carries no `version`. A lock reader must
+never skip a holder it cannot classify. Skipping a newer but live owner would let two writers hold
+the lock at once. New fields such as `terminal` are optional in both directions: an older reader
+ignores them, and a newer reader treats their absence as unknown. A lock owner field that an older
+reader must understand needs a new lock path instead of a version.
+
 ### Keep a record's values open when the reader does not branch
 
 Close an enumeration only when the reader branches on its value. Use an open, bounded pattern for

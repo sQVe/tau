@@ -23,6 +23,7 @@ import modelFallbackExtension from './extensions/modelFallback/modelFallback.js'
 import piResumeExtension from './extensions/piResume/piResume.js';
 import prExtension from './extensions/pr/pr.js';
 import prFeedbackExtension from './extensions/prFeedback/prFeedback.js';
+import sessionLockExtension from './extensions/sessionLock/sessionLock.js';
 import sliceExtension from './extensions/slice/slice.js';
 import snippetsExtension from './extensions/snippets/snippets.js';
 import stackExtension from './extensions/stack/stack.js';
@@ -40,6 +41,9 @@ const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
 const checkoutDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
+  // Must be the first session_start handler, so a refused start runs no other handler.
+  sessionLockExtension(pi);
+
   // Features report config notices in their own session_start handlers, so the new session must
   // forget the old notices before any of them runs.
   pi.on('session_start', (_event, context) => {
