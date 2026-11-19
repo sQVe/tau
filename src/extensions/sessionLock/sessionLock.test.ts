@@ -243,6 +243,39 @@ it('cancels resume onto a session file another live Pi holds', async ({ onTestFi
   expect(harness.notices).toHaveLength(1);
 });
 
+it.for([
+  { name: 'a new session', reason: 'new', hasTarget: true },
+  { name: 'a resume with no target file', reason: 'resume', hasTarget: false },
+] as const)(
+  'does not cancel $name even when a live Pi holds the target',
+  async ({ reason, hasTarget }, { onTestFinished }) => {
+    const harness = await startSession(onTestFinished);
+
+    await harness.binding;
+
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+    });
+
+    onTestFinished(() => {
+      child.kill();
+    });
+
+    const target = join(dirname(harness.sessionFile), 'target.jsonl');
+
+    await writeLockRecord(await sessionLockPath(harness.agentDirectory, target), child.pid ?? 0);
+
+    const result = await harness.session.extensionRunner.emit({
+      type: 'session_before_switch',
+      reason,
+      ...(hasTarget ? { targetSessionFile: target } : {}),
+    } satisfies SessionBeforeSwitchEvent);
+
+    expect(result).toBeUndefined();
+    expect(harness.notices).toEqual([]);
+  },
+);
+
 it('starts with no lock when the session has no file', async ({ onTestFinished }) => {
   const harness = await startSession(onTestFinished, { inMemory: true });
 
