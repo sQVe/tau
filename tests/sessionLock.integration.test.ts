@@ -19,6 +19,13 @@ import { seedSavedSession } from './savedSession.js';
 
 const onLinux = process.platform === 'linux';
 
+// The test process is not the foreground process of its hc terminal, so full Tau would not own it.
+const terminalForeground = vi.hoisted(() => ({ pid: 0 }));
+
+vi.mock(import('../src/extensions/inbox/processGroup.js'), () => ({
+  readProcessGroup: () => Promise.resolve(terminalForeground.pid),
+}));
+
 const startTauOnSessionFile = async (prepare: (lockPath: string) => Promise<void>) => {
   const hc = await startHcSession(onTestFinished);
   const { address: terminal } = await run(hc.runtime, { argv: ['sleep', '60'], background: true });
@@ -26,6 +33,18 @@ const startTauOnSessionFile = async (prepare: (lockPath: string) => Promise<void
   onTestFinished(async () => {
     await kill(hc.runtime, terminal).catch(() => undefined);
   });
+
+  const foreground = await vi.waitFor(async () => {
+    const reply = await get(hc.runtime, terminal);
+
+    if (reply.foreground === undefined || reply.foreground === null) {
+      throw new Error(`Terminal ${terminal} reports no foreground process.`);
+    }
+
+    return reply.foreground;
+  });
+
+  terminalForeground.pid = foreground.pid;
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
