@@ -9,6 +9,7 @@ export interface StartHandoverRequest {
   folder: string;
   target: PiStartTarget;
   model: string | undefined;
+  bareRoot: boolean;
 }
 
 export interface StartHandoverResult {
@@ -27,6 +28,7 @@ export const startHandover = async (
     task: text,
     model: request.model,
     session: undefined,
+    bareRoot: request.bareRoot,
     environment: undefined,
   });
 };
