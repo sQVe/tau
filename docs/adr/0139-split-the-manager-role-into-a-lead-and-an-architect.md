@@ -71,10 +71,15 @@ of refusing. A question in the inbox of a live architect in this checkout needs 
 
 ### The lead's tab
 
-The lead's tab, the first tab of its work space, holds only the architect on the left and the lead
-on the right. Every other pane opens in another tab of the same space. Workers open in
-`<lead tab>-workers`, `draft_review`'s tuicr opens in `<caller tab>-review`, and a terminal an agent
-starts opens in a new tab from `tab.new`.
+The lead's tab is the first tab of its workspace. Once the lead starts, only the lead on the right
+and the architect on the left may use that tab. Workers open in `<lead tab>-workers`, and
+`draft_review` opens tuicr in `<caller tab>-review`. Other terminals that agents open in an existing
+workspace use `tab.new`, with one exception for `handover start`.
+
+`handover start` can reuse a workspace's only tab if that tab has one terminal with no app and
+`hc get` reports a foreground shell in the requested folder. It starts Pi by splitting the shell
+pane instead of opening a new tab. It closes the shell pane only if a second foreground check still
+finds a shell in that folder. A tab with a running lead does not qualify for reuse.
 
 ### Models
 
