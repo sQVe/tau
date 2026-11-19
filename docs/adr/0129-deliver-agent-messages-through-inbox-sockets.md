@@ -29,6 +29,9 @@ folder, and replies before the sender reports success.
   advertises the socket path in one `tau.inbox` label on its own terminal.
 - A reload keeps one listener. Shutdown closes the socket and removes the label. A stale socket is
   replaced only when a connect to it is refused, so a live owner is never replaced.
+- A Pi advertises and serves its inbox only when its own pid is the foreground pid of its
+  `HC_TERMINAL_ID` terminal. A child Pi started from a session's shell starts none. A launcher that
+  does not exec Pi means that Pi starts no inbox.
 
 ### Sending
 

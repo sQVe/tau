@@ -8,11 +8,14 @@ import type { TranscriptContext } from '@earendil-works/pi-ai';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { createInboxExtension } from '../src/extensions/inbox/inbox.js';
 import { executeAnswer } from '../src/extensions/subagents/answer.js';
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import { workerContinuation, workerStartMessage } from '../src/extensions/subagents/workerStart.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
+import { get } from '../src/hc/hc.js';
+import { socketDirectoryFor } from '../src/inbox/inbox.js';
 import { skillTools } from '../src/skillTools.js';
 import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
@@ -151,10 +154,35 @@ const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/p
 
 const workerExtensionPaths = [
   fileURLToPath(new URL('../src/extensions/subagents/workerExtension.ts', import.meta.url)),
-  fileURLToPath(new URL('../src/extensions/inbox/inbox.ts', import.meta.url)),
   fileURLToPath(new URL('../src/extensions/fullCheck/fullCheck.ts', import.meta.url)),
   safetyPackage,
 ];
+
+const foregroundPidOf = (hc: HcSession, address: string): Promise<number> =>
+  vi.waitFor(async () => {
+    const reply = await get(hc.runtime, address);
+
+    if (reply.foreground === undefined || reply.foreground === null) {
+      throw new Error(`Terminal ${address} reports no foreground process.`);
+    }
+
+    return reply.foreground.pid;
+  });
+
+const workerInbox = async (hc: HcSession, worker: WorkerSession) => {
+  const uid = process.getuid?.();
+
+  if (uid === undefined) {
+    throw new Error('The Tau inbox needs a POSIX user ID.');
+  }
+
+  return createInboxExtension({
+    hc: hc.runtime,
+    socketDirectory: () => socketDirectoryFor(uid),
+    inboxDirectory: () => recordDirectory(worker.agentDirectory),
+    processPid: await foregroundPidOf(hc, worker.workerAddress),
+  });
+};
 
 const becomeWorker = (hc: HcSession, worker: WorkerSession): void => {
   for (const [name, value] of Object.entries(hc.environment)) {
@@ -215,6 +243,8 @@ it('resumes a saved worker session without waiting once it holds the answer rece
       ]),
   ]);
 
+  const inbox = await workerInbox(hc, worker);
+
   const startSession = () =>
     createBoundSession(
       () => undefined,
@@ -224,6 +254,7 @@ it('resumes a saved worker session without waiting once it holds the answer rece
         providers: [provider],
         tools: workerTools(launched.loadout, skillTools),
         extensionPaths: workerExtensionPaths,
+        extensionFactories: [inbox],
         sessionManager: SessionManager.open(launched.session.file),
       },
       { onError: () => undefined },

@@ -93,6 +93,7 @@ const pureModules = [
   'src/extensions/improvement/recordRequest.ts',
   'src/extensions/inbox/arrivalDecision.ts',
   'src/extensions/inbox/guardDecision.ts',
+  'src/extensions/inbox/ownerDecision.ts',
   'src/extensions/mergeWatch/autoMergeRequest.ts',
   'src/extensions/mergeWatch/mergeOffer.ts',
   'src/extensions/mergeWatch/watchOutcome.ts',

@@ -17,6 +17,7 @@ export interface InboxExtensionDependencies {
   hc: HcRuntime;
   socketDirectory: () => string;
   inboxDirectory: () => string;
+  processPid: number;
 }
 
 export const createInboxExtension =
@@ -29,6 +30,7 @@ export const createInboxExtension =
       terminal: currentTerminalAddress,
       socketDirectory: dependencies.socketDirectory,
       inboxDirectory: dependencies.inboxDirectory,
+      processPid: dependencies.processPid,
       gate: createStartupGate(pi),
       wake: createWake(pi),
     });
@@ -55,5 +57,6 @@ export default function inboxExtension(pi: ExtensionAPI): void {
     hc: { exec: piExec(pi), connect, cwd: process.cwd() },
     socketDirectory: currentSocketDirectory,
     inboxDirectory: () => join(getAgentDir(), 'tau', 'inbox'),
+    processPid: process.pid,
   })(pi);
 }

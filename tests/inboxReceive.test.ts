@@ -83,10 +83,16 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
+const processPid = 100;
+
 const hcExec: Exec = (_command, commandArguments) => {
   const labels = commandArguments[0] === 'get' ? {} : undefined;
 
-  return Promise.resolve(succeededResult(JSON.stringify({ address: 't7', state: 'live', labels })));
+  const foreground = { pid: processPid, name: 'pi', argv: ['pi'], cwd: root };
+
+  return Promise.resolve(
+    succeededResult(JSON.stringify({ address: 't7', state: 'live', foreground, labels })),
+  );
 };
 
 const until = (condition: () => boolean) =>
@@ -128,6 +134,7 @@ const startReceiver = async (sessionId: string, mode = 'tui') => {
     hc: { exec: hcExec, connect: () => Promise.reject(new Error('no connect')), cwd: root },
     socketDirectory: () => join(root, 'sockets'),
     inboxDirectory: () => join(root, 'records'),
+    processPid,
   })(fake.pi);
 
   const context = {
