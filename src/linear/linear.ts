@@ -39,6 +39,16 @@ const updateSchema = Type.Object({ issueUpdate: Type.Object({ success: Type.Lite
 // issues are matched by an allow-list.
 export const openStateTypes = ['triage', 'backlog', 'unstarted', 'started'];
 
+const issuesQuery =
+  'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { pageInfo { hasNextPage } nodes { identifier } } }';
+
+const issuesSchema = Type.Object({
+  issues: Type.Object({
+    nodes: Type.Array(Type.Object({ identifier: Type.String() })),
+    pageInfo: Type.Object({ hasNextPage: Type.Boolean() }),
+  }),
+});
+
 // GraphQL can return partial `data` beside `errors`, with a failed field set to null.
 const graphqlErrors = (value: unknown): string[] => {
   const errors: unknown =
@@ -219,4 +229,32 @@ export const readRouteIds = async (
   }
 
   return readTeamProjectIds(exec, cwd, { team: route.team, project: route.project });
+};
+
+// Lists the open issues in the route's team, and its project when the route names one, whose title
+// is exactly the given title. Throws when Linear reports another page.
+export const findOpenIssues = async (
+  exec: Exec,
+  cwd: string,
+  search: { team: string; project: string | null; title: string },
+): Promise<string[]> => {
+  const filter: Record<string, unknown> = {
+    team: { key: { eq: search.team } },
+    title: { eq: search.title },
+    state: { type: { in: openStateTypes } },
+  };
+
+  if (search.project !== null) {
+    filter['project'] = { name: { eq: search.project } };
+  }
+
+  const data = await api(exec, cwd, issuesQuery, { filter }, issuesSchema);
+
+  if (data.issues.pageInfo.hasNextPage) {
+    throw new Error(
+      `Open issues titled "${search.title}" have another page. Cannot rule out an unrecorded ticket. Nothing was written.`,
+    );
+  }
+
+  return data.issues.nodes.map((issue) => issue.identifier);
 };

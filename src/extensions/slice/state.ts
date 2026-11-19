@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 
 import type { CommandRuntime } from '../../command.js';
+import { findOpenIssues } from '../../linear/linear.js';
 import type { Draft } from './draft.js';
 import { readDraft } from './draft.js';
-import { findOpenIssues, readContainer } from './linear.js';
+import { readContainer } from './linear.js';
 import { isInPlanOrder, planWrites } from './writes.js';
 import type { LinearContainer, OrderedSlice, WritePlan } from './writes.js';
 

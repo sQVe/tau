@@ -8,7 +8,7 @@ import type { Exec } from '../../command.js';
 import type { ConfigLocation } from '../../config/config.js';
 import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
-import { createIssue, readRouteIds, updateIssue } from '../../linear/linear.js';
+import { createIssue, findOpenIssues, readRouteIds, updateIssue } from '../../linear/linear.js';
 import { isViewersTicket } from '../../linear/ownership.js';
 import { readOptionalText } from '../../record.js';
 import { isWorkerProcess } from '../../role/role.js';
@@ -21,7 +21,7 @@ import {
 import { readRepositorySetup } from './config.js';
 import type { TrackerRoute } from './config.js';
 import { readDraftRecord, writeDraftRecord } from './draftRecord.js';
-import { readTicketIssue, searchIssues } from './linear.js';
+import { readTicketIssue } from './linear.js';
 import { trackerSetupDiagnostic } from './setupDiagnostic.js';
 import { planTicketWrites, resolveTicketBinding } from './ticketWrites.js';
 import type { TicketArguments, TicketDraft, TicketPlan, TicketWrite } from './ticketWrites.js';
@@ -109,21 +109,13 @@ const readCreateCandidates = async (
 
   const { exec, context } = runtime;
 
-  const found = await searchIssues(exec, context.cwd, {
+  const identifiers = await findOpenIssues(exec, context.cwd, {
     team: route.team,
     project: route.project ?? null,
-    keywords: title,
+    title,
   });
 
-  if (found.hasNextPage) {
-    throw new Error(
-      'Ticket search has another page. Cannot rule out an unrecorded ticket. Nothing was written.',
-    );
-  }
-
-  return Promise.all(
-    found.issues.map((issue) => readTicketIssue(exec, context.cwd, issue.identifier)),
-  );
+  return Promise.all(identifiers.map((candidate) => readTicketIssue(exec, context.cwd, candidate)));
 };
 
 type ReadyCreatePlan = Extract<TicketPlan, { kind: 'create' }> & {
