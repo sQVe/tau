@@ -150,8 +150,9 @@ same question twice. Reusing the message ID lets the receiver keep one copy.
 ### Close at once, or only after every ask is answered
 
 Closing at once fails answers that are still sending, and the lead gets the answer and a note that
-no answer came. Waiting for every ask to be answered can keep the architect open forever. A bounded
-wait, then a settle and a note, keeps closing finite and tells the lead the truth.
+no answer came. Waiting for every ask to be answered can keep the architect open forever. Close does
+not wait for every ask to be answered. It waits a bounded time for answers in flight, then settles
+the rest and sends a note, so the lead learns the truth.
 
 ### Handover text only
 
