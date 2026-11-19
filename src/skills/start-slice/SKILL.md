@@ -90,8 +90,9 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    structure rules, also answer the module questions: which module owns the concept, what deletes
    branches or layers, and what gets more tangled. Then decide every design choice before drafting:
    new or changed signatures and types, data shapes, error cases, and the existing pattern or helper
-   to copy. A worker route picks a cheaper model for a fully specified ticket, and a stronger one
-   for a ticket that leaves judgment open.
+   to copy. A worker launch omits `model`; the user `tau.json` decides the worker model. When a
+   ticket needs another model, ask the user, and hold that ticket until they change their config or
+   accept the current model.
 
    > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
 

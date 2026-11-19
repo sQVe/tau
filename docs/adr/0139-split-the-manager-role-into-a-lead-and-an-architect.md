@@ -78,11 +78,12 @@ starts opens in a new tab from `tab.new`.
 
 ### Models
 
-`roles.lead.model` and `roles.architect.model` choose each role's model from the user file. A worker
-launch uses the launch `model`, then `roles.<kind>.profiles.<profile>.model` for the launching role,
-then `profiles.<profile>.model`, then `profiles.default.model`. This lets a role run the same
-profile on a different model. A lead whose session model differs from `roles.lead.model` warns at
-session start.
+`roles.lead.model` and `roles.architect.model` choose each role's model from the user file. A
+`reviewer` or `checker` launch uses its `model` first; every other profile refuses a launch `model`.
+Then a launch uses `roles.<kind>.profiles.<profile>.model` for the launching role, then
+`profiles.<profile>.model`, then `profiles.default.model`. This lets a role run the same profile on
+a different model. A lead whose session model differs from `roles.lead.model` warns at session
+start.
 
 The per-profile `route` setting is removed. Its classifier call now serves the gate. The gate's
 classifier is fixed at `typesafe/jev-latest`, the one model name in code, because a gate is not a

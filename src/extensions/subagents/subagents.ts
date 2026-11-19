@@ -162,7 +162,7 @@ const registerLaunchTool = (
     label: 'Launch worker',
     description: [
       'Launch a Pi worker as an hc child. cwd must match this session.',
-      `Profiles: ${profileText(profiles)}. model overrides the profile default as provider/id.`,
+      `Profiles: ${profileText(profiles)}. model: reviewer/checker only; profiles set others.`,
       ...modelLine,
       'Editing workers require acceptance criteria. Brief them with, when it applies: outcome, scope and non-goals, entry files, decisions already made, baseline, and checks to run. Give the worktree; one editor per worktree. The deadline includes waits and cleanup.',
       'A worker event starts a new turn when a worker reports, asks a question, or stops. End your turn to wait; never sleep or poll.',

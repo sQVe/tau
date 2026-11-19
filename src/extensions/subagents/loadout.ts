@@ -90,7 +90,7 @@ const resolveModel = (
 
   if (model === undefined) {
     throw new Error(
-      `No model for worker profile ${profile.name}. Pass model, or set profiles.default.model in ${userConfigPath(location.agentDirectory)}.${configuredModels(context, location)}`,
+      `No model for worker profile ${profile.name}. Set roles.<role>.profiles.${profile.name}.model, then profiles.${profile.name}.model, then profiles.default.model in ${userConfigPath(location.agentDirectory)}; the first one set wins.${configuredModels(context, location)}`,
     );
   }
 

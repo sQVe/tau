@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type {
@@ -8,6 +8,7 @@ import type {
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 
 import { failedResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
@@ -18,8 +19,11 @@ import type { Exec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
 import { skillTools } from '../../skillTools.js';
+import { writeAssignment } from './assignment.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
 import { workerFixture } from './fixtures/workerLoadout.js';
+import type { WorkerFixture } from './fixtures/workerLoadout.js';
+import { Admission } from './launch.js';
 import type { LaunchStatus } from './launch.js';
 import { checkLaunchEnvironment } from './launchCheck.js';
 import type { WorkerPackageManager } from './packageInstall.js';
@@ -31,7 +35,13 @@ interface ToolFixture {
   context: Record<string, unknown>;
 }
 
+interface ModelFixture {
+  directory: string;
+  request: { model: string };
+}
+
 vi.mock(import('../../hc/connect.js'), { spy: true });
+vi.mock(import('./assignment.js'), { spy: true });
 vi.mock(import('./launchCheck.js'), { spy: true });
 vi.mock(import('./piPackageManager.js'), { spy: true });
 
@@ -132,6 +142,14 @@ const toolContext = (fixture: ToolFixture): ExtensionToolContext =>
     },
   }) as unknown as ExtensionToolContext;
 
+const profileModelConfig = (fixture: ModelFixture) => ({
+  profiles: { default: { model: fixture.request.model } },
+});
+
+const writeProfileModel = (fixture: ModelFixture): void => {
+  writeFileSync(join(fixture.directory, 'tau.json'), JSON.stringify(profileModelConfig(fixture)));
+};
+
 const execute = (
   tool: ToolDefinition,
   parameters: Record<string, unknown>,
@@ -142,6 +160,35 @@ const resultText = (result: Awaited<ReturnType<ToolDefinition['execute']>>): str
   const [first] = result.content;
 
   return first?.type === 'text' ? first.text : '';
+};
+
+const refusalMessage = async (run: () => Promise<unknown>): Promise<string> => {
+  try {
+    await run();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  throw new Error('The launch was not refused.');
+};
+
+const modelOrderPattern = (profile: string): RegExp =>
+  new RegExp(
+    `roles\\.<role>\\.profiles\\.${profile}\\.model, then profiles\\.${profile}\\.model, then profiles\\.default\\.model`,
+  );
+
+const admissionSpy = (): MockInstance => vi.spyOn(Admission.prototype, 'run');
+
+const expectNothingLaunched = (
+  fake: HcFake,
+  fixture: WorkerFixture,
+  admission: MockInstance,
+): void => {
+  expect(writeAssignment).not.toHaveBeenCalled();
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(fake.connectCalls).toEqual([]);
+  expect(existsSync(join(fixture.directory, 'tau'))).toBe(false);
+  expect(admission).not.toHaveBeenCalled();
 };
 
 it('launches on the profile model', async ({ onTestFinished }) => {
@@ -176,6 +223,8 @@ it('places an editing worker in the workers tab of the manager', async ({ onTest
 
   const fixture = await workerFixture(onTestFinished);
 
+  writeProfileModel(fixture);
+
   const fake = hcSetup({ 'herdr.space': 'space-1', 'herdr.tab': 'tab-2' });
   const { tool } = registerTool(fake);
 
@@ -183,7 +232,6 @@ it('places an editing worker in the workers tab of the manager', async ({ onTest
     tool,
     {
       profile: 'worker',
-      model: fixture.request.model,
       acceptance: ['Done.'],
       task: 'Fix it.',
     },
@@ -202,14 +250,12 @@ it('places an investigation worker in the workers tab of the manager', async ({
 
   const fixture = await workerFixture(onTestFinished);
 
+  writeProfileModel(fixture);
+
   const fake = hcSetup({ 'herdr.space': 'space-1', 'herdr.tab': 'tab-2' });
   const { tool } = registerTool(fake);
 
-  const result = await execute(
-    tool,
-    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
-    toolContext(fixture),
-  );
+  const result = await execute(tool, { profile: 'scout', task: 'Look.' }, toolContext(fixture));
 
   expect(result.isError).not.toBe(true);
   expect(terminalRun(fake)?.labels['herdr.space']).toBe('space-1');
@@ -223,6 +269,8 @@ it('gives a worker no herdr labels when the manager has no space and tab labels'
 
   const fixture = await workerFixture(onTestFinished);
 
+  writeProfileModel(fixture);
+
   const fake = hcSetup();
   const { tool } = registerTool(fake);
 
@@ -230,7 +278,6 @@ it('gives a worker no herdr labels when the manager has no space and tab labels'
     tool,
     {
       profile: 'worker',
-      model: fixture.request.model,
       acceptance: ['Done.'],
       task: 'Fix it.',
     },
@@ -258,6 +305,7 @@ it('applies the repository QA settings and brief to a qa launch', async ({ onTes
   writeFileSync(
     join(fixture.directory, 'tau.json'),
     JSON.stringify({
+      ...profileModelConfig(fixture),
       qa: {
         repositories: {
           'sQVe/cape': { testAccountCommand: 'op read login', dataWrites: false },
@@ -275,7 +323,7 @@ it('applies the repository QA settings and brief to a qa launch', async ({ onTes
 
   const result = await execute(
     tool,
-    { profile: 'qa', model: fixture.request.model, task: 'Test the form.' },
+    { profile: 'qa', task: 'Test the form.' },
     { ...toolContext(fixture), cwd: worktree },
   );
 
@@ -305,9 +353,9 @@ it('refuses a launch without a saved parent session', async ({ onTestFinished })
     sessionManager: { getSessionFile: () => undefined },
   } as unknown as ExtensionToolContext;
 
-  await expect(
-    execute(tool, { profile: 'scout', model: fixture.request.model, task: 'Look.' }, context),
-  ).rejects.toThrow('saved parent Pi session');
+  await expect(execute(tool, { profile: 'scout', task: 'Look.' }, context)).rejects.toThrow(
+    'saved parent Pi session',
+  );
 });
 
 it('refuses a follow-up without a saved parent session', async ({ onTestFinished }) => {
@@ -377,16 +425,140 @@ it('refuses a launch when a listed skill tool is not registered', async ({ onTes
   const fake = hcSetup();
   const { tool } = registerTool(fake, []);
 
-  const result = await execute(
-    tool,
-    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
-    toolContext(fixture),
-  );
+  const result = await execute(tool, { profile: 'scout', task: 'Look.' }, toolContext(fixture));
 
   expect(result).toMatchObject({ isError: true });
   expect(resultText(result)).toContain('Run /reload');
   expect(terminalRun(fake)).toBeUndefined();
 });
+
+it.for(['worker', 'scout', 'qa', 'browser'] as const)(
+  'refuses a %s launch that sets model',
+  async (profile, { onTestFinished }) => {
+    vi.stubEnv('HC_TERMINAL_ID', manager);
+
+    const fixture = await workerFixture(onTestFinished);
+    const fake = hcSetup();
+    const { tool } = registerTool(fake);
+    const admission = admissionSpy();
+
+    vi.mocked(writeAssignment).mockClear();
+
+    const text = await refusalMessage(() =>
+      execute(
+        tool,
+        {
+          profile,
+          model: fixture.request.model,
+          task: 'Fix the counts.',
+          acceptance: ['Done.'],
+        },
+        toolContext(fixture),
+      ),
+    );
+
+    expect(text).toContain(`Profile ${profile} cannot set model`);
+    expect(text).toContain('reviewer');
+    expect(text).toContain('checker');
+    expect(text).toMatch(modelOrderPattern(profile));
+    expect(text).toContain('tau.json');
+    expectNothingLaunched(fake, fixture, admission);
+  },
+);
+
+it.for(['invalid model', 'missing/model'] as const)(
+  'refuses a worker launch with model %s before resolving it',
+  async (model, { onTestFinished }) => {
+    vi.stubEnv('HC_TERMINAL_ID', manager);
+
+    const fixture = await workerFixture(onTestFinished);
+    const fake = hcSetup();
+    const { tool } = registerTool(fake);
+    const admission = admissionSpy();
+
+    vi.mocked(writeAssignment).mockClear();
+
+    const text = await refusalMessage(() =>
+      execute(
+        tool,
+        { profile: 'worker', model, task: 'Fix the counts.', acceptance: ['Done.'] },
+        toolContext(fixture),
+      ),
+    );
+
+    expect(text).toContain('Only reviewer and checker launches may set model');
+    expect(text).toMatch(modelOrderPattern('worker'));
+    expect(text).not.toContain('Set an exact worker model');
+    expect(text).not.toContain('Worker model unavailable');
+    expectNothingLaunched(fake, fixture, admission);
+  },
+);
+
+it('refuses a qa launch with model before running the configured urlCommand', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('HC_TERMINAL_ID', manager);
+
+  const fixture = await workerFixture(onTestFinished);
+  const worktree = join(fixture.directory, 'tree');
+  const marker = join(worktree, 'url-command-ran');
+
+  mkdirSync(worktree, { recursive: true });
+  await initializeRepository(worktree);
+
+  execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:sQVe/cape.git'], {
+    cwd: worktree,
+  });
+
+  writeFileSync(
+    join(fixture.directory, 'tau.json'),
+    JSON.stringify({
+      qa: { repositories: { 'sQVe/cape': { urlCommand: 'touch url-command-ran' } } },
+    }),
+  );
+
+  const fake = hcSetup();
+  const { tool } = registerTool(fake);
+  const admission = admissionSpy();
+
+  vi.mocked(writeAssignment).mockClear();
+
+  const text = await refusalMessage(() =>
+    execute(
+      tool,
+      { profile: 'qa', model: fixture.request.model, task: 'Test the form.' },
+      { ...toolContext(fixture), cwd: worktree },
+    ),
+  );
+
+  expect(text).toContain('Profile qa cannot set model');
+  expect(existsSync(marker)).toBe(false);
+  expectNothingLaunched(fake, fixture, admission);
+});
+
+it.for(['reviewer', 'checker'] as const)(
+  'launches the %s profile with the explicit model',
+  async (profile, { onTestFinished }) => {
+    vi.stubEnv('HC_TERMINAL_ID', manager);
+
+    const fixture = await workerFixture(onTestFinished);
+    const fake = hcSetup();
+    const { tool } = registerTool(fake);
+
+    const result = await execute(
+      tool,
+      { profile, model: fixture.request.model, task: 'Review the change.' },
+      toolContext(fixture),
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(terminalRun(fake)?.labels['tau.model']).toBe(fixture.request.model);
+
+    const details = result.details as LaunchStatus;
+
+    expect(details.model).toBe(fixture.request.model);
+  },
+);
 
 it('starts the deadline before the pre-launch environment checks', async ({ onTestFinished }) => {
   vi.useFakeTimers();
@@ -398,6 +570,9 @@ it('starts the deadline before the pre-launch environment checks', async ({ onTe
   vi.stubEnv('HC_TERMINAL_ID', manager);
 
   const fixture = await workerFixture(onTestFinished);
+
+  writeProfileModel(fixture);
+
   const fake = hcSetup();
   const { tool } = registerTool(fake);
   const start = 1_000_000;
@@ -410,11 +585,7 @@ it('starts the deadline before the pre-launch environment checks', async ({ onTe
     return parameters;
   });
 
-  const result = await execute(
-    tool,
-    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
-    toolContext(fixture),
-  );
+  const result = await execute(tool, { profile: 'scout', task: 'Look.' }, toolContext(fixture));
 
   expect(result.isError).not.toBe(true);
 
@@ -439,6 +610,9 @@ it('scans the children after a launch whose reconciliation failed', async ({ onT
   vi.stubEnv('HC_TERMINAL_ID', manager);
 
   const fixture = await workerFixture(onTestFinished);
+
+  writeProfileModel(fixture);
+
   const fake = hcSetup();
   let listCalls = 0;
 
@@ -473,11 +647,7 @@ it('scans the children after a launch whose reconciliation failed', async ({ onT
     return Promise.reject(new HcError('read_failed', 'lost launch reply'));
   });
 
-  const result = await execute(
-    tool,
-    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
-    toolContext(fixture),
-  );
+  const result = await execute(tool, { profile: 'scout', task: 'Look.' }, toolContext(fixture));
 
   expect(result.isError).toBe(true);
   expect(resultText(result)).toContain('unclear');
@@ -494,7 +664,7 @@ it('fails closed and reports an invalid worker capacity', async ({ onTestFinishe
 
   writeFileSync(
     join(fixture.directory, 'tau.json'),
-    JSON.stringify({ subagents: { capacity: 0 } }),
+    JSON.stringify({ ...profileModelConfig(fixture), subagents: { capacity: 0 } }),
   );
 
   const fake = hcSetup();
@@ -525,11 +695,7 @@ it('fails closed and reports an invalid worker capacity', async ({ onTestFinishe
     throw new Error('The subagent tool was not registered.');
   }
 
-  const result = await execute(
-    tool,
-    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
-    context,
-  );
+  const result = await execute(tool, { profile: 'scout', task: 'Look.' }, context);
 
   expect(result).toMatchObject({ isError: true, terminate: true });
   expect(resultText(result)).toContain('Worker capacity full (0/0)');

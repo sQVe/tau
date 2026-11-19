@@ -375,6 +375,16 @@ it('refuses an editing launch without acceptance criteria', async () => {
   expect(result.content[0]?.text).toContain('acceptance criteria');
 });
 
+it('launches the worker profile without model', async () => {
+  const { fake, runtime } = setup();
+
+  const result = await launch(runtime, { profile: 'worker' });
+
+  expect(result.isError).not.toBe(true);
+  expect(terminalRun(fake)).toBeDefined();
+  expect(fake.connectCalls).toHaveLength(1);
+});
+
 it('reports a failed loadout check', async () => {
   const { runtime } = setup();
 
@@ -931,7 +941,7 @@ it('refuses a launch aborted while it waits for admission', async () => {
   const controller = new AbortController();
   const release = Promise.withResolvers<undefined>();
   const held = runtime.admission.run(() => release.promise);
-  const pending = launch(runtime, { model: 'faux/test' }, controller.signal);
+  const pending = launch(runtime, {}, controller.signal);
 
   controller.abort();
   release.resolve(undefined);
@@ -985,7 +995,7 @@ it('frees the slot and removes the snapshot when the signal aborts after admissi
     });
   });
 
-  const result = await launch(runtime, { model: 'faux/test' }, controller.signal);
+  const result = await launch(runtime, {}, controller.signal);
 
   expect(result.isError).toBe(true);
   expect(terminalRun(fake)).toBeUndefined();
@@ -1148,7 +1158,7 @@ it('refuses a foreground launch whose signal aborts during the manager label rea
     return originalExec(command, commandArguments, execOptions);
   };
 
-  const pending = launch(runtime, { model: 'faux/test' }, controller.signal);
+  const pending = launch(runtime, {}, controller.signal);
 
   await entered.promise;
   controller.abort();

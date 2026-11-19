@@ -88,13 +88,14 @@ start with `vitest`.
 
 - Tau's code names no model, except the gate's fixed classifier. Every other model comes from a call
   argument or from the user file.
-- A worker launch uses the launch `model`, then `roles.<role>.profiles.<name>.model` for the
-  launching role, then `profiles.<name>.model`, then `profiles.default.model`. Without any of them,
-  the launch fails and names `profiles.default.model`. Profile files may not set `model:`. `roles`
-  is user-file only, like `profiles`, because it chooses a model.
+- A `reviewer` or `checker` launch uses the launch `model` first; every other profile refuses a
+  launch `model`. Then a launch uses `roles.<role>.profiles.<name>.model` for the launching role,
+  then `profiles.<name>.model`, then `profiles.default.model`. Without any of them, the launch fails
+  and names the three keys. Profile files may not set `model:`. `roles` is user-file only, like
+  `profiles`, because it chooses a model.
 - A worker's model is chosen once at launch. The `subagent` tool's model line is fixed for the
-  session, so the prompt cache holds. The manager guidance says to use the profile default unless
-  the user asks for another model or a multi-model discussion.
+  session, so the prompt cache holds. The manager guidance says to omit `model` and ask the user
+  when a ticket needs another model.
 - Web answers use `pi-web-access`'s own `fetch.answerModel`, unless the caller passes one.
 - `allowedModels` limits every model Tau selects or passes on. Each file that sets it may only
   remove models from the list before it. Tau refuses a model outside the list, names the list and
@@ -124,7 +125,7 @@ start with `vitest`.
 ### Negative
 
 - A misspelled key only warns, so the feature runs without it until the user reads the warning.
-- A new user must set a launch `model`, or write `profiles.default.model`, before a worker starts.
+- A new user must configure a worker model in the user file before a worker starts.
 - Each per-repository feature repeats `owner/name` keys in its own map.
 - A team cannot share QA or review settings through the repository.
 - A repository file chooses the full check command that runs on the user's machine. Pi's project
