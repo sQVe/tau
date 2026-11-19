@@ -14,7 +14,7 @@ export interface SessionLog {
 }
 
 export interface LoggedQuestion extends PastAnswer {
-  // The root session of the file's parentSession chain, so copied entries keep one origin.
+  // The root session of the entry's lineage, so every copy of an entry keeps one origin.
   session: string;
 }
 
@@ -25,6 +25,8 @@ export interface SkippedQuestions {
   failedCalls: number;
   unansweredCalls: number;
   unmatchedResults: number;
+  // Call or result occurrences left unmatched because their call ID had several candidates.
+  ambiguousEntries: number;
   malformedAnswers: number;
   noRecommendation: number;
   multiSelect: number;
@@ -43,10 +45,16 @@ type QuestionRead =
   | { kind: 'skip'; counter: SkipCounter }
   | { kind: 'malformed' };
 
+interface SessionLineage {
+  parent: string | undefined;
+  time: number;
+}
+
 interface ParsedLog {
   file: SessionLog;
   entries: Entry[];
   malformedLines: number;
+  lineage: SessionLineage | undefined;
 }
 
 interface RawOption {
@@ -55,22 +63,38 @@ interface RawOption {
 }
 
 interface CallRecord {
+  callId: string;
   parameters: Entry | undefined;
+  file: string;
 }
 
 interface ResultRecord {
+  callId: string;
   result: CallResult;
   toolName: string | undefined;
+  file: string;
   session: string;
   time: number;
+}
+
+interface OccurrencePair {
+  call: CallRecord;
+  result: ResultRecord;
+}
+
+interface Pairing {
+  pairs: OccurrencePair[];
+  unanswered: CallRecord[];
+  unmatched: ResultRecord[];
+  ambiguous: number;
 }
 
 interface LogState {
   questions: LoggedQuestion[];
   skipped: SkippedQuestions;
   seen: Set<string>;
-  calls: Map<string, CallRecord>;
-  results: Map<string, ResultRecord>;
+  calls: CallRecord[];
+  results: ResultRecord[];
 }
 
 interface CompletedCall {
@@ -97,6 +121,7 @@ const zeroSkipped = (): SkippedQuestions => ({
   failedCalls: 0,
   unansweredCalls: 0,
   unmatchedResults: 0,
+  ambiguousEntries: 0,
   malformedAnswers: 0,
   noRecommendation: 0,
   multiSelect: 0,
@@ -354,22 +379,218 @@ const readCall = (state: LogState, call: CompletedCall) => {
   }
 };
 
-const addCall = (state: LogState, message: Entry) => {
+const sessionLineage = (entries: readonly Entry[]): SessionLineage | undefined => {
+  const header = entries.find((entry) => entry.type === 'session');
+
+  if (header === undefined) {
+    return undefined;
+  }
+
+  const parent = text(header.parentSession);
+
+  return {
+    parent: parent === undefined || parent === '' ? undefined : parent,
+    time: Date.parse(text(header.timestamp) ?? ''),
+  };
+};
+
+const originSession = (path: string, parents: ReadonlyMap<string, string>): string => {
+  const visited = new Set<string>();
+  let current = path;
+
+  while (!visited.has(current)) {
+    visited.add(current);
+
+    const parent = parents.get(current);
+
+    if (parent === undefined) {
+      return current;
+    }
+
+    current = parent;
+  }
+
+  return current;
+};
+
+const headerOrder = (path: string, times: ReadonlyMap<string, number>): number => {
+  const time = times.get(path) ?? Number.NaN;
+
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+};
+
+const earliestPath = (paths: readonly string[], times: ReadonlyMap<string, number>): string => {
+  const [first = ''] = paths.toSorted(
+    (left, right) =>
+      headerOrder(left, times) - headerOrder(right, times) || left.localeCompare(right),
+  );
+
+  return first;
+};
+
+// A copy's owner is its only root file, or the earliest-started file when the chain is broken.
+const entryOrigin = (
+  paths: ReadonlySet<string>,
+  parents: ReadonlyMap<string, string>,
+  times: ReadonlyMap<string, number>,
+): string => {
+  const candidates = [...paths];
+  const roots = candidates.filter((path) => !parents.has(path));
+  const pool = roots.length === 1 ? roots : candidates;
+
+  return originSession(earliestPath(pool, times), parents);
+};
+
+const entryFiles = (logs: readonly ParsedLog[]): Map<string, Set<string>> => {
+  const files = new Map<string, Set<string>>();
+
+  for (const { file, entries } of logs) {
+    for (const entry of entries) {
+      const key = copyKey(entry);
+      const paths = files.get(key) ?? new Set<string>();
+
+      paths.add(file.path);
+      files.set(key, paths);
+    }
+  }
+
+  return files;
+};
+
+const entryOrigins = (
+  logs: readonly ParsedLog[],
+  parents: ReadonlyMap<string, string>,
+  times: ReadonlyMap<string, number>,
+): Map<string, string> => {
+  const origins = new Map<string, string>();
+
+  for (const [key, paths] of entryFiles(logs)) {
+    origins.set(key, entryOrigin(paths, parents, times));
+  }
+
+  return origins;
+};
+
+const groupByCallId = <Record extends { callId: string }>(
+  records: readonly Record[],
+): Map<string, Record[]> => {
+  const groups = new Map<string, Record[]>();
+
+  for (const record of records) {
+    const group = groups.get(record.callId) ?? [];
+
+    group.push(record);
+    groups.set(record.callId, group);
+  }
+
+  return groups;
+};
+
+const pairRemainder = (
+  pairs: OccurrencePair[],
+  calls: CallRecord[],
+  results: ResultRecord[],
+): Pairing => {
+  if (calls.length === 0) {
+    return { pairs, unanswered: [], unmatched: results, ambiguous: 0 };
+  }
+
+  if (results.length === 0) {
+    return { pairs, unanswered: calls, unmatched: [], ambiguous: 0 };
+  }
+
+  const [call] = calls;
+  const [result] = results;
+  const unambiguous = calls.length === 1 && results.length === 1;
+
+  if (unambiguous && call !== undefined && result !== undefined) {
+    return { pairs: [...pairs, { call, result }], unanswered: [], unmatched: [], ambiguous: 0 };
+  }
+
+  return { pairs, unanswered: [], unmatched: [], ambiguous: calls.length + results.length };
+};
+
+const pairOccurrences = (
+  calls: readonly CallRecord[],
+  results: readonly ResultRecord[],
+): Pairing => {
+  const paired = new Set<ResultRecord>();
+  const pairs: OccurrencePair[] = [];
+  const unpairedCalls: CallRecord[] = [];
+
+  for (const call of calls) {
+    const result = results.find(
+      (candidate) => candidate.file === call.file && !paired.has(candidate),
+    );
+
+    if (result === undefined) {
+      unpairedCalls.push(call);
+    } else {
+      paired.add(result);
+      pairs.push({ call, result });
+    }
+  }
+
+  const unmatched = results.filter((candidate) => !paired.has(candidate));
+
+  return pairRemainder(pairs, unpairedCalls, unmatched);
+};
+
+const pairCalls = (state: LogState) => {
+  const calls = groupByCallId(state.calls);
+  const results = groupByCallId(state.results);
+  const callIds = new Set([...calls.keys(), ...results.keys()]);
+
+  for (const callId of callIds) {
+    const pairing = pairOccurrences(calls.get(callId) ?? [], results.get(callId) ?? []);
+
+    for (const pair of pairing.pairs) {
+      readCall(state, {
+        parameters: pair.call.parameters,
+        result: pair.result.result,
+        session: pair.result.session,
+        time: pair.result.time,
+      });
+    }
+
+    state.skipped.unansweredCalls += pairing.unanswered.length;
+
+    state.skipped.unmatchedResults += pairing.unmatched.filter((result) =>
+      isQuestionResult(result.toolName, result.result.details),
+    ).length;
+
+    state.skipped.ambiguousEntries += pairing.ambiguous;
+  }
+};
+
+const addCall = (state: LogState, message: Entry, file: string) => {
   for (const called of assistantCalls(message).calls) {
     if (called.tool === 'ask_user_question') {
-      state.calls.set(called.callId, { parameters: called.arguments });
+      state.calls.push({ callId: called.callId, parameters: called.arguments, file });
     }
   }
 };
 
-const addResult = (state: LogState, message: Entry, session: string, time: number) => {
+const addResult = (
+  state: LogState,
+  message: Entry,
+  file: string,
+  session: string,
+  time: number,
+) => {
   const { callId, result } = toolResult(message);
-  const toolName = text(message.toolName);
 
-  state.results.set(callId, { result, toolName, session, time });
+  state.results.push({
+    callId,
+    result,
+    toolName: text(message.toolName),
+    file,
+    session,
+    time,
+  });
 };
 
-const collectEntry = (state: LogState, origin: string, entry: Entry) => {
+const collectEntry = (state: LogState, file: string, origin: string, entry: Entry) => {
   const time = Date.parse(text(entry.timestamp) ?? '');
 
   if (Number.isNaN(time)) {
@@ -395,95 +616,55 @@ const collectEntry = (state: LogState, origin: string, entry: Entry) => {
   }
 
   if (message.role === 'assistant') {
-    addCall(state, message);
+    addCall(state, message, file);
   } else if (message.role === 'toolResult') {
-    addResult(state, message, origin, time);
-  }
-};
-
-const collectEntries = (state: LogState, origin: string, entries: readonly Entry[]) => {
-  for (const entry of entries) {
-    collectEntry(state, origin, entry);
-  }
-};
-
-const parentSessions = (logs: readonly ParsedLog[]): Map<string, string> => {
-  const parents = new Map<string, string>();
-
-  for (const { file, entries } of logs) {
-    const header = entries.find((entry) => entry.type === 'session');
-    const parent = header === undefined ? undefined : text(header.parentSession);
-
-    if (parent !== undefined && parent !== '') {
-      parents.set(file.path, parent);
-    }
-  }
-
-  return parents;
-};
-
-const originSession = (path: string, parents: ReadonlyMap<string, string>): string => {
-  const visited = new Set<string>();
-  let current = path;
-
-  while (!visited.has(current)) {
-    visited.add(current);
-
-    const parent = parents.get(current);
-
-    if (parent === undefined) {
-      return current;
-    }
-
-    current = parent;
-  }
-
-  return current;
-};
-
-const joinCalls = (state: LogState) => {
-  for (const [callId, call] of state.calls) {
-    const result = state.results.get(callId);
-
-    if (result === undefined) {
-      state.skipped.unansweredCalls += 1;
-    } else {
-      state.results.delete(callId);
-
-      readCall(state, {
-        parameters: call.parameters,
-        result: result.result,
-        session: result.session,
-        time: result.time,
-      });
-    }
-  }
-
-  for (const result of state.results.values()) {
-    if (isQuestionResult(result.toolName, result.result.details)) {
-      state.skipped.unmatchedResults += 1;
-    }
+    addResult(state, message, file, origin, time);
   }
 };
 
 export const readLoggedQuestions = (files: readonly SessionLog[]): QuestionLog => {
-  const logs: ParsedLog[] = files.map((file) => ({ file, ...parseEntries(file.text) }));
-  const parents = parentSessions(logs);
+  const logs: ParsedLog[] = files.map((file) => {
+    const { entries, malformedLines } = parseEntries(file.text);
+
+    return { file, entries, malformedLines, lineage: sessionLineage(entries) };
+  });
+
+  const parents = new Map<string, string>();
+  const times = new Map<string, number>();
+
+  for (const { file, lineage } of logs) {
+    if (lineage !== undefined) {
+      times.set(file.path, lineage.time);
+
+      if (lineage.parent !== undefined) {
+        parents.set(file.path, lineage.parent);
+      }
+    }
+  }
+
+  const origins = entryOrigins(logs, parents, times);
 
   const state: LogState = {
     questions: [],
     skipped: zeroSkipped(),
     seen: new Set(),
-    calls: new Map(),
-    results: new Map(),
+    calls: [],
+    results: [],
   };
 
   for (const { file, entries, malformedLines } of logs) {
     state.skipped.malformedLines += malformedLines;
-    collectEntries(state, originSession(file.path, parents), entries);
+
+    const fallbackOrigin = originSession(file.path, parents);
+
+    for (const entry of entries) {
+      const origin = origins.get(copyKey(entry)) ?? fallbackOrigin;
+
+      collectEntry(state, file.path, origin, entry);
+    }
   }
 
-  joinCalls(state);
+  pairCalls(state);
 
   return {
     questions: state.questions.toSorted((left, right) => left.time - right.time),

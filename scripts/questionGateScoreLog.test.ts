@@ -15,6 +15,7 @@ const noSkips: SkippedQuestions = {
   failedCalls: 0,
   unansweredCalls: 0,
   unmatchedResults: 0,
+  ambiguousEntries: 0,
   malformedAnswers: 0,
   noRecommendation: 0,
   multiSelect: 0,
@@ -582,4 +583,103 @@ it('treats an empty parentSession as its own origin', () => {
   ]);
 
   expect(log.questions.map((entry) => entry.session)).toEqual([path]);
+});
+
+it('keeps both complete pairs when two files share a call ID', () => {
+  const pair = (path: string, questionText: string, label: string, start: number): SessionLog => ({
+    path,
+    text: logText(
+      [
+        call('call-shared', at(start), [
+          question({
+            question: questionText,
+            options: [option('Postgres', true), option(label)],
+          }),
+        ]),
+        result('call-shared', at(start + 1), {
+          details: answered([{ question: questionText, selected: [label], typed: false }]),
+        }),
+      ],
+      header(`session-${start}`),
+    ),
+  });
+
+  const log = readLoggedQuestions([
+    pair('/logs/a.jsonl', 'Which database?', 'SQLite', 1),
+    pair('/logs/b.jsonl', 'Which cache?', 'Redis', 3),
+  ]);
+
+  expect(log.questions.map((entry) => entry.outcome)).toEqual([
+    { kind: 'otherOption', label: 'SQLite' },
+    { kind: 'otherOption', label: 'Redis' },
+  ]);
+
+  expect(log.questions.map((entry) => entry.session)).toEqual(['/logs/a.jsonl', '/logs/b.jsonl']);
+
+  expect(log.skipped).toEqual(noSkips);
+});
+
+it('counts ambiguous cross-file pairs with one call ID', () => {
+  const calls = [1, 2].map((start): SessionLog => ({
+    path: `/logs/call-${start}.jsonl`,
+    text: logText(
+      [call('call-ambiguous', at(start), [question()])],
+      header(`session-call-${start}`),
+    ),
+  }));
+
+  const results = [3, 4].map((start): SessionLog => ({
+    path: `/logs/result-${start}.jsonl`,
+    text: logText(
+      [
+        result('call-ambiguous', at(start), {
+          details: answered([
+            { question: 'Which database?', selected: ['Postgres'], typed: false },
+          ]),
+        }),
+      ],
+      header(`session-result-${start}`),
+    ),
+  }));
+
+  const log = readLoggedQuestions([...calls, ...results]);
+
+  expect(log).toEqual({ questions: [], skipped: { ...noSkips, ambiguousEntries: 4 } });
+});
+
+it('gives every copy the original session when a parent is missing', () => {
+  const originalPath = '/logs/original.jsonl';
+  const intermediatePath = '/logs/intermediate.jsonl';
+
+  const copied = [
+    call('call-copied', at(1), [question()]),
+    result('call-copied', at(2), {
+      details: answered([{ question: 'Which database?', selected: ['Postgres'], typed: false }]),
+    }),
+  ];
+
+  const later = [
+    call('call-later', at(3), [
+      question({ question: 'Which cache?', options: [option('Postgres', true), option('Redis')] }),
+    ]),
+    result('call-later', at(4), {
+      details: answered([{ question: 'Which cache?', selected: ['Postgres'], typed: false }]),
+    }),
+  ];
+
+  const grandchild: SessionLog = {
+    path: '/logs/grandchild.jsonl',
+    text: logText(copied, header('session-grandchild', intermediatePath)),
+  };
+
+  const original: SessionLog = {
+    path: originalPath,
+    text: logText([...copied, ...later], header('session-original')),
+  };
+
+  for (const order of permutations([grandchild, original])) {
+    const log = readLoggedQuestions(order);
+
+    expect(log.questions.map((entry) => entry.session)).toEqual([originalPath, originalPath]);
+  }
 });
