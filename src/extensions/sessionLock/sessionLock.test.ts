@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -15,9 +15,12 @@ import { expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
 import { exitedPid } from '../../../tests/exitedPid.js';
+import { writeLockOwnerRecord } from '../../../tests/lockOwnerRecord.js';
 import { createPiSession, shutdownSession } from '../../../tests/piSession.js';
+import { seedSavedSession } from '../../../tests/savedSession.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { holdFileLock, readLiveLockHolder } from '../../fileLock/fileLock.js';
+import type { LiveLockHolder } from '../../fileLock/fileLock.js';
 import { sessionLockPath } from './hold.js';
 import sessionLockExtension from './sessionLock.js';
 
@@ -26,46 +29,14 @@ type Cleanup = TestContext['onTestFinished'];
 interface Harness {
   agentDirectory: string;
   sessionFile: string;
+  sessionBytes: string;
   session: AgentSession;
   notices: { message: string; type: string | undefined }[];
   shutdowns: string[];
   laterCalls: string[];
+  holdersAtShutdown: (LiveLockHolder | undefined)[];
   binding: Promise<void>;
 }
-
-// Pi appends a model and a thinking level entry to a file with no messages, before any extension
-// runs, so the fixture holds a message.
-const sessionContent = (directory: string): string => {
-  const timestamp = new Date(0).toISOString();
-
-  const entries = [
-    { type: 'session', version: 3, id: 'locked-session', timestamp, cwd: directory },
-    {
-      type: 'model_change',
-      id: 'aaaaaaaa',
-      parentId: null,
-      timestamp,
-      provider: 'faux',
-      modelId: 'faux-1',
-    },
-    {
-      type: 'thinking_level_change',
-      id: 'bbbbbbbb',
-      parentId: 'aaaaaaaa',
-      timestamp,
-      thinkingLevel: 'off',
-    },
-    {
-      type: 'message',
-      id: 'cccccccc',
-      parentId: 'bbbbbbbb',
-      timestamp,
-      message: { role: 'user', content: 'Hello', timestamp: 0 },
-    },
-  ];
-
-  return entries.map((entry) => `${JSON.stringify(entry)}\n`).join('');
-};
 
 const startSession = async (
   onTestFinished: Cleanup,
@@ -73,7 +44,6 @@ const startSession = async (
 ): Promise<Harness> => {
   const directory = temporaryDirectory(onTestFinished, 'tau-session-lock-');
   const agentDirectory = join(directory, 'agent');
-  const sessionFile = join(directory, 'session.jsonl');
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
@@ -81,7 +51,8 @@ const startSession = async (
     vi.unstubAllEnvs();
   });
 
-  writeFileSync(sessionFile, sessionContent(directory));
+  const sessionFile = seedSavedSession(directory);
+  const sessionBytes = readFileSync(sessionFile, 'utf8');
 
   const lockPath = await sessionLockPath(agentDirectory, sessionFile);
 
@@ -91,9 +62,16 @@ const startSession = async (
   const shutdowns: string[] = [];
   const laterCalls: string[] = [];
 
+  const holdersAtShutdown: Harness['holdersAtShutdown'] = [];
+
+  // Runs after the session lock's own handlers, so it sees the lock as they left it.
   const laterExtension = (pi: ExtensionAPI): void => {
     pi.on('session_start', () => {
       laterCalls.push('session_start');
+    });
+
+    pi.on('session_shutdown', async () => {
+      holdersAtShutdown.push(await readLiveLockHolder(lockPath));
     });
   };
 
@@ -124,23 +102,21 @@ const startSession = async (
     onError: () => undefined,
   });
 
-  return { agentDirectory, sessionFile, session, notices, shutdowns, laterCalls, binding };
+  return {
+    agentDirectory,
+    sessionFile,
+    sessionBytes,
+    session,
+    notices,
+    shutdowns,
+    laterCalls,
+    holdersAtShutdown,
+    binding,
+  };
 };
 
-const writeLockRecord = async (lockPath: string, pid: number): Promise<void> => {
-  await mkdir(dirname(lockPath), { recursive: true });
-
-  await writeFile(
-    `${lockPath}.1`,
-    JSON.stringify({
-      pid,
-      checkout: '/other',
-      startedAt: new Date().toISOString(),
-      token: 'other',
-      terminal: 't42',
-    }),
-  );
-};
+const writeLockRecord = (lockPath: string, pid: number): Promise<void> =>
+  writeLockOwnerRecord(lockPath, { pid, terminal: 't42' });
 
 it('refuses a session file another live Pi holds before later handlers run', async ({
   onTestFinished,
@@ -169,9 +145,7 @@ it('refuses a session file another live Pi holds before later handlers run', asy
   expect(notice?.message).toContain(harness.sessionFile);
   expect(harness.laterCalls).toEqual([]);
 
-  expect(readFileSync(harness.sessionFile, 'utf8')).toBe(
-    sessionContent(dirname(harness.sessionFile)),
-  );
+  expect(readFileSync(harness.sessionFile, 'utf8')).toBe(harness.sessionBytes);
 
   await shutdownSession(harness.session);
 });
@@ -199,6 +173,25 @@ it('frees the lock on session shutdown', async ({ onTestFinished }) => {
 
   const lockPath = await sessionLockPath(harness.agentDirectory, harness.sessionFile);
 
+  expect(await readLiveLockHolder(lockPath)).toMatchObject({ pid: process.pid });
+
+  await shutdownSession(harness.session);
+
+  expect(await readLiveLockHolder(lockPath)).toBeUndefined();
+});
+
+it('keeps the lock held across a reload and frees it on quit', async ({ onTestFinished }) => {
+  const harness = await startSession(onTestFinished);
+
+  await harness.binding;
+  await harness.session.reload();
+
+  const lockPath = await sessionLockPath(harness.agentDirectory, harness.sessionFile);
+
+  expect(harness.holdersAtShutdown).toEqual([expect.objectContaining({ pid: process.pid })]);
+
+  expect(harness.shutdowns).toEqual([]);
+  expect(harness.laterCalls).toEqual(['session_start', 'session_start']);
   expect(await readLiveLockHolder(lockPath)).toMatchObject({ pid: process.pid });
 
   await shutdownSession(harness.session);

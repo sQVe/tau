@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process';
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
+import { exitedPid } from '../../tests/exitedPid.js';
+import { writeLockOwnerRecord } from '../../tests/lockOwnerRecord.js';
 import { holdFileLock, readLiveLockHolder } from './fileLock.js';
 import type { HeldFileLock } from './fileLock.js';
 import { fixture } from './fixtures/fileLockHarness.js';
@@ -61,24 +62,9 @@ it('takes a free lock and frees it on release', async () => {
 
 it('takes over a lock whose holder process exited', async ({ onTestFinished }) => {
   const { lockPath } = fixture();
-  const session = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
-  const deadPid = session.pid ?? 0;
+  const deadPid = await exitedPid();
 
-  await new Promise((resolve) => {
-    session.once('close', resolve);
-  });
-
-  await mkdir(dirname(lockPath), { recursive: true });
-
-  await writeFile(
-    `${lockPath}.1`,
-    JSON.stringify({
-      pid: deadPid,
-      checkout: '/gone',
-      startedAt: new Date().toISOString(),
-      token: 'dead',
-    }),
-  );
+  await writeLockOwnerRecord(lockPath, { pid: deadPid, checkout: '/gone', token: 'dead' });
 
   const held = await holdFileLock({ lockPath, checkout, terminal: undefined });
 

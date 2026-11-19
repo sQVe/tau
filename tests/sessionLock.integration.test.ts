@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -13,41 +13,11 @@ import tauExtension from '../src/tau.js';
 import { exitedPid } from './exitedPid.js';
 import { startHcSession } from './hcSessionHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
+import { writeLockOwnerRecord } from './lockOwnerRecord.js';
 import { createPiSession, shutdownSession } from './piSession.js';
+import { seedSavedSession } from './savedSession.js';
 
 const onLinux = process.platform === 'linux';
-
-const sessionContent = (directory: string): string => {
-  const timestamp = new Date(0).toISOString();
-
-  const entries = [
-    { type: 'session', version: 3, id: 'locked-session', timestamp, cwd: directory },
-    {
-      type: 'model_change',
-      id: 'aaaaaaaa',
-      parentId: null,
-      timestamp,
-      provider: 'faux',
-      modelId: 'faux-1',
-    },
-    {
-      type: 'thinking_level_change',
-      id: 'bbbbbbbb',
-      parentId: 'aaaaaaaa',
-      timestamp,
-      thinkingLevel: 'off',
-    },
-    {
-      type: 'message',
-      id: 'cccccccc',
-      parentId: 'bbbbbbbb',
-      timestamp,
-      message: { role: 'user', content: 'Hello', timestamp: 0 },
-    },
-  ];
-
-  return entries.map((entry) => `${JSON.stringify(entry)}\n`).join('');
-};
 
 const startTauOnSessionFile = async (prepare: (lockPath: string) => Promise<void>) => {
   const hc = await startHcSession(onTestFinished);
@@ -68,10 +38,9 @@ const startTauOnSessionFile = async (prepare: (lockPath: string) => Promise<void
   vi.stubEnv('HC_TERMINAL_ID', terminal);
 
   const agentDirectory = join(hc.root, 'agent');
-  const sessionFile = join(hc.root, 'session.jsonl');
 
   mkdirSync(agentDirectory, { recursive: true });
-  writeFileSync(sessionFile, sessionContent(hc.root));
+  const sessionFile = seedSavedSession(hc.root);
   isolateWebAccessConfig(agentDirectory, onTestFinished);
 
   await prepare(await sessionLockPath(agentDirectory, sessionFile));
@@ -105,19 +74,7 @@ it.skipIf(!onLinux)(
     const pid = await exitedPid();
 
     const started = await startTauOnSessionFile(async (lockPath) => {
-      const lockDirectory = join(lockPath, '..');
-
-      mkdirSync(lockDirectory, { recursive: true });
-
-      writeFileSync(
-        `${lockPath}.1`,
-        JSON.stringify({
-          pid,
-          checkout: '/gone',
-          startedAt: new Date().toISOString(),
-          token: 'gone',
-        }),
-      );
+      await writeLockOwnerRecord(lockPath, { pid, checkout: '/gone', token: 'gone' });
     });
 
     await started.binding;
