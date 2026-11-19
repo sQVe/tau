@@ -52,9 +52,11 @@ const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout']
 const skillsDirectory = fileURLToPath(new URL('../src/skills/', import.meta.url));
 const checkoutDirectory = fileURLToPath(new URL('../', import.meta.url));
 
-// A bundled guide's source line names its absolute path, so a fixed token stands in for the
-// checkout. Otherwise the measured size would depend on where Tau is checked out.
-const measuredPrompt = (prompt: string): string => prompt.replaceAll(checkoutDirectory, '<tau>/');
+// A bundled guide's source line names its absolute path, and an adopted project's heading names the
+// project root, so fixed tokens stand in for both. Otherwise the measured size would depend on where
+// Tau is checked out and on the temporary folder of the host.
+const measuredPrompt = (prompt: string, projectDirectory: string): string =>
+  prompt.replaceAll(projectDirectory, '<project>').replaceAll(checkoutDirectory, '<tau>/');
 
 const isMultiAction = (tool: ToolDefinition): boolean =>
   Object.hasOwn((tool.parameters as { properties?: object }).properties ?? {}, 'action');
@@ -108,7 +110,7 @@ const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) =
     await handler(event as never, { cwd: agentDirectory } as ExtensionContext);
   }
 
-  const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt);
+  const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt, agentDirectory);
   const guidelines = managerGuidelines(role, roleOptions);
   const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
 
@@ -266,7 +268,7 @@ const workerSession = async (profileName: string, directory: string) => {
 
   const tools = [...fake.tools.values()].filter((tool) => names.has(tool.name));
 
-  const prompt = measuredPrompt(await workerHookPrompt(loadout, directory));
+  const prompt = measuredPrompt(await workerHookPrompt(loadout, directory), directory);
 
   return { tools, size: prompt.length + toolsSize(tools), prompt };
 };
@@ -382,6 +384,17 @@ describe('prompt budget', () => {
       .map(([name, { size }]) => `${name}: ${size} characters, ceiling ${sessionCeilings[name]}`);
 
     expect(over).toEqual([]);
+  });
+
+  it('measures a project heading the same for project roots of any length and place', () => {
+    const heading = (root: string) =>
+      `# Stomme 0.2.0 coding guides, from ${root}/docs/stomme/\n${checkoutDirectory}vendor/stomme`;
+
+    const roots = ['/tmp/a', '/tmp/a-much-longer-project-folder-name', `${checkoutDirectory}tmp/p`];
+    const nested = `${checkoutDirectory}tmp/a-much-longer-project-folder-name`;
+    const measured = [...roots, nested].map((root) => measuredPrompt(heading(root), root));
+
+    expect(new Set(measured).size).toBe(1);
   });
 
   it('measures a session without the coding set the same in both projects', () => {
