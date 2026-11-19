@@ -45,10 +45,12 @@ tells it apart from an architect that is still starting.
 Recovery never turns one question into two. The lead's own inbox must be listening for its current
 session before `ask` sends, because the answer can return only there. The ask ID is the inbox
 message ID of both the question and the answer. After a lost reply, a retry resends the same bytes
-with the same ID, so the receiver saves each message at most once. The architect answers with
-`architect` `answer`, which sends only to the lead session that asked. A local error in the answer
-leaves the ask open for a fixed retry. An answer the lead inbox confirmed is never reported to the
-lead as missing.
+with the same ID, so the receiver saves each message at most once. A refused send fails the ask only
+when no earlier send of the same message ended `unknown`. A refusal writes nothing, so it says
+nothing about the first copy, which may still be saved. The architect answers with `architect`
+`answer`, which sends only to the lead session that asked. A local error in the answer leaves the
+ask open for a fixed retry. An answer the lead inbox confirmed is never reported to the lead as
+missing.
 
 The architect cannot send its final handover while an ask to its session is open. Closing stops new
 questions and answers, waits a bounded time for work in flight, settles each open ask, and only then
@@ -103,8 +105,9 @@ the work.
 - The user switches tabs to watch a worker or a review.
 - A question saved just before the architect's inbox closes shows only when that session resumes.
   The lead gets a note to ask again.
-- Closing an architect with work in flight waits up to about 15 seconds: 10 for saves and answers in
-  flight, then one inbox exchange for an answer with an unknown outcome.
+- Closing an architect with work in flight waits up to about 20 seconds: 10 for saves and answers in
+  flight, one inbox exchange to resend an answer with an unknown outcome, and one more for the note
+  when that resend fails.
 
 ## Alternatives considered
 

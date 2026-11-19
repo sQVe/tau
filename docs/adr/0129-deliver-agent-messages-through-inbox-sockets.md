@@ -46,7 +46,8 @@ folder, and replies before the sender reports success.
 - When the reply is missing after the message was written, the result is `unknown`, because the
   receiver may have saved it. A retry reuses the message ID, so the receiver saves it once. A sender
   that must settle an `unknown` send before it exits sends it once more with the same ID, because
-  the receiver replies `queued` for a message it already saved or showed.
+  the receiver replies `queued` for a message it already saved or showed. A refused retry writes
+  nothing, so the sender keeps the outcome of the first send as `unknown`.
 - A sender that waits for a reply in its own inbox first checks that its own listener runs for its
   current session and that its label names that listener. A label alone can outlive the socket.
 
@@ -57,8 +58,9 @@ folder, and replies before the sender reports success.
 - A family can carry a fact the receiver must still hold when it saves, such as the lock token of an
   `architect-ask`. The receiver checks that fact in the family's accept check, before the save, and
   refuses on a mismatch. A session ID alone cannot show this, because a reload keeps it. The fact
-  must still hold when the record is written. An owner that gives up the fact first stops new
-  writes, then waits for writes in progress, and only then gives it up.
+  must still hold when the record is published. The receiver writes a temporary file, then checks
+  the fact and renames the file in one synchronous step. No other code in the process can give up
+  the fact between the check and the rename, so a slow write cannot publish after the owner let go.
 - After a best-effort startup gate, the receiver wakes its session with the message, saves a receipt
   in the session, and then deletes the record. A receipt stops a repeated delivery after a reload.
 - Delivery is at least once. A crash after the message is shown but before Pi saves the session can
