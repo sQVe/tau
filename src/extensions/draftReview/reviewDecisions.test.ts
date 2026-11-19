@@ -5,6 +5,7 @@ import {
   decideEdit,
   decideWaitOutcome,
   isStagedPathRefused,
+  reviewTerminalLabels,
   selectReviewedComments,
   stagedNames,
 } from './reviewDecisions.js';
@@ -166,4 +167,12 @@ it.each([
   { stagedPath: '01-notes/..', refused: true },
 ])('refuses $stagedPath: $refused', ({ stagedPath, refused }) => {
   expect(isStagedPathRefused(stagedPath)).toBe(refused);
+});
+
+it.each([
+  ['a tab', 'tab-2', { 'herdr.space': 'space-a', 'herdr.tab': 'tab-2-review' }],
+  ['no tab', undefined, { 'herdr.space': 'space-a' }],
+  ['an empty tab', '', { 'herdr.space': 'space-a' }],
+])('labels a review terminal with %s', (_name, tab, expected) => {
+  expect(reviewTerminalLabels('space-a', tab)).toStrictEqual(expected);
 });

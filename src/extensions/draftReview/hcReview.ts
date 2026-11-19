@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { kill, readCurrentTerminal, run, wait } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { decideWaitOutcome } from './reviewDecisions.js';
+import { decideWaitOutcome, reviewTerminalLabels } from './reviewDecisions.js';
 
 export interface RequestingManager {
   address: string;
@@ -27,19 +27,6 @@ export const reviewWaitTimeoutSeconds = 30;
 const suffixByteCount = 4;
 
 const messageWaitLimit = 5;
-
-const reviewTabSuffix = '-review';
-
-export const reviewTerminalLabels = (
-  space: string,
-  tab: string | undefined,
-): Record<string, string> => {
-  if (tab === undefined || tab === '') {
-    return { 'herdr.space': space };
-  }
-
-  return { 'herdr.space': space, 'herdr.tab': `${tab}${reviewTabSuffix}` };
-};
 
 export class TuicrExitTimeoutError extends Error {
   override name = 'TuicrExitTimeoutError';

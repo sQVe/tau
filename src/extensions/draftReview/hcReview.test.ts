@@ -5,12 +5,7 @@ import type { HcFake } from '../../../tests/hcFake.js';
 import { errorMessage } from '../../errors.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import type { HcWaitResult } from '../../hc/replies.js';
-import {
-  readRequestingManager,
-  reviewTerminalLabels,
-  TuicrExitTimeoutError,
-  waitForReviewExit,
-} from './hcReview.js';
+import { readRequestingManager, TuicrExitTimeoutError, waitForReviewExit } from './hcReview.js';
 
 const recordDirectory = '/records/draft-review-1';
 
@@ -122,14 +117,6 @@ it('returns the tab label of the manager terminal', async () => {
     space: 'a',
     tab: 'tab-2',
   });
-});
-
-it.each([
-  ['a tab', 'tab-2', { 'herdr.space': 'space-a', 'herdr.tab': 'tab-2-review' }],
-  ['no tab', undefined, { 'herdr.space': 'space-a' }],
-  ['an empty tab', '', { 'herdr.space': 'space-a' }],
-])('labels a review terminal with %s', (_name, tab, expected) => {
-  expect(reviewTerminalLabels('space-a', tab)).toStrictEqual(expected);
 });
 
 it('returns no manager without a manager terminal', async () => {

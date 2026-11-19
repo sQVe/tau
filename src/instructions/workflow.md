@@ -18,9 +18,9 @@ when you stop. Follow explicit user instructions and repository conventions over
 
 - Read your space from the `herdr.space` label of `hc get $HC_TERMINAL_ID`.
 - Start a terminal with
-  `herdr-app do tab.new --space <your space> --folder <folder> --argv '["<program>"]'`. Do not use
-  `pane.split` or `terminal.open`, which add a pane to an existing tab, and the lead's tab holds
-  only the architect and the lead.
+  `herdr-app do tab.new --space <your space> --folder <folder> --argv '["<program>"]'`. It names the
+  space. Do not use `pane.split` in the lead's tab: it adds a pane to the tab it splits, and the
+  lead's tab holds only the architect and the lead.
 - Before you report where it runs, check that `hc get <new terminal>` shows your `herdr.space` label
   and the folder in `foreground.cwd`.
 
