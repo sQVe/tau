@@ -1,3 +1,4 @@
+import { array, assert, constantFrom, property } from 'fast-check';
 import { expect, it } from 'vitest';
 
 import { tabName, tabRenameDecision } from './tabName.js';
@@ -72,6 +73,16 @@ const renameRows: { name: string; facts: TabRenameFacts; expected: string | unde
     expected: undefined,
   },
   {
+    name: 'the target name Tau wrote',
+    facts: {
+      role: 'lead',
+      detail: 'designing',
+      currentName: 'lead: designing',
+      lastWrittenName: 'lead: designing',
+    },
+    expected: undefined,
+  },
+  {
     name: 'a hand name Tau wrote',
     facts: {
       role: 'lead',
@@ -90,4 +101,39 @@ const renameRows: { name: string; facts: TabRenameFacts; expected: string | unde
 
 it.each(renameRows)('decides a rename for $name', ({ facts, expected }) => {
   expect(tabRenameDecision(facts)).toBe(expected);
+});
+
+const textCharacters = constantFrom('a', 'B', 'c', ' ', '\t', '-', '1', 'Z');
+
+const generatedText = array(textCharacters, { maxLength: 40 }).map((characters) =>
+  characters.join(''),
+);
+
+it('keeps a generated name in the tab shape', () => {
+  assert(
+    property(generatedText, generatedText, (role, detail) => {
+      const name = tabName(role, detail);
+
+      expect(name).toBe(name.toLowerCase());
+      expect(name).toBe(name.trim());
+      expect(name.length).toBeLessThanOrEqual(maximumTabNameLength);
+    }),
+  );
+});
+
+it('keeps a generated tab name on a second decision', () => {
+  assert(
+    property(generatedText, generatedText, (role, detail) => {
+      const name = tabName(role, detail);
+
+      const decision = tabRenameDecision({
+        role,
+        detail,
+        currentName: name,
+        lastWrittenName: name,
+      });
+
+      expect(decision).toBeUndefined();
+    }),
+  );
 });
