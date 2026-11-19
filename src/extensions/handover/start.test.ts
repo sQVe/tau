@@ -3,39 +3,23 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
+import { createHerdrAppFake } from '../../../tests/herdrAppFake.js';
+import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { Exec } from '../../command.js';
 import { startHandover } from './start.js';
 import type { StartHandoverRequest, StartHandoverTarget } from './start.js';
 
-type AppKey = 'ls' | 'app';
-
 const emptyLayout = JSON.stringify({ spaces: [] });
 
-const createAppFake = (): ExecFake<AppKey> =>
-  createExecFake<AppKey>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
-      }
+const createAppFake = (): ExecFake<HerdrAppCommand> => createHerdrAppFake({ layout: emptyLayout });
 
-      return commandArguments[0] === 'ls' ? 'ls' : 'app';
-    },
-    handlerFor: (key) => () => {
-      const reply = key === 'ls' ? emptyLayout : '{"ok":true}';
-
-      return succeededResult(reply);
-    },
-  });
-
-const runtimeOf = (fake: ExecFake<AppKey>, cwd: string) => ({
+const runtimeOf = (fake: ExecFake<HerdrAppCommand>, cwd: string) => ({
   exec: fake.exec,
-  connect: createHcFake().connect,
   cwd,
 });
 
@@ -62,7 +46,7 @@ const requestFor = (
   bareRoot: false,
 });
 
-const commandsOf = (fake: ExecFake<AppKey>) =>
+const commandsOf = (fake: ExecFake<HerdrAppCommand>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
 
 it('opens a tab in the space with the file text as its task', async () => {
@@ -139,36 +123,10 @@ const shellLayout = JSON.stringify({
   ],
 });
 
-const shellAppFake = (): ExecFake<'ls' | 'pane.split' | 'pane.close'> =>
-  createExecFake<'ls' | 'pane.split' | 'pane.close'>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
-      }
-
-      if (commandArguments[0] === 'ls') {
-        return 'ls';
-      }
-
-      const [, name] = commandArguments;
-
-      return name === 'pane.split' || name === 'pane.close' ? name : undefined;
-    },
-    handlerFor: (key) => () => {
-      if (key === 'ls') {
-        return succeededResult(shellLayout);
-      }
-
-      if (key === 'pane.split') {
-        return succeededResult('{"pane":"p-new","terminal":"t-new"}');
-      }
-
-      return succeededResult('{"ok":true}');
-    },
-  });
+const shellAppFake = (): ExecFake<HerdrAppCommand> => createHerdrAppFake({ layout: shellLayout });
 
 const routedExec =
-  (app: ExecFake<'ls' | 'pane.split' | 'pane.close'>, hc: HcFake): Exec =>
+  (app: ExecFake<HerdrAppCommand>, hc: HcFake): Exec =>
   (command, commandArguments, options) =>
     command === 'herdr-app'
       ? app.exec(command, commandArguments, options)
@@ -190,7 +148,7 @@ it('a space start reads the shell foreground with hc get and takes over the tab'
   );
 
   const result = await startHandover(
-    { exec: routedExec(app, hc), connect: hc.connect, cwd: root },
+    { exec: routedExec(app, hc), cwd: root },
     requestFor(root, file, { space: 'space-1' }),
   );
 

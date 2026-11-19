@@ -1,4 +1,4 @@
-import type { HcRuntime } from '../../hc/hc.js';
+import type { CommandRuntime } from '../../command.js';
 import { get } from '../../hc/hc.js';
 import { startPiSession } from '../../piStart/piStart.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
@@ -20,7 +20,7 @@ export interface StartHandoverResult {
 }
 
 export const startHandover = async (
-  runtime: HcRuntime,
+  runtime: CommandRuntime,
   request: StartHandoverRequest,
 ): Promise<StartHandoverResult> => {
   const text = await readHandoverText(request.cwd, request.file);
