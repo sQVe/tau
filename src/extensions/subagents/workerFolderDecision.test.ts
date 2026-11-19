@@ -177,6 +177,40 @@ const table: { name: string; facts: WorkerFolderFacts; expected: WorkerFolderRem
     expected: { scratch: ['assignment-a'], snapshots: [] },
   },
   {
+    name: 'matches an unread prefix at the start of the dash-free scratch name only',
+    facts: {
+      now,
+      scratch: [
+        folder('0123-ab-cd-9999', 120 * second),
+        folder('ffff-0123abcd', 120 * second),
+        folder('0123abc', 120 * second),
+      ],
+      snapshots: [folder('snapshot-a', 25 * hour)],
+      terminals: [unread('0123abcd')],
+    },
+    expected: { scratch: ['ffff-0123abcd', '0123abc'], snapshots: [] },
+  },
+  {
+    name: 'keeps every scratch folder and snapshot when an unread terminal has no prefix',
+    facts: {
+      now,
+      scratch: [folder('0123abcd-1111', 120 * second), folder('fedcba98-1111', 120 * second)],
+      snapshots: [folder('snapshot-a', 25 * hour)],
+      terminals: [unread(undefined)],
+    },
+    expected: { scratch: [], snapshots: [] },
+  },
+  {
+    name: 'removes a scratch folder that no unread prefix matches and a finished worker names',
+    facts: {
+      now,
+      scratch: [folder('0123abcd-1111', 120 * second), folder('fedcba98-1111', 5 * second)],
+      snapshots: [folder('snapshot-a', 25 * hour)],
+      terminals: [unread('0123abcd'), terminal('fedcba98-1111', false, null)],
+    },
+    expected: { scratch: ['fedcba98-1111'], snapshots: [] },
+  },
+  {
     name: 'keeps a folder born in the future',
     facts: {
       now,

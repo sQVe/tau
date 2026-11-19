@@ -51,17 +51,12 @@ const runningTerminals = (terminals: readonly ReadTerminalFact[]): ReadTerminalF
 const namesAssignment = (terminals: readonly ReadTerminalFact[], name: string): boolean =>
   terminals.some((terminal) => terminal.assignmentId === name);
 
-const keepsEveryScratchFolder = (terminal: UnreadTerminalFact): boolean =>
-  terminal.assignmentPrefix === undefined;
-
 const keepsScratchFolder = (terminal: UnreadTerminalFact, name: string): boolean =>
-  terminal.assignmentPrefix !== undefined &&
+  terminal.assignmentPrefix === undefined ||
   name.replaceAll('-', '').startsWith(terminal.assignmentPrefix);
 
 const isKeptByUnread = (unread: readonly UnreadTerminalFact[], name: string): boolean =>
-  unread.some(
-    (terminal) => keepsEveryScratchFolder(terminal) || keepsScratchFolder(terminal, name),
-  );
+  unread.some((terminal) => keepsScratchFolder(terminal, name));
 
 // The launch grace protects only a folder that no terminal names.
 const isStaleScratch = (

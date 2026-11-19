@@ -654,6 +654,74 @@ it('returns before the sweep settles', async () => {
   });
 });
 
+it('passes the starting fact with the basename of the snapshot to the sweep', async () => {
+  const { runtime } = setup();
+  const sweepFolders = vi.fn<NonNullable<LaunchRuntime['sweepFolders']>>(() => Promise.resolve());
+  const snapshot = join(runtime.agentDirectory, 'tmp', 'tau-worker-packages', 'source-launch');
+
+  const assignment = {
+    ...savedAssignment(runtime.agentDirectory, null),
+    packageSnapshot: snapshot,
+  };
+
+  runtime.sweepFolders = sweepFolders;
+
+  await writeAssignment(assignment);
+
+  await startReservedWorker(runtime, {
+    assignment,
+    task: 'Follow up.',
+    label: undefined,
+    extensionPackages: [],
+    skillTools: {},
+    modelReason: 'Reused.',
+    signal: undefined,
+  });
+
+  expect(sweepFolders.mock.calls[0]?.[0]).toEqual({
+    kind: 'read',
+    assignmentId: assignment.assignmentId,
+    running: true,
+    packageSnapshot: 'source-launch',
+  });
+});
+
+it('keeps the launch folders and its snapshot when hc lists no worker', async () => {
+  const { runtime } = setup();
+  const snapshotRoot = join(runtime.agentDirectory, 'tmp', 'tau-worker-packages');
+  const reused = join(snapshotRoot, 'source-launch');
+  const unused = join(snapshotRoot, 'unused-launch');
+  const realExec = runtime.hc.exec;
+
+  runtime.hc.exec = (command, commandArguments, options) =>
+    commandArguments[0] === 'ls'
+      ? Promise.resolve(succeeded({ terminals: [] }))
+      : realExec(command, commandArguments, options);
+
+  mkdirSync(reused, { recursive: true });
+  mkdirSync(unused, { recursive: true });
+  fakeDateAfter(reused, 25 * hourInMilliseconds);
+
+  const assignment = { ...savedAssignment(runtime.agentDirectory, null), packageSnapshot: reused };
+
+  await startReservedWorker(runtime, {
+    assignment,
+    task: 'Follow up.',
+    label: undefined,
+    extensionPackages: [],
+    skillTools: {},
+    modelReason: 'Reused.',
+    signal: undefined,
+  });
+
+  await vi.waitFor(() => {
+    expect(existsSync(unused)).toBe(false);
+  });
+
+  expect(existsSync(reused)).toBe(true);
+  expect(scratchNames(runtime.agentDirectory)).toEqual([assignment.assignmentId]);
+});
+
 it('launches when the sweep rejects', async () => {
   const { runtime } = setup();
 

@@ -10,10 +10,18 @@ const prefixRows: { name: string | null | undefined; expected: string | undefine
   { name: undefined, expected: undefined },
   { name: 'x-0123ABCD', expected: undefined },
   { name: 'x-0123abcde', expected: undefined },
+  { name: 'x-0123abc', expected: undefined },
+  { name: 'x0123abcd', expected: undefined },
+  { name: 'x-0123abcd-y', expected: undefined },
+  { name: 'x-0123abcg', expected: undefined },
 ];
 
 it.each(prefixRows)('reads the assignment prefix of $name', ({ name, expected }) => {
   expect(assignmentPrefixFromName(name)).toBe(expected);
+});
+
+it('drops every dash of the assignment id before it takes the prefix', () => {
+  expect(workerName('scout', 'ab-cd-ef0123456')).toBe('scout-abcdef01');
 });
 
 it('gives each name a prefix that matches its assignment', () => {
