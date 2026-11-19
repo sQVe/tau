@@ -48,7 +48,9 @@ message ID of both the question and the answer. After a lost reply, a retry rese
 with the same ID, so the receiver saves each message at most once. A refused send fails the ask only
 when no earlier send of the same message ended `unknown`. A refusal writes nothing, so it says
 nothing about the first copy, which may still be saved. The architect answers with `architect`
-`answer`, which sends only to the lead session that asked. A local error in the answer leaves the
+`answer`, which sends only to the lead session that asked. After an `unknown` answer, a retry sends
+the kept text again and refuses a file that changed, because the lead may already hold the first
+text. A correction goes to the lead as a separate handover. A local error in the answer leaves the
 ask open for a fixed retry. An answer the lead inbox confirmed is never reported to the lead as
 missing.
 
@@ -105,9 +107,10 @@ the work.
 - The user switches tabs to watch a worker or a review.
 - A question saved just before the architect's inbox closes shows only when that session resumes.
   The lead gets a note to ask again.
-- Closing an architect with work in flight waits up to about 20 seconds: 10 for saves and answers in
-  flight, one inbox exchange to resend an answer with an unknown outcome, and one more for the note
-  when that resend fails.
+- Closing an architect with work in flight can take more than 20 seconds. It waits up to 10 seconds
+  for saves and answers in flight. It may then resend an answer with an unknown outcome and send a
+  note when that resend fails. Each send waits up to 5 seconds for its reply, after an `hc` terminal
+  lookup that has no time limit of its own. Close has no overall deadline.
 
 ## Alternatives considered
 

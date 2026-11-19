@@ -44,10 +44,10 @@ folder, and replies before the sender reports success.
 - A sender that must reach one session, such as an architect's answer to the lead that asked, passes
   that session's ID. The send refuses when the terminal advertises another session.
 - When the reply is missing after the message was written, the result is `unknown`, because the
-  receiver may have saved it. A retry reuses the message ID, so the receiver saves it once. A sender
-  that must settle an `unknown` send before it exits sends it once more with the same ID, because
-  the receiver replies `queued` for a message it already saved or showed. A refused retry writes
-  nothing, so the sender keeps the outcome of the first send as `unknown`.
+  receiver may have saved it. A retry reuses the message ID and the same bytes, so the receiver
+  saves it once. A sender that must settle an `unknown` send before it exits sends it once more with
+  the same ID, because the receiver replies `queued` for a message it already saved or showed. A
+  refused retry writes nothing, so the sender keeps the outcome of the first send as `unknown`.
 - A sender that waits for a reply in its own inbox first checks that its own listener runs for its
   current session and that its label names that listener. A label alone can outlive the socket.
 
