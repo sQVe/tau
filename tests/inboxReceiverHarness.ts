@@ -4,9 +4,11 @@ import { join } from 'node:path';
 
 import type { onTestFinished } from 'vitest';
 
+import { ensurePrivateDirectory, openEndpoint, socketPathFor } from '../src/inbox/endpoint.js';
 import { createReceiptStore, createReceiver, startInbox } from '../src/inbox/inbox.js';
 import type { ReceiverOptions } from '../src/inbox/inbox.js';
-import type { Family } from '../src/inbox/protocol.js';
+import { decodeRequest, encodeFrame, refusedReply } from '../src/inbox/protocol.js';
+import type { Family, MessageReply, MessageRequest } from '../src/inbox/protocol.js';
 
 export interface HandoverReceiver {
   sessionId: string;
@@ -17,9 +19,62 @@ export interface HandoverReceiver {
 export interface HandoverReceiverOptions {
   accepts?: ReceiverOptions['accepts'];
   sessionId?: string;
+  // The process has one inbox slot. A receiver outside it leaves the slot to another receiver.
+  outsideSlot?: boolean;
 }
 
+type Accept = (request: MessageRequest) => Promise<MessageReply>;
+
 const acceptHandovers: ReceiverOptions['accepts'] = { handover: (_request, save) => save() };
+
+const listenInSlot = async (
+  directory: string,
+  sessionId: string,
+  terminal: string,
+  accept: Accept,
+  paths: string[],
+): Promise<() => Promise<void>> => {
+  const listener = await startInbox({
+    sessionId,
+    terminal,
+    directory,
+    accept,
+    onQueued: () => undefined,
+    advertise: (path) => {
+      paths.push(path);
+
+      return Promise.resolve();
+    },
+    withdraw: () => Promise.resolve(),
+  });
+
+  return listener.stop;
+};
+
+const listenOutsideSlot = async (
+  directory: string,
+  sessionId: string,
+  accept: Accept,
+  paths: string[],
+): Promise<() => Promise<void>> => {
+  ensurePrivateDirectory(directory);
+
+  const endpoint = await openEndpoint({
+    path: socketPathFor(directory, sessionId),
+    respond: async (bytes) => {
+      const decision = decodeRequest(bytes);
+
+      const reply =
+        decision.kind === 'frame' ? await accept(decision.value) : refusedReply(decision.reason);
+
+      return encodeFrame(reply);
+    },
+  });
+
+  paths.push(endpoint.path);
+
+  return endpoint.close;
+};
 
 export const startHandoverReceiver = async (
   finished: typeof onTestFinished,
@@ -42,23 +97,14 @@ export const startHandoverReceiver = async (
     notify: () => undefined,
   });
 
-  const listener = await startInbox({
-    sessionId,
-    terminal,
-    directory: join(root, 'sockets'),
-    accept: receiver.accept,
-    onQueued: () => undefined,
-    advertise: (path) => {
-      paths.push(path);
+  const directory = join(root, 'sockets');
 
-      return Promise.resolve();
-    },
-    withdraw: () => Promise.resolve(),
-  });
+  const stop =
+    options.outsideSlot === true
+      ? await listenOutsideSlot(directory, sessionId, receiver.accept, paths)
+      : await listenInSlot(directory, sessionId, terminal, receiver.accept, paths);
 
-  finished(async () => {
-    await listener.stop();
-  });
+  finished(stop);
 
   const savedRecords = (): string[] => {
     try {

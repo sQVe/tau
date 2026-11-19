@@ -13,6 +13,7 @@ import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { createAnswerTracker } from './answer.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
+import { startLeadInbox } from './fixtures/leadInbox.js';
 import { contextOf, holdLock, recordSession, setup } from './fixtures/toolHarness.js';
 import {
   askRecordDirectory,
@@ -47,7 +48,7 @@ const getTargets = (hc: HcFake): (string | undefined)[] =>
     .filter((call) => call.commandArguments[0] === 'get')
     .map((call) => call.commandArguments.at(-1));
 
-const liveArchitect = async (cleanup: Cleanup) => {
+const liveArchitect = async (cleanup: Cleanup, withLeadInbox = true) => {
   const { root } = await setup(cleanup);
   const hc = createHcFake();
   const sockets = temporaryDirectory(cleanup, 'tau-live-ask-');
@@ -55,11 +56,16 @@ const liveArchitect = async (cleanup: Cleanup) => {
   const receiver = await startHandoverReceiver(cleanup, sockets, 't-architect', {
     sessionId: 'session-architect',
     accepts: { 'architect-ask': (_request, save) => save() },
+    outsideSlot: true,
   });
 
   await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
   await holdLock(root, root);
-  replyTerminal(hc, 't-lead', leadLabel());
+
+  if (withLeadInbox) {
+    await startLeadInbox(cleanup, hc);
+  }
+
   replyTerminal(hc, 't-architect', `rpc1:${receiver.path}`);
 
   return { root, hc, receiver, tool: createArchitectTool({ ...hc, cwd: root }) };
@@ -165,6 +171,33 @@ it.for<[string, string | undefined]>([
   },
 );
 
+it('a lead label that names this session without a local listener refuses the live ask', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, hc, receiver, tool } = await liveArchitect(cleanup, false);
+
+  replyTerminal(hc, 't-lead', leadLabel());
+
+  const result = await tool.execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(result.details).toEqual({
+    action: 'ask',
+    status: 'needsOpen',
+    reason:
+      'This lead session has no working inbox, so the answer cannot reach it. Reload Pi, then ask again.',
+  });
+
+  await expect(readAskRecords(root)).resolves.toEqual({ records: [], gaps: [] });
+  expect(receiver.savedRecords()).toEqual([]);
+  expect(getTargets(hc)).toEqual(['t-lead']);
+});
+
 it('a refused live ask marks its record failed', async ({ onTestFinished: cleanup }) => {
   const { root, hc, tool } = await liveArchitect(cleanup);
 
@@ -195,7 +228,7 @@ it('an unknown live ask retried with its ask ID resends the same bytes and saves
 
   await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
   await holdLock(root, root);
-  replyTerminal(hc, 't-lead', leadLabel());
+  await startLeadInbox(cleanup, hc);
   replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
 
   const tool = createArchitectTool({ ...hc, cwd: root });
@@ -309,18 +342,12 @@ const startHeldQuestion = async (cleanup: Cleanup) => {
   const { root } = await setup(cleanup);
   const hc = createHcFake();
 
-  const lead = await startHandoverReceiver(
-    cleanup,
-    temporaryDirectory(cleanup, 'tau-lead-inbox-'),
-    't-lead',
-    { sessionId: 'session-lead' },
-  );
+  const lead = await startLeadInbox(cleanup, hc);
 
   const inbox = await startCapturingInbox(cleanup, 'session-architect', 'hold');
 
   await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
   await holdLock(root, root);
-  replyTerminal(hc, 't-lead', `rpc1:${lead.path}`);
   replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
 
   const tool = createArchitectTool({ ...hc, cwd: root });
@@ -452,7 +479,7 @@ it('a live ask reports a confirmed send when the ask closed before its record up
 
   await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
   await holdLock(root, root);
-  replyTerminal(hc, 't-lead', leadLabel());
+  await startLeadInbox(cleanup, hc);
   replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
 
   const result = await createArchitectTool({ ...hc, cwd: root }).execute(
@@ -494,7 +521,7 @@ it('a live ask returns its ask ID with a note when the record write fails after 
 
   await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
   await holdLock(root, root);
-  replyTerminal(hc, 't-lead', leadLabel());
+  await startLeadInbox(cleanup, hc);
   replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
 
   const result = await createArchitectTool({ ...hc, cwd: root }).execute(
@@ -565,7 +592,7 @@ it('a live ask reports a confirmed send when its record disappeared', async ({
 
   await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
   await holdLock(root, root);
-  replyTerminal(hc, 't-lead', leadLabel());
+  await startLeadInbox(cleanup, hc);
   replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
 
   const result = await createArchitectTool({ ...hc, cwd: root }).execute(

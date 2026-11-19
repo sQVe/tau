@@ -19,7 +19,7 @@ export { createReceiver } from './receive.js';
 export type { AcceptCheck, Receiver, ReceiverOptions } from './receive.js';
 export { createReceiptStore } from './receipts.js';
 export { sendInboxMessage } from './send.js';
-export { advertisedSession } from './targetDecision.js';
+export { ownInboxReady } from './targetDecision.js';
 export type { InboxSendRequest, InboxSendResult } from './send.js';
 
 export interface InboxStartOptions {
@@ -61,6 +61,8 @@ globalThis.tauInboxSlot = slot;
 export const setAcceptCheck = (family: Family, check: AcceptCheck): void => {
   slot.checks[family] = check;
 };
+
+export const currentInboxPath = (): string | undefined => slot.endpoint?.path;
 
 export const acceptChecks = (): Partial<Record<Family, AcceptCheck>> => slot.checks;
 

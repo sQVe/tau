@@ -1,4 +1,4 @@
-import { inboxLabelKey, isSessionId, parseInboxLabel } from './protocol.js';
+import { formatInboxLabel, inboxLabelKey, isSessionId, parseInboxLabel } from './protocol.js';
 
 export interface TargetFacts {
   address: string;
@@ -12,6 +12,12 @@ export type TargetDecision =
   | { kind: 'connect'; path: string; sessionId: string }
   | { kind: 'refuse'; reason: string };
 
+export interface OwnInboxFacts {
+  listenerPath: string | undefined;
+  labels: Readonly<Record<string, string>>;
+  sessionId: string;
+}
+
 const isRemote = (address: string): boolean => address.includes('/');
 
 const socketSession = (path: string): string | undefined => {
@@ -19,18 +25,6 @@ const socketSession = (path: string): string | undefined => {
   const sessionId = name.slice(0, -'.sock'.length);
 
   return name.endsWith('.sock') && isSessionId(sessionId) ? sessionId : undefined;
-};
-
-export const advertisedSession = (labels: Readonly<Record<string, string>>): string | undefined => {
-  const label = labels[inboxLabelKey];
-
-  if (label === undefined) {
-    return undefined;
-  }
-
-  const parsed = parseInboxLabel(label);
-
-  return parsed.kind === 'socket' ? socketSession(parsed.path) : undefined;
 };
 
 export const decideTarget = (facts: TargetFacts): TargetDecision => {
@@ -79,4 +73,18 @@ export const decideTarget = (facts: TargetFacts): TargetDecision => {
   }
 
   return { kind: 'connect', path: parsed.path, sessionId };
+};
+
+export const ownInboxReady = (facts: OwnInboxFacts): boolean => {
+  const { listenerPath, labels, sessionId } = facts;
+
+  if (listenerPath === undefined) {
+    return false;
+  }
+
+  if (socketSession(listenerPath) !== sessionId) {
+    return false;
+  }
+
+  return labels[inboxLabelKey] === formatInboxLabel(listenerPath);
 };

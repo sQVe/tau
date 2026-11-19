@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createHcFake } from '../../../../tests/hcFake.js';
+import { startLeadInbox } from '../fixtures/leadInbox.js';
 import { contextOf, holdLock, recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import {
@@ -160,14 +161,7 @@ it('ask reports an inbox that does not answer', async ({ onTestFinished: cleanup
   await recordSession(root, { terminal: 't-architect', sessionId: 'absent-inbox' });
   await holdLock(root, root);
 
-  hc.replyGet(
-    't-lead',
-    JSON.stringify({
-      address: 't-lead',
-      state: 'live',
-      labels: { 'tau.inbox': 'rpc1:/tmp/tau-lead/session-lead.sock' },
-    }),
-  );
+  await startLeadInbox(cleanup, hc);
 
   hc.reply(
     'get',

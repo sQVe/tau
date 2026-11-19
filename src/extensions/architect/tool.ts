@@ -6,7 +6,7 @@ import { Type } from 'typebox';
 import { readConfigLocation } from '../../config/config.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { isUuid } from '../../inbox/inbox.js';
+import { currentInboxPath, isUuid } from '../../inbox/inbox.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { answerLiveAsk } from './answer.js';
 import type { AnswerResult, AnswerTracker } from './answer.js';
@@ -94,6 +94,7 @@ const runAsk = (
     question: requireText('question', input.question),
     leadTerminal: leadTerminal(),
     leadSessionId,
+    listenerPath: currentInboxPath(),
     location: readConfigLocation(root, {}, context),
     ui: context.ui,
     hc,

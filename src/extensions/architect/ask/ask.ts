@@ -26,6 +26,7 @@ export interface AskRequest {
   question: string;
   leadTerminal: string;
   leadSessionId: string;
+  listenerPath: string | undefined;
   location: ConfigLocation;
   ui: ConfigWarnings;
   hc: HcRuntime;

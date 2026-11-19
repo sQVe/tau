@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { advertisedSession, decideTarget } from './targetDecision.js';
+import { decideTarget, ownInboxReady } from './targetDecision.js';
 import type { TargetFacts } from './targetDecision.js';
 
 const sessionId = '0190c1d2-0000-7000-8000-000000000002';
@@ -85,14 +85,43 @@ it.each(targetCases)('decides a target for %s', (_name, facts, expected) => {
   expect(decideTarget(facts)).toEqual(expected);
 });
 
-const advertisedCases: [string, Record<string, string>, string | undefined][] = [
-  ['an rpc1 label', { 'tau.inbox': `rpc1:/tmp/tau-1000/${sessionId}.sock` }, sessionId],
-  ['no label', {}, undefined],
-  ['an empty label', { 'tau.inbox': '' }, undefined],
-  ['another protocol', { 'tau.inbox': `rpc2:/tmp/tau-1000/${sessionId}.sock` }, undefined],
-  ['a socket without a session', { 'tau.inbox': 'rpc1:/tmp/tau-1000/inbox' }, undefined],
+const ownPath = `/tmp/tau-1000/${sessionId}.sock`;
+
+const ownInboxCases: [string, Parameters<typeof ownInboxReady>[0], boolean][] = [
+  [
+    'a listener for the session that the label names',
+    { listenerPath: ownPath, labels: { 'tau.inbox': `rpc1:${ownPath}` }, sessionId },
+    true,
+  ],
+  [
+    'no listener',
+    { listenerPath: undefined, labels: { 'tau.inbox': `rpc1:${ownPath}` }, sessionId },
+    false,
+  ],
+  [
+    'a listener for another session',
+    {
+      listenerPath: `/tmp/tau-1000/${otherSessionId}.sock`,
+      labels: { 'tau.inbox': `rpc1:/tmp/tau-1000/${otherSessionId}.sock` },
+      sessionId,
+    },
+    false,
+  ],
+  [
+    'a label that names another path for the same session',
+    {
+      listenerPath: ownPath,
+      labels: { 'tau.inbox': `rpc1:/tmp/tau-2000/${sessionId}.sock` },
+      sessionId,
+    },
+    false,
+  ],
+  ['no label', { listenerPath: ownPath, labels: {}, sessionId }, false],
 ];
 
-it.each(advertisedCases)('reads the advertised session of %s', (_name, labels, expected) => {
-  expect(advertisedSession(labels)).toBe(expected);
-});
+it.each(ownInboxCases)(
+  'decides whether the own inbox is ready with %s',
+  (_name, facts, expected) => {
+    expect(ownInboxReady(facts)).toBe(expected);
+  },
+);

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { errorMessage } from '../../errors.js';
 import { get } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { advertisedSession, sendInboxMessage } from '../../inbox/inbox.js';
+import { ownInboxReady, sendInboxMessage } from '../../inbox/inbox.js';
 import { changeAskRecord, isOpenLiveAsk, readAskRecord, writeAskRecord } from './record.js';
 import type { LiveAskRecord } from './record.js';
 
@@ -18,6 +18,7 @@ export interface LiveAskRequest {
   question: string;
   leadTerminal: string;
   leadSessionId: string;
+  listenerPath: string | undefined;
   hc: HcRuntime;
 }
 
@@ -43,7 +44,11 @@ const questionText = (record: LiveAskRecord): string =>
 const leadInboxWorks = async (request: LiveAskRequest): Promise<boolean> => {
   const terminal = await get(request.hc, request.leadTerminal);
 
-  return advertisedSession(terminal.labels ?? {}) === request.leadSessionId;
+  return ownInboxReady({
+    listenerPath: request.listenerPath,
+    labels: terminal.labels ?? {},
+    sessionId: request.leadSessionId,
+  });
 };
 
 type SentSettlement =

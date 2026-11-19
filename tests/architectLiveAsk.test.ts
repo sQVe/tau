@@ -119,6 +119,7 @@ const startArchitectInbox = (check: AcceptCheck): Promise<HandoverReceiver> =>
   startHandoverReceiver(onTestFinished, socketRoot(), 't-architect', {
     sessionId: 'session-architect',
     accepts: { handover: (_request, save) => save(), 'architect-ask': check },
+    outsideSlot: true,
   });
 
 const replyTerminal = (hc: HcFake, address: string, path: string): void => {
@@ -147,9 +148,12 @@ const askLiveArchitect = async (root: string, hc: HcFake) => {
   const { fake, context, check } = await startVisibleArchitect(root, hc);
   const architectInbox = await startArchitectInbox(check);
   const leadSockets = socketRoot();
-  const leadSocket = join(leadSockets, 'sockets', 'session-lead.sock');
 
-  replyTerminal(hc, 't-lead', leadSocket);
+  const lead = await startHandoverReceiver(onTestFinished, leadSockets, 't-lead', {
+    sessionId: 'session-lead',
+  });
+
+  replyTerminal(hc, 't-lead', lead.path);
   replyTerminal(hc, 't-architect', architectInbox.path);
 
   const asked = await createArchitectTool({ ...hc, cwd: root }).execute(
@@ -189,7 +193,7 @@ const askLiveArchitect = async (root: string, hc: HcFake) => {
     );
   };
 
-  return { askId, leadSockets, leadSocket, answer, fake, context };
+  return { askId, leadSockets, lead, answer, fake, context };
 };
 
 it('the lead session that asked receives the live architect answer in its inbox', async () => {
@@ -198,14 +202,8 @@ it('the lead session that asked receives the live architect answer in its inbox'
 
   stubLead();
 
-  const { askId, leadSockets, leadSocket, answer } = await askLiveArchitect(root, hc);
+  const { askId, lead, answer } = await askLiveArchitect(root, hc);
   const lockToken = (await readArchitectOwner(root))?.lockToken;
-
-  const lead = await startHandoverReceiver(onTestFinished, leadSockets, 't-lead', {
-    sessionId: 'session-lead',
-  });
-
-  expect(lead.path).toBe(leadSocket);
 
   const answered = await answer();
   const texts = await savedTexts(lead);
@@ -529,11 +527,18 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
 it('ask refuses a changed architect session', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const hc = createHcFake();
-  const architect = await startHandoverReceiver(onTestFinished, socketRoot(), 't-architect');
+
+  const architect = await startHandoverReceiver(onTestFinished, socketRoot(), 't-architect', {
+    outsideSlot: true,
+  });
+
+  const lead = await startHandoverReceiver(onTestFinished, socketRoot(), 't-lead', {
+    sessionId: 'session-lead',
+  });
 
   stubLead();
   await recordLiveArchitect(root, 'recorded-session');
-  replyTerminal(hc, 't-lead', '/tmp/tau-lead/session-lead.sock');
+  replyTerminal(hc, 't-lead', lead.path);
   replyTerminal(hc, 't-architect', architect.path);
 
   const tool = createArchitectTool({ ...hc, cwd: root });
