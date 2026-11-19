@@ -1,12 +1,21 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { runWithEnvironment } from '../src/hc/connect.js';
 import { wait } from '../src/hc/hc.js';
+import { isolatedRootParent } from './hcIsolationHarness.js';
 import { sessionProcesses, startHcSession } from './hcSessionHarness.js';
 
 // Process checks read /proc, which exists only on Linux.
@@ -97,7 +106,10 @@ it.skipIf(!onLinux)(
 it.skipIf(!onLinux)(
   'runs a terminal when TMPDIR contains a space and leaves no private core',
   async () => {
-    const outer = mkdtempSync(join(tmpdir(), 'tau-hc-space-'));
+    const outer = mkdtempSync(
+      join(isolatedRootParent(realpathSync(tmpdir()), realpathSync(homedir())), 'tau-hc-space-'),
+    );
+
     const spaceDirectory = join(outer, 'a b');
 
     mkdirSync(spaceDirectory);
@@ -115,6 +127,8 @@ it.skipIf(!onLinux)(
     vi.stubEnv('TMPDIR', spaceDirectory);
 
     const hc = await startHcSession(onTestFinished);
+
+    expect(dirname(hc.root)).toBe(realpathSync(spaceDirectory));
 
     const probe = `probe-${randomBytes(6).toString('hex')}`;
     const outputPath = join(hc.root, 'probe-output');
