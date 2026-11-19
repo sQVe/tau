@@ -32,7 +32,7 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
 
   await writeFile(
     join(cwd, 'vite.config.ts'),
-    await readFile(join(repositoryRoot, 'vite.config.ts'), 'utf8'),
+    `export { default } from ${JSON.stringify(join(repositoryRoot, 'vite.config.ts'))};\n`,
   );
 
   await writeFile(join(cwd, 'value.json'), '{"value":1}');

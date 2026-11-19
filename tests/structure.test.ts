@@ -290,6 +290,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/instructions/stommeGuides/stommeGuidesDecision.ts': ['node:path', 'smol-toml'],
   'src/instructions/syncRecord.ts': ['smol-toml'],
   'src/schema.ts': ['typebox', 'typebox/value'],
+  'tests/hcIsolationHarness.ts': ['node:path'],
 };
 
 const isPureLibrary = (path: string, specifier: string) =>

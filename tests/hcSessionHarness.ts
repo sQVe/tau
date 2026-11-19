@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import type { ExecFileException } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { homedir, tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,8 +11,13 @@ import type { Exec } from '../src/command.js';
 import { connect as connectToHc } from '../src/hc/connect.js';
 import type { HcRuntime } from '../src/hc/hc.js';
 import { isAbortError } from '../src/hc/replies.js';
-import { isolationProblems, privatePathProblems } from './hcIsolationHarness.js';
+import {
+  isolationProblems,
+  isolatedRootParent,
+  privatePathProblems,
+} from './hcIsolationHarness.js';
 import type { ProtectedVariable } from './hcIsolationHarness.js';
+import { resolveExistingPath } from './pathHarness.js';
 
 export interface HcSession {
   root: string;
@@ -33,16 +38,8 @@ type HarnessExecResult = Awaited<ReturnType<Exec>> & { signal?: NodeJS.Signals |
 
 export const inheritedVariables = ['PATH', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ'] as const;
 
-const resolvePath = (path: string): string => {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-};
-
 const resolveExisting = (path: string | undefined): string | undefined =>
-  path === undefined || path === '' ? path : resolvePath(path);
+  path === undefined || path === '' ? path : resolveExistingPath(path);
 
 const realValues = (): Record<ProtectedVariable, string | undefined> => {
   const home = resolveExisting(homedir());
@@ -363,14 +360,18 @@ export const startHcSession = async (
   options: HcSessionOptions = {},
 ): Promise<HcSession> => {
   const session = (options.session ?? `tau-test-${randomBytes(6).toString('hex')}`).trim();
-  const root = resolvePath(mkdtempSync(join(tmpdir(), 'tau-hc-')));
+  const realEnvironment = realValues();
+
+  const root = resolveExistingPath(
+    mkdtempSync(
+      join(isolatedRootParent(resolveExistingPath(tmpdir()), realEnvironment.HOME), 'tau-hc-'),
+    ),
+  );
 
   try {
     createDirectories(root);
 
     const environment = privateEnvironment(root, session);
-
-    const realEnvironment = realValues();
 
     const problems = isolationProblems({
       session,

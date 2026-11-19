@@ -1,3 +1,5 @@
+import { posix } from 'node:path';
+
 export interface HcIsolationFacts {
   session: string | undefined;
   inheritedSession: string | undefined;
@@ -5,6 +7,8 @@ export interface HcIsolationFacts {
   realValues: Readonly<Partial<Record<ProtectedVariable, string | undefined>>>;
   variables: readonly string[];
 }
+
+type Containment = 'equal' | 'inside' | 'outside';
 
 export const protectedVariables = [
   'HOME',
@@ -18,31 +22,29 @@ export const protectedVariables = [
 export type ProtectedVariable = (typeof protectedVariables)[number];
 
 // Resolves . and .. segments in one lexical form. Every path here is absolute.
-const normalize = (value: string): string => {
-  const segments: string[] = [];
+const normalize = (value: string): string => posix.resolve('/', value);
 
-  for (const segment of value.split('/')) {
-    if (segment === '' || segment === '.') {
-      continue;
-    }
+const containment = (candidate: string, real: string): Containment => {
+  const base = normalize(real);
+  const resolved = normalize(candidate);
 
-    if (segment === '..') {
-      segments.pop();
-
-      continue;
-    }
-
-    segments.push(segment);
+  if (resolved === base) {
+    return 'equal';
   }
 
-  return `/${segments.join('/')}`;
+  return base === '/' || resolved.startsWith(`${base}/`) ? 'inside' : 'outside';
 };
 
-const isInside = (candidate: string, real: string): boolean => {
-  const base = normalize(real);
-  const prefix = base === '/' ? '/' : `${base}/`;
+// A worker's TMPDIR sits inside the real HOME, so a root there must fall back to /tmp.
+export const isolatedRootParent = (
+  temporaryDirectory: string,
+  realHome: string | undefined,
+): string => {
+  if (realHome === undefined || realHome === '') {
+    return temporaryDirectory;
+  }
 
-  return normalize(candidate).startsWith(prefix);
+  return containment(temporaryDirectory, realHome) === 'outside' ? temporaryDirectory : '/tmp';
 };
 
 const inheritedProblem = (name: string): boolean => name !== 'HC_SESSION' && name.startsWith('HC_');
@@ -88,9 +90,11 @@ export const privatePathProblems = (
       continue;
     }
 
-    if (normalize(value) === normalize(real)) {
+    const relation = containment(value, real);
+
+    if (relation === 'equal') {
       problems.push(`${name} equals the real ${name}`);
-    } else if (isInside(value, real)) {
+    } else if (relation === 'inside') {
       problems.push(`${name} is inside the real ${name}`);
     }
   }

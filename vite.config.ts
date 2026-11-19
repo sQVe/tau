@@ -1,8 +1,11 @@
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { format, lint, vitest } from '@sqve/stomme-ts-style';
 import { defineConfig } from 'vite-plus';
+
+import { isolatedRootParent } from './tests/hcIsolationHarness.js';
+import { resolveExistingPath } from './tests/pathHarness.js';
 
 interface TestProject {
   name: string;
@@ -112,6 +115,11 @@ const pathVariable = process.env.TAU_PATH_COMMANDS === undefined ? 'PATH' : 'TAU
 
 const taskEnvironment = testEnvironment.map((name) => (name === 'PATH' ? pathVariable : name));
 
+const testTemporaryDirectory = isolatedRootParent(
+  resolveExistingPath(tmpdir()),
+  resolveExistingPath(homedir()),
+);
+
 const projectTasks = Object.fromEntries(
   testProjects.map(({ name }) => [
     `vitest:${name}`,
@@ -153,7 +161,10 @@ export default defineConfig({
       HC_SESSION: '',
       GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_NOSYSTEM: '1',
-      TAU_TEST_WRITE_ROOT: tmpdir(),
+      TMPDIR: testTemporaryDirectory,
+      TMP: testTemporaryDirectory,
+      TEMP: testTemporaryDirectory,
+      TAU_TEST_WRITE_ROOT: testTemporaryDirectory,
       GIT_AUTHOR_NAME: 'Tau Test',
       GIT_AUTHOR_EMAIL: 'tau@example.com',
       GIT_AUTHOR_DATE: '2005-04-07T22:13:13Z',

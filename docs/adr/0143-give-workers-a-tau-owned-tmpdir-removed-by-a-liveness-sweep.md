@@ -77,6 +77,9 @@ no timer is needed.
 - A sweep adds one `hc ls` read and one `hc get` per live worker terminal to each scan and launch. A
   slow terminal delays the sweep by up to 10 seconds plus the kill grace.
 - A folder named by a finished worker, and younger than a minute, stays until the next sweep.
+- Tests cannot use the worker's `TMPDIR`, because it sits inside the real HOME and makes Unix socket
+  paths too long. In a worker session the test run sets `TMPDIR` to `/tmp`, and each test removes
+  its own folders as today.
 
 ## Alternatives considered
 

@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -168,7 +168,7 @@ it('builds a private environment for a generated session', async () => {
   }
 });
 
-it('refuses a temp root that resolves inside the real home', async () => {
+it('places the root outside the real home when TMPDIR resolves inside it', async () => {
   const outer = mkdtempSync(join(tmpdir(), 'tau-hc-home-'));
   const realHome = join(outer, 'home');
   const alias = join(outer, 'alias');
@@ -179,13 +179,25 @@ it('refuses a temp root that resolves inside the real home', async () => {
   vi.stubEnv('TMPDIR', alias);
 
   try {
-    const failure = await startHcSession(onTestFinished).catch((error: unknown) => error);
+    const session = await startHcSession(onTestFinished);
+    const canonicalRoot = realpathSync(session.root);
 
-    expect(failure).toBeInstanceOf(Error);
-    expect((failure as Error).message).toContain('HOME is inside the real HOME');
+    expect(canonicalRoot.startsWith(`${realpathSync('/tmp')}/`)).toBe(true);
+    expect(canonicalRoot.startsWith(`${realpathSync(realHome)}/`)).toBe(false);
   } finally {
     rmSync(outer, { recursive: true, force: true });
   }
+});
+
+it('refuses a root inside the real home when the real home is /', async () => {
+  vi.stubEnv('HOME', '/');
+
+  const failure = await startHcSession(onTestFinished).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('HOME is inside the real HOME');
+  expect(execFileMock).not.toHaveBeenCalled();
+  expect(spawnMock).not.toHaveBeenCalled();
 });
 
 it('does not inherit HC_ variables in exec, connect, or stop', async () => {

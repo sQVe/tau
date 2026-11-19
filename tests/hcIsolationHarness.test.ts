@@ -1,8 +1,13 @@
-import { expect, it } from 'vitest';
+import { mkdirSync, symlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import config, { testEnvironment } from '../vite.config.js';
-import { isolationProblems, protectedVariables } from './hcIsolationHarness.js';
+import { isolatedRootParent, isolationProblems, protectedVariables } from './hcIsolationHarness.js';
 import type { HcIsolationFacts, ProtectedVariable } from './hcIsolationHarness.js';
+import { temporaryDirectory as createTemporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const realValues: Record<ProtectedVariable, string> = {
   HOME: '/real/home',
@@ -133,6 +138,60 @@ it('accepts a private value when the real value is missing', () => {
   expect(
     isolationProblems(facts({ realValues: { ...realValues, XDG_DATA_HOME: undefined } })),
   ).toEqual([]);
+});
+
+it.each([
+  { temporaryDirectory: '/tmp/x', realHome: '/real/home', expected: '/tmp/x' },
+  { temporaryDirectory: '/real/home', realHome: '/real/home', expected: '/tmp' },
+  {
+    temporaryDirectory: '/real/home/.pi/agent/tmp/tau-worker-scratch/abc',
+    realHome: '/real/home',
+    expected: '/tmp',
+  },
+  { temporaryDirectory: '/other/../real/home/scratch', realHome: '/real/home', expected: '/tmp' },
+  { temporaryDirectory: '/real/homework', realHome: '/real/home', expected: '/real/homework' },
+  { temporaryDirectory: '/real/home/x', realHome: undefined, expected: '/real/home/x' },
+  { temporaryDirectory: '/real/home/x', realHome: '', expected: '/real/home/x' },
+])(
+  'gives $expected as the isolated root parent for $temporaryDirectory with real home $realHome',
+  ({ temporaryDirectory, realHome, expected }) => {
+    expect(isolatedRootParent(temporaryDirectory, realHome)).toBe(expected);
+  },
+);
+
+it('runs tests with a temporary directory outside the real home', () => {
+  const env = (config as { test?: { env?: Record<string, string> } }).test?.env ?? {};
+  const temporaryDirectory = env['TMPDIR'] ?? '';
+
+  expect(temporaryDirectory).not.toBe('');
+  expect(isolatedRootParent(temporaryDirectory, homedir())).toBe(temporaryDirectory);
+  expect(env['TMP']).toBe(temporaryDirectory);
+  expect(env['TEMP']).toBe(temporaryDirectory);
+  expect(env['TAU_TEST_WRITE_ROOT']).toBe(temporaryDirectory);
+});
+
+it('resolves a symlinked HOME before choosing the test temporary directory', async () => {
+  const outer = createTemporaryDirectory(onTestFinished, 'tau-config-home-');
+  const realHome = join(outer, 'home');
+  const alias = join(outer, 'alias');
+  const workerDirectory = join(realHome, 'worker');
+
+  mkdirSync(workerDirectory, { recursive: true });
+  symlinkSync(realHome, alias, 'dir');
+  vi.stubEnv('HOME', alias);
+  vi.stubEnv('TMPDIR', workerDirectory);
+
+  try {
+    vi.resetModules();
+
+    const reloaded = await import('../vite.config.js');
+    const env = (reloaded.default as { test?: { env?: Record<string, string> } }).test?.env ?? {};
+
+    expect(env['TMPDIR']).toBe('/tmp');
+  } finally {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  }
 });
 
 it('clears the inherited hc session and terminal id before every test worker starts', () => {
