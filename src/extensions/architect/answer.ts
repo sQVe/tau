@@ -19,10 +19,10 @@ export interface AnswerRequest {
   root: string;
   cwd: string;
   askId: string;
-  file: string;
+  file: string | undefined;
   architectSessionId: string;
   hc: HcRuntime;
-  hasUncertain: (askId: string) => boolean;
+  uncertainText: (askId: string) => string | undefined;
   recordDelivered: (askId: string, answer: string) => void;
   recordUncertain: (askId: string, answer: string) => void;
 }
@@ -33,7 +33,7 @@ export type AnswerResult =
 
 export interface AnswerTracker {
   run: <Result>(answer: () => Promise<Result>) => Promise<Result>;
-  hasUncertain: (askId: string) => boolean;
+  uncertainText: (askId: string) => string | undefined;
   recordDelivered: (askId: string, answer: string) => void;
   recordUncertain: (askId: string, answer: string) => void;
   close: () => Promise<ClosedAnswers>;
@@ -65,7 +65,7 @@ export const createAnswerTracker = (): AnswerTracker => {
         inFlight.delete(running);
       }
     },
-    hasUncertain: (askId) => uncertain.has(askId),
+    uncertainText: (askId) => uncertain.get(askId),
     recordDelivered: (askId, answer) => {
       uncertain.delete(askId);
       delivered.set(askId, answer);
@@ -112,7 +112,7 @@ const answerableRecord = async (request: AnswerRequest): Promise<LiveAskRecord> 
 };
 
 const firstAnswerNote = (askId: string): string =>
-  `The first answer may already be in the lead inbox, so ask ${askId} stays open. Call architect answer again with the same file, or close: closing resends the first answer once.`;
+  `The first answer may already be in the lead inbox, so ask ${askId} stays open. Call architect answer again with askId ${askId} and no file, or close: closing resends the first answer once.`;
 
 const readAnswerText = async (cwd: string, file: string): Promise<string> => {
   const realFile = await resolveTextFile(file, cwd, 'answer file');
@@ -149,16 +149,48 @@ const markAnswered = async (root: string, askId: string, answer: string): Promis
   }
 };
 
-export const answerLiveAsk = async (request: AnswerRequest): Promise<AnswerResult> => {
-  const record = await answerableRecord(request);
+const needsFileError = (): Error =>
+  new Error('architect answer needs file, except to resend an answer whose outcome is unknown.');
+
+const changedFileError = (askId: string): Error =>
+  new Error(
+    `Ask ${askId} already has an answer that may be in the lead inbox, and this file differs from it. A retry must send the same text, so nothing was sent. Call architect answer with askId ${askId} and no file to resend the first answer. Send any correction to the lead with handover send.`,
+  );
+
+const answerToSend = async (
+  request: AnswerRequest,
+  record: LiveAskRecord,
+  kept: string | undefined,
+): Promise<string> => {
   const { askId } = record;
+
+  if (request.file === undefined) {
+    if (kept === undefined) {
+      throw needsFileError();
+    }
+
+    return kept;
+  }
 
   const text = await readAnswerText(request.cwd, request.file);
   const answer = `Answer to ask ${askId}:\n\n${text}`;
 
   assertFitsOneMessage(record, answer);
 
-  const earlierSendUnknown = request.hasUncertain(askId);
+  if (kept !== undefined && answer !== kept) {
+    throw changedFileError(askId);
+  }
+
+  return answer;
+};
+
+export const answerLiveAsk = async (request: AnswerRequest): Promise<AnswerResult> => {
+  const record = await answerableRecord(request);
+  const { askId } = record;
+
+  const kept = request.uncertainText(askId);
+  const answer = await answerToSend(request, record, kept);
+  const earlierSendUnknown = kept !== undefined;
 
   const sent = await sendInboxMessage({
     hc: request.hc,
@@ -187,7 +219,7 @@ export const answerLiveAsk = async (request: AnswerRequest): Promise<AnswerResul
     return {
       status: 'unknown',
       askId,
-      note: `The answer may already be in the lead inbox. Call architect answer again with askId ${askId} and the same file.`,
+      note: `The answer may already be in the lead inbox. Call architect answer again with askId ${askId} and no file to resend the same answer.`,
     };
   }
 

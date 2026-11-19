@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
+import { Value } from 'typebox/value';
 import { expect, it, vi } from 'vitest';
 import type { onTestFinished } from 'vitest';
 
@@ -256,6 +257,29 @@ it('answer refuses an ask ID that is not a UUID', async ({ onTestFinished: clean
 
   await expect(answer('../escape')).rejects.toThrow('askId is not a UUID: ../escape');
   expect(hc.calls).toEqual([]);
+});
+
+it('the answer tool schema accepts an answer without a file', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, hc } = await answering(cleanup);
+  const record = liveRecord('queued');
+  const tool = createArchitectAnswerTool({ ...hc, cwd: root }, createAnswerTracker());
+  const input = { action: 'answer', askId: record.askId };
+
+  await writeAskRecord(root, record);
+
+  expect(Value.Check(tool.parameters, input)).toBe(true);
+
+  await expect(
+    tool.execute(
+      'call',
+      { action: 'answer', askId: record.askId },
+      undefined,
+      undefined,
+      contextOf(root, {}, 'session-architect'),
+    ),
+  ).rejects.toThrow('architect answer needs file');
 });
 
 const answerFileCases = [

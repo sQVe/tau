@@ -16,11 +16,11 @@ export interface CapturingInbox {
   saved: () => string[];
   savedTexts: () => string[];
   releaseFirst: () => void;
-  // Every later frame is saved, but its reply is dropped.
-  dropLaterReplies: () => void;
+  // Sets the mode for every frame after the first.
+  replyLater: (mode: ReplyMode) => void;
 }
 
-type ReplyMode = 'suppress' | 'hold' | 'reply' | 'save-then-drop';
+export type ReplyMode = 'suppress' | 'hold' | 'reply' | 'save-then-drop';
 
 const readdirSyncSafe = (path: string): string[] => {
   try {
@@ -138,8 +138,8 @@ export const startCapturingInbox = async (
     releaseFirst: () => {
       release?.();
     },
-    dropLaterReplies: () => {
-      later = 'save-then-drop';
+    replyLater: (mode) => {
+      later = mode;
     },
   };
 };

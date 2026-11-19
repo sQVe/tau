@@ -176,7 +176,11 @@ Every gate call writes a record under .tau/lead/gate.`,
 const answerParameters = Type.Object({
   action: Type.Literal('answer'),
   askId: Type.String(),
-  file: Type.String(),
+  file: Type.Optional(
+    Type.String({
+      description: 'omit only to resend after unknown.',
+    }),
+  ),
 });
 
 export const createArchitectAnswerTool = (
@@ -187,7 +191,7 @@ export const createArchitectAnswerTool = (
     name: 'architect',
     label: 'Architect',
     description: `Answer an "Ask <askId> from the lead".
-- answer: sends file to that lead: {status: queued|unknown, askId, note}; follow note. After a local file error, fix it and call answer again with the same askId. Tell the user only after a delivery refusal.`,
+- answer: sends file to lead: {status: queued|unknown, askId, note}; follow note. Retry after a file error; after unknown, retry with no file. Tell the user only after a refusal.`,
     promptSnippet: 'Answer a lead question.',
     parameters: answerParameters,
     executionMode: 'sequential',
@@ -204,7 +208,7 @@ export const createArchitectAnswerTool = (
           file: input.file,
           architectSessionId: context.sessionManager.getSessionId(),
           hc: { ...hc, signal },
-          hasUncertain: answers.hasUncertain,
+          uncertainText: answers.uncertainText,
           recordDelivered: answers.recordDelivered,
           recordUncertain: answers.recordUncertain,
         }),

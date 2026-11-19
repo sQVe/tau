@@ -117,14 +117,16 @@ const closingArchitect = async (
     held: createHeldLockToken(),
   };
 
-  const answerWith = (answerHc: AnswerHc, file = 'answer.md') =>
+  const send = (answerHc: AnswerHc, file: string | undefined) =>
     createArchitectAnswerTool({ ...answerHc, cwd: root }, answers).execute(
       'call',
-      { action: 'answer', askId: record.askId, file },
+      { action: 'answer', askId: record.askId, ...(file === undefined ? {} : { file }) },
       undefined,
       undefined,
       contextOf(root, {}, 'session-architect'),
     );
+
+  const answerWith = (answerHc: AnswerHc, file = 'answer.md') => send(answerHc, file);
 
   return {
     root,
@@ -134,6 +136,7 @@ const closingArchitect = async (
     hc,
     notify,
     answer: (file?: string) => answerWith(hc, file),
+    answerWithoutFile: () => send(hc, undefined),
     answerWith,
     end: () =>
       endArchitectSession(
@@ -339,7 +342,9 @@ it('a refused answer resend after an unknown send is settled at close', async ({
 
   hc.fail('get', 'transient', 1);
 
-  await expect(answer()).rejects.toThrow(`ask ${record.askId} stays open`);
+  await expect(answer()).rejects.toThrow(
+    `The first answer may already be in the lead inbox, so ask ${record.askId} stays open. Call architect answer again with askId ${record.askId} and no file, or close: closing resends the first answer once.`,
+  );
 
   expect(await readFile(askRecordPath(root, record.askId), 'utf8')).toBe(before);
   expect(lead.frames).toHaveLength(1);
@@ -356,6 +361,51 @@ it('a refused answer resend after an unknown send is settled at close', async ({
   expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
 });
 
+const changedFileError = (askId: string): string =>
+  `Ask ${askId} already has an answer that may be in the lead inbox, and this file differs from it. A retry must send the same text, so nothing was sent. Call architect answer with askId ${askId} and no file to resend the first answer. Send any correction to the lead with handover send.`;
+
+it('a changed file after an unknown answer is refused before the send', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, lead, record, answer, answerWithoutFile, end, notify } = await closingArchitect(
+    cleanup,
+    'suppress',
+  );
+
+  expect((await answer()).details).toMatchObject({ status: 'unknown', askId: record.askId });
+  expect(lead.saved()).toEqual([]);
+
+  await writeFile(join(root, 'answer.md'), 'Use --force.\n');
+
+  const before = await readFile(askRecordPath(root, record.askId), 'utf8');
+
+  await expect(answer()).rejects.toThrow(changedFileError(record.askId));
+
+  expect(lead.frames).toHaveLength(1);
+  expect(await readFile(askRecordPath(root, record.askId), 'utf8')).toBe(before);
+
+  lead.replyLater('reply');
+
+  expect((await answerWithoutFile()).details).toEqual({
+    action: 'answer',
+    status: 'queued',
+    askId: record.askId,
+  });
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'answered',
+    answer: answerText(record.askId),
+  });
+
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+
+  await end();
+
+  expect(lead.frames).toHaveLength(2);
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(notify).not.toHaveBeenCalled();
+});
+
 it('the close resend sends the first uncertain answer when a different file is refused', async ({
   onTestFinished: cleanup,
 }) => {
@@ -367,8 +417,9 @@ it('the close resend sends the first uncertain answer when a different file is r
 
   const before = await readFile(askRecordPath(root, record.askId), 'utf8');
 
-  await expect(answer('other.md')).rejects.toThrow(`ask ${record.askId} stays open`);
+  await expect(answer('other.md')).rejects.toThrow(changedFileError(record.askId));
 
+  expect(lead.frames).toHaveLength(1);
   expect(await readFile(askRecordPath(root, record.askId), 'utf8')).toBe(before);
 
   await end();
@@ -381,13 +432,60 @@ it('the close resend sends the first uncertain answer when a different file is r
   expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
 });
 
+it('an answer resend without a file keeps the close resend on the same bytes', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, lead, record, answer, answerWithoutFile, end, notify } = await closingArchitect(
+    cleanup,
+    'suppress',
+  );
+
+  expect((await answer()).details).toMatchObject({ status: 'unknown', askId: record.askId });
+
+  lead.replyLater('save-then-drop');
+
+  expect((await answerWithoutFile()).details).toMatchObject({
+    status: 'unknown',
+    askId: record.askId,
+  });
+
+  lead.replyLater('reply');
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'answered',
+    answer: answerText(record.askId),
+  });
+
+  expect(lead.saved()).toEqual([`${record.askId}.json`]);
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+
+  const savedText = lead.savedTexts().join('\n');
+
+  expect(savedText).not.toContain('could not check');
+  expect(savedText).not.toContain('got no answer');
+  expect(notify).not.toHaveBeenCalled();
+});
+
+it('answer without a file and nothing kept needs a file', async ({ onTestFinished: cleanup }) => {
+  const { root, lead, record, answerWithoutFile } = await closingArchitect(cleanup, 'reply');
+  const before = await readFile(askRecordPath(root, record.askId), 'utf8');
+
+  await expect(answerWithoutFile()).rejects.toThrow(
+    'architect answer needs file, except to resend an answer whose outcome is unknown.',
+  );
+
+  expect(lead.frames).toEqual([]);
+  expect(await readFile(askRecordPath(root, record.askId), 'utf8')).toBe(before);
+});
+
 it('an answer whose outcome stays unknown at close gets the could-not-check note', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, lead, record, answer, end } = await closingArchitect(cleanup, 'save-then-drop');
 
   await answer();
-  lead.dropLaterReplies();
+  lead.replyLater('save-then-drop');
   await end();
 
   expect(await readAskRecord(root, record.askId)).toMatchObject({
