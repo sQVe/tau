@@ -28,7 +28,7 @@ export interface InboxLifecycleDependencies {
   inboxDirectory: () => string;
   gate: StartupGate;
   wake: Wake;
-  processPid: number;
+  processGroup: () => Promise<number>;
 }
 
 interface Generation {
@@ -110,11 +110,18 @@ export const registerInboxLifecycle = (
       return;
     }
 
-    const snapshot = await get(hc, terminal);
+    const [snapshot, processGroup] = await Promise.all([
+      get(hc, terminal),
+      dependencies.processGroup(),
+    ]);
+
+    if (current.controller.signal.aborted) {
+      return;
+    }
 
     const foregroundPid = snapshot.foreground?.pid;
 
-    if (!ownsTerminal({ foregroundPid, processPid: dependencies.processPid })) {
+    if (!ownsTerminal({ foregroundPid, processGroup })) {
       return;
     }
 

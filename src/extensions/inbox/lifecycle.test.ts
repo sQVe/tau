@@ -25,11 +25,11 @@ interface HcState {
 interface HarnessOptions {
   state?: HcState;
   socketDirectory?: string;
-  processPid?: number;
+  processGroup?: number;
 }
 
 const raceWaitMilliseconds = 200;
-const foregroundProcessPid = 100;
+const foregroundProcessGroup = 100;
 
 let root = '';
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -52,7 +52,7 @@ afterEach(async () => {
 const hcState = (overrides: Partial<HcState> = {}): HcState => ({
   labels: new Map(),
   failLabel: false,
-  foregroundPid: foregroundProcessPid,
+  foregroundPid: foregroundProcessGroup,
   ...overrides,
 });
 
@@ -142,7 +142,7 @@ const startHarness = (options: HarnessOptions = {}) => {
     hc: { exec: hcExec(state), connect: () => Promise.reject(new Error('no connect')), cwd: root },
     socketDirectory: () => socketDirectory,
     inboxDirectory: () => join(root, 'records'),
-    processPid: options.processPid ?? foregroundProcessPid,
+    processGroup: () => Promise.resolve(options.processGroup ?? foregroundProcessGroup),
   })(fake.pi);
 
   const emit = async (name: string, event: unknown, context: ExtensionContext) => {
@@ -654,8 +654,8 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
 
 it("keeps the foreground session's label when a second Pi on its terminal starts and exits", async () => {
   const state = hcState({ foregroundPid: 100 });
-  const parent = startHarness({ state, processPid: 100 });
-  const child = startHarness({ state, processPid: 200 });
+  const parent = startHarness({ state, processGroup: 100 });
+  const child = startHarness({ state, processGroup: 200 });
   const parentSession = randomUUID();
   const childSession = randomUUID();
 
@@ -678,6 +678,21 @@ it("keeps the foreground session's label when a second Pi on its terminal starts
 
   expect(existsSync(socketOf(childSession))).toBe(false);
   expect(child.notices).toEqual([]);
+});
+
+it('starts no inbox when the session ends while the terminal is read', async () => {
+  const state = hcState();
+  const harness = startHarness({ state });
+  const sessionId = randomUUID();
+
+  state.afterRead = () => harness.shutdown(sessionId);
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  expect(Object.fromEntries(state.labels)).toEqual({});
+  expect(existsSync(socketOf(sessionId))).toBe(false);
+  expect(harness.notices).toEqual([]);
 });
 
 it('starts no inbox when the terminal reports no foreground process', async () => {

@@ -153,7 +153,7 @@ const startReceiverSession = async (
     hc: hc.runtime,
     socketDirectory: () => socketDirectory,
     inboxDirectory: () => recordDirectory,
-    processPid: foreground.pid,
+    processGroup: () => Promise.resolve(foreground.pid),
   });
 
   const extensionFactories = hold === undefined ? [inbox] : [inbox, hold.extension];

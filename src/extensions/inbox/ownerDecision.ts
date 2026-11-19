@@ -1,9 +1,9 @@
 export interface OwnerFacts {
   foregroundPid: number | undefined;
-  processPid: number;
+  processGroup: number;
 }
 
-// A Pi started from another Pi's bash tool shares its terminal address but is not the foreground
-// process. An ancestor rule would let that child match its parent.
-export const ownsTerminal = ({ foregroundPid, processPid }: OwnerFacts): boolean =>
-  foregroundPid === processPid;
+// hc reports the leader of the foreground process group. Pi's bash tool runs its shell detached, so
+// a Pi started from it is in another group and never matches.
+export const ownsTerminal = ({ foregroundPid, processGroup }: OwnerFacts): boolean =>
+  foregroundPid === processGroup;

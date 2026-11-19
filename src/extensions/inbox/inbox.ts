@@ -11,13 +11,14 @@ import { claimRegistration, releaseRegistration, socketDirectoryFor } from '../.
 import { createWake } from '../../wake/wake.js';
 import { guardTerminalTyping } from './guard.js';
 import { registerInboxLifecycle } from './lifecycle.js';
+import { readProcessGroup } from './processGroup.js';
 import { createStartupGate } from './startup.js';
 
 export interface InboxExtensionDependencies {
   hc: HcRuntime;
   socketDirectory: () => string;
   inboxDirectory: () => string;
-  processPid: number;
+  processGroup: () => Promise<number>;
 }
 
 export const createInboxExtension =
@@ -30,7 +31,7 @@ export const createInboxExtension =
       terminal: currentTerminalAddress,
       socketDirectory: dependencies.socketDirectory,
       inboxDirectory: dependencies.inboxDirectory,
-      processPid: dependencies.processPid,
+      processGroup: dependencies.processGroup,
       gate: createStartupGate(pi),
       wake: createWake(pi),
     });
@@ -57,6 +58,6 @@ export default function inboxExtension(pi: ExtensionAPI): void {
     hc: { exec: piExec(pi), connect, cwd: process.cwd() },
     socketDirectory: currentSocketDirectory,
     inboxDirectory: () => join(getAgentDir(), 'tau', 'inbox'),
-    processPid: process.pid,
+    processGroup: () => readProcessGroup(piExec(pi), process.pid),
   })(pi);
 }

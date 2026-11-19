@@ -5,17 +5,27 @@ import { ownsTerminal } from './ownerDecision.js';
 const table = [
   {
     name: 'no foreground process',
-    facts: { foregroundPid: undefined, processPid: 100 },
+    facts: { foregroundPid: undefined, processGroup: 500 },
     owns: false,
   },
   {
-    name: 'this process in the foreground',
-    facts: { foregroundPid: 100, processPid: 100 },
+    name: 'a Pi started from a shell, which leads its group',
+    facts: { foregroundPid: 500, processGroup: 500 },
     owns: true,
   },
   {
-    name: 'the parent Pi in the foreground',
-    facts: { foregroundPid: 100, processPid: 200 },
+    name: 'a Pi run by pnpm exec, in the group of pnpm',
+    facts: { foregroundPid: 400, processGroup: 400 },
+    owns: true,
+  },
+  {
+    name: 'a Pi started from the bash tool of another Pi',
+    facts: { foregroundPid: 500, processGroup: 700 },
+    owns: false,
+  },
+  {
+    name: 'a Pi run by pnpm exec from the bash tool of another Pi',
+    facts: { foregroundPid: 400, processGroup: 710 },
     owns: false,
   },
 ] as const;

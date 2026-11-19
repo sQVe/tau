@@ -170,6 +170,7 @@ const foregroundPidOf = (hc: HcSession, address: string): Promise<number> =>
   });
 
 const workerInbox = async (hc: HcSession, worker: WorkerSession) => {
+  const workerGroup = await foregroundPidOf(hc, worker.workerAddress);
   const uid = process.getuid?.();
 
   if (uid === undefined) {
@@ -180,7 +181,7 @@ const workerInbox = async (hc: HcSession, worker: WorkerSession) => {
     hc: hc.runtime,
     socketDirectory: () => socketDirectoryFor(uid),
     inboxDirectory: () => recordDirectory(worker.agentDirectory),
-    processPid: await foregroundPidOf(hc, worker.workerAddress),
+    processGroup: () => Promise.resolve(workerGroup),
   });
 };
 
