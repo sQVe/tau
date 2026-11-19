@@ -49,9 +49,10 @@ Tau differs from shared ADR 0002 in two places today.
    below between two I/O modules.
 
 A module is an I/O module when at least one of its files reads or writes the filesystem, starts a
-process, uses the network or a socket, reads the clock or the environment, calls a model or sets a
-timer, sends a message into the Pi session, or draws the terminal UI. A module that runs a command
-through an injected `exec` function starts a process, so it is an I/O module.
+process, uses the network or a socket, reads the clock, the environment, or randomness (such as
+`Math.random()` or `randomUUID()`), calls a model or sets a timer, sends a message into the Pi
+session, or draws the terminal UI. A module that runs a command through an injected `exec` function
+starts a process, so it is an I/O module.
 
 In this section, a pure module is a module with no I/O file. It is not the same as a module in
 `pureModules`, which makes pure decisions.
