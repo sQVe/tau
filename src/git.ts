@@ -4,8 +4,6 @@ import type { ChildProcess, ExecFileException } from 'node:child_process';
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { isMissingFile } from './errors.ts';
-
 export interface GitResult {
   exitCode: number | null;
   stdout: Buffer;
@@ -301,16 +299,11 @@ export const isBareRoot = async (
   return read.status === 'read' && read.bare;
 };
 
+// A `.git` entry means a checkout. A missing folder or a regular file has no entry to read.
 const hasGitEntry = (root: string): Promise<boolean> =>
   lstat(join(root, '.git')).then(
     () => true,
-    (error: unknown) => {
-      if (isMissingFile(error)) {
-        return false;
-      }
-
-      throw error;
-    },
+    () => false,
   );
 
 // A `.git` entry means a checkout, so its presence answers without a Git call.

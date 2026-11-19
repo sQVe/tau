@@ -523,6 +523,27 @@ it('passes the model to the new Pi through herdr-app', async () => {
   ]);
 });
 
+it('refuses a regular file as the start folder before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const folder = join(root, 'folder-file');
+  const app = createAppFake();
+
+  await writeFile(folder, 'not a directory\n');
+
+  const execution = createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder, space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(app.calls).toEqual([]);
+});
+
 it('refuses a start without a space or name before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
