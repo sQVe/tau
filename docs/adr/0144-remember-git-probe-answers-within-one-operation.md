@@ -6,8 +6,8 @@
 ## Context
 
 Tau asks Git whether a repository is bare and which object format it uses. Several reads and writes
-ask the same question again and again. One pr evidence read started 124 to 271 Git processes. On a
-loaded machine, the pr tests timed out at 5000 ms.
+ask the same question again and again. One pr evidence read started 124 to 271 Git processes, and
+the pr tests timed out at 5000 ms on a loaded machine (ME-1611).
 
 Git answers can change while the process runs, because a repository can be replaced at the same
 path. A process-wide cache then keeps a stale answer. After a SHA-1 repository became SHA-256, Tau
@@ -21,9 +21,12 @@ one operation. A new operation asks Git again.
 
 Operation scopes sit at top-level reads and writes: `readPublicationEvidence`, the standalone `pr`
 coverage read, the review capture entries in
-`src/reviewCapture/{evidence,generation,pinnedCapture}.ts`, and each `.tau` directory write.
+`src/reviewCapture/{evidence,generation,pinnedCapture}.ts`, and each `.tau` directory write. Inside
+these scopes, each question is asked at most once. Outside a scope, each call asks Git again; a
+bare-repository handover start is an example.
 
-A failed probe is not remembered, so the next call asks again. Only an answer keeps its place.
+A failed probe is not remembered, so a later call, if one comes, asks again. The failure still
+reaches the caller.
 
 `src/git.ts` owns the mechanism: `withOperationProbes`, `readProbe`, and `operationProbeCache`.
 
@@ -31,10 +34,10 @@ A failed probe is not remembered, so the next call asks again. Only an answer ke
 
 ### Positive
 
-- One operation asks each question once. The five ME-1611 tests start 103, 159, 158, 138, and 219
-  Git processes, down from 124, 197, 196, 168, and 271.
+- Inside an operation scope, each question is asked once, so a pr evidence read starts fewer Git
+  processes than before (ME-1611).
 - A replaced repository is read with its new format on the next operation.
-- A failed probe is retried on the next call instead of failing the whole operation.
+- A failed probe reaches its caller. A later call, if one comes, asks Git again.
 
 ### Negative
 
@@ -47,7 +50,7 @@ A failed probe is not remembered, so the next call asks again. Only an answer ke
 ### No cache
 
 Ask Git on every check. Rejected because one pr evidence read started 124 to 271 Git processes, and
-the pr tests timed out at 5000 ms on a loaded machine.
+the pr tests timed out at 5000 ms on a loaded machine (ME-1611).
 
 ### A process-wide cache keyed by path
 
