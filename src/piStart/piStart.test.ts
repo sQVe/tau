@@ -1,33 +1,16 @@
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
   createTemporaryRepository,
 } from '../../tests/gitRepository.js';
+import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
+import type { HerdrAppCommand } from '../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { startPiSession, startPiSessionLeftOf } from './piStart.js';
 
-type SpaceKey = 'ls' | 'pane.split' | 'pane.close' | 'tab.new';
-
 const emptyLayout = JSON.stringify({ spaces: [] });
-
-const createAppFake = (): ExecFake<'ls' | 'app'> =>
-  createExecFake<'ls' | 'app'>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
-      }
-
-      return commandArguments[0] === 'ls' ? 'ls' : 'app';
-    },
-    handlerFor: (key) => () => {
-      const reply = key === 'ls' ? emptyLayout : '{"ok":true}';
-
-      return succeededResult(reply);
-    },
-  });
 
 const shellLayout = (space: string): string =>
   JSON.stringify({
@@ -39,41 +22,11 @@ const shellLayout = (space: string): string =>
     ],
   });
 
-const createSpaceFake = (layout: string): ExecFake<SpaceKey> =>
-  createExecFake<SpaceKey>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
-      }
-
-      if (commandArguments[0] === 'ls') {
-        return 'ls';
-      }
-
-      const [, name] = commandArguments;
-
-      return name === 'pane.split' || name === 'pane.close' || name === 'tab.new'
-        ? name
-        : undefined;
-    },
-    handlerFor: (key) => () => {
-      if (key === 'ls') {
-        return succeededResult(layout);
-      }
-
-      if (key === 'pane.split') {
-        return succeededResult('{"pane":"p-new","terminal":"t-new"}');
-      }
-
-      return succeededResult('{"ok":true}');
-    },
-  });
-
-const appCommands = (fake: ExecFake<SpaceKey>): string[] =>
+const appCommands = (fake: ExecFake<HerdrAppCommand>): string[] =>
   fake.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0] ?? '');
 
 it('a tab start passes the argv as JSON', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake({ layout: emptyLayout });
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await startPiSession(
@@ -119,7 +72,7 @@ it('a tab start passes the argv as JSON', async () => {
 });
 
 it('a space with one idle shell tab gets Pi by split and close', async () => {
-  const fake = createSpaceFake(shellLayout('space-1'));
+  const fake = createHerdrAppFake({ layout: shellLayout('space-1') });
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await startPiSession(
@@ -156,7 +109,7 @@ it('a space with one idle shell tab gets Pi by split and close', async () => {
 });
 
 it('a shell running another program keeps its tab', async () => {
-  const fake = createSpaceFake(shellLayout('space-1'));
+  const fake = createHerdrAppFake({ layout: shellLayout('space-1') });
   const root = await createTemporaryRepository(onTestFinished);
 
   await startPiSession(
@@ -179,7 +132,7 @@ it('a shell running another program keeps its tab', async () => {
 });
 
 it('a space id that matches no listed space starts a tab', async () => {
-  const fake = createSpaceFake(shellLayout('space-other'));
+  const fake = createHerdrAppFake({ layout: shellLayout('space-other') });
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await startPiSession(
@@ -202,7 +155,7 @@ it('a space id that matches no listed space starts a tab', async () => {
 });
 
 it('a shell that turns busy during the split stays open', async () => {
-  const fake = createSpaceFake(shellLayout('space-1'));
+  const fake = createHerdrAppFake({ layout: shellLayout('space-1') });
   const root = await createTemporaryRepository(onTestFinished);
 
   const foregrounds = [
@@ -230,7 +183,7 @@ it('a shell that turns busy during the split stays open', async () => {
 });
 
 it('a failed shell close names the new pane', async () => {
-  const fake = createSpaceFake(shellLayout('space-1'));
+  const fake = createHerdrAppFake({ layout: shellLayout('space-1') });
   const root = await createTemporaryRepository(onTestFinished);
 
   fake.failCommand('pane.close', 'pane is gone');
@@ -261,8 +214,46 @@ it('a failed shell close names the new pane', async () => {
   expect(appCommands(fake)).toEqual(['ls', 'pane.split', 'pane.close']);
 });
 
+it('a failed second foreground read names the new pane and terminal', async () => {
+  const fake = createHerdrAppFake({ layout: shellLayout('space-1') });
+  const root = await createTemporaryRepository(onTestFinished);
+
+  let reads = 0;
+
+  const readForeground = () => {
+    reads += 1;
+
+    if (reads === 1) {
+      return Promise.resolve({ name: 'zsh', cwd: root });
+    }
+
+    return Promise.reject(new Error('terminal t-shell is gone'));
+  };
+
+  const failure = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { space: 'space-1', readForeground },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+
+  const { message, cause } = failure as Error;
+
+  expect(message).toContain('pane p-new (terminal t-new)');
+  expect(message).toContain('terminal t-shell is gone');
+  expect(cause).toBeInstanceOf(Error);
+  expect(appCommands(fake)).toEqual(['ls', 'pane.split']);
+});
+
 it('a true bare repository root starts a session', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake({ layout: emptyLayout });
   const root = await createTemporaryBareRepository(onTestFinished);
 
   const result = await startPiSession(
@@ -287,7 +278,7 @@ it('a true bare repository root starts a session', async () => {
 });
 
 it('a folder that is not a Git checkout is refused', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake({ layout: emptyLayout });
   const root = await createTemporaryRepository(onTestFinished);
   const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-');
 
@@ -309,24 +300,8 @@ it('a folder that is not a Git checkout is refused', async () => {
   expect(fake.calls).toEqual([]);
 });
 
-const paneAppFake = (splitReply: string): ExecFake<'split' | 'swap'> =>
-  createExecFake<'split' | 'swap'>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
-      }
-
-      return commandArguments[1] === 'pane.split' ? 'split' : 'swap';
-    },
-    handlerFor: (key) => () => {
-      const reply = key === 'split' ? splitReply : '{"ok":true}';
-
-      return succeededResult(reply);
-    },
-  });
-
 it('a left-of start splits right with the task in the argv, then swaps the new pane left', async () => {
-  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await startPiSessionLeftOf(
@@ -360,7 +335,7 @@ it('a left-of start splits right with the task in the argv, then swaps the new p
 });
 
 it('a pane split reply without a pane ends the start before the swap', async () => {
-  const fake = paneAppFake('{"terminal":"t-new"}');
+  const fake = createHerdrAppFake({ split: '{"terminal":"t-new"}' });
   const root = await createTemporaryRepository(onTestFinished);
 
   await expect(
@@ -381,15 +356,13 @@ it('a pane split reply without a pane ends the start before the swap', async () 
   expect(fake.calls).toHaveLength(1);
 });
 
-const failingSwapFake = (): ExecFake<'split' | 'swap'> =>
-  createExecFake<'split' | 'swap'>({
-    keyOf: (command, commandArguments) =>
-      command === 'herdr-app' && commandArguments[1] === 'pane.split' ? 'split' : 'swap',
-    handlerFor: (key) => () =>
-      key === 'split'
-        ? succeededResult('{"pane":"p-new","terminal":"t-new"}')
-        : failedResult('no such pane'),
-  });
+const failingSwapFake = (): ExecFake<HerdrAppCommand> => {
+  const fake = createHerdrAppFake();
+
+  fake.failCommand('pane.swap', 'no such pane');
+
+  return fake;
+};
 
 const paneRequest = (root: string) => ({
   folder: root,
@@ -425,12 +398,9 @@ it('a failed swap names the created pane and terminal and where the architect ru
 it('a cancel after the split skips the swap and names the created pane', async () => {
   const controller = new AbortController();
 
-  const fake = createExecFake<'split'>({
-    keyOf: () => 'split',
-    handlerFor: () => () => {
+  const fake = createHerdrAppFake({
+    beforeReply: () => {
       controller.abort();
-
-      return succeededResult('{"pane":"p-new","terminal":"t-new"}');
     },
   });
 
@@ -448,7 +418,7 @@ it('a cancel after the split skips the swap and names the created pane', async (
 });
 
 it('a left-of start in a folder that is not a Git checkout runs no command', async () => {
-  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-');
 
@@ -460,7 +430,7 @@ it('a left-of start in a folder that is not a Git checkout runs no command', asy
 });
 
 it('a left-of start with an aborted signal runs no command', async () => {
-  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const controller = new AbortController();
 

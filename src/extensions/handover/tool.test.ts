@@ -7,7 +7,6 @@ import { Value } from 'typebox/value';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { installCommandShim, logCommandCalls } from '../../../tests/commandShimFake.js';
-import { createExecFake, succeededResult } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
@@ -17,6 +16,8 @@ import {
 } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
+import { createHerdrAppFake } from '../../../tests/herdrAppFake.js';
+import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
@@ -386,23 +387,9 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
 
 const emptyLayout = JSON.stringify({ spaces: [] });
 
-const createAppFake = (): ExecFake<'ls' | 'app'> =>
-  createExecFake<'ls' | 'app'>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
-      }
+const createAppFake = (): ExecFake<HerdrAppCommand> => createHerdrAppFake({ layout: emptyLayout });
 
-      return commandArguments[0] === 'ls' ? 'ls' : 'app';
-    },
-    handlerFor: (key) => () => {
-      const reply = key === 'ls' ? emptyLayout : '{"ok":true}';
-
-      return succeededResult(reply);
-    },
-  });
-
-const createStartTool = (app: ExecFake<'ls' | 'app'>) =>
+const createStartTool = (app: ExecFake<HerdrAppCommand>) =>
   createHandoverTool({ exec: app.exec, connect: createHcFake().connect, cwd: '/repository' });
 
 const argvOf = ({ commandArguments }: { commandArguments: string[] }) =>
