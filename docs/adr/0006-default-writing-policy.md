@@ -89,8 +89,13 @@ subjects, and agents read a code rule as a prose rule.
 ### Status report rules in the writing set
 
 Put the subject of a status report and the naming of its work in `writing.md`, beside the other
-reply rules. Rejected because they decide what a report covers, not how a sentence reads. Splitting
-one report rule across two sets also lets its parts drift apart.
+reply rules. Rejected because both decide what a report covers, not how a sentence reads.
+
+### Work naming in the writing set
+
+Keep the subject rule in `workflow.md` and move only the naming rule to `writing.md`. Rejected
+because the two rules lean on each other: a report on the right feature still fails when it names
+work by a ticket identifier. One report rule in one file is also easier to follow.
 
 ### Rules in a skill
 
