@@ -57,6 +57,7 @@ export interface ReviewFixture {
 
 export interface ReviewFixtureOptions {
   space?: string;
+  tab?: string;
 }
 
 export const reviewAddress = 'review-1';
@@ -141,12 +142,18 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
   const hc = createHcFake();
 
   if (options.space !== undefined) {
+    const labels: Record<string, string> = { 'herdr.space': options.space };
+
+    if (options.tab !== undefined) {
+      labels['herdr.tab'] = options.tab;
+    }
+
     hc.reply(
       'get',
       JSON.stringify({
         address: 'manager',
         state: 'live',
-        labels: { 'herdr.space': options.space },
+        labels,
       }),
     );
   }

@@ -190,3 +190,16 @@ export const decideWaitOutcome = (facts: WaitFacts): WaitOutcome => {
 
   return facts.reason === 'timeout' ? 'timeout' : 'unfinished';
 };
+
+const reviewTabSuffix = '-review';
+
+export const reviewTerminalLabels = (
+  space: string,
+  tab: string | undefined,
+): Record<string, string> => {
+  if (tab === undefined || tab === '') {
+    return { 'herdr.space': space };
+  }
+
+  return { 'herdr.space': space, 'herdr.tab': `${tab}${reviewTabSuffix}` };
+};

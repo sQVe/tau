@@ -94,6 +94,28 @@ it('returns the address and space label of the manager terminal', async () => {
   await expect(readRequestingManager(runtimeOf(fake))).resolves.toEqual({
     address: 't7',
     space: 'a',
+    tab: undefined,
+  });
+});
+
+it('returns the tab label of the manager terminal', async () => {
+  const fake = createHcFake();
+
+  vi.stubEnv('HC_TERMINAL_ID', 't7');
+
+  fake.reply(
+    'get',
+    JSON.stringify({
+      address: 't7',
+      state: 'live',
+      labels: { 'herdr.space': 'a', 'herdr.tab': 'tab-2' },
+    }),
+  );
+
+  await expect(readRequestingManager(runtimeOf(fake))).resolves.toEqual({
+    address: 't7',
+    space: 'a',
+    tab: 'tab-2',
   });
 });
 
@@ -127,6 +149,7 @@ it('returns the manager address when the terminal has no labels', async () => {
   await expect(readRequestingManager(runtimeOf(fake))).resolves.toEqual({
     address: 't7',
     space: undefined,
+    tab: undefined,
   });
 });
 
@@ -139,5 +162,6 @@ it('returns the manager address without a space when it has no space label', asy
   await expect(readRequestingManager(runtimeOf(fake))).resolves.toEqual({
     address: 't7',
     space: undefined,
+    tab: undefined,
   });
 });

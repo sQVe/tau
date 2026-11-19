@@ -25,8 +25,8 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 ### The review
 
 - The tool copies the drafts to a staging directory outside Git. It starts tuicr with `hc run --bg`
-  and the manager's `herdr.space` label. Herdr shows tuicr in a new tab in that space and names the
-  tab.
+  and the manager's `herdr.space` label. When the manager has a `herdr.tab` label, tuicr also gets
+  the tab `<manager tab>-review`, so it never opens in the manager's tab.
 - `open` returns at once, so the agent can ask the approval question while the user reviews in
   tuicr. In a manager terminal, the user submits comments and saves edits before answering, since
   `collect` ends tuicr. Text the user has not submitted, and unsaved editor buffers, are lost.

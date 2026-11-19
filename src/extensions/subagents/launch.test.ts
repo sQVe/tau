@@ -372,7 +372,7 @@ it('writes the tau labels and no space and tab labels when the manager has no ta
   expect(request?.labels['herdr.tab']).toBeUndefined();
 });
 
-it('places an editing worker in the manager space and tab', async () => {
+it('places an editing worker in the workers tab of the manager', async () => {
   vi.mocked(loadouts.resolveLoadout).mockReturnValue(loadout);
 
   const { fake, runtime } = setup({
@@ -383,7 +383,7 @@ it('places an editing worker in the manager space and tab', async () => {
   const request = terminalRun(fake);
 
   expect(request?.labels['herdr.space']).toBe('space-1');
-  expect(request?.labels['herdr.tab']).toBe('tab-2');
+  expect(request?.labels['herdr.tab']).toBe('tab-2-workers');
 });
 
 it.each(['missing_reply', 'read_failed', 'malformed', 'unexpected'] as const)(

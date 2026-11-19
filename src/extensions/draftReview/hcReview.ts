@@ -2,16 +2,18 @@ import { randomBytes } from 'node:crypto';
 
 import { kill, readCurrentTerminal, run, wait } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { decideWaitOutcome } from './reviewDecisions.js';
+import { decideWaitOutcome, reviewTerminalLabels } from './reviewDecisions.js';
 
 export interface RequestingManager {
   address: string;
   space: string | undefined;
+  tab: string | undefined;
 }
 
 export interface ReviewTerminalRequest {
   stagingDirectory: string;
   space: string;
+  tab: string | undefined;
 }
 
 export interface ReviewExitRequest {
@@ -39,7 +41,11 @@ export const readRequestingManager = async (
     return undefined;
   }
 
-  return { address: terminal.address, space: terminal.labels?.['herdr.space'] };
+  return {
+    address: terminal.address,
+    space: terminal.labels?.['herdr.space'],
+    tab: terminal.labels?.['herdr.tab'],
+  };
 };
 
 export const openReviewTerminal = async (
@@ -51,7 +57,7 @@ export const openReviewTerminal = async (
   const terminal = await run(runtime, {
     argv: ['tuicr', '--file', request.stagingDirectory],
     cwd: request.stagingDirectory,
-    labels: { 'herdr.space': request.space },
+    labels: reviewTerminalLabels(request.space, request.tab),
     name: `draft-review-${suffix}`,
     background: true,
     notify: false,
