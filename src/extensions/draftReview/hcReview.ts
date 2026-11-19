@@ -7,11 +7,13 @@ import { decideWaitOutcome } from './reviewDecisions.js';
 export interface RequestingManager {
   address: string;
   space: string | undefined;
+  tab: string | undefined;
 }
 
 export interface ReviewTerminalRequest {
   stagingDirectory: string;
   space: string;
+  tab: string | undefined;
 }
 
 export interface ReviewExitRequest {
@@ -26,6 +28,19 @@ const suffixByteCount = 4;
 
 const messageWaitLimit = 5;
 
+const reviewTabSuffix = '-review';
+
+export const reviewTerminalLabels = (
+  space: string,
+  tab: string | undefined,
+): Record<string, string> => {
+  if (tab === undefined || tab === '') {
+    return { 'herdr.space': space };
+  }
+
+  return { 'herdr.space': space, 'herdr.tab': `${tab}${reviewTabSuffix}` };
+};
+
 export class TuicrExitTimeoutError extends Error {
   override name = 'TuicrExitTimeoutError';
 }
@@ -39,7 +54,11 @@ export const readRequestingManager = async (
     return undefined;
   }
 
-  return { address: terminal.address, space: terminal.labels?.['herdr.space'] };
+  return {
+    address: terminal.address,
+    space: terminal.labels?.['herdr.space'],
+    tab: terminal.labels?.['herdr.tab'],
+  };
 };
 
 export const openReviewTerminal = async (
@@ -51,7 +70,7 @@ export const openReviewTerminal = async (
   const terminal = await run(runtime, {
     argv: ['tuicr', '--file', request.stagingDirectory],
     cwd: request.stagingDirectory,
-    labels: { 'herdr.space': request.space },
+    labels: reviewTerminalLabels(request.space, request.tab),
     name: `draft-review-${suffix}`,
     background: true,
     notify: false,

@@ -318,7 +318,7 @@ export const startReservedWorker = async (
     facts.signal?.throwIfAborted();
 
     const manager = await readCurrentTerminal(runtime.hc);
-    const placement = placementLabels(assignment.loadout.role, manager?.labels ?? {});
+    const placement = placementLabels(manager?.labels ?? {});
 
     let terminal: HcTerminal;
 

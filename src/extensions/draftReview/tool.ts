@@ -204,6 +204,7 @@ const open = async (
       address = await launchReviewTerminal(runtime, cwd, {
         stagingDirectory: staged.stagingDirectory,
         space,
+        tab: manager?.tab,
       });
 
       await saveTerminal(staged, address);

@@ -41,7 +41,12 @@ it('opens a review terminal with the space label, its tuicr argv, and a draft na
 
   mkdirSync(stagingDirectory);
 
-  const address = await openReviewTerminal(hc.runtime, { stagingDirectory, space: 'space-a' });
+  const address = await openReviewTerminal(hc.runtime, {
+    stagingDirectory,
+    space: 'space-a',
+    tab: undefined,
+  });
+
   const terminal = await get(hc.runtime, address);
 
   await endReviewTerminal(hc.runtime, address);

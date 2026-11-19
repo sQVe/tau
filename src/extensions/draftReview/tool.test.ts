@@ -444,6 +444,21 @@ it('names the comments deleted before a failed delete', async () => {
   );
 });
 
+it('opens tuicr in the review tab of the caller', async () => {
+  const context = await fixture({ space: 'space-a', tab: 'tab-2' });
+
+  await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+
+  const runCall = commandCalls(context.hc.calls, 'hc', 'run')[0]?.commandArguments ?? [];
+
+  const labels = runCall.flatMap((argument, index) =>
+    runCall[index - 1] === '--label' ? [argument] : [],
+  );
+
+  expect(labels).toContain('herdr.tab=tab-2-review');
+  expect(labels).toContain('herdr.space=space-a');
+});
+
 it('opens tuicr in a manager tab with the space label and --bg, then saves a version 4 record', async () => {
   const context = await fixture({ space: 'space-a' });
   const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });

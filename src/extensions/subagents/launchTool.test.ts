@@ -171,7 +171,7 @@ it('launches on the profile model', async ({ onTestFinished }) => {
   expect(details.modelReason).toContain('profile model');
 });
 
-it('places an editing worker in the manager tab', async ({ onTestFinished }) => {
+it('places an editing worker in the workers tab of the manager', async ({ onTestFinished }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
 
   const fixture = await workerFixture(onTestFinished);
@@ -192,7 +192,7 @@ it('places an editing worker in the manager tab', async ({ onTestFinished }) => 
 
   expect(result.isError).not.toBe(true);
   expect(terminalRun(fake)?.labels['herdr.space']).toBe('space-1');
-  expect(terminalRun(fake)?.labels['herdr.tab']).toBe('tab-2');
+  expect(terminalRun(fake)?.labels['herdr.tab']).toBe('tab-2-workers');
 });
 
 it('places an investigation worker in the workers tab of the manager', async ({
