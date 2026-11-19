@@ -223,8 +223,6 @@ const rejectUnignored = async (root: string, relativeDirectory: string) => {
   await rejectTracked(root, relativeDirectory);
 };
 
-// Whether a root is bare cannot change while it is a repository, so one probe per root serves the
-// whole process. A failed probe leaves no entry, so the next call asks Git again.
 const bareRootProbes = new Map<string, Promise<BareProbe>>();
 
 const probeBareRoot = async (root: string): Promise<BareProbe> => {
