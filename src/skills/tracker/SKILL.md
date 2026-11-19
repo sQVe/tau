@@ -102,24 +102,36 @@ This list is the one approval rule; other skills link here.
      move the slice. It skips `In Progress`; every other state, `In Review` included, moves. Stop
      and ask if the team lacks that state.
    - Cancel: call `ticket` `cancel`. Its confirm supplies approval. Report the returned status.
-   - Done: only for a merged PR's ticket that the merge left open. Read the PR with
-     `gh pr view <number> --repo <repo> --json state,mergedAt,mergeCommit,headRefOid,body`. Stop and
-     report the gap when the read fails, `state` is not `MERGED`, or `mergedAt` is unset. Read each
-     acceptance item of the ticket and the PR body's deferred verification section. Treat a failed
-     or empty read as every item still open, and an omitted deferred section as no deferred checks.
-     Stop and name the blocker when an item is unchecked, not met, or has no evidence, or when a
-     check is deferred, including a deployment check that no acceptance item names. Rely only on
-     saved sources that record the covered revision, never on the PR body's Verification section
-     alone, which holds no SHA. Look in the `full_check` record `.tau/checks/*.json`, whose `tree`
-     must equal `git rev-parse <revision>^{tree}`; the review capture
-     `.tau/workers/review-*/capture.json`, whose `head` or `endpoint.tree` must match; and the
-     slice's `finish.md`, whose `Audited commit:` line must match. The revision is `mergeCommit` or
-     the PR's final `headRefOid`. Stop and name each source that is missing or records another
-     revision as stale evidence. Right before the write, run
-     `linear issue view <ticket> --json --no-pager` and stop unless `state.name` is neither `Done`
-     nor `Canceled`; this narrows the race with a concurrent change and does not close it. Then run
-     `linear issue update <ticket> --state Done --no-input` and read the state back the same way.
-     Report a state that is not `Done`. When the read-back fails, report the result as unverified.
+   - Done: only for a merged PR's ticket that the merge left open.
+     - Read the PR with
+       `gh pr view <number> --repo <repo> --json state,mergedAt,mergeCommit,headRefOid,body`. Stop
+       and report the gap when the read fails, `state` is not `MERGED`, or `mergedAt` is unset. The
+       revision is `mergeCommit` or the PR's final `headRefOid`.
+     - Read each acceptance item of the ticket and the PR body's deferred verification section.
+       Treat a failed or empty read as every item still open, and an omitted deferred section as no
+       deferred checks. Stop and name the blocker when an item is unchecked, not met, or has no
+       evidence, or when a check is deferred, including a deployment check that no acceptance item
+       names.
+     - Support each item with the saved source it needs, and require only that source. The PR body's
+       Verification section alone is not evidence, because it holds no SHA.
+       - Passing check: a `full_check` record in `.tau/checks/*.json` with `passed` set to `true`
+         and a `tree` equal to `git rev-parse <revision>^{tree}`. A record for that tree with
+         `passed` set to `false` is a failed required check. Name it as a blocker.
+       - Clean review: in `.tau/workers/review-*/capture.json`, `head` or `endpoint.tree` must match
+         the revision. It pins the revision and shows no outcome. Read the outcome in the same
+         directory, in `report.md` or in `reviewer.md` (or `finder.md` and `checker.md`). The report
+         must be complete and list no open finding. A file in the report's `Unread files` section is
+         not reviewed. A fix review counts when each review in the `target.review` chain covers its
+         part.
+       - Slice audit: the slice's `finish.md`, whose `Audited commit:` line must match.
+     - A source that no item needs, such as `finish.md` for a ticket with no slice audit, is not
+       required, and its absence does not stop the step. Stop and name each needed source that is
+       missing, unfinished, or records another revision as stale evidence.
+     - Right before the write, run `linear issue view <ticket> --json --no-pager` and stop unless
+       `state.name` is neither `Done` nor `Canceled`; this narrows the race with a concurrent change
+       and does not close it. Then run `linear issue update <ticket> --state Done --no-input` and
+       read the state back the same way. Report a state that is not `Done`. When the read-back
+       fails, report the result as unverified.
 
 7. Link the ticket from the PR. Write `Fixes <id>` only for the ticket the PR completes, such as the
    slice, and `Related to <id>` for the rest. Never list an agent ticket or a container as fixed.
