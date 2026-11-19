@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { appendFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -114,6 +114,8 @@ export const prebuildCrate = async (cwd: string): Promise<void> => {
   );
 };
 
+// Cargo keeps a binary and its dep-info file in debug/deps, or in debug/build/<package>/<hash>/out
+// with cargo 1.100.0, so this searches the whole debug folder.
 export const removeDepInfoFiles = async (packageName: string): Promise<void> => {
   const targetDirectory = process.env.CARGO_TARGET_DIR;
 
@@ -121,18 +123,20 @@ export const removeDepInfoFiles = async (packageName: string): Promise<void> => 
     throw new Error('CARGO_TARGET_DIR is not set; call useSharedCargoEnvironment first.');
   }
 
-  const dependencies = join(targetDirectory, 'debug', 'deps');
-  const entries = await readdir(dependencies);
+  const buildDirectory = join(targetDirectory, 'debug');
+  const entries = await readdir(buildDirectory, { recursive: true });
 
-  const depInfo = entries.filter(
-    (entry) => entry.startsWith(`${packageName}-`) && entry.endsWith('.d'),
-  );
+  const depInfo = entries.filter((entry) => {
+    const fileName = basename(entry);
+
+    return fileName.startsWith(`${packageName}-`) && fileName.endsWith('.d');
+  });
 
   if (depInfo.length === 0) {
-    throw new Error(`Found no dep-info files for ${packageName} in ${dependencies}.`);
+    throw new Error(`Found no dep-info files for ${packageName} in ${buildDirectory}.`);
   }
 
-  await Promise.all(depInfo.map((entry) => rm(join(dependencies, entry))));
+  await Promise.all(depInfo.map((entry) => rm(join(buildDirectory, entry))));
 };
 
 export const createNextestTool = (): NextestTool => {
