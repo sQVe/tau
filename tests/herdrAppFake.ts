@@ -10,11 +10,8 @@ export type HerdrAppCommand =
   | 'tab.new';
 
 export interface HerdrAppReplies {
-  // The reply to `herdr-app ls`. Defaults to a layout with no spaces.
   layout?: string;
-  // The reply to `herdr-app do pane.split`. Defaults to pane p-new in terminal t-new.
   split?: string;
-  // Runs before the reply, so a test can inject a fault such as a cancellation.
   beforeReply?: (key: HerdrAppCommand) => void;
 }
 
