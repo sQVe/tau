@@ -132,6 +132,14 @@ it('refuses to launch a bundled profile without a launch or configured model', a
   for (const name of ['worker', 'reviewer', 'checker', 'qa']) {
     const missing = () => resolveLoadout({ profile: name }, context);
     expect(missing).toThrow(`profiles.default.model in ${userFile}`);
+
+    expect(missing).toThrow(
+      new RegExp(
+        `roles\\.<role>\\.profiles\\.${name}\\.model, then profiles\\.${name}\\.model, then profiles\\.default\\.model`,
+      ),
+    );
+
+    expect(missing).not.toThrow('Pass model');
     expect(missing).toThrow(`Configured models: ${request.model}.`);
   }
 

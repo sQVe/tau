@@ -15,11 +15,14 @@ it.each([
   expect(modelRefusal(profile, model) !== undefined).toBe(refused);
 });
 
-it('names the allowed profiles and where the user sets the model', () => {
+it('names the allowed profiles and the user config order', () => {
   const refusal = modelRefusal('worker', 'faux/test');
 
   expect(refusal).toContain('reviewer');
   expect(refusal).toContain('checker');
-  expect(refusal).toContain('profiles');
   expect(refusal).toContain('tau.json');
+
+  expect(refusal).toMatch(
+    /roles\.<role>\.profiles\.worker\.model, then profiles\.worker\.model, then profiles\.default\.model/,
+  );
 });

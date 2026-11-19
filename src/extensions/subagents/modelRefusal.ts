@@ -7,5 +7,5 @@ export const modelRefusal = (profile: string, model: string | undefined): string
     return undefined;
   }
 
-  return `Profile ${profile} cannot set model. Only reviewer and checker launches may set model. Omit model; the profiles block in the user tau.json sets this profile's model.`;
+  return `Profile ${profile} cannot set model. Only reviewer and checker launches may set model. Omit model; the user tau.json sets this profile's model, from roles.<role>.profiles.${profile}.model, then profiles.${profile}.model, then profiles.default.model.`;
 };
