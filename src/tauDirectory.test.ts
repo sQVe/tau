@@ -7,12 +7,8 @@ import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
 import { installCommandShim, logCommandCalls } from '../tests/commandShimFake.ts';
 import { createTemporaryBareRoot, createTemporaryRepository, git } from '../tests/gitRepository.ts';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.ts';
-import {
-  checkTauDirectory,
-  ensureTauDirectory,
-  findSharedRepositoryRoot,
-  isBareRoot,
-} from './tauDirectory.ts';
+import { isBareRoot, withBareProbeCache } from './git.ts';
+import { checkTauDirectory, ensureTauDirectory, findSharedRepositoryRoot } from './tauDirectory.ts';
 
 const cleanups: (() => Promise<void>)[] = [];
 
@@ -156,4 +152,29 @@ it('does not remember a failed bare probe', async () => {
   await git(root, 'init', '--quiet', '--bare');
 
   expect(await isBareRoot(root)).toBe(true);
+});
+
+it('asks Git again after a failed bare probe in the same operation', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-bare-probe-');
+  const logPath = join(temporaryDirectory(onTestFinished, 'tau-bare-git-calls-'), 'calls.log');
+
+  await writeFile(logPath, '');
+
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [logCommandCalls(logPath)],
+  });
+
+  const results = await withBareProbeCache(async () => {
+    const failed = await isBareRoot(root);
+
+    await git(root, 'init', '--quiet', '--bare');
+
+    const retried = await isBareRoot(root);
+
+    return [failed, retried];
+  });
+
+  expect(results).toEqual([false, true]);
+  expect(await countCalls(logPath, 'rev-parse --is-bare-repository')).toBe(2);
 });

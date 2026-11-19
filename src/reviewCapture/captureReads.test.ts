@@ -261,6 +261,22 @@ it('probes the object format once per root across hashes', async () => {
   expect(await countCalls(logPath, 'rev-parse --show-object-format')).toBe(1);
 });
 
+it('shares one object-format probe between concurrent cold hashes', async () => {
+  const root = await committedRepository({ 'a.txt': 'one\n' });
+  const logPath = join(temporaryDirectory(onTestFinished, 'tau-capture-git-calls-'), 'calls.log');
+
+  await writeFile(logPath, '');
+
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [logCommandCalls(logPath)],
+  });
+
+  await Promise.all([hashBytes(root, Buffer.from('one\n')), hashBytes(root, Buffer.from('two\n'))]);
+
+  expect(await countCalls(logPath, 'rev-parse --show-object-format')).toBe(1);
+});
+
 it('probes the object format again after a failed probe', async () => {
   const root = await committedRepository({ 'a.txt': 'one\n' });
   const directory = temporaryDirectory(onTestFinished, 'tau-capture-git-calls-');
