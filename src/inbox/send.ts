@@ -4,7 +4,13 @@ import { createConnection } from 'node:net';
 import { errorMessage } from '../errors.js';
 import { currentTerminalAddress, get } from '../hc/hc.js';
 import type { HcRuntime } from '../hc/hc.js';
-import { decodeReply, encodeFrame, isUuid, replyByteLimit, requestByteLimit } from './protocol.js';
+import {
+  decodeReply,
+  encodeMessageFrame,
+  isUuid,
+  replyByteLimit,
+  requestByteLimit,
+} from './protocol.js';
 import type { MessageBody, MessageReply } from './protocol.js';
 import { decideTarget } from './targetDecision.js';
 
@@ -138,13 +144,11 @@ const deliver = async (
   target: Target,
   messageId: string,
 ): Promise<InboxSendResult> => {
-  const frame = encodeFrame({
-    protocol: 'rpc1',
-    kind: 'message',
+  const frame = encodeMessageFrame({
     messageId,
     targetTerminal: target.address,
     targetSessionId: target.sessionId,
-    ...request.body,
+    body: request.body,
   });
 
   if (Buffer.byteLength(frame) > requestByteLimit) {

@@ -115,7 +115,7 @@ it('queues the answer on the worker socket and saves nothing in the manager inbo
   const { assignment } = await questionedAssignment();
 
   const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), worker, {
-    answer: (_request, save) => save(),
+    accepts: { answer: (_request, save) => save() },
   });
 
   const fake = createHcFake();
@@ -160,7 +160,7 @@ it('refuses an answer for a reported assignment and queues nothing', async () =>
   });
 
   const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), worker, {
-    answer: (_request, save) => save(),
+    accepts: { answer: (_request, save) => save() },
   });
 
   const save = saveSpy();
@@ -185,7 +185,7 @@ it('refuses an answer for an older question and queues nothing', async () => {
   ]);
 
   const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), worker, {
-    answer: (_request, save) => save(),
+    accepts: { answer: (_request, save) => save() },
   });
 
   const save = saveSpy();
@@ -252,7 +252,7 @@ it('refuses when the manager has no saved session file', async () => {
   const { assignment } = await questionedAssignment();
 
   const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), worker, {
-    answer: (_request, save) => save(),
+    accepts: { answer: (_request, save) => save() },
   });
 
   const save = saveSpy();
@@ -299,7 +299,7 @@ it('refuses a handover family', async () => {
   const { assignment } = await questionedAssignment();
 
   const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), worker, {
-    answer: (_request, save) => save(),
+    accepts: { answer: (_request, save) => save() },
   });
 
   const request = decode({

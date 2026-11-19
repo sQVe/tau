@@ -1,34 +1,39 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { userConfigPath } from '../../config/config.js';
-import { readRoleModel } from '../../config/roleModels.js';
-import { readLiveLockHolder } from '../../fileLock/fileLock.js';
-import { get, kill, run, wait } from '../../hc/hc.js';
-import type { HcRuntime } from '../../hc/hc.js';
-import { piArguments } from '../../piStart/piArguments.js';
-import { askOutcome } from './askDecision.js';
-import { architectLockPath } from './lock.js';
+import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
+import { notifyOnce, userConfigPath } from '../../../config/config.js';
+import { readRoleModel } from '../../../config/roleModels.js';
+import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
+import { get, kill, run, wait } from '../../../hc/hc.js';
+import type { HcRuntime } from '../../../hc/hc.js';
+import { piArguments } from '../../../piStart/piArguments.js';
+import { askLiveArchitect } from '../liveAsk.js';
+import type { LiveAskResult } from '../liveAsk.js';
+import { architectLockPath } from '../lock.js';
 import {
   askRecordPath,
   readArchitectRecord,
   readAskRecord,
   readAskRecords,
   writeAskRecord,
-} from './record.js';
-import type { AskRecord } from './record.js';
+} from '../record.js';
+import type { AskRecordGap, HiddenAskRecord, SavedArchitectRecord } from '../record.js';
+import { askOutcome, askRoute } from './askDecision.js';
+import type { ArchitectPublication } from './askDecision.js';
 
 export interface AskRequest {
   root: string;
   question: string;
   leadTerminal: string;
+  leadSessionId: string;
+  listenerPath: string | undefined;
   location: ConfigLocation;
   ui: ConfigWarnings;
   hc: HcRuntime;
 }
 
 export type AskResult =
-  | { status: 'needsOpen'; reason: string }
+  | LiveAskResult
   | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
 
@@ -36,9 +41,22 @@ export const askDeadlineSeconds = 900;
 
 const millisecondsPerSecond = 1000;
 
-const liveRunningAsk = async (root: string, hc: HcRuntime): Promise<AskRecord | undefined> => {
-  const records = await readAskRecords(root);
-  const newest = records.at(-1);
+const reportAskGaps = (ui: ConfigWarnings, gaps: AskRecordGap[]): void => {
+  for (const gap of gaps) {
+    notifyOnce(ui, gap.path, 'ask-record', gap.reason, 'warning');
+  }
+};
+
+const liveRunningAsk = async (
+  root: string,
+  hc: HcRuntime,
+  ui: ConfigWarnings,
+): Promise<HiddenAskRecord | undefined> => {
+  const { records, gaps } = await readAskRecords(root);
+
+  reportAskGaps(ui, gaps);
+
+  const newest = records.findLast((record): record is HiddenAskRecord => record.route === 'hidden');
 
   if (newest?.status !== 'running' || newest.terminal === null) {
     return undefined;
@@ -63,36 +81,14 @@ const requireModel = (request: AskRequest): string => {
 
 const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason });
 
-export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
-  const architect = await readArchitectRecord(request.root);
-  const sessionFile = architect?.sessionFile ?? undefined;
-
-  if (sessionFile === undefined) {
-    return needsOpen(
-      'No architect session is recorded for this checkout. Call architect open first.',
-    );
-  }
-
-  const holder = await readLiveLockHolder(architectLockPath(request.root));
-
-  if (holder !== undefined) {
-    return needsOpen(
-      `The architect is already running in ${holder.checkout}. Call architect open to talk to it.`,
-    );
-  }
-
-  const running = await liveRunningAsk(request.root, request.hc);
-
-  if (running !== undefined) {
-    return needsOpen(`Ask ${running.askId} is still running. Wait for it, or call architect open.`);
-  }
-
+const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Promise<AskResult> => {
   const model = requireModel(request);
   const askId = randomUUID();
   const recordPath = askRecordPath(request.root, askId);
 
-  const initial: AskRecord = {
-    version: 1,
+  const initial: HiddenAskRecord = {
+    version: 2,
+    route: 'hidden',
     askId,
     createdAt: new Date().toISOString(),
     question: request.question,
@@ -125,7 +121,7 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     labels: { 'tau.architect.ask': askId },
   });
 
-  const started: AskRecord = { ...initial, terminal: terminal.address };
+  const started: HiddenAskRecord = { ...initial, terminal: terminal.address };
 
   await writeAskRecord(request.root, started);
 
@@ -143,7 +139,8 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     return needsOpen('The ask reached its deadline. Call architect open to talk to the architect.');
   }
 
-  const latest = (await readAskRecord(request.root, askId)) ?? started;
+  const recorded = await readAskRecord(request.root, askId);
+  const latest: HiddenAskRecord = recorded?.route === 'hidden' ? recorded : started;
 
   const outcome = askOutcome({
     status: latest.status,
@@ -178,4 +175,51 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     askId,
     reason: 'The ask terminal failed before the architect answered. Call architect open instead.',
   };
+};
+
+const architectPublication = (
+  architect: SavedArchitectRecord | undefined,
+): ArchitectPublication => {
+  if (architect === undefined) {
+    return { kind: 'none' };
+  }
+
+  if (architect.version === 1) {
+    return { kind: 'version1', updatedAt: Date.parse(architect.updatedAt) };
+  }
+
+  return architect.owner === null ? { kind: 'none' } : { kind: 'owner', owner: architect.owner };
+};
+
+export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
+  const running = await liveRunningAsk(request.root, request.hc, request.ui);
+
+  if (running !== undefined) {
+    return needsOpen(`Ask ${running.askId} is still running. Wait for it to answer.`);
+  }
+
+  const architect = await readArchitectRecord(request.root);
+  const holder = await readLiveLockHolder(architectLockPath(request.root));
+
+  const holderFacts =
+    holder === undefined
+      ? undefined
+      : { checkout: holder.checkout, token: holder.token, startedAt: Date.parse(holder.startedAt) };
+
+  const route = askRoute({
+    root: request.root,
+    holder: holderFacts,
+    publication: architectPublication(architect),
+    sessionFile: architect?.sessionFile ?? null,
+  });
+
+  if (route.kind === 'needsOpen') {
+    return needsOpen(route.reason);
+  }
+
+  if (route.kind === 'live') {
+    return askLiveArchitect(request, route);
+  }
+
+  return askHiddenArchitect(request, route.sessionFile);
 };

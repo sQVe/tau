@@ -13,6 +13,7 @@ import {
   readTextWithinSync,
   readVersionedRecord,
   savedVersion,
+  writeFencedRecord,
   writeRecord,
 } from './record.js';
 
@@ -181,6 +182,39 @@ it('keeps the old record and leaves no temporary file when a write fails', async
 
   await expect(writeRecord(path, { version: 2 })).rejects.toThrow('write failed');
   expect(await readFile(path, 'utf8')).toBe(before);
+  expect(await readdir(directory)).toEqual(['a.json']);
+});
+
+it('a fence that refuses after the temporary write publishes nothing and leaves no temporary file', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'a.json');
+  const seen: string[][] = [];
+
+  const reason = await writeFencedRecord(
+    path,
+    { version: 1 },
+    {
+      check: () => 'Not now.',
+      beforePublish: async () => {
+        seen.push(await readdir(directory));
+      },
+    },
+  );
+
+  expect(reason).toBe('Not now.');
+  expect(seen).toHaveLength(1);
+  expect(seen[0]).toHaveLength(1);
+  expect(await readdir(directory)).toEqual([]);
+});
+
+it('a fence that allows the write publishes the record', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'a.json');
+
+  const reason = await writeFencedRecord(path, { version: 2 }, { check: () => undefined });
+
+  expect(reason).toBeUndefined();
+  expect(await readFile(path, 'utf8')).toBe('{\n  "version": 2\n}\n');
   expect(await readdir(directory)).toEqual(['a.json']);
 });
 

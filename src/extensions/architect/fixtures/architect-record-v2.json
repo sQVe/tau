@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "sessionFile": "/sessions/architect.jsonl",
+  "leadTerminal": "t-lead",
+  "owner": {
+    "lockToken": "lock-token",
+    "mode": "visible",
+    "terminal": "t-architect",
+    "sessionId": "session-architect"
+  },
+  "updatedAt": "2026-11-17T10:00:00.000Z"
+}

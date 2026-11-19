@@ -6,22 +6,29 @@ import { Type } from 'typebox';
 import { readConfigLocation } from '../../config/config.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { currentInboxPath, isUuid } from '../../inbox/inbox.js';
 import { findTauRoot } from '../../tauDirectory.js';
-import { askArchitect } from './ask.js';
-import type { AskResult } from './ask.js';
+import { answerLiveAsk } from './answer.js';
+import type { AnswerResult, AnswerTracker } from './answer.js';
+import { askArchitect } from './ask/ask.js';
+import type { AskResult } from './ask/ask.js';
 import { runGate } from './gate.js';
 import type { GateResult } from './gate.js';
-import { openArchitect } from './open.js';
-import type { OpenResult } from './open.js';
+import { retryLiveAsk } from './liveAsk.js';
+import { openArchitect } from './open/open.js';
+import type { OpenResult } from './open/open.js';
 
 type ArchitectDetails =
   | ({ action: 'open' } & OpenResult)
   | ({ action: 'ask' } & AskResult)
   | ({ action: 'gate' } & GateResult);
 
+type AnswerDetails = { action: 'answer' } & AnswerResult;
+
 const parameters = Type.Object({
   action: Type.Union([Type.Literal('open'), Type.Literal('ask'), Type.Literal('gate')]),
   question: Type.Optional(Type.String({ description: 'ask: the question for the architect.' })),
+  askId: Type.Optional(Type.String()),
   request: Type.Optional(
     Type.String({ description: 'open, gate: the user request, in the user words.' }),
   ),
@@ -48,6 +55,14 @@ const rejectUnexpected = (input: ArchitectInput, names: readonly (keyof Architec
   }
 };
 
+const requireAskId = (value: string): string => {
+  if (!isUuid(value)) {
+    throw new Error(`askId is not a UUID: ${value}`);
+  }
+
+  return value;
+};
+
 const leadTerminal = (): string => {
   const address = currentTerminalAddress();
 
@@ -56,6 +71,34 @@ const leadTerminal = (): string => {
   }
 
   return address;
+};
+
+const runAsk = (
+  hc: HcRuntime,
+  context: ExtensionToolContext,
+  input: ArchitectInput,
+  root: string,
+): Promise<AskResult> => {
+  const leadSessionId = context.sessionManager.getSessionId();
+
+  if (input.askId !== undefined) {
+    if (input.question !== undefined) {
+      throw new Error('action ask with askId does not take question.');
+    }
+
+    return retryLiveAsk({ root, askId: requireAskId(input.askId), leadSessionId, hc });
+  }
+
+  return askArchitect({
+    root,
+    question: requireText('question', input.question),
+    leadTerminal: leadTerminal(),
+    leadSessionId,
+    listenerPath: currentInboxPath(),
+    location: readConfigLocation(root, {}, context),
+    ui: context.ui,
+    hc,
+  });
 };
 
 const runAction = async (
@@ -68,7 +111,7 @@ const runAction = async (
   const location = readConfigLocation(root, {}, context);
 
   if (input.action === 'open') {
-    rejectUnexpected(input, ['question', 'restatement']);
+    rejectUnexpected(input, ['question', 'askId', 'restatement']);
 
     return {
       action: 'open',
@@ -86,20 +129,10 @@ const runAction = async (
   if (input.action === 'ask') {
     rejectUnexpected(input, ['request', 'restatement']);
 
-    return {
-      action: 'ask',
-      ...(await askArchitect({
-        root,
-        question: requireText('question', input.question),
-        leadTerminal: leadTerminal(),
-        location,
-        ui: context.ui,
-        hc: { ...hc, signal },
-      })),
-    };
+    return { action: 'ask', ...(await runAsk({ ...hc, signal }, context, input, root)) };
   }
 
-  rejectUnexpected(input, ['question']);
+  rejectUnexpected(input, ['question', 'askId']);
 
   return {
     action: 'gate',
@@ -122,7 +155,7 @@ export const createArchitectTool = (
     label: 'Architect',
     description: `Open, ask, or gate the checkout's architect.
 - action open: with request, starts the architect in a pane beside the lead, or resumes its recorded session. Returns {status, sessionFile}, or {status: "running", terminal} for a live architect; send it the request with handover. Refuses while another architect holds the lock.
-- action ask: resumes the architect in a hidden terminal with question. Returns {status, askId, answer} when the architect answers. Refuses while an architect runs or another ask is live. A deadline returns {status: "needsOpen"}; call open instead.
+- action ask: live architect in this checkout: queues question {queued|unknown, askId, note}; follow note, retry unknown by askId. Else hidden: {askId, answer} or needsOpen. Refuses during a hidden ask or another checkout's lock.
 - action gate: classifies request and restatement with typesafe/jev-latest. Returns {decision, label, confidence, recordPath}. Follow specified; on open, call architect open; on uncertain, ask the user whether to brief a worker or open the architect.
 Every gate call writes a record under .tau/lead/gate.`,
     promptSnippet: 'Open, ask, or gate the checkout architect.',
@@ -132,6 +165,56 @@ Every gate call writes a record under .tau/lead/gate.`,
       signal?.throwIfAborted();
 
       const details = await runAction(hc, context, input, signal);
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(details, null, 2) }],
+        details,
+      };
+    },
+  });
+
+const answerParameters = Type.Object({
+  action: Type.Literal('answer'),
+  askId: Type.String(),
+  file: Type.Optional(
+    Type.String({
+      description: 'omit only to resend after unknown.',
+    }),
+  ),
+});
+
+export const createArchitectAnswerTool = (
+  hc: HcRuntime,
+  answers: AnswerTracker,
+): ToolDefinition<typeof answerParameters, AnswerDetails> =>
+  defineTool({
+    name: 'architect',
+    label: 'Architect',
+    description: `Answer an "Ask <askId> from the lead".
+- answer: sends file to lead: {status: queued|unknown, askId, note}; follow note. Retry after a file error; after unknown, retry with no file. Tell the user only after a refusal.`,
+    promptSnippet: 'Answer a lead question.',
+    parameters: answerParameters,
+    executionMode: 'sequential',
+    async execute(_toolCallId, input, signal, _onUpdate, context) {
+      signal?.throwIfAborted();
+
+      const root = await findTauRoot(context.cwd, 'architect');
+
+      const result = await answers.run(() =>
+        answerLiveAsk({
+          root,
+          cwd: context.cwd,
+          askId: requireAskId(input.askId),
+          file: input.file,
+          architectSessionId: context.sessionManager.getSessionId(),
+          hc: { ...hc, signal },
+          uncertainText: answers.uncertainText,
+          recordDelivered: answers.recordDelivered,
+          recordUncertain: answers.recordUncertain,
+        }),
+      );
+
+      const details: AnswerDetails = { action: 'answer', ...result };
 
       return {
         content: [{ type: 'text', text: JSON.stringify(details, null, 2) }],

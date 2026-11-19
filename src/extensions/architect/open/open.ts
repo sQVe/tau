@@ -1,20 +1,21 @@
 import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
-import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { userConfigPath } from '../../config/config.js';
-import { readRoleModel } from '../../config/roleModels.js';
-import { errorMessage, isMissingFile } from '../../errors.js';
-import { readLiveLockHolder } from '../../fileLock/fileLock.js';
-import type { LiveLockHolder } from '../../fileLock/fileLock.js';
-import { get } from '../../hc/hc.js';
-import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
-import { findPane } from '../../piStart/herdrPane.js';
-import { startPiSession, startPiSessionLeftOf } from '../../piStart/piStart.js';
-import { architectLockPath } from './lock.js';
+import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
+import { userConfigPath } from '../../../config/config.js';
+import { readRoleModel } from '../../../config/roleModels.js';
+import { errorMessage, isMissingFile } from '../../../errors.js';
+import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
+import type { LiveLockHolder } from '../../../fileLock/fileLock.js';
+import { get } from '../../../hc/hc.js';
+import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
+import { findPane } from '../../../piStart/herdrPane.js';
+import { startPiSession, startPiSessionLeftOf } from '../../../piStart/piStart.js';
+import { architectLockPath } from '../lock.js';
+import { readArchitectRecord, readAskRecords } from '../record.js';
+import type { SavedArchitectRecord } from '../record.js';
 import { eligibleTerminal, openCandidate, openReuse } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
-import { readArchitectRecord, readAskRecords } from './record.js';
 
 export interface OpenRequest {
   root: string;
@@ -98,9 +99,11 @@ const terminalRunsAsk = async (root: string, terminal: string | undefined): Prom
     return false;
   }
 
-  const asks = await readAskRecords(root);
+  const { records } = await readAskRecords(root);
 
-  return asks.some((ask) => ask.status === 'running' && ask.terminal === terminal);
+  return records.some(
+    (ask) => ask.route === 'hidden' && ask.status === 'running' && ask.terminal === terminal,
+  );
 };
 
 const readPane = async (request: OpenRequest, terminal: string): Promise<string | undefined> => {
@@ -219,9 +222,12 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
+const recordedTerminal = (record: SavedArchitectRecord | undefined): string | null | undefined =>
+  record?.version === 2 ? record.owner?.terminal : record?.terminal;
+
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);
-  const running = await runningTerminal(request, record?.terminal);
+  const running = await runningTerminal(request, recordedTerminal(record));
 
   if (running !== undefined) {
     return { status: 'running', terminal: running };

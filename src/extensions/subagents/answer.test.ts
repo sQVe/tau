@@ -79,7 +79,7 @@ it('sends one answer message to the live worker inbox and changes no assignment 
   const { assignment, agent } = await questionedAssignment();
 
   const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), worker, {
-    answer: (_request, save) => save(),
+    accepts: { answer: (_request, save) => save() },
   });
 
   const fake = createHcFake();
@@ -114,7 +114,7 @@ it('refuses a worker without a live inbox with a restart recovery and stores not
   const { assignment } = await questionedAssignment();
 
   const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), worker, {
-    answer: (_request, save) => save(),
+    accepts: { answer: (_request, save) => save() },
   });
 
   const fake = createHcFake();
@@ -184,7 +184,7 @@ it.each([
     });
 
     const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), worker, {
-      answer: (_request, save) => save(),
+      accepts: { answer: (_request, save) => save() },
     });
 
     const fake = createHcFake();

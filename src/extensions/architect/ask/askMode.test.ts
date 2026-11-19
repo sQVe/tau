@@ -1,17 +1,19 @@
+import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { fakeExtensionApi } from '../../../../tests/extensionApi.js';
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { readAskRecordAt, writeAskRecordAt } from '../record.js';
+import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
 import { askModePrompt, registerAskMode } from './askMode.js';
-import { readAskRecordAt, writeAskRecordAt } from './record.js';
-import type { AskRecord } from './record.js';
 
-const askRecord = (): AskRecord => ({
-  version: 1,
-  askId: 'ask-1',
+const askRecord = (): HiddenAskRecord => ({
+  version: 2,
+  route: 'hidden',
+  askId: '0190c1d2-0000-7000-8000-000000000105',
   createdAt: '2026-11-17T10:00:00.000Z',
   question: 'Which flag name should replace --fast?',
   sessionFile: '/sessions/architect.jsonl',
@@ -23,11 +25,27 @@ const askRecord = (): AskRecord => ({
   answer: null,
 });
 
+const liveRecord = (): LiveAskRecord => ({
+  version: 2,
+  route: 'live',
+  askId: '0190c1d2-0000-7000-8000-000000000106',
+  createdAt: '2026-11-17T10:00:00.000Z',
+  question: 'Which flag name should replace --fast?',
+  leadTerminal: 't-lead',
+  leadSessionId: 'session-lead',
+  architectTerminal: 't-architect',
+  architectSessionId: 'session-architect',
+  architectLockToken: 'live',
+  status: 'queued',
+  detail: null,
+  answer: null,
+});
+
 const askFile = async (
   cleanup: (cleanup: () => void) => void,
-): Promise<{ directory: string; path: string; record: AskRecord }> => {
+): Promise<{ directory: string; path: string; record: HiddenAskRecord }> => {
   const directory = temporaryDirectory(cleanup, 'tau-ask-mode-');
-  const path = join(directory, 'ask.json');
+  const path = join(directory, `${askRecord().askId}.json`);
   const record = askRecord();
 
   await writeAskRecordAt(path, record);
@@ -108,6 +126,44 @@ it('ask mode blocks a handover send to a terminal that is not the lead', async (
 
   expect(shutdown).not.toHaveBeenCalled();
   expect(await readAskRecordAt(path)).toMatchObject({ status: 'running', answer: null });
+});
+
+it('ask mode leaves a live record alone', async ({ onTestFinished }) => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-ask-mode-');
+  const path = join(directory, `${liveRecord().askId}.json`);
+  const record = liveRecord();
+  const file = await writeHandover(directory, 'Use --quick.');
+  const fake = fakeExtensionApi();
+  const shutdown = vi.fn<() => void>();
+
+  await writeAskRecordAt(path, record);
+  registerAskMode(fake.pi, path);
+
+  await fake.handler('tool_result')(
+    { toolName: 'handover', details: { status: 'queued' }, input: { terminal: 't-lead', file } },
+    { shutdown, cwd: directory } as never,
+  );
+
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(await readAskRecordAt(path)).toEqual(record);
+});
+
+it('ask mode ignores a missing record', async ({ onTestFinished }) => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-ask-mode-');
+  const path = join(directory, 'missing.json');
+  const file = await writeHandover(directory, 'Use --quick.');
+  const fake = fakeExtensionApi();
+  const shutdown = vi.fn<() => void>();
+
+  registerAskMode(fake.pi, path);
+
+  await fake.handler('tool_result')(
+    { toolName: 'handover', details: { status: 'queued' }, input: { terminal: 't-lead', file } },
+    { shutdown, cwd: directory } as never,
+  );
+
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(existsSync(path)).toBe(false);
 });
 
 it('ask mode does not shut down when no handover was queued', async ({ onTestFinished }) => {

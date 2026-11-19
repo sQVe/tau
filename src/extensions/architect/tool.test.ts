@@ -1,174 +1,16 @@
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readdir } from 'node:fs/promises';
 
 import { expect, it } from 'vitest';
 
-import { contextOf, holdLock, recordSession, setup } from '../../../tests/architectToolHarness.js';
 import { createHcFake } from '../../../tests/hcFake.js';
-import { askDeadlineSeconds } from './ask.js';
+import { contextOf, setup } from './fixtures/toolHarness.js';
 import { gateClassifier } from './gate.js';
-import {
-  askRecordDirectory,
-  gateRecordDirectory,
-  readAskRecords,
-  readArchitectRecord,
-  readGateRecord,
-  writeAskRecord,
-} from './record.js';
+import { gateRecordDirectory, readArchitectRecord, readGateRecord } from './record.js';
 import { createArchitectTool } from './tool.js';
 
 const classifyAsSpecified = async () => ({
   stopReason: 'stop',
   answers: { choice: { type: 'choice', choice: 'specified', confidence: 0.9 } },
-});
-
-it('ask refuses without a recorded session file', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const tool = createArchitectTool({ ...hc, cwd: root });
-
-  const result = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect((result.details as { reason: string }).reason).toContain('architect open');
-});
-
-it('ask refuses while the lock is held', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const tool = createArchitectTool({ ...hc, cwd: root });
-
-  await recordSession(root);
-  await holdLock(root, '/other/checkout');
-
-  const result = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect((result.details as { reason: string }).reason).toContain('/other/checkout');
-});
-
-it('a second ask while one runs is refused', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const tool = createArchitectTool({ ...hc, cwd: root });
-
-  await recordSession(root);
-  await mkdir(askRecordDirectory(root), { recursive: true });
-
-  await writeFile(
-    join(askRecordDirectory(root), 'ask-1.json'),
-    JSON.stringify({
-      version: 1,
-      askId: 'ask-1',
-      createdAt: new Date().toISOString(),
-      question: 'Earlier question',
-      sessionFile: join(root, 'architect-session.jsonl'),
-      terminal: 't-ask',
-      leadTerminal: 't-lead',
-      deadline: Date.now() + 1000,
-      status: 'running',
-      detail: null,
-      answer: null,
-    }),
-  );
-
-  hc.reply('get', JSON.stringify({ address: 't-ask', state: 'live' }));
-
-  const result = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect((result.details as { reason: string }).reason).toContain('ask-1');
-  expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
-});
-
-it('an ask deadline returns needsOpen and kills the terminal', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const tool = createArchitectTool({ ...hc, cwd: root });
-
-  await recordSession(root);
-  hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
-
-  hc.reply(
-    'wait',
-    JSON.stringify({ terminal: 't-ask', ended: false, reason: 'timeout', turn: 0, children: [] }),
-  );
-
-  hc.reply('kill', JSON.stringify({ address: 't-ask', state: 'finished' }));
-  const startedAt = Date.now();
-
-  const result = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-  expect(hc.calls.some((call) => call.commandArguments[0] === 'kill')).toBe(true);
-  const [record] = await readAskRecords(root);
-
-  expect(record).toMatchObject({ status: 'timeout', terminal: 't-ask' });
-  expect(record?.deadline).toBeGreaterThanOrEqual(startedAt + askDeadlineSeconds * 1000);
-});
-
-it('ask returns the answer the architect saved', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const answer = 'Use --quick.';
-
-  await recordSession(root);
-  hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
-
-  hc.reply(
-    'wait',
-    JSON.stringify({ terminal: 't-ask', ended: true, reason: 'ended', turn: 1, children: [] }),
-  );
-
-  const exec: typeof hc.exec = async (command, commandArguments, options) => {
-    if (command === 'hc' && commandArguments[0] === 'wait') {
-      const [record] = await readAskRecords(root);
-
-      if (record !== undefined) {
-        await writeAskRecord(root, { ...record, status: 'sent', answer });
-      }
-    }
-
-    return hc.exec(command, commandArguments, options);
-  };
-
-  const tool = createArchitectTool({ ...hc, exec, cwd: root });
-
-  const result = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(result.details).toMatchObject({ action: 'ask', status: 'ended', answer });
 });
 
 it('gate writes one record per call', async ({ onTestFinished: cleanup }) => {
@@ -240,3 +82,29 @@ it('gate records an uncertain decision below the cutoff', async ({ onTestFinishe
 
   expect(record?.decision).toBe('uncertain');
 });
+
+it.for([
+  ['open', { action: 'open' }],
+  ['gate', { action: 'gate', request: 'Rename --fast.', restatement: 'Rename it.' }],
+] as const)(
+  '%s refuses an askId and has no effects',
+  async ([action, input], { onTestFinished }) => {
+    const { root } = await setup(onTestFinished);
+    const hc = createHcFake();
+
+    const tool = createArchitectTool({ ...hc, cwd: root });
+
+    const called = tool.execute(
+      'call',
+      { ...input, askId: '0190c1d2-0000-7000-8000-000000000501' },
+      undefined,
+      undefined,
+      contextOf(root),
+    );
+
+    await expect(called).rejects.toThrow(`action ${action} does not take askId.`);
+
+    expect(hc.calls).toEqual([]);
+    await expect(readdir(gateRecordDirectory(root))).rejects.toThrow(/ENOENT/);
+  },
+);

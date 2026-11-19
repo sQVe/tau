@@ -86,6 +86,26 @@ it('refuses a message its family check rejects and saves nothing', async () => {
   expect(existsSync(join(root, 'records', sessionId))).toBe(false);
 });
 
+it('refuses a family name that only the object prototype defines and saves nothing', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const { receiver, woken } = directReceiver(sessionId, {});
+
+  const request: MessageRequest = Object.assign(messageRequest(sessionId, messageId), {
+    family: 'toString',
+  });
+
+  await expect(receiver.accept(request)).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'This session does not accept toString messages.',
+    messageId,
+  });
+
+  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+  expect(woken).toEqual([]);
+});
+
 it('refuses to save an answer-request message and saves nothing', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
@@ -157,6 +177,99 @@ it('accepts a handover while an answer-request check is still waiting', async ()
     terminal: 't7',
     sessionId,
   });
+});
+
+it('saves an accepted architect-ask as a handover with its text', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {
+    'architect-ask': (_request, save) => save(),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'architect-ask',
+    payload: { text: 'Ask text', lockToken: 'lock-1' },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+  await receiver.deliver(new AbortController().signal);
+
+  expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
+    version: 1,
+    messageId,
+    family: 'handover',
+    payload: { text: 'Ask text' },
+  });
+
+  expect(woken).toMatchObject([{ content: 'Ask text', details: { family: 'handover' } }]);
+});
+
+it('saves an architect-ask retry of a saved message once', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver } = directReceiver(sessionId, {
+    'architect-ask': (_request, save) => save(),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'architect-ask',
+    payload: { text: 'Ask text', lockToken: 'lock-1' },
+  };
+
+  await receiver.accept(request);
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+});
+
+it('a commit guard reason writes nothing', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver } = directReceiver(sessionId, {
+    'architect-ask': (_request, save) => save(() => 'The lock changed.'),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'architect-ask',
+    payload: { text: 'Ask text', lockToken: 'lock-1' },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    messageId,
+    reason: 'The lock changed.',
+  });
+
+  expect(existsSync(recordOf(sessionId, messageId))).toBe(false);
+});
+
+it('a commit guard does not refuse an already saved message', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const guards: (() => string)[] = [];
+
+  const { receiver } = directReceiver(sessionId, {
+    'architect-ask': (_request, save) => save(guards[0]),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'architect-ask',
+    payload: { text: 'Ask text', lockToken: 'lock-1' },
+  };
+
+  await receiver.accept(request);
+
+  guards.push(() => 'The lock changed.');
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+  expect(existsSync(recordOf(sessionId, messageId))).toBe(true);
 });
 
 it('saves an accepted answer and wakes with its answer text', async () => {

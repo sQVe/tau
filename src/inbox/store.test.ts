@@ -116,6 +116,28 @@ it('saves once and never replaces a saved record', async () => {
   expect(readFileSync(path, 'utf8')).toBe(saved);
 });
 
+it('writes nothing when the fence gives a reason', async () => {
+  const directory = directoryFixture();
+
+  await expect(
+    saveMessage(directory, record, { fence: { check: () => 'Not now.' } }),
+  ).resolves.toEqual({
+    refused: 'Not now.',
+  });
+
+  await expect(pendingMessages(directory)).resolves.toEqual([]);
+});
+
+it('does not run the fence for a message that is already saved', async () => {
+  const directory = directoryFixture();
+
+  await saveMessage(directory, record);
+
+  await expect(
+    saveMessage(directory, record, { fence: { check: () => 'Not now.' } }),
+  ).resolves.toBe('existing');
+});
+
 it('lists saved records by message ID and skips temporary and foreign names', async () => {
   const directory = directoryFixture();
 

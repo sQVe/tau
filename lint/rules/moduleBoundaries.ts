@@ -75,6 +75,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     ],
   },
   { name: 'fileLock', entry: 'fileLock/fileLock', publicFiles: [] },
+  { name: 'fileText', entry: 'fileText', publicFiles: [] },
   { name: 'git', entry: 'git', publicFiles: [] },
   {
     name: 'github',
@@ -162,6 +163,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   dialog: ['role'],
   errors: [],
   fileLock: ['errors', 'process', 'schema'],
+  fileText: ['errors'],
   git: ['errors'],
   github: ['command', 'errors', 'git', 'schema'],
   hc: ['command', 'errors', 'schema'],

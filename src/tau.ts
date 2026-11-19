@@ -70,8 +70,8 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   sliceExtension(pi);
   fullCheckExtension(pi);
   handoverExtension(pi);
-  architectExtension(pi);
   inboxExtension(pi);
+  architectExtension(pi);
   draftReviewExtension(pi);
   trackerExtension(pi);
   verificationExtension(pi);

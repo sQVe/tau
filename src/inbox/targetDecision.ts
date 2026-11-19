@@ -1,4 +1,4 @@
-import { inboxLabelKey, isSessionId, parseInboxLabel } from './protocol.js';
+import { formatInboxLabel, inboxLabelKey, isSessionId, parseInboxLabel } from './protocol.js';
 
 export interface TargetFacts {
   address: string;
@@ -11,6 +11,12 @@ export interface TargetFacts {
 export type TargetDecision =
   | { kind: 'connect'; path: string; sessionId: string }
   | { kind: 'refuse'; reason: string };
+
+export interface OwnInboxFacts {
+  listenerPath: string | undefined;
+  labels: Readonly<Record<string, string>>;
+  sessionId: string;
+}
 
 const isRemote = (address: string): boolean => address.includes('/');
 
@@ -67,4 +73,18 @@ export const decideTarget = (facts: TargetFacts): TargetDecision => {
   }
 
   return { kind: 'connect', path: parsed.path, sessionId };
+};
+
+export const ownInboxReady = (facts: OwnInboxFacts): boolean => {
+  const { listenerPath, labels, sessionId } = facts;
+
+  if (listenerPath === undefined) {
+    return false;
+  }
+
+  if (socketSession(listenerPath) !== sessionId) {
+    return false;
+  }
+
+  return labels[inboxLabelKey] === formatInboxLabel(listenerPath);
 };

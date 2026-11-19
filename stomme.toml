@@ -50,24 +50,9 @@ rule = "role-folder"
 key = "core:src"
 
 [[violations]]
-path = "src/extensions/architect/ask.ts"
-rule = "typescript-owner-folder"
-key = "askDecision.ts"
-
-[[violations]]
-path = "src/extensions/architect/ask.ts"
-rule = "typescript-owner-folder"
-key = "askMode.ts"
-
-[[violations]]
 path = "src/extensions/architect/gate.ts"
 rule = "typescript-owner-folder"
 key = "gateDecision.ts"
-
-[[violations]]
-path = "src/extensions/architect/open.ts"
-rule = "typescript-owner-folder"
-key = "openReuseDecision.ts"
 
 [[violations]]
 path = "src/extensions/commit/types.ts"
@@ -470,6 +455,11 @@ imports = []
 entry = "src/fileLock/fileLock.ts"
 public = []
 imports = ["errors", "process", "schema"]
+
+[modules.fileText]
+entry = "src/fileText.ts"
+public = []
+imports = ["errors"]
 
 [modules.git]
 entry = "src/git.ts"

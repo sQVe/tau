@@ -5,7 +5,8 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { errorMessage, isMissingFile } from '../errors.js';
-import { parseVersionedRecord, writeRecord } from '../record.js';
+import { parseVersionedRecord, writeFencedRecord, writeRecord } from '../record.js';
+import type { RecordFence } from '../record.js';
 import { isUuid, requestByteLimit, uuidSchema, withSavableBody } from './protocol.js';
 
 export type InboxRecord = Static<typeof recordSchema>;
@@ -15,7 +16,13 @@ export type InboxRead =
   | { kind: 'missing' }
   | { kind: 'malformed'; reason: string };
 
-export type SaveOutcome = 'saved' | 'existing' | 'changed';
+export type SaveOutcome = 'saved' | 'existing' | 'changed' | { refused: string };
+
+export interface SaveOptions {
+  // Checked when the record is published, in the same synchronous step as the publish. A reason
+  // publishes nothing.
+  fence?: RecordFence | undefined;
+}
 
 const recordVersion = 1;
 
@@ -56,7 +63,11 @@ export const readMessage = async (directory: string, messageId: string): Promise
 const sameMessage = (saved: InboxRead, record: InboxRecord): boolean =>
   saved.kind === 'record' && JSON.stringify(saved.record) === JSON.stringify(record);
 
-export const saveMessage = async (directory: string, record: InboxRecord): Promise<SaveOutcome> => {
+export const saveMessage = async (
+  directory: string,
+  record: InboxRecord,
+  options: SaveOptions = {},
+): Promise<SaveOutcome> => {
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
   const saved = await readMessage(directory, record.messageId);
@@ -65,9 +76,17 @@ export const saveMessage = async (directory: string, record: InboxRecord): Promi
     return sameMessage(saved, record) ? 'existing' : 'changed';
   }
 
-  await writeRecord(recordPath(directory, record.messageId), record);
+  const path = recordPath(directory, record.messageId);
 
-  return 'saved';
+  if (options.fence === undefined) {
+    await writeRecord(path, record);
+
+    return 'saved';
+  }
+
+  const reason = await writeFencedRecord(path, record, options.fence);
+
+  return reason === undefined ? 'saved' : { refused: reason };
 };
 
 export const pendingMessages = async (directory: string): Promise<string[]> => {

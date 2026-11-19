@@ -43,8 +43,25 @@ const answerRequest = {
   payload: { assignmentId, questionId, answer: 'Use 42.' },
 } as const;
 
+const architectAsk = {
+  ...handover,
+  family: 'architect-ask',
+  payload: { text: 'Ask text', lockToken: 'lock-1' },
+} as const;
+
 const requestCases: [string, Uint8Array, ReturnType<typeof decodeRequest>][] = [
   ['a handover message', line(handover), { kind: 'frame', value: handover }],
+  ['an architect-ask message', line(architectAsk), { kind: 'frame', value: architectAsk }],
+  [
+    'an architect-ask without a lock token',
+    line({ ...architectAsk, payload: { text: 'Ask text' } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'an architect-ask with an empty lock token',
+    line({ ...architectAsk, payload: { text: 'Ask text', lockToken: '' } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
   ['an answer message', line(answer), { kind: 'frame', value: answer }],
   [
     'an answer-request with an assignment ID that is not a UUID',
