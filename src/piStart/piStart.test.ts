@@ -19,6 +19,7 @@ it('a space start opens one tab with the argv as JSON', async () => {
     {
       folder: root,
       target: { space: 'space-1' },
+      tabName: 'lead',
       task: 'Next steps\n',
       model: 'morph/morph-dsv41flash-1017',
       session: '/tmp/architect.jsonl',
@@ -39,8 +40,53 @@ it('a space start opens one tab with the argv as JSON', async () => {
         'space-1',
         '--folder',
         root,
+        '--name',
+        'lead',
         '--argv',
         '["env","TAU_ROLE=architect","pi","--session","/tmp/architect.jsonl","--provider","morph","--model","morph-dsv41flash-1017"]',
+        '--task',
+        'Next steps\n',
+        '--focus',
+        'false',
+      ],
+      signal: undefined,
+    },
+  ]);
+});
+
+it('a space start names its first tab', async () => {
+  const fake = createAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { name: 'ticket-1' },
+      tabName: 'architect',
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"ok":true}' });
+
+  expect(fake.calls).toEqual([
+    {
+      command: 'herdr-app',
+      commandArguments: [
+        'do',
+        'space.new',
+        '--name',
+        'ticket-1',
+        '--folder',
+        root,
+        '--tab',
+        'architect',
+        '--argv',
+        '["pi"]',
         '--task',
         'Next steps\n',
         '--focus',
@@ -60,6 +106,7 @@ it('a true bare repository root starts a session', async () => {
     {
       folder: root,
       target: { space: 'space-1' },
+      tabName: 'lead',
       task: 'Next steps\n',
       model: undefined,
       session: undefined,
@@ -83,6 +130,7 @@ it('a folder that is not a Git checkout is refused', async () => {
       {
         folder,
         target: { name: 'ticket-1' },
+        tabName: 'lead',
         task: 'Next steps\n',
         model: undefined,
         session: undefined,

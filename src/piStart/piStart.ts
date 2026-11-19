@@ -22,6 +22,7 @@ interface PiSessionRequest {
 export interface PiStartRequest extends PiSessionRequest {
   target: PiStartTarget;
   bareRoot: boolean;
+  tabName: string;
 }
 
 export interface PiStartRightOfRequest extends PiSessionRequest {
@@ -39,13 +40,15 @@ const argvOf = (request: PiSessionRequest, message: string | undefined): string[
     message,
   });
 
-const tabArguments = (request: PiSessionRequest, space: string): string[] => [
+const tabArguments = (request: PiStartRequest, space: string): string[] => [
   'do',
   'tab.new',
   '--space',
   space,
   '--folder',
   request.folder,
+  '--name',
+  request.tabName,
   '--argv',
   JSON.stringify(argvOf(request, undefined)),
   '--task',
@@ -54,13 +57,15 @@ const tabArguments = (request: PiSessionRequest, space: string): string[] => [
   'false',
 ];
 
-const spaceArguments = (request: PiSessionRequest, name: string): string[] => [
+const spaceArguments = (request: PiStartRequest, name: string): string[] => [
   'do',
   'space.new',
   '--name',
   name,
   '--folder',
   request.folder,
+  '--tab',
+  request.tabName,
   '--argv',
   JSON.stringify(argvOf(request, undefined)),
   '--task',

@@ -1,6 +1,7 @@
 import type { CommandRuntime } from '../../command.js';
 import { startPiSession } from '../../piStart/piStart.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
+import { tabName } from '../../tabName.js';
 import { readHandoverText } from './handoverFile.js';
 
 export interface StartHandoverRequest {
@@ -25,6 +26,7 @@ export const startHandover = async (
   return startPiSession(runtime, {
     folder: request.folder,
     target: request.target,
+    tabName: tabName('lead'),
     task: text,
     model: request.model,
     session: undefined,

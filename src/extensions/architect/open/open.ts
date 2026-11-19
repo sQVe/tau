@@ -12,6 +12,7 @@ import { get } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
 import { startPiSession, startPiSessionRightOf } from '../../../piStart/piStart.js';
+import { tabName } from '../../../tabName.js';
 import { architectLockPath } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
@@ -182,7 +183,7 @@ const startArchitect = async (
   if (pane === undefined) {
     const target = { name: `architect-${basename(request.root)}` };
 
-    await startPiSession(request.hc, { ...start, target });
+    await startPiSession(request.hc, { ...start, target, tabName: tabName('architect') });
   } else {
     await startPiSessionRightOf(request.hc, { ...start, pane });
   }
