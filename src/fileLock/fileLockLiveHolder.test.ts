@@ -106,6 +106,8 @@ it.each([
   expect(await readLiveLockHolder(lockPath)).toEqual({
     pid: process.pid,
     checkout: '/other',
+    startedAt: record['startedAt'],
+    token: 'live',
     terminal: undefined,
   });
 });

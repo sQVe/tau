@@ -54,7 +54,7 @@ const exchange = (path: string, frame: string): Promise<MessageReply> =>
 
 const closingSetup = async (cleanup: Cleanup, stallPoint: StallPoint = 'commit') => {
   const root = await createTemporaryRepository(cleanup);
-  const lock = await holdArchitectLock(root, () => undefined);
+  const lock = await holdArchitectLock(root);
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 

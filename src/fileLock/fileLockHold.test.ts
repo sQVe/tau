@@ -10,6 +10,7 @@ import type { HeldFileLock } from './fileLock.js';
 import { fixture } from './fixtures/fileLockHarness.js';
 
 const checkout = '/checkout';
+const anyString: unknown = expect.any(String);
 
 const release = async (held: HeldFileLock): Promise<void> => {
   if (held.kind === 'held') {
@@ -33,13 +34,21 @@ it('refuses while a live holder has the lock and names its terminal', async ({
 
   expect(second).toEqual({
     kind: 'refused',
-    holder: { pid: process.pid, checkout, terminal: 't1' },
+    holder: {
+      pid: process.pid,
+      checkout,
+      terminal: 't1',
+      startedAt: anyString,
+      token: anyString,
+    },
   });
 
   expect(await readLiveLockHolder(lockPath)).toEqual({
     pid: process.pid,
     checkout,
     terminal: 't1',
+    startedAt: anyString,
+    token: anyString,
   });
 });
 
@@ -53,6 +62,8 @@ it('takes a free lock and frees it on release', async () => {
     pid: process.pid,
     checkout,
     terminal: undefined,
+    startedAt: anyString,
+    token: anyString,
   });
 
   await release(held);
