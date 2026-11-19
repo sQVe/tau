@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -198,7 +198,12 @@ it('refuses a recheck.diff symlink with a relative target before reading it', as
 it('refuses a recheck whose object format Git cannot report and changes nothing', async () => {
   const root = await committedRepository();
   const { directory } = await savedReview(root);
-  const before = await savedState(root, directory);
+  const copy = join(temporaryDirectory(onTestFinished, 'tau-saved-recapture-copy-'), 'repository');
+
+  await cp(root, copy, { recursive: true });
+
+  const copiedDirectory = join(copy, relative(root, directory));
+  const before = await savedState(copy, copiedDirectory);
 
   await installCommandShim('git', {
     otherCalls: 'real',
@@ -210,8 +215,8 @@ it('refuses a recheck whose object format Git cannot report and changes nothing'
     ],
   });
 
-  await expect(readSavedRecapture(root, directory)).rejects.toThrow('show-object-format');
-  expect(await savedState(root, directory)).toEqual(before);
+  await expect(readSavedRecapture(copy, copiedDirectory)).rejects.toThrow('show-object-format');
+  expect(await savedState(copy, copiedDirectory)).toEqual(before);
 });
 
 it('sees a change to a nested snapshot file or capture artifact in the saved state', async () => {
