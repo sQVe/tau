@@ -2,6 +2,7 @@
 'tau': patch
 ---
 
-Probe each repository's object format at most once per process and its bare state at most once per
-operation, and read the check state once per evidence read. The pr evidence tests spawn fewer Git
-processes per pr evidence read.
+Probe each repository's object format and bare state at most once per operation, and read the check
+state once per evidence read. A new operation probes again, so a repository replaced at the same
+path is read with its new format. The pr evidence tests spawn fewer Git processes per pr evidence
+read.
