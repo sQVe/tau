@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import {
+  decideUnreadListRemoval,
   decideWorkerFolderRemoval,
   isWorkerCandidate,
   scratchLaunchGrace,
@@ -381,3 +382,38 @@ it.each(candidateTable.map((row) => [row.name, row] as const))(
     expect(isWorkerCandidate(listed)).toBe(expected);
   },
 );
+
+it('clears only the markers of snapshots a starting worker names when the list is unread', () => {
+  const snapshots = [
+    snapshot('snapshot-a', hour),
+    snapshot('snapshot-b', hour),
+    snapshot('snapshot-c', undefined),
+  ];
+
+  const starting = [
+    terminal('assignment-a', true, 'snapshot-a'),
+    terminal('x', true, 'snapshot-c'),
+  ];
+
+  expect(decideUnreadListRemoval(snapshots, starting)).toEqual({
+    scratch: [],
+    snapshots: [],
+    markUnused: [],
+    clearUnused: ['snapshot-a'],
+  });
+});
+
+it('clears no marker when no starting worker names a snapshot', () => {
+  const starting = [
+    terminal('a', true, null),
+    terminal('b', true, 'unread'),
+    terminal('c', false, 'snapshot-a'),
+  ];
+
+  expect(decideUnreadListRemoval([snapshot('snapshot-a', hour)], starting)).toEqual({
+    scratch: [],
+    snapshots: [],
+    markUnused: [],
+    clearUnused: [],
+  });
+});

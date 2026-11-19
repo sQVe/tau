@@ -52,6 +52,29 @@ const hasSeparator = (name: string): boolean => name.includes('/') || name.inclu
 
 const isPathName = (name: string): boolean => !isDotName(name) && !hasSeparator(name);
 
+// Throws when the root is redirected or the name is a path. Returns the folder inside the canonical
+// root. `action` names the refused work in the message.
+export const guardedTemporaryFolder = async (
+  agentDirectory: string,
+  rootName: string,
+  name: string,
+  action: string,
+): Promise<string> => {
+  if (!isPathName(name)) {
+    throw new Error(`Invalid temporary folder name ${JSON.stringify(name)}. ${action} refused.`);
+  }
+
+  const canonicalAgent = await realpath(agentDirectory);
+  const expectedRoot = join(canonicalAgent, 'tmp', rootName);
+  const canonicalRoot = await realpath(expectedRoot);
+
+  if (canonicalRoot !== expectedRoot) {
+    throw new Error(`Temporary root ${rootName} is redirected. ${action} refused.`);
+  }
+
+  return join(canonicalRoot, name);
+};
+
 // Returns the cleanup error, so a caller without a handle can still report it. A missing folder is
 // success.
 export const removeAgentTemporaryFolder = async (
@@ -60,19 +83,9 @@ export const removeAgentTemporaryFolder = async (
   name: string,
 ): Promise<string | undefined> => {
   try {
-    if (!isPathName(name)) {
-      throw new Error(`Invalid temporary folder name ${JSON.stringify(name)}. Cleanup refused.`);
-    }
+    const folder = await guardedTemporaryFolder(agentDirectory, rootName, name, 'Cleanup');
 
-    const canonicalAgent = await realpath(agentDirectory);
-    const expectedRoot = join(canonicalAgent, 'tmp', rootName);
-    const canonicalRoot = await realpath(expectedRoot);
-
-    if (canonicalRoot !== expectedRoot) {
-      throw new Error(`Temporary root ${rootName} is redirected. Cleanup refused.`);
-    }
-
-    await rm(join(canonicalRoot, name), { recursive: true, force: true });
+    await rm(folder, { recursive: true, force: true });
 
     return undefined;
   } catch (error) {

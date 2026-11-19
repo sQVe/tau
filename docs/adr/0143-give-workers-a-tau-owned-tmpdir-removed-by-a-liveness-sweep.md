@@ -26,22 +26,26 @@ launch does not wait for it. A manager that exited is covered by the next launch
 other manager.
 
 The sweep reads `hc ls --all`, then `hc get` for each live worker terminal, at most 4 at a time,
-because the list carries no labels. Each `hc get` has a 10 second limit, and a timeout counts as a
-failed read. A finished terminal needs no read, since it protects nothing. A live terminal whose
-name is not a worker name needs no read either. It removes a scratch folder only when no running
-worker has its assignment ID. A folder that no terminal names must also be at least a minute old.
-The minute protects a launch that created its folder but has not started the worker yet. A worker
-that is starting counts as running, so a launch never removes its own folders.
+because the list carries no labels. Each `hc get` is stopped at 10 seconds, and a stopped read
+counts as a failed read. Pi sends SIGTERM at 10 seconds and SIGKILL 5 seconds later if the process
+lives, so a read ends within 10 seconds plus that grace. A finished terminal needs no read, since it
+protects nothing. A live terminal whose name is not a worker name needs no read either. It removes a
+scratch folder only when no running worker has its assignment ID. A folder that no terminal names
+must also be at least a minute old. The minute protects a launch that created its folder but has not
+started the worker yet. A worker that is starting counts as running, so a launch never removes its
+own folders.
 
 The sweep removes a package snapshot only when no running worker has named it for 24 hours. The
 clock starts at the first sweep that sees no running worker name the snapshot. That sweep writes a
 `.tau-unused-since` marker in the snapshot, and the marker's modification time is the start. A sweep
-that sees a running worker name the snapshot removes the marker. A follow-up reuses the snapshot of
-its source assignment, and a follow-up is the only reader that starts after a worker ended. The
-24-hour window protects a follow-up that another manager or a scan has not yet seen as running. The
-sweep takes no lock. One race stays as a known limit: a follow-up of another manager that starts
-between its validation and the `hc` listing, on a snapshot whose marker is already older than 24
-hours, can lose that snapshot.
+that sees a running worker name the snapshot removes the marker. A launch's own sweep also removes
+the marker of its starting worker's snapshot when `hc ls` fails, and marks and removes nothing else.
+Marker changes use the same redirected-root guard as removals and never follow a link at the marker
+path. A follow-up reuses the snapshot of its source assignment, and a follow-up is the only reader
+that starts after a worker ended. The 24-hour window protects a follow-up that another manager or a
+scan has not yet seen as running. The sweep takes no lock. One race stays as a known limit: a
+follow-up of another manager that starts between its validation and the `hc` listing, on a snapshot
+whose marker is already older than 24 hours, can lose that snapshot.
 
 The sweep fails closed. It removes nothing when the `hc` list cannot be read. When `hc get` fails
 for a live terminal, the sweep keeps every snapshot and the scratch folders that terminal may own.
@@ -71,7 +75,7 @@ no timer is needed.
 - A snapshot stays for one sweep longer than 24 hours after its last user ended, because the clock
   starts at the first sweep that sees it unused.
 - A sweep adds one `hc ls` read and one `hc get` per live worker terminal to each scan and launch. A
-  slow terminal delays the sweep by up to 10 seconds.
+  slow terminal delays the sweep by up to 10 seconds plus the kill grace.
 - A folder named by a finished worker, and younger than a minute, stays until the next sweep.
 
 ## Alternatives considered

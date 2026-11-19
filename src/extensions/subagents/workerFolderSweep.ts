@@ -1,4 +1,4 @@
-import { readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
@@ -10,7 +10,12 @@ import {
   snapshotDirectoryFor,
   snapshotRootFor,
 } from './packageSnapshot.js';
-import { decideWorkerFolderRemoval, isWorkerCandidate } from './workerFolderDecision.js';
+import { clearSnapshotMarker, markSnapshotUnused, readUnusedSince } from './snapshotMarker.js';
+import {
+  decideUnreadListRemoval,
+  decideWorkerFolderRemoval,
+  isWorkerCandidate,
+} from './workerFolderDecision.js';
 import type {
   SnapshotFolder,
   WorkerFolder,
@@ -34,8 +39,6 @@ interface TerminalFacts {
   terminals: readonly WorkerTerminalFact[] | 'unread';
   errors: string[];
 }
-
-const unusedMarkerName = '.tau-unused-since';
 
 const terminalReadTimeout = 10_000;
 
@@ -79,59 +82,12 @@ const readFolders = async (root: string): Promise<WorkerFolder[]> => {
   return folders.flatMap(({ name, bornAt }) => (bornAt === undefined ? [] : [{ name, bornAt }]));
 };
 
-const readUnusedSince = async (snapshot: string): Promise<number | undefined> => {
-  try {
-    const stats = await stat(join(snapshot, unusedMarkerName));
-
-    return stats.mtimeMs;
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  }
-};
-
 const readSnapshots = async (root: string): Promise<SnapshotFolder[]> => {
   const names = await readDirectoryNames(root);
 
   return Promise.all(
     names.map(async (name) => ({ name, unusedSince: await readUnusedSince(join(root, name)) })),
   );
-};
-
-const markSnapshotUnused = async (
-  snapshot: string,
-  name: string,
-  now: number,
-): Promise<string | undefined> => {
-  const marker = join(snapshot, unusedMarkerName);
-
-  try {
-    await writeFile(marker, '');
-    const markedAt = new Date(now);
-
-    await utimes(marker, markedAt, markedAt);
-
-    return undefined;
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    return `Marking snapshot ${name} unused failed: ${errorMessage(error)}.`;
-  }
-};
-
-const clearSnapshotMarker = async (snapshot: string, name: string): Promise<string | undefined> => {
-  try {
-    await rm(join(snapshot, unusedMarkerName), { force: true });
-
-    return undefined;
-  } catch (error) {
-    return `Clearing the unused marker of snapshot ${name} failed: ${errorMessage(error)}.`;
-  }
 };
 
 const readPackageSnapshot = async (label: string): Promise<string | null> => {
@@ -271,12 +227,8 @@ const updateUnusedMarkers = async (
   now: number,
 ): Promise<string[]> => {
   const results = await Promise.all([
-    ...decision.markUnused.map((name) =>
-      markSnapshotUnused(snapshotDirectoryFor(agentDirectory, name), name, now),
-    ),
-    ...decision.clearUnused.map((name) =>
-      clearSnapshotMarker(snapshotDirectoryFor(agentDirectory, name), name),
-    ),
+    ...decision.markUnused.map((name) => markSnapshotUnused(agentDirectory, name, now)),
+    ...decision.clearUnused.map((name) => clearSnapshotMarker(agentDirectory, name)),
   ]);
 
   return results.flatMap((error) => (error === undefined ? [] : [error]));
@@ -297,7 +249,11 @@ export const sweepWorkerFolders = async (
     terminals: terminals === 'unread' ? terminals : [...terminals, ...starting],
   };
 
-  const decision = decideWorkerFolderRemoval(facts);
+  const decision =
+    terminals === 'unread'
+      ? decideUnreadListRemoval(facts.snapshots, starting)
+      : decideWorkerFolderRemoval(facts);
+
   const markerErrors = await updateUnusedMarkers(agentDirectory, decision, now);
   const removal = await removeDecidedFolders(agentDirectory, decision);
 

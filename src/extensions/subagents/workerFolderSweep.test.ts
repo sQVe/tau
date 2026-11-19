@@ -706,10 +706,10 @@ it('reports a marker that cannot be written and still removes the other folders'
   const snapshot = makeFolder(snapshotRoot, 'snapshot-a');
   const scratch = makeFolder(scratchRoot, 'assignment-a');
 
-  vi.mocked(fsPromises.writeFile).mockRejectedValueOnce(new Error('disk full'));
+  vi.mocked(fsPromises.open).mockRejectedValueOnce(new Error('disk full'));
 
   onTestFinished(() => {
-    vi.mocked(fsPromises.writeFile).mockRestore();
+    vi.mocked(fsPromises.open).mockRestore();
   });
 
   listTerminals([]);
@@ -758,4 +758,62 @@ it('keeps folders and reports a timed-out read', async () => {
   expect(result.removed).toEqual([folderB]);
   expect(result.errors).toHaveLength(1);
   expect(result.errors[0]).toContain(`Reading terminal t-${idA} failed`);
+});
+
+it('clears the marker of the starting snapshot when hc ls fails and removes nothing', async () => {
+  const { agentDirectory, hcFake, hc, scratchRoot, snapshotRoot } = setup();
+  const reused = makeFolder(snapshotRoot, 'snapshot-reused');
+  const other = makeFolder(snapshotRoot, 'snapshot-other');
+  const scratch = makeFolder(scratchRoot, 'assignment-a');
+  const now = Date.now();
+
+  writeUnusedMarker(reused, now - 25 * hour);
+  writeUnusedMarker(other, now - 25 * hour);
+  hcFake.fail('ls', 'boom', 1);
+
+  const result = await sweepWorkerFolders(hc, agentDirectory, now, [
+    { kind: 'read', assignmentId: 'follow-up', running: true, packageSnapshot: 'snapshot-reused' },
+  ]);
+
+  expect(existsSync(join(reused, unusedMarkerName))).toBe(false);
+  expect(existsSync(join(other, unusedMarkerName))).toBe(true);
+  expect(existsSync(reused)).toBe(true);
+  expect(existsSync(other)).toBe(true);
+  expect(existsSync(scratch)).toBe(true);
+  expect(result.removed).toEqual([]);
+  expect(result.errors).toHaveLength(1);
+  expect(result.errors[0]).toContain('Listing hc terminals failed');
+});
+
+it('writes no marker when hc ls fails', async () => {
+  const { agentDirectory, hcFake, hc, snapshotRoot } = setup();
+  const snapshot = makeFolder(snapshotRoot, 'snapshot-a');
+
+  hcFake.fail('ls', 'boom', 1);
+
+  await sweepWorkerFolders(hc, agentDirectory, Date.now(), []);
+
+  expect(existsSync(join(snapshot, unusedMarkerName))).toBe(false);
+});
+
+it('refuses a redirected snapshot root for marker changes', async () => {
+  const { agentDirectory, hc, snapshotRoot, listTerminals } = setup();
+  const elsewhere = temporaryDirectory(onTestFinished, 'tau-sweep-redirect-');
+  const unnamed = makeFolder(elsewhere, 'snapshot-unnamed');
+  const named = makeFolder(elsewhere, 'snapshot-used');
+  const runningId = await saveAssignmentWithSnapshot(agentDirectory, 'snapshot-used');
+  const now = Date.now();
+
+  writeUnusedMarker(named, now - 25 * hour);
+  mkdirSync(dirname(snapshotRoot), { recursive: true });
+  symlinkSync(elsewhere, snapshotRoot);
+  listTerminals([{ assignmentId: runningId, state: 'live' }]);
+
+  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+
+  expect(existsSync(join(unnamed, unusedMarkerName))).toBe(false);
+  expect(existsSync(join(named, unusedMarkerName))).toBe(true);
+  expect(result.removed).toEqual([]);
+  expect(result.errors).toHaveLength(2);
+  expect(result.errors.every((error) => error.includes('redirected'))).toBe(true);
 });

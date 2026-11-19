@@ -150,3 +150,21 @@ export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolde
     ...decideSnapshots(facts.snapshots, running, keepsEverySnapshot, facts.now),
   };
 };
+
+// The list of terminals could not be read, so nothing is removed or marked. A worker that is
+// starting is known without the list, and its snapshot loses any marker.
+export const decideUnreadListRemoval = (
+  snapshots: readonly SnapshotFolder[],
+  starting: readonly WorkerTerminalFact[],
+): WorkerFolderRemoval => {
+  const running = runningTerminals(starting.filter(isRead));
+
+  return {
+    scratch: [],
+    snapshots: [],
+    markUnused: [],
+    clearUnused: snapshots
+      .filter((folder) => hasUnusedMarker(folder) && isNamedSnapshot(running, folder.name))
+      .map((folder) => folder.name),
+  };
+};

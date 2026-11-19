@@ -22,7 +22,7 @@ class SnapshotError extends Error {
   override name = 'SnapshotError';
 }
 
-const snapshotRootName = 'tau-worker-packages';
+export const snapshotRootName = 'tau-worker-packages';
 
 export const snapshotRootFor = (agentDirectory: string): string =>
   join(agentDirectory, 'tmp', snapshotRootName);
