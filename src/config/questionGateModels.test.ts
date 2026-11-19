@@ -1,27 +1,52 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { expect, it } from 'vitest';
 
-import { temporaryTauConfig } from '../../tests/tauConfigHarness.js';
-import { readQuestionGateModels } from './questionGateModels.js';
+import { temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
+import { readQuestionGateModels } from './questionGateModels.ts';
+
+interface ConfigBytes {
+  user: string;
+  repository: string | undefined;
+}
 
 const models = {
   classifier: 'tau-fixture/judge-a',
   panel: ['tau-fixture/judge-a', 'tau-fixture/judge-b', 'tau-fixture/judge-c'],
 } as const;
 
+const readBytes = (userFile: string, repositoryFile: string): ConfigBytes => ({
+  user: readFileSync(userFile, 'utf8'),
+  repository: existsSync(repositoryFile) ? readFileSync(repositoryFile, 'utf8') : undefined,
+});
+
+const expectBytesUnchanged = (
+  before: ConfigBytes,
+  userFile: string,
+  repositoryFile: string,
+): void => {
+  const userAfter = readFileSync(userFile, 'utf8');
+
+  const repositoryAfter = existsSync(repositoryFile)
+    ? readFileSync(repositoryFile, 'utf8')
+    : undefined;
+
+  expect(userAfter).toBe(before.user);
+  expect(repositoryAfter).toBe(before.repository);
+};
+
 it('reads a valid user key and leaves the file unchanged', ({ onTestFinished }) => {
-  const { location, userFile, writeUser } = temporaryTauConfig(
+  const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
     onTestFinished,
     'tau-question-gate-',
   );
 
   writeUser({ questionGate: models });
 
-  const before = readFileSync(userFile, 'utf8');
+  const before = readBytes(userFile, repositoryFile);
 
   expect(readQuestionGateModels(location)).toEqual(models);
-  expect(readFileSync(userFile, 'utf8')).toBe(before);
+  expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
 it('returns undefined when the key is missing', ({ onTestFinished }) => {
@@ -33,7 +58,7 @@ it('returns undefined when the key is missing', ({ onTestFinished }) => {
 });
 
 it('refuses a panel of two models with the schema error', ({ onTestFinished }) => {
-  const { location, userFile, writeUser } = temporaryTauConfig(
+  const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
     onTestFinished,
     'tau-question-gate-',
   );
@@ -45,6 +70,7 @@ it('refuses a panel of two models with the schema error', ({ onTestFinished }) =
     },
   });
 
+  const before = readBytes(userFile, repositoryFile);
   const read = () => readQuestionGateModels(location);
 
   expect(read).toThrow(userFile);
@@ -52,34 +78,46 @@ it('refuses a panel of two models with the schema error', ({ onTestFinished }) =
   expect(read).toThrow(
     'questionGate needs classifier, a provider/model-id string, and panel, an array of three provider/model-id strings.',
   );
+
+  expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
 it('refuses an extra key with the schema error', ({ onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+  const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-question-gate-',
+  );
 
   writeUser({ questionGate: { ...models, extra: true } });
 
-  expect(() => readQuestionGateModels(location)).toThrow(
+  const before = readBytes(userFile, repositoryFile);
+  const read = () => readQuestionGateModels(location);
+
+  expect(read).toThrow(
     'questionGate needs classifier, a provider/model-id string, and panel, an array of three provider/model-id strings.',
   );
+
+  expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
 it('refuses a panel string that is not a model reference', ({ onTestFinished }) => {
-  const { location, userFile, writeUser } = temporaryTauConfig(
+  const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
     onTestFinished,
     'tau-question-gate-',
   );
 
   writeUser({ questionGate: { classifier: 'a/b', panel: ['a/b', 'c/d', 'nope'] } });
 
+  const before = readBytes(userFile, repositoryFile);
   const read = () => readQuestionGateModels(location);
 
   expect(read).toThrow(userFile);
   expect(read).toThrow('questionGate model "nope" is not a provider/model-id reference.');
+  expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
 it('refuses the key in a trusted repository file', ({ onTestFinished }) => {
-  const { location, repositoryFile, writeUser, writeRepository } = temporaryTauConfig(
+  const { location, userFile, repositoryFile, writeUser, writeRepository } = temporaryTauConfig(
     onTestFinished,
     'tau-question-gate-',
   );
@@ -87,9 +125,10 @@ it('refuses the key in a trusted repository file', ({ onTestFinished }) => {
   writeUser({});
   writeRepository({ questionGate: models });
 
-  expect(() => readQuestionGateModels(location)).toThrow(repositoryFile);
+  const before = readBytes(userFile, repositoryFile);
+  const read = () => readQuestionGateModels(location);
 
-  expect(() => readQuestionGateModels(location)).toThrow(
-    'questionGate may be set only in the user file',
-  );
+  expect(read).toThrow(repositoryFile);
+  expect(read).toThrow('questionGate may be set only in the user file');
+  expectBytesUnchanged(before, userFile, repositoryFile);
 });

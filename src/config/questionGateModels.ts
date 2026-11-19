@@ -1,9 +1,9 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { readUserOnlyKey } from './config.js';
-import type { ConfigLocation } from './config.js';
-import { parseModelReference } from './models.js';
+import { readUserOnlyKey } from './config.ts';
+import type { ConfigLocation } from './config.ts';
+import { parseModelReference } from './models.ts';
 
 export interface QuestionGateModels {
   classifier: string;

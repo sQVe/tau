@@ -20,7 +20,7 @@ const answer = (time: number): PastAnswer => ({
 });
 
 it('returns only answers older than before, oldest first', () => {
-  const answers = [answer(3), answer(1), answer(2)];
+  const answers = [answer(3), answer(1), answer(2), answer(4)];
 
   expect(pastExamples(answers, 3, exampleCount)).toEqual([answer(1), answer(2)]);
 });
