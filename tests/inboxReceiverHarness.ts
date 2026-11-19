@@ -13,6 +13,8 @@ import type { Family, MessageReply, MessageRequest } from '../src/inbox/protocol
 export interface HandoverReceiver {
   sessionId: string;
   path: string;
+  // The folder that holds this receiver's saved records.
+  inbox: string;
   savedRecords: () => string[];
 }
 
@@ -22,6 +24,7 @@ export interface HandoverReceiverOptions {
   // The process has one inbox slot. A receiver outside it leaves the slot to another receiver.
   outsideSlot?: boolean;
   beforeCommit?: ReceiverOptions['beforeCommit'];
+  beforePublish?: ReceiverOptions['beforePublish'];
 }
 
 type Accept = (request: MessageRequest) => Promise<MessageReply>;
@@ -85,10 +88,11 @@ export const startHandoverReceiver = async (
 ): Promise<HandoverReceiver> => {
   const { accepts = acceptHandovers, sessionId = randomUUID() } = options;
   const records = join(root, 'records');
+  const inbox = join(records, sessionId);
   const paths: string[] = [];
 
   const receiver = createReceiver({
-    directory: join(records, sessionId),
+    directory: inbox,
     terminal,
     sessionId,
     accepts,
@@ -97,6 +101,7 @@ export const startHandoverReceiver = async (
     wake: () => true,
     notify: () => undefined,
     ...(options.beforeCommit === undefined ? {} : { beforeCommit: options.beforeCommit }),
+    ...(options.beforePublish === undefined ? {} : { beforePublish: options.beforePublish }),
   });
 
   const directory = join(root, 'sockets');
@@ -116,7 +121,7 @@ export const startHandoverReceiver = async (
     }
   };
 
-  return { sessionId, path: paths[0] ?? '', savedRecords };
+  return { sessionId, path: paths[0] ?? '', inbox, savedRecords };
 };
 
 // Accept checks live in the process-wide inbox slot, so a test that registers one removes it after.

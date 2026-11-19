@@ -5,7 +5,8 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { errorMessage, isMissingFile } from '../errors.js';
-import { parseVersionedRecord, writeRecord } from '../record.js';
+import { parseVersionedRecord, writeFencedRecord, writeRecord } from '../record.js';
+import type { RecordFence } from '../record.js';
 import { isUuid, requestByteLimit, uuidSchema, withSavableBody } from './protocol.js';
 
 export type InboxRecord = Static<typeof recordSchema>;
@@ -18,8 +19,9 @@ export type InboxRead =
 export type SaveOutcome = 'saved' | 'existing' | 'changed' | { refused: string };
 
 export interface SaveOptions {
-  // Runs after the read of an unsaved message, right before the write. A reason writes nothing.
-  beforeWrite?: (() => string | undefined) | undefined;
+  // Checked when the record is published, in the same synchronous step as the publish. A reason
+  // publishes nothing.
+  fence?: RecordFence | undefined;
 }
 
 const recordVersion = 1;
@@ -74,15 +76,17 @@ export const saveMessage = async (
     return sameMessage(saved, record) ? 'existing' : 'changed';
   }
 
-  const reason = options.beforeWrite?.();
+  const path = recordPath(directory, record.messageId);
 
-  if (reason !== undefined) {
-    return { refused: reason };
+  if (options.fence === undefined) {
+    await writeRecord(path, record);
+
+    return 'saved';
   }
 
-  await writeRecord(recordPath(directory, record.messageId), record);
+  const reason = await writeFencedRecord(path, record, options.fence);
 
-  return 'saved';
+  return reason === undefined ? 'saved' : { refused: reason };
 };
 
 export const pendingMessages = async (directory: string): Promise<string[]> => {

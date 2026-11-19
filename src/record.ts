@@ -5,6 +5,7 @@ import {
   linkSync,
   openSync,
   readSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -30,6 +31,13 @@ export interface VersionedRecordOptions<Schema extends TSchema> {
 }
 
 type FormatOptions = Pick<VersionedRecordOptions<TSchema>, 'label' | 'version'>;
+
+export interface RecordFence {
+  // Returns the reason to refuse, or undefined to publish.
+  check: () => string | undefined;
+  // Test seam: runs after the temporary write and before the check.
+  beforePublish?: (() => Promise<void>) | undefined;
+}
 
 const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
@@ -126,18 +134,62 @@ export const readVersionedRecord = async <Schema extends TSchema>(
   return parseVersionedRecord(path, text, options);
 };
 
-// Writes a new file and renames it over the record, so a failed write keeps the old record or none.
-// The rename replaces a link at the path instead of following it.
-export const writeRecord = async (path: string, value: unknown): Promise<void> => {
-  const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}`);
+const temporaryPathFor = (path: string): string =>
+  join(dirname(path), `.${basename(path)}.${randomUUID()}`);
 
+const refuseSymlink = async (path: string): Promise<void> => {
   if (await isSymlink(path)) {
     throw new Error(`Refusing to write through a symlink: ${path}`);
   }
+};
+
+const recordText = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+// Writes a new file and renames it over the record, so a failed write keeps the old record or none.
+// The rename replaces a link at the path instead of following it.
+export const writeRecord = async (path: string, value: unknown): Promise<void> => {
+  const temporary = temporaryPathFor(path);
+
+  await refuseSymlink(path);
 
   try {
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
+    await writeFile(temporary, recordText(value), { flag: 'wx' });
     await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+
+    throw error;
+  }
+};
+
+// Like writeRecord, but publishes only while the fence allows it. Returns the refusal reason, or
+// undefined when the record was published.
+export const writeFencedRecord = async (
+  path: string,
+  value: unknown,
+  fence: RecordFence,
+): Promise<string | undefined> => {
+  const temporary = temporaryPathFor(path);
+
+  await refuseSymlink(path);
+
+  try {
+    await writeFile(temporary, recordText(value), { flag: 'wx' });
+    await fence.beforePublish?.();
+
+    // No await may sit between the check and the rename: the owner gives up the fact it checks
+    // synchronously in this process, so the record publishes only while the fact still holds.
+    const reason = fence.check();
+
+    if (reason === undefined) {
+      renameSync(temporary, path);
+
+      return undefined;
+    }
+
+    await rm(temporary, { force: true });
+
+    return reason;
   } catch (error) {
     await rm(temporary, { force: true });
 

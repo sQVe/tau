@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readdirSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { basename } from 'node:path';
 
@@ -9,15 +10,20 @@ import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import { startHandoverReceiver } from '../../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import type { AcceptCheck } from '../../../inbox/inbox.js';
 import { decodeReply, encodeMessageFrame } from '../../../inbox/protocol.js';
 import type { MessageReply } from '../../../inbox/protocol.js';
+import { pendingMessages } from '../../../inbox/store.js';
 import { createAnswerTracker } from '../answer.js';
+import { architectLockPath, holdArchitectLock } from '../lock.js';
 import { createHeldLockToken, endArchitectSession } from '../session.js';
 import type { ArchitectSession } from '../session.js';
 import { createAskAdmissions } from './askAcceptance.js';
 
 type Cleanup = typeof onTestFinished;
+
+type StallPoint = 'commit' | 'publish';
 
 const lockRefusal = (token: string): string =>
   `This architect does not hold lock ${token} now. It restarted or closed. Call architect ask again.`;
@@ -46,7 +52,10 @@ const exchange = (path: string, frame: string): Promise<MessageReply> =>
     socket.end(frame);
   });
 
-const closingSetup = async (cleanup: Cleanup) => {
+const closingSetup = async (cleanup: Cleanup, stallPoint: StallPoint = 'commit') => {
+  const root = await createTemporaryRepository(cleanup);
+  const lock = await holdArchitectLock(root, () => undefined);
+
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   cleanup(() => {
@@ -61,7 +70,7 @@ const closingSetup = async (cleanup: Cleanup) => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  held.set('T1');
+  held.set(lock.token);
 
   const accept: AcceptCheck = (request, save) =>
     admissions.check(request, async (guard) => {
@@ -72,6 +81,14 @@ const closingSetup = async (cleanup: Cleanup) => {
       return reply;
     });
 
+  const stalling = async () => {
+    admitted.resolve(undefined);
+    await stall.promise;
+  };
+
+  const stallOption =
+    stallPoint === 'commit' ? { beforeCommit: stalling } : { beforePublish: stalling };
+
   const receiver = await startHandoverReceiver(
     cleanup,
     temporaryDirectory(cleanup, 'tau-admissions-'),
@@ -79,26 +96,21 @@ const closingSetup = async (cleanup: Cleanup) => {
     {
       sessionId,
       accepts: { 'architect-ask': accept },
-      beforeCommit: async () => {
-        admitted.resolve(undefined);
-        await stall.promise;
-      },
+      ...stallOption,
     },
   );
 
-  const root = await createTemporaryRepository(cleanup);
   const hc = createHcFake();
 
   const session: ArchitectSession = {
     root,
-    release: () => {
+    release: async () => {
+      await lock.release();
       events.push('released');
-
-      return Promise.resolve();
     },
     ui: { notify: () => undefined },
     owner: {
-      lockToken: 'T1',
+      lockToken: lock.token,
       mode: 'visible',
       terminal: 't-architect',
       sessionId: 'session-architect',
@@ -110,7 +122,7 @@ const closingSetup = async (cleanup: Cleanup) => {
     messageId,
     targetTerminal: 't-architect',
     targetSessionId: sessionId,
-    body: { family: 'architect-ask', payload: { text: 'Which flag?', lockToken: 'T1' } },
+    body: { family: 'architect-ask', payload: { text: 'Which flag?', lockToken: lock.token } },
   });
 
   const asking = exchange(receiver.path, frame);
@@ -122,6 +134,10 @@ const closingSetup = async (cleanup: Cleanup) => {
     stall,
     asking,
     messageId,
+    token: lock.token,
+    root,
+    pending: () => pendingMessages(receiver.inbox),
+    folderNames: () => readdirSync(receiver.inbox),
     savedMessages: () => receiver.savedRecords().filter((name) => name.endsWith('.json')),
     end: () =>
       endArchitectSession(session, { ...hc, cwd: root }, createAnswerTracker(), admissions),
@@ -131,7 +147,7 @@ const closingSetup = async (cleanup: Cleanup) => {
 it('an admitted question that stalls past the close deadline is not saved', async ({
   onTestFinished: cleanup,
 }) => {
-  const { events, stall, asking, savedMessages, end } = await closingSetup(cleanup);
+  const { events, stall, asking, savedMessages, end, token } = await closingSetup(cleanup);
   const ending = end();
 
   await vi.advanceTimersByTimeAsync(10_000);
@@ -141,22 +157,46 @@ it('an admitted question that stalls past the close deadline is not saved', asyn
 
   stall.resolve(undefined);
 
-  await expect(asking).resolves.toMatchObject({ kind: 'refused', reason: lockRefusal('T1') });
+  await expect(asking).resolves.toMatchObject({ kind: 'refused', reason: lockRefusal(token) });
   expect(savedMessages()).toEqual([]);
   expect(events).toEqual(['released', 'save settled']);
+});
+
+it('a question whose write stalls past the close deadline is not published', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { stall, asking, pending, folderNames, end, token, root } = await closingSetup(
+    cleanup,
+    'publish',
+  );
+
+  const ending = end();
+
+  await vi.advanceTimersByTimeAsync(10_000);
+  await ending;
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+
+  stall.resolve(undefined);
+
+  await expect(asking).resolves.toMatchObject({ kind: 'refused', reason: lockRefusal(token) });
+  await expect(pending()).resolves.toEqual([]);
+  const temporaryNames = folderNames().filter((name) => name.startsWith('.'));
+
+  expect(temporaryNames).toEqual([]);
 });
 
 it('close waits for an admitted question before it releases the lock', async ({
   onTestFinished: cleanup,
 }) => {
-  const { events, stall, asking, savedMessages, end } = await closingSetup(cleanup);
+  const { events, stall, asking, savedMessages, end, token } = await closingSetup(cleanup);
   const ending = end();
 
   await vi.advanceTimersByTimeAsync(9999);
   stall.resolve(undefined);
   await ending;
 
-  await expect(asking).resolves.toMatchObject({ kind: 'refused', reason: lockRefusal('T1') });
+  await expect(asking).resolves.toMatchObject({ kind: 'refused', reason: lockRefusal(token) });
   expect(savedMessages()).toEqual([]);
   expect(events).toEqual(['save settled', 'released']);
   expect(vi.getTimerCount()).toBe(0);

@@ -43,6 +43,8 @@ export interface ReceiverOptions {
   notify: (message: string) => void;
   // Test seam: runs after the receipt check and before the commit guard.
   beforeCommit?: () => Promise<void>;
+  // Test seam: runs after the temporary write and before the fence check.
+  beforePublish?: () => Promise<void>;
 }
 
 export interface Receiver {
@@ -102,10 +104,15 @@ const save = async (
 
   await options.beforeCommit?.();
 
+  const fence =
+    commitGuard === undefined
+      ? undefined
+      : { check: commitGuard, beforePublish: options.beforePublish };
+
   const outcome = await saveMessage(
     options.directory,
     { version: 1, messageId, ...body },
-    { beforeWrite: commitGuard },
+    { fence },
   );
 
   if (typeof outcome === 'object') {
