@@ -21,9 +21,16 @@ const noSkips: SkippedQuestions = {
   preview: 0,
 };
 
-const header = JSON.stringify({ type: 'session', id: 'session-inline', timestamp: at(0) });
+const header = (id = 'session-inline', parentSession?: string) =>
+  JSON.stringify({
+    type: 'session',
+    id,
+    timestamp: at(0),
+    ...(parentSession === undefined ? {} : { parentSession }),
+  });
 
-const logText = (lines: string[]) => `${[header, ...lines].join('\n')}\n`;
+const logText = (lines: string[], headerLine = header()) =>
+  `${[headerLine, ...lines].join('\n')}\n`;
 
 const call = (callId: string, timestamp: string, questions: unknown[]) =>
   JSON.stringify({
@@ -43,7 +50,11 @@ const call = (callId: string, timestamp: string, questions: unknown[]) =>
     },
   });
 
-const result = (callId: string, timestamp: string, fields: { error?: string; details?: unknown }) =>
+const result = (
+  callId: string,
+  timestamp: string,
+  fields: { error?: string; details?: unknown; toolName?: string },
+) =>
   JSON.stringify({
     type: 'message',
     id: `${callId}-result`,
@@ -51,6 +62,7 @@ const result = (callId: string, timestamp: string, fields: { error?: string; det
     message: {
       role: 'toolResult',
       toolCallId: callId,
+      toolName: fields.toolName ?? 'ask_user_question',
       isError: fields.error !== undefined,
       content: [{ type: 'text', text: fields.error ?? 'done' }],
       ...(fields.details === undefined ? {} : { details: fields.details }),
@@ -86,6 +98,56 @@ const inlineLog = (lines: string[], path = '/logs/inline.jsonl'): SessionLog => 
   path,
   text: logText(lines),
 });
+
+const forkScenario = () => {
+  const originalPath = '/logs/original.jsonl';
+
+  const first = [
+    call('call-first', at(1), [question()]),
+    result('call-first', at(2), {
+      details: answered([{ question: 'Which database?', selected: ['Postgres'], typed: false }]),
+    }),
+  ];
+
+  const second = [
+    call('call-second', at(3), [
+      question({ question: 'Which cache?', options: [option('Postgres', true), option('Redis')] }),
+    ]),
+    result('call-second', at(4), {
+      details: answered([{ question: 'Which cache?', selected: ['Postgres'], typed: false }]),
+    }),
+  ];
+
+  return {
+    originalPath,
+    fork: {
+      path: '/logs/fork.jsonl',
+      text: logText(first, header('session-fork', originalPath)),
+    },
+    original: {
+      path: originalPath,
+      text: logText([...first, ...second], header('session-original')),
+    },
+  };
+};
+
+const permutations = <T>(items: readonly T[]): T[][] => {
+  if (items.length <= 1) {
+    return [[...items]];
+  }
+
+  const orders: T[][] = [];
+
+  for (const [index, item] of items.entries()) {
+    const rest = [...items.slice(0, index), ...items.slice(index + 1)];
+
+    for (const order of permutations(rest)) {
+      orders.push([item, ...order]);
+    }
+  }
+
+  return orders;
+};
 
 it('reads the recommended answer of a current-shape call', () => {
   const log = readLoggedQuestions([fixtureLog('current.jsonl')]);
@@ -299,4 +361,225 @@ it('counts a malformed answer row and still reads the other question', () => {
   ]);
 
   expect(log.skipped).toEqual({ ...noSkips, malformedAnswers: 1 });
+});
+
+it('keeps a legacy typed value that equals the normalized recommended label', () => {
+  const log = readLoggedQuestions([
+    inlineLog([
+      call('call-legacy-label', at(1), [
+        question({ options: [option('Postgres (Recommended)'), option('SQLite')] }),
+      ]),
+      result('call-legacy-label', at(2), {
+        details: answered([{ question: 'Which database?', selected: ['Postgres'] }]),
+      }),
+    ]),
+  ]);
+
+  expect(log.questions.map((entry) => entry.outcome)).toEqual([
+    { kind: 'typed', text: 'Postgres' },
+  ]);
+});
+
+it('groups a fork copied first under its original session', () => {
+  const { originalPath, fork, original } = forkScenario();
+  const log = readLoggedQuestions([fork, original]);
+
+  expect(log.questions.map((entry) => entry.session)).toEqual([originalPath, originalPath]);
+  expect(log.skipped).toEqual({ ...noSkips, copiedEntries: 2 });
+});
+
+it('reads the same answers in every file order', () => {
+  const { fork, original } = forkScenario();
+
+  const other: SessionLog = {
+    path: '/logs/other.jsonl',
+    text: logText(
+      [
+        call('call-other', at(5), [
+          question({
+            question: 'Which queue?',
+            options: [option('Postgres', true), option('SQS')],
+          }),
+        ]),
+        result('call-other', at(6), {
+          details: answered([{ question: 'Which queue?', selected: ['SQS'], typed: false }]),
+        }),
+      ],
+      header('session-other'),
+    ),
+  };
+
+  const logs = [fork, original, other];
+  const expected = readLoggedQuestions(logs);
+
+  for (const order of permutations(logs)) {
+    const log = readLoggedQuestions(order);
+
+    expect(log.questions).toEqual(expected.questions);
+    expect(log.skipped).toEqual(expected.skipped);
+  }
+});
+
+it('keeps positional answer slots when one is malformed', () => {
+  const log = readLoggedQuestions([
+    inlineLog([
+      call('call-slots', at(1), [
+        question(),
+        question({
+          question: 'Which cache?',
+          options: [option('Postgres', true), option('Redis')],
+        }),
+        question({ question: 'Which queue?', options: [option('Postgres', true), option('SQS')] }),
+      ]),
+      result('call-slots', at(2), {
+        details: answered([
+          { question: 'Which database?', selected: ['Postgres'], typed: false },
+          null,
+          { question: 'Which queue?', selected: ['SQS'], typed: false },
+        ]),
+      }),
+    ]),
+  ]);
+
+  expect(log.questions.map((entry) => entry.outcome)).toEqual([
+    { kind: 'recommended' },
+    { kind: 'otherOption', label: 'SQS' },
+  ]);
+
+  expect(log.skipped).toEqual({ ...noSkips, malformedAnswers: 1 });
+});
+
+it('pairs a result that appears before its call in another file', () => {
+  const log = readLoggedQuestions([
+    {
+      path: '/logs/result.jsonl',
+      text: logText(
+        [
+          result('call-late', at(4), {
+            details: answered([
+              { question: 'Which database?', selected: ['Postgres'], typed: false },
+            ]),
+          }),
+        ],
+        header('session-result'),
+      ),
+    },
+    {
+      path: '/logs/call.jsonl',
+      text: logText([call('call-late', at(3), [question()])], header('session-call')),
+    },
+  ]);
+
+  expect(log.questions).toHaveLength(1);
+  expect(log.questions[0]?.session).toBe('/logs/result.jsonl');
+  expect(log.skipped).toEqual(noSkips);
+});
+
+it('counts a named question error result that has no call', () => {
+  const log = readLoggedQuestions([
+    inlineLog([result('call-orphan-error', at(1), { error: 'The dialog failed.' })]),
+  ]);
+
+  expect(log).toEqual({ questions: [], skipped: { ...noSkips, unmatchedResults: 1 } });
+});
+
+it('counts an error result with valid answers as a failed call', () => {
+  const log = readLoggedQuestions([
+    inlineLog([
+      call('call-error-answers', at(1), [question()]),
+      result('call-error-answers', at(2), {
+        error: 'The dialog failed.',
+        details: answered([{ question: 'Which database?', selected: ['Postgres'], typed: false }]),
+      }),
+    ]),
+  ]);
+
+  expect(log).toEqual({ questions: [], skipped: { ...noSkips, failedCalls: 1 } });
+});
+
+it('counts an entry with an invalid timestamp as a malformed line', () => {
+  const badTimestamp = JSON.stringify({
+    type: 'message',
+    id: 'bad-timestamp',
+    timestamp: 'not-a-time',
+    message: { role: 'assistant', content: [] },
+  });
+
+  const log = readLoggedQuestions([
+    inlineLog([
+      call('call-timed', at(1), [question()]),
+      badTimestamp,
+      result('call-timed', at(3), {
+        details: answered([{ question: 'Which database?', selected: ['Postgres'], typed: false }]),
+      }),
+    ]),
+  ]);
+
+  expect(log.questions).toHaveLength(1);
+  expect(log.skipped).toEqual({ ...noSkips, malformedLines: 1 });
+});
+
+it('counts a missing positional answer slot', () => {
+  const log = readLoggedQuestions([
+    inlineLog([
+      call('call-missing-slot', at(1), [
+        question(),
+        question({
+          question: 'Which cache?',
+          options: [option('Postgres', true), option('Redis')],
+        }),
+      ]),
+      result('call-missing-slot', at(2), {
+        details: answered([{ question: 'Which database?', selected: ['Postgres'], typed: false }]),
+      }),
+    ]),
+  ]);
+
+  expect(log.questions.map((entry) => entry.question.question)).toEqual(['Which database?']);
+  expect(log.skipped).toEqual({ ...noSkips, malformedAnswers: 1 });
+});
+
+it('rejects malformed answer fields', () => {
+  const log = readLoggedQuestions([
+    inlineLog([
+      call('call-bad-fields', at(1), [
+        question(),
+        question({
+          question: 'Which cache?',
+          options: [option('Postgres', true), option('Redis')],
+        }),
+      ]),
+      result('call-bad-fields', at(2), {
+        details: answered([
+          { question: 'Which database?', selected: ['Postgres', 3], typed: false },
+          { question: 'Which cache?', selected: ['Postgres'], typed: 'yes' },
+        ]),
+      }),
+    ]),
+  ]);
+
+  expect(log).toEqual({ questions: [], skipped: { ...noSkips, malformedAnswers: 2 } });
+});
+
+it('treats an empty parentSession as its own origin', () => {
+  const path = '/logs/empty-parent.jsonl';
+
+  const log = readLoggedQuestions([
+    {
+      path,
+      text: logText(
+        [
+          call('call-empty-parent', at(1), [question()]),
+          result('call-empty-parent', at(2), {
+            details: answered([
+              { question: 'Which database?', selected: ['Postgres'], typed: false },
+            ]),
+          }),
+        ],
+        header('session-empty-parent', ''),
+      ),
+    },
+  ]);
+
+  expect(log.questions.map((entry) => entry.session)).toEqual([path]);
 });

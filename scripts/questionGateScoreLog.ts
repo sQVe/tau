@@ -14,6 +14,7 @@ export interface SessionLog {
 }
 
 export interface LoggedQuestion extends PastAnswer {
+  // The root session of the file's parentSession chain, so copied entries keep one origin.
   session: string;
 }
 
@@ -42,11 +43,34 @@ type QuestionRead =
   | { kind: 'skip'; counter: SkipCounter }
   | { kind: 'malformed' };
 
+interface ParsedLog {
+  file: SessionLog;
+  entries: Entry[];
+  malformedLines: number;
+}
+
+interface RawOption {
+  rawLabel: string;
+  option: JudgeOption;
+}
+
+interface CallRecord {
+  parameters: Entry | undefined;
+}
+
+interface ResultRecord {
+  result: CallResult;
+  toolName: string | undefined;
+  session: string;
+  time: number;
+}
+
 interface LogState {
   questions: LoggedQuestion[];
   skipped: SkippedQuestions;
   seen: Set<string>;
-  pending: Map<string, Entry | undefined>;
+  calls: Map<string, CallRecord>;
+  results: Map<string, ResultRecord>;
 }
 
 interface CompletedCall {
@@ -59,7 +83,8 @@ interface CompletedCall {
 interface QuestionShape {
   raw: Entry;
   question: string;
-  rawOptions: Entry[];
+  optionEntries: Entry[];
+  rawOptions: RawOption[];
   options: JudgeOption[];
 }
 
@@ -84,20 +109,23 @@ const copyKey = (entry: Entry) => `${text(entry.id) ?? ''}\0${text(entry.timesta
 const stripRecommendation = (label: string) =>
   label.endsWith(recommendedSuffix) ? label.slice(0, -recommendedSuffix.length) : label;
 
-const readOption = (raw: Entry, label: string): JudgeOption => {
-  const stripped = stripRecommendation(label);
+const readOption = (raw: Entry, rawLabel: string): RawOption => {
+  const label = stripRecommendation(rawLabel);
 
   return {
-    label: stripped,
-    description: text(raw.description) ?? '',
-    recommended: raw.recommended === true || label !== stripped,
+    rawLabel,
+    option: {
+      label,
+      description: text(raw.description) ?? '',
+      recommended: raw.recommended === true || rawLabel !== label,
+    },
   };
 };
 
-const readOptions = (rawOptions: readonly Entry[]): JudgeOption[] | undefined => {
-  const options: JudgeOption[] = [];
+const readOptions = (optionEntries: readonly Entry[]): RawOption[] | undefined => {
+  const options: RawOption[] = [];
 
-  for (const raw of rawOptions) {
+  for (const raw of optionEntries) {
     const label = text(raw.label);
 
     if (label === undefined) {
@@ -110,9 +138,9 @@ const readOptions = (rawOptions: readonly Entry[]): JudgeOption[] | undefined =>
   return options;
 };
 
-const hasPreview = (raw: Entry, rawOptions: readonly Entry[]) =>
+const hasPreview = (raw: Entry, optionEntries: readonly Entry[]) =>
   text(raw.preview) !== undefined ||
-  rawOptions.some((option) => text(option.preview) !== undefined);
+  optionEntries.some((option) => text(option.preview) !== undefined);
 
 const isClosed = (details: Entry) => details.kind === 'declined' || details.cancelled === true;
 
@@ -134,39 +162,45 @@ const isQuestionDetails = (details: unknown) => {
   return answered || isClosed(details);
 };
 
+// Older logs lack the result's tool name, so only their details can identify a question result.
+const isQuestionResult = (toolName: string | undefined, details: unknown) =>
+  toolName === undefined ? isQuestionDetails(details) : toolName === 'ask_user_question';
+
 const isIndexedRow = (row: Entry) => typeof row.questionIndex === 'number';
 
 const answerRow = (answers: readonly unknown[], index: number): Entry | undefined => {
-  const rows = answers.filter(isRecord);
-  const indexed = rows.find((row) => isIndexedRow(row) && row.questionIndex === index);
+  const indexed = answers.find(
+    (row) => isRecord(row) && isIndexedRow(row) && row.questionIndex === index,
+  );
 
-  if (indexed !== undefined) {
+  if (isRecord(indexed)) {
     return indexed;
   }
 
-  return rows.filter((row) => !isIndexedRow(row))[index];
+  const positional = answers[index];
+
+  return isRecord(positional) && !isIndexedRow(positional) ? positional : undefined;
 };
 
 const outcomeForLabel = (
-  value: string,
-  options: readonly JudgeOption[],
+  rawValue: string,
+  options: readonly RawOption[],
 ): PastOutcome | undefined => {
-  const label = stripRecommendation(value);
-  const option = options.find((candidate) => candidate.label === label);
+  const found = options.find((candidate) => candidate.rawLabel === rawValue);
 
-  if (option === undefined) {
+  if (found === undefined) {
     return undefined;
   }
 
-  return option.recommended
+  return found.option.recommended
     ? { kind: 'recommended' }
-    : { kind: 'otherOption', label: option.label };
+    : { kind: 'otherOption', label: found.option.label };
 };
 
 const typedOutcome = (answer: string | undefined): PastOutcome | undefined =>
   answer === undefined ? undefined : { kind: 'typed', text: answer };
 
-const indexedOutcome = (row: Entry, options: readonly JudgeOption[]): PastOutcome | undefined => {
+const indexedOutcome = (row: Entry, options: readonly RawOption[]): PastOutcome | undefined => {
   const kind = text(row.kind);
   const answer = text(row.answer);
 
@@ -177,41 +211,47 @@ const indexedOutcome = (row: Entry, options: readonly JudgeOption[]): PastOutcom
   return kind === 'option' && answer !== undefined ? outcomeForLabel(answer, options) : undefined;
 };
 
-const selectedOutcome = (row: Entry, options: readonly JudgeOption[]): PastOutcome | undefined => {
-  if (!Array.isArray(row.selected)) {
+const selectedValues = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value) || value.length === 0) {
     return undefined;
   }
 
-  const selected = row.selected.filter((value): value is string => typeof value === 'string');
+  return value.every((item): item is string => typeof item === 'string') ? value : undefined;
+};
 
-  if (selected.length === 0) {
+const selectedOutcome = (row: Entry, options: readonly RawOption[]): PastOutcome | undefined => {
+  const selected = selectedValues(row.selected);
+  const typed = row.typed;
+  const typedValid = typed === undefined || typeof typed === 'boolean';
+
+  if (selected === undefined || !typedValid) {
     return undefined;
   }
 
   const answer = selected.join(', ');
 
-  if (row.typed === true) {
+  if (typed === true) {
     return { kind: 'typed', text: answer };
   }
 
   const outcome = outcomeForLabel(answer, options);
 
-  return row.typed === false ? outcome : (outcome ?? { kind: 'typed', text: answer });
+  return typed === false ? outcome : (outcome ?? { kind: 'typed', text: answer });
 };
 
-const readOutcome = (row: Entry, options: readonly JudgeOption[]): PastOutcome | undefined =>
+const readOutcome = (row: Entry, options: readonly RawOption[]): PastOutcome | undefined =>
   text(row.kind) === undefined ? selectedOutcome(row, options) : indexedOutcome(row, options);
 
 const skipReason = (
   raw: Entry,
-  rawOptions: readonly Entry[],
+  optionEntries: readonly Entry[],
   options: readonly JudgeOption[],
 ): SkipCounter | undefined => {
   if (raw.multiSelect === true) {
     return 'multiSelect';
   }
 
-  if (hasPreview(raw, rawOptions)) {
+  if (hasPreview(raw, optionEntries)) {
     return 'preview';
   }
 
@@ -226,14 +266,20 @@ const questionShape = (raw: unknown): QuestionShape | undefined => {
   }
 
   const question = text(raw.question);
-  const rawOptions = Array.isArray(raw.options) ? raw.options.filter(isRecord) : undefined;
-  const options = rawOptions === undefined ? undefined : readOptions(rawOptions);
+  const optionEntries = Array.isArray(raw.options) ? raw.options.filter(isRecord) : undefined;
+  const rawOptions = optionEntries === undefined ? undefined : readOptions(optionEntries);
 
-  if (question === undefined || rawOptions === undefined || options === undefined) {
+  if (question === undefined || optionEntries === undefined || rawOptions === undefined) {
     return undefined;
   }
 
-  return { raw, question, rawOptions, options };
+  return {
+    raw,
+    question,
+    optionEntries,
+    rawOptions,
+    options: rawOptions.map((entry) => entry.option),
+  };
 };
 
 const readQuestion = (raw: unknown, index: number, answers: readonly unknown[]): QuestionRead => {
@@ -243,14 +289,14 @@ const readQuestion = (raw: unknown, index: number, answers: readonly unknown[]):
     return { kind: 'malformed' };
   }
 
-  const skip = skipReason(shape.raw, shape.rawOptions, shape.options);
+  const skip = skipReason(shape.raw, shape.optionEntries, shape.options);
 
   if (skip !== undefined) {
     return { kind: 'skip', counter: skip };
   }
 
   const row = answerRow(answers, index);
-  const outcome = row === undefined ? undefined : readOutcome(row, shape.options);
+  const outcome = row === undefined ? undefined : readOutcome(row, shape.rawOptions);
 
   if (outcome === undefined) {
     return { kind: 'malformed' };
@@ -311,29 +357,19 @@ const readCall = (state: LogState, call: CompletedCall) => {
 const addCall = (state: LogState, message: Entry) => {
   for (const called of assistantCalls(message).calls) {
     if (called.tool === 'ask_user_question') {
-      state.pending.set(called.callId, called.arguments);
+      state.calls.set(called.callId, { parameters: called.arguments });
     }
   }
 };
 
 const addResult = (state: LogState, message: Entry, session: string, time: number) => {
   const { callId, result } = toolResult(message);
+  const toolName = text(message.toolName);
 
-  if (!state.pending.has(callId)) {
-    if (isQuestionDetails(result.details)) {
-      state.skipped.unmatchedResults += 1;
-    }
-
-    return;
-  }
-
-  const parameters = state.pending.get(callId);
-
-  state.pending.delete(callId);
-  readCall(state, { parameters, result, session, time });
+  state.results.set(callId, { result, toolName, session, time });
 };
 
-const readEntry = (state: LogState, session: string, entry: Entry) => {
+const collectEntry = (state: LogState, origin: string, entry: Entry) => {
   const time = Date.parse(text(entry.timestamp) ?? '');
 
   if (Number.isNaN(time)) {
@@ -361,33 +397,93 @@ const readEntry = (state: LogState, session: string, entry: Entry) => {
   if (message.role === 'assistant') {
     addCall(state, message);
   } else if (message.role === 'toolResult') {
-    addResult(state, message, session, time);
+    addResult(state, message, origin, time);
   }
 };
 
-const readSessionLog = (state: LogState, file: SessionLog) => {
-  const { entries, malformedLines } = parseEntries(file.text);
-
-  state.skipped.malformedLines += malformedLines;
-
+const collectEntries = (state: LogState, origin: string, entries: readonly Entry[]) => {
   for (const entry of entries) {
-    readEntry(state, file.path, entry);
+    collectEntry(state, origin, entry);
+  }
+};
+
+const parentSessions = (logs: readonly ParsedLog[]): Map<string, string> => {
+  const parents = new Map<string, string>();
+
+  for (const { file, entries } of logs) {
+    const header = entries.find((entry) => entry.type === 'session');
+    const parent = header === undefined ? undefined : text(header.parentSession);
+
+    if (parent !== undefined && parent !== '') {
+      parents.set(file.path, parent);
+    }
+  }
+
+  return parents;
+};
+
+const originSession = (path: string, parents: ReadonlyMap<string, string>): string => {
+  const visited = new Set<string>();
+  let current = path;
+
+  while (!visited.has(current)) {
+    visited.add(current);
+
+    const parent = parents.get(current);
+
+    if (parent === undefined) {
+      return current;
+    }
+
+    current = parent;
+  }
+
+  return current;
+};
+
+const joinCalls = (state: LogState) => {
+  for (const [callId, call] of state.calls) {
+    const result = state.results.get(callId);
+
+    if (result === undefined) {
+      state.skipped.unansweredCalls += 1;
+    } else {
+      state.results.delete(callId);
+
+      readCall(state, {
+        parameters: call.parameters,
+        result: result.result,
+        session: result.session,
+        time: result.time,
+      });
+    }
+  }
+
+  for (const result of state.results.values()) {
+    if (isQuestionResult(result.toolName, result.result.details)) {
+      state.skipped.unmatchedResults += 1;
+    }
   }
 };
 
 export const readLoggedQuestions = (files: readonly SessionLog[]): QuestionLog => {
+  const logs: ParsedLog[] = files.map((file) => ({ file, ...parseEntries(file.text) }));
+  const parents = parentSessions(logs);
+
   const state: LogState = {
     questions: [],
     skipped: zeroSkipped(),
     seen: new Set(),
-    pending: new Map(),
+    calls: new Map(),
+    results: new Map(),
   };
 
-  for (const file of files) {
-    readSessionLog(state, file);
+  for (const { file, entries, malformedLines } of logs) {
+    state.skipped.malformedLines += malformedLines;
+    collectEntries(state, originSession(file.path, parents), entries);
   }
 
-  state.skipped.unansweredCalls = state.pending.size;
+  joinCalls(state);
 
   return {
     questions: state.questions.toSorted((left, right) => left.time - right.time),
