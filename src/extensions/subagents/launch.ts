@@ -26,7 +26,15 @@ import { piPackageManager } from './piPackageManager.js';
 import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
+import type { WorkerTerminalFact } from './workerFolderDecision.js';
+import { sweepWorkerFolders } from './workerFolderSweep.js';
+import { workerName } from './workerName.js';
 import { placementLabels } from './workerPlacement.js';
+import {
+  createScratchDirectory,
+  errorAfterScratchCleanup,
+  scratchDirectoryFor,
+} from './workerScratch.js';
 
 export interface LaunchRuntime {
   pi: ExtensionAPI;
@@ -37,6 +45,7 @@ export interface LaunchRuntime {
   admission: Admission;
   refuseCapacity?: (() => void) | undefined;
   readSkillTools?: (() => SkillTools | undefined) | undefined;
+  sweepFolders?: ((starting: WorkerTerminalFact) => Promise<unknown>) | undefined;
   packageManager?: (loadout: Assignment['loadout']) => WorkerPackageManager;
   buildCommand?: (
     sessionFile: string,
@@ -79,7 +88,6 @@ export interface WorkerStart {
 
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
 const taskLabelLength = 60;
-const workerNameSuffixLength = 8;
 
 const millisecondsPerSecond = 1000;
 
@@ -92,9 +100,6 @@ const shortTask = (task: string, label: string | undefined): string => {
 
   return firstLine(task).slice(0, taskLabelLength);
 };
-
-const workerName = (profile: string, assignmentId: string): string =>
-  `${profile}-${assignmentId.replaceAll('-', '').slice(0, workerNameSuffixLength)}`;
 
 const assignmentIdFromPath = (path: string | undefined): string | undefined => {
   if (path === undefined || path === '') {
@@ -273,7 +278,12 @@ const startAssignmentWorker = async (
     skillTools,
   );
 
-  const environment = workerEnvironment(runtime.processEnvironment, runtime.agentDirectory);
+  const environment = workerEnvironment(
+    runtime.processEnvironment,
+    runtime.agentDirectory,
+    scratchDirectoryFor(runtime.agentDirectory, assignment.assignmentId),
+    assignmentDirectory(assignment.assignmentId),
+  );
 
   const labels: Record<string, string> = {
     'tau.assignment': join(assignmentDirectory(assignment.assignmentId), 'assignment.json'),
@@ -304,6 +314,24 @@ const startAssignmentWorker = async (
   );
 };
 
+const startFolderSweep = (runtime: LaunchRuntime, assignment: Assignment): void => {
+  const snapshot = assignment.packageSnapshot;
+
+  const starting: WorkerTerminalFact = {
+    kind: 'read',
+    assignmentId: assignment.assignmentId,
+    running: true,
+    packageSnapshot: snapshot === null ? null : basename(snapshot),
+  };
+
+  const sweep =
+    runtime.sweepFolders ??
+    ((fact) => sweepWorkerFolders(runtime.hc, runtime.agentDirectory, Date.now(), [fact]));
+
+  // A sweep failure never fails a launch. The next scan reports it.
+  sweep(starting).catch(() => undefined);
+};
+
 export const startReservedWorker = async (
   runtime: LaunchRuntime,
   facts: WorkerStart,
@@ -319,6 +347,10 @@ export const startReservedWorker = async (
 
     const manager = await readCurrentTerminal(runtime.hc);
     const placement = placementLabels(manager?.labels ?? {});
+
+    // A sweep removes a scratch folder 60 s after creation, so no slow read may sit between the
+    // creation and the request.
+    await createScratchDirectory(runtime.agentDirectory, assignmentId);
 
     let terminal: HcTerminal;
 
@@ -344,6 +376,7 @@ export const startReservedWorker = async (
     }
 
     runtime.admission.remove(assignmentId);
+    startFolderSweep(runtime, assignment);
 
     const modelReason = facts.modelReason;
     const status = launchStatus(terminal, assignment.loadout.model, modelReason);
@@ -359,13 +392,14 @@ export const startReservedWorker = async (
 
     runtime.admission.remove(assignmentId);
 
+    const failure = await errorAfterScratchCleanup(runtime.agentDirectory, assignmentId, error);
     const onDefiniteFailure = hooks.onDefiniteFailure;
 
     if (onDefiniteFailure === undefined) {
-      throw error;
+      throw failure;
     }
 
-    throw await onDefiniteFailure(error);
+    throw await onDefiniteFailure(failure);
   }
 };
 

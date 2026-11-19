@@ -37,7 +37,7 @@ const terminalRun = (fake: HcFake) => {
     const request = call.find((message) => message.method === 'terminal.run');
 
     if (request !== undefined) {
-      return request.params as { labels: Record<string, string> };
+      return request.params as { labels: Record<string, string>; env: Record<string, string> };
     }
   }
 
@@ -392,32 +392,6 @@ it('refuses a follow-up when the session use is unknown', async () => {
   expect(assignmentFolders(directory)).toEqual(before);
 });
 
-it('starts a follow-up without reading finished terminals', async () => {
-  const { directory, fake, runtime } = setup();
-  const source = sourceAssignment(directory);
-
-  await writeAssignment(source);
-
-  fake.reply('ls', JSON.stringify({ terminals: [{ address: 't-old', state: 'finished' }] }));
-
-  fake.replyConnect('hello', 1, {
-    generation: 1,
-    version: 'test',
-    core: { id: 'core', name: 'core' },
-    framed: false,
-    methods: [],
-    features: [],
-  });
-
-  fake.replyConnect('terminal.run', 2, { address: 't-new', state: 'live', parent: manager });
-
-  const result = await followUp(runtime, source.assignmentId);
-  const reads = fake.calls.filter((call) => call.commandArguments.includes('t-old'));
-
-  expect(result.isError).not.toBe(true);
-  expect(reads).toEqual([]);
-});
-
 it('places a follow-up of an investigation worker in the workers tab of the manager', async () => {
   const { directory, fake, runtime } = setup();
 
@@ -495,6 +469,12 @@ it('starts a new child that resumes the source session', async () => {
   expect(assignment.previousAssignmentId).toBe(source.assignmentId);
   expect(assignment.extensionPackages).toEqual([{ source: 'pkg', path: extensionPath }]);
   expect(assignment.deadline).toBe(31_000);
+
+  expect(request?.env.TMPDIR).toBe(
+    join(directory, 'tmp', 'tau-worker-scratch', assignment.assignmentId),
+  );
+
+  expect(request?.env.TAU_ASSIGNMENT_DIRECTORY).toBe(assignmentDirectory(assignment.assignmentId));
 });
 
 it('refuses a cancelled follow-up before it writes or starts anything', async () => {

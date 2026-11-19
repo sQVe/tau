@@ -23,5 +23,5 @@ changed, its evidence is missing or contradictory, the task names it as a gate, 
 reproduce a suspected defect.
 
 List each candidate with its verdict in Decisions, then any omissions, most severe first. Keep the
-summary under 3,000 characters and save longer details to the file the task names or a `mktemp` file
-outside the repository. Refuting candidates is still success.
+summary under 3,000 characters and save longer details to the file the task names or a file in
+`$TAU_ASSIGNMENT_DIRECTORY`. Refuting candidates is still success.

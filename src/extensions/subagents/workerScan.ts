@@ -7,6 +7,7 @@ import { retryDelay } from './deadlineDecision.js';
 import type { DeadlineWatchdog } from './deadlineWatchdog.js';
 import { readWorkerChildren } from './workerDelivery.js';
 import type { WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
+import { sweepWorkerFolders } from './workerFolderSweep.js';
 
 export type WorkerScanContext = Pick<
   ExtensionContext,
@@ -30,6 +31,7 @@ export const createWorkerScan = (
   hc: HcRuntime,
   delivery: WorkerDelivery,
   deadline: DeadlineWatchdog,
+  agentDirectory: string,
 ): WorkerScan => {
   let tail: Promise<void> = Promise.resolve();
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -75,6 +77,18 @@ export const createWorkerScan = (
     }
   };
 
+  const sweepFolders = async (context: WorkerScanContext): Promise<void> => {
+    try {
+      const sweep = await sweepWorkerFolders(hc, agentDirectory, Date.now(), []);
+
+      for (const error of sweep.errors) {
+        notifyFailure(context, `Worker folder sweep failed: ${error}`);
+      }
+    } catch (error) {
+      notifyFailure(context, `Worker folder sweep failed: ${errorMessage(error)}`);
+    }
+  };
+
   const runScan = async (context: WorkerScanContext): Promise<boolean> => {
     const managerTerminal = currentTerminalAddress();
 
@@ -104,6 +118,8 @@ export const createWorkerScan = (
     } catch (error) {
       notifyFailure(context, `Deadline scan failed: ${errorMessage(error)}`);
     }
+
+    await sweepFolders(context);
 
     return false;
   };

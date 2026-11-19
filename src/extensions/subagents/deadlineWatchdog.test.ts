@@ -134,7 +134,14 @@ const harness = (hcFake: HcFake) => {
   } as unknown as DeadlineWatchdogContext;
 
   const watchdog = createDeadlineWatchdog(hc, delivery);
-  const scanner = createWorkerScan(hc, delivery, watchdog);
+
+  const scanner = createWorkerScan(
+    hc,
+    delivery,
+    watchdog,
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  );
+
   const fake = fakeExtensionApi();
 
   registerDeadlineWatchdog(fake.pi, watchdog);
@@ -372,7 +379,14 @@ it('shows one deadline message when the worker finishes while its kill is pendin
   const context = launchingContext(await parentSessionOf(path));
   const { delivery, messages } = launchingDelivery();
   const watchdog = createDeadlineWatchdog(hc, delivery);
-  const scanner = createWorkerScan(hc, delivery, watchdog);
+
+  const scanner = createWorkerScan(
+    hc,
+    delivery,
+    watchdog,
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  );
+
   const killStarted = deferred();
   const killFinished = deferred();
   const realExec = hcFake.exec;
@@ -439,7 +453,13 @@ it('shows the generic ended message when a failed kill is followed by an unrepor
   const { path, deadline, hc, hcFake, commands } = await setup();
   const context = launchingContext(await parentSessionOf(path));
   const { delivery, messages } = launchingDelivery();
-  const scanner = createWorkerScan(hc, delivery, createDeadlineWatchdog(hc, delivery));
+
+  const scanner = createWorkerScan(
+    hc,
+    delivery,
+    createDeadlineWatchdog(hc, delivery),
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  );
 
   hcFake.fail('kill', JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } }), 1);
 
@@ -543,7 +563,7 @@ it('starts the newer scan read only after the older scan finishes', async () => 
 
   await Promise.all([oldScan, newScan]);
 
-  expect(listCalls).toBe(2);
+  expect(listCalls).toBe(4);
   expect(vi.getTimerCount()).toBe(1);
 });
 
@@ -675,8 +695,9 @@ it('reports an unread child without killing it', async () => {
 
   await scanner.scan(context);
 
-  expect(notifications).toHaveLength(1);
-  expect(notifications[0]?.[0]).toContain('Reading t-child failed');
+  const messages = notifications.map(([message]) => message);
+
+  expect(messages.filter((message) => message.includes('Reading t-child failed'))).toHaveLength(1);
   expect(commands('kill')).toHaveLength(0);
 });
 
@@ -741,7 +762,7 @@ it('keeps a pending kill retry when a rescan cannot read the child', async () =>
 
   await scanner.scan(context);
 
-  expect(getAttempts).toBe(2);
+  expect(getAttempts).toBe(3);
 
   await vi.advanceTimersByTimeAsync(5_000);
 
@@ -749,7 +770,7 @@ it('keeps a pending kill retry when a rescan cannot read the child', async () =>
     expect(ended).toHaveLength(1);
   });
 
-  expect(getAttempts).toBe(3);
+  expect(getAttempts).toBe(4);
 });
 
 it('retries a kill after hc kill fails, then succeeds', async () => {

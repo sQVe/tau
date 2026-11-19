@@ -95,6 +95,8 @@ const isManagerVariable = (name: string): boolean =>
 export const workerEnvironment = (
   processEnvironment: NodeJS.ProcessEnv,
   agentDirectory: string,
+  scratchDirectory: string,
+  assignmentDirectory: string,
 ): Record<string, string> => {
   const inherited = Object.entries(processEnvironment).filter(
     (entry): entry is [string, string] => entry[1] !== undefined && !isManagerVariable(entry[0]),
@@ -104,5 +106,9 @@ export const workerEnvironment = (
     ...Object.fromEntries(inherited),
     TAU_ROLE: 'worker',
     PI_CODING_AGENT_DIR: agentDirectory,
+    TMPDIR: scratchDirectory,
+    TMP: scratchDirectory,
+    TEMP: scratchDirectory,
+    TAU_ASSIGNMENT_DIRECTORY: assignmentDirectory,
   };
 };

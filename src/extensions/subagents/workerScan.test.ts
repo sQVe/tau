@@ -1,13 +1,18 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { failedResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createHcFake } from '../../../tests/hcFake.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import type { DeadlineWatchdog, DeadlineWatchdogContext } from './deadlineWatchdog.js';
 import { registerWorkerScan } from './subagents.js';
 import type { WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
 import { createWorkerScan } from './workerScan.js';
+import { scratchRootFor } from './workerScratch.js';
 
 const manager = 't-manager';
 
@@ -21,6 +26,9 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
+
+const scanFor = (hc: HcRuntime, delivery: WorkerDelivery, deadline: DeadlineWatchdog) =>
+  createWorkerScan(hc, delivery, deadline, temporaryDirectory(onTestFinished, 'tau-scan-'));
 
 const childRow = { address: 't-child', state: 'live', parent: manager };
 
@@ -87,7 +95,7 @@ it('delivers the children before the deadline step runs on the same read', async
   const { hc } = hcFor();
   const steps = createSteps();
 
-  await createWorkerScan(hc, steps.delivery, steps.deadline).scan(steps.context);
+  await scanFor(hc, steps.delivery, steps.deadline).scan(steps.context);
 
   expect(steps.order).toEqual(['deliver', 'deadline']);
   expect(steps.delivered).toEqual(steps.deadlines);
@@ -105,7 +113,7 @@ it('runs the deadline step when delivery fails', async () => {
     },
   };
 
-  await createWorkerScan(hc, failingDelivery, steps.deadline).scan(steps.context);
+  await scanFor(hc, failingDelivery, steps.deadline).scan(steps.context);
 
   expect(steps.deadlines).toHaveLength(1);
   expect(steps.notifications).toEqual([['Worker delivery failed: boom', 'error']]);
@@ -117,7 +125,7 @@ it('reports an hc ls failure through both notices and runs neither step', async 
 
   hcFake.fail('ls', 'boom', 1);
 
-  await createWorkerScan(hc, steps.delivery, steps.deadline).scan(steps.context);
+  await scanFor(hc, steps.delivery, steps.deadline).scan(steps.context);
 
   expect(steps.order).toEqual([]);
 
@@ -130,12 +138,12 @@ it('reports an hc ls failure through both notices and runs neither step', async 
 it('reads the children once for each scan', async () => {
   const { hcFake, hc } = hcFor();
   const steps = createSteps();
-  const scanner = createWorkerScan(hc, steps.delivery, steps.deadline);
+  const scanner = scanFor(hc, steps.delivery, steps.deadline);
 
   await scanner.scan(steps.context);
   await scanner.scan(steps.context);
 
-  expect(hcFake.calls.filter((call) => call.commandArguments[0] === 'ls')).toHaveLength(2);
+  expect(hcFake.calls.filter((call) => call.commandArguments[0] === 'ls')).toHaveLength(4);
   expect(steps.order).toEqual(['deliver', 'deadline', 'deliver', 'deadline']);
 });
 
@@ -145,7 +153,7 @@ it('does nothing without a manager terminal', async () => {
   const { hcFake, hc } = hcFor();
   const steps = createSteps();
 
-  await createWorkerScan(hc, steps.delivery, steps.deadline).scan(steps.context);
+  await scanFor(hc, steps.delivery, steps.deadline).scan(steps.context);
 
   expect(hcFake.calls).toEqual([]);
   expect(steps.order).toEqual([]);
@@ -170,13 +178,13 @@ it('retries a failed discovery scan and arms timers when it recovers', async () 
     return realExec(command, commandArguments, options);
   };
 
-  await createWorkerScan(hc, steps.delivery, steps.deadline).scan(steps.context);
+  await scanFor(hc, steps.delivery, steps.deadline).scan(steps.context);
 
   expect(steps.order).toEqual([]);
 
   await vi.advanceTimersByTimeAsync(5_000);
 
-  expect(listAttempts).toBe(2);
+  expect(listAttempts).toBe(3);
   expect(steps.order).toEqual(['deliver', 'deadline']);
 });
 
@@ -196,7 +204,7 @@ it('stops retrying a failed discovery scan after the bounded schedule', async ()
     return realExec(command, commandArguments, options);
   };
 
-  await createWorkerScan(hc, steps.delivery, steps.deadline).scan(steps.context);
+  await scanFor(hc, steps.delivery, steps.deadline).scan(steps.context);
 
   await vi.advanceTimersByTimeAsync(5_000 + 15_000 + 45_000);
   await vi.advanceTimersByTimeAsync(1_000_000);
@@ -228,7 +236,7 @@ it('skips a discovery retry queued behind a blocked scan after clear', async () 
     return realExec(command, commandArguments, options);
   };
 
-  const scanner = createWorkerScan(hc, steps.delivery, steps.deadline);
+  const scanner = scanFor(hc, steps.delivery, steps.deadline);
 
   await scanner.scan(steps.context);
 
@@ -266,7 +274,7 @@ it('schedules no retry after shutdown', async () => {
     return realExec(command, commandArguments, options);
   };
 
-  const scanner = createWorkerScan(hc, steps.delivery, steps.deadline);
+  const scanner = scanFor(hc, steps.delivery, steps.deadline);
 
   scanner.clear();
 
@@ -293,7 +301,7 @@ it('cancels a pending discovery retry at session shutdown', async () => {
     return realExec(command, commandArguments, options);
   };
 
-  const scanner = createWorkerScan(hc, steps.delivery, steps.deadline);
+  const scanner = scanFor(hc, steps.delivery, steps.deadline);
 
   registerWorkerScan(fake.pi, scanner, { start: () => undefined, stop: () => undefined });
 
@@ -308,4 +316,88 @@ it('cancels a pending discovery retry at session shutdown', async () => {
   await vi.advanceTimersByTimeAsync(5_000);
 
   expect(listAttempts).toBe(1);
+});
+
+const sweepSetup = () => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scan-');
+  const { hcFake, hc } = hcFor();
+  const steps = createSteps();
+
+  return { agentDirectory, hcFake, hc, steps, scratchRoot: scratchRootFor(agentDirectory) };
+};
+
+const scratchLabel = (agentDirectory: string, assignmentId: string) => ({
+  'tau.assignment': join(
+    agentDirectory,
+    'tau',
+    'checkout',
+    'assignments',
+    assignmentId,
+    'assignment.json',
+  ),
+});
+
+it('sweeps after a scan', async () => {
+  const { agentDirectory, hcFake, hc, steps, scratchRoot } = sweepSetup();
+  const folder = join(scratchRoot, 'assignment-a');
+  const labels = scratchLabel(agentDirectory, 'assignment-a');
+
+  mkdirSync(folder, { recursive: true });
+  vi.setSystemTime(statSync(folder).birthtimeMs + 120_000);
+
+  const terminalList = (state: string) =>
+    JSON.stringify({ terminals: [{ ...childRow, state, labels }] });
+
+  hcFake.reply('ls', terminalList('live'));
+
+  const deadline: DeadlineWatchdog = {
+    apply: () => {
+      hcFake.reply('ls', terminalList('finished'));
+
+      return Promise.resolve();
+    },
+    clear: () => undefined,
+  };
+
+  await createWorkerScan(hc, steps.delivery, deadline, agentDirectory).scan(steps.context);
+
+  expect(existsSync(folder)).toBe(false);
+  expect(steps.notifications).toEqual([]);
+});
+
+it('reports each sweep removal error', async () => {
+  const { agentDirectory, hcFake, hc, steps, scratchRoot } = sweepSetup();
+  const elsewhere = temporaryDirectory(onTestFinished, 'tau-scan-redirect-');
+  const target = join(elsewhere, 'assignment-a');
+
+  mkdirSync(target);
+  mkdirSync(dirname(scratchRoot), { recursive: true });
+  symlinkSync(elsewhere, scratchRoot);
+  vi.setSystemTime(statSync(target).birthtimeMs + 120_000);
+  hcFake.reply('ls', JSON.stringify({ terminals: [] }));
+
+  await createWorkerScan(hc, steps.delivery, steps.deadline, agentDirectory).scan(steps.context);
+
+  expect(existsSync(target)).toBe(true);
+
+  expect(steps.notifications).toEqual([
+    [
+      'Worker folder sweep failed: Temporary root tau-worker-scratch is redirected. Cleanup refused.',
+      'error',
+    ],
+  ]);
+});
+
+it('reports a sweep that throws and still finishes the scan', async () => {
+  const { agentDirectory, hc, steps, scratchRoot } = sweepSetup();
+
+  mkdirSync(dirname(scratchRoot), { recursive: true });
+  writeFileSync(scratchRoot, 'not a folder');
+
+  await createWorkerScan(hc, steps.delivery, steps.deadline, agentDirectory).scan(steps.context);
+
+  expect(steps.order).toEqual(['deliver', 'deadline']);
+  expect(steps.notifications).toHaveLength(1);
+  expect(steps.notifications[0]?.[0]).toMatch(/^Worker folder sweep failed: .*ENOTDIR/);
+  expect(steps.notifications[0]?.[1]).toBe('error');
 });

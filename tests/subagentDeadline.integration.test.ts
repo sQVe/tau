@@ -15,6 +15,7 @@ import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { launchWorkerSession, managerSessionFile } from './subagentSessionHarness.js';
 import type { WorkerSession } from './subagentSessionHarness.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface Notice {
   message: string;
@@ -94,7 +95,15 @@ const startWatchdog = (hc: HcSession, view: ManagerView) => {
   const delivery = createWorkerDelivery(view.pi);
   const watchdog = createDeadlineWatchdog(hc.runtime, delivery);
 
-  return { watchdog, scan: createWorkerScan(hc.runtime, delivery, watchdog) };
+  return {
+    watchdog,
+    scan: createWorkerScan(
+      hc.runtime,
+      delivery,
+      watchdog,
+      temporaryDirectory(onTestFinished, 'tau-sweep-'),
+    ),
+  };
 };
 
 const prepareTest = (): void => {

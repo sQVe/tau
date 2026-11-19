@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { cp, mkdir, realpath, rm } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { cp, mkdir } from 'node:fs/promises';
+import { isAbsolute, join, relative, sep } from 'node:path';
 
-import { errorMessage, isMissingFile } from '../../errors.js';
+import { errorMessage } from '../../errors.js';
+import { removeAgentTemporaryFolder } from './workerScratch.js';
 
 interface SnapshotRequest {
   agentDirectory: string;
@@ -21,8 +22,13 @@ class SnapshotError extends Error {
   override name = 'SnapshotError';
 }
 
+export const snapshotRootName = 'tau-worker-packages';
+
+export const snapshotRootFor = (agentDirectory: string): string =>
+  join(agentDirectory, 'tmp', snapshotRootName);
+
 export const snapshotDirectoryFor = (agentDirectory: string, launchId: string): string =>
-  join(agentDirectory, 'tmp', 'tau-worker-packages', launchId);
+  join(snapshotRootFor(agentDirectory), launchId);
 
 const npmUnitFolder = (source: string, packageRoot: string): string => {
   const marker = `${sep}node_modules${sep}`;
@@ -93,37 +99,9 @@ export const removeSnapshotDirectory = async (
 ): Promise<string | undefined> => {
   const { agentDirectory, directory, snapshotName } = request;
 
-  try {
-    if (snapshotName === '' || snapshotName === '.' || snapshotName === '..') {
-      throw new Error('Invalid package snapshot owner. Cleanup refused.');
-    }
-
-    if (basename(directory) !== snapshotName) {
-      throw new Error('Package snapshot name does not match its owner. Cleanup refused.');
-    }
-
-    const canonicalAgent = await realpath(agentDirectory);
-    const expectedRoot = join(canonicalAgent, 'tmp', 'tau-worker-packages');
-    const canonicalRoot = await realpath(expectedRoot);
-
-    if (canonicalRoot !== expectedRoot) {
-      throw new Error('Package snapshot root is redirected. Cleanup refused.');
-    }
-
-    const canonicalParent = await realpath(dirname(directory));
-
-    if (canonicalParent !== canonicalRoot) {
-      throw new Error('Package snapshot is outside the trusted root. Cleanup refused.');
-    }
-
-    await rm(join(canonicalRoot, snapshotName), { recursive: true, force: true });
-
-    return undefined;
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    return errorMessage(error);
+  if (directory !== snapshotDirectoryFor(agentDirectory, snapshotName)) {
+    return 'Package snapshot name does not match its owner. Cleanup refused.';
   }
+
+  return removeAgentTemporaryFolder(agentDirectory, snapshotRootName, snapshotName);
 };

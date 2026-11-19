@@ -20,6 +20,24 @@ it.each(['.', '..'])('refuses snapshot cleanup whose owner is %s', async (snapsh
     snapshotName,
   });
 
-  expect(error).toContain('snapshot owner');
+  expect(error).toContain('Cleanup refused');
   expect(existsSync(marker)).toBe(true);
+});
+
+it('refuses snapshot cleanup whose directory belongs to another owner', async () => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-snapshot-mismatch-');
+  const root = join(agentDirectory, 'tmp', 'tau-worker-packages');
+
+  mkdirSync(join(root, 'first'), { recursive: true });
+  mkdirSync(join(root, 'second'), { recursive: true });
+
+  const error = await removeSnapshotDirectory({
+    agentDirectory,
+    directory: join(root, 'second'),
+    snapshotName: 'first',
+  });
+
+  expect(error).toContain('does not match its owner');
+  expect(existsSync(join(root, 'first'))).toBe(true);
+  expect(existsSync(join(root, 'second'))).toBe(true);
 });
