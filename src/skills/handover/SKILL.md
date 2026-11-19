@@ -79,7 +79,7 @@ commit another worktree from your session, even over bash.
      - Several spaces for the checkout: ask the user which one.
      - No space: leave `space` out and pass `name` as a short title of what the work does, such as
        `completion uses the read record`: about 40 characters, lowercase, one line, and no ticket
-       ID.
+       ID. `handover start` with `name` creates the space with Pi as its first tab and its only tab.
      - Pass `model` when the receiver must run a model other than the default, such as a DeepSeek
        lead.
    - Never rename a reused space. The user may have renamed it by hand.

@@ -6,3 +6,6 @@
 has one tab with one idle shell in the request's folder, Pi starts by splitting that shell's pane
 and then closing the shell. The shell closes only when `hc get` still reports a shell in that folder
 after the split. Every other case opens a tab as before.
+
+The worktree skill leaves space creation to `handover start` when a handover follows, so the space
+starts with Pi as its first tab.
