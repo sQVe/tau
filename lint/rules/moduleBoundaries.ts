@@ -40,6 +40,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'config/config',
     publicFiles: [
       'config/models',
+      'config/questionGateModels',
       'config/repositoryCommand',
       'config/repositoryEntry',
       'config/repositorySection',
@@ -131,6 +132,11 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: ['piStart/herdrPane', 'piStart/piArguments'],
   },
   { name: 'process', entry: 'process/process', publicFiles: [] },
+  {
+    name: 'questionGate',
+    entry: 'questionGate/questionGate',
+    publicFiles: ['questionGate/decision', 'questionGate/examples'],
+  },
   { name: 'record', entry: 'record', publicFiles: [] },
   { name: 'reviewBots', entry: 'reviewBots/reviewBots', publicFiles: [] },
   {
@@ -183,6 +189,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   linear: ['command', 'errors'],
   piStart: ['command', 'config', 'errors', 'tauDirectory'],
   process: ['errors'],
+  questionGate: [],
   record: ['errors', 'schema', 'tauDirectory'],
   reviewBots: ['command', 'config', 'github', 'schema'],
   reviewCapture: ['command', 'errors', 'git', 'github', 'record', 'schema', 'tauDirectory'],

@@ -90,6 +90,7 @@ const topLevelKeys: Readonly<Record<string, string>> = {
   mutation: 'fullCheck',
   profiles: 'subagents',
   qa: 'subagents',
+  questionGate: 'questionGate',
   reviews: 'pr',
   roles: 'architect',
   subagents: 'subagents',
