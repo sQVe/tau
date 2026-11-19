@@ -8,7 +8,25 @@ type Cleanup = () => Promise<void> | void;
 
 export type SuiteCleanup = (cleanup: Cleanup) => void;
 
-const trackedDirectories = new Set<string>();
+interface HarnessState {
+  trackedDirectories: Set<string>;
+  handlersInstalled: boolean;
+}
+
+// A test file that resets modules loads a fresh copy of this module in the same process. The state
+// lives on globalThis so every copy shares one directory set and one set of process handlers.
+const stateKey = Symbol.for('tau.temporaryDirectoryHarness');
+
+const sharedState = globalThis as { [stateKey]?: HarnessState };
+
+const state = sharedState[stateKey] ?? {
+  trackedDirectories: new Set<string>(),
+  handlersInstalled: false,
+};
+
+sharedState[stateKey] = state;
+
+const trackedDirectories = state.trackedDirectories;
 const handledSignals = ['SIGHUP', 'SIGINT', 'SIGTERM'] as const;
 
 const removeTrackedDirectories = (): void => {
@@ -35,14 +53,12 @@ const installExitHandlers = (): void => {
   }
 };
 
-let exitHandlersInstalled = false;
-
 const installOnce = (): void => {
-  if (exitHandlersInstalled) {
+  if (state.handlersInstalled) {
     return;
   }
 
-  exitHandlersInstalled = true;
+  state.handlersInstalled = true;
   installExitHandlers();
 };
 
