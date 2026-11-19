@@ -59,6 +59,7 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   const sessionId = 'shutdown-test-session';
   const socketPath = socketPathFor(socketDirectoryFor(uid), sessionId);
   const lockPath = architectLockPath(root);
+  const processGroup = 100;
   const withdrawalStarted = Promise.withResolvers<undefined>();
   const releaseWithdrawal = Promise.withResolvers<undefined>();
   let holdWithdrawal = false;
@@ -69,7 +70,11 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
   const fake = fakeExtensionApi({
-    exec: async (_command, commandArguments) => {
+    exec: async (command, commandArguments) => {
+      if (command === 'ps') {
+        return succeededResult(`${String(processGroup)}\n`);
+      }
+
       if (holdWithdrawal && commandArguments[0] === 'get') {
         holdWithdrawal = false;
         withdrawalStarted.resolve(undefined);
@@ -77,7 +82,8 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
       }
 
       const labels = { 'tau.inbox': `rpc1:${socketPath}` };
-      const terminal = { address: 't-architect', state: 'live', labels };
+      const foreground = { pid: processGroup, name: 'pi', argv: ['pi'], cwd: root };
+      const terminal = { address: 't-architect', state: 'live', foreground, labels };
 
       return succeededResult(JSON.stringify(terminal));
     },

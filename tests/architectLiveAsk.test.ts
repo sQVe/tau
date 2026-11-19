@@ -388,7 +388,15 @@ it.for([
   const sockets = socketRoot();
   const hc = createHcFake();
   const inbox = fakeExtensionApi();
-  const terminal = JSON.stringify({ address: 't-session', name: null, state: 'live', labels: {} });
+  const processGroup = 100;
+
+  const terminal = JSON.stringify({
+    address: 't-session',
+    name: null,
+    state: 'live',
+    foreground: { pid: processGroup, name: 'pi', argv: ['pi'], cwd: sockets },
+    labels: {},
+  });
 
   forgetAcceptCheck('architect-ask');
   stubLead();
@@ -403,6 +411,7 @@ it.for([
     hc: { ...hc, cwd: sockets },
     socketDirectory: () => join(sockets, 'sockets'),
     inboxDirectory: () => join(sockets, 'records'),
+    processGroup: () => Promise.resolve(processGroup),
   })(inbox.pi);
 
   const context = {
