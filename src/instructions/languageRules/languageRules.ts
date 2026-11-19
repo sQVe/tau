@@ -225,8 +225,8 @@ const noticeText = (notice: CommandNotice, label: string): string =>
     ? `The project declares ${labels[notice.declared]}, so Tau loads no ${label} guide.`
     : plainNoticeTexts[notice.reason](label);
 
-const commandSnapshot = (guideRuns: GuideRuns, context: ExtensionContext) =>
-  context.isIdle() ? guideRuns.current() : guideRuns.snapshot();
+const commandSnapshot = (guideRuns: GuideRuns, idle: boolean) =>
+  idle ? guideRuns.current() : guideRuns.snapshot();
 
 const registerCommand = (
   pi: ExtensionAPI,
@@ -239,7 +239,8 @@ const registerCommand = (
   pi.registerCommand(commandNames[language], {
     description: `Load ${label} rules before shell-only ${label} work`,
     handler: async (_arguments, context) => {
-      const snapshot = await commandSnapshot(guideRuns, context);
+      const idle = context.isIdle();
+      const snapshot = await commandSnapshot(guideRuns, idle);
 
       const usesCodingSet = await guideRuns.usesCodingSet();
 
@@ -253,7 +254,7 @@ const registerCommand = (
 
       activate(pi, language, state);
 
-      if (!context.isIdle()) {
+      if (!idle) {
         sendRules(pi, language, rulesText(outcome.bundle, language));
       }
 

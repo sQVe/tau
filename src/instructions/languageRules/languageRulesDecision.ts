@@ -43,23 +43,39 @@ const ignoredFolder: Readonly<Record<GuideLanguage, string>> = {
   rust: 'target',
 };
 
+const collapsedSegments = (path: string): string[] => {
+  const kept: string[] = [];
+
+  for (const segment of path.split(/[\\/]/u)) {
+    if (segment === '..') {
+      kept.pop();
+    } else if (segment !== '' && segment !== '.') {
+      kept.push(segment);
+    }
+  }
+
+  return kept;
+};
+
 export const languageForPath = (path: unknown): GuideLanguage | undefined => {
   if (typeof path !== 'string') {
     return undefined;
   }
 
-  const extension = /\.([^./\\]+)$/u.exec(path)?.[1] ?? '';
+  const segments = collapsedSegments(path);
+  const collapsed = segments.join('/');
+  const extension = /\.([^./]+)$/u.exec(collapsed)?.[1] ?? '';
   const language = languageByExtension.get(extension);
 
   if (language === undefined) {
     return undefined;
   }
 
-  if (path.split(/[\\/]/u).includes(ignoredFolder[language])) {
+  if (segments.includes(ignoredFolder[language])) {
     return undefined;
   }
 
-  if (language === 'typescript' && /\.d\.(?:ts|mts|cts)$/u.test(path)) {
+  if (language === 'typescript' && /\.d\.(?:ts|mts|cts)$/u.test(collapsed)) {
     return undefined;
   }
 

@@ -94,10 +94,11 @@ for (const { language, label, customType, command } of languageCases) {
     await runLanguageCommand(fixture, command);
 
     expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(
-      expect.stringContaining(label),
+      expect.stringContaining('does not load the coding guides'),
       'warning',
     );
 
+    expect(fixture.notify.mock.calls[0]?.[0]).toContain(label);
     expect(fixture.appendEntry).not.toHaveBeenCalled();
     expect(fixture.api.sendMessage).not.toHaveBeenCalled();
   });
@@ -114,7 +115,11 @@ for (const { language, label, customType, command } of languageCases) {
 
     const warnings = fixture.notify.mock.calls.filter(([, level]) => level === 'warning');
 
-    expect(warnings).toEqual([[expect.stringContaining(label), 'warning']]);
+    expect(warnings).toEqual([
+      [expect.stringContaining('could not load the stomme guides'), 'warning'],
+    ]);
+
+    expect(warnings[0]?.[0]).toContain(label);
     expect(fixture.appendEntry).not.toHaveBeenCalled();
     expect(fixture.api.sendMessage).not.toHaveBeenCalled();
   });
@@ -138,6 +143,19 @@ for (const { language, label, customType, command } of languageCases) {
     expect(fixture.notify).toHaveBeenCalledExactlyOnceWith(expect.any(String), 'info');
 
     expect(fixture.appendEntry).not.toHaveBeenCalled();
+    expect(fixture.api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it(`steers no ${label} rules when the run starts while the command loads`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setupLanguageRules(onTestFinished);
+
+    fixture.idle.mockReturnValueOnce(true);
+    await runLanguageCommand(fixture, command);
+
+    expect(fixture.idle).toHaveBeenCalledOnce();
+    expect(fixture.appendEntry).toHaveBeenCalledExactlyOnceWith(customType, { version: 1 });
     expect(fixture.api.sendMessage).not.toHaveBeenCalled();
   });
 
