@@ -83,6 +83,7 @@ it('a released lock starts the architect and writes its record', async ({ onTest
   expect(await readLiveLockHolder(architectLockPath(root))).toEqual({
     pid: process.pid,
     checkout: root,
+    terminal: 't-architect',
   });
 
   await endArchitectSession(session as NonNullable<typeof session>);

@@ -41,7 +41,7 @@ const startArchitect = async (context: ExtensionContext): Promise<ArchitectSessi
   const root = await findTauRoot(context.cwd, 'architect');
 
   try {
-    const release = await holdArchitectLock(root, () => undefined);
+    const release = await holdArchitectLock(root);
 
     try {
       await writeArchitectRecord(root, {

@@ -11,6 +11,7 @@ import type { LockHolderFacts } from './lockHolderDecision.js';
 export interface LiveLockHolder {
   pid: number;
   checkout: string;
+  terminal: string | undefined;
 }
 
 interface LockOwner {
@@ -21,12 +22,14 @@ interface LockOwner {
   released?: true;
   // Process group of the running command, which outlives its session.
   commandGroup?: number;
+  terminal?: string;
 }
 
 export interface FileLockOptions {
   cancelled: () => Error;
   lockPath: string;
   checkout: string;
+  terminal?: string;
   signal: AbortSignal | undefined;
   pollMilliseconds: number;
   // Called when another checkout holds the lock, once for each holder.
@@ -34,6 +37,16 @@ export interface FileLockOptions {
   // Runs between reading the holder and linking the next generation. Tests use it to stall a session.
   beforeLink?: () => Promise<void>;
 }
+
+export interface HoldFileLockOptions {
+  lockPath: string;
+  checkout: string;
+  terminal: string | undefined;
+}
+
+export type HeldFileLock =
+  | { kind: 'held'; release: () => Promise<void> }
+  | { kind: 'refused'; holder: LiveLockHolder | undefined };
 
 const tokenRadix = 36;
 
@@ -60,6 +73,7 @@ const parseOwner = (text: string): LockOwner | undefined => {
 
     const released = value['released'] === true ? { released: true as const } : {};
     const commandGroup = parseCommandGroup(value['commandGroup']);
+    const terminal = value['terminal'];
 
     return {
       pid,
@@ -68,6 +82,7 @@ const parseOwner = (text: string): LockOwner | undefined => {
       token: typeof token === 'string' ? token : '',
       ...released,
       ...commandGroup,
+      ...(typeof terminal === 'string' && terminal !== '' ? { terminal } : {}),
     };
   } catch {
     return undefined;
@@ -221,6 +236,12 @@ const findCurrentHolder = async (lockPath: string) => {
   return { highest, holder: current, facts: await readHolderFacts(current) };
 };
 
+const toLiveHolder = (owner: LockOwner): LiveLockHolder => ({
+  pid: owner.pid,
+  checkout: owner.checkout,
+  terminal: owner.terminal,
+});
+
 // Returns the holder only while its session or command is alive. A released, missing, or dead
 // holder is not a live holder.
 export const readLiveLockHolder = async (lockPath: string): Promise<LiveLockHolder | undefined> => {
@@ -242,7 +263,7 @@ export const readLiveLockHolder = async (lockPath: string): Promise<LiveLockHold
     return undefined;
   }
 
-  return { pid: holder.pid, checkout: holder.checkout };
+  return toLiveHolder(holder);
 };
 
 // Links generation `next`, and keeps it only if no higher generation exists. A stalled session can
@@ -314,7 +335,7 @@ export const withFileLock = async <T>(
   options: FileLockOptions,
   run: (recordCommandGroup: (groupId: number) => Promise<void>) => Promise<T>,
 ): Promise<T> => {
-  const { lockPath, checkout, cancelled } = options;
+  const { lockPath, checkout, cancelled, terminal } = options;
   const token = newToken();
 
   const owner: LockOwner = {
@@ -322,6 +343,7 @@ export const withFileLock = async <T>(
     checkout,
     startedAt: new Date().toISOString(),
     token,
+    ...(terminal === undefined ? {} : { terminal }),
   };
 
   await mkdir(dirname(lockPath), { recursive: true });
@@ -346,4 +368,68 @@ export const withFileLock = async <T>(
   await releaseOwnFile(path, owner);
 
   return result;
+};
+
+// Holds the lock until the returned release runs. A live holder refuses at once instead of
+// queueing. Filesystem errors reject.
+export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFileLock> => {
+  const controller = new AbortController();
+  const ready = Promise.withResolvers<() => Promise<void>>();
+
+  const state: { refusal: { holder: LockOwner | undefined } | undefined } = { refusal: undefined };
+
+  const { lockPath, checkout, terminal } = options;
+
+  const holding = withFileLock(
+    {
+      lockPath,
+      checkout,
+      ...(terminal === undefined ? {} : { terminal }),
+      pollMilliseconds: 250,
+      signal: controller.signal,
+      cancelled: () => new Error('The lock is held by another session.'),
+      onWaiting: (holder) => {
+        state.refusal = { holder };
+        controller.abort();
+      },
+    },
+    async () => {
+      const released = Promise.withResolvers<undefined>();
+
+      ready.resolve(async () => {
+        released.resolve(undefined);
+        await holding;
+      });
+
+      await released.promise;
+    },
+  );
+
+  const settled = holding.then(
+    () => ({ kind: 'ended' as const }),
+    (error: unknown) => ({ kind: 'failed' as const, error }),
+  );
+
+  const acquired = await Promise.race([
+    ready.promise.then((release) => ({ kind: 'ready' as const, release })),
+    settled,
+  ]);
+
+  if (acquired.kind === 'ready') {
+    return { kind: 'held', release: acquired.release };
+  }
+
+  const { refusal } = state;
+
+  if (refusal !== undefined) {
+    const holder = refusal.holder === undefined ? undefined : toLiveHolder(refusal.holder);
+
+    return { kind: 'refused', holder };
+  }
+
+  if (acquired.kind === 'failed') {
+    throw acquired.error;
+  }
+
+  throw new Error('The lock ended before it was taken.');
 };
