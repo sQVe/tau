@@ -50,6 +50,11 @@ it.each([
     expected: undefined,
   },
   {
+    label: 'a terminal with an empty pane',
+    space: spaceWith([{ terminal: 't1', pane: '' }]),
+    expected: undefined,
+  },
+  {
     label: 'a missing space',
     space: undefined,
     expected: undefined,

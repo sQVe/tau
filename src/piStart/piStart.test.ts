@@ -178,6 +178,29 @@ it('a shell running another program keeps its tab', async () => {
   expect(appCommands(fake)).not.toContain('pane.close');
 });
 
+it('a space id that matches no listed space starts a tab', async () => {
+  const fake = createSpaceFake(shellLayout('space-other'));
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: {
+        space: 'space-1',
+        readForeground: () => Promise.resolve({ name: 'zsh', cwd: root }),
+      },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(appCommands(fake)).toEqual(['ls', 'tab.new']);
+});
+
 it('a shell that turns busy during the split stays open', async () => {
   const fake = createSpaceFake(shellLayout('space-1'));
   const root = await createTemporaryRepository(onTestFinished);
