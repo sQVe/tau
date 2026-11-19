@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { execFile } from 'node:child_process';
 import type { ChildProcess, ExecFileException } from 'node:child_process';
+import { lstat } from 'node:fs/promises';
+import { join } from 'node:path';
 
 export interface GitResult {
   exitCode: number | null;
@@ -15,7 +17,40 @@ export interface GitOptions {
   environment?: Record<string, string>;
 }
 
+export type ProbeCache<Value> = Map<string, Promise<Value>>;
+
+export type BareProbe = { status: 'read'; bare: boolean } | { status: 'failed' };
+
 const scopedEnvironment = new AsyncLocalStorage<Record<string, string>>();
+
+export const createProbeCache = <Value>(): ProbeCache<Value> => new Map();
+
+// Shares one in-flight probe per key within the cache's scope. Drops an entry whose result the
+// keep test rejects, so the next call asks again.
+export const readProbe = async <Value>(
+  cache: ProbeCache<Value>,
+  key: string,
+  probe: () => Promise<Value>,
+  keep: (value: Value) => boolean,
+): Promise<Value> => {
+  const cached = cache.get(key);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const read = probe();
+
+  cache.set(key, read);
+
+  const value = await read;
+
+  if (!keep(value) && cache.get(key) === read) {
+    cache.delete(key);
+  }
+
+  return value;
+};
 
 export const withGitEnvironment = <Value>(
   environment: Record<string, string>,
@@ -207,3 +242,69 @@ export const findCheckoutRoot = async (
 
   return root;
 };
+
+const operationProbeCaches = new AsyncLocalStorage<Map<string, unknown>>();
+
+// A read or write keeps one answer per named probe across its nested checks. Outside such an
+// operation, each call asks Git again so a changed repository takes effect at once.
+export const withOperationProbes = <Value>(run: () => Promise<Value>): Promise<Value> =>
+  operationProbeCaches.run(new Map(), run);
+
+export const operationProbeCache = <Value>(name: string): ProbeCache<Value> => {
+  const caches = operationProbeCaches.getStore();
+
+  if (caches === undefined) {
+    return createProbeCache();
+  }
+
+  const cached = caches.get(name);
+
+  if (cached !== undefined) {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Each probe name is read with one value type at every call site.
+    return cached as ProbeCache<Value>;
+  }
+
+  const created = createProbeCache<Value>();
+
+  caches.set(name, created);
+
+  return created;
+};
+
+export const currentBareProbeCache = (): ProbeCache<BareProbe> => operationProbeCache('bare');
+
+const probeBareRoot = async (root: string): Promise<BareProbe> => {
+  const result = await runGit(root, ['rev-parse', '--is-bare-repository'], {
+    timeoutMilliseconds: 5000,
+  });
+
+  if (result.exitCode !== 0) {
+    return { status: 'failed' };
+  }
+
+  return { status: 'read', bare: result.stdout.toString('utf8').trim() === 'true' };
+};
+
+export const isBareRoot = async (
+  root: string,
+  cache: ProbeCache<BareProbe> = currentBareProbeCache(),
+): Promise<boolean> => {
+  const read = await readProbe(
+    cache,
+    root,
+    () => probeBareRoot(root),
+    (result) => result.status === 'read',
+  );
+
+  return read.status === 'read' && read.bare;
+};
+
+const hasGitEntry = (root: string): Promise<boolean> =>
+  lstat(join(root, '.git')).then(
+    () => true,
+    () => false,
+  );
+
+// A `.git` entry means a checkout, so its presence answers without a Git call.
+export const isBareRootWithoutGitEntry = async (root: string): Promise<boolean> =>
+  !(await hasGitEntry(root)) && isBareRoot(root);

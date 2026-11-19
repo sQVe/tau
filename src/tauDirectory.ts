@@ -12,8 +12,8 @@ import {
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
 import { isMissingFile } from './errors.ts';
-import { findCheckoutRoot, readGit, runGit } from './git.ts';
-import type { GitOptions } from './git.ts';
+import { currentBareProbeCache, findCheckoutRoot, isBareRoot, readGit, runGit } from './git.ts';
+import type { BareProbe, GitOptions, ProbeCache } from './git.ts';
 
 export type TauChild =
   | { kind: 'outside' }
@@ -221,12 +221,6 @@ const rejectUnignored = async (root: string, relativeDirectory: string) => {
   await rejectTracked(root, relativeDirectory);
 };
 
-export const isBareRoot = async (root: string): Promise<boolean> => {
-  const output = await readQuickly(root, ['rev-parse', '--is-bare-repository']);
-
-  return output?.trim() === 'true';
-};
-
 const gitDirectoryOf = async (cwd: string, toolName: string): Promise<string> => {
   const output = await readQuickly(cwd, ['rev-parse', '--absolute-git-dir']);
   const path = output?.trim();
@@ -322,14 +316,18 @@ export const rejectTauSymlinks = async (root: string, path: string): Promise<voi
 // Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
 // `.tau/.gitignore` has another hard link, since either could send writes outside the repository,
 // or when Git would not ignore files in it. Changes nothing, so a read can run it.
-export const checkTauDirectory = async (root: string, path: string): Promise<void> => {
+const checkTauDirectoryWith = async (
+  root: string,
+  path: string,
+  bareProbes: ProbeCache<BareProbe>,
+): Promise<void> => {
   const segments = parseSegments(path);
 
   await rejectParsedSymlinks(root, segments);
   await rejectLinkedIgnoreFile(root);
   await rejectLaterExceptions(root);
 
-  if (await isBareRoot(root)) {
+  if (await isBareRoot(root, bareProbes)) {
     const content = await readIgnoreFile(join(root, '.tau/.gitignore'));
 
     if (!endsWithIgnoreEverything(content)) {
@@ -342,6 +340,9 @@ export const checkTauDirectory = async (root: string, path: string): Promise<voi
   await rejectUnignored(root, ['.tau', ...segments].join('/'));
 };
 
+export const checkTauDirectory = (root: string, path: string): Promise<void> =>
+  checkTauDirectoryWith(root, path, currentBareProbeCache());
+
 // Creates `<root>/.tau/<path>` and makes Git ignore everything in `.tau/`. Refuses before it
 // creates anything when a path it would write through is a symlink, when `.tau/.gitignore` has
 // another hard link, or when Git tracks
@@ -349,11 +350,12 @@ export const checkTauDirectory = async (root: string, path: string): Promise<voi
 // not ignore it. A path swapped between the check and the write can still escape.
 export const ensureTauDirectory = async (root: string, path: string): Promise<string> => {
   const segments = parseSegments(path);
+  const bareProbes = currentBareProbeCache();
 
   await rejectParsedSymlinks(root, segments);
   await rejectLinkedIgnoreFile(root);
 
-  if (await isBareRoot(root)) {
+  if (await isBareRoot(root, bareProbes)) {
     await rejectLaterExceptions(root);
   } else {
     await rejectTracked(root, '.tau/.gitignore');
@@ -362,7 +364,7 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
 
   await mkdir(join(root, '.tau'), { recursive: true });
   await ignoreTauDirectory(root);
-  await checkTauDirectory(root, path);
+  await checkTauDirectoryWith(root, path, bareProbes);
 
   const directory = join(root, '.tau', ...segments);
 

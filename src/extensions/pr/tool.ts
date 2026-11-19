@@ -5,7 +5,7 @@ import { Type } from 'typebox';
 
 import type { Exec, CommandRuntime } from '../../command.js';
 import { readConfigLocation } from '../../config/config.js';
-import { findCheckoutRoot } from '../../git.js';
+import { findCheckoutRoot, withOperationProbes } from '../../git.js';
 import { readReviewBotStatuses } from '../../reviewBots/reviewBots.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readCheckHeader } from './checkEvidence.js';
@@ -146,7 +146,7 @@ const runAction = async (
   if (parameters.action === 'coverage') {
     const root = await findCheckoutRoot(cwd, 'pr');
 
-    return { ...(await readChainCoverage(root, parameters)) };
+    return { ...(await withOperationProbes(() => readChainCoverage(root, parameters))) };
   }
 
   if (parameters.action === 'checkHeader') {

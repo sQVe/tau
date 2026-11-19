@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
 
 import { createTemporaryRepository } from '../tests/gitRepository.js';
+import { isBareRoot } from './git.js';
 import { checkTauDirectory, ensureTauDirectory } from './tauDirectory.js';
 
 it('refuses a tracked .tau/.gitignore before it changes anything', async ({ onTestFinished }) => {
@@ -15,6 +16,29 @@ it('refuses a tracked .tau/.gitignore before it changes anything', async ({ onTe
   await mkdir(join(repository, '.tau'));
   await writeFile(ignoreFile, 'state.json\n');
   await promisify(execFile)('git', ['add', '--force', ignoreFile], { cwd: repository });
+
+  await expect(ensureTauDirectory(repository, 'slices/me-479')).rejects.toThrow(
+    'Git tracks files in .tau/.gitignore',
+  );
+
+  expect(await readFile(ignoreFile, 'utf8')).toBe('state.json\n');
+  expect(await readdir(join(repository, '.tau'))).toEqual(['.gitignore']);
+});
+
+it('refuses a tracked .tau/.gitignore after core.bare flips to false', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  const ignoreFile = join(repository, '.tau/.gitignore');
+
+  await mkdir(join(repository, '.tau'));
+  await writeFile(ignoreFile, 'state.json\n');
+  await promisify(execFile)('git', ['add', '--force', ignoreFile], { cwd: repository });
+  await promisify(execFile)('git', ['config', 'core.bare', 'true'], { cwd: repository });
+
+  expect(await isBareRoot(repository)).toBe(true);
+
+  await promisify(execFile)('git', ['config', 'core.bare', 'false'], { cwd: repository });
 
   await expect(ensureTauDirectory(repository, 'slices/me-479')).rejects.toThrow(
     'Git tracks files in .tau/.gitignore',

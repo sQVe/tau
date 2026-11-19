@@ -1,7 +1,8 @@
 import { readCheckState } from '../../checkRecord/identity.js';
+import type { CheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
-import { readGit } from '../../git.js';
+import { readGit, withOperationProbes } from '../../git.js';
 import { readInspectedEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
 import type { Marker, ReviewEvidence } from '../../reviewCapture/evidence.js';
 import type {
@@ -244,7 +245,17 @@ const toVerificationEvidence = ({
   counts,
 });
 
-const readVerification = async (root: string, evidence: PublicationEvidence) => {
+const createCheckStateReader = (root: string) => {
+  let read: Promise<CheckState> | undefined;
+
+  return () => (read ??= readCheckState(root));
+};
+
+const readVerification = async (
+  root: string,
+  evidence: PublicationEvidence,
+  readCurrentCheckState: () => Promise<CheckState>,
+) => {
   let recordRoot: string;
 
   try {
@@ -258,7 +269,7 @@ const readVerification = async (root: string, evidence: PublicationEvidence) => 
   let tree: string | null;
 
   try {
-    const state = await readCheckState(root);
+    const state = await readCurrentCheckState();
 
     tree = state.tree;
   } catch (error) {
@@ -288,7 +299,7 @@ const readVerification = async (root: string, evidence: PublicationEvidence) => 
   evidence.gaps.push(...verificationGaps);
 };
 
-export const readPublicationEvidence = async (
+const readPublicationEvidenceOperation = async (
   runtime: CommandRuntime,
   root: string,
   request: PublicationRequest,
@@ -335,13 +346,28 @@ export const readPublicationEvidence = async (
   await readChain(root, request, evidence);
   await readReview(root, request, evidence);
 
-  const checkEvidence = await readCheckEvidence(root, evidence.target?.mergeBase, config);
+  const readCheckStateOnce = createCheckStateReader(root);
+
+  const checkEvidence = await readCheckEvidence(
+    root,
+    evidence.target?.mergeBase,
+    config,
+    readCheckStateOnce,
+  );
 
   evidence.checks = checkEvidence.checks;
   evidence.fullCheck = checkEvidence.fullCheck;
   evidence.gaps.push(...checkEvidence.gaps);
 
-  await readVerification(root, evidence);
+  await readVerification(root, evidence, readCheckStateOnce);
 
   return evidence;
 };
+
+export const readPublicationEvidence = (
+  runtime: CommandRuntime,
+  root: string,
+  request: PublicationRequest,
+  config: PublicationConfig,
+): Promise<PublicationEvidence> =>
+  withOperationProbes(() => readPublicationEvidenceOperation(runtime, root, request, config));

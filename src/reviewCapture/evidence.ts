@@ -2,7 +2,7 @@ import { access, constants, lstat, readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
-import { runGit } from '../git.js';
+import { runGit, withOperationProbes } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { isInsideRoot } from './capture.js';
 import {
@@ -429,9 +429,11 @@ export const readInspectedEvidence = async (
   };
 };
 
-export const readReviewEvidence = async (
+export const readReviewEvidence = (
   root: string,
   requestedDirectory: string,
   limits = defaultEvidenceLimits,
 ): Promise<ReviewEvidence> =>
-  readInspectedEvidence(root, await inspectReview(root, requestedDirectory), limits);
+  withOperationProbes(async () =>
+    readInspectedEvidence(root, await inspectReview(root, requestedDirectory), limits),
+  );

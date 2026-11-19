@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { installCommandShim } from '../../../tests/commandShimFake.js';
 import { git } from '../../../tests/gitRepository.js';
 import { pullRequest as fakePullRequest } from '../../../tests/prGhFake.js';
 import {
@@ -306,6 +307,29 @@ it('reports a failed target read and skips comparisons that need the merge base'
 
   expect(fake.calls).toHaveLength(1);
   expect(await readSavedFiles(root)).toEqual(before);
+});
+
+it('reports a failed check-state read in the checks and verification gaps', async () => {
+  const { run } = await setUp();
+
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' version ', script: "echo 'forced failure' >&2; exit 2" }],
+  });
+
+  const evidence = await run();
+
+  expect(evidence.fullCheck).toBeNull();
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'checks',
+    reason: 'git version failed: forced failure',
+  });
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'verification',
+    reason: 'git version failed: forced failure',
+  });
 });
 
 it('reports a missing recheck and leaves it missing', async () => {

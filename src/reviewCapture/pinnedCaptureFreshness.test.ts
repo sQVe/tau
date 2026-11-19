@@ -1,5 +1,5 @@
 import { cp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
@@ -172,8 +172,15 @@ it('reports unknown and removes the recheck when the hash command fails', async 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
   await captureWorkingTree(root, directory);
   await checkReviewFreshness(root, directory);
+
+  const copy = join(temporaryDirectory(onTestFinished, 'tau-review-copy-'), 'repository');
+
+  await cp(root, copy, { recursive: true });
+
+  const copiedDirectory = join(copy, relative(root, directory));
+
   await failGitCommand('--show-object-format');
 
-  expect(await checkReviewFreshness(root, directory)).toMatchObject({ status: 'unknown' });
-  expect(await readdir(directory)).not.toContain('recheck.diff');
+  expect(await checkReviewFreshness(copy, copiedDirectory)).toMatchObject({ status: 'unknown' });
+  expect(await readdir(copiedDirectory)).not.toContain('recheck.diff');
 });

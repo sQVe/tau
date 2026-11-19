@@ -3,7 +3,7 @@ import { access, constants, lstat, realpath, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
-import { runGit } from '../git.js';
+import { operationProbeCache, readProbe, runGit } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { keepAddedLines } from './evidenceDecisions.js';
 import { hasOnlyLineEndingWarnings } from './lineEndingWarning.js';
@@ -84,6 +84,10 @@ export type FileList =
 type HeadRead = { head: string; error?: undefined } | { head?: undefined; error: string };
 
 type HashedBytes = { hash: string; error?: undefined } | { hash?: undefined; error: string };
+
+type ObjectFormatRead =
+  | { status: 'read'; format: 'sha1' | 'sha256' }
+  | { status: 'failed'; error: string };
 
 export const emptyPart: Part = { bytes: Buffer.alloc(0), paths: [], gaps: [], errors: [] };
 
@@ -772,18 +776,41 @@ const captureWholeFiles = async (
   return { parts, addedByPart };
 };
 
-export const hashBytes = async (root: string, bytes: Buffer): Promise<HashedBytes> => {
+// A read or write keeps one object-format answer per root. Outside such an operation, each call
+// asks Git again. A failed probe leaves no entry, so the next call asks Git again.
+const probeObjectFormat = async (root: string): Promise<ObjectFormatRead> => {
   const commandArguments = ['rev-parse', '--show-object-format'];
   const { stdout, error } = await runCaptureCommand(root, commandArguments);
   const format = stdout?.toString('utf8').trim();
 
   if (format !== 'sha1' && format !== 'sha256') {
-    return { error: `${describeCommand(commandArguments)} failed: ${error ?? format}` };
+    return {
+      status: 'failed',
+      error: `${describeCommand(commandArguments)} failed: ${error ?? format}`,
+    };
+  }
+
+  return { status: 'read', format };
+};
+
+const readObjectFormat = (root: string): Promise<ObjectFormatRead> =>
+  readProbe(
+    operationProbeCache('object-format'),
+    root,
+    () => probeObjectFormat(root),
+    (read) => read.status === 'read',
+  );
+
+export const hashBytes = async (root: string, bytes: Buffer): Promise<HashedBytes> => {
+  const read = await readObjectFormat(root);
+
+  if (read.status === 'failed') {
+    return { error: read.error };
   }
 
   const header = Buffer.from(`blob ${bytes.length}\0`);
 
-  return { hash: createHash(format).update(header).update(bytes).digest('hex') };
+  return { hash: createHash(read.format).update(header).update(bytes).digest('hex') };
 };
 
 export const excludedGaps = (target: { exclude?: string[] | undefined }): Gap[] =>

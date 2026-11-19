@@ -3,7 +3,7 @@ import { constants, lstat, readFile, readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import { listSavedLogs } from '../../checkRecord/checkRecord.js';
-import { readCheckState } from '../../checkRecord/identity.js';
+import type { CheckState } from '../../checkRecord/identity.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { readRepositoryArgv } from '../../config/repositoryCommand.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
@@ -220,6 +220,7 @@ const readFullCheck = async (
   root: string,
   mergeBase: string | undefined,
   config: PublicationConfig,
+  readCheckState: () => Promise<CheckState>,
   gaps: PublicationGap[],
 ): Promise<FullCheckEvidence | null> => {
   if (mergeBase === undefined) {
@@ -229,7 +230,7 @@ const readFullCheck = async (
   let fullCheck: FullCheckEvidence | null = null;
 
   try {
-    const state = await readCheckState(root);
+    const state = await readCheckState();
     const saved = await listSavedLogs(join(root, '.tau', 'checks'));
     const { argv } = readRepositoryArgv(config.location, config.ui, 'fullCheck');
     const decision = decideFullCheck(state, argv, saved);
@@ -254,9 +255,10 @@ export const readCheckEvidence = async (
   root: string,
   mergeBase: string | undefined,
   config: PublicationConfig,
+  readCheckState: () => Promise<CheckState>,
 ): Promise<CheckEvidence> => {
   const gaps: PublicationGap[] = [];
-  const fullCheck = await readFullCheck(root, mergeBase, config, gaps);
+  const fullCheck = await readFullCheck(root, mergeBase, config, readCheckState, gaps);
   const checks = await readChecks(root, mergeBase, fullCheck, gaps);
 
   return { checks, fullCheck, gaps };

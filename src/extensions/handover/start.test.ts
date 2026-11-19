@@ -33,6 +33,7 @@ const requestFor = (root: string, file: string, target: PiStartTarget): StartHan
   folder: root,
   target,
   model: undefined,
+  bareRoot: false,
 });
 
 const commandsOf = (fake: ExecFake<'app'>) =>

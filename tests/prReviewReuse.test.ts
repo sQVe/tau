@@ -216,7 +216,7 @@ it('refuses reuse when recheck.diff is replaced after reuse reads it', async () 
     otherCalls: 'real',
     overrides: [
       {
-        match: ' rev-parse --show-object-format ',
+        match: ' rev-parse --verify ',
         script: `cp '${reviewedPath}' '${recheckPath}'; exec "$real" "$@"`,
       },
     ],

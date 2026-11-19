@@ -31,6 +31,11 @@ export interface CommandShim {
 
 const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`;
 
+export const logCommandCalls = (logPath: string): CommandOverride => ({
+  match: '',
+  script: `printf '%s\\n' "$*" >> ${quote(logPath)}\nexec "$real" "$@"`,
+});
+
 const overrideArm = ({ match, script }: CommandOverride): string =>
   `*${quote(match)}*)\n${script}\nexit 0 ;;`;
 

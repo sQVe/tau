@@ -27,6 +27,7 @@ it('a tab start passes the argv as JSON', async () => {
       task: 'Next steps\n',
       model: 'morph/morph-dsv41flash-1017',
       session: '/tmp/architect.jsonl',
+      bareRoot: false,
       environment: { TAU_ROLE: 'architect' },
     },
   );
@@ -67,6 +68,7 @@ it('a true bare repository root starts a session', async () => {
       task: 'Next steps\n',
       model: undefined,
       session: undefined,
+      bareRoot: true,
       environment: undefined,
     },
   );
@@ -89,6 +91,7 @@ it('a folder that is not a Git checkout is refused', async () => {
         task: 'Next steps\n',
         model: undefined,
         session: undefined,
+        bareRoot: false,
         environment: undefined,
       },
     ),
@@ -125,6 +128,7 @@ it('a left-of start splits right with the task in the argv, then swaps the new p
       task: 'Design this',
       model: undefined,
       session: undefined,
+      bareRoot: false,
       environment: { TAU_ROLE: 'architect' },
     },
   );
@@ -159,6 +163,7 @@ it('a pane split reply without a pane ends the start before the swap', async () 
         task: 'Design this',
         model: undefined,
         session: undefined,
+        bareRoot: false,
         environment: undefined,
       },
     ),
@@ -183,6 +188,7 @@ const paneRequest = (root: string) => ({
   task: 'Design this',
   model: undefined,
   session: undefined,
+  bareRoot: false,
   environment: undefined,
 });
 

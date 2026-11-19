@@ -6,7 +6,7 @@ import { Type } from 'typebox';
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { errorMessage, isMissingFile } from '../errors.js';
-import { existingEntry, isBareRoot } from '../tauDirectory.js';
+import { existingEntry } from '../tauDirectory.js';
 import { piArguments } from './piArguments.js';
 
 export type PiStartTarget = { space: string } | { name: string };
@@ -21,10 +21,12 @@ interface PiSessionRequest {
 
 export interface PiStartRequest extends PiSessionRequest {
   target: PiStartTarget;
+  bareRoot: boolean;
 }
 
 export interface PiStartLeftOfRequest extends PiSessionRequest {
   pane: string;
+  bareRoot: boolean;
 }
 
 const splitReplySchema = Type.Object({ pane: Type.String(), terminal: Type.String() });
@@ -139,7 +141,7 @@ const isDirectory = (path: string): Promise<boolean> =>
     },
   );
 
-const isGitCheckout = async (folder: string): Promise<boolean> => {
+const isGitCheckout = async (folder: string, bareRoot: boolean): Promise<boolean> => {
   if (!(await isDirectory(folder))) {
     return false;
   }
@@ -148,11 +150,15 @@ const isGitCheckout = async (folder: string): Promise<boolean> => {
     return true;
   }
 
-  return isBareRoot(folder);
+  return bareRoot;
 };
 
-const requireCheckout = async (runtime: CommandRuntime, folder: string): Promise<void> => {
-  if (!(await isGitCheckout(folder))) {
+const requireCheckout = async (
+  runtime: CommandRuntime,
+  folder: string,
+  bareRoot: boolean,
+): Promise<void> => {
+  if (!(await isGitCheckout(folder, bareRoot))) {
     throw new Error(`start folder is not a Git checkout: ${folder}`);
   }
 
@@ -163,7 +169,7 @@ export const startPiSession = async (
   runtime: CommandRuntime,
   request: PiStartRequest,
 ): Promise<{ reply: string }> => {
-  await requireCheckout(runtime, request.folder);
+  await requireCheckout(runtime, request.folder, request.bareRoot);
 
   const reply = await runCommand(runtime, 'herdr-app', startArguments(request), 'herdr-app do');
 
@@ -174,7 +180,7 @@ export const startPiSessionLeftOf = async (
   runtime: CommandRuntime,
   request: PiStartLeftOfRequest,
 ): Promise<{ reply: string }> => {
-  await requireCheckout(runtime, request.folder);
+  await requireCheckout(runtime, request.folder, request.bareRoot);
 
   return { reply: await startInPane(runtime, request, request.pane) };
 };
