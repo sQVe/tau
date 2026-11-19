@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { expect, it } from 'vitest';
@@ -14,6 +14,7 @@ import {
   setup,
 } from './fixtures/workerExtensionHarness.js';
 import { workerPrompt } from './profiles.js';
+import { scratchDirectoryFor } from './workerScratch.js';
 import { workerContinuation } from './workerStart.js';
 
 it('stops the worker with a visible error when the assignment file is missing', async () => {
@@ -59,6 +60,37 @@ it('reads the assignment and activates its tools without sending a message at se
   expect(pi.sendUserMessage).not.toHaveBeenCalled();
 
   expect(loadout.model).toBe('faux/test');
+});
+
+it('recreates a missing scratch folder at worker start', async () => {
+  const { context, directory, pi, shutdown } = setup();
+  const assignment = assignmentFor(directory);
+  const scratch = scratchDirectoryFor(directory, assignment.assignmentId);
+
+  await writeAssignment(assignment);
+  await savePassingFullCheck(directory);
+
+  expect(existsSync(scratch)).toBe(false);
+
+  await pi.handler('session_start')({}, context);
+
+  expect(existsSync(scratch)).toBe(true);
+  expect(context.ui.notify).not.toHaveBeenCalled();
+  expect(shutdown).not.toHaveBeenCalled();
+});
+
+it('stops the worker with a visible error when the scratch folder cannot be created', async () => {
+  const { context, directory, pi, shutdown } = setup();
+  const assignment = assignmentFor(directory);
+
+  await writeAssignment(assignment);
+  mkdirSync(join(directory, 'elsewhere'));
+  symlinkSync(join(directory, 'elsewhere'), join(directory, 'tmp'));
+
+  await pi.handler('session_start')({}, context);
+
+  expect(context.ui.notify).toHaveBeenCalledWith(expect.stringContaining('redirected'), 'error');
+  expect(shutdown).toHaveBeenCalledOnce();
 });
 
 const savedReport: SavedReport = {

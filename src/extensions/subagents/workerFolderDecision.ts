@@ -1,6 +1,14 @@
+import { assignmentPrefixFromName } from './workerName.js';
+
 export interface WorkerFolder {
   name: string;
   bornAt: number;
+}
+
+export interface SnapshotFolder {
+  name: string;
+  // The modification time of the unused marker, or undefined when no marker exists.
+  unusedSince: number | undefined;
 }
 
 interface ReadTerminalFact {
@@ -23,13 +31,15 @@ export type WorkerTerminalFact = ReadTerminalFact | UnreadTerminalFact;
 export interface WorkerFolderFacts {
   now: number;
   scratch: readonly WorkerFolder[];
-  snapshots: readonly WorkerFolder[];
+  snapshots: readonly SnapshotFolder[];
   terminals: readonly WorkerTerminalFact[] | 'unread';
 }
 
 export interface WorkerFolderRemoval {
   scratch: string[];
   snapshots: string[];
+  markUnused: string[];
+  clearUnused: string[];
 }
 
 export const scratchLaunchGrace = 60_000;
@@ -72,9 +82,52 @@ const hasUnreadSnapshot = (running: readonly ReadTerminalFact[]): boolean =>
 const isNamedSnapshot = (running: readonly ReadTerminalFact[], name: string): boolean =>
   running.some((terminal) => terminal.packageSnapshot === name);
 
+const hasUnusedMarker = (folder: SnapshotFolder): boolean => folder.unusedSince !== undefined;
+
+const isUnusedForWindow = (folder: SnapshotFolder, now: number): boolean =>
+  folder.unusedSince !== undefined && now - folder.unusedSince >= snapshotFollowUpWindow;
+
+const isFinished = (terminal: { state: string }): boolean => terminal.state === 'finished';
+
+export const isWorkerCandidate = (listed: {
+  state: string;
+  name?: string | null | undefined;
+}): boolean => {
+  if (isFinished(listed)) {
+    return false;
+  }
+
+  const hasNoName = listed.name === undefined || listed.name === null;
+
+  return hasNoName || assignmentPrefixFromName(listed.name) !== undefined;
+};
+
+const decideSnapshots = (
+  snapshots: readonly SnapshotFolder[],
+  running: readonly ReadTerminalFact[],
+  keepsEverySnapshot: boolean,
+  now: number,
+): Pick<WorkerFolderRemoval, 'snapshots' | 'markUnused' | 'clearUnused'> => {
+  const named = snapshots.filter((folder) => isNamedSnapshot(running, folder.name));
+  const unnamed = snapshots.filter((folder) => !isNamedSnapshot(running, folder.name));
+  const clearUnused = named.filter(hasUnusedMarker).map((folder) => folder.name);
+
+  if (keepsEverySnapshot) {
+    return { snapshots: [], markUnused: [], clearUnused };
+  }
+
+  return {
+    snapshots: unnamed
+      .filter((folder) => isUnusedForWindow(folder, now))
+      .map((folder) => folder.name),
+    markUnused: unnamed.filter((folder) => !hasUnusedMarker(folder)).map((folder) => folder.name),
+    clearUnused,
+  };
+};
+
 export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolderRemoval => {
   if (facts.terminals === 'unread') {
-    return { scratch: [], snapshots: [] };
+    return { scratch: [], snapshots: [], markUnused: [], clearUnused: [] };
   }
 
   const terminals = facts.terminals.filter(isRead);
@@ -92,15 +145,8 @@ export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolde
 
   const keepsEverySnapshot = unread.length > 0 || hasUnreadSnapshot(running);
 
-  const snapshots = keepsEverySnapshot
-    ? []
-    : facts.snapshots
-        .filter(
-          (folder) =>
-            !isNamedSnapshot(running, folder.name) &&
-            ageAtLeast(folder, facts.now, snapshotFollowUpWindow),
-        )
-        .map((folder) => folder.name);
-
-  return { scratch, snapshots };
+  return {
+    scratch,
+    ...decideSnapshots(facts.snapshots, running, keepsEverySnapshot, facts.now),
+  };
 };

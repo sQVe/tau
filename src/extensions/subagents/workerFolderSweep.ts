@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
@@ -10,8 +10,13 @@ import {
   snapshotDirectoryFor,
   snapshotRootFor,
 } from './packageSnapshot.js';
-import { decideWorkerFolderRemoval } from './workerFolderDecision.js';
-import type { WorkerFolder, WorkerTerminalFact } from './workerFolderDecision.js';
+import { decideWorkerFolderRemoval, isWorkerCandidate } from './workerFolderDecision.js';
+import type {
+  SnapshotFolder,
+  WorkerFolder,
+  WorkerFolderRemoval,
+  WorkerTerminalFact,
+} from './workerFolderDecision.js';
 import { assignmentPrefixFromName } from './workerName.js';
 import { removeScratchDirectory, scratchRootFor } from './workerScratch.js';
 
@@ -30,6 +35,10 @@ interface TerminalFacts {
   errors: string[];
 }
 
+const unusedMarkerName = '.tau-unused-since';
+
+const terminalReadTimeout = 10_000;
+
 const readBornAt = async (path: string): Promise<number | undefined> => {
   try {
     const stats = await stat(path);
@@ -44,7 +53,7 @@ const readBornAt = async (path: string): Promise<number | undefined> => {
   }
 };
 
-const readFolders = async (root: string): Promise<WorkerFolder[]> => {
+const readDirectoryNames = async (root: string): Promise<string[]> => {
   let entries: { name: string; isDirectory: () => boolean }[];
 
   try {
@@ -57,16 +66,72 @@ const readFolders = async (root: string): Promise<WorkerFolder[]> => {
     throw error;
   }
 
-  const directories = entries.filter((entry) => entry.isDirectory());
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+};
+
+const readFolders = async (root: string): Promise<WorkerFolder[]> => {
+  const names = await readDirectoryNames(root);
 
   const folders = await Promise.all(
-    directories.map(async (entry) => ({
-      name: entry.name,
-      bornAt: await readBornAt(join(root, entry.name)),
-    })),
+    names.map(async (name) => ({ name, bornAt: await readBornAt(join(root, name)) })),
   );
 
   return folders.flatMap(({ name, bornAt }) => (bornAt === undefined ? [] : [{ name, bornAt }]));
+};
+
+const readUnusedSince = async (snapshot: string): Promise<number | undefined> => {
+  try {
+    const stats = await stat(join(snapshot, unusedMarkerName));
+
+    return stats.mtimeMs;
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
+
+const readSnapshots = async (root: string): Promise<SnapshotFolder[]> => {
+  const names = await readDirectoryNames(root);
+
+  return Promise.all(
+    names.map(async (name) => ({ name, unusedSince: await readUnusedSince(join(root, name)) })),
+  );
+};
+
+const markSnapshotUnused = async (
+  snapshot: string,
+  name: string,
+  now: number,
+): Promise<string | undefined> => {
+  const marker = join(snapshot, unusedMarkerName);
+
+  try {
+    await writeFile(marker, '');
+    const markedAt = new Date(now);
+
+    await utimes(marker, markedAt, markedAt);
+
+    return undefined;
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    return `Marking snapshot ${name} unused failed: ${errorMessage(error)}.`;
+  }
+};
+
+const clearSnapshotMarker = async (snapshot: string, name: string): Promise<string | undefined> => {
+  try {
+    await rm(join(snapshot, unusedMarkerName), { force: true });
+
+    return undefined;
+  } catch (error) {
+    return `Clearing the unused marker of snapshot ${name} failed: ${errorMessage(error)}.`;
+  }
 };
 
 const readPackageSnapshot = async (label: string): Promise<string | null> => {
@@ -107,22 +172,12 @@ const mapWithLimit = async <Item, Result>(
 
 const isFinished = (terminal: Pick<HcTerminal, 'state'>): boolean => terminal.state === 'finished';
 
-const isWorkerCandidate = (listed: HcTerminal): boolean => {
-  if (isFinished(listed)) {
-    return false;
-  }
-
-  const hasNoName = listed.name === undefined || listed.name === null;
-
-  return hasNoName || assignmentPrefixFromName(listed.name) !== undefined;
-};
-
 // hc lists terminals without labels, so each label comes from `hc get`.
 const readTerminalFact = async (hc: HcRuntime, listed: HcTerminal): Promise<TerminalRead> => {
   let terminal: HcTerminal;
 
   try {
-    terminal = await get(hc, listed.address);
+    terminal = await get(hc, listed.address, { timeout: terminalReadTimeout });
   } catch (error) {
     return {
       fact: { kind: 'unread', assignmentPrefix: assignmentPrefixFromName(listed.name) },
@@ -172,24 +227,12 @@ const readTerminalFacts = async (hc: HcRuntime): Promise<TerminalFacts> => {
   };
 };
 
-export const sweepWorkerFolders = async (
-  hc: HcRuntime,
+const removeDecidedFolders = async (
   agentDirectory: string,
-  now: number,
-  starting: readonly WorkerTerminalFact[],
+  decision: WorkerFolderRemoval,
 ): Promise<WorkerFolderSweep> => {
   const scratchRoot = scratchRootFor(agentDirectory);
   const snapshotRoot = snapshotRootFor(agentDirectory);
-  const { terminals, errors: readErrors } = await readTerminalFacts(hc);
-
-  const facts = {
-    now,
-    scratch: await readFolders(scratchRoot),
-    snapshots: await readFolders(snapshotRoot),
-    terminals: terminals === 'unread' ? terminals : [...terminals, ...starting],
-  };
-
-  const decision = decideWorkerFolderRemoval(facts);
 
   const scratchErrors = await Promise.all(
     decision.scratch.map((name) => removeScratchDirectory(agentDirectory, name)),
@@ -218,9 +261,48 @@ export const sweepWorkerFolders = async (
 
   return {
     removed: removals.filter((removal) => removal.error === undefined).map(({ path }) => path),
-    errors: [
-      ...readErrors,
-      ...removals.flatMap(({ error }) => (error === undefined ? [] : [error])),
-    ],
+    errors: removals.flatMap(({ error }) => (error === undefined ? [] : [error])),
+  };
+};
+
+const updateUnusedMarkers = async (
+  agentDirectory: string,
+  decision: WorkerFolderRemoval,
+  now: number,
+): Promise<string[]> => {
+  const results = await Promise.all([
+    ...decision.markUnused.map((name) =>
+      markSnapshotUnused(snapshotDirectoryFor(agentDirectory, name), name, now),
+    ),
+    ...decision.clearUnused.map((name) =>
+      clearSnapshotMarker(snapshotDirectoryFor(agentDirectory, name), name),
+    ),
+  ]);
+
+  return results.flatMap((error) => (error === undefined ? [] : [error]));
+};
+
+export const sweepWorkerFolders = async (
+  hc: HcRuntime,
+  agentDirectory: string,
+  now: number,
+  starting: readonly WorkerTerminalFact[],
+): Promise<WorkerFolderSweep> => {
+  const { terminals, errors: readErrors } = await readTerminalFacts(hc);
+
+  const facts = {
+    now,
+    scratch: await readFolders(scratchRootFor(agentDirectory)),
+    snapshots: await readSnapshots(snapshotRootFor(agentDirectory)),
+    terminals: terminals === 'unread' ? terminals : [...terminals, ...starting],
+  };
+
+  const decision = decideWorkerFolderRemoval(facts);
+  const markerErrors = await updateUnusedMarkers(agentDirectory, decision, now);
+  const removal = await removeDecidedFolders(agentDirectory, decision);
+
+  return {
+    removed: removal.removed,
+    errors: [...readErrors, ...markerErrors, ...removal.errors],
   };
 };

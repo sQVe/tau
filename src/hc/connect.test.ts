@@ -225,6 +225,39 @@ it('turns a synchronous spawn failure into an HcError', async () => {
   expect(failure).toMatchObject({ name: 'HcError', kind: 'spawn_failed' });
 });
 
+it('reports spawn_failed for a child error before spawn', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const pending = connect([helloLine, terminalLine]);
+
+  child.emit('error', new Error('spawn hc ENOENT'));
+  child.emit('close', -2, null);
+
+  const failure = await pending.catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ kind: 'spawn_failed' });
+  expect((failure as HcError).message).toContain('hc connect failed to start');
+});
+
+it('reports connect_failed for a child error after spawn', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const pending = connect([helloLine, terminalLine]);
+
+  child.emit('spawn');
+  child.emit('error', new Error('kill EPERM'));
+  child.emit('close', null, null);
+
+  const failure = await pending.catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ kind: 'connect_failed' });
+  expect((failure as HcError).message).toBe('hc connect failed: kill EPERM');
+});
+
 it('rejects with the stdout failure after the child closes cleanly', async () => {
   const child = createFakeChild();
   spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);

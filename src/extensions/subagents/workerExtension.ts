@@ -1,3 +1,4 @@
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type {
   AgentEndEvent,
   ExtensionAPI,
@@ -46,6 +47,7 @@ import { createWorkerDeadlineWarning } from './workerDeadlineWarning.js';
 import type { WorkerDeadlineWarning } from './workerDeadlineWarning.js';
 import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
 import type { WorkerStart } from './workerResume.js';
+import { createScratchDirectory } from './workerScratch.js';
 import { startPromptText } from './workerStart.js';
 import { handleStartInput } from './workerStartInput.js';
 import type { WorkerStartInput } from './workerStartInput.js';
@@ -321,6 +323,9 @@ const startWorker = async (
 ): Promise<void> => {
   try {
     const loaded = await readWorkerAssignment(state);
+
+    // A sweep may have removed the folder while `hc run` was slow.
+    await createScratchDirectory(getAgentDir(), loaded.assignment.assignmentId);
 
     state.target = { hc: state.hc, refusal: state.refusal, ...loaded };
 

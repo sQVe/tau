@@ -55,12 +55,14 @@ const runHc = async <Command extends HcCommand>(
   command: Command,
   commandArguments: string[],
   label: string,
+  options: { timeout?: number } = {},
 ): Promise<HcCommandReply<Command>> => {
   let result: Awaited<ReturnType<Exec>>;
 
   try {
     result = await runtime.exec('hc', commandArguments, {
       cwd: runtime.cwd,
+      ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
       ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
     });
   } catch (error) {
@@ -105,8 +107,12 @@ export const run = (runtime: HcRuntime, request: RunRequest): Promise<HcTerminal
   );
 };
 
-export const get = (runtime: HcRuntime, terminal: string): Promise<HcTerminal> =>
-  runHc(runtime, 'get', ['get', '--json', '--', terminal], `hc get ${terminal}`);
+export const get = (
+  runtime: HcRuntime,
+  terminal: string,
+  options: { timeout?: number } = {},
+): Promise<HcTerminal> =>
+  runHc(runtime, 'get', ['get', '--json', '--', terminal], `hc get ${terminal}`, options);
 
 export const ls = (runtime: HcRuntime, request: LsRequest = {}): Promise<HcTerminalList> => {
   const flags = request.all === true ? ['--all'] : [];

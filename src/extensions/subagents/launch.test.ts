@@ -5,6 +5,7 @@ import {
   renameSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -208,7 +209,14 @@ const launch = (
   );
 
 const uncertainSetup = (
-  kind: 'missing_reply' | 'read_failed' | 'malformed' | 'unexpected' | 'aborted' | 'spawn_failed',
+  kind:
+    | 'missing_reply'
+    | 'read_failed'
+    | 'malformed'
+    | 'unexpected'
+    | 'aborted'
+    | 'spawn_failed'
+    | 'connect_failed',
   packages: string[] = [],
 ) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-launch-');
@@ -444,6 +452,35 @@ it.each(['missing_reply', 'read_failed', 'malformed', 'unexpected'] as const)(
   },
 );
 
+it('reconciles a connect_failed launch by name', async () => {
+  const state = uncertainSetup('connect_failed');
+
+  state.runtime.hc.connect = async (lines) => {
+    const request = JSON.parse(lines[1] ?? '') as {
+      params: { name: string; labels: Record<string, string> };
+    };
+
+    const worker = {
+      address: 'worker',
+      name: request.params.name,
+      state: 'live',
+      parent: manager,
+      labels: request.params.labels,
+    };
+
+    state.fake.reply('ls', JSON.stringify({ terminals: [worker] }));
+    state.fake.reply('get', JSON.stringify(worker));
+
+    throw new HcError('connect_failed', 'hc connect failed: kill EPERM');
+  };
+
+  const result = await launch(state.runtime, {});
+
+  expect(result.isError).not.toBe(true);
+  expect(result.details?.address).toBe('worker');
+  expect(scratchNames(state.directory)).toHaveLength(1);
+});
+
 it('reconciles an aborted launch request that started the worker', async () => {
   const state = uncertainSetup('aborted', ['npm:review-package']);
   const controller = new AbortController();
@@ -632,6 +669,14 @@ const fakeDateAfter = (path: string, milliseconds: number): void => {
   vi.setSystemTime(statSync(path).birthtimeMs + milliseconds);
 };
 
+const markUnusedSinceBirth = (snapshot: string): void => {
+  const marker = join(snapshot, '.tau-unused-since');
+  const birth = statSync(snapshot).birthtimeMs / 1000;
+
+  writeFileSync(marker, '');
+  utimesSync(marker, birth, birth);
+};
+
 it('returns before the sweep settles', async () => {
   const { runtime } = setup();
 
@@ -700,6 +745,8 @@ it('keeps the launch folders and its snapshot when hc lists no worker', async ()
 
   mkdirSync(reused, { recursive: true });
   mkdirSync(unused, { recursive: true });
+  markUnusedSinceBirth(unused);
+  markUnusedSinceBirth(reused);
   fakeDateAfter(reused, 25 * hourInMilliseconds);
 
   const assignment = { ...savedAssignment(runtime.agentDirectory, null), packageSnapshot: reused };
@@ -785,6 +832,8 @@ it('keeps the old snapshot a starting follow-up reuses', async () => {
 
   mkdirSync(reused, { recursive: true });
   mkdirSync(unused, { recursive: true });
+  markUnusedSinceBirth(unused);
+  markUnusedSinceBirth(reused);
   fakeDateAfter(reused, 25 * hourInMilliseconds);
 
   const assignment = { ...savedAssignment(runtime.agentDirectory, null), packageSnapshot: reused };
@@ -991,9 +1040,7 @@ it('frees a confirmed slot when hc removed the child before the next launch', as
   expect(terminalRun(emptied)).toBeDefined();
 });
 
-it('removes the scratch folder when the signal aborts after admission', async () => {
-  const { fake, runtime } = setup();
-  const controller = new AbortController();
+const heldManagerRead = (runtime: LaunchRuntime) => {
   const entered = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
   const originalExec = runtime.hc.exec;
@@ -1007,18 +1054,48 @@ it('removes the scratch folder when the signal aborts after admission', async ()
     return originalExec(command, commandArguments, execOptions);
   };
 
-  const pending = launch(runtime, {}, controller.signal);
+  return {
+    entered: entered.promise,
+    release: () => {
+      release.resolve(undefined);
+    },
+  };
+};
 
-  await entered.promise;
+it('creates the scratch folder after the manager terminal read', async () => {
+  const { fake, runtime, scratchExistedAtRun } = setup();
+  const held = heldManagerRead(runtime);
+
+  const pending = launch(runtime, {});
+
+  await held.entered;
 
   const createdWhileWaiting = scratchNames(runtime.agentDirectory);
 
-  controller.abort();
-  release.resolve(undefined);
+  held.release();
 
   const result = await pending;
 
-  expect(createdWhileWaiting).toHaveLength(1);
+  expect(createdWhileWaiting).toEqual([]);
+  expect(result.isError).not.toBe(true);
+  expect(scratchExistedAtRun()).toBe(true);
+  expect(terminalRun(fake)).toBeDefined();
+  expect(scratchNames(runtime.agentDirectory)).toHaveLength(1);
+});
+
+it('leaves no scratch folder when the signal aborts during the manager read', async () => {
+  const { fake, runtime } = setup();
+  const controller = new AbortController();
+  const held = heldManagerRead(runtime);
+
+  const pending = launch(runtime, {}, controller.signal);
+
+  await held.entered;
+  controller.abort();
+  held.release();
+
+  const result = await pending;
+
   expect(result.isError).toBe(true);
   expect(terminalRun(fake)).toBeUndefined();
   expect(scratchNames(runtime.agentDirectory)).toEqual([]);

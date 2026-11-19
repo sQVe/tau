@@ -125,6 +125,13 @@ export const runWithEnvironment = async (
   return parseTerminal(label, takeReply(label, replies, 2));
 };
 
+// An error after spawn may come with a request hc already received, so only an error before spawn
+// is a definite start failure.
+const childFailure = (error: Error, spawned: boolean): HcError =>
+  spawned
+    ? new HcError('connect_failed', `hc connect failed: ${errorMessage(error)}`)
+    : new HcError('spawn_failed', `hc connect failed to start: ${errorMessage(error)}`);
+
 export const connect: Connect = (lines, options = {}) => {
   let child: ChildProcessWithoutNullStreams;
 
@@ -144,7 +151,8 @@ export const connect: Connect = (lines, options = {}) => {
   return new Promise<ConnectResult>((resolve, reject) => {
     let stdout = '';
     let stderr = '';
-    let spawnError: Error | undefined;
+    let spawned = false;
+    let childError: Error | undefined;
     let streamFailure: HcError | undefined;
     let aborted = false;
     let killTimer: NodeJS.Timeout | undefined;
@@ -182,21 +190,23 @@ export const connect: Connect = (lines, options = {}) => {
       failStream(new HcError('read_failed', `hc connect stderr failed: ${errorMessage(error)}`));
     });
 
+    child.on('spawn', () => {
+      spawned = true;
+    });
+
     child.on('error', (error) => {
       if (isAbortError(error)) {
         aborted = true;
       } else {
-        spawnError = error;
+        childError = error;
       }
     });
 
     child.on('close', (code, signal) => {
       clearTimeout(killTimer);
 
-      if (spawnError !== undefined) {
-        reject(
-          new HcError('spawn_failed', `hc connect failed to start: ${errorMessage(spawnError)}`),
-        );
+      if (childError !== undefined) {
+        reject(childFailure(childError, spawned));
 
         return;
       }

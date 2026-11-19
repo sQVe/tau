@@ -345,10 +345,12 @@ export const startReservedWorker = async (
   try {
     facts.signal?.throwIfAborted();
 
-    await createScratchDirectory(runtime.agentDirectory, assignmentId);
-
     const manager = await readCurrentTerminal(runtime.hc);
     const placement = placementLabels(manager?.labels ?? {});
+
+    // A sweep removes a scratch folder 60 s after creation, so no slow read may sit between the
+    // creation and the request.
+    await createScratchDirectory(runtime.agentDirectory, assignmentId);
 
     let terminal: HcTerminal;
 
