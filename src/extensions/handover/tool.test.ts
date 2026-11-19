@@ -384,13 +384,25 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const createAppFake = (): ExecFake<'app'> =>
-  createExecFake<'app'>({
-    keyOf: (command) => (command === 'herdr-app' ? 'app' : undefined),
-    handlerFor: () => () => succeededResult('{"ok":true}'),
+const emptyLayout = JSON.stringify({ spaces: [] });
+
+const createAppFake = (): ExecFake<'ls' | 'app'> =>
+  createExecFake<'ls' | 'app'>({
+    keyOf: (command, commandArguments) => {
+      if (command !== 'herdr-app') {
+        return undefined;
+      }
+
+      return commandArguments[0] === 'ls' ? 'ls' : 'app';
+    },
+    handlerFor: (key) => () => {
+      const reply = key === 'ls' ? emptyLayout : '{"ok":true}';
+
+      return succeededResult(reply);
+    },
   });
 
-const createStartTool = (app: ExecFake<'app'>) =>
+const createStartTool = (app: ExecFake<'ls' | 'app'>) =>
   createHandoverTool({ exec: app.exec, connect: createHcFake().connect, cwd: '/repository' });
 
 const argvOf = ({ commandArguments }: { commandArguments: string[] }) =>
@@ -451,7 +463,11 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
   );
 
   expect(result.details).toEqual({ reply: '{"ok":true}' });
-  expect(app.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
+
+  expect(app.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0])).toEqual([
+    'ls',
+    'tab.new',
+  ]);
 });
 
 it('starts a tab from a real bare repository root', async () => {
@@ -518,9 +534,9 @@ it('passes the model to the new Pi through herdr-app', async () => {
     modelContext(root, onTestFinished),
   );
 
-  expect(app.calls.map(argvOf)).toEqual([
-    '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
-  ]);
+  const lastArgv = app.calls.map(argvOf).at(-1);
+
+  expect(lastArgv).toBe('["pi","--provider","morph","--model","morph-dsv41flash-1017"]');
 });
 
 it('refuses a regular file as the start folder before any herdr-app call', async () => {

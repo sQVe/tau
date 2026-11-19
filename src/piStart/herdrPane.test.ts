@@ -15,6 +15,7 @@ const layoutOf = (stdout: string) => {
 const layout = JSON.stringify({
   spaces: [
     {
+      id: 'space-1',
       tabs: [
         { terminals: [{ terminal: 't1', pane: 'p1' }] },
         {
@@ -25,7 +26,7 @@ const layout = JSON.stringify({
         },
       ],
     },
-    { tabs: [{ terminals: [{ terminal: 't4', pane: 'p4' }] }] },
+    { id: 'space-2', tabs: [{ terminals: [{ terminal: 't4', pane: 'p4' }] }] },
   ],
 });
 

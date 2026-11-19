@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { Type } from 'typebox';
 
@@ -7,9 +7,14 @@ import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { errorMessage, isMissingFile } from '../errors.js';
 import { existingEntry } from '../tauDirectory.js';
+import { readHerdrLayout } from './herdrPane.js';
+import { isIdleShell, soleShellPane } from './idleShellDecision.js';
+import type { Foreground } from './idleShellDecision.js';
 import { piArguments } from './piArguments.js';
 
-export type PiStartTarget = { space: string } | { name: string };
+type ReadForeground = (terminal: string) => Promise<Foreground | null | undefined>;
+
+export type PiStartTarget = { space: string; readForeground: ReadForeground } | { name: string };
 
 interface PiSessionRequest {
   folder: string;
@@ -27,6 +32,11 @@ export interface PiStartRequest extends PiSessionRequest {
 export interface PiStartLeftOfRequest extends PiSessionRequest {
   pane: string;
   bareRoot: boolean;
+}
+
+interface SplitPaneResult {
+  pane: string;
+  terminal: string;
 }
 
 const splitReplySchema = Type.Object({ pane: Type.String(), terminal: Type.String() });
@@ -89,16 +99,13 @@ const swapArguments = (pane: string, target: string): string[] => [
   target,
 ];
 
-const startArguments = (request: PiStartRequest): string[] =>
-  'space' in request.target
-    ? tabArguments(request, request.target.space)
-    : spaceArguments(request, request.target.name);
+const closeArguments = (pane: string): string[] => ['do', 'pane.close', '--pane', pane];
 
-const startInPane = async (
+const splitPane = async (
   runtime: CommandRuntime,
   request: PiSessionRequest,
   pane: string,
-): Promise<string> => {
+): Promise<{ split: SplitPaneResult; reply: string }> => {
   const reply = await runCommand(
     runtime,
     'herdr-app',
@@ -110,18 +117,55 @@ const startInPane = async (
 
   checkOutput('herdr-app do pane.split', splitReplySchema, created);
 
+  return { split: created, reply };
+};
+
+const startInPane = async (
+  runtime: CommandRuntime,
+  request: PiSessionRequest,
+  pane: string,
+): Promise<string> => {
+  const { split, reply } = await splitPane(runtime, request, pane);
+
   try {
     runtime.signal?.throwIfAborted();
 
     await runCommand(
       runtime,
       'herdr-app',
-      swapArguments(created.pane, pane),
+      swapArguments(split.pane, pane),
       'herdr-app do pane.swap',
     );
   } catch (error) {
     throw new Error(
-      `The session runs in pane ${created.pane} (terminal ${created.terminal}), but the swap did not finish: ${errorMessage(error)}`,
+      `The session runs in pane ${split.pane} (terminal ${split.terminal}), but the swap did not finish: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+
+  return reply;
+};
+
+const takeOverShell = async (
+  runtime: CommandRuntime,
+  request: PiSessionRequest,
+  shell: { terminal: string; pane: string },
+  readForeground: ReadForeground,
+): Promise<string> => {
+  const { split, reply } = await splitPane(runtime, request, shell.pane);
+  const foreground = await readForeground(shell.terminal);
+
+  if (!isIdleShell(foreground, resolve(request.folder))) {
+    return reply;
+  }
+
+  try {
+    runtime.signal?.throwIfAborted();
+
+    await runCommand(runtime, 'herdr-app', closeArguments(shell.pane), 'herdr-app do pane.close');
+  } catch (error) {
+    throw new Error(
+      `The session runs in pane ${split.pane} (terminal ${split.terminal}), but the shell pane ${shell.pane} did not close: ${errorMessage(error)}`,
       { cause: error },
     );
   }
@@ -165,13 +209,46 @@ const requireCheckout = async (
   runtime.signal?.throwIfAborted();
 };
 
+const startInTab = (runtime: CommandRuntime, request: PiSessionRequest, space: string) =>
+  runCommand(runtime, 'herdr-app', tabArguments(request, space), 'herdr-app do');
+
+const startInSpace = async (
+  runtime: CommandRuntime,
+  request: PiSessionRequest,
+  target: { space: string; readForeground: ReadForeground },
+): Promise<string> => {
+  const layout = await readHerdrLayout(runtime);
+  const space = layout.spaces.find((candidate) => candidate.id === target.space);
+  const shell = soleShellPane(space);
+
+  if (shell === undefined) {
+    return startInTab(runtime, request, target.space);
+  }
+
+  const foreground = await target.readForeground(shell.terminal);
+
+  if (!isIdleShell(foreground, resolve(request.folder))) {
+    return startInTab(runtime, request, target.space);
+  }
+
+  return takeOverShell(runtime, request, shell, target.readForeground);
+};
+
 export const startPiSession = async (
   runtime: CommandRuntime,
   request: PiStartRequest,
 ): Promise<{ reply: string }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
-  const reply = await runCommand(runtime, 'herdr-app', startArguments(request), 'herdr-app do');
+  const reply =
+    'space' in request.target
+      ? await startInSpace(runtime, request, request.target)
+      : await runCommand(
+          runtime,
+          'herdr-app',
+          spaceArguments(request, request.target.name),
+          'herdr-app do',
+        );
 
   return { reply };
 };

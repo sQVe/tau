@@ -9,11 +9,68 @@ import {
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { startPiSession, startPiSessionLeftOf } from './piStart.js';
 
-const createAppFake = (): ExecFake<'app'> =>
-  createExecFake<'app'>({
-    keyOf: (command) => (command === 'herdr-app' ? 'app' : undefined),
-    handlerFor: () => () => succeededResult('{"ok":true}'),
+type SpaceKey = 'ls' | 'pane.split' | 'pane.close' | 'tab.new';
+
+const emptyLayout = JSON.stringify({ spaces: [] });
+
+const createAppFake = (): ExecFake<'ls' | 'app'> =>
+  createExecFake<'ls' | 'app'>({
+    keyOf: (command, commandArguments) => {
+      if (command !== 'herdr-app') {
+        return undefined;
+      }
+
+      return commandArguments[0] === 'ls' ? 'ls' : 'app';
+    },
+    handlerFor: (key) => () => {
+      const reply = key === 'ls' ? emptyLayout : '{"ok":true}';
+
+      return succeededResult(reply);
+    },
   });
+
+const shellLayout = (space: string): string =>
+  JSON.stringify({
+    spaces: [
+      {
+        id: space,
+        tabs: [{ terminals: [{ terminal: 't-shell', pane: 'p-shell', app: null }] }],
+      },
+    ],
+  });
+
+const createSpaceFake = (layout: string): ExecFake<SpaceKey> =>
+  createExecFake<SpaceKey>({
+    keyOf: (command, commandArguments) => {
+      if (command !== 'herdr-app') {
+        return undefined;
+      }
+
+      if (commandArguments[0] === 'ls') {
+        return 'ls';
+      }
+
+      const [, name] = commandArguments;
+
+      return name === 'pane.split' || name === 'pane.close' || name === 'tab.new'
+        ? name
+        : undefined;
+    },
+    handlerFor: (key) => () => {
+      if (key === 'ls') {
+        return succeededResult(layout);
+      }
+
+      if (key === 'pane.split') {
+        return succeededResult('{"pane":"p-new","terminal":"t-new"}');
+      }
+
+      return succeededResult('{"ok":true}');
+    },
+  });
+
+const appCommands = (fake: ExecFake<SpaceKey>): string[] =>
+  fake.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0] ?? '');
 
 it('a tab start passes the argv as JSON', async () => {
   const fake = createAppFake();
@@ -23,7 +80,7 @@ it('a tab start passes the argv as JSON', async () => {
     { exec: fake.exec, cwd: root },
     {
       folder: root,
-      target: { space: 'space-1' },
+      target: { space: 'space-1', readForeground: () => Promise.resolve(null) },
       task: 'Next steps\n',
       model: 'morph/morph-dsv41flash-1017',
       session: '/tmp/architect.jsonl',
@@ -35,6 +92,11 @@ it('a tab start passes the argv as JSON', async () => {
   expect(result).toEqual({ reply: '{"ok":true}' });
 
   expect(fake.calls).toEqual([
+    {
+      command: 'herdr-app',
+      commandArguments: ['ls'],
+      signal: undefined,
+    },
     {
       command: 'herdr-app',
       commandArguments: [
@@ -56,6 +118,126 @@ it('a tab start passes the argv as JSON', async () => {
   ]);
 });
 
+it('a space with one idle shell tab gets Pi by split and close', async () => {
+  const fake = createSpaceFake(shellLayout('space-1'));
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: {
+        space: 'space-1',
+        readForeground: () => Promise.resolve({ name: 'zsh', cwd: root }),
+      },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+
+  expect(fake.calls.map((call) => call.commandArguments)).toEqual([
+    ['ls'],
+    [
+      'do',
+      'pane.split',
+      '--direction',
+      'right',
+      '--pane',
+      'p-shell',
+      '--argv',
+      JSON.stringify(['env', '-C', root, 'pi', 'Next steps\n']),
+    ],
+    ['do', 'pane.close', '--pane', 'p-shell'],
+  ]);
+});
+
+it('a shell running another program keeps its tab', async () => {
+  const fake = createSpaceFake(shellLayout('space-1'));
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: {
+        space: 'space-1',
+        readForeground: () => Promise.resolve({ name: 'vim', cwd: root }),
+      },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  );
+
+  expect(appCommands(fake)).toEqual(['ls', 'tab.new']);
+  expect(appCommands(fake)).not.toContain('pane.close');
+});
+
+it('a shell that turns busy during the split stays open', async () => {
+  const fake = createSpaceFake(shellLayout('space-1'));
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const foregrounds = [
+    { name: 'zsh', cwd: root },
+    { name: 'vim', cwd: root },
+  ];
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: {
+        space: 'space-1',
+        readForeground: () => Promise.resolve(foregrounds.shift()),
+      },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+  expect(appCommands(fake)).toEqual(['ls', 'pane.split']);
+});
+
+it('a failed shell close names the new pane', async () => {
+  const fake = createSpaceFake(shellLayout('space-1'));
+  const root = await createTemporaryRepository(onTestFinished);
+
+  fake.failCommand('pane.close', 'pane is gone');
+
+  const failure = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: {
+        space: 'space-1',
+        readForeground: () => Promise.resolve({ name: 'zsh', cwd: root }),
+      },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+
+  const { message, cause } = failure as Error;
+
+  expect(message).toContain('pane p-new (terminal t-new)');
+  expect(message).toContain('the shell pane p-shell did not close');
+  expect(message).toContain('pane is gone');
+  expect(cause).toBeInstanceOf(Error);
+  expect(appCommands(fake)).toEqual(['ls', 'pane.split', 'pane.close']);
+});
+
 it('a true bare repository root starts a session', async () => {
   const fake = createAppFake();
   const root = await createTemporaryBareRepository(onTestFinished);
@@ -64,7 +246,7 @@ it('a true bare repository root starts a session', async () => {
     { exec: fake.exec, cwd: root },
     {
       folder: root,
-      target: { space: 'space-1' },
+      target: { space: 'space-1', readForeground: () => Promise.resolve(null) },
       task: 'Next steps\n',
       model: undefined,
       session: undefined,
@@ -74,7 +256,11 @@ it('a true bare repository root starts a session', async () => {
   );
 
   expect(result).toEqual({ reply: '{"ok":true}' });
-  expect(fake.calls).toHaveLength(1);
+
+  expect(fake.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0])).toEqual([
+    'ls',
+    'tab.new',
+  ]);
 });
 
 it('a folder that is not a Git checkout is refused', async () => {
