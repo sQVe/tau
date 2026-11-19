@@ -162,11 +162,11 @@ const closeLiveAsks = async (
     session.ui.notify(message, 'warning');
   };
 
-  const delivered = await answers.close();
+  const { delivered, uncertain } = await answers.close();
 
   await failOpenLiveAsks(
     { root: session.root, sessionId: session.owner.sessionId },
-    { hc, report, delivered },
+    { hc, report, delivered, uncertain },
   ).catch((error: unknown) => {
     report(`The architect could not close its open asks: ${errorMessage(error)}`);
   });

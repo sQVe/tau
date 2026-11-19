@@ -16,7 +16,11 @@ export interface CapturingInbox {
   saved: () => string[];
   savedTexts: () => string[];
   releaseFirst: () => void;
+  // Every later frame is saved, but its reply is dropped.
+  dropLaterReplies: () => void;
 }
+
+type ReplyMode = 'suppress' | 'hold' | 'reply' | 'save-then-drop';
 
 const readdirSyncSafe = (path: string): string[] => {
   try {
@@ -29,7 +33,7 @@ const readdirSyncSafe = (path: string): string[] => {
 export const startCapturingInbox = async (
   cleanup: Cleanup,
   sessionId: string,
-  first: 'suppress' | 'hold' | 'reply',
+  first: ReplyMode,
   beforeReply?: (messageId: string) => Promise<void>,
   terminal = 't-architect',
 ): Promise<CapturingInbox> => {
@@ -37,6 +41,7 @@ export const startCapturingInbox = async (
   const records = join(directory, '..', 'records');
   const frames: string[] = [];
   let release: (() => void) | undefined;
+  let later: ReplyMode = 'reply';
 
   const receiver = createReceiver({
     directory: join(records, sessionId),
@@ -68,12 +73,14 @@ export const startCapturingInbox = async (
     socket.on('end', () => {
       frames.push(data);
 
-      if (frames.length === 1 && first !== 'reply') {
+      const mode = frames.length === 1 ? first : later;
+
+      if (mode === 'suppress' || mode === 'hold') {
         const finish = (): void => {
           socket.end();
         };
 
-        if (first === 'hold') {
+        if (mode === 'hold') {
           release = finish;
         } else {
           finish();
@@ -94,7 +101,11 @@ export const startCapturingInbox = async (
             ? await receiver.accept(decision.value)
             : refusedReply(decision.reason);
 
-        socket.end(encodeFrame(reply));
+        if (mode === 'save-then-drop') {
+          socket.end();
+        } else {
+          socket.end(encodeFrame(reply));
+        }
       })().catch(() => {
         socket.destroy();
       });
@@ -126,6 +137,9 @@ export const startCapturingInbox = async (
       }),
     releaseFirst: () => {
       release?.();
+    },
+    dropLaterReplies: () => {
+      later = 'save-then-drop';
     },
   };
 };

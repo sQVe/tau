@@ -5,7 +5,14 @@ import { encodeMessageFrame, requestByteLimit, sendInboxMessage } from '../../in
 import { changeAskRecord, isOpenLiveAsk, isOpenLiveAskStatus, readAskRecord } from './record.js';
 import type { AskRecordChange, LiveAskRecord } from './record.js';
 
-export type DeliveredAnswers = ReadonlyMap<string, string>;
+export type AnswerTexts = ReadonlyMap<string, string>;
+
+export interface ClosedAnswers {
+  // Answers the lead inbox confirmed, whose ask record could not be settled.
+  delivered: AnswerTexts;
+  // Answers whose send ended unknown. The lead may or may not have saved them.
+  uncertain: AnswerTexts;
+}
 
 export interface AnswerRequest {
   root: string;
@@ -15,6 +22,7 @@ export interface AnswerRequest {
   architectSessionId: string;
   hc: HcRuntime;
   recordDelivered: (askId: string, answer: string) => void;
+  recordUncertain: (askId: string, answer: string) => void;
 }
 
 export type AnswerResult =
@@ -24,7 +32,8 @@ export type AnswerResult =
 export interface AnswerTracker {
   run: <Result>(answer: () => Promise<Result>) => Promise<Result>;
   recordDelivered: (askId: string, answer: string) => void;
-  close: () => Promise<DeliveredAnswers>;
+  recordUncertain: (askId: string, answer: string) => void;
+  close: () => Promise<ClosedAnswers>;
 }
 
 type Settlement =
@@ -36,6 +45,7 @@ const closeLimitMilliseconds = 10_000;
 export const createAnswerTracker = (): AnswerTracker => {
   const inFlight = new Set<Promise<unknown>>();
   const delivered = new Map<string, string>();
+  const uncertain = new Map<string, string>();
   let closed = false;
 
   return {
@@ -55,7 +65,11 @@ export const createAnswerTracker = (): AnswerTracker => {
       }
     },
     recordDelivered: (askId, answer) => {
+      uncertain.delete(askId);
       delivered.set(askId, answer);
+    },
+    recordUncertain: (askId, answer) => {
+      uncertain.set(askId, answer);
     },
     close: async () => {
       closed = true;
@@ -72,7 +86,7 @@ export const createAnswerTracker = (): AnswerTracker => {
         clearTimeout(timer);
       }
 
-      return delivered;
+      return { delivered, uncertain };
     },
   };
 };
@@ -164,6 +178,8 @@ export const answerLiveAsk = async (request: AnswerRequest): Promise<AnswerResul
   });
 
   if (sent.status === 'unknown') {
+    request.recordUncertain(askId, answer);
+
     return {
       status: 'unknown',
       askId,

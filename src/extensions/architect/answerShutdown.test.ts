@@ -28,6 +28,12 @@ const isRoot = process.getuid?.() === 0;
 const closeNote = (askId: string): string =>
   `Ask ${askId} got no answer: the architect closed. Call architect ask again.`;
 
+const uncheckedDetail =
+  'The architect closed and could not check whether its answer reached the lead.';
+
+const uncheckedNote = (askId: string): string =>
+  `Ask ${askId}: the architect closed and could not check whether its answer reached you. If no "Answer to ask ${askId}" arrived, call architect ask again.`;
+
 const liveRecord = (): LiveAskRecord => ({
   version: 2,
   route: 'live',
@@ -266,7 +272,7 @@ it('shutdown still fails an open ask that was never answered', async ({
   expect(notify).not.toHaveBeenCalled();
 });
 
-it('shutdown fails an ask whose answer send ended unknown and sends the close note', async ({
+it('shutdown resends an answer whose send was dropped before the lead saved it', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, lead, record, answer, end } = await closingArchitect(cleanup, 'hold');
@@ -283,8 +289,69 @@ it('shutdown fails an ask whose answer send ended unknown and sends the close no
   expect((await answering).details).toMatchObject({ status: 'unknown', askId: record.askId });
   await ending;
 
-  expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
-  expect(lead.savedTexts()).toEqual([closeNote(record.askId)]);
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'answered',
+    answer: answerText(record.askId),
+  });
+
+  expect(lead.saved()).toEqual([`${record.askId}.json`]);
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+});
+
+it('an answer saved before its reply was lost is settled at close', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, lead, record, answer, end, notify } = await closingArchitect(
+    cleanup,
+    'save-then-drop',
+  );
+
+  expect((await answer()).details).toMatchObject({ status: 'unknown', askId: record.askId });
+  expect(lead.saved()).toEqual([`${record.askId}.json`]);
+
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'answered',
+    answer: answerText(record.askId),
+  });
+
+  expect(lead.saved()).toEqual([`${record.askId}.json`]);
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(notify).not.toHaveBeenCalled();
+});
+
+it('an answer whose outcome stays unknown at close gets the could-not-check note', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, lead, record, answer, end } = await closingArchitect(cleanup, 'save-then-drop');
+
+  await answer();
+  lead.dropLaterReplies();
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'failed',
+    detail: uncheckedDetail,
+  });
+
+  const expectedTexts = [answerText(record.askId), uncheckedNote(record.askId)].toSorted();
+  const savedTexts = lead.savedTexts().toSorted();
+
+  expect(savedTexts).toEqual(expectedTexts);
+});
+
+it('closing the tracker reports delivered and uncertain answers apart', async () => {
+  const answers = createAnswerTracker();
+
+  answers.recordUncertain('ask-1', 'first');
+  answers.recordUncertain('ask-2', 'second');
+  answers.recordDelivered('ask-2', 'second');
+
+  await expect(answers.close()).resolves.toEqual({
+    delivered: new Map([['ask-2', 'second']]),
+    uncertain: new Map([['ask-1', 'first']]),
+  });
 });
 
 it('an answer after shutdown started throws, sends nothing, and leaves the record unchanged', async ({
@@ -319,7 +386,7 @@ it('an answer that never settles holds shutdown for 10 seconds, then the ask fai
     },
   };
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   cleanup(() => {
     vi.useRealTimers();
@@ -350,7 +417,7 @@ it('an answer that never settles holds shutdown for 10 seconds, then the ask fai
 it('closing the tracker waits for a run that never settles for exactly 10 seconds', async ({
   onTestFinished: cleanup,
 }) => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   cleanup(() => {
     vi.useRealTimers();

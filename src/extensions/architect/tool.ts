@@ -205,6 +205,7 @@ export const createArchitectAnswerTool = (
           architectSessionId: context.sessionManager.getSessionId(),
           hc: { ...hc, signal },
           recordDelivered: answers.recordDelivered,
+          recordUncertain: answers.recordUncertain,
         }),
       );
 
