@@ -6,7 +6,7 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import { resolveAllowedModel } from '../../config/models.js';
-import { isBareRoot } from '../../git.js';
+import { isBareRootWithoutGitEntry } from '../../git.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
 import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
@@ -155,7 +155,10 @@ const runAction = async (
   if (input.action === 'start') {
     const request = startRequest(context, input);
 
-    return startHandover(hc, { ...request, bareRoot: await isBareRoot(request.folder) });
+    return startHandover(hc, {
+      ...request,
+      bareRoot: await isBareRootWithoutGitEntry(request.folder),
+    });
   }
 
   return sendHandover(hc, sendRequest(context.cwd, input));

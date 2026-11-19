@@ -6,9 +6,11 @@ import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { installCommandShim, logCommandCalls } from '../../../tests/commandShimFake.js';
 import { createExecFake, succeededResult } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import {
+  createTemporaryBareRepository,
   createTemporaryBareRoot,
   createTemporaryRepository,
   git,
@@ -18,6 +20,7 @@ import type { HcFake } from '../../../tests/hcFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
+import { readHandoverText } from './handoverFile.js';
 import { createHandoverTool } from './tool.js';
 
 const runtimeOf = (fake: HcFake) => ({
@@ -449,6 +452,51 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
 
   expect(result.details).toEqual({ reply: '{"ok":true}' });
   expect(app.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
+});
+
+it('starts a tab from a real bare repository root', async () => {
+  const root = await createTemporaryBareRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+
+  const result = await createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({ reply: '{"ok":true}' });
+  expect(app.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
+});
+
+const countBareProbes = (calls: string): number =>
+  calls.split('\n').filter((call) => call === 'rev-parse --is-bare-repository').length;
+
+it('starts from a repository with a .git entry without asking Git whether it is bare', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+  const logPath = join(temporaryDirectory(onTestFinished, 'tau-handover-git-calls-'), 'calls.log');
+
+  await writeFile(logPath, '');
+  await installCommandShim('git', { otherCalls: 'real', overrides: [logCommandCalls(logPath)] });
+
+  await readHandoverText(root, file);
+  const readingProbes = countBareProbes(await readFile(logPath, 'utf8'));
+
+  await writeFile(logPath, '');
+
+  await createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(countBareProbes(await readFile(logPath, 'utf8'))).toBe(readingProbes);
 });
 
 it('passes the model to the new Pi through herdr-app', async () => {

@@ -1,6 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { execFile } from 'node:child_process';
 import type { ChildProcess, ExecFileException } from 'node:child_process';
+import { lstat } from 'node:fs/promises';
+import { join } from 'node:path';
+
+import { isMissingFile } from './errors.ts';
 
 export interface GitResult {
   exitCode: number | null;
@@ -296,3 +300,19 @@ export const isBareRoot = async (
 
   return read.status === 'read' && read.bare;
 };
+
+const hasGitEntry = (root: string): Promise<boolean> =>
+  lstat(join(root, '.git')).then(
+    () => true,
+    (error: unknown) => {
+      if (isMissingFile(error)) {
+        return false;
+      }
+
+      throw error;
+    },
+  );
+
+// A `.git` entry means a checkout, so its presence answers without a Git call.
+export const isBareRootWithoutGitEntry = async (root: string): Promise<boolean> =>
+  !(await hasGitEntry(root)) && isBareRoot(root);

@@ -7,7 +7,7 @@ import { readRoleModel } from '../../../config/roleModels.js';
 import { errorMessage, isMissingFile } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../../fileLock/fileLock.js';
-import { isBareRoot } from '../../../git.js';
+import { isBareRootWithoutGitEntry } from '../../../git.js';
 import { get } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
@@ -175,7 +175,7 @@ const startArchitect = async (
     task,
     model,
     session,
-    bareRoot: await isBareRoot(request.root),
+    bareRoot: await isBareRootWithoutGitEntry(request.root),
     environment: { TAU_ROLE: 'architect', TAU_LEAD_TERMINAL: request.leadTerminal },
   };
 

@@ -12,6 +12,7 @@ import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
 import type { Exec } from '../../../command.js';
+import type { HcRuntime } from '../../../hc/hc.js';
 import { architectRecordPath, writeArchitectRecord, writeAskRecord } from '../record.js';
 import { createArchitectTool } from '../tool.js';
 
@@ -22,6 +23,7 @@ interface OpenTool {
   app: ExecFake<AppKey>;
   terminals: Map<string, ExecResult>;
   tool: ReturnType<typeof createArchitectTool>;
+  runtime: HcRuntime;
 }
 
 const appFake = (): ExecFake<AppKey> =>
@@ -122,13 +124,11 @@ export const openTool = (
 
   leadInSpace(hc, leadSpace);
 
-  const tool = createArchitectTool({
-    ...hc,
-    exec: routedExec(hc, app, terminals, afterTerminalLookup),
-    cwd: root,
-  });
+  const runtime = { ...hc, exec: routedExec(hc, app, terminals, afterTerminalLookup), cwd: root };
 
-  return { hc, app, terminals, tool };
+  const tool = createArchitectTool(runtime);
+
+  return { hc, app, terminals, tool, runtime };
 };
 
 export const open = (
