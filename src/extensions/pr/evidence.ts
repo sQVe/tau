@@ -23,7 +23,7 @@ import { listRecordProblems, selectEvidence } from '../../verification/selection
 import type { SelectedResult } from '../../verification/selection.js';
 import { readRuns, verificationDirectoryPath } from '../../verification/verification.js';
 import { readCheckEvidence } from './checkEvidence.js';
-import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
+import type { CheckStateRead, FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainEvidence } from './evidenceChain.js';
 import type { CheckLog, PublicationGap } from './evidenceDecisions.js';
 import { decideSavedReuse } from './reuse.js';
@@ -244,7 +244,11 @@ const toVerificationEvidence = ({
   counts,
 });
 
-const readVerification = async (root: string, evidence: PublicationEvidence) => {
+const readVerification = async (
+  root: string,
+  evidence: PublicationEvidence,
+  checkState: CheckStateRead,
+) => {
   let recordRoot: string;
 
   try {
@@ -257,12 +261,10 @@ const readVerification = async (root: string, evidence: PublicationEvidence) => 
 
   let tree: string | null;
 
-  try {
-    const state = await readCheckState(root);
-
-    tree = state.tree;
-  } catch (error) {
-    evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
+  if (checkState.status === 'read') {
+    tree = checkState.state.tree;
+  } else {
+    evidence.gaps.push({ kind: 'verification', reason: errorMessage(checkState.error) });
     tree = null;
   }
 
@@ -335,13 +337,23 @@ export const readPublicationEvidence = async (
   await readChain(root, request, evidence);
   await readReview(root, request, evidence);
 
-  const checkEvidence = await readCheckEvidence(root, evidence.target?.mergeBase, config);
+  const checkState: CheckStateRead = await readCheckState(root).then(
+    (state) => ({ status: 'read', state }),
+    (error: unknown) => ({ status: 'failed', error }),
+  );
+
+  const checkEvidence = await readCheckEvidence(
+    root,
+    evidence.target?.mergeBase,
+    config,
+    checkState,
+  );
 
   evidence.checks = checkEvidence.checks;
   evidence.fullCheck = checkEvidence.fullCheck;
   evidence.gaps.push(...checkEvidence.gaps);
 
-  await readVerification(root, evidence);
+  await readVerification(root, evidence, checkState);
 
   return evidence;
 };
