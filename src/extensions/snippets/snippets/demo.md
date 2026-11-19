@@ -1,6 +1,6 @@
 ---
 name: Demo in a pane
-description: Run a demo in a herdr-app pane beside mine
+description: Run a demo in a new herdr-app tab in my space
 ---
 
-Demo this in a new herdr-app pane to the right of yours, so I can watch it run. Find your pane ID in `herdr-app ls`, where it lists your `HC_TERMINAL_ID`, and run the demo with `herdr-app do pane.split --direction right --pane <your pane> --argv '[...]'`. If you cannot find your pane, ask me. Tell me what to look at, and leave the pane open when you finish.
+Demo this in a new tab of your herdr-app space, so I can watch it run. Open the tab with `herdr-app do tab.new --space <your space> --folder <folder> --argv '[...]'`, and run the demo there. If you cannot find your space, ask me. Tell me what to look at, and leave the tab open when you finish.

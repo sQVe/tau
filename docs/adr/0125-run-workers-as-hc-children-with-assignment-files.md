@@ -65,9 +65,8 @@ only the worker writes its report and its questions into it.
   unclear.
 - A failed launch removes its package snapshot. A worker that ends keeps its snapshot and session
   file.
-- Every worker gets a herdr pane by its role. An editing worker takes the manager's herdr space and
-  tab. Any other worker takes the manager's herdr space and a tab named `<manager tab>-workers`. A
-  manager without both labels gives its workers no herdr labels. Tau has no `visibility` parameter.
+- Every worker takes the manager's herdr space and a tab named `<manager tab>-workers`. A manager
+  without both labels gives its workers no herdr labels. Tau has no `visibility` parameter.
 - A worker's first run starts from a fixed start message that Tau passes on the Pi command line. The
   worker extension replaces it with the task prompt or the restart note, or handles it with no run.
   The worker extension never sends a message during Pi's `session_start`: Pi reports terminal status

@@ -38,6 +38,13 @@ keeps its earlier design context and approvals. The checkout records the session
 stops two sessions from writing one session file. `open` reports the live visible architect instead
 of refusing, and `ask` and a second start still refuse while a live holder keeps the lock.
 
+### The lead's tab
+
+The lead's tab, the first tab of its work space, holds only the architect on the left and the lead
+on the right. Every other pane opens in another tab of the same space. Workers open in
+`<lead tab>-workers`, `draft_review`'s tuicr opens in `<caller tab>-review`, and a terminal an agent
+starts opens in a new tab from `tab.new`.
+
 ### Models
 
 `roles.lead.model` and `roles.architect.model` choose each role's model from the user file. A worker
@@ -66,6 +73,7 @@ the work.
 - Each ask resumes a large architect session, so its prompt cache cost can return.
 - The split adds a role-specific prompt and model setting to maintain.
 - A lead that ignores a skill marker can still decide a design choice itself.
+- The user switches tabs to watch a worker or a review.
 
 ## Alternatives considered
 

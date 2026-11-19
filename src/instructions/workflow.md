@@ -14,13 +14,13 @@ when you stop. Follow explicit user instructions and repository conventions over
 - An address such as `t28` names an `hc` terminal. Before searching files, branches, worktrees, or
   Linear, run `hc get t28` and use its `cwd` and labels.
 
-## Open herdr-app panes beside your own
+## Open herdr-app terminals in a new tab
 
-- Before a `herdr-app` pane command, find your pane in `herdr-app ls` by `HC_TERMINAL_ID` and pass
-  it as `pane`. The default is the focused pane, which may be in another space.
-- Start a terminal in a folder with
-  `pane.split --direction right --pane <your pane> --argv '["env","-C","<folder>","<program>"]'`,
-  not `terminal.open`, which splits the focused pane.
+- Read your space from the `herdr.space` label of `hc get $HC_TERMINAL_ID`.
+- Start a terminal with
+  `herdr-app do tab.new --space <your space> --folder <folder> --argv '["<program>"]'`. Do not use
+  `pane.split` or `terminal.open`, which add a pane to an existing tab, and the lead's tab holds
+  only the architect and the lead.
 - Before you report where it runs, check that `hc get <new terminal>` shows your `herdr.space` label
   and the folder in `foreground.cwd`.
 
