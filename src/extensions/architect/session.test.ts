@@ -590,3 +590,125 @@ it('ending does not note an ask that disappears after the scan', async ({ onTest
   expect(warnings).toEqual([]);
   await expect(readAskRecord(root, liveIds.open)).resolves.toBeUndefined();
 });
+
+const flushMacrotask = (): Promise<void> =>
+  new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+
+const secondLiveId = '0190c1d2-0000-7000-8000-000000000306';
+
+it('ending waits for a held close note after another ask settlement fails', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+  const noteHeld = Promise.withResolvers<undefined>();
+  const noteEntered = Promise.withResolvers<undefined>();
+  const writeFailed = Promise.withResolvers<undefined>();
+  const warnings: string[] = [];
+  let reads = 0;
+
+  const sockets = temporaryDirectory(onTestFinished, 'tau-architect-held-note-');
+
+  const lead = await startHandoverReceiver(onTestFinished, sockets, 't-lead', {
+    sessionId: 'session-lead',
+    beforeCommit: async () => {
+      noteEntered.resolve(undefined);
+      await noteHeld.promise;
+    },
+  });
+
+  leadTerminal(hc, lead);
+  await writeAskRecord(root, liveAsk('open', 'queued'));
+  await writeAskRecord(root, { ...liveAsk('open', 'queued'), askId: secondLiveId });
+
+  let outcome = 'running';
+
+  const closing = failOpenLiveAsks(
+    { root, sessionId: 'session-architect' },
+    {
+      hc: hcRuntime(hc),
+      report: (message) => warnings.push(message),
+      delivered: new Map(),
+      uncertain: new Map(),
+    },
+    {
+      afterRead: () => {
+        reads += 1;
+
+        if (reads > 1) {
+          return Promise.resolve();
+        }
+
+        writeFailed.resolve(undefined);
+
+        return Promise.reject(new Error('The record write failed.'));
+      },
+    },
+  ).then(
+    () => {
+      outcome = 'resolved';
+
+      return undefined;
+    },
+    (error: unknown) => {
+      outcome = error instanceof Error ? error.message : 'rejected';
+
+      return undefined;
+    },
+  );
+
+  await Promise.all([noteEntered.promise, writeFailed.promise]);
+  await flushMacrotask();
+
+  expect(outcome).toBe('running');
+
+  noteHeld.resolve(undefined);
+  await closing;
+
+  expect(outcome).toBe('The record write failed.');
+
+  const statuses = [
+    (await readAskRecord(root, liveIds.open))?.status,
+    (await readAskRecord(root, secondLiveId))?.status,
+  ];
+
+  expect(statuses.toSorted((left, right) => String(left).localeCompare(String(right)))).toEqual([
+    'failed',
+    'queued',
+  ]);
+
+  await expect(readdir(join(sockets, 'records', 'session-lead'))).resolves.toHaveLength(1);
+  expect(warnings).toEqual([]);
+});
+
+it('ending reports every failed ask settlement in one error', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+  let reads = 0;
+
+  await writeAskRecord(root, liveAsk('open', 'queued'));
+  await writeAskRecord(root, { ...liveAsk('open', 'queued'), askId: secondLiveId });
+
+  const closing = failOpenLiveAsks(
+    { root, sessionId: 'session-architect' },
+    {
+      hc: hcRuntime(hc),
+      report: () => undefined,
+      delivered: new Map(),
+      uncertain: new Map(),
+    },
+    {
+      afterRead: () => {
+        reads += 1;
+
+        return Promise.reject(new Error(`The record write ${reads} failed.`));
+      },
+    },
+  );
+
+  await expect(closing).rejects.toThrow(
+    /The record write \d failed\.\nThe record write \d failed\./u,
+  );
+});

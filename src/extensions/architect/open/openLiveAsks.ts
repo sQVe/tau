@@ -169,7 +169,8 @@ const settleOpenAsk = async (
 
 // Each note is best effort: the caller releases the lock after this, whatever the lead receives.
 // An ask whose answer reached the lead settles as answered and gets no note. An answer with an
-// unknown send is sent once more.
+// unknown send is sent once more. Every settlement finishes before this returns or throws, so the
+// caller never releases the lock while one still runs.
 export const failOpenLiveAsks = async (
   owner: OpenAskOwner,
   closing: AskClosing,
@@ -177,5 +178,15 @@ export const failOpenLiveAsks = async (
 ): Promise<void> => {
   const open = await readOpenLiveAsks(owner.root, owner.sessionId);
 
-  await Promise.all(open.map((ask) => settleOpenAsk(ask, owner, closing, options)));
+  const settlements = await Promise.allSettled(
+    open.map((ask) => settleOpenAsk(ask, owner, closing, options)),
+  );
+
+  const failures = settlements.filter((settlement) => settlement.status === 'rejected');
+
+  if (failures.length > 0) {
+    const messages = failures.map((failure) => errorMessage(failure.reason));
+
+    throw new Error(messages.join('\n'));
+  }
 };
