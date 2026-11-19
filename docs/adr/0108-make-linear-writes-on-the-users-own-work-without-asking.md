@@ -88,11 +88,12 @@ Tracker writes keep the rule that any change after approval needs a new preview.
 - Agents make only three status changes: In Progress at a slice start, an approved cancellation, and
   Done for a merged pull request's ticket that the merge left open. Done needs an affirmative read
   that the PR is merged, no deferred check, saved evidence that records the merged revision and
-  shows each acceptance item met (the newest check record for the revision's tree passed, a clean
-  review report, a slice audit with a `met` verdict), and a read-back of the new state. When a read,
-  the evidence, or the ticket's state stops the agent before the write, the ticket keeps its state
-  and the agent names the blocker. When the read-back fails, the ticket may already be Done and the
-  agent reports the result as unverified.
+  shows each acceptance item met (the newest check record for the revision's tree and the configured
+  command passed and the item is one the check covers, a clean review report, a slice audit with a
+  `met` verdict), and a read-back of the new state. When a read, the evidence, or the ticket's state
+  stops the agent before the write, the ticket keeps its state and the agent names the blocker. When
+  the read-back fails, the ticket may already be Done and the agent reports the result as
+  unverified.
 
 ### Enforcement
 

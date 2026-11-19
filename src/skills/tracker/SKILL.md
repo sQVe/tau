@@ -106,7 +106,8 @@ This list is the one approval rule; other skills link here.
      - Read the PR with
        `gh pr view <number> --repo <repo> --json state,mergedAt,mergeCommit,headRefOid,body`. Stop
        and report the gap when the read fails, `state` is not `MERGED`, or `mergedAt` is unset. The
-       revision is `mergeCommit` or the PR's final `headRefOid`.
+       revision is `mergeCommit` or the PR's final `headRefOid`. Use `mergeCommit.oid`, or
+       `headRefOid` when `mergeCommit` is null.
      - Read each acceptance item of the ticket and the PR body's deferred verification section.
        Treat a failed or empty read as every item still open, and an omitted deferred section as no
        deferred checks. Ticket checkboxes are not evidence, because the tracker flow leaves them
@@ -117,10 +118,14 @@ This list is the one approval rule; other skills link here.
        shows it not met. The PR body's Verification section alone is not evidence, because it holds
        no SHA.
        - Passing check: among the `full_check` records in `.tau/checks/*.json` whose `tree` equals
-         `git rev-parse <revision>^{tree}`, the newest decides. Newest is the last filename in
-         sorted order, because each filename starts with a timestamp. A newest record with `passed`
-         set to `true` shows the item met. A newest record with `passed` set to `false` is a failed
-         required check. Name it as a blocker.
+         `git rev-parse <revision>^{tree}` and whose `argv` equals `fullCheck.argv` in the
+         repository's `.pi/tau.json`, the newest decides. A record with another `argv` is not
+         evidence. Newest is the last filename in sorted order, because each filename starts with a
+         timestamp. A newest record with `passed` set to `false` is a failed required check. Name it
+         as a blocker. A newest record with `passed` set to `true` shows only that the check passed.
+         It shows an item met only when the item asks for the full check to pass or names a test or
+         command that the check runs. Any other item needs an item-specific source, such as a `met`
+         verdict in `finish.md`.
        - Clean review: in `.tau/workers/review-*/capture.json`, `head` must equal the revision's
          commit SHA, or `endpoint.tree` must equal `git rev-parse <revision>^{tree}`. It pins the
          revision and shows no outcome. Read the outcome in the same directory, in `report.md` or in
@@ -133,11 +138,14 @@ This list is the one approval rule; other skills link here.
      - A source that no item needs, such as `finish.md` for a ticket with no slice audit, is not
        required, and its absence does not stop the step. Stop and name each needed source that is
        missing, unfinished, or records another revision as stale evidence.
-     - Right before the write, run `linear issue view <ticket> --json --no-pager` and stop unless
-       `state.name` is neither `Done` nor `Canceled`; this narrows the race with a concurrent change
-       and does not close it. Then run `linear issue update <ticket> --state Done --no-input` and
-       read the state back the same way. Report a state that is not `Done`. When the read-back
-       fails, report the result as unverified.
+     - Right before the write, run
+       `linear api 'query($id: String!) { issue(id: $id) { state { name type } } }' --variable id=<ticket>`
+       and stop unless `data.issue.state.type` is neither `completed` nor `canceled`. The
+       `linear issue view --json` output has no state type. This guard narrows the race with a
+       concurrent change and does not close it. Then run
+       `linear issue update <ticket> --state Done --no-input` and read the state back the same way.
+       Report a `state.name` that is not `Done`. When the read-back fails, report the result as
+       unverified.
 
 7. Link the ticket from the PR. Write `Fixes <id>` only for the ticket the PR completes, such as the
    slice, and `Related to <id>` for the rest. Never list an agent ticket or a container as fixed.
