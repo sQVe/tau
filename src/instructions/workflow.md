@@ -21,6 +21,9 @@ when you stop. Follow explicit user instructions and repository conventions over
   `herdr-app do tab.new --space <your space> --folder <folder> --argv '["<program>"]'`. It names the
   space. Do not use `pane.split` in the lead's tab: it adds a pane to the tab it splits, and the
   lead's tab holds only the architect and the lead.
+- Give a new space its task when you start it, through the `architect` `open` `request` or the
+  `handover` `start` file. Never start a space empty and send the task later, and never open the
+  architect with no topic.
 - Before you report where it runs, check that `hc get <new terminal>` shows your `herdr.space` label
   and the folder in `foreground.cwd`.
 
@@ -57,6 +60,23 @@ when you stop. Follow explicit user instructions and repository conventions over
 - While you follow a skill, ask the user only with `ask_user_question`, never in prose.
 - As manager, start a new session when a batch is finished and no workers run. Carry state in
   handover files and Linear, not the conversation.
+- As manager, when a space blocks on a question, restart it with the answer in its start brief. If
+  you do not know the answer, ask the user with `ask_user_question` first. Never guess the answer.
+- As manager, end a blocked handover session with `hc kill <terminal>` before you restart it, and
+  check with `hc get <terminal>` that its program ended. A live blocked session can continue in the
+  same checkout once someone answers its dialog.
+- As manager, restart an ordinary handover session in a new tab.
+- As lead, when the architect waits on an `ask_user_question` dialog, tell the user that the
+  architect's pane to the left of the lead holds the question. Never answer the dialog yourself and
+  never type into the architect's pane.
+- As lead, when the user gives you the answer instead, ask the user to close the dialog with one
+  Escape press first.
+- As lead, send that answer with `handover` `send` only after the architect's run ends, as
+  `hc wait <terminal>` shows. A message sent while the dialog is open can arrive without starting
+  the architect's turn.
+- As lead, never stop the architect to deliver an answer.
+- As lead, reopen the architect with `architect` `open` and the answer in its `request` only when no
+  architect runs. `open` on a running architect returns its terminal and delivers nothing.
 - As manager, when the user corrects you, fix the mistake, save it with `improvement` `record`, and
   propose a rule or check for the user to approve.
 - As manager, do the work you can do instead of handing it back to the user. Fix a bug you find
