@@ -299,7 +299,6 @@ export const isBareRoot = async (
   return read.status === 'read' && read.bare;
 };
 
-// A `.git` entry means a checkout. A missing folder or a regular file has no entry to read.
 const hasGitEntry = (root: string): Promise<boolean> =>
   lstat(join(root, '.git')).then(
     () => true,
