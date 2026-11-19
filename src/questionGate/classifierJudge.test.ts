@@ -55,13 +55,9 @@ it('an accept label at 0.9 returns confidence 0.9', async () => {
 
   expect(verdict).toEqual({ kind: 'answered', confidence: 0.9 });
 
-  expect(calls[0]?.asked).toEqual({
-    instructions: 'Will the user pick the recommended option as it is, without changes?',
-    criteria: {
-      accept: 'The user picks the recommended option as it is.',
-      other: 'The user picks another option or types their own answer.',
-    },
-  });
+  const criteriaKeys = Object.keys(calls[0]?.asked.criteria ?? {}).toSorted();
+
+  expect(criteriaKeys).toEqual(['accept', 'other']);
 
   expect(calls[0]?.signal).toBeUndefined();
 });

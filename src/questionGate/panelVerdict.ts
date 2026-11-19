@@ -21,7 +21,13 @@ export const panelVerdict = (
   labels: readonly string[],
   recommended: string,
 ): JudgeVerdict => {
-  const normalized = results.map((result) => normalizeReply(result, labels));
+  const trimmedLabels = labels.map((label) => label.trim());
+
+  if (new Set(trimmedLabels).size !== trimmedLabels.length) {
+    return { kind: 'error' };
+  }
+
+  const normalized = results.map((result) => normalizeReply(result, trimmedLabels));
   const kinds = new Set(normalized.map((result) => result.kind));
 
   if (kinds.has('unavailable')) {
@@ -36,8 +42,10 @@ export const panelVerdict = (
     return { kind: 'error' };
   }
 
+  const wanted = recommended.trim();
+
   const matching = normalized.filter(
-    (result) => result.kind === 'replied' && result.text === recommended,
+    (result) => result.kind === 'replied' && result.text === wanted,
   ).length;
 
   return { kind: 'answered', confidence: matching / normalized.length };

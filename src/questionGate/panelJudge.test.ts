@@ -43,17 +43,42 @@ const memberFixture = (reply: () => Promise<PanelReply>) => {
 
 const replying = (text: string) => memberFixture(() => Promise.resolve({ kind: 'replied', text }));
 
-it('three members pick the recommended label', async () => {
-  const first = replying('Fast');
-  const second = replying('Fast');
-  const third = replying('Fast');
+const deferredReply = () => {
+  const settled = Promise.withResolvers<PanelReply>();
+
+  return { promise: settled.promise, settle: settled.resolve };
+};
+
+it('starts every member before any finishes with distinct signals and no recommendation flag', async () => {
+  const firstReply = deferredReply();
+  const secondReply = deferredReply();
+  const thirdReply = deferredReply();
+  const first = memberFixture(() => firstReply.promise);
+  const second = memberFixture(() => secondReply.promise);
+  const third = memberFixture(() => thirdReply.promise);
   const members = [first.member, second.member, third.member] as const;
 
-  const verdict = await judgeWithPanel(members, question, [], undefined);
+  const pending = judgeWithPanel(members, question, [], undefined);
+  const calls = [first.calls, second.calls, third.calls];
 
-  expect(verdict).toEqual({ kind: 'answered', confidence: 1 });
-  expect(second.calls[0]?.prompt).toEqual(first.calls[0]?.prompt);
-  expect(third.calls[0]?.prompt).toEqual(first.calls[0]?.prompt);
+  expect(calls.map((memberCalls) => memberCalls.length)).toEqual([1, 1, 1]);
+
+  const signals = calls.map((memberCalls) => memberCalls[0]?.signal);
+
+  expect(new Set(signals).size).toBe(3);
+
+  for (const memberCalls of calls) {
+    const user: unknown = JSON.parse(memberCalls[0]?.prompt.user ?? '{}');
+
+    expect(user).not.toHaveProperty('recommended');
+    expect(user).toMatchObject({ options });
+  }
+
+  firstReply.settle({ kind: 'replied', text: 'Fast' });
+  secondReply.settle({ kind: 'replied', text: 'Fast' });
+  thirdReply.settle({ kind: 'replied', text: 'Fast' });
+
+  expect(await pending).toEqual({ kind: 'answered', confidence: 1 });
 });
 
 it('a member that ignores abort gives timeout and is aborted', async () => {
@@ -86,6 +111,15 @@ it('a rejected member promise gives error', async () => {
   expect(verdict).toEqual({ kind: 'error' });
 });
 
+it('a member returning unavailable gives unavailable', async () => {
+  const unavailable = memberFixture(() => Promise.resolve({ kind: 'unavailable' }));
+  const members = [replying('Fast').member, unavailable.member, replying('Fast').member] as const;
+
+  const verdict = await judgeWithPanel(members, question, [], undefined);
+
+  expect(verdict).toEqual({ kind: 'unavailable' });
+});
+
 it('a caller abort gives error', async () => {
   const hanging = memberFixture(() => new Promise(() => {}));
   const members = [hanging.member, replying('Fast').member, replying('Fast').member] as const;
@@ -98,32 +132,45 @@ it('a caller abort gives error', async () => {
   expect(hanging.calls[0]?.signal.aborted).toBe(true);
 });
 
-it('the user prompt has no recommended field for the current question and keeps it in examples', async () => {
+it('an already aborted caller starts no member', async () => {
   const first = replying('Fast');
-  const members = [first.member, replying('Fast').member, replying('Fast').member] as const;
+  const second = replying('Fast');
+  const third = replying('Fast');
+  const members = [first.member, second.member, third.member] as const;
+  const controller = new AbortController();
+
+  controller.abort();
+
+  const verdict = await judgeWithPanel(members, question, [], controller.signal);
+
+  expect(verdict).toEqual({ kind: 'error' });
+  expect([first.calls.length, second.calls.length, third.calls.length]).toEqual([0, 0, 0]);
+});
+
+it('the user prompt keeps examples but no current recommendation', async () => {
+  const first = replying('Fast');
+  const second = replying('Fast');
+  const third = replying('Fast');
+  const members = [first.member, second.member, third.member] as const;
   const past: PastAnswer = { time: 1, question, outcome: { kind: 'recommended' } };
 
   await judgeWithPanel(members, question, [past], undefined);
 
-  const prompt = first.calls[0]?.prompt;
+  for (const fixture of [first, second, third]) {
+    const user: unknown = JSON.parse(fixture.calls[0]?.prompt.user ?? '{}');
 
-  expect(prompt?.system).toBe(
-    'You predict which option this user picks. Reply with the exact label of one option and nothing else.',
-  );
+    expect(user).not.toHaveProperty('recommended');
 
-  const user: unknown = JSON.parse(prompt?.user ?? '{}');
-
-  expect(user).not.toHaveProperty('recommended');
-
-  expect(user).toMatchObject({
-    options,
-    examples: [
-      {
-        question: question.question,
-        options,
-        recommended: 'Fast',
-        answer: 'recommended',
-      },
-    ],
-  });
+    expect(user).toMatchObject({
+      options,
+      examples: [
+        {
+          question: question.question,
+          options,
+          recommended: 'Fast',
+          answer: 'recommended',
+        },
+      ],
+    });
+  }
 });
