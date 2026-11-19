@@ -39,6 +39,11 @@ configuration loading and initial catalog refresh are disabled. Resource discove
 (`noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`) so a developer's `~/.pi` can never
 change a result.
 
+One exception: a test may use a disk-backed `SessionManager.create()` when the saved session file is
+the behavior under test. Only `tests/toolResultRedaction.integration.test.ts` does this. It reads
+the saved file to check that no secret reaches disk, and its session directory is a temporary
+directory.
+
 ### Dependency versions
 
 `@earendil-works/pi-ai` is a devDependency with the same version range as pi-coding-agent, so both

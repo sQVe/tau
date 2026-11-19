@@ -167,6 +167,7 @@ const pureModules = [
   'src/extensions/tdd/runner/vitestSelection.ts',
   'src/extensions/tdd/runner/vitestVersion.ts',
   'src/extensions/tdd/worktreePath.ts',
+  'src/extensions/toolResultRedaction/redaction.ts',
   'src/extensions/tracker/cancelDecision.ts',
   'src/extensions/tracker/candidateFit.ts',
   'src/extensions/tracker/commentTarget.ts',

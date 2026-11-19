@@ -129,6 +129,23 @@ it('loads the inbox extension without saved Tau settings', () => {
   expect(commandLine[commandLine.indexOf(inboxPath) - 1]).toBe('-e');
 });
 
+it('loads the tool result redaction extension before the bash guard', () => {
+  const commandLine = workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools);
+
+  const redactionPath = fileURLToPath(
+    new URL('../toolResultRedaction/toolResultRedaction.ts', import.meta.url),
+  );
+
+  const guardPath = fileURLToPath(new URL('./workerBashGuard.ts', import.meta.url));
+  const redactionIndex = commandLine.indexOf(redactionPath);
+
+  const guardIndex = commandLine.indexOf(guardPath);
+
+  expect(commandLine[redactionIndex - 1]).toBe('-e');
+  expect(commandLine[guardIndex - 1]).toBe('-e');
+  expect(redactionIndex).toBeLessThan(guardIndex);
+});
+
 it('loads the verification record extension in every worker', () => {
   const commandLine = workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools);
   const recordPath = fileURLToPath(new URL('../verification/workerRecord.ts', import.meta.url));

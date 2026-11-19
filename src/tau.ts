@@ -31,6 +31,7 @@ import statusbarExtension from './extensions/statusbar/statusbar.js';
 import subagentsExtension, { registerCapacityRefusal } from './extensions/subagents/subagents.js';
 import tauSkillsExtension from './extensions/tauSkills/tauSkills.js';
 import tddExtension from './extensions/tdd/tdd.js';
+import toolResultRedactionExtension from './extensions/toolResultRedaction/toolResultRedaction.js';
 import trackerExtension from './extensions/tracker/tracker.js';
 import verificationExtension from './extensions/verification/verification.js';
 import webAccessExtension from './extensions/webAccess.js';
@@ -47,6 +48,10 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
 
   // Pi stops at the first blocking hook, so capacity refusal must run before other guards.
   const capacityRefusal = registerCapacityRefusal(pi);
+
+  // It must be Tau's first tool_result handler, so Tau's later handlers and the full-output files
+  // they save see redacted text.
+  toolResultRedactionExtension(pi);
 
   await instructionsExtension(pi);
   codemodeExtension(pi);
