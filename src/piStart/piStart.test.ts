@@ -131,6 +131,34 @@ it('a shell running another program keeps its tab', async () => {
   expect(appCommands(fake)).not.toContain('pane.close');
 });
 
+it('a space with no sole shell pane never reads the foreground', async () => {
+  const fake = createHerdrAppFake({ layout: emptyLayout });
+  const root = await createTemporaryRepository(onTestFinished);
+  let reads = 0;
+
+  await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: {
+        space: 'space-1',
+        readForeground: () => {
+          reads += 1;
+
+          return Promise.resolve({ name: 'zsh', cwd: root });
+        },
+      },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  );
+
+  expect(reads).toBe(0);
+  expect(appCommands(fake)).toEqual(['ls', 'tab.new']);
+});
+
 it('a space id that matches no listed space starts a tab', async () => {
   const fake = createHerdrAppFake({ layout: shellLayout('space-other') });
   const root = await createTemporaryRepository(onTestFinished);

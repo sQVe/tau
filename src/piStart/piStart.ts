@@ -211,22 +211,34 @@ const requireCheckout = async (
   runtime.signal?.throwIfAborted();
 };
 
+const idleShellOf = async (
+  runtime: CommandRuntime,
+  target: { space: string; readForeground: ReadForeground },
+  folder: string,
+): Promise<{ terminal: string; pane: string } | undefined> => {
+  const layout = await readHerdrLayout(runtime);
+  const space = layout.spaces.find((candidate) => candidate.id === target.space);
+  const shell = soleShellPane(space);
+
+  if (shell === undefined) {
+    return undefined;
+  }
+
+  const foreground = await target.readForeground(shell.terminal);
+
+  return isIdleShell(foreground, folder) ? shell : undefined;
+};
+
 const startInSpace = async (
   runtime: CommandRuntime,
   request: PiSessionRequest,
   target: { space: string; readForeground: ReadForeground },
 ): Promise<string> => {
-  const layout = await readHerdrLayout(runtime);
-  const space = layout.spaces.find((candidate) => candidate.id === target.space);
-  const shell = soleShellPane(space);
-  const foreground = shell === undefined ? undefined : await target.readForeground(shell.terminal);
-  const idle = isIdleShell(foreground, resolve(request.folder));
+  const shell = await idleShellOf(runtime, target, resolve(request.folder));
 
-  if (shell === undefined || !idle) {
-    return launch(runtime, request, { space: target.space });
-  }
-
-  return takeOverShell(runtime, request, shell, target.readForeground);
+  return shell === undefined
+    ? launch(runtime, request, { space: target.space })
+    : takeOverShell(runtime, request, shell, target.readForeground);
 };
 
 export const startPiSession = async (
