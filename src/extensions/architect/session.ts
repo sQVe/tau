@@ -8,7 +8,8 @@ import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
-import type { AnswerTracker } from './answer.js';
+import type { AnswerTracker, ClosedAnswers } from './answer.js';
+import type { AskAdmissions } from './ask/askAcceptance.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
@@ -149,10 +150,20 @@ const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> 
   );
 };
 
+// Both waits start together, so they share one close limit.
+const closeAdmitted = async (
+  answers: AnswerTracker,
+  admissions: AskAdmissions,
+): Promise<ClosedAnswers> => {
+  const [closed] = await Promise.all([answers.close(), admissions.settle()]);
+
+  return closed;
+};
+
 const closeLiveAsks = async (
   session: ArchitectSession,
   hc: HcRuntime,
-  answers: AnswerTracker,
+  closed: ClosedAnswers,
 ): Promise<void> => {
   if (session.owner.mode !== 'visible') {
     return;
@@ -162,25 +173,28 @@ const closeLiveAsks = async (
     session.ui.notify(message, 'warning');
   };
 
-  const { delivered, uncertain } = await answers.close();
-
   await failOpenLiveAsks(
     { root: session.root, sessionId: session.owner.sessionId },
-    { hc, report, delivered, uncertain },
+    { hc, report, ...closed },
   ).catch((error: unknown) => {
     report(`The architect could not close its open asks: ${errorMessage(error)}`);
   });
 };
 
+// The token goes first so no new question is saved. The wait lets a save that already started
+// finish before the lock is released.
 export const endArchitectSession = async (
   session: ArchitectSession,
   hc: HcRuntime,
   answers: AnswerTracker,
+  admissions: AskAdmissions,
 ): Promise<void> => {
   session.held.set(undefined);
 
   try {
-    await closeLiveAsks(session, hc, answers);
+    const closed = await closeAdmitted(answers, admissions);
+
+    await closeLiveAsks(session, hc, closed);
     await session.release();
   } finally {
     await failRunningAsks(session.root, session.ui);

@@ -15,7 +15,12 @@ export type InboxRead =
   | { kind: 'missing' }
   | { kind: 'malformed'; reason: string };
 
-export type SaveOutcome = 'saved' | 'existing' | 'changed';
+export type SaveOutcome = 'saved' | 'existing' | 'changed' | { refused: string };
+
+export interface SaveOptions {
+  // Runs after the read of an unsaved message, right before the write. A reason writes nothing.
+  beforeWrite?: (() => string | undefined) | undefined;
+}
 
 const recordVersion = 1;
 
@@ -56,13 +61,23 @@ export const readMessage = async (directory: string, messageId: string): Promise
 const sameMessage = (saved: InboxRead, record: InboxRecord): boolean =>
   saved.kind === 'record' && JSON.stringify(saved.record) === JSON.stringify(record);
 
-export const saveMessage = async (directory: string, record: InboxRecord): Promise<SaveOutcome> => {
+export const saveMessage = async (
+  directory: string,
+  record: InboxRecord,
+  options: SaveOptions = {},
+): Promise<SaveOutcome> => {
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
   const saved = await readMessage(directory, record.messageId);
 
   if (saved.kind !== 'missing') {
     return sameMessage(saved, record) ? 'existing' : 'changed';
+  }
+
+  const reason = options.beforeWrite?.();
+
+  if (reason !== undefined) {
+    return { refused: reason };
   }
 
   await writeRecord(recordPath(directory, record.messageId), record);

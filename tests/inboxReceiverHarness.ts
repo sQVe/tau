@@ -21,6 +21,7 @@ export interface HandoverReceiverOptions {
   sessionId?: string;
   // The process has one inbox slot. A receiver outside it leaves the slot to another receiver.
   outsideSlot?: boolean;
+  beforeCommit?: ReceiverOptions['beforeCommit'];
 }
 
 type Accept = (request: MessageRequest) => Promise<MessageReply>;
@@ -95,6 +96,7 @@ export const startHandoverReceiver = async (
     entries: () => [],
     wake: () => true,
     notify: () => undefined,
+    ...(options.beforeCommit === undefined ? {} : { beforeCommit: options.beforeCommit }),
   });
 
   const directory = join(root, 'sockets');

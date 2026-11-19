@@ -7,7 +7,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createAnswerTracker } from '../src/extensions/architect/answer.js';
 import architectExtension from '../src/extensions/architect/architect.js';
-import { acceptArchitectAsk } from '../src/extensions/architect/ask/askAcceptance.js';
+import { createAskAdmissions } from '../src/extensions/architect/ask/askAcceptance.js';
 import { readArchitectOwner } from '../src/extensions/architect/fixtures/toolHarness.js';
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import {
@@ -323,12 +323,13 @@ it('an architect-ask sent after the record is published but before startup retur
   const root = await createTemporaryRepository(onTestFinished);
   const hc = createHcFake();
   const held = createHeldLockToken();
+  const admissions = createAskAdmissions(held.current);
 
   const inbox = await startHandoverReceiver(onTestFinished, socketRoot(), 't-architect', {
     sessionId: 'session-architect',
     accepts: {
       handover: (_request, save) => save(),
-      'architect-ask': acceptArchitectAsk(held.current),
+      'architect-ask': admissions.check,
     },
   });
 
@@ -374,6 +375,7 @@ it('an architect-ask sent after the record is published but before startup retur
     session as NonNullable<typeof session>,
     { ...hc, cwd: root },
     createAnswerTracker(),
+    admissions,
   );
 
   expect(held.current()).toBeUndefined();

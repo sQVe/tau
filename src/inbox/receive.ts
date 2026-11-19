@@ -23,9 +23,12 @@ interface InboxMessage {
 // interrupted, so it is shown without starting one.
 type Arrival = 'arrived' | 'recovered';
 
+// A guard that returns a reason stops the write of a message that is not saved yet.
+type CommitGuard = () => string | undefined;
+
 export type AcceptCheck = (
   request: MessageRequest,
-  save: () => Promise<MessageReply>,
+  save: (commitGuard?: CommitGuard) => Promise<MessageReply>,
 ) => Promise<MessageReply | string>;
 
 export interface ReceiverOptions {
@@ -38,6 +41,8 @@ export interface ReceiverOptions {
   // Returns false when the caller holds the message. A held message is delivered by a later drain.
   wake: (message: InboxMessage, arrival: Arrival) => boolean;
   notify: (message: string) => void;
+  // Test seam: runs after the receipt check and before the commit guard.
+  beforeCommit?: () => Promise<void>;
 }
 
 export interface Receiver {
@@ -73,7 +78,11 @@ const bodyOf = (request: MessageRequest): SavableMessageBody | undefined => {
 const changedReply = (messageId: string): MessageReply =>
   refusedReply(`Message ${messageId} is already saved with different content.`, messageId);
 
-const save = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
+const save = async (
+  options: ReceiverOptions,
+  request: MessageRequest,
+  commitGuard: CommitGuard | undefined,
+): Promise<MessageReply> => {
   const { messageId } = request;
   const body = bodyOf(request);
 
@@ -91,7 +100,17 @@ const save = async (options: ReceiverOptions, request: MessageRequest): Promise<
       : changedReply(messageId);
   }
 
-  const outcome = await saveMessage(options.directory, { version: 1, messageId, ...body });
+  await options.beforeCommit?.();
+
+  const outcome = await saveMessage(
+    options.directory,
+    { version: 1, messageId, ...body },
+    { beforeWrite: commitGuard },
+  );
+
+  if (typeof outcome === 'object') {
+    return refusedReply(outcome.refused, messageId);
+  }
 
   return outcome === 'changed' ? changedReply(messageId) : queuedReply(options, messageId);
 };
@@ -104,7 +123,7 @@ const accept = async (options: ReceiverOptions, request: MessageRequest): Promis
     return refusedReply(`This session does not accept ${family} messages.`, messageId);
   }
 
-  const reply = await check(request, () => save(options, request));
+  const reply = await check(request, (commitGuard) => save(options, request, commitGuard));
 
   return typeof reply === 'string' ? refusedReply(reply, messageId) : reply;
 };

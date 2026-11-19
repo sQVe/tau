@@ -9,6 +9,7 @@ import { failedResult } from '../../../tests/execFake.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { createAnswerTracker } from './answer.js';
+import { createAskAdmissions } from './ask/askAcceptance.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
 import { contextOf, setup } from './fixtures/toolHarness.js';
 import { askRecordDirectory, askRecordPath, readAskRecord, writeAskRecord } from './record.js';
@@ -134,7 +135,13 @@ const closingArchitect = async (
     notify,
     answer: () => answerWith(hc),
     answerWith,
-    end: () => endArchitectSession(session, { ...hc, cwd: root }, answers),
+    end: () =>
+      endArchitectSession(
+        session,
+        { ...hc, cwd: root },
+        answers,
+        createAskAdmissions(() => undefined),
+      ),
   };
 };
 
@@ -339,6 +346,33 @@ it('an answer whose outcome stays unknown at close gets the could-not-check note
   const savedTexts = lead.savedTexts().toSorted();
 
   expect(savedTexts).toEqual(expectedTexts);
+});
+
+it('an answer that cannot be sent again at close gets the could-not-check detail', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, lead, record, hc, notify, answer, end } = await closingArchitect(
+    cleanup,
+    'save-then-drop',
+  );
+
+  await answer();
+
+  hc.replyGet(
+    't-lead',
+    JSON.stringify({ address: 't-lead', name: null, state: 'live', labels: {} }),
+  );
+
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'failed',
+    detail: uncheckedDetail,
+  });
+
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(notify.mock.calls[0]?.[0]).toContain(`no close note for ask ${record.askId}`);
 });
 
 it('closing the tracker reports delivered and uncertain answers apart', async () => {

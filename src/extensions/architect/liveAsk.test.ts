@@ -12,6 +12,7 @@ import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { createAnswerTracker } from './answer.js';
+import { createAskAdmissions } from './ask/askAcceptance.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
 import { contextOf, holdLock, recordSession, setup } from './fixtures/toolHarness.js';
@@ -426,7 +427,14 @@ it('a close that lands before the lead send returns keeps the ask failed', async
   };
 
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  await endArchitectSession(session, { ...hc, cwd: root }, createAnswerTracker());
+
+  await endArchitectSession(
+    session,
+    { ...hc, cwd: root },
+    createAnswerTracker(),
+    createAskAdmissions(() => undefined),
+  );
+
   vi.stubEnv('HC_TERMINAL_ID', 't-lead');
 
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });

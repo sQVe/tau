@@ -2,6 +2,7 @@ import { errorMessage } from '../../errors.js';
 import { readCheckedText, resolveTextFile } from '../../fileText.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { encodeMessageFrame, requestByteLimit, sendInboxMessage } from '../../inbox/inbox.js';
+import { settleWithinCloseLimit } from './closeLimit.js';
 import { changeAskRecord, isOpenLiveAsk, isOpenLiveAskStatus, readAskRecord } from './record.js';
 import type { AskRecordChange, LiveAskRecord } from './record.js';
 
@@ -40,8 +41,6 @@ type Settlement =
   | { kind: 'settled'; change: AskRecordChange | undefined }
   | { kind: 'failed'; error: unknown };
 
-const closeLimitMilliseconds = 10_000;
-
 export const createAnswerTracker = (): AnswerTracker => {
   const inFlight = new Set<Promise<unknown>>();
   const delivered = new Map<string, string>();
@@ -74,17 +73,7 @@ export const createAnswerTracker = (): AnswerTracker => {
     close: async () => {
       closed = true;
 
-      const expired = Promise.withResolvers<undefined>();
-
-      const timer = setTimeout(() => {
-        expired.resolve(undefined);
-      }, closeLimitMilliseconds);
-
-      try {
-        await Promise.race([Promise.allSettled(inFlight), expired.promise]);
-      } finally {
-        clearTimeout(timer);
-      }
+      await settleWithinCloseLimit(inFlight);
 
       return { delivered, uncertain };
     },

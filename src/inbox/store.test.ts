@@ -116,6 +116,26 @@ it('saves once and never replaces a saved record', async () => {
   expect(readFileSync(path, 'utf8')).toBe(saved);
 });
 
+it('writes nothing when the guard before the write gives a reason', async () => {
+  const directory = directoryFixture();
+
+  await expect(saveMessage(directory, record, { beforeWrite: () => 'Not now.' })).resolves.toEqual({
+    refused: 'Not now.',
+  });
+
+  await expect(pendingMessages(directory)).resolves.toEqual([]);
+});
+
+it('does not run the guard before the write for a message that is already saved', async () => {
+  const directory = directoryFixture();
+
+  await saveMessage(directory, record);
+
+  await expect(saveMessage(directory, record, { beforeWrite: () => 'Not now.' })).resolves.toBe(
+    'existing',
+  );
+});
+
 it('lists saved records by message ID and skips temporary and foreign names', async () => {
   const directory = directoryFixture();
 

@@ -225,6 +225,53 @@ it('saves an architect-ask retry of a saved message once', async () => {
   await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
 });
 
+it('a commit guard reason writes nothing', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver } = directReceiver(sessionId, {
+    'architect-ask': (_request, save) => save(() => 'The lock changed.'),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'architect-ask',
+    payload: { text: 'Ask text', lockToken: 'lock-1' },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    messageId,
+    reason: 'The lock changed.',
+  });
+
+  expect(existsSync(recordOf(sessionId, messageId))).toBe(false);
+});
+
+it('a commit guard does not refuse an already saved message', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const guards: (() => string)[] = [];
+
+  const { receiver } = directReceiver(sessionId, {
+    'architect-ask': (_request, save) => save(guards[0]),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'architect-ask',
+    payload: { text: 'Ask text', lockToken: 'lock-1' },
+  };
+
+  await receiver.accept(request);
+
+  guards.push(() => 'The lock changed.');
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+  expect(existsSync(recordOf(sessionId, messageId))).toBe(true);
+});
+
 it('saves an accepted answer and wakes with its answer text', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
