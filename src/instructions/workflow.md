@@ -48,6 +48,10 @@ when you stop. Follow explicit user instructions and repository conventions over
 ## Keep to the task
 
 - Editing comments does not permit refactoring or scope growth.
+- When you find a defect, fix it at its cause in its own space. If you cannot fix it now, file a bug
+  ticket. Never leave the defect as an out-of-scope note or a workaround.
+- When a check fails, fix its cause, or file a bug ticket when you cannot fix it now. Never skip the
+  check or cap its resources, such as memory or a mutant count, to hide the cause.
 - Continue the work unless it needs user input.
 - Do not end a turn that waits for the user without stating the question.
 - While you follow a skill, ask the user only with `ask_user_question`, never in prose.

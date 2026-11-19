@@ -2,7 +2,8 @@
 name: fix-bug
 description:
   Fix a reported defect at its root cause, test-first. Use it for "fix this bug", "this is broken",
-  or "it regressed". It does not file tickets; the `tracker` skill does.
+  or "it regressed". It files a bug ticket through the `tracker` skill when the user asks or the fix
+  cannot happen now.
 metadata:
   required-for: fixing a defect, regression, or broken behavior
 ---
@@ -11,8 +12,9 @@ metadata:
 
 ## When to use
 
-Use this skill for a defect, a regression, or broken behavior. Use a bug ticket the user named.
-Create one with the `tracker` skill only when the user asks. Do not file a ticket for every fix.
+Use this skill for a defect, a regression, or broken behavior. Use a bug ticket the user named. Do
+not file a ticket for a defect you fix, unless the user asks. When you cannot fix the defect now,
+file a bug ticket with the `tracker` skill under its [Hard rules](../tracker/SKILL.md#hard-rules).
 
 The procedure delegates to subagent workers, which need the `subagent` tools. Without them, carry
 out each step yourself in the same order.
