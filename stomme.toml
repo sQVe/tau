@@ -335,11 +335,6 @@ rule = "typescript-owner-folder"
 key = "sweepProject.ts"
 
 [[violations]]
-path = "src/instructions/typescriptRules.ts"
-rule = "typescript-owner-folder"
-key = "typescriptRulesDecision.ts"
-
-[[violations]]
 path = "src/reviewCapture/chainSelection.ts"
 rule = "typescript-owner-folder"
 key = "chainSelectionDecision.ts"
@@ -524,8 +519,13 @@ imports = ["errors", "fileLock", "hc", "record", "schema", "wake"]
 
 [modules.instructions]
 entry = "src/instructions/instructions.ts"
-public = ["src/instructions/systemPrompt.ts", "src/instructions/typescriptRules.ts"]
-imports = []
+public = [
+  "src/instructions/guideRuns.ts",
+  "src/instructions/languageRules/languageRules.ts",
+  "src/instructions/stommeGuides/stommeGuides.ts",
+  "src/instructions/systemPrompt.ts",
+]
+imports = ["errors"]
 
 [modules.linear]
 entry = "src/linear/linear.ts"

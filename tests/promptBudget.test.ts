@@ -1,17 +1,22 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolDefinition,
+} from '@earendil-works/pi-coding-agent';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { assignmentDirectory, writeAssignment } from '../src/extensions/subagents/assignment.js';
+import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { bundledProfileDirectory, resolveProfile } from '../src/extensions/subagents/profiles.js';
 import { qaGuidePath } from '../src/extensions/subagents/qaBrief.js';
 import type { Loadout } from '../src/extensions/subagents/types.js';
-import workerExtension, {
-  workerSystemPrompt,
-} from '../src/extensions/subagents/workerExtension.js';
+import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
 import type { RoleKind } from '../src/role/role.js';
@@ -19,6 +24,10 @@ import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
 import tauExtension from '../src/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
+import { createHcFake } from './hcFake.js';
+import { writeStommeProject } from './stommeProjectHarness.js';
+
+type Sessions = Map<string, { tools: ToolDefinition[]; size: number; prompt: string }>;
 
 const oneActionBudget = 1000;
 const multiActionBudget = 3000;
@@ -26,14 +35,14 @@ const multiActionBudget = 3000;
 // Tools over budget today, each with its current description length as its own ceiling.
 const descriptionExceptions: Readonly<Record<string, number>> = {};
 
-// Each ceiling caps a session at about its measured size, so a cut must lower it. The target is
-// beside each ceiling.
+// Each ceiling caps a session at its larger measured size, the empty folder or the adopted project,
+// so a cut must lower it. The target is beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  lead: 57_907, // target 38,000
-  architect: 54_293,
-  worker: 22_387, // target 14,000
-  reviewer: 17_841, // target 11,000
-  checker: 17_994,
+  lead: 60_736, // target 38,000
+  architect: 57_129,
+  worker: 25_240, // target 14,000
+  reviewer: 20_694, // target 11,000
+  checker: 20_847,
   qa: 14_670, // target 9,000
   browser: 12_828, // target 9,000
   scout: 12_387, // target 9,000
@@ -41,6 +50,13 @@ const sessionCeilings: Readonly<Record<string, number>> = {
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];
 const skillsDirectory = fileURLToPath(new URL('../src/skills/', import.meta.url));
+const checkoutDirectory = fileURLToPath(new URL('../', import.meta.url));
+
+// A bundled guide's source line names its absolute path, and an adopted project's heading names the
+// project root, so fixed tokens stand in for both. Otherwise the measured size would depend on where
+// Tau is checked out and on the temporary folder of the host.
+const measuredPrompt = (prompt: string, projectDirectory: string): string =>
+  prompt.replaceAll(projectDirectory, '<project>').replaceAll(checkoutDirectory, '<tau>/');
 
 const isMultiAction = (tool: ToolDefinition): boolean =>
   Object.hasOwn((tool.parameters as { properties?: object }).properties ?? {}, 'action');
@@ -91,10 +107,10 @@ const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) =
   };
 
   for (const handler of fake.handlers.get('before_agent_start') ?? []) {
-    await handler(event as never, {} as ExtensionContext);
+    await handler(event as never, { cwd: agentDirectory } as ExtensionContext);
   }
 
-  const prompt = event.systemPromptOptions.appendSystemPrompt;
+  const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt, agentDirectory);
   const guidelines = managerGuidelines(role, roleOptions);
   const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
 
@@ -117,12 +133,121 @@ const loadoutFor = (profileName: string, directory: string): Loadout => {
   }
 
   return {
+    harness: 'pi',
+    profile: profileName,
     role: profile.role,
+    model: 'faux/test',
+    thinking: 'off',
+    cwd: directory,
+    agentDirectory: directory,
+    permissions: 'trusted-full-tools',
     instructions: profile.instructions,
     tools: profile.tools,
-    instructionSets: profile.instructionSets,
     skills: profile.skills.map((name) => join(skillsDirectory, name, 'SKILL.md')),
-  } as Loadout;
+    instructionSets: profile.instructionSets,
+    packages: profile.packages,
+  };
+};
+
+const safetyNetPath = join(
+  dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
+  'dist',
+  'pi',
+  'index.js',
+);
+
+const workerTerminal = 'worker-1';
+const parentTerminal = 'manager-1';
+
+const assignmentFor = (loadout: Loadout, directory: string): Assignment => {
+  const assignmentId = randomUUID();
+  const sessionId = randomUUID();
+
+  return {
+    version: 3,
+    assignmentId,
+    task: 'Measure the prompt.',
+    acceptance: [],
+    label: null,
+    profile: loadout.profile,
+    loadout,
+    routing: null,
+    packageSnapshot: null,
+    session: {
+      id: sessionId,
+      file: join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`),
+    },
+    parentSession: join(directory, 'parent.jsonl'),
+    cwd: directory,
+    parentTerminal,
+    deadline: Date.now() + 60_000,
+    createdAt: Date.now(),
+    previousAssignmentId: null,
+    extensionPackages: null,
+    questions: [],
+    report: null,
+  };
+};
+
+const workerHookPrompt = async (loadout: Loadout, directory: string): Promise<string> => {
+  vi.stubEnv('TAU_ROLE', 'worker');
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('HC_TERMINAL_ID', workerTerminal);
+
+  try {
+    const assignment = assignmentFor(loadout, directory);
+    const hc = createHcFake();
+    const toolNames = workerTools(loadout, skillTools);
+
+    hc.reply(
+      'get',
+      JSON.stringify({
+        address: workerTerminal,
+        state: 'live',
+        parent: parentTerminal,
+        labels: {
+          'tau.assignment': join(assignmentDirectory(assignment.assignmentId), 'assignment.json'),
+        },
+      }),
+    );
+
+    const api = fakeExtensionApi({
+      exec: hc.exec,
+      getThinkingLevel: () => 'off',
+      getCommands: () => [
+        { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safetyNetPath } },
+      ],
+      getAllTools: () => toolNames.map((name) => ({ name })),
+      setActiveTools: () => undefined,
+    } as unknown as Partial<ExtensionAPI>);
+
+    const context = {
+      sessionManager: { getBranch: () => [] },
+      shutdown: () => undefined,
+      cwd: directory,
+      model: { provider: 'faux', id: 'test' },
+      isProjectTrusted: () => true,
+      isIdle: () => true,
+      ui: { notify: () => undefined },
+    } as unknown as ExtensionContext;
+
+    workerExtension(api.pi);
+    await writeAssignment(assignment);
+
+    for (const handler of api.handlers.get('session_start') ?? []) {
+      await handler({} as never, context);
+    }
+
+    const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: [] } };
+
+    for (const handler of api.handlers.get('before_agent_start') ?? []) {
+      await handler(event as never, context);
+    }
+
+    return event.systemPromptOptions.appendSystemPrompt;
+  } finally {
+    vi.unstubAllEnvs();
+  }
 };
 
 const workerSession = async (profileName: string, directory: string) => {
@@ -142,31 +267,55 @@ const workerSession = async (profileName: string, directory: string) => {
   }
 
   const tools = [...fake.tools.values()].filter((tool) => names.has(tool.name));
-  const prompt = await workerSystemPrompt(loadout);
+
+  const prompt = measuredPrompt(await workerHookPrompt(loadout, directory), directory);
 
   return { tools, size: prompt.length + toolsSize(tools), prompt };
 };
 
-const sessions = new Map<string, { tools: ToolDefinition[]; size: number; prompt: string }>();
-let directory = '';
-
-beforeAll(async () => {
-  // The directory is shared by every test, so `afterAll` removes it.
-  directory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-'));
-  sessions.set('lead', await roleSession('lead', directory));
-  sessions.set('architect', await roleSession('architect', directory));
+const measureSessions = async (projectDirectory: string): Promise<Sessions> => {
+  const measured: Sessions = new Map([
+    ['lead', await roleSession('lead', projectDirectory)],
+    ['architect', await roleSession('architect', projectDirectory)],
+  ]);
 
   for (const name of profileNames) {
-    sessions.set(name, await workerSession(name, directory));
+    measured.set(name, await workerSession(name, projectDirectory));
+  }
+
+  return measured;
+};
+
+const sessionsWithoutCoding = ['qa', 'browser', 'scout'];
+
+const bundledSessions: Sessions = new Map();
+const adoptedSessions: Sessions = new Map();
+let directory = '';
+let adoptedDirectory = '';
+
+beforeAll(async () => {
+  directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-prompt-budget-')));
+
+  adoptedDirectory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-prompt-budget-adopted-')));
+
+  await writeStommeProject(adoptedDirectory, { language: 'typescript', layers: ['pi'] });
+
+  for (const [name, session] of await measureSessions(directory)) {
+    bundledSessions.set(name, session);
+  }
+
+  for (const [name, session] of await measureSessions(adoptedDirectory)) {
+    adoptedSessions.set(name, session);
   }
 });
 
 afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
+  rmSync(adoptedDirectory, { recursive: true, force: true });
 });
 
 const allTools = (): ToolDefinition[] => {
-  const toolEntries = [...sessions.values()]
+  const toolEntries = [...bundledSessions.values(), ...adoptedSessions.values()]
     .flatMap((session) => session.tools)
     .map((tool) => [tool.name, tool] as const);
 
@@ -175,7 +324,7 @@ const allTools = (): ToolDefinition[] => {
 
 describe('prompt budget', () => {
   it('a lead prompt holds the lead rules and no architect rules', () => {
-    const prompt = sessions.get('lead')?.prompt ?? '';
+    const prompt = bundledSessions.get('lead')?.prompt ?? '';
     const lead = managerGuidelines('lead', roleOptions);
     const architect = managerGuidelines('architect', roleOptions);
     const architectOnly = architect.filter((guideline) => !lead.includes(guideline));
@@ -185,7 +334,7 @@ describe('prompt budget', () => {
   });
 
   it('an architect prompt holds the architect rules', () => {
-    const prompt = sessions.get('architect')?.prompt ?? '';
+    const prompt = bundledSessions.get('architect')?.prompt ?? '';
     const lead = managerGuidelines('lead', roleOptions);
     const architect = managerGuidelines('architect', roleOptions);
     const leadOnly = lead.filter((guideline) => !architect.includes(guideline));
@@ -223,14 +372,35 @@ describe('prompt budget', () => {
     expect(over).toEqual([]);
   });
 
-  it('keeps each session within its ceiling', () => {
+  it.each([
+    ['an empty folder', bundledSessions],
+    ['an adopted project', adoptedSessions],
+  ])('keeps each session within its ceiling in %s', (_case, measured) => {
     const sessionCeilingNames = Object.keys(sessionCeilings).toSorted();
-    expect([...sessions.keys()].toSorted()).toEqual(sessionCeilingNames);
+    expect([...measured.keys()].toSorted()).toEqual(sessionCeilingNames);
 
-    const over = [...sessions]
+    const over = [...measured]
       .filter(([name, { size }]) => size > (sessionCeilings[name] ?? 0))
       .map(([name, { size }]) => `${name}: ${size} characters, ceiling ${sessionCeilings[name]}`);
 
     expect(over).toEqual([]);
+  });
+
+  it('measures a project heading the same for project roots of any length and place', () => {
+    const heading = (root: string) =>
+      `# Stomme 0.2.0 coding guides, from ${root}/docs/stomme/\n${checkoutDirectory}vendor/stomme`;
+
+    const roots = ['/tmp/a', '/tmp/a-much-longer-project-folder-name', `${checkoutDirectory}tmp/p`];
+    const nested = `${checkoutDirectory}tmp/a-much-longer-project-folder-name`;
+    const measured = [...roots, nested].map((root) => measuredPrompt(heading(root), root));
+
+    expect(new Set(measured).size).toBe(1);
+  });
+
+  it('measures a session without the coding set the same in both projects', () => {
+    const sizes = (measured: Sessions) =>
+      sessionsWithoutCoding.map((name) => [name, measured.get(name)?.size]);
+
+    expect(sizes(adoptedSessions)).toEqual(sizes(bundledSessions));
   });
 });

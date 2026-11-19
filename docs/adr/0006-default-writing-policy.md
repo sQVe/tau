@@ -22,16 +22,17 @@ or whether a comment earns its place.
 
 ## Decision
 
-Tau keeps its rules in instruction sets, one Markdown file per concern under `src/instructions/`,
-and appends them to the system prompt before each ordinary agent run. One file per concern keeps a
-code rule from being read as a prose rule, and loading by default means no skill has to be loaded
-first.
+Tau keeps its rules in instruction sets, one set per concern, and appends them to the system prompt
+before each ordinary agent run. The writing, workflow, and browser sets are Markdown files under
+`src/instructions/`. The coding set loads the stomme guides
+([ADR 0141](./0141-load-coding-guides-from-stomme.md)). One set per concern keeps a code rule from
+being read as a prose rule, and loading by default means no skill has to be loaded first.
 
 ### The sets
 
 - `writing.md` governs text the agent writes: replies, commit and PR text, tickets, docs, and the
   wording of code comments.
-- `coding.md` governs code the agent writes, including whether a comment should exist.
+- `coding` governs code the agent writes, including whether a comment should exist.
 - `workflow.md` governs how the agent carries out a task: the commands it runs, the checkouts it
   touches, the scope it keeps, and when it stops.
 - `browser.md` is opt-in for workers that drive a browser
@@ -47,10 +48,13 @@ A rule goes in exactly one set. The task and repository rules come before the se
   run, so it does not build up.
 - A worker appends the sets its profile lists instead
   ([ADR 0067](./0067-give-workers-only-their-profile-tools-and-skills.md)).
-- Reject a missing, unreadable, or blank default set when Tau loads. A visible load failure is
-  better than a session that runs without its rules. A worker's selected sets, including `browser`,
-  are read on its first `before_agent_start`, so a missing, unreadable, or blank one fails that
-  hook.
+- Reject a missing, unreadable, or blank file-backed default set (`writing` or `workflow`) when Tau
+  loads. A visible load failure is better than a session that runs without its rules. A worker's
+  selected file-backed sets, including `browser`, are read on its first `before_agent_start`, so a
+  missing, unreadable, or blank one fails that hook.
+- The `coding` set has no file. It reads the stomme guides at each run, and a broken installation
+  gives a notice and a prompt line instead of a load failure
+  ([ADR 0141](./0141-load-coding-guides-from-stomme.md)).
 
 ### Not covered
 
@@ -62,14 +66,15 @@ may replace the prompt.
 ### Positive
 
 - Ordinary runs get the rules without loading a skill.
-- Each concern has one file, and contributors can read the same file the agent reads.
+- Each file-backed set is one file, and contributors can read the same file the agent reads. The
+  `coding` set is the stomme guides the project syncs or Tau bundles.
 
 ### Negative
 
 - Each loaded set costs prompt space on every run.
 - Prompt rules cannot guarantee good writing or readable code.
-- A broken or blank default set stops Tau from loading.
-- A broken or blank worker set fails that worker's first `before_agent_start`.
+- A broken or blank file-backed default set stops Tau from loading.
+- A broken or blank file-backed worker set fails that worker's first `before_agent_start`.
 - Rules near a boundary, such as comments, can drift between two sets.
 
 ## Alternatives considered

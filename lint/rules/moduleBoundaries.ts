@@ -112,7 +112,12 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'instructions',
     entry: 'instructions/instructions',
-    publicFiles: ['instructions/systemPrompt', 'instructions/typescriptRules'],
+    publicFiles: [
+      'instructions/guideRuns',
+      'instructions/languageRules/languageRules',
+      'instructions/stommeGuides/stommeGuides',
+      'instructions/systemPrompt',
+    ],
   },
   {
     name: 'linear',
@@ -171,7 +176,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
     'tauDirectory',
   ],
   inbox: ['errors', 'fileLock', 'hc', 'record', 'schema', 'wake'],
-  instructions: [],
+  instructions: ['errors'],
   linear: ['command', 'errors'],
   piStart: ['command', 'config', 'errors', 'tauDirectory'],
   process: ['errors'],

@@ -46,7 +46,8 @@
     "@xmldom/xmldom": "0.9.12",
     "cc-safety-net": "2.4.1",
     "minimatch": "11.0.3",
-    "pi-web-access": "0.33.0"
+    "pi-web-access": "0.33.0",
+    "smol-toml": "1.9.1"
   },
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",

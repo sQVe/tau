@@ -9,8 +9,6 @@ verification.
 - Follow the structure and naming decisions in [docs/adr](docs/adr/README.md), and record new
   decisions there. Read that guide before adding an ADR. Do not write documents that explain how a
   feature works; see [shared ADR 0001](docs/stomme/shared/adr/0001-documentation-scope.md).
-- Follow the [coding instructions](src/instructions/coding.md) for all code. Pi loads them through
-  Tau; other agents must read the file.
 - Follow the [writing instructions](src/instructions/writing.md) for every document.
 - Follow the [workflow instructions](src/instructions/workflow.md) for how you run commands and
   scope work.

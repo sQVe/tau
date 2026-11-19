@@ -1,0 +1,162 @@
+import { createHash } from 'node:crypto';
+import { lstat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { errorMessage, isMissingFile } from '../../errors.js';
+import { readRegularFile } from '../regularFile.js';
+import { readSyncedGuides } from '../syncedGuides.js';
+import { planGuides, selectBundleGuides, selectProjectGuides } from './stommeGuidesDecision.js';
+import type { ConfigFact, Guide, GuideSelection } from './stommeGuidesDecision.js';
+
+export type GuideSnapshot =
+  | (Exclude<GuideSelection, { kind: 'broken' }> & { digest: string })
+  | Extract<GuideSelection, { kind: 'broken' }>;
+
+const configName = 'stomme.toml';
+const defaultBundleDirectory = fileURLToPath(new URL('../../../vendor/stomme', import.meta.url));
+
+const isPresent = async (path: string): Promise<boolean> => {
+  try {
+    await lstat(path);
+
+    return true;
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+};
+
+const findRepositoryTop = async (folder: string): Promise<string | undefined> => {
+  if (await isPresent(join(folder, '.git'))) {
+    return folder;
+  }
+
+  const parent = dirname(folder);
+
+  return parent === folder ? undefined : findRepositoryTop(parent);
+};
+
+const foldersBetween = (start: string, top: string): string[] =>
+  start === top ? [start] : [start, ...foldersBetween(dirname(start), top)];
+
+const searchedFolders = async (cwd: string): Promise<string[]> => {
+  const top = await findRepositoryTop(cwd);
+
+  return top === undefined ? [cwd] : foldersBetween(cwd, top);
+};
+
+const readConfigText = async (root: string): Promise<ConfigFact> => {
+  try {
+    const bytes = await readRegularFile(join(root, configName));
+
+    return { kind: 'text', root, text: bytes.toString('utf8') };
+  } catch (error) {
+    return { kind: 'unreadable', root, error: errorMessage(error) };
+  }
+};
+
+const readConfig = async (root: string): Promise<ConfigFact | undefined> => {
+  try {
+    if (!(await isPresent(join(root, configName)))) {
+      return undefined;
+    }
+  } catch (error) {
+    return { kind: 'unreadable', root, error: errorMessage(error) };
+  }
+
+  return readConfigText(root);
+};
+
+const findConfigIn = async (
+  folders: readonly string[],
+  bundleRoot: string,
+): Promise<ConfigFact> => {
+  const [folder, ...rest] = folders;
+
+  if (folder === undefined) {
+    return { kind: 'missing', bundleRoot };
+  }
+
+  return (await readConfig(folder)) ?? findConfigIn(rest, bundleRoot);
+};
+
+const findConfig = async (cwd: string, bundleRoot: string): Promise<ConfigFact> =>
+  findConfigIn(await searchedFolders(cwd), bundleRoot);
+
+const readSelection = async (cwd: string, bundleRoot: string): Promise<GuideSelection> => {
+  const plan = planGuides(await findConfig(cwd, bundleRoot));
+
+  if (plan.kind === 'readProject') {
+    const docs = join(plan.root, 'docs');
+    const synced = await readSyncedGuides(join(docs, 'stomme'), [docs]);
+
+    return selectProjectGuides(plan.root, plan.pin, synced);
+  }
+
+  if (plan.kind === 'readBundle') {
+    return selectBundleGuides(plan.bundleRoot, await readSyncedGuides(plan.bundleRoot));
+  }
+
+  return plan;
+};
+
+const frame = (value: string): string => `${Buffer.byteLength(value)}:${value}`;
+
+const guideFields = (guides: readonly Guide[]): string[] =>
+  guides.flatMap((guide) => [guide.path, guide.text]);
+
+const digestFields = (selection: Exclude<GuideSelection, { kind: 'broken' }>): string[] => {
+  if (selection.kind === 'project') {
+    return [
+      selection.kind,
+      selection.version,
+      selection.language,
+      selection.layers.join(','),
+      ...guideFields(selection.guides),
+    ];
+  }
+
+  const { typescript, rust } = selection.languageGuides;
+
+  return [
+    selection.kind,
+    selection.version,
+    '',
+    '',
+    ...guideFields(selection.guides),
+    ...guideFields([typescript, rust]),
+  ];
+};
+
+const digestOf = (selection: Exclude<GuideSelection, { kind: 'broken' }>): string => {
+  const hash = createHash('sha256');
+
+  for (const field of digestFields(selection)) {
+    hash.update(frame(field));
+  }
+
+  return hash.digest('hex');
+};
+
+export const resolveStommeGuides = async (
+  cwd: string,
+  bundleDirectory: string = defaultBundleDirectory,
+): Promise<GuideSnapshot> => {
+  const start = resolve(cwd);
+
+  try {
+    const selection = await readSelection(start, bundleDirectory);
+
+    return selection.kind === 'broken' ? selection : { ...selection, digest: digestOf(selection) };
+  } catch (error) {
+    return {
+      kind: 'broken',
+      root: start,
+      reason: `${start} cannot be read: ${errorMessage(error)}`,
+    };
+  }
+};

@@ -1,7 +1,8 @@
-# Tau coding instructions
+# Coding guide
 
-Apply these rules to every file you write or edit, tests included. Follow explicit user instructions
-and repository conventions over these defaults.
+Apply these rules to every file you write or edit, tests included. Language guides refine these
+rules for their language. Follow explicit user instructions and repository conventions over these
+defaults.
 
 ## Write straightforward code
 
@@ -14,11 +15,14 @@ and repository conventions over these defaults.
 - Use the standard library or an installed dependency before adding one.
 - Fix a bug once at its root cause, in the function all callers share, not only the caller the
   report names.
-- Parse untrusted values once at the boundary and pass trusted types inward.
+- Parse untrusted values once at the boundary and pass trusted types inward. Follow
+  [ADR 0005](./adr/0005-results-and-parse-once.md) for results and parsing.
 - Reject invalid states where they enter the system, and report the error there.
 - Check each reason to reject in its own guard, with its own error message.
 
 ## Drop backwards compatibility by default
+
+Follow [ADR 0008](./adr/0008-backwards-compatibility.md) for compatibility and saved formats.
 
 - On an interface change, update its callers in the repository and delete the old path.
 - Do not keep deprecated aliases, optional parameters for the old call shape, branches for old
@@ -28,6 +32,8 @@ and repository conventions over these defaults.
 - If deleting the old path is outside the task, say so instead of silently keeping both.
 
 ## Keep functions small
+
+Follow [ADR 0009](./adr/0009-advisory-review-signals.md) for size review signals.
 
 - One function, one job. Split anything that does two.
 - Review functions over 60 lines, files over 500 lines, and functions with more than 4 parameters.
@@ -71,6 +77,9 @@ and repository conventions over these defaults.
 - Keep required documentation and tool directives. Delete commented-out code and temporary notes.
 
 ## Write tests that can fail
+
+Follow [ADR 0007](./adr/0007-test-placement-and-fakes.md) for test placement and fakes, and
+[ADR 0006](./adr/0006-side-effect-records.md) for side-effect records.
 
 - Make each test defend one observable behavior: an output, a state change, or an error. If you
   cannot say what breaks for the caller, do not write it.

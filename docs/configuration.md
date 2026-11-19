@@ -323,7 +323,8 @@ Frontmatter keys:
   role.
 - `skills`: optional. Comma-separated skill names, such as `tdd`. Default: none.
 - `instruction-sets`: optional. Comma-separated names from `writing`, `coding`, `workflow`, and
-  `browser`. Default: `writing, coding, workflow`.
+  `browser`. Default: `writing, coding, workflow`. `coding` loads the project's stomme guides, or
+  Tau's bundled stomme guides when no `stomme.toml` is found.
 - `packages`: optional. Comma-separated Pi package sources that `pi -e` accepts, such as `npm:name`,
   `git:host/path`, a URL, or a local path. Default: none.
 

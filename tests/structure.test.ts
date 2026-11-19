@@ -193,7 +193,9 @@ const pureModules = [
   'src/inbox/protocol.ts',
   'src/inbox/receiptDecision.ts',
   'src/inbox/targetDecision.ts',
-  'src/instructions/typescriptRulesDecision.ts',
+  'src/instructions/languageRules/languageRulesDecision.ts',
+  'src/instructions/stommeGuides/stommeGuidesDecision.ts',
+  'src/instructions/syncRecord.ts',
   'src/linear/descriptionMatch.ts',
   'src/linear/ownership.ts',
   'src/process/stateDecision.ts',
@@ -278,6 +280,8 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/improvement/transcript.ts': ['typebox'],
   'src/improvement/writeDecision.ts': ['node:path'],
   'src/inbox/protocol.ts': ['typebox', 'typebox/value'],
+  'src/instructions/stommeGuides/stommeGuidesDecision.ts': ['node:path', 'smol-toml'],
+  'src/instructions/syncRecord.ts': ['smol-toml'],
   'src/schema.ts': ['typebox', 'typebox/value'],
 };
 
@@ -598,7 +602,7 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
     'src/models/models.ts',
     'src/models/models.test.ts',
     'src/models/allowedModels.ts',
-    'src/instructions/coding.md',
+    'src/instructions/writing.md',
     'src/skills/pr/SKILL.md',
     'src/extensions/themes.ts',
     'src/extensions/commit/commit.ts',

@@ -221,7 +221,7 @@ export default defineConfig({
   fmt: {
     ...format,
     // Local `.pi` agent state, including preserved review reports, is not source and must not be reformatted.
-    ignorePatterns: ['pnpm-lock.yaml', '.pi/**', 'docs/stomme/**'],
+    ignorePatterns: ['pnpm-lock.yaml', '.pi/**', 'docs/stomme/**', 'vendor/**'],
     overrides: [
       ...(format.overrides ?? []),
       // Snippet bodies are sent to the model as written, so wrapping them would

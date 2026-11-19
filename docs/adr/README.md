@@ -55,6 +55,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0066: Add Tau's prompt text to Pi's append section](./0066-add-taus-prompt-text-to-pis-append-section.md)
 - [0080: Store prompt snippets as files and insert them through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
 - [0131: Load language rules on first file access](./0131-load-language-rules-on-first-file-access.md)
+- [0141: Load coding guides from stomme](./0141-load-coding-guides-from-stomme.md)
 
 ### Skills and tools
 

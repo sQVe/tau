@@ -23,9 +23,12 @@ import { currentTerminalAddress, readCurrentTerminal } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { setAcceptCheck } from '../../inbox/inbox.js';
 import { answeredQuestionId } from '../../inbox/receiptDecision.js';
-import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
+import { trackGuideRuns } from '../../instructions/guideRuns.js';
+import type { GuideRuns } from '../../instructions/guideRuns.js';
+import { instructionTexts, readInstructionSections } from '../../instructions/instructions.js';
+import type { InstructionSection } from '../../instructions/instructions.js';
+import { registerLanguageRules } from '../../instructions/languageRules/languageRules.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
-import { registerTypeScriptRules } from '../../instructions/typescriptRules.js';
 import { isWorkerProcess } from '../../role/role.js';
 import { skillTools } from '../../skillTools.js';
 import { findTauRoot } from '../../tauDirectory.js';
@@ -60,6 +63,12 @@ interface WorkerState {
   branch: () => readonly SessionEntry[];
 }
 
+interface WorkerPromptParts {
+  prefix: string;
+  sections: InstructionSection[];
+  suffix: string[];
+}
+
 const inOrder = <Result>(state: WorkerState, step: () => Promise<Result>): Promise<Result> => {
   const next = state.steps.then(step, step);
 
@@ -68,25 +77,22 @@ const inOrder = <Result>(state: WorkerState, step: () => Promise<Result>): Promi
   return next;
 };
 
-const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> => {
-  const instructionSetReads = instructionSetNames
-    .filter((name) => loadout.instructionSets.includes(name))
-    .map((name) => readInstructionSet(name));
-
-  return Promise.all(instructionSetReads);
-};
-
 const workerCodemodeGuidelines = (loadout: Loadout): string[] =>
   loadout.tools.includes('codemode') ? [guidelineLines(codemodeGuidelines)] : [];
 
-export const workerSystemPrompt = async (loadout: Loadout): Promise<string> => {
-  const instructionSets = await readLoadoutInstructionSets(loadout);
+const readWorkerPromptParts = async (loadout: Loadout): Promise<WorkerPromptParts> => ({
+  prefix: workerInstructions(loadout),
+  sections: await readInstructionSections(loadout.instructionSets),
+  suffix: workerCodemodeGuidelines(loadout),
+});
 
-  return [
-    workerInstructions(loadout),
-    ...instructionSets,
-    ...workerCodemodeGuidelines(loadout),
-  ].join('\n\n');
+const workerPromptText = async (
+  parts: WorkerPromptParts,
+  guideRuns: Pick<GuideRuns, 'snapshot'>,
+): Promise<string> => {
+  const instructionSets = await instructionTexts(parts.sections, guideRuns);
+
+  return [parts.prefix, ...instructionSets, ...parts.suffix].join('\n\n');
 };
 
 const callsReportAlone = (
@@ -240,15 +246,26 @@ const registerToolCallHandler = (pi: ExtensionAPI): void => {
 };
 
 const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerState): void => {
-  // Read once, so every turn gets the same text even if the checkout changes.
-  let systemPrompt: Promise<string> | undefined;
+  const usesCodingSet = async (): Promise<boolean> => {
+    await state.ready;
+
+    return state.target?.assignment.loadout.instructionSets.includes('coding') === true;
+  };
+
+  const guideRuns = trackGuideRuns(pi, { usesCodingSet });
+
+  registerLanguageRules(pi, guideRuns);
+
+  // Read the instruction files once, so a changed checkout does not change them. The stomme guides
+  // are read again at each run.
+  let parts: Promise<WorkerPromptParts> | undefined;
 
   pi.on('before_agent_start', async (event) => {
     await state.ready;
 
     if (state.target !== undefined) {
-      systemPrompt ??= workerSystemPrompt(state.target.assignment.loadout);
-      appendSystemPrompt(event, await systemPrompt);
+      parts ??= readWorkerPromptParts(state.target.assignment.loadout);
+      appendSystemPrompt(event, await workerPromptText(await parts, guideRuns));
     }
   });
 };
@@ -413,8 +430,6 @@ export default function workerExtension(pi: ExtensionAPI): void {
   if (!isWorkerProcess()) {
     return;
   }
-
-  registerTypeScriptRules(pi);
 
   const state: WorkerState = {
     hc: { exec: pi.exec.bind(pi), connect, cwd: process.cwd() },

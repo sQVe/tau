@@ -1,0 +1,5 @@
+schema = 2
+version = "0.3.0"
+
+[files]
+"shared/coding.md" = "521e918b76d54a202d9a527fb9cafeee30c332342497fa22920fd6b06443b5f1"

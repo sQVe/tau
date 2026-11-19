@@ -1,0 +1,6 @@
+schema = 1
+version = "0.1.0"
+agents = "49815fc961bcc8cb122b4015fdf0793ada307640f806de91ced0482f36e87f8a"
+
+[files]
+"shared/coding.md" = "521e918b76d54a202d9a527fb9cafeee30c332342497fa22920fd6b06443b5f1"

@@ -1,25 +1,41 @@
-import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
-const instructionSets = ['writing', 'coding', 'workflow'] as const;
+const fileInstructionSets = ['writing', 'workflow'] as const;
 
 const copiedFiles = [
+  'errors.ts',
   'extensions/instructions.ts',
+  'instructions/guideRuns.ts',
   'instructions/instructions.ts',
+  'instructions/regularFile.ts',
+  'instructions/stommeGuides/stommeGuides.ts',
+  'instructions/stommeGuides/stommeGuidesDecision.ts',
+  'instructions/syncRecord.ts',
+  'instructions/syncedGuides.ts',
   'instructions/systemPrompt.ts',
-  'instructions/typescript.md',
-  'instructions/typescriptRules.ts',
-  'instructions/typescriptRulesDecision.ts',
+  'instructions/languageRules/languageRules.ts',
+  'instructions/languageRules/languageRulesDecision.ts',
   'schema.ts',
   'role/role.ts',
 ];
 
-const copySourceFiles = async (workingDirectory: string) => {
+const copySources = async (workingDirectory: string): Promise<void> => {
+  await mkdir(join(workingDirectory, 'extensions'));
+  await mkdir(join(workingDirectory, 'instructions', 'stommeGuides'), { recursive: true });
+  await mkdir(join(workingDirectory, 'instructions', 'languageRules'), { recursive: true });
+
+  await symlink(
+    fileURLToPath(new URL('../node_modules', import.meta.url)),
+    join(workingDirectory, 'node_modules'),
+  );
+
   for (const copiedFile of copiedFiles) {
     const destination = join(workingDirectory, copiedFile);
 
@@ -28,22 +44,18 @@ const copySourceFiles = async (workingDirectory: string) => {
   }
 };
 
-for (const instructionSet of instructionSets) {
+for (const instructionSet of fileInstructionSets) {
   it(`rejects invalid ${instructionSet} instructions and reads them again on reload`, async ({
     onTestFinished,
   }) => {
     const workingDirectory = temporaryDirectory(onTestFinished, `tau-${instructionSet}-`);
 
-    // Keep the extension's relative imports and the instruction files' path.
     const extensionPath = join(workingDirectory, 'extensions', 'instructions.ts');
     const instructionsPath = join(workingDirectory, 'instructions', `${instructionSet}.md`);
 
-    await mkdir(join(workingDirectory, 'extensions'));
-    await mkdir(join(workingDirectory, 'instructions'));
+    await copySources(workingDirectory);
 
-    await copySourceFiles(workingDirectory);
-
-    for (const otherSet of instructionSets) {
+    for (const otherSet of fileInstructionSets) {
       await writeFile(join(workingDirectory, 'instructions', `${otherSet}.md`), `# ${otherSet}\n`);
     }
 
@@ -99,12 +111,9 @@ it.for([
     const workingDirectory = temporaryDirectory(onTestFinished, 'tau-instructions-role-');
     const extensionPath = join(workingDirectory, 'extensions', 'instructions.ts');
 
-    await mkdir(join(workingDirectory, 'extensions'));
-    await mkdir(join(workingDirectory, 'instructions'));
+    await copySources(workingDirectory);
 
-    await copySourceFiles(workingDirectory);
-
-    for (const instructionSet of instructionSets) {
+    for (const instructionSet of fileInstructionSets) {
       await writeFile(
         join(workingDirectory, 'instructions', `${instructionSet}.md`),
         `# ${instructionSet}\n`,
