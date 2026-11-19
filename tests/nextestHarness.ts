@@ -1,4 +1,5 @@
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { appendFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -77,6 +78,30 @@ export const useSharedCargoEnvironment = (prefix: string): void => {
     previousAgentDirectory = process.env.PI_CODING_AGENT_DIR;
     process.env.CARGO_TARGET_DIR = temporaryDirectory(registerCleanup, `tau-${prefix}-target-`);
     process.env.PI_CODING_AGENT_DIR = temporaryDirectory(registerCleanup, `tau-${prefix}-agent-`);
+
+    const watched = process.env.CARGO_TARGET_DIR;
+    let previousState = '';
+
+    process.stderr.write(
+      `DIAG begin ${prefix} pid=${process.pid} now=${Date.now()} dir=${watched}\n`,
+    );
+
+    const timer = setInterval(() => {
+      const state = `${existsSync(watched)}/${existsSync(join(watched, 'debug'))}/${existsSync(join(watched, 'debug', 'deps'))}`;
+
+      if (state !== previousState) {
+        process.stderr.write(
+          `DIAG watch ${prefix} pid=${process.pid} now=${Date.now()} target/debug/deps=${state} env=${process.env.CARGO_TARGET_DIR}\n`,
+        );
+
+        previousState = state;
+      }
+    }, 10);
+
+    registerCleanup(() => {
+      clearInterval(timer);
+      process.stderr.write(`DIAG end ${prefix} pid=${process.pid} now=${Date.now()}\n`);
+    });
   });
 
   registerCleanup(() => {
@@ -94,6 +119,46 @@ export const useSharedCargoEnvironment = (prefix: string): void => {
   });
 };
 
+const runCommand = (command: string, args: string[]): string => {
+  try {
+    return execFileSync(command, args, { encoding: 'utf8', timeout: 20_000 }).slice(0, 6000);
+  } catch (error) {
+    return `failed: ${String(error)}`;
+  }
+};
+
+const diagnose = (label: string, extra: Record<string, unknown> = {}): string => {
+  const targetDirectory = process.env.CARGO_TARGET_DIR ?? '';
+
+  const cargoEnv = Object.entries(process.env).filter(([name]) =>
+    /^(CARGO|RUST|NEXTEST)/.test(name),
+  );
+
+  return JSON.stringify(
+    {
+      label,
+      now: Date.now(),
+      pid: process.pid,
+      ppid: process.ppid,
+      cargoTargetDir: process.env.CARGO_TARGET_DIR,
+      cargoEnv,
+      targetExists: existsSync(targetDirectory),
+      depsExists: existsSync(join(targetDirectory, 'debug', 'deps')),
+      find: runCommand('find', [targetDirectory, '-maxdepth', '3']),
+      lsTmp: runCommand('ls', ['-la', '/tmp']),
+      listeners: {
+        SIGTERM: process.listenerCount('SIGTERM'),
+        SIGINT: process.listenerCount('SIGINT'),
+        SIGHUP: process.listenerCount('SIGHUP'),
+        exit: process.listenerCount('exit'),
+      },
+      ...extra,
+    },
+    null,
+    1,
+  );
+};
+
 export const prebuildCrate = async (cwd: string): Promise<void> => {
   const metadata = await promisify(execFile)(
     'cargo',
@@ -107,11 +172,27 @@ export const prebuildCrate = async (cwd: string): Promise<void> => {
     throw new Error('Could not read cargo metadata for the prebuild.');
   }
 
-  await promisify(execFile)(
+  const metadataTarget = (JSON.parse(metadata.stdout) as { target_directory: string })
+    .target_directory;
+
+  const listed = await promisify(execFile)(
     'cargo',
     ['nextest', 'list', ...targetArguments(parsed), '--message-format', 'json'],
     { cwd, maxBuffer: 64 * 1024 * 1024 },
   );
+
+  const depsPath = join(process.env.CARGO_TARGET_DIR ?? '', 'debug', 'deps');
+
+  if (!existsSync(depsPath)) {
+    throw new Error(
+      `DIAG prebuild: deps missing after list. ${diagnose('prebuild', {
+        cwd,
+        metadataTarget,
+        stderr: listed.stderr.slice(0, 4000),
+        stdout: listed.stdout.slice(0, 2000),
+      })}`,
+    );
+  }
 };
 
 export const removeDepInfoFiles = async (packageName: string): Promise<void> => {
@@ -122,7 +203,10 @@ export const removeDepInfoFiles = async (packageName: string): Promise<void> => 
   }
 
   const dependencies = join(targetDirectory, 'debug', 'deps');
-  const entries = await readdir(dependencies);
+
+  const entries = await readdir(dependencies).catch((error: unknown) => {
+    throw new Error(`DIAG remove: ${String(error)} ${diagnose('removeDepInfoFiles')}`);
+  });
 
   const depInfo = entries.filter(
     (entry) => entry.startsWith(`${packageName}-`) && entry.endsWith('.d'),

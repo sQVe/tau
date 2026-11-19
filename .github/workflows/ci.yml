@@ -37,6 +37,10 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        copy: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -107,7 +111,30 @@ jobs:
           tar --extract --file "${RUNNER_TEMP}/cargo-nextest/cargo-nextest.tar.gz" --directory "${RUNNER_TEMP}/cargo-nextest"
           chmod +x "${RUNNER_TEMP}/cargo-nextest/cargo-nextest"
           echo "${RUNNER_TEMP}/cargo-nextest" >> "${GITHUB_PATH}"
-      - run: pnpm test
+      - name: Run the tests repeatedly
+        shell: bash
+        run: |
+          cargo --version; rustc --version; cargo nextest --version; df -h /tmp
+          failed=0
+          for attempt in 1 2 3 4 5 6 7 8; do
+            echo "::group::attempt ${attempt}"
+            status=0
+            pnpm test > "${RUNNER_TEMP}/run-${attempt}.log" 2>&1 || status=$?
+            echo "attempt ${attempt} status ${status}"
+            if [ "${status}" -ne 0 ]; then
+              failed=$((failed + 1))
+              sed 's/\x1b\[[0-9;]*m//g' "${RUNNER_TEMP}/run-${attempt}.log" > "${RUNNER_TEMP}/clean-${attempt}.log"
+              echo "=== FAIL sections of attempt ${attempt}"
+              grep -n -A40 ' FAIL ' "${RUNNER_TEMP}/clean-${attempt}.log" | head -400 || true
+              echo "=== DIAG lines of attempt ${attempt}"
+              grep -n -A12 'DIAG' "${RUNNER_TEMP}/clean-${attempt}.log" | head -600 || true
+            else
+              grep -c 'DIAG' "${RUNNER_TEMP}/run-${attempt}.log" || true
+            fi
+            echo "::endgroup::"
+          done
+          echo "failed attempts: ${failed}"
+          exit "${failed}"
 
   mutation:
     name: Mutation

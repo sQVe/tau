@@ -8,11 +8,21 @@ type Cleanup = () => Promise<void> | void;
 
 export type SuiteCleanup = (cleanup: Cleanup) => void;
 
+const diagRemoval = (where: string, directory: string): void => {
+  if (directory.includes('attribution-target')) {
+    process.stderr.write(
+      `DIAG removal ${where} pid=${process.pid} now=${Date.now()} dir=${directory}\n${new Error('stack').stack}\n`,
+    );
+  }
+};
+
 const trackedDirectories = new Set<string>();
 const handledSignals = ['SIGHUP', 'SIGINT', 'SIGTERM'] as const;
 
 const removeTrackedDirectories = (): void => {
   for (const directory of trackedDirectories) {
+    diagRemoval('removeTrackedDirectories', directory);
+
     try {
       rmSync(directory, { recursive: true, force: true });
     } catch {
@@ -26,6 +36,10 @@ const installExitHandlers = (): void => {
 
   for (const signal of handledSignals) {
     const handleSignal = () => {
+      process.stderr.write(
+        `DIAG signal ${signal} pid=${process.pid} now=${Date.now()} tracked=${[...trackedDirectories].join(',')}\n`,
+      );
+
       removeTrackedDirectories();
       process.off(signal, handleSignal);
       process.kill(process.pid, signal);
@@ -56,6 +70,7 @@ export const forgetTemporaryDirectory = (directory: string): void => {
 };
 
 const removeTemporaryDirectory = (directory: string): void => {
+  diagRemoval('removeTemporaryDirectory', directory);
   rmSync(directory, { recursive: true, force: true });
   forgetTemporaryDirectory(directory);
 };
