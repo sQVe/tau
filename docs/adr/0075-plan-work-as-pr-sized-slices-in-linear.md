@@ -30,8 +30,8 @@ reason.
 ### Lifecycle
 
 1. The user and the manager agree on a design.
-2. The manager splits the design into slice tickets under a container. The user reviews the split in
-   one preview before anything is written to Linear.
+2. The manager writes the split to Linear and reports it with links. The user reviews the drafts
+   first only on request.
 3. The manager starts one slice at a time: it creates the slice branch and the slice's agent
    tickets, then reports the start. The user reads that report.
 4. Workers do the agent tickets, and the slice goes through review, a PR, and merge. Then the next
@@ -56,7 +56,7 @@ reason.
   dependency.
 - A slice that depends on an unmerged slice may stack on it instead of waiting.
 - The manager may add agent tickets inside a slice's approved outcome, each with a one-line reason.
-  Work beyond that outcome becomes a new slice through a new split preview.
+  Work beyond that outcome becomes a new slice through a new split.
 - Merged slices never change.
 
 ### Closing
@@ -71,7 +71,7 @@ reason.
 
 - The plan survives the session in Linear, and each PR maps to exactly one ticket.
 - Detailed plans stay current, because agent tickets are written just before the work.
-- The user reviews the split before it is written, and reads a report of each slice start.
+- The user reads the written split in the report, and can ask to review the drafts first.
 
 ### Negative
 

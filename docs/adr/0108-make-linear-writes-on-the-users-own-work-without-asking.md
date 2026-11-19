@@ -64,9 +64,8 @@ prose cannot decide what a rule allows.
 
 ### Review is not approval
 
-Before a new ticket, or a title or body edit on any ticket except an agent ticket, the tracker skill
-stops and asks the user to review the draft. That review is not write approval, and the rules above
-do not change.
+The tracker skill reviews a draft only when the user asks. That review is not write approval, and
+the rules above do not change.
 
 ### Pull requests
 
@@ -100,8 +99,7 @@ Tracker writes keep the rule that any change after approval needs a new preview.
 
 ### Positive
 
-- A slice's Linear writes need no approval. A new slice still gets the review stop, which is not
-  approval.
+- A slice's Linear writes need neither approval nor a review stop.
 - The prompts that remain mark writes other people see, so the user reads them.
 - One list changes in one place.
 
