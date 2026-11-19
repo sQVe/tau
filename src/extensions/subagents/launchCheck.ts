@@ -13,6 +13,7 @@ import {
   launchEnvironmentRefusal,
 } from './launchEnvironment.js';
 import type { LaunchParameters } from './launchParameters.js';
+import { modelRefusal } from './modelRefusal.js';
 import { applyQaSettings } from './qaLaunch.js';
 import { textLimit } from './types.js';
 
@@ -23,6 +24,12 @@ export const checkLaunchEnvironment = async (
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
   exec: Exec,
 ): Promise<LaunchParameters> => {
+  const modelRefused = modelRefusal(requested.profile, requested.model);
+
+  if (modelRefused !== undefined) {
+    throw new Error(modelRefused);
+  }
+
   const parameters = await applyQaSettings(requested, signal, context, exec);
   const urlRefusal = appUrlRefusal(parameters.profile, parameters.url);
 

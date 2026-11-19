@@ -19,7 +19,6 @@ import type { ToolResult } from './errorResult.js';
 import { briefWithAppUrl } from './launchEnvironment.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { resolveLoadout } from './loadout.js';
-import { modelRefusal } from './modelRefusal.js';
 import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot.js';
@@ -424,12 +423,6 @@ export const executeLaunch = async (
 
     if (skillToolsRefused !== undefined) {
       throw new Error(skillToolsRefused);
-    }
-
-    const modelRefused = modelRefusal(request.parameters.profile, request.parameters.model);
-
-    if (modelRefused !== undefined) {
-      throw new Error(modelRefused);
     }
 
     const loadout = resolveLoadout(request.parameters, context, runtime.pi.getCommands(), {
