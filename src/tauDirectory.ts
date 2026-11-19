@@ -21,8 +21,6 @@ export type TauChild =
   | { kind: 'unnamed' }
   | { kind: 'child'; name: string };
 
-export { isBareRoot };
-
 const ignoreEverything = '*';
 
 const isNameSegment = (segment: string) => !['', '.', '..'].includes(segment);

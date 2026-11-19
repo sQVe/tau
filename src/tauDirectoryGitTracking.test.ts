@@ -6,7 +6,8 @@ import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
 
 import { createTemporaryRepository } from '../tests/gitRepository.js';
-import { checkTauDirectory, ensureTauDirectory, isBareRoot } from './tauDirectory.js';
+import { isBareRoot } from './git.js';
+import { checkTauDirectory, ensureTauDirectory } from './tauDirectory.js';
 
 it('refuses a tracked .tau/.gitignore before it changes anything', async ({ onTestFinished }) => {
   const repository = await createTemporaryRepository(onTestFinished);

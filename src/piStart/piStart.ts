@@ -6,7 +6,8 @@ import { Type } from 'typebox';
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { errorMessage, isMissingFile } from '../errors.js';
-import { existingEntry, isBareRoot } from '../tauDirectory.js';
+import { isBareRoot } from '../git.js';
+import { existingEntry } from '../tauDirectory.js';
 import { piArguments } from './piArguments.js';
 
 export type PiStartTarget = { space: string } | { name: string };

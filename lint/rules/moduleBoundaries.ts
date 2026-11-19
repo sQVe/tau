@@ -180,7 +180,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   inbox: ['errors', 'fileLock', 'hc', 'record', 'schema', 'wake'],
   instructions: ['errors'],
   linear: ['command', 'errors'],
-  piStart: ['command', 'config', 'errors', 'tauDirectory'],
+  piStart: ['command', 'config', 'errors', 'git', 'tauDirectory'],
   process: ['errors'],
   record: ['errors', 'schema', 'tauDirectory'],
   reviewBots: ['command', 'config', 'github', 'schema'],
