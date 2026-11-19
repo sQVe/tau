@@ -34,6 +34,12 @@ const nameRows: { name: string; role: string; detail?: string; expected: string 
     detail: 'task',
     expected: 'averyveryverylongrolenam',
   },
+  {
+    name: 'a cut role ending in a space',
+    role: 'abcdefghijklmnopqrstuvw xyz',
+    detail: 'task',
+    expected: 'abcdefghijklmnopqrstuvw',
+  },
 ];
 
 it.each(nameRows)('names a tab for $name', ({ role, detail, expected }) => {
@@ -105,7 +111,7 @@ it.each(renameRows)('decides a rename for $name', ({ facts, expected }) => {
 
 const textCharacters = constantFrom('a', 'B', 'c', ' ', '\t', '-', '1', 'Z');
 
-const generatedText = array(textCharacters, { maxLength: 40 }).map((characters) =>
+const generatedText = array(textCharacters, { minLength: 25, maxLength: 40 }).map((characters) =>
   characters.join(''),
 );
 

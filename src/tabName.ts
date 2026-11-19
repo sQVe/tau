@@ -25,7 +25,7 @@ const fitDetail = (detail: string, budget: number): string => {
 };
 
 export const tabName = (role: string, detail?: string): string => {
-  const fittedRole = normalized(role).slice(0, maximumTabNameLength);
+  const fittedRole = normalized(role).slice(0, maximumTabNameLength).trimEnd();
   const fittedDetail = normalized(detail ?? '');
   const budget = maximumTabNameLength - fittedRole.length - 2;
 
