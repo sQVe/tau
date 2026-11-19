@@ -46,14 +46,13 @@ creates the worktree and runs the repository's add hooks, such as dependency ins
    - Find a space to reuse by its folder in `herdr-app ls`, never by its name. When a space has the
      checkout as its folder, show it with `herdr-app do space.select --id <id>`.
    - Never rename a reused space. The user may have renamed it by hand.
-   - A handover follows when step 4 sends one, or when the calling skill starts one itself, as the
-     [retrospective skill](../retrospective/SKILL.md) step 10 does.
-   - With no space for the checkout and a handover, start no space yourself. The
-     [handover skill](../handover/SKILL.md) `handover start` with `name` creates the space with Pi
-     as its first tab, with `<title>` as its `name`.
-   - With no space for the checkout and no handover, run
-     `herdr-app do space.new --name "<title>" --folder "<checkout>" --focus false`. The space opens
-     in the background, so the user keeps their shown space and focus.
+   - With no space for the checkout, choose who creates it from the next action:
+     - A handover will follow: start no space yourself. The [handover skill](../handover/SKILL.md)
+       `handover start` with `name` creates the space with Pi as its first tab, with `<title>` as
+       its `name`.
+     - No handover will follow: run
+       `herdr-app do space.new --name "<title>" --folder "<checkout>" --focus false`. The space
+       opens in the background, so the user keeps their shown space and focus.
    - Make `<title>` a short title of what the work does, such as `completion uses the read record`:
      about 40 characters, lowercase, one line, and no ticket ID.
 4. Send a handover for the new checkout with the [handover skill](../handover/SKILL.md) when the
