@@ -110,6 +110,7 @@ const pureModules = [
   'src/extensions/prFeedback/statusDecisions.ts',
   'src/extensions/prFeedback/threads.ts',
   'src/extensions/prFeedback/writes.ts',
+  'src/extensions/sessionLock/lockDecision.ts',
   'src/extensions/slice/blockers.ts',
   'src/extensions/slice/foreignWrites.ts',
   'src/extensions/slice/startDecisions.ts',

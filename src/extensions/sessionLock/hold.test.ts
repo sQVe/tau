@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { ExtensionContext, SessionBeforeSwitchEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
-import { releaseSessionLock, sessionLockPath, startSessionLock, switchRefusal } from './hold.js';
+import { guardResume, releaseSessionLock, sessionLockPath, startSessionLock } from './hold.js';
 
 const isolatedAgentDirectory = (onTestFinished: TestContext['onTestFinished']): string => {
   const directory = temporaryDirectory(onTestFinished, 'tau-session-lock-hold-');
@@ -36,7 +37,21 @@ it('does not refuse a resume onto the session file this process holds', async ({
   const sessionFile = join(agentDirectory, 'session.jsonl');
 
   await expect(startSessionLock(sessionFile, '/checkout')).resolves.toEqual({ kind: 'held' });
-  await expect(switchRefusal(sessionFile)).resolves.toBeUndefined();
+
+  const notices: string[] = [];
+
+  const context = {
+    ui: { notify: (message: string) => notices.push(message) },
+  } as unknown as ExtensionContext;
+
+  const event: SessionBeforeSwitchEvent = {
+    type: 'session_before_switch',
+    reason: 'resume',
+    targetSessionFile: sessionFile,
+  };
+
+  await expect(guardResume(event, context)).resolves.toBeUndefined();
+  expect(notices).toEqual([]);
 });
 
 it('gives one lock path to a session file and a symlink to it', async ({ onTestFinished }) => {
@@ -96,4 +111,29 @@ it('frees the old lock when the next start is a different file', async ({ onTest
 
   expect(await readLiveLockHolder(firstLock)).toBeUndefined();
   expect(await readLiveLockHolder(secondLock)).toMatchObject({ pid: process.pid });
+});
+
+it('keeps the lease when a reload loads the module again', async ({ onTestFinished }) => {
+  const agentDirectory = isolatedAgentDirectory(onTestFinished);
+  const sessionFile = join(agentDirectory, 'session.jsonl');
+  const lockPath = await sessionLockPath(agentDirectory, sessionFile);
+
+  await startSessionLock(sessionFile, '/checkout');
+  await releaseSessionLock('reload');
+
+  vi.resetModules();
+
+  const reloaded = await import('./hold.js');
+
+  onTestFinished(async () => {
+    await reloaded.releaseSessionLock('quit');
+  });
+
+  await expect(reloaded.startSessionLock(sessionFile, '/checkout')).resolves.toEqual({
+    kind: 'held',
+  });
+
+  await reloaded.releaseSessionLock('quit');
+
+  expect(await readLiveLockHolder(lockPath)).toBeUndefined();
 });

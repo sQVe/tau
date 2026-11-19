@@ -14,15 +14,15 @@ import type {
 import { expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
-import { exitedPid } from '../../../tests/exitedPid.js';
-import { writeLockOwnerRecord } from '../../../tests/lockOwnerRecord.js';
-import { createPiSession, shutdownSession } from '../../../tests/piSession.js';
-import { seedSavedSession } from '../../../tests/savedSession.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { holdFileLock, readLiveLockHolder } from '../../fileLock/fileLock.js';
-import type { LiveLockHolder } from '../../fileLock/fileLock.js';
-import { sessionLockPath } from './hold.js';
-import sessionLockExtension from './sessionLock.js';
+import { sessionLockPath } from '../src/extensions/sessionLock/hold.js';
+import sessionLockExtension from '../src/extensions/sessionLock/sessionLock.js';
+import { holdFileLock, readLiveLockHolder } from '../src/fileLock/fileLock.js';
+import type { LiveLockHolder } from '../src/fileLock/fileLock.js';
+import { exitedPid } from './exitedPid.js';
+import { writeLockOwnerRecord } from './lockOwnerRecord.js';
+import { createPiSession, shutdownSession } from './piSession.js';
+import { seedSavedSession } from './savedSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 type Cleanup = TestContext['onTestFinished'];
 

@@ -13,6 +13,9 @@ import { errorMessage } from '../../errors.js';
 import { holdFileLock, readLiveLockHolder } from '../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../fileLock/fileLock.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
+import { isRecord } from '../../schema.js';
+import { decideResume, decideShutdown, decideStart, needsResumeCheck } from './lockDecision.js';
+import type { ResumeHolderFact } from './lockDecision.js';
 
 interface HeldSessionLock {
   lockPath: string;
@@ -24,9 +27,41 @@ type SessionLockStart =
   | { kind: 'held' }
   | { kind: 'refused'; sessionFile: string; holder: LiveLockHolder | undefined };
 
-// A reload ends one extension runner and starts another in the same process, so the held lock
-// lives here and not in a closure.
-const state: { held: HeldSessionLock | undefined } = { held: undefined };
+interface SessionLockState {
+  held: HeldSessionLock | undefined;
+}
+
+// Pi loads this module again on a reload, so the held lock lives on globalThis, not in the module.
+const stateKey = Symbol.for('tau.sessionLock.held');
+
+const isHeldSessionLock = (value: unknown): value is HeldSessionLock =>
+  isRecord(value) &&
+  typeof value['lockPath'] === 'string' &&
+  typeof value['release'] === 'function';
+
+const isSessionLockState = (value: unknown): value is SessionLockState => {
+  if (!isRecord(value) || !('held' in value)) {
+    return false;
+  }
+
+  return value['held'] === undefined || isHeldSessionLock(value['held']);
+};
+
+const sharedState = (): SessionLockState => {
+  const existing: unknown = Object.getOwnPropertyDescriptor(globalThis, stateKey)?.value;
+
+  if (isSessionLockState(existing)) {
+    return existing;
+  }
+
+  const created: SessionLockState = { held: undefined };
+
+  Reflect.set(globalThis, stateKey, created);
+
+  return created;
+};
+
+const state = sharedState();
 
 const canonicalSessionFile = async (sessionFile: string): Promise<string> => {
   const resolvedFile = await realpath(sessionFile).catch(() => undefined);
@@ -75,19 +110,24 @@ export const startSessionLock = async (
   sessionFile: string | undefined,
   checkout: string,
 ): Promise<SessionLockStart> => {
-  if (sessionFile === undefined) {
-    await releaseHeld();
+  const lockPath =
+    sessionFile === undefined ? undefined : await sessionLockPath(getAgentDir(), sessionFile);
 
-    return { kind: 'none' };
-  }
+  const plan = decideStart({
+    hasSessionFile: sessionFile !== undefined,
+    heldLockPath: state.held?.lockPath,
+    lockPath,
+  });
 
-  const lockPath = await sessionLockPath(getAgentDir(), sessionFile);
-
-  if (state.held?.lockPath === lockPath) {
+  if (plan === 'keep') {
     return { kind: 'held' };
   }
 
   await releaseHeld();
+
+  if (plan === 'release' || sessionFile === undefined || lockPath === undefined) {
+    return { kind: 'none' };
+  }
 
   const acquired = await holdFileLock({ lockPath, checkout, terminal: currentTerminalAddress() });
 
@@ -100,24 +140,10 @@ export const startSessionLock = async (
   return { kind: 'held' };
 };
 
-// A reload shuts the session down and starts it again on the same file, so the lock stays held.
 export const releaseSessionLock = async (reason: SessionShutdownEvent['reason']): Promise<void> => {
-  if (reason === 'reload') {
-    return;
+  if (decideShutdown(reason) === 'release') {
+    await releaseHeld();
   }
-
-  await releaseHeld();
-};
-
-export const switchRefusal = async (targetSessionFile: string): Promise<string | undefined> => {
-  const lockPath = await sessionLockPath(getAgentDir(), targetSessionFile);
-  const holder = await readLiveLockHolder(lockPath);
-
-  if (holder === undefined || holder.pid === process.pid) {
-    return undefined;
-  }
-
-  return `Session ${targetSessionFile} is open in ${describeHolder(holder)}. Resume cancelled.`;
 };
 
 const exitAfterRefusal = async (context: ExtensionContext, message: string): Promise<never> => {
@@ -151,27 +177,42 @@ export const lockSessionOnStart = async (context: ExtensionContext): Promise<voi
   }
 };
 
+const resumeRefusal = (targetSessionFile: string, holder: LiveLockHolder | undefined): string =>
+  `Session ${targetSessionFile} is open in ${describeHolder(holder)}. Resume cancelled.`;
+
 export const guardResume = async (
   event: SessionBeforeSwitchEvent,
   context: ExtensionContext,
 ): Promise<{ cancel: true } | undefined> => {
-  if (event.reason !== 'resume' || event.targetSessionFile === undefined) {
+  const { reason, targetSessionFile } = event;
+
+  if (!needsResumeCheck(reason, targetSessionFile) || targetSessionFile === undefined) {
     return undefined;
   }
+
+  let holder: LiveLockHolder | undefined;
+  let failure: unknown;
+  let fact: ResumeHolderFact;
 
   try {
-    const message = await switchRefusal(event.targetSessionFile);
-
-    if (message === undefined) {
-      return undefined;
-    }
-
-    context.ui.notify(message, 'error');
-
-    return { cancel: true };
+    holder = await readLiveLockHolder(await sessionLockPath(getAgentDir(), targetSessionFile));
+    fact = { read: 'ok', holderPid: holder?.pid, ownPid: process.pid };
   } catch (error) {
-    warnLockFailure(context, error);
+    failure = error;
+    fact = { read: 'failed' };
+  }
 
+  const plan = decideResume(fact);
+
+  if (plan === 'allow-with-warning') {
+    warnLockFailure(context, failure);
+  }
+
+  if (plan !== 'refuse') {
     return undefined;
   }
+
+  context.ui.notify(resumeRefusal(targetSessionFile, holder), 'error');
+
+  return { cancel: true };
 };
