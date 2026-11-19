@@ -173,6 +173,41 @@ it.for([
     },
   },
   {
+    name: 'a link target with a query',
+    files: {
+      ...guides,
+      'shared/rules.md': '[a](./coding.md?plain=1) and [b](./coding.md?a=1#frag)\n',
+    },
+  },
+  {
+    name: 'a URL target with a query',
+    files: { ...guides, 'shared/rules.md': '[a](https://example.com/gone.md?x=1)\n' },
+  },
+  {
+    name: 'a link target with balanced parentheses',
+    files: {
+      ...guides,
+      'shared/rules(v2).md': '# Rules\n',
+      'shared/coding.md': '[rules](./rules(v2).md)\n',
+    },
+  },
+  {
+    name: 'a reference definition with the target on the next line',
+    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]:\n  ./coding.md\n' },
+  },
+  {
+    name: 'a label followed by a blank line and prose',
+    files: { ...guides, 'shared/rules.md': '[adr]:\n\n./missing.md\n' },
+  },
+  {
+    name: 'CRLF lines with a present next-line reference target',
+    files: {
+      ...guides,
+      'shared/rules.md':
+        '[rules][adr]\r\n\r\n[adr]:\r\n  ./coding.md\r\n[Note]: this is important\r\n',
+    },
+  },
+  {
     name: 'reference definitions with each title form',
     files: {
       ...guides,
@@ -319,6 +354,34 @@ const brokenRows: BrokenRow[] = [
     reason: ['shared/rules.md', 'links to ../../outside.md, which leaves the synced folder'],
   },
   {
+    name: 'a missing link target with a query',
+    files: { ...guides, 'shared/rules.md': '[gone](./gone.md?plain=1)\n' },
+    reason: ['shared/rules.md', './gone.md?plain=1', 'not a synced file'],
+  },
+  {
+    name: 'a missing link target with balanced parentheses',
+    files: { ...guides, 'shared/rules.md': '[gone](./gone(v2).md)\n' },
+    reason: ['shared/rules.md', 'links to ./gone(v2).md, which is not a synced file'],
+  },
+  {
+    name: 'a reference definition with the target on the next line',
+    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]:\n  ../../outside.md\n' },
+    reason: ['shared/rules.md', 'links to ../../outside.md, which leaves the synced folder'],
+  },
+  {
+    name: 'CRLF lines with a next-line reference target that leaves the folder',
+    files: {
+      ...guides,
+      'shared/rules.md': '[rules][adr]\r\n\r\n[adr]:\r\n  ../../outside.md\r\n',
+    },
+    reason: ['shared/rules.md', 'links to ../../outside.md, which leaves the synced folder'],
+  },
+  {
+    name: 'CRLF lines with an inline link to a missing target',
+    files: { ...guides, 'shared/rules.md': '# Rules\r\n\r\n[gone](./gone.md)\r\n' },
+    reason: ['shared/rules.md', 'links to ./gone.md, which is not a synced file'],
+  },
+  {
     name: 'a dangling reference definition after a fenced one',
     files: {
       ...guides,
@@ -348,6 +411,51 @@ it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) 
   }
 });
 
+it('reports a synced folder that is a symbolic link as broken', async () => {
+  const target = writeGuides(guides);
+  const link = `${target}-link`;
+
+  symlinkSync(target, link);
+
+  onTestFinished(() => {
+    rmSync(link, { force: true });
+  });
+
+  const result = await readSyncedGuides(link);
+
+  expect(result).toEqual({
+    kind: 'broken',
+    reason: `${link} is a symbolic link; replace it with the folder and run stomme sync`,
+  });
+});
+
+it('reports a listed folder above the synced folder as broken when it is a symbolic link', async () => {
+  const holder = writeGuides({});
+  const docs = join(holder, 'docs');
+
+  mkdirSync(join(holder, 'real'));
+  renameSync(writeGuides(guides), join(holder, 'real/stomme'));
+  symlinkSync(join(holder, 'real'), docs);
+
+  const result = await readSyncedGuides(join(docs, 'stomme'), [docs]);
+
+  expect(result).toEqual({
+    kind: 'broken',
+    reason: `${docs} is a symbolic link; replace it with the folder and run stomme sync`,
+  });
+});
+
+it('keeps the missing record reason for a synced folder that does not exist', async () => {
+  const directory = join(writeGuides(guides), 'absent');
+
+  const result = await readSyncedGuides(directory);
+
+  expect(result).toEqual({
+    kind: 'broken',
+    reason: `${join(directory, recordName)} is missing; run stomme sync`,
+  });
+});
+
 const changingRecord = (versions: readonly string[]): GuideFileSystem => {
   let reads = 0;
 
@@ -364,7 +472,7 @@ const changingRecord = (versions: readonly string[]): GuideFileSystem => {
 };
 
 it('reports a record that changes while it is read', async () => {
-  const result = await readSyncedGuides('guides', changingRecord(['1', '2', '3', '4', '5']));
+  const result = await readSyncedGuides('guides', [], changingRecord(['1', '2', '3', '4', '5']));
 
   expect(result).toEqual({
     kind: 'broken',
@@ -373,7 +481,7 @@ it('reports a record that changes while it is read', async () => {
 });
 
 it('starts over once when the record changes while it is read', async () => {
-  const result = await readSyncedGuides('guides', changingRecord(['1', '2']));
+  const result = await readSyncedGuides('guides', [], changingRecord(['1', '2']));
 
   expect(result).toEqual({ kind: 'valid', version: '2', files: new Map() });
 });
@@ -409,7 +517,7 @@ it('keeps the error of a record that cannot be read again', async () => {
     lstat: () => Promise.reject(new Error('no file is recorded')),
   };
 
-  const result = await readSyncedGuides('guides', fileSystem);
+  const result = await readSyncedGuides('guides', [], fileSystem);
   const reason = result.kind === 'broken' ? result.reason : 'the result is valid';
 
   expect(reason).toContain('the disk went away');
@@ -430,7 +538,7 @@ it('keeps the error of a record that cannot be read at first', async () => {
     lstat: () => Promise.reject(new Error('no file is recorded')),
   };
 
-  const result = await readSyncedGuides('guides', fileSystem);
+  const result = await readSyncedGuides('guides', [], fileSystem);
   const reason = result.kind === 'broken' ? result.reason : 'the result is valid';
 
   expect(reason).toContain('the disk went away');

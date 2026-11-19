@@ -7,6 +7,7 @@ import {
   open,
   readFile,
   readdir,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -236,6 +237,50 @@ it('changes the digest when the version changes', async ({ onTestFinished }) => 
   await writeStommeProject(newer, { language: 'rust', version: '0.2.1' });
 
   expect(await digestOf(newer)).not.toBe(await digestOf(current));
+});
+
+it('reports a project whose docs folder is a symbolic link as broken', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  await writeStommeProject(repository, { language: 'rust' });
+  await rename(join(repository, 'docs'), join(repository, 'docs-real'));
+  await symlink(join(repository, 'docs-real'), join(repository, 'docs'));
+
+  const snapshot = await resolveStommeGuides(repository);
+
+  expect(snapshot).toMatchObject({ kind: 'broken', root: repository });
+  expect(reasonOf(snapshot)).toContain(`${join(repository, 'docs')} is a symbolic link`);
+});
+
+it('reports a project whose synced folder is a symbolic link as broken', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  await writeStommeProject(repository, { language: 'rust' });
+  const synced = join(repository, 'docs', 'stomme');
+  await rename(synced, join(repository, 'synced-real'));
+  await symlink(join(repository, 'synced-real'), synced);
+
+  const snapshot = await resolveStommeGuides(repository);
+
+  expect(snapshot).toMatchObject({ kind: 'broken', root: repository });
+  expect(reasonOf(snapshot)).toContain(`${synced} is a symbolic link`);
+});
+
+it('reads a project below a symbolic link above the project root', async ({ onTestFinished }) => {
+  const holder = temporaryDirectory(onTestFinished, 'tau-stomme-holder-');
+  const repository = join(holder, 'repository');
+  await mkdir(repository);
+  await initializeRepository(repository);
+  await writeStommeProject(repository, { language: 'rust' });
+  const linkedHolder = `${holder}-link`;
+  await symlink(holder, linkedHolder);
+  onTestFinished(() => rm(linkedHolder, { force: true }));
+
+  const snapshot = await resolveStommeGuides(join(linkedHolder, 'repository'));
+
+  expect(snapshot).toMatchObject({ kind: 'project', language: 'rust' });
 });
 
 it('reports a configured project without a record as broken', async ({ onTestFinished }) => {

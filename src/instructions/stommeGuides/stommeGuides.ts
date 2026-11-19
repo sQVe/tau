@@ -91,7 +91,8 @@ const readSelection = async (cwd: string, bundleRoot: string): Promise<GuideSele
   const plan = planGuides(await findConfig(cwd, bundleRoot));
 
   if (plan.kind === 'readProject') {
-    const synced = await readSyncedGuides(join(plan.root, 'docs', 'stomme'));
+    const docs = join(plan.root, 'docs');
+    const synced = await readSyncedGuides(join(docs, 'stomme'), [docs]);
 
     return selectProjectGuides(plan.root, plan.pin, synced);
   }

@@ -56,6 +56,8 @@ file in Tau. The set keeps its name, so profiles and saved loadouts stay valid.
 - Tau reads and hashes every file the sync record lists, not only the guides the project loads. A
   missing file, a hash mismatch, or a bad link in any recorded file, including shared ADRs, makes
   the whole installation broken.
+- A project whose `docs` folder or `docs/stomme` folder is a symbolic link reads as a broken
+  installation. A symbolic link above `docs` is allowed.
 
 ## Consequences
 

@@ -27,7 +27,7 @@ const fix = 'run stomme sync';
 // alternatives capture an inline link target and a reference definition target. A definition is the
 // target alone, with an optional title, to the end of the line; other text after a label is prose.
 const markdownToken =
-  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)(?:(?!\n[ \t]*(?:\n|`{3,}|~{3,}))[\s\S])*?\2|\]\(\s*(?:<([^>\n]*)>|([^)\s]+))|^ {0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:<([^>\n]*)>|(\S+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
+  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)(?:(?!\n[ \t]*(?:\n|`{3,}|~{3,}))[\s\S])*?\2|\]\(\s*(?:<([^>\n]*)>|((?:[^()\s]|\([^()\s]*\))+))|^ {0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:\n[ \t]*)?(?:<([^>\n]*)>|(\S+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
 
 const urlScheme = /^[a-z][a-z\d+.-]*:/i;
 
@@ -49,14 +49,10 @@ const readText = async (file: string, fileSystem: GuideFileSystem): Promise<Text
   }
 };
 
-const linkedFolder = async (
-  directory: string,
-  path: string,
+const firstLinkedFolder = async (
+  folders: readonly string[],
   fileSystem: GuideFileSystem,
 ): Promise<string | undefined> => {
-  const segments = path.split('/').slice(0, -1);
-  const folders = segments.map((_, index) => join(directory, ...segments.slice(0, index + 1)));
-
   const stats = await Promise.all(
     folders.map((folder) => fileSystem.lstat(folder).catch(() => undefined)),
   );
@@ -67,6 +63,17 @@ const linkedFolder = async (
   return link === undefined
     ? undefined
     : `${link} is a symbolic link; replace it with the folder and ${fix}`;
+};
+
+const linkedFolder = async (
+  directory: string,
+  path: string,
+  fileSystem: GuideFileSystem,
+): Promise<string | undefined> => {
+  const segments = path.split('/').slice(0, -1);
+  const folders = segments.map((_, index) => join(directory, ...segments.slice(0, index + 1)));
+
+  return firstLinkedFolder(folders, fileSystem);
 };
 
 const readGuide = async (
@@ -102,7 +109,7 @@ const readGuide = async (
 };
 
 const linkTargets = (markdown: string): string[] =>
-  [...markdown.matchAll(markdownToken)].flatMap((match) => {
+  [...markdown.replaceAll('\r\n', '\n').matchAll(markdownToken)].flatMap((match) => {
     const inlineTarget = match[3] ?? match[4];
     const definitionTarget = match[5] ?? match[6];
 
@@ -114,7 +121,7 @@ const linkProblem = (
   target: string,
   recorded: ReadonlyMap<string, string>,
 ): string | undefined => {
-  const [targetPath = ''] = target.split('#');
+  const [targetPath = ''] = target.split(/[?#]/u);
 
   if (targetPath === '' || urlScheme.test(target)) {
     return undefined;
@@ -212,10 +219,19 @@ const readOnce = async (
 
 const nodeFileSystem: GuideFileSystem = { readFile: readRegularFile, lstat };
 
+// The caller lists the folders above `directory` that must not be links, such as `docs`. Folders
+// further up stay free to be links.
 export const readSyncedGuides = async (
   directory: string,
+  checkedParents: readonly string[] = [],
   fileSystem: GuideFileSystem = nodeFileSystem,
 ): Promise<SyncedGuides> => {
+  const linked = await firstLinkedFolder([...checkedParents, directory], fileSystem);
+
+  if (linked !== undefined) {
+    return broken(linked);
+  }
+
   const first = await readOnce(directory, fileSystem);
 
   if (first !== undefined) {
