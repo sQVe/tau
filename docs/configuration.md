@@ -279,8 +279,8 @@ name, such as `scout`. `profiles.default.model` applies to every profile without
 `default` is reserved and cannot name a profile.
 
 A `reviewer` or `checker` launch may set `model`, which wins over the role override and the profile
-entries. Every other profile omits `model`; the user's `profiles` entry decides its model. A launch
-without `model` uses `roles.<kind>.profiles.<profile>.model`, then `profiles.<profile>.model`, then
+entries. Every other profile omits `model`; the user `tau.json` decides its model. A launch without
+`model` uses `roles.<kind>.profiles.<profile>.model`, then `profiles.<profile>.model`, then
 `profiles.default.model`. A worker launch with none of them fails. Tau fails a model that Pi does
 not list, or a model outside `allowedModels`.
 
