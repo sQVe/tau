@@ -86,6 +86,12 @@ may replace the prompt.
 Put all rules in one file. Rejected because prose, code, and workflow rules then govern each other's
 subjects, and agents read a code rule as a prose rule.
 
+### Status report rules in the writing set
+
+Put the subject of a status report and the naming of its work in `writing.md`, beside the other
+reply rules. Rejected because they decide what a report covers, not how a sentence reads. Splitting
+one report rule across two sets also lets its parts drift apart.
+
 ### Rules in a skill
 
 Ship the rules as a skill, such as an unslop skill. Rejected because the model must load the skill
