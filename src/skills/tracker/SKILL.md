@@ -72,8 +72,8 @@ This list is the one approval rule; other skills link here.
 
 5. Write a new ticket, or a title or body edit on the user's own ticket, without a dialog, and
    report it in step 8. Run this review loop only when the user asked to review the draft, with the
-   options Write as drafted (Accept) or Request changes, or when a calling skill's dialog uses it
-   with its approve options as Accept.
+   options Write as drafted (Accept) or Request changes, or when a calling skill's own dialog runs
+   it; that dialog's approve options count as Accept when it has them.
    1. Before the question, call `draft_review` `open`, title before body. On `opened`, tell the user
       to submit comments and save edits before answering; `collect` loses unsubmitted text. On
       `manual`, give its `command` and tell the user to quit tuicr before answering.

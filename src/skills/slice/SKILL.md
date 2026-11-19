@@ -119,13 +119,14 @@ design it follows in its Design section. The container has one sub-ticket per sl
      item passes, say nothing about it. The list never stops `apply`.
 
 6. Call `slice` with `apply` for the last read.
-   - Apply without a dialog. Only when the user asked to review the plan, first run the review loop
-     in the tracker skill's [Procedure](../tracker/SKILL.md#procedure) step 5 over `plan.md` and
-     every body file `plan.json` names, such as `container.md` or `ticket.md` and the `slice-<n>.md`
+   - Apply without a dialog. When the user asked to review the plan, first run the review loop in
+     the tracker skill's [Procedure](../tracker/SKILL.md#procedure) step 5 over `plan.md` and every
+     body file `plan.json` names, such as `container.md` or `ticket.md` and the `slice-<n>.md`
      files, with the options Write as drafted (Accept) or Request changes. Pass `plan.md` first,
-     then the container body, then the slice files in plan order. After a review, carry `plan.md`
-     changes into the draft as step 4 says, call `read` again, and resolve its `problems`. Map the
-     coverage again, and judge each acceptance item the review added or changed, as step 5 says.
+     then the container body, then the slice files in plan order.
+   - After any review of the plan, including the selection review in step 8, carry `plan.md` changes
+     into the draft as step 4 says, call `read` again, resolve its `problems`, map the coverage
+     again, and judge each acceptance item the review added or changed, as step 5 says.
    - When `apply` would write to a container or slice another person owns, it asks the user first
      and writes nothing if the user declines. Do not ask again with `ask_user_question` for those
      writes; the tool's confirm is the approval the tracker skill's
