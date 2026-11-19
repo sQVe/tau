@@ -62,6 +62,7 @@ const pureModules = [
   'scripts/piSessionRules.ts',
   'scripts/piSmokeChecks.ts',
   'scripts/piVersionDrift.ts',
+  'scripts/questionGateScoreLog.ts',
   'scripts/sessionHealthReport.ts',
   'scripts/sessionHealthRules.ts',
   'scripts/tokenUsageReport.ts',
