@@ -40,6 +40,18 @@ const nameRows: { name: string; role: string; detail?: string; expected: string 
     detail: 'task',
     expected: 'abcdefghijklmnopqrstuvw',
   },
+  {
+    name: 'a word cut at the budget edge',
+    role: 'lead',
+    detail: 'abcdefghijklmnopq xyz',
+    expected: 'lead: abcdefghijklmnopq',
+  },
+  {
+    name: 'a one-character detail',
+    role: 'abcdefghijklmnopqrstu',
+    detail: 'xy',
+    expected: 'abcdefghijklmnopqrstu: x',
+  },
 ];
 
 it.each(nameRows)('names a tab for $name', ({ role, detail, expected }) => {
@@ -101,6 +113,31 @@ const renameRows: { name: string; facts: TabRenameFacts; expected: string | unde
   {
     name: 'a hand name Tau never wrote',
     facts: { role: 'lead', detail: undefined, currentName: 'my notes', lastWrittenName: undefined },
+    expected: undefined,
+  },
+  {
+    name: 'a whitespace name',
+    facts: { role: 'lead', detail: undefined, currentName: '   ', lastWrittenName: undefined },
+    expected: 'lead',
+  },
+  {
+    name: 'a two-digit name',
+    facts: { role: 'lead', detail: undefined, currentName: '12', lastWrittenName: undefined },
+    expected: 'lead',
+  },
+  {
+    name: 'a digit-then-letter name',
+    facts: { role: 'lead', detail: undefined, currentName: '1a', lastWrittenName: undefined },
+    expected: undefined,
+  },
+  {
+    name: 'a digits-then-letter name',
+    facts: { role: 'lead', detail: undefined, currentName: '12a', lastWrittenName: undefined },
+    expected: undefined,
+  },
+  {
+    name: 'a letter-then-digits name',
+    facts: { role: 'lead', detail: undefined, currentName: 'a12', lastWrittenName: undefined },
     expected: undefined,
   },
 ];
