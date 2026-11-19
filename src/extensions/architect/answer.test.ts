@@ -130,6 +130,19 @@ it('answer to a lead terminal that runs a new session throws and marks the ask f
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
 });
 
+it('a refused first answer still fails the ask', async ({ onTestFinished: cleanup }) => {
+  const { root, hc, lead, answer } = await answering(cleanup);
+  const record = liveRecord('queued');
+
+  await writeAskRecord(root, record);
+  hc.fail('get', 'transient', 1);
+
+  await expect(answer(record.askId)).rejects.toThrow(/transient/);
+
+  expect(savedFiles(lead)).toEqual([]);
+  expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
+});
+
 it('answer to a silent lead inbox leaves the ask open and says to call answer again', async ({
   onTestFinished: cleanup,
 }) => {

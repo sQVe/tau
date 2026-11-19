@@ -117,10 +117,10 @@ const closingArchitect = async (
     held: createHeldLockToken(),
   };
 
-  const answerWith = (answerHc: AnswerHc) =>
+  const answerWith = (answerHc: AnswerHc, file = 'answer.md') =>
     createArchitectAnswerTool({ ...answerHc, cwd: root }, answers).execute(
       'call',
-      { action: 'answer', askId: record.askId, file: 'answer.md' },
+      { action: 'answer', askId: record.askId, file },
       undefined,
       undefined,
       contextOf(root, {}, 'session-architect'),
@@ -133,7 +133,7 @@ const closingArchitect = async (
     answers,
     hc,
     notify,
-    answer: () => answerWith(hc),
+    answer: (file?: string) => answerWith(hc, file),
     answerWith,
     end: () =>
       endArchitectSession(
@@ -326,6 +326,59 @@ it('an answer saved before its reply was lost is settled at close', async ({
   expect(lead.saved()).toEqual([`${record.askId}.json`]);
   expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
   expect(notify).not.toHaveBeenCalled();
+});
+
+it('a refused answer resend after an unknown send is settled at close', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, lead, record, hc, answer, end } = await closingArchitect(cleanup, 'save-then-drop');
+
+  expect((await answer()).details).toMatchObject({ status: 'unknown', askId: record.askId });
+
+  const before = await readFile(askRecordPath(root, record.askId), 'utf8');
+
+  hc.fail('get', 'transient', 1);
+
+  await expect(answer()).rejects.toThrow(`ask ${record.askId} stays open`);
+
+  expect(await readFile(askRecordPath(root, record.askId), 'utf8')).toBe(before);
+  expect(lead.frames).toHaveLength(1);
+
+  hc.recover('get');
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'answered',
+    answer: answerText(record.askId),
+  });
+
+  expect(lead.saved()).toEqual([`${record.askId}.json`]);
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+});
+
+it('the close resend sends the first uncertain answer when a different file is refused', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, lead, record, answer, end } = await closingArchitect(cleanup, 'save-then-drop');
+
+  await writeFile(join(root, 'other.md'), 'Use --force.\n');
+
+  expect((await answer()).details).toMatchObject({ status: 'unknown', askId: record.askId });
+
+  const before = await readFile(askRecordPath(root, record.askId), 'utf8');
+
+  await expect(answer('other.md')).rejects.toThrow(`ask ${record.askId} stays open`);
+
+  expect(await readFile(askRecordPath(root, record.askId), 'utf8')).toBe(before);
+
+  await end();
+
+  expect(await readAskRecord(root, record.askId)).toMatchObject({
+    status: 'answered',
+    answer: answerText(record.askId),
+  });
+
+  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
 });
 
 it('an answer whose outcome stays unknown at close gets the could-not-check note', async ({

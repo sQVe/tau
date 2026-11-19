@@ -22,6 +22,7 @@ export interface AnswerRequest {
   file: string;
   architectSessionId: string;
   hc: HcRuntime;
+  hasUncertain: (askId: string) => boolean;
   recordDelivered: (askId: string, answer: string) => void;
   recordUncertain: (askId: string, answer: string) => void;
 }
@@ -32,6 +33,7 @@ export type AnswerResult =
 
 export interface AnswerTracker {
   run: <Result>(answer: () => Promise<Result>) => Promise<Result>;
+  hasUncertain: (askId: string) => boolean;
   recordDelivered: (askId: string, answer: string) => void;
   recordUncertain: (askId: string, answer: string) => void;
   close: () => Promise<ClosedAnswers>;
@@ -63,12 +65,16 @@ export const createAnswerTracker = (): AnswerTracker => {
         inFlight.delete(running);
       }
     },
+    hasUncertain: (askId) => uncertain.has(askId),
     recordDelivered: (askId, answer) => {
       uncertain.delete(askId);
       delivered.set(askId, answer);
     },
+    // The first text is the one the lead may have saved, so a later text must not replace it.
     recordUncertain: (askId, answer) => {
-      uncertain.set(askId, answer);
+      if (!uncertain.has(askId)) {
+        uncertain.set(askId, answer);
+      }
     },
     close: async () => {
       closed = true;
@@ -104,6 +110,9 @@ const answerableRecord = async (request: AnswerRequest): Promise<LiveAskRecord> 
 
   return record;
 };
+
+const firstAnswerNote = (askId: string): string =>
+  `The first answer may already be in the lead inbox, so ask ${askId} stays open. Call architect answer again with the same file, or close: closing resends the first answer once.`;
 
 const readAnswerText = async (cwd: string, file: string): Promise<string> => {
   const realFile = await resolveTextFile(file, cwd, 'answer file');
@@ -149,6 +158,8 @@ export const answerLiveAsk = async (request: AnswerRequest): Promise<AnswerResul
 
   assertFitsOneMessage(record, answer);
 
+  const earlierSendUnknown = request.hasUncertain(askId);
+
   const sent = await sendInboxMessage({
     hc: request.hc,
     target: record.leadTerminal,
@@ -157,6 +168,10 @@ export const answerLiveAsk = async (request: AnswerRequest): Promise<AnswerResul
     body: { family: 'handover', payload: { text: answer } },
     refusal: 'Nothing was queued. Tell the user that the answer did not reach the lead.',
   }).catch(async (error: unknown) => {
+    if (earlierSendUnknown) {
+      throw new Error(`${errorMessage(error)} ${firstAnswerNote(askId)}`, { cause: error });
+    }
+
     await changeAskRecord(request.root, askId, (current) =>
       isOpenLiveAsk(current)
         ? { ...current, status: 'failed', detail: errorMessage(error) }

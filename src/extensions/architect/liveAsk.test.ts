@@ -271,6 +271,59 @@ it('an unknown live ask retried with its ask ID resends the same bytes and saves
   expect(commands(hc)).not.toContain('run');
 });
 
+it('a refused retry after an unknown send keeps the ask unknown', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  const inbox = await startCapturingInbox(cleanup, 'session-architect', 'save-then-drop');
+
+  await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
+  await holdLock(root, root);
+  await startLeadInbox(cleanup, hc);
+  replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
+
+  const tool = createArchitectTool({ ...hc, cwd: root });
+
+  const asked = await tool.execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  const { askId } = asked.details as { askId: string };
+
+  expect(asked.details).toMatchObject({ status: 'unknown' });
+
+  const recordBytes = await readFile(askRecordPath(root, askId), 'utf8');
+
+  hc.fail('get', 'transient', 1);
+
+  await expect(
+    tool.execute('call', { action: 'ask', askId }, undefined, undefined, contextOf(root)),
+  ).rejects.toThrow(new RegExp(`ask ${askId} stays unknown`));
+
+  expect(await readFile(askRecordPath(root, askId), 'utf8')).toBe(recordBytes);
+  expect(await readAskRecord(root, askId)).toMatchObject({ status: 'unknown' });
+  expect(inbox.frames).toHaveLength(1);
+
+  hc.recover('get');
+
+  const retried = await tool.execute(
+    'call',
+    { action: 'ask', askId },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(retried.details).toMatchObject({ action: 'ask', status: 'queued', askId });
+  expect(await readAskRecord(root, askId)).toMatchObject({ status: 'queued' });
+  expect(inbox.saved()).toEqual([`${askId}.json`]);
+});
+
 it.for<[string, string, RegExp]>([
   ['a missing record', 'missing', /No ask record/],
   ['a hidden record', 'hidden', /hidden ask/],

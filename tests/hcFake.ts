@@ -28,6 +28,7 @@ export interface HcFake {
   reply: (command: HcCommand, stdout: string) => void;
   replyGet: (address: string, stdout: string) => void;
   fail: (command: HcCommand, stderr: string, code: number) => void;
+  recover: (command: HcCommand) => void;
   replyConnect: (method: string, id: number, result: unknown) => void;
   failConnect: (method: string, id: number, error: unknown) => void;
   appendConnectOutput: (text: string) => void;
@@ -197,6 +198,7 @@ export const createHcFake = (): HcFake => {
     reply: (command, stdout) => replies.set(command, stdout),
     replyGet: (address, stdout) => terminalReplies.set(address, stdout),
     fail: (command, stderr, code) => failures.set(command, { stderr, code }),
+    recover: (command) => failures.delete(command),
     replyConnect: (method, id, result) => {
       expectations.push({ method, id, reply: { result } });
     },

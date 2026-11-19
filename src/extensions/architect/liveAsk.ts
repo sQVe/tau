@@ -44,6 +44,9 @@ const missingRecordNote =
 const questionText = (record: LiveAskRecord): string =>
   `Ask ${record.askId} from the lead: "${record.question}". Answer it with architect answer and askId ${record.askId}. Update the ticket if the answer changes it. If you need the user, ask the user directly.`;
 
+const firstCopyNote = (askId: string): string =>
+  `The first copy may still be in the architect inbox, so ask ${askId} stays unknown. Retry with architect ask and askId ${askId}.`;
+
 const leadInboxWorks = async (request: LiveAskRequest): Promise<boolean> => {
   const terminal = await get(request.hc, request.leadTerminal);
 
@@ -84,6 +87,8 @@ const sendQuestion = async (
   hc: HcRuntime,
   record: LiveAskRecord,
 ): Promise<LiveAskResult> => {
+  const earlierSendUnknown = record.status === 'unknown';
+
   const sent = await sendInboxMessage({
     hc,
     target: record.architectTerminal,
@@ -95,6 +100,10 @@ const sendQuestion = async (
     },
     refusal: 'Nothing was queued.',
   }).catch(async (error: unknown) => {
+    if (earlierSendUnknown) {
+      throw new Error(`${errorMessage(error)} ${firstCopyNote(record.askId)}`, { cause: error });
+    }
+
     await settleOpenAsk(root, record.askId, (current) => ({
       ...current,
       status: 'failed',
