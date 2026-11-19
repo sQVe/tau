@@ -144,6 +144,7 @@ const pureModules = [
   'src/extensions/subagents/workerFolderDecision.ts',
   'src/extensions/subagents/workerMessage.ts',
   'src/extensions/subagents/workerModels.ts',
+  'src/extensions/subagents/workerName.ts',
   'src/extensions/subagents/workerPackages.ts',
   'src/extensions/subagents/workerPlacement.ts',
   'src/extensions/subagents/workerResume.ts',

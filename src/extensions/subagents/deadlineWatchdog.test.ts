@@ -695,8 +695,9 @@ it('reports an unread child without killing it', async () => {
 
   await scanner.scan(context);
 
-  expect(notifications).toHaveLength(1);
-  expect(notifications[0]?.[0]).toContain('Reading t-child failed');
+  const messages = notifications.map(([message]) => message);
+
+  expect(messages.filter((message) => message.includes('Reading t-child failed'))).toHaveLength(1);
   expect(commands('kill')).toHaveLength(0);
 });
 

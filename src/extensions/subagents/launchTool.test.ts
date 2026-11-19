@@ -446,7 +446,7 @@ it('scans the children after a launch whose reconciliation failed', async ({ onT
     if (commandArguments[0] === 'ls') {
       listCalls += 1;
 
-      if (listCalls === 3) {
+      if (listCalls === 2) {
         return Promise.resolve(failedResult('temporary lookup failure'));
       }
     }

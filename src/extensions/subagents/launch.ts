@@ -26,7 +26,9 @@ import { piPackageManager } from './piPackageManager.js';
 import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
+import type { WorkerTerminalFact } from './workerFolderDecision.js';
 import { sweepWorkerFolders } from './workerFolderSweep.js';
+import { workerName } from './workerName.js';
 import { placementLabels } from './workerPlacement.js';
 import {
   createScratchDirectory,
@@ -43,6 +45,7 @@ export interface LaunchRuntime {
   admission: Admission;
   refuseCapacity?: (() => void) | undefined;
   readSkillTools?: (() => SkillTools | undefined) | undefined;
+  sweepFolders?: ((starting: WorkerTerminalFact) => Promise<unknown>) | undefined;
   packageManager?: (loadout: Assignment['loadout']) => WorkerPackageManager;
   buildCommand?: (
     sessionFile: string,
@@ -85,7 +88,6 @@ export interface WorkerStart {
 
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
 const taskLabelLength = 60;
-const workerNameSuffixLength = 8;
 
 const millisecondsPerSecond = 1000;
 
@@ -98,9 +100,6 @@ const shortTask = (task: string, label: string | undefined): string => {
 
   return firstLine(task).slice(0, taskLabelLength);
 };
-
-const workerName = (profile: string, assignmentId: string): string =>
-  `${profile}-${assignmentId.replaceAll('-', '').slice(0, workerNameSuffixLength)}`;
 
 const assignmentIdFromPath = (path: string | undefined): string | undefined => {
   if (path === undefined || path === '') {
@@ -315,20 +314,22 @@ const startAssignmentWorker = async (
   );
 };
 
-const sweepBeforeLaunch = async (runtime: LaunchRuntime, assignment: Assignment): Promise<void> => {
+const startFolderSweep = (runtime: LaunchRuntime, assignment: Assignment): void => {
   const snapshot = assignment.packageSnapshot;
 
-  const starting = {
+  const starting: WorkerTerminalFact = {
+    kind: 'read',
     assignmentId: assignment.assignmentId,
     running: true,
     packageSnapshot: snapshot === null ? null : basename(snapshot),
   };
 
-  try {
-    await sweepWorkerFolders(runtime.hc, runtime.agentDirectory, Date.now(), [starting]);
-  } catch {
-    // A sweep failure never fails a launch. The next scan reports it.
-  }
+  const sweep =
+    runtime.sweepFolders ??
+    ((fact) => sweepWorkerFolders(runtime.hc, runtime.agentDirectory, Date.now(), [fact]));
+
+  // A sweep failure never fails a launch. The next scan reports it.
+  sweep(starting).catch(() => undefined);
 };
 
 export const startReservedWorker = async (
@@ -344,7 +345,6 @@ export const startReservedWorker = async (
   try {
     facts.signal?.throwIfAborted();
 
-    await sweepBeforeLaunch(runtime, assignment);
     await createScratchDirectory(runtime.agentDirectory, assignmentId);
 
     const manager = await readCurrentTerminal(runtime.hc);
@@ -374,6 +374,7 @@ export const startReservedWorker = async (
     }
 
     runtime.admission.remove(assignmentId);
+    startFolderSweep(runtime, assignment);
 
     const modelReason = facts.modelReason;
     const status = launchStatus(terminal, assignment.loadout.model, modelReason);

@@ -22,7 +22,12 @@ const terminal = (
   assignmentId: string,
   running: boolean,
   packageSnapshot: string | null,
-): WorkerTerminalFact => ({ assignmentId, running, packageSnapshot });
+): WorkerTerminalFact => ({ kind: 'read', assignmentId, running, packageSnapshot });
+
+const unread = (assignmentPrefix: string | undefined): WorkerTerminalFact => ({
+  kind: 'unread',
+  assignmentPrefix,
+});
 
 const table: { name: string; facts: WorkerFolderFacts; expected: WorkerFolderRemoval }[] = [
   {
@@ -127,6 +132,49 @@ const table: { name: string; facts: WorkerFolderFacts; expected: WorkerFolderRem
       terminals: [terminal('assignment-a', true, 'unread'), terminal('assignment-c', false, null)],
     },
     expected: { scratch: ['assignment-b'], snapshots: [] },
+  },
+  {
+    name: 'keeps every snapshot when a terminal is unread',
+    facts: {
+      now,
+      scratch: [],
+      snapshots: [folder('snapshot-a', 25 * hour)],
+      terminals: [unread('0123abcd')],
+    },
+    expected: { scratch: [], snapshots: [] },
+  },
+  {
+    name: "keeps the scratch folder an unread terminal's prefix starts",
+    facts: {
+      now,
+      scratch: [
+        folder('0123abcd-1111-2222-3333-444455556666', 120 * second),
+        folder('fedcba98-1111-2222-3333-444455556666', 120 * second),
+      ],
+      snapshots: [],
+      terminals: [unread('0123abcd')],
+    },
+    expected: { scratch: ['fedcba98-1111-2222-3333-444455556666'], snapshots: [] },
+  },
+  {
+    name: 'keeps every scratch folder when an unread terminal has no prefix',
+    facts: {
+      now,
+      scratch: [folder('assignment-a', 120 * second), folder('assignment-b', 120 * second)],
+      snapshots: [],
+      terminals: [unread(undefined), terminal('assignment-c', false, null)],
+    },
+    expected: { scratch: [], snapshots: [] },
+  },
+  {
+    name: 'still removes what read terminals leave when an unread terminal has a prefix',
+    facts: {
+      now,
+      scratch: [folder('0123abcd-aaaa', 120 * second), folder('assignment-a', 120 * second)],
+      snapshots: [],
+      terminals: [unread('0123abcd'), terminal('assignment-a', false, null)],
+    },
+    expected: { scratch: ['assignment-a'], snapshots: [] },
   },
   {
     name: 'keeps a folder born in the future',

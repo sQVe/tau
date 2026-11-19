@@ -3,12 +3,22 @@ export interface WorkerFolder {
   bornAt: number;
 }
 
-export interface WorkerTerminalFact {
+interface ReadTerminalFact {
+  kind: 'read';
   assignmentId: string;
   running: boolean;
   // A snapshot folder name, null for none, or 'unread' when the assignment could not be read.
   packageSnapshot: string | null;
 }
+
+// A terminal whose labels could not be read. The prefix is the start of its assignment id when its
+// name gives one.
+interface UnreadTerminalFact {
+  kind: 'unread';
+  assignmentPrefix: string | undefined;
+}
+
+export type WorkerTerminalFact = ReadTerminalFact | UnreadTerminalFact;
 
 export interface WorkerFolderFacts {
   now: number;
@@ -29,24 +39,42 @@ const ageAtLeast = (folder: WorkerFolder, now: number, limit: number): boolean =
   return now - folder.bornAt >= limit;
 };
 
-const runningTerminals = (terminals: readonly WorkerTerminalFact[]): WorkerTerminalFact[] =>
+const isRead = (terminal: WorkerTerminalFact): terminal is ReadTerminalFact =>
+  terminal.kind === 'read';
+
+const isUnread = (terminal: WorkerTerminalFact): terminal is UnreadTerminalFact =>
+  terminal.kind === 'unread';
+
+const runningTerminals = (terminals: readonly ReadTerminalFact[]): ReadTerminalFact[] =>
   terminals.filter((terminal) => terminal.running);
 
-const namesAssignment = (terminals: readonly WorkerTerminalFact[], name: string): boolean =>
+const namesAssignment = (terminals: readonly ReadTerminalFact[], name: string): boolean =>
   terminals.some((terminal) => terminal.assignmentId === name);
+
+const keepsEveryScratchFolder = (terminal: UnreadTerminalFact): boolean =>
+  terminal.assignmentPrefix === undefined;
+
+const keepsScratchFolder = (terminal: UnreadTerminalFact, name: string): boolean =>
+  terminal.assignmentPrefix !== undefined &&
+  name.replaceAll('-', '').startsWith(terminal.assignmentPrefix);
+
+const isKeptByUnread = (unread: readonly UnreadTerminalFact[], name: string): boolean =>
+  unread.some(
+    (terminal) => keepsEveryScratchFolder(terminal) || keepsScratchFolder(terminal, name),
+  );
 
 // The launch grace protects only a folder that no terminal names.
 const isStaleScratch = (
   folder: WorkerFolder,
-  terminals: readonly WorkerTerminalFact[],
+  terminals: readonly ReadTerminalFact[],
   now: number,
 ): boolean =>
   namesAssignment(terminals, folder.name) || ageAtLeast(folder, now, scratchLaunchGrace);
 
-const hasUnreadSnapshot = (running: readonly WorkerTerminalFact[]): boolean =>
+const hasUnreadSnapshot = (running: readonly ReadTerminalFact[]): boolean =>
   running.some((terminal) => terminal.packageSnapshot === 'unread');
 
-const isNamedSnapshot = (running: readonly WorkerTerminalFact[], name: string): boolean =>
+const isNamedSnapshot = (running: readonly ReadTerminalFact[], name: string): boolean =>
   running.some((terminal) => terminal.packageSnapshot === name);
 
 export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolderRemoval => {
@@ -54,17 +82,22 @@ export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolde
     return { scratch: [], snapshots: [] };
   }
 
-  const { terminals } = facts;
+  const terminals = facts.terminals.filter(isRead);
+  const unread = facts.terminals.filter(isUnread);
   const running = runningTerminals(terminals);
 
   const scratch = facts.scratch
     .filter(
       (folder) =>
-        !namesAssignment(running, folder.name) && isStaleScratch(folder, terminals, facts.now),
+        !namesAssignment(running, folder.name) &&
+        !isKeptByUnread(unread, folder.name) &&
+        isStaleScratch(folder, terminals, facts.now),
     )
     .map((folder) => folder.name);
 
-  const snapshots = hasUnreadSnapshot(running)
+  const keepsEverySnapshot = unread.length > 0 || hasUnreadSnapshot(running);
+
+  const snapshots = keepsEverySnapshot
     ? []
     : facts.snapshots
         .filter(

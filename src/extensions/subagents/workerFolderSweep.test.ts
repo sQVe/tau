@@ -43,14 +43,41 @@ const setup = () => {
   const hcFake = createHcFake();
   const details = new Map<string, string>();
 
+  const gets = {
+    started: [] as string[],
+    active: 0,
+    peak: 0,
+    hold: false,
+    pending: [] as (() => void)[],
+  };
+
   // Real hc lists terminals without labels. Only `hc get` returns them.
   const exec: HcRuntime['exec'] = (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'get') {
-      const reply = details.get(commandArguments.at(-1) ?? '');
+      const address = commandArguments.at(-1) ?? '';
+      const reply = details.get(address);
 
       const result = reply === undefined ? failedResult('not_found') : succeededResult(reply);
 
-      return Promise.resolve(result);
+      gets.started.push(address);
+      gets.active += 1;
+      gets.peak = Math.max(gets.peak, gets.active);
+
+      const settle = () => {
+        gets.active -= 1;
+
+        return result;
+      };
+
+      if (!gets.hold) {
+        return Promise.resolve(settle());
+      }
+
+      return new Promise((resolve) => {
+        gets.pending.push(() => {
+          resolve(settle());
+        });
+      });
     }
 
     return hcFake.exec(command, commandArguments, options);
@@ -59,8 +86,14 @@ const setup = () => {
   const hc: HcRuntime = { exec, connect: hcFake.connect, cwd: agentDirectory };
   const snapshotRoot = join(agentDirectory, 'tmp', 'tau-worker-packages');
 
-  const listTerminals = (rows: { assignmentId: string; state: string }[]): void => {
-    const terminals = rows.map((row) => ({ address: `t-${row.assignmentId}`, state: row.state }));
+  const listTerminals = (
+    rows: { assignmentId: string; state: string; name?: string | null }[],
+  ): void => {
+    const terminals = rows.map(({ assignmentId, state, name }) => ({
+      address: `t-${assignmentId}`,
+      state,
+      ...(name === undefined ? {} : { name }),
+    }));
 
     hcFake.reply('ls', JSON.stringify({ terminals }));
 
@@ -81,6 +114,7 @@ const setup = () => {
     hcFake,
     hc,
     details,
+    gets,
     snapshotRoot,
     scratchRoot: scratchRootFor(agentDirectory),
     listTerminals,
@@ -143,7 +177,7 @@ it('keeps the scratch folder of a running worker', async () => {
   expect(result).toEqual({ removed: [], errors: [] });
 });
 
-it('removes nothing when the hc list fails', async () => {
+it('reports a failed hc list', async () => {
   const { agentDirectory, hcFake, hc, scratchRoot, snapshotRoot } = setup();
   const scratch = makeFolder(scratchRoot, 'assignment-a');
   const snapshot = makeFolder(snapshotRoot, 'snapshot-a');
@@ -155,7 +189,9 @@ it('removes nothing when the hc list fails', async () => {
 
   expect(existsSync(scratch)).toBe(true);
   expect(existsSync(snapshot)).toBe(true);
-  expect(result).toEqual({ removed: [], errors: [] });
+  expect(result.removed).toEqual([]);
+  expect(result.errors).toHaveLength(1);
+  expect(result.errors[0]).toContain('Listing hc terminals failed');
 });
 
 it("keeps every snapshot when a running worker's assignment file is missing", async () => {
@@ -207,7 +243,7 @@ it('keeps the old snapshot a starting follow-up reuses', async () => {
   listTerminals([]);
 
   await sweepWorkerFolders(hc, agentDirectory, bornAt(snapshot) + 25 * hour, [
-    { assignmentId: 'follow-up', running: true, packageSnapshot: 'snapshot-source' },
+    { kind: 'read', assignmentId: 'follow-up', running: true, packageSnapshot: 'snapshot-source' },
   ]);
 
   expect(existsSync(snapshot)).toBe(true);
@@ -231,7 +267,7 @@ it('keeps the scratch folder of a starting launch', async () => {
   listTerminals([]);
 
   await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 2 * minute, [
-    { assignmentId: 'assignment-starting', running: true, packageSnapshot: null },
+    { kind: 'read', assignmentId: 'assignment-starting', running: true, packageSnapshot: null },
   ]);
 
   expect(existsSync(folder)).toBe(true);
@@ -404,17 +440,6 @@ it('keeps the scratch folder and snapshot of a running worker that hc ls lists w
   expect(existsSync(snapshot)).toBe(true);
 });
 
-it('removes the scratch folder of a finished worker inside the launch grace', async () => {
-  const { agentDirectory, hc, scratchRoot, listTerminals } = setup();
-  const folder = makeFolder(scratchRoot, 'assignment-a');
-
-  listTerminals([{ assignmentId: 'assignment-a', state: 'finished' }]);
-
-  await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 5_000, []);
-
-  expect(existsSync(folder)).toBe(false);
-});
-
 it('keeps a scratch folder no terminal names inside the launch grace', async () => {
   const { agentDirectory, hc, scratchRoot, listTerminals } = setup();
   const folder = makeFolder(scratchRoot, 'assignment-a');
@@ -439,27 +464,6 @@ const readFailures: { name: string; arrange: (state: ReturnType<typeof setup>) =
       hcFake.reply('ls', JSON.stringify({ terminals: 'none' }));
     },
   },
-  {
-    name: 'hc get fails for a live terminal',
-    arrange: ({ details, listTerminals }) => {
-      listTerminals([{ assignmentId: 'assignment-live', state: 'live' }]);
-      details.delete('t-assignment-live');
-    },
-  },
-  {
-    name: 'hc get returns malformed output for a live terminal',
-    arrange: ({ details, listTerminals }) => {
-      listTerminals([{ assignmentId: 'assignment-live', state: 'live' }]);
-      details.set('t-assignment-live', 'not json');
-    },
-  },
-  {
-    name: 'hc get returns a terminal without a state for a live terminal',
-    arrange: ({ details, listTerminals }) => {
-      listTerminals([{ assignmentId: 'assignment-live', state: 'live' }]);
-      details.set('t-assignment-live', JSON.stringify({ address: 't-assignment-live' }));
-    },
-  },
 ];
 
 it.each(readFailures)('removes nothing when $name', async ({ arrange }) => {
@@ -474,17 +478,146 @@ it.each(readFailures)('removes nothing when $name', async ({ arrange }) => {
 
   expect(existsSync(scratch)).toBe(true);
   expect(existsSync(snapshot)).toBe(true);
-  expect(result).toEqual({ removed: [], errors: [] });
+  expect(result.removed).toEqual([]);
+  expect(result.errors).toHaveLength(1);
 });
 
-it('still removes folders when hc get fails for a finished terminal', async () => {
+const nextMacrotask = (): Promise<undefined> => {
+  const { promise, resolve } = Promise.withResolvers<undefined>();
+
+  setImmediate(() => {
+    resolve(undefined);
+  });
+
+  return promise;
+};
+
+const idA = '0123abcd-1111-2222-3333-444455556666';
+const idB = 'fedcba98-1111-2222-3333-444455556666';
+
+it("keeps only the failed terminal's scratch folder", async () => {
+  const { agentDirectory, hc, details, scratchRoot, snapshotRoot, listTerminals } = setup();
+  const folderA = makeFolder(scratchRoot, idA);
+  const folderB = makeFolder(scratchRoot, idB);
+  const snapshot = makeFolder(snapshotRoot, 'snapshot-a');
+
+  listTerminals([{ assignmentId: idA, state: 'live', name: 'worker-0123abcd' }]);
+  details.delete(`t-${idA}`);
+
+  const now = Math.max(bornAt(folderA), bornAt(folderB), bornAt(snapshot)) + 25 * hour;
+  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+
+  expect(existsSync(folderA)).toBe(true);
+  expect(existsSync(snapshot)).toBe(true);
+  expect(existsSync(folderB)).toBe(false);
+  expect(result.removed).toEqual([folderB]);
+  expect(result.errors).toHaveLength(1);
+  expect(result.errors[0]).toContain(`Reading terminal t-${idA} failed`);
+  expect(result.errors[0]).toContain('Kept its folders.');
+});
+
+it('keeps the failed terminal folders when hc get returns malformed output', async () => {
   const { agentDirectory, hc, details, scratchRoot, listTerminals } = setup();
+  const folderA = makeFolder(scratchRoot, idA);
+  const folderB = makeFolder(scratchRoot, idB);
+
+  listTerminals([{ assignmentId: idA, state: 'live', name: 'worker-0123abcd' }]);
+  details.set(`t-${idA}`, 'not json');
+
+  const result = await sweepWorkerFolders(hc, agentDirectory, bornAt(folderA) + 2 * minute, []);
+
+  expect(existsSync(folderA)).toBe(true);
+  expect(existsSync(folderB)).toBe(false);
+  expect(result.errors).toHaveLength(1);
+});
+
+it('keeps every folder when a failed terminal has no worker name', async () => {
+  const { agentDirectory, hc, details, scratchRoot, snapshotRoot, listTerminals } = setup();
+  const folderA = makeFolder(scratchRoot, idA);
+  const folderB = makeFolder(scratchRoot, idB);
+  const snapshot = makeFolder(snapshotRoot, 'snapshot-a');
+
+  listTerminals([{ assignmentId: idA, state: 'live' }]);
+  details.delete(`t-${idA}`);
+
+  const now = Math.max(bornAt(folderA), bornAt(folderB), bornAt(snapshot)) + 25 * hour;
+  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+
+  expect(existsSync(folderA)).toBe(true);
+  expect(existsSync(folderB)).toBe(true);
+  expect(existsSync(snapshot)).toBe(true);
+  expect(result.removed).toEqual([]);
+  expect(result.errors).toHaveLength(1);
+});
+
+it('reads no finished terminal', async () => {
+  const { agentDirectory, hc, gets, scratchRoot, listTerminals } = setup();
+  const ids = ['assignment-a', 'assignment-b', 'assignment-c'];
+  const folders = ids.map((id) => makeFolder(scratchRoot, id));
+
+  listTerminals(ids.map((assignmentId) => ({ assignmentId, state: 'finished' })));
+
+  const result = await sweepWorkerFolders(
+    hc,
+    agentDirectory,
+    bornAt(folders[0] ?? '') + 2 * minute,
+    [],
+  );
+
+  expect(gets.started).toEqual([]);
+  expect(result.removed.toSorted()).toEqual(folders.toSorted());
+  expect(result.errors).toEqual([]);
+});
+
+it('skips live terminals that are not workers', async () => {
+  const { agentDirectory, hc, gets, scratchRoot, listTerminals } = setup();
   const folder = makeFolder(scratchRoot, 'assignment-a');
 
-  listTerminals([{ assignmentId: 'assignment-gone', state: 'finished' }]);
-  details.delete('t-assignment-gone');
+  listTerminals([
+    { assignmentId: 'assignment-shell', state: 'live', name: 'shell' },
+    { assignmentId: 'assignment-short', state: 'live', name: 'worker-0123ABCD' },
+  ]);
 
   await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
 
+  expect(gets.started).toEqual([]);
   expect(existsSync(folder)).toBe(false);
+});
+
+it('runs at most four terminal reads at once', async () => {
+  const { agentDirectory, hc, gets, listTerminals } = setup();
+
+  const rows = Array.from({ length: 10 }, (_, index) => ({
+    assignmentId: `0000000${index}-aaaa`,
+    state: 'live',
+    name: `worker-0000000${index}`,
+  }));
+
+  gets.hold = true;
+  listTerminals(rows);
+
+  const sweep = sweepWorkerFolders(hc, agentDirectory, Date.now(), []);
+
+  await vi.waitFor(() => {
+    expect(gets.started).toHaveLength(4);
+  });
+
+  await nextMacrotask();
+  expect(gets.started).toHaveLength(4);
+
+  gets.pending.shift()?.();
+
+  await vi.waitFor(() => {
+    expect(gets.started).toHaveLength(5);
+  });
+
+  while (gets.started.length < rows.length || gets.pending.length > 0) {
+    gets.pending.shift()?.();
+    await nextMacrotask();
+  }
+
+  await sweep;
+
+  expect(gets.started).toHaveLength(10);
+  expect(gets.peak).toBe(4);
 });

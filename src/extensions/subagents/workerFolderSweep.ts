@@ -1,7 +1,7 @@
 import { readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
-import { isMissingFile } from '../../errors.js';
+import { errorMessage, isMissingFile } from '../../errors.js';
 import { get, ls } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { readAssignment } from './assignment.js';
@@ -12,10 +12,21 @@ import {
 } from './packageSnapshot.js';
 import { decideWorkerFolderRemoval } from './workerFolderDecision.js';
 import type { WorkerFolder, WorkerTerminalFact } from './workerFolderDecision.js';
+import { assignmentPrefixFromName } from './workerName.js';
 import { removeScratchDirectory, scratchRootFor } from './workerScratch.js';
 
 export interface WorkerFolderSweep {
   removed: string[];
+  errors: string[];
+}
+
+interface TerminalRead {
+  fact: WorkerTerminalFact | undefined;
+  error: string | undefined;
+}
+
+interface TerminalFacts {
+  terminals: readonly WorkerTerminalFact[] | 'unread';
   errors: string[];
 }
 
@@ -72,51 +83,93 @@ const readPackageSnapshot = async (label: string): Promise<string | null> => {
   }
 };
 
+const terminalReadLimit = 4;
+
+const mapWithLimit = async <Item, Result>(
+  items: readonly Item[],
+  limit: number,
+  map: (item: Item) => Promise<Result>,
+): Promise<Result[]> => {
+  const queue = items.entries();
+  const results: Result[] = [];
+
+  const drain = async (): Promise<void> => {
+    for (const [index, item] of queue) {
+      // oxlint-disable-next-line no-await-in-loop -- Each loop is one of the limited readers.
+      results[index] = await map(item);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, drain));
+
+  return results;
+};
+
 const isFinished = (terminal: Pick<HcTerminal, 'state'>): boolean => terminal.state === 'finished';
 
+const isWorkerCandidate = (listed: HcTerminal): boolean => {
+  if (isFinished(listed)) {
+    return false;
+  }
+
+  const hasNoName = listed.name === undefined || listed.name === null;
+
+  return hasNoName || assignmentPrefixFromName(listed.name) !== undefined;
+};
+
 // hc lists terminals without labels, so each label comes from `hc get`.
-const readTerminalFact = async (
-  hc: HcRuntime,
-  listed: HcTerminal,
-): Promise<WorkerTerminalFact | undefined> => {
+const readTerminalFact = async (hc: HcRuntime, listed: HcTerminal): Promise<TerminalRead> => {
   let terminal: HcTerminal;
 
   try {
     terminal = await get(hc, listed.address);
   } catch (error) {
-    if (isFinished(listed)) {
-      return undefined;
-    }
-
-    throw error;
+    return {
+      fact: { kind: 'unread', assignmentPrefix: assignmentPrefixFromName(listed.name) },
+      error: `Reading terminal ${listed.address} failed: ${errorMessage(error)}. Kept its folders.`,
+    };
   }
 
   const label = terminal.labels?.['tau.assignment'];
 
   if (label === undefined || label === '') {
-    return undefined;
+    return { fact: undefined, error: undefined };
   }
 
   const running = !isFinished(terminal);
 
-  return {
+  const fact: WorkerTerminalFact = {
+    kind: 'read',
     assignmentId: basename(dirname(label)),
     running,
     packageSnapshot: running ? await readPackageSnapshot(label) : null,
   };
+
+  return { fact, error: undefined };
 };
 
-const readTerminalFacts = async (
-  hc: HcRuntime,
-): Promise<readonly WorkerTerminalFact[] | 'unread'> => {
-  try {
-    const list = await ls(hc, { all: true });
-    const facts = await Promise.all(list.terminals.map((listed) => readTerminalFact(hc, listed)));
+const readTerminalFacts = async (hc: HcRuntime): Promise<TerminalFacts> => {
+  let list: Awaited<ReturnType<typeof ls>>;
 
-    return facts.filter((fact) => fact !== undefined);
-  } catch {
-    return 'unread';
+  try {
+    list = await ls(hc, { all: true });
+  } catch (error) {
+    return {
+      terminals: 'unread',
+      errors: [`Listing hc terminals failed: ${errorMessage(error)}. Removed nothing.`],
+    };
   }
+
+  const candidates = list.terminals.filter(isWorkerCandidate);
+
+  const reads = await mapWithLimit(candidates, terminalReadLimit, (listed) =>
+    readTerminalFact(hc, listed),
+  );
+
+  return {
+    terminals: reads.flatMap(({ fact }) => (fact === undefined ? [] : [fact])),
+    errors: reads.flatMap(({ error }) => (error === undefined ? [] : [error])),
+  };
 };
 
 export const sweepWorkerFolders = async (
@@ -127,7 +180,7 @@ export const sweepWorkerFolders = async (
 ): Promise<WorkerFolderSweep> => {
   const scratchRoot = scratchRootFor(agentDirectory);
   const snapshotRoot = snapshotRootFor(agentDirectory);
-  const terminals = await readTerminalFacts(hc);
+  const { terminals, errors: readErrors } = await readTerminalFacts(hc);
 
   const facts = {
     now,
@@ -165,6 +218,9 @@ export const sweepWorkerFolders = async (
 
   return {
     removed: removals.filter((removal) => removal.error === undefined).map(({ path }) => path),
-    errors: removals.flatMap(({ error }) => (error === undefined ? [] : [error])),
+    errors: [
+      ...readErrors,
+      ...removals.flatMap(({ error }) => (error === undefined ? [] : [error])),
+    ],
   };
 };

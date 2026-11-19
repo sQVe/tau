@@ -392,32 +392,6 @@ it('refuses a follow-up when the session use is unknown', async () => {
   expect(assignmentFolders(directory)).toEqual(before);
 });
 
-it('reads a finished terminal once, for the folder sweep, when it starts a follow-up', async () => {
-  const { directory, fake, runtime } = setup();
-  const source = sourceAssignment(directory);
-
-  await writeAssignment(source);
-
-  fake.reply('ls', JSON.stringify({ terminals: [{ address: 't-old', state: 'finished' }] }));
-
-  fake.replyConnect('hello', 1, {
-    generation: 1,
-    version: 'test',
-    core: { id: 'core', name: 'core' },
-    framed: false,
-    methods: [],
-    features: [],
-  });
-
-  fake.replyConnect('terminal.run', 2, { address: 't-new', state: 'live', parent: manager });
-
-  const result = await followUp(runtime, source.assignmentId);
-  const reads = fake.calls.filter((call) => call.commandArguments.includes('t-old'));
-
-  expect(result.isError).not.toBe(true);
-  expect(reads).toHaveLength(1);
-});
-
 it('places a follow-up of an investigation worker in the workers tab of the manager', async () => {
   const { directory, fake, runtime } = setup();
 

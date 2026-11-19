@@ -622,32 +622,6 @@ it('creates the scratch folder before the worker starts', async () => {
 
 const hourInMilliseconds = 3_600_000;
 
-// The capacity count lists first; the sweep lists second.
-const failSweepList = (runtime: LaunchRuntime): { count: number } => {
-  const calls = { count: 0 };
-  const realExec = runtime.hc.exec;
-
-  runtime.hc.exec = (command, commandArguments, options) => {
-    if (command === 'hc' && commandArguments.includes('--all')) {
-      calls.count += 1;
-
-      if (calls.count === 2) {
-        return Promise.resolve({
-          code: 1,
-          killed: false,
-          truncated: false,
-          stdout: '',
-          stderr: 'boom',
-        });
-      }
-    }
-
-    return realExec(command, commandArguments, options);
-  };
-
-  return calls;
-};
-
 const fakeDateAfter = (path: string, milliseconds: number): void => {
   vi.useFakeTimers({ toFake: ['Date'] });
 
@@ -658,31 +632,66 @@ const fakeDateAfter = (path: string, milliseconds: number): void => {
   vi.setSystemTime(statSync(path).birthtimeMs + milliseconds);
 };
 
-it('launches when the sweep cannot read the hc list', async () => {
-  const { runtime, scratchExistedAtRun } = setup();
-  const calls = failSweepList(runtime);
+it('returns before the sweep settles', async () => {
+  const { runtime } = setup();
+
+  const neverSettles = Promise.withResolvers<never>().promise;
+  const sweepFolders = vi.fn<NonNullable<LaunchRuntime['sweepFolders']>>(() => neverSettles);
+
+  runtime.sweepFolders = sweepFolders;
+
+  const result = await launch(runtime, {});
+  const launchedId = vi.mocked(writeAssignment).mock.calls.at(-1)?.[0].assignmentId;
+
+  expect(result.isError).not.toBe(true);
+  expect(sweepFolders).toHaveBeenCalledTimes(1);
+
+  expect(sweepFolders.mock.calls[0]?.[0]).toEqual({
+    kind: 'read',
+    assignmentId: launchedId,
+    running: true,
+    packageSnapshot: null,
+  });
+});
+
+it('launches when the sweep rejects', async () => {
+  const { runtime } = setup();
+
+  runtime.sweepFolders = () => Promise.reject(new Error('sweep failed'));
 
   const result = await launch(runtime, {});
 
-  expect(calls.count).toBe(2);
   expect(result.isError).not.toBe(true);
-  expect(scratchExistedAtRun()).toBe(true);
 });
 
-it('launches when the sweep throws', async () => {
-  const { runtime, scratchExistedAtRun } = setup();
-  const snapshotRoot = join(runtime.agentDirectory, 'tmp', 'tau-worker-packages');
+it('starts no sweep after a definite launch failure', async () => {
+  const state = uncertainSetup('spawn_failed');
+  const sweepFolders = vi.fn<NonNullable<LaunchRuntime['sweepFolders']>>(() => Promise.resolve());
 
-  mkdirSync(join(runtime.agentDirectory, 'tmp'), { recursive: true });
-  writeFileSync(snapshotRoot, 'not a folder');
+  state.runtime.sweepFolders = sweepFolders;
 
-  const result = await launch(runtime, {});
+  const result = await launch(state.runtime, {});
 
-  expect(result.isError).not.toBe(true);
-  expect(scratchExistedAtRun()).toBe(true);
+  expect(result.isError).toBe(true);
+  expect(sweepFolders).not.toHaveBeenCalled();
 });
 
-it('removes the scratch folder of an ended worker before it creates its own', async () => {
+it('starts the sweep after the worker started', async () => {
+  const { fake, runtime } = setup();
+  let workerStartedAtSweep: boolean | undefined;
+
+  runtime.sweepFolders = () => {
+    workerStartedAtSweep = terminalRun(fake) !== undefined;
+
+    return Promise.resolve();
+  };
+
+  await launch(runtime, {});
+
+  expect(workerStartedAtSweep).toBe(true);
+});
+
+it('removes the scratch folder of an ended worker after the launch', async () => {
   const { runtime } = setup();
   const stale = join(scratchRootFor(runtime.agentDirectory), 'ended-assignment');
 
@@ -692,8 +701,12 @@ it('removes the scratch folder of an ended worker before it creates its own', as
   const result = await launch(runtime, {});
 
   expect(result.isError).not.toBe(true);
+
+  await vi.waitFor(() => {
+    expect(existsSync(stale)).toBe(false);
+  });
+
   expect(scratchNames(runtime.agentDirectory)).toHaveLength(1);
-  expect(existsSync(stale)).toBe(false);
 });
 
 it('keeps the old snapshot a starting follow-up reuses', async () => {
@@ -706,8 +719,12 @@ it('keeps the old snapshot a starting follow-up reuses', async () => {
   mkdirSync(unused, { recursive: true });
   fakeDateAfter(reused, 25 * hourInMilliseconds);
 
+  const assignment = { ...savedAssignment(runtime.agentDirectory, null), packageSnapshot: reused };
+
+  await writeAssignment(assignment);
+
   const result = await startReservedWorker(runtime, {
-    assignment: { ...savedAssignment(runtime.agentDirectory, null), packageSnapshot: reused },
+    assignment,
     task: 'Follow up.',
     label: undefined,
     extensionPackages: [],
@@ -717,8 +734,12 @@ it('keeps the old snapshot a starting follow-up reuses', async () => {
   });
 
   expect(result.isError).not.toBe(true);
+
+  await vi.waitFor(() => {
+    expect(existsSync(unused)).toBe(false);
+  });
+
   expect(existsSync(reused)).toBe(true);
-  expect(existsSync(unused)).toBe(false);
 });
 
 it('removes the scratch folder after a definite launch failure', async () => {

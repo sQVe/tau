@@ -20,14 +20,16 @@ Tau gives each worker its own scratch folder under the agent directory, outside 
 as the worker's `TMPDIR`. A liveness sweep removes the folder after the worker ended. The worker
 never removes it.
 
-The sweep runs after each worker scan and before each launch, in any manager. A manager that exited
-is covered by the next launch or scan from any other manager.
+The sweep runs after each worker scan and after each launch starts its worker, in any manager. The
+launch does not wait for it. A manager that exited is covered by the next launch or scan from any
+other manager.
 
-The sweep reads `hc ls --all`, then `hc get` for each listed terminal, because the list carries no
-labels. It removes a scratch folder only when no running worker has its assignment ID. A folder that
-no terminal names must also be at least a minute old. The minute protects a launch that created its
-folder but has not started the worker yet. A folder named by a finished worker is removed at once. A
-worker that is starting counts as running, so a launch never removes its own folders.
+The sweep reads `hc ls --all`, then `hc get` for each live worker terminal, at most 4 at a time,
+because the list carries no labels. A finished terminal needs no read, since it protects nothing. A
+live terminal whose name is not a worker name needs no read either. It removes a scratch folder only
+when no running worker has its assignment ID. A folder that no terminal names must also be at least
+a minute old. The minute protects a launch that created its folder but has not started the worker
+yet. A worker that is starting counts as running, so a launch never removes its own folders.
 
 The sweep removes a package snapshot only when no running worker names it and it is at least 24
 hours old. A follow-up reuses the snapshot of its source assignment, and a follow-up is the only
@@ -36,10 +38,13 @@ manager or a scan has not yet seen as running. The sweep takes no lock. One race
 limit: a follow-up of another manager that starts between its validation and the `hc` listing, on a
 snapshot already older than 24 hours, can lose that snapshot.
 
-The sweep fails closed. It removes nothing when the `hc` list cannot be read, or when `hc get` fails
-for a terminal that is not finished. It keeps every snapshot when the assignment of a running worker
-is missing or malformed, since that worker may use any snapshot. A removal goes through one guard
-that refuses a redirected root and a folder name that is a path.
+The sweep fails closed. It removes nothing when the `hc` list cannot be read. When `hc get` fails
+for a live terminal, the sweep keeps every snapshot and the scratch folders that terminal may own.
+The worker name gives the start of its assignment ID, so the sweep keeps the folders that start with
+it. When the name gives no start, the sweep keeps every scratch folder. The scan reports the failed
+read. It keeps every snapshot when the assignment of a running worker is missing or malformed, since
+that worker may use any snapshot. A removal goes through one guard that refuses a redirected root
+and a folder name that is a path.
 
 A sweep failure never fails a launch or a scan. The scan reports each error. The launch stays silent
 and the next scan reports it. A folder skipped for the launch grace is removed by the next sweep, so
@@ -58,7 +63,8 @@ no timer is needed.
 - A scratch folder lives until the next scan or launch after its worker ends.
 - A follow-up started more than 24 hours after its source worker ended can fail, because the sweep
   may have removed the snapshot.
-- A sweep adds one `hc ls` read to each scan and launch.
+- A sweep adds one `hc ls` read and one `hc get` per live worker terminal to each scan and launch.
+- A folder named by a finished worker, and younger than a minute, stays until the next sweep.
 
 ## Alternatives considered
 
