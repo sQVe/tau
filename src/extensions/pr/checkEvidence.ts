@@ -36,10 +36,6 @@ export interface CheckEvidence {
   gaps: PublicationGap[];
 }
 
-export type CheckStateRead =
-  | { status: 'read'; state: CheckState }
-  | { status: 'failed'; error: unknown };
-
 const readChecksFailure = (error: unknown): PublicationGap => ({
   kind: 'checks',
   reason: errorMessage(error),
@@ -224,23 +220,17 @@ const readFullCheck = async (
   root: string,
   mergeBase: string | undefined,
   config: PublicationConfig,
-  checkState: CheckStateRead,
+  readCheckState: () => Promise<CheckState>,
   gaps: PublicationGap[],
 ): Promise<FullCheckEvidence | null> => {
   if (mergeBase === undefined) {
     return null;
   }
 
-  if (checkState.status === 'failed') {
-    gaps.push(readChecksFailure(checkState.error));
-
-    return null;
-  }
-
   let fullCheck: FullCheckEvidence | null = null;
 
   try {
-    const state = checkState.state;
+    const state = await readCheckState();
     const saved = await listSavedLogs(join(root, '.tau', 'checks'));
     const { argv } = readRepositoryArgv(config.location, config.ui, 'fullCheck');
     const decision = decideFullCheck(state, argv, saved);
@@ -265,10 +255,10 @@ export const readCheckEvidence = async (
   root: string,
   mergeBase: string | undefined,
   config: PublicationConfig,
-  checkState: CheckStateRead,
+  readCheckState: () => Promise<CheckState>,
 ): Promise<CheckEvidence> => {
   const gaps: PublicationGap[] = [];
-  const fullCheck = await readFullCheck(root, mergeBase, config, checkState, gaps);
+  const fullCheck = await readFullCheck(root, mergeBase, config, readCheckState, gaps);
   const checks = await readChecks(root, mergeBase, fullCheck, gaps);
 
   return { checks, fullCheck, gaps };

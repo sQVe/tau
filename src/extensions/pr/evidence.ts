@@ -1,7 +1,8 @@
 import { readCheckState } from '../../checkRecord/identity.js';
+import type { CheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
-import { readGit } from '../../git.js';
+import { readGit, withBareProbeCache } from '../../git.js';
 import { readInspectedEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
 import type { Marker, ReviewEvidence } from '../../reviewCapture/evidence.js';
 import type {
@@ -23,7 +24,7 @@ import { listRecordProblems, selectEvidence } from '../../verification/selection
 import type { SelectedResult } from '../../verification/selection.js';
 import { readRuns, verificationDirectoryPath } from '../../verification/verification.js';
 import { readCheckEvidence } from './checkEvidence.js';
-import type { CheckStateRead, FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
+import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainEvidence } from './evidenceChain.js';
 import type { CheckLog, PublicationGap } from './evidenceDecisions.js';
 import { decideSavedReuse } from './reuse.js';
@@ -244,10 +245,16 @@ const toVerificationEvidence = ({
   counts,
 });
 
+const createCheckStateReader = (root: string) => {
+  let read: Promise<CheckState> | undefined;
+
+  return () => (read ??= readCheckState(root));
+};
+
 const readVerification = async (
   root: string,
   evidence: PublicationEvidence,
-  checkState: CheckStateRead,
+  readCurrentCheckState: () => Promise<CheckState>,
 ) => {
   let recordRoot: string;
 
@@ -261,10 +268,12 @@ const readVerification = async (
 
   let tree: string | null;
 
-  if (checkState.status === 'read') {
-    tree = checkState.state.tree;
-  } else {
-    evidence.gaps.push({ kind: 'verification', reason: errorMessage(checkState.error) });
+  try {
+    const state = await readCurrentCheckState();
+
+    tree = state.tree;
+  } catch (error) {
+    evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
     tree = null;
   }
 
@@ -290,7 +299,7 @@ const readVerification = async (
   evidence.gaps.push(...verificationGaps);
 };
 
-export const readPublicationEvidence = async (
+const readPublicationEvidenceOperation = async (
   runtime: CommandRuntime,
   root: string,
   request: PublicationRequest,
@@ -337,23 +346,28 @@ export const readPublicationEvidence = async (
   await readChain(root, request, evidence);
   await readReview(root, request, evidence);
 
-  const checkState: CheckStateRead = await readCheckState(root).then(
-    (state) => ({ status: 'read', state }),
-    (error: unknown) => ({ status: 'failed', error }),
-  );
+  const readCheckStateOnce = createCheckStateReader(root);
 
   const checkEvidence = await readCheckEvidence(
     root,
     evidence.target?.mergeBase,
     config,
-    checkState,
+    readCheckStateOnce,
   );
 
   evidence.checks = checkEvidence.checks;
   evidence.fullCheck = checkEvidence.fullCheck;
   evidence.gaps.push(...checkEvidence.gaps);
 
-  await readVerification(root, evidence, checkState);
+  await readVerification(root, evidence, readCheckStateOnce);
 
   return evidence;
 };
+
+export const readPublicationEvidence = (
+  runtime: CommandRuntime,
+  root: string,
+  request: PublicationRequest,
+  config: PublicationConfig,
+): Promise<PublicationEvidence> =>
+  withBareProbeCache(() => readPublicationEvidenceOperation(runtime, root, request, config));
