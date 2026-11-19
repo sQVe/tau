@@ -40,7 +40,7 @@ const parameters = Type.Object({
   ),
   space: Type.Optional(
     Type.String({
-      description: 'start: herdr-app space ID that gets the new Pi tab. Omit it to use name.',
+      description: 'start: herdr-app space ID where the new Pi runs. Omit it to use name.',
     }),
   ),
   name: Type.Optional(Type.String({ description: 'start without space: name of the new space.' })),
@@ -175,7 +175,7 @@ export const createHandoverTool = (
   - queued: saved and shown once. Never resend it.
   - unknown: it may be saved; see note. Retry with the same file, messageId, and sessionId.
   - An error ending "Nothing was queued." is a refusal.
-- action start: opens a Pi tab with the file's text as its task. Needs file and folder, plus space or name. Pass model as provider/model-id to run the new Pi on another model. Returns {reply}, herdr-app's output.`,
+- action start: starts Pi with the file's text as its task. Needs file and folder, plus space or name. Pass model as provider/model-id to run the new Pi on another model. Returns {reply}, herdr-app's output.`,
     promptSnippet: 'Prepare, send, and start handover messages.',
     parameters,
     executionMode: 'sequential',
