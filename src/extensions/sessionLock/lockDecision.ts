@@ -1,10 +1,8 @@
 export type StartPlan = 'release' | 'keep' | 'acquire';
 
-export interface StartFacts {
-  hasSessionFile: boolean;
-  heldLockPath: string | undefined;
-  lockPath: string | undefined;
-}
+export type StartFacts =
+  | { kind: 'no-file'; heldLockPath: string | undefined }
+  | { kind: 'file'; heldLockPath: string | undefined; lockPath: string };
 
 export type ShutdownPlan = 'keep' | 'release';
 
@@ -17,11 +15,11 @@ export type ResumePlan = 'allow' | 'refuse' | 'allow-with-warning';
 // A start on the lock this process already holds keeps it. A start on another file frees the old
 // lock before it takes the new one.
 export const decideStart = (facts: StartFacts): StartPlan => {
-  if (!facts.hasSessionFile) {
+  if (facts.kind === 'no-file') {
     return 'release';
   }
 
-  if (facts.lockPath !== undefined && facts.lockPath === facts.heldLockPath) {
+  if (facts.lockPath === facts.heldLockPath) {
     return 'keep';
   }
 

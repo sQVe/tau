@@ -15,7 +15,7 @@ import type { LiveLockHolder } from '../../fileLock/fileLock.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import { isRecord } from '../../schema.js';
 import { decideResume, decideShutdown, decideStart, needsResumeCheck } from './lockDecision.js';
-import type { ResumeHolderFact } from './lockDecision.js';
+import type { ResumeHolderFact, StartFacts } from './lockDecision.js';
 
 interface HeldSessionLock {
   lockPath: string;
@@ -110,14 +110,14 @@ export const startSessionLock = async (
   sessionFile: string | undefined,
   checkout: string,
 ): Promise<SessionLockStart> => {
-  const lockPath =
-    sessionFile === undefined ? undefined : await sessionLockPath(getAgentDir(), sessionFile);
+  const heldLockPath = state.held?.lockPath;
 
-  const plan = decideStart({
-    hasSessionFile: sessionFile !== undefined,
-    heldLockPath: state.held?.lockPath,
-    lockPath,
-  });
+  const facts: StartFacts =
+    sessionFile === undefined
+      ? { kind: 'no-file', heldLockPath }
+      : { kind: 'file', heldLockPath, lockPath: await sessionLockPath(getAgentDir(), sessionFile) };
+
+  const plan = decideStart(facts);
 
   if (plan === 'keep') {
     return { kind: 'held' };
@@ -125,10 +125,11 @@ export const startSessionLock = async (
 
   await releaseHeld();
 
-  if (plan === 'release' || sessionFile === undefined || lockPath === undefined) {
+  if (facts.kind === 'no-file' || sessionFile === undefined) {
     return { kind: 'none' };
   }
 
+  const { lockPath } = facts;
   const acquired = await holdFileLock({ lockPath, checkout, terminal: currentTerminalAddress() });
 
   if (acquired.kind === 'refused') {

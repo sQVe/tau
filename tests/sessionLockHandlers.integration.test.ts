@@ -236,6 +236,30 @@ it('cancels resume onto a session file another live Pi holds', async ({ onTestFi
   expect(harness.notices).toHaveLength(1);
 });
 
+it('allows resume with a warning when the target lock cannot be read', async ({
+  onTestFinished,
+}) => {
+  const harness = await startSession(onTestFinished);
+
+  await harness.binding;
+
+  const target = join(dirname(harness.sessionFile), 'target.jsonl');
+  const lockPath = await sessionLockPath(harness.agentDirectory, target);
+
+  await mkdir(dirname(dirname(lockPath)), { recursive: true });
+  await writeFile(dirname(lockPath), 'a file where the lock folder belongs');
+
+  const result = await harness.session.extensionRunner.emit({
+    type: 'session_before_switch',
+    reason: 'resume',
+    targetSessionFile: target,
+  } satisfies SessionBeforeSwitchEvent);
+
+  expect(result).toBeUndefined();
+  expect(harness.notices.map((notice) => notice.type)).toEqual(['warning']);
+  expect(harness.notices[0]?.message).toContain('Session lock failed');
+});
+
 it.for([
   { name: 'a new session', reason: 'new', hasTarget: true },
   { name: 'a resume with no target file', reason: 'resume', hasTarget: false },
