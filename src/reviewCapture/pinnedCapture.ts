@@ -1,6 +1,7 @@
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { withOperationProbes } from '../git.js';
 import { captureTarget, readHead } from './capture.js';
 import { captureFixTarget } from './fixCapture.js';
 import type { FixTarget } from './fixCapture.js';
@@ -59,17 +60,18 @@ export const recaptureReview = async (
   return { capture, freshness };
 };
 
-export const checkReviewFreshness = async (root: string, directory: string): Promise<Freshness> => {
-  const checked = await checkReviewDirectory(root, directory);
-  const record = requireRecord(await readRecord(checked)).record;
-  const { capture, freshness } = await recaptureReview(root, record);
-  const recheckFile = join(checked, recheckFileName);
+export const checkReviewFreshness = (root: string, directory: string): Promise<Freshness> =>
+  withOperationProbes(async () => {
+    const checked = await checkReviewDirectory(root, directory);
+    const record = requireRecord(await readRecord(checked)).record;
+    const { capture, freshness } = await recaptureReview(root, record);
+    const recheckFile = join(checked, recheckFileName);
 
-  if (freshness.status === 'unknown') {
-    await rm(recheckFile, { force: true });
-  } else {
-    await writeFile(recheckFile, capture.bytes);
-  }
+    if (freshness.status === 'unknown') {
+      await rm(recheckFile, { force: true });
+    } else {
+      await writeFile(recheckFile, capture.bytes);
+    }
 
-  return freshness;
-};
+    return freshness;
+  });

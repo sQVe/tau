@@ -2,7 +2,7 @@ import { readCheckState } from '../../checkRecord/identity.js';
 import type { CheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
-import { readGit, withBareProbeCache } from '../../git.js';
+import { readGit, withOperationProbes } from '../../git.js';
 import { readInspectedEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
 import type { Marker, ReviewEvidence } from '../../reviewCapture/evidence.js';
 import type {
@@ -370,4 +370,4 @@ export const readPublicationEvidence = (
   request: PublicationRequest,
   config: PublicationConfig,
 ): Promise<PublicationEvidence> =>
-  withBareProbeCache(() => readPublicationEvidenceOperation(runtime, root, request, config));
+  withOperationProbes(() => readPublicationEvidenceOperation(runtime, root, request, config));

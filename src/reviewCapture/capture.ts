@@ -3,7 +3,7 @@ import { access, constants, lstat, realpath, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
-import { createProbeCache, readProbe, runGit } from '../git.js';
+import { operationProbeCache, readProbe, runGit } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { keepAddedLines } from './evidenceDecisions.js';
 import { hasOnlyLineEndingWarnings } from './lineEndingWarning.js';
@@ -776,10 +776,8 @@ const captureWholeFiles = async (
   return { parts, addedByPart };
 };
 
-// The object format cannot change while the repository exists, so one probe per root serves the
-// whole process. A failed probe leaves no entry, so the next call asks Git again.
-const objectFormatProbes = createProbeCache<ObjectFormatRead>();
-
+// A read or write keeps one object-format answer per root. Outside such an operation, each call
+// asks Git again. A failed probe leaves no entry, so the next call asks Git again.
 const probeObjectFormat = async (root: string): Promise<ObjectFormatRead> => {
   const commandArguments = ['rev-parse', '--show-object-format'];
   const { stdout, error } = await runCaptureCommand(root, commandArguments);
@@ -797,7 +795,7 @@ const probeObjectFormat = async (root: string): Promise<ObjectFormatRead> => {
 
 const readObjectFormat = (root: string): Promise<ObjectFormatRead> =>
   readProbe(
-    objectFormatProbes,
+    operationProbeCache('object-format'),
     root,
     () => probeObjectFormat(root),
     (read) => read.status === 'read',

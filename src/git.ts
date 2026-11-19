@@ -241,15 +241,35 @@ export const findCheckoutRoot = async (
   return root;
 };
 
-const bareProbeCaches = new AsyncLocalStorage<ProbeCache<BareProbe>>();
+const operationProbeCaches = new AsyncLocalStorage<Map<string, unknown>>();
 
-// A read or write keeps one bare-state answer across its nested directory checks. Outside such an
-// operation, each call asks Git again so a core.bare change takes effect at once.
-export const withBareProbeCache = <Value>(run: () => Promise<Value>): Promise<Value> =>
-  bareProbeCaches.run(createProbeCache(), run);
+// A read or write keeps one answer per named probe across its nested checks. Outside such an
+// operation, each call asks Git again so a changed repository takes effect at once.
+export const withOperationProbes = <Value>(run: () => Promise<Value>): Promise<Value> =>
+  operationProbeCaches.run(new Map(), run);
 
-export const currentBareProbeCache = (): ProbeCache<BareProbe> =>
-  bareProbeCaches.getStore() ?? createProbeCache();
+export const operationProbeCache = <Value>(name: string): ProbeCache<Value> => {
+  const caches = operationProbeCaches.getStore();
+
+  if (caches === undefined) {
+    return createProbeCache();
+  }
+
+  const cached = caches.get(name);
+
+  if (cached !== undefined) {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Each probe name is read with one value type at every call site.
+    return cached as ProbeCache<Value>;
+  }
+
+  const created = createProbeCache<Value>();
+
+  caches.set(name, created);
+
+  return created;
+};
+
+export const currentBareProbeCache = (): ProbeCache<BareProbe> => operationProbeCache('bare');
 
 const probeBareRoot = async (root: string): Promise<BareProbe> => {
   const result = await runGit(root, ['rev-parse', '--is-bare-repository'], {

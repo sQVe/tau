@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
 import { installCommandShim, logCommandCalls } from '../tests/commandShimFake.ts';
 import { createTemporaryBareRoot, createTemporaryRepository, git } from '../tests/gitRepository.ts';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.ts';
-import { isBareRoot, withBareProbeCache } from './git.ts';
+import { isBareRoot, withOperationProbes } from './git.ts';
 import { checkTauDirectory, ensureTauDirectory, findSharedRepositoryRoot } from './tauDirectory.ts';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -165,7 +165,7 @@ it('asks Git again after a failed bare probe in the same operation', async () =>
     overrides: [logCommandCalls(logPath)],
   });
 
-  const results = await withBareProbeCache(async () => {
+  const results = await withOperationProbes(async () => {
     const failed = await isBareRoot(root);
 
     await git(root, 'init', '--quiet', '--bare');

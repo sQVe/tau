@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -8,6 +8,7 @@ import { installCommandShim, logCommandCalls } from '../../tests/commandShimFake
 import type { CommandOverride } from '../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { withOperationProbes } from '../git.js';
 import { captureTarget, hashBytes, pinTarget } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 
@@ -234,6 +235,26 @@ it('hashes the capture of a SHA-256 repository the way Git does', async () => {
   expect(result.hash).toBe(expected);
 });
 
+it('probes the object format again after the repository at the path is replaced', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-object-format-');
+  const header = Buffer.from('blob 4\0');
+  const bytes = Buffer.from('one\n');
+
+  await git(root, 'init', '--quiet', '--initial-branch=main');
+
+  const before = await withOperationProbes(() => hashBytes(root, bytes));
+
+  await rm(join(root, '.git'), { recursive: true, force: true });
+  await git(root, 'init', '--quiet', '--object-format=sha256', '--initial-branch=main');
+
+  const after = await withOperationProbes(() => hashBytes(root, bytes));
+  const sha1Hash = createHash('sha1').update(header).update(bytes).digest('hex');
+  const sha256Hash = createHash('sha256').update(header).update(bytes).digest('hex');
+
+  expect(before).toEqual({ hash: sha1Hash });
+  expect(after).toEqual({ hash: sha256Hash });
+});
+
 it('accepts cat-file output with only whitespace on stderr', async () => {
   const root = await unindexedRepository({ 'a.txt': 'one\n' });
 
@@ -255,8 +276,10 @@ it('probes the object format once per root across hashes', async () => {
     overrides: [logCommandCalls(logPath)],
   });
 
-  await hashBytes(root, Buffer.from('one\n'));
-  await hashBytes(root, Buffer.from('two\n'));
+  await withOperationProbes(async () => {
+    await hashBytes(root, Buffer.from('one\n'));
+    await hashBytes(root, Buffer.from('two\n'));
+  });
 
   expect(await countCalls(logPath, 'rev-parse --show-object-format')).toBe(1);
 });
@@ -272,7 +295,9 @@ it('shares one object-format probe between concurrent cold hashes', async () => 
     overrides: [logCommandCalls(logPath)],
   });
 
-  await Promise.all([hashBytes(root, Buffer.from('one\n')), hashBytes(root, Buffer.from('two\n'))]);
+  await withOperationProbes(() =>
+    Promise.all([hashBytes(root, Buffer.from('one\n')), hashBytes(root, Buffer.from('two\n'))]),
+  );
 
   expect(await countCalls(logPath, 'rev-parse --show-object-format')).toBe(1);
 });
@@ -295,8 +320,12 @@ it('probes the object format again after a failed probe', async () => {
     ],
   });
 
-  const failed = await hashBytes(root, Buffer.from('one\n'));
-  const succeeded = await hashBytes(root, Buffer.from('one\n'));
+  const { failed, succeeded } = await withOperationProbes(async () => {
+    const failedRead = await hashBytes(root, Buffer.from('one\n'));
+    const succeededRead = await hashBytes(root, Buffer.from('one\n'));
+
+    return { failed: failedRead, succeeded: succeededRead };
+  });
 
   const expected = createHash('sha1').update(Buffer.from('blob 4\0')).update('one\n').digest('hex');
 
