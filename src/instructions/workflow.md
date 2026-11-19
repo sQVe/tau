@@ -21,6 +21,9 @@ when you stop. Follow explicit user instructions and repository conventions over
   `herdr-app do tab.new --space <your space> --folder <folder> --argv '["<program>"]'`. It names the
   space. Do not use `pane.split` in the lead's tab: it adds a pane to the tab it splits, and the
   lead's tab holds only the architect and the lead.
+- Give a new space its task when you start it, through the `architect` `open` `request` or the
+  `handover` `start` file. Never start a space empty and send the task later, and never open the
+  architect with no topic.
 - Before you report where it runs, check that `hc get <new terminal>` shows your `herdr.space` label
   and the folder in `foreground.cwd`.
 
@@ -57,6 +60,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 - While you follow a skill, ask the user only with `ask_user_question`, never in prose.
 - As manager, start a new session when a batch is finished and no workers run. Carry state in
   handover files and Linear, not the conversation.
+- As manager, when a space blocks on a question and you know the answer, restart it in a new tab
+  with the answer in its start brief. Do not leave it waiting on the dialog.
 - As manager, when the user corrects you, fix the mistake, save it with `improvement` `record`, and
   propose a rule or check for the user to approve.
 - As manager, do the work you can do instead of handing it back to the user. Fix a bug you find
