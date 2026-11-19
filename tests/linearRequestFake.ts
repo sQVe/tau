@@ -201,7 +201,7 @@ const contracts: QueryContract[] = [
   {
     name: 'issues',
     rootField: 'issues',
-    selection: '',
+    selection: 'pageInfo { hasNextPage }',
     reads: { filter: isObject },
     optional: {},
   },

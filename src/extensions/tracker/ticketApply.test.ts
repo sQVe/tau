@@ -346,6 +346,22 @@ it.each([
   await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
+it('reports a duplicate outside any project on a route that names only a team', async () => {
+  const { runtime, fake, directory } = await setup();
+
+  await writeFile(
+    join(runtime.location.cwd, 'tau.json'),
+    JSON.stringify({ tracker: { repositories: { 'sQVe/tau': { team: 'ME' } } } }),
+  );
+
+  const duplicate = fake.addIssue({ title: 'Fix the failure', projectId: null });
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  expect(plan.problems.join('\n')).toContain(duplicate.identifier);
+  expect(plan.writes).toEqual([]);
+  expect(fake.writes()).toEqual([]);
+});
+
 const addLooseMatches = (fake: ReturnType<typeof createLinearFake>) => {
   for (let number = 1; number <= 60; number++) {
     fake.addIssue({ title: `Fix the failure ${number}` });

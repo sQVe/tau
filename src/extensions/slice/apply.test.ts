@@ -113,6 +113,23 @@ describe('slice tool apply', () => {
     expect(fake.writes()).toHaveLength(writesBefore);
   });
 
+  it('refuses to apply a new draft when open issues with the container title have another page', async () => {
+    const { fake, context, directory } = await setUp();
+    const { stateToken } = readDetails(await run(fake, context, { action: 'read', directory }));
+
+    fake.overrideOutput(
+      'issues',
+      '{"data":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":true}}}}',
+    );
+
+    await expect(run(fake, context, { action: 'apply', directory, stateToken })).rejects.toThrow(
+      /another page/u,
+    );
+
+    expect(fake.writes()).toEqual([]);
+    expect(fake.issues.size).toBe(0);
+  });
+
   it('reports the new title and the body file of an applied update', async () => {
     const { fake, directory, apply } = await appliedPlan();
 
