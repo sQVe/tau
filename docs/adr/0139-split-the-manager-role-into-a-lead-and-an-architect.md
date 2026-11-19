@@ -31,40 +31,30 @@ architect to the left of the lead when the lead terminal has a `herdr.space` lab
 named space when it has none. `ask` does not follow that placement rule. It sends one question to
 the architect and has two paths. `gate` classifies a user request that no skill covers.
 
-An architect that takes the checkout lock records its route: the lock token, its mode, its terminal,
-and its Pi session ID. The mode is visible, or ask for a hidden ask. `ask` takes the live path only
-when the recorded token matches the live lock holder and the mode is visible. The send names the
-recorded session, so the inbox refuses the question when that terminal now runs another session. A
-holder without a matching route is still starting, and the lead asks again shortly. An architect
-from a Tau release before routes is the exception. It writes a version 1 record without a route
-after it takes the lock, so that record is never older than its lock. The lock stamps its start when
-a claim wins, after the old holder is gone, so a newer architect's lock is never older than the
-version 1 record it replaces. For an older architect, `ask` tells the lead to wait until it closes,
-because it takes no live asks and may be a hidden ask without a pane. A running hidden ask comes
-before both messages, and the lead waits for its answer. The question also carries the lock token,
-and the architect saves it only while it holds that token. A reload or restart between the lead's
-read and the send therefore refuses the question, even when the terminal keeps its session. A holder
-in ask mode is a running hidden ask, and `ask` refuses until it ends. A live holder in another
-checkout also refuses.
+A live architect in this checkout takes the question in its inbox, so no second Pi writes its
+session file. The architect records its route when it takes the checkout lock: the lock token, its
+mode, its terminal, and its Pi session ID. `ask` takes the live path only when that token matches
+the live lock holder and the mode is visible. The question names the recorded session and carries
+the token, and the architect saves it only while it holds that token. Only the token names the lock
+generation that may write: `/resume` changes the session behind a terminal, and a reload keeps the
+session ID. Every other holder state refuses with a reason the lead can act on: still starting, a
+running hidden ask, another checkout, or an architect from a Tau release before routes. That older
+release writes its record after it takes the lock, so its record is never older than its lock. This
+tells it apart from an architect that is still starting.
 
-On the live path, the lead must have a working inbox for its own session, or `ask` refuses before it
-sends. `ask` saves an ask record with an ask ID, the lead's terminal and session, and the
-architect's session. It sends the question with the ask ID as the message ID and returns when the
-inbox replies. A missing reply makes the result `unknown`. The lead then retries with the ask ID,
-which sends the same text with the same message ID and never starts a hidden ask. The architect
-answers with `architect` `answer` and the ask ID. The action sends the answer to the lead's recorded
-terminal and session, starts it with the ask ID, and marks the ask answered. A local error in the
-answer leaves the ask open, so the architect fixes the file and calls `answer` again with the same
-ask ID. Local errors include a missing, empty, or oversized file, or an answer larger than one inbox
-message. A delivery refusal marks the ask failed. A lead terminal that runs a new session refuses
-the answer, and the architect tells the user.
+Recovery never turns one question into two. The lead's own inbox must be listening for its current
+session before `ask` sends, because the answer can return only there. The ask ID is the inbox
+message ID of both the question and the answer. After a lost reply, a retry resends the same bytes
+with the same ID, so the receiver saves each message at most once. The architect answers with
+`architect` `answer`, which sends only to the lead session that asked. A local error in the answer
+leaves the ask open for a fixed retry. An answer the lead inbox confirmed is never reported to the
+lead as missing.
 
-The architect cannot send its final handover while an ask to its session is open. When it closes
-anyway, its inbox stops before it releases the lock. It then waits up to 10 seconds for an answer
-that is still sending, so a delivered answer is not failed. A later `answer` call refuses. The
-architect marks each ask that is still open failed and sends the lead a note to ask again. An ask
-whose answer reached the lead but whose record write failed is marked answered instead, with no
-note.
+The architect cannot send its final handover while an ask to its session is open. Closing stops new
+questions and answers, waits a bounded time for work in flight, settles each open ask, and only then
+releases the lock. A confirmed answer settles as answered. An answer with an unknown outcome is sent
+once more with the same ID, because the lead inbox replies `queued` for a message it already has.
+Any other open ask fails, and the lead gets a note to ask again.
 
 Without a live holder, `ask` resumes the saved session in a hidden terminal with one question and a
 deadline. This path needs the recorded session file. The architect answers, updates the ticket if
@@ -113,6 +103,8 @@ the work.
 - The user switches tabs to watch a worker or a review.
 - A question saved just before the architect's inbox closes shows only when that session resumes.
   The lead gets a note to ask again.
+- Closing an architect with work in flight waits up to about 15 seconds: 10 for saves and answers in
+  flight, then one inbox exchange for an answer with an unknown outcome.
 
 ## Alternatives considered
 
@@ -126,6 +118,34 @@ orchestration prices.
 
 Run the architect as a subagent. Rejected because a subagent cannot ask the user directly, and it
 cannot resume the design session with its earlier context.
+
+### Refuse questions while the architect is live
+
+Keep the lock as a refusal for every ask. Rejected because the lead and architect sit side by side,
+so the architect is live most of the time, and the user would switch panes for every question.
+
+### Route a live ask by terminal or by Pi session ID
+
+Send to the recorded terminal, or to the session behind it. Rejected because both outlive a lock
+generation. `/resume` puts another session behind the terminal, and a reload keeps the session ID
+while the lock is released and taken again. Only the lock token names the session that may write.
+
+### Answer with a plain handover send
+
+Let the architect send the answer with `handover` `send` to the lead terminal. Rejected because the
+model would have to carry the lead's session and the ask ID by itself. Nothing would tie the answer
+to its ask or mark the ask answered, and `/new` in the lead would redirect the answer.
+
+### Ask again as a new question after a lost reply
+
+Rejected because the receiver may already hold the first copy. The architect would then answer the
+same question twice. Reusing the message ID lets the receiver keep one copy.
+
+### Close at once, or only after every ask is answered
+
+Closing at once fails answers that are still sending, and the lead gets the answer and a note that
+no answer came. Waiting for every ask to be answered can keep the architect open forever. A bounded
+wait, then a settle and a note, keeps closing finite and tells the lead the truth.
 
 ### Handover text only
 

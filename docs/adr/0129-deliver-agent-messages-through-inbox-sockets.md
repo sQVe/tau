@@ -44,7 +44,11 @@ folder, and replies before the sender reports success.
 - A sender that must reach one session, such as an architect's answer to the lead that asked, passes
   that session's ID. The send refuses when the terminal advertises another session.
 - When the reply is missing after the message was written, the result is `unknown`, because the
-  receiver may have saved it. A retry reuses the message ID, so the receiver saves it once.
+  receiver may have saved it. A retry reuses the message ID, so the receiver saves it once. A sender
+  that must settle an `unknown` send before it exits sends it once more with the same ID, because
+  the receiver replies `queued` for a message it already saved or showed.
+- A sender that waits for a reply in its own inbox first checks that its own listener runs for its
+  current session and that its label names that listener. A label alone can outlive the socket.
 
 ### Receiving
 
@@ -52,7 +56,9 @@ folder, and replies before the sender reports success.
   replies `queued`. Only the receiver deletes a record.
 - A family can carry a fact the receiver must still hold when it saves, such as the lock token of an
   `architect-ask`. The receiver checks that fact in the family's accept check, before the save, and
-  refuses on a mismatch. A session ID alone cannot show this, because a reload keeps it.
+  refuses on a mismatch. A session ID alone cannot show this, because a reload keeps it. The fact
+  must still hold when the record is written. An owner that gives up the fact first stops new
+  writes, then waits for writes in progress, and only then gives it up.
 - After a best-effort startup gate, the receiver wakes its session with the message, saves a receipt
   in the session, and then deletes the record. A receipt stops a repeated delivery after a reload.
 - Delivery is at least once. A crash after the message is shown but before Pi saves the session can
@@ -125,6 +131,11 @@ Rejected because the text joins the user's input, and the sender learns nothing 
 Let the sender write a file and the receiver watch for it, with a lease on the folder. Rejected
 because two writers share one folder, and the sender still cannot tell whether a live receiver read
 the file.
+
+### Check a family fact only when the message arrives
+
+Rejected because a save can stall after the check. The owner could then give up the fact, such as an
+architect lock, and the stalled save would still write a message that no owner accepted.
 
 ### Refuse `hc send` inside `hc`
 
