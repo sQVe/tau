@@ -21,6 +21,8 @@ export type TauChild =
   | { kind: 'unnamed' }
   | { kind: 'child'; name: string };
 
+type BareProbe = { status: 'read'; bare: boolean } | { status: 'failed' };
+
 const ignoreEverything = '*';
 
 const isNameSegment = (segment: string) => !['', '.', '..'].includes(segment);
@@ -221,10 +223,44 @@ const rejectUnignored = async (root: string, relativeDirectory: string) => {
   await rejectTracked(root, relativeDirectory);
 };
 
-export const isBareRoot = async (root: string): Promise<boolean> => {
+// Whether a root is bare cannot change while it is a repository, so one probe per root serves the
+// whole process. A failed probe leaves no entry, so the next call asks Git again.
+const bareRootProbes = new Map<string, Promise<BareProbe>>();
+
+const probeBareRoot = async (root: string): Promise<BareProbe> => {
   const output = await readQuickly(root, ['rev-parse', '--is-bare-repository']);
 
-  return output?.trim() === 'true';
+  if (output === undefined) {
+    return { status: 'failed' };
+  }
+
+  return { status: 'read', bare: output.trim() === 'true' };
+};
+
+const readBareRoot = async (root: string): Promise<BareProbe> => {
+  const cached = bareRootProbes.get(root);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const probe = probeBareRoot(root);
+
+  bareRootProbes.set(root, probe);
+
+  const read = await probe;
+
+  if (read.status === 'failed' && bareRootProbes.get(root) === probe) {
+    bareRootProbes.delete(root);
+  }
+
+  return read;
+};
+
+export const isBareRoot = async (root: string): Promise<boolean> => {
+  const read = await readBareRoot(root);
+
+  return read.status === 'read' && read.bare;
 };
 
 const gitDirectoryOf = async (cwd: string, toolName: string): Promise<string> => {
