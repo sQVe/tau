@@ -1,5 +1,5 @@
 import type { CommandRuntime } from '../../command.js';
-import { get } from '../../hc/hc.js';
+import { get, HcError } from '../../hc/hc.js';
 import { startPiSession } from '../../piStart/piStart.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
 import { readHandoverText } from './handoverFile.js';
@@ -19,6 +19,9 @@ export interface StartHandoverResult {
   reply: string;
 }
 
+const isMissingTerminal = (error: unknown): boolean =>
+  error instanceof HcError && error.kind === 'not_found';
+
 export const startHandover = async (
   runtime: CommandRuntime,
   request: StartHandoverRequest,
@@ -30,9 +33,17 @@ export const startHandover = async (
       ? {
           space: request.target.space,
           readForeground: async (terminal) => {
-            const found = await get(runtime, terminal);
+            try {
+              const found = await get(runtime, terminal);
 
-            return found.foreground;
+              return found.foreground;
+            } catch (error) {
+              if (isMissingTerminal(error)) {
+                return undefined;
+              }
+
+              throw error;
+            }
           },
         }
       : request.target;

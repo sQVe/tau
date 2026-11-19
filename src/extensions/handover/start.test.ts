@@ -132,6 +132,23 @@ const routedExec =
       ? app.exec(command, commandArguments, options)
       : hc.exec(command, commandArguments, options);
 
+const appSteps = (app: ExecFake<HerdrAppCommand>): string[] =>
+  app.calls.map(({ commandArguments }) => commandArguments[1] ?? commandArguments[0] ?? '');
+
+const abortingHcExec =
+  (app: ExecFake<HerdrAppCommand>, controller: AbortController): Exec =>
+  (command, commandArguments, options) => {
+    if (command === 'hc') {
+      controller.abort();
+
+      return Promise.reject(
+        Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }),
+      );
+    }
+
+    return app.exec(command, commandArguments, options);
+  };
+
 it('a space start reads the shell foreground with hc get and takes over the tab', async () => {
   const app = shellAppFake();
   const hc = createHcFake();
@@ -164,6 +181,60 @@ it('a space start reads the shell foreground with hc get and takes over the tab'
     ['get', '--json', '--', 't-shell'],
     ['get', '--json', '--', 't-shell'],
   ]);
+});
+
+it('a terminal hc get reports missing still opens a tab', async () => {
+  const app = shellAppFake();
+  const hc = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  hc.fail(
+    'get',
+    JSON.stringify({ error: { kind: 'not_found', message: 'terminal t-shell is gone' } }),
+    3,
+  );
+
+  const result = await startHandover(
+    { exec: routedExec(app, hc), cwd: root },
+    requestFor(root, file, { space: 'space-1' }),
+  );
+
+  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(appSteps(app)).toEqual(['ls', 'tab.new']);
+});
+
+it('a failed hc get stops the start instead of opening a tab', async () => {
+  const app = shellAppFake();
+  const hc = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  hc.fail('get', JSON.stringify({ error: { kind: 'failed', message: 'hc is unreachable' } }), 1);
+
+  await expect(
+    startHandover(
+      { exec: routedExec(app, hc), cwd: root },
+      requestFor(root, file, { space: 'space-1' }),
+    ),
+  ).rejects.toThrow(/hc is unreachable/);
+
+  expect(appSteps(app)).toEqual(['ls']);
+});
+
+it('a cancelled hc get stops the start instead of opening a tab', async () => {
+  const app = shellAppFake();
+  const controller = new AbortController();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  const failure = await startHandover(
+    { exec: abortingHcExec(app, controller), cwd: root, signal: controller.signal },
+    requestFor(root, file, { space: 'space-1' }),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'aborted' });
+  expect(appSteps(app)).toEqual(['ls']);
 });
 
 it('refuses a file outside .tau/handovers before any herdr-app call', async () => {

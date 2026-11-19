@@ -521,9 +521,11 @@ it('passes the model to the new Pi through herdr-app', async () => {
     modelContext(root, onTestFinished),
   );
 
-  const lastArgv = app.calls.map(argvOf).at(-1);
+  const launchArgvs = app.calls
+    .filter(({ commandArguments }) => commandArguments.includes('--argv'))
+    .map(argvOf);
 
-  expect(lastArgv).toBe('["pi","--provider","morph","--model","morph-dsv41flash-1017"]');
+  expect(launchArgvs).toEqual(['["pi","--provider","morph","--model","morph-dsv41flash-1017"]']);
 });
 
 it('refuses a regular file as the start folder before any herdr-app call', async () => {

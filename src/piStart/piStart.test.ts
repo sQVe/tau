@@ -210,6 +210,42 @@ it('a shell that turns busy during the split stays open', async () => {
   expect(appCommands(fake)).toEqual(['ls', 'pane.split']);
 });
 
+it('a cancel between the second foreground read and the close leaves the shell open', async () => {
+  const fake = createHerdrAppFake({ layout: shellLayout('space-1') });
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+  let reads = 0;
+
+  const readForeground = () => {
+    reads += 1;
+
+    if (reads === 2) {
+      controller.abort();
+    }
+
+    return Promise.resolve({ name: 'zsh', cwd: root });
+  };
+
+  const failure = await startPiSession(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    {
+      folder: root,
+      target: { space: 'space-1', readForeground },
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      environment: undefined,
+    },
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+
+  const { message } = failure as Error;
+
+  expect(message).toContain('pane p-new (terminal t-new)');
+  expect(appCommands(fake)).toEqual(['ls', 'pane.split']);
+});
+
 it('a failed shell close names the new pane', async () => {
   const fake = createHerdrAppFake({ layout: shellLayout('space-1') });
   const root = await createTemporaryRepository(onTestFinished);
