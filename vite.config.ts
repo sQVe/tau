@@ -98,6 +98,7 @@ export const testEnvironment = [
 export const testManagedEnvironment = [
   'CARGO_TARGET_DIR',
   'PI_CODING_AGENT_DIR',
+  'TAU_FAKE_API_KEY',
   'TAU_ROLE',
   'TAU_WORKER_RECORD',
   'HC_SESSION',

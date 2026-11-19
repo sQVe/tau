@@ -44,6 +44,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0135: Record improvement events in each project root](./0135-record-improvement-events-in-each-project-root.md)
 - [0139: Split the manager role into a lead and an architect](./0139-split-the-manager-role-into-a-lead-and-an-architect.md)
 - [0140: Route a throttled model to a fallback model](./0140-route-a-throttled-model-to-a-fallback-model.md)
+- [0142: Redact environment values in tool results](./0142-redact-environment-values-in-tool-results.md)
 
 ### Documentation and writing
 

@@ -36,6 +36,8 @@ export const workerArguments = (
     ...loadout.skills.flatMap((path) => ['--skill', path]),
     // Pi loads these command-line extensions before the saved configuration's, so the guard is active before CC Safety Net.
     '-e',
+    fileURLToPath(new URL('../toolResultRedaction/toolResultRedaction.ts', import.meta.url)),
+    '-e',
     fileURLToPath(new URL('./workerBashGuard.ts', import.meta.url)),
     '-e',
     fileURLToPath(new URL('./workerExtension.ts', import.meta.url)),
