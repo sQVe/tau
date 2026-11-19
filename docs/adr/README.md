@@ -45,6 +45,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0139: Split the manager role into a lead and an architect](./0139-split-the-manager-role-into-a-lead-and-an-architect.md)
 - [0140: Route a throttled model to a fallback model](./0140-route-a-throttled-model-to-a-fallback-model.md)
 - [0142: Redact environment values in tool results](./0142-redact-environment-values-in-tool-results.md)
+- [0144: Remember Git probe answers within one operation](./0144-remember-git-probe-answers-within-one-operation.md)
 
 ### Documentation and writing
 
