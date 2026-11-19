@@ -306,7 +306,7 @@ export const createLinearFake = (): LinearFake => {
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
       .map((issue) => ({ identifier: issue.identifier }));
 
-    return { issues: { nodes } };
+    return { issues: { nodes, pageInfo: { hasNextPage: false } } };
   };
 
   // Supports what the tracker search sends: a team ID, and a filter with an optional project name

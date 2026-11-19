@@ -13,6 +13,9 @@ const createMutation =
 const createWithoutTitle =
   'mutation($team: String!, $title: String!, $description: String!) { issueCreate(input: { teamId: $team, title: $title, description: $description }) { issue { identifier url } } }';
 
+const issuesWithoutPageInfo =
+  'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
+
 const refusedCalls: [string, string, string[]][] = [
   ['another executable', 'not-linear', ['api', 'query { team(id: "ME") { id } }']],
   ['an unknown query', 'linear', ['api', 'query { definitelyNotALinearField }']],
@@ -20,6 +23,11 @@ const refusedCalls: [string, string, string[]][] = [
   ['a gh pull request read without the state field', 'gh', ['pr', 'view', 'url']],
   ['an issue update command', 'linear', ['issue', 'update', 'ME-1', '--title', 'New']],
   ['an unknown issue command', 'linear', ['issue', 'view', 'ME-1']],
+  [
+    'an issues query that does not select pageInfo',
+    'linear',
+    ['api', issuesWithoutPageInfo, '--variables-json', '{"filter":{}}'],
+  ],
   ['a query without its variable', 'linear', ['api', teamQuery]],
   [
     'a query that does not declare the variable it reads',

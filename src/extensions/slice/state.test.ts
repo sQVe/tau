@@ -41,6 +41,21 @@ describe('slice tool read', () => {
     });
   });
 
+  it('refuses to read a new draft when open issues with the container title have another page', async () => {
+    const { fake, context, directory } = await setUp();
+
+    fake.overrideOutput(
+      'issues',
+      '{"data":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":true}}}}',
+    );
+
+    await expect(run(fake, context, { action: 'read', directory })).rejects.toThrow(
+      /another page/u,
+    );
+
+    expect(fake.writes()).toEqual([]);
+  });
+
   it.each(['OPEN', 'CLOSED'])(
     'does not mark a root or child with only a %s PR as merged',
     async (state) => {

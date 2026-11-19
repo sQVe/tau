@@ -346,6 +346,49 @@ it.each([
   await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
+it('reports a duplicate outside any project on a route that names only a team', async () => {
+  const { runtime, fake, directory } = await setup();
+
+  await writeFile(
+    join(runtime.location.cwd, 'tau.json'),
+    JSON.stringify({ tracker: { repositories: { 'sQVe/tau': { team: 'ME' } } } }),
+  );
+
+  const duplicate = fake.addIssue({ title: 'Fix the failure', projectId: null });
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  expect(plan.problems.join('\n')).toContain(duplicate.identifier);
+  expect(plan.writes).toEqual([]);
+  expect(fake.writes()).toEqual([]);
+});
+
+const addLooseMatches = (fake: ReturnType<typeof createLinearFake>) => {
+  for (let number = 1; number <= 60; number++) {
+    fake.addIssue({ title: `Fix the failure ${number}` });
+  }
+};
+
+it('plans a create when many open tickets loosely match the title', async () => {
+  const { runtime, fake, directory } = await setup();
+  addLooseMatches(fake);
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  expect(plan.problems).toEqual([]);
+  expect(plan.writes).toMatchObject([{ kind: 'createTicket' }]);
+  expect(fake.writes()).toEqual([]);
+});
+
+it('reports a duplicate the viewer created beyond the first page of loose matches', async () => {
+  const { runtime, fake, directory } = await setup();
+  addLooseMatches(fake);
+  const duplicate = fake.addIssue({ title: 'Fix the failure' });
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  expect(plan.problems.join('\n')).toContain(duplicate.identifier);
+  expect(plan.writes).toEqual([]);
+  expect(fake.writes()).toEqual([]);
+});
+
 it('reports a missing route for an unrecorded draft without writing', async () => {
   const { runtime, fake, directory } = await setup();
   await rm(join(runtime.location.agentDirectory, 'tau.json'));
@@ -379,13 +422,17 @@ it('refuses a create when a matching ticket appears after read', async () => {
 it.each([
   {
     name: 'partial search',
-    output: '{"data":{"searchIssues":{"nodes":[],"pageInfo":{"hasNextPage":true}}}}',
+    output: '{"data":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":true}}}}',
     error: /another page/u,
   },
-  { name: 'malformed search', output: '{"data":{}}', error: /unexpected output/u },
+  {
+    name: 'malformed search',
+    output: '{"data":{"issues":{"nodes":[]}}}',
+    error: /unexpected output/u,
+  },
 ])('refuses $name evidence without writing', async ({ output, error }) => {
   const { runtime, fake, directory } = await setup();
-  fake.overrideOutput('searchIssues', output);
+  fake.overrideOutput('issues', output);
 
   await expect(ticketApply.readTicket(runtime, { directory })).rejects.toThrow(error);
   expect(fake.writes()).toEqual([]);
@@ -394,7 +441,7 @@ it.each([
 
 it('updates only the changed field', async () => {
   const { runtime, fake, directory, ticket, record } = await setupUpdate();
-  fake.failCall('searchIssues', 'Search unavailable');
+  fake.failCall('issues', 'Search unavailable');
   const plan = await ticketApply.readTicket(runtime, { directory });
   expect(plan.current).toMatchObject({ title: ticket.title, description: ticket.description });
   const result = await ticketApply.applyTicket(runtime, { directory, stateToken: plan.stateToken });

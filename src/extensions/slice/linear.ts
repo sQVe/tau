@@ -3,7 +3,7 @@ import type { Static } from 'typebox';
 
 import type { Exec } from '../../command.js';
 import { isPullRequestUrl, readPullRequestState } from '../../github/github.js';
-import { api, openStateTypes, run } from '../../linear/linear.js';
+import { api, run } from '../../linear/linear.js';
 import type { PickPullRequest } from './startPickDecisions.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
@@ -24,9 +24,6 @@ const containerQuery =
 
 const issuePullRequestsQuery =
   'query($id: String!) { issue(id: $id) { attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } } }';
-
-const issuesQuery =
-  'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
 
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
 
@@ -86,10 +83,6 @@ const issuePullRequestsSchema = Type.Object({
     Type.Object({ attachments: childSchema.properties.attachments }),
     Type.Null(),
   ]),
-});
-
-const issuesSchema = Type.Object({
-  issues: Type.Object({ nodes: Type.Array(Type.Object({ identifier: Type.String() })) }),
 });
 
 type ChildNode = Static<typeof childSchema>;
@@ -240,28 +233,6 @@ export const readContainer = async (
     project: issue.project,
     children,
   };
-};
-
-// Lists the open issues in the route's team, and its project when the route names one, whose title
-// is exactly the given title.
-export const findOpenIssues = async (
-  exec: Exec,
-  cwd: string,
-  search: { team: string; project: string | null; title: string },
-): Promise<string[]> => {
-  const filter: Record<string, unknown> = {
-    team: { key: { eq: search.team } },
-    title: { eq: search.title },
-    state: { type: { in: openStateTypes } },
-  };
-
-  if (search.project !== null) {
-    filter['project'] = { name: { eq: search.project } };
-  }
-
-  const data = await api(exec, cwd, issuesQuery, { filter }, issuesSchema);
-
-  return data.issues.nodes.map((issue) => issue.identifier);
 };
 
 export const changeBlockedBy = async (
