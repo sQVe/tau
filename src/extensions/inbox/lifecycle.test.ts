@@ -17,15 +17,19 @@ interface HcState {
   failLabel: boolean;
   malformedLabelReply?: boolean;
   failGet?: boolean;
+  failGetAfterLabel?: boolean;
+  foregroundPid?: number | null;
   afterRead?: (() => Promise<void>) | undefined;
 }
 
 interface HarnessOptions {
   state?: HcState;
   socketDirectory?: string;
+  processGroup?: number;
 }
 
 const raceWaitMilliseconds = 200;
+const foregroundProcessGroup = 100;
 
 let root = '';
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -45,15 +49,34 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
+const hcState = (overrides: Partial<HcState> = {}): HcState => ({
+  labels: new Map(),
+  failLabel: false,
+  foregroundPid: foregroundProcessGroup,
+  ...overrides,
+});
+
+const foregroundOf = (pid: number | null | undefined) =>
+  typeof pid === 'number' ? { pid, name: 'pi', argv: ['pi'], cwd: root } : pid;
+
 const hcExec = (state: HcState): Exec => {
   const terminal = () =>
-    JSON.stringify({ address: 't7', state: 'live', labels: Object.fromEntries(state.labels) });
+    JSON.stringify({
+      address: 't7',
+      state: 'live',
+      foreground: foregroundOf(state.foregroundPid),
+      labels: Object.fromEntries(state.labels),
+    });
+
+  let labelCalls = 0;
 
   return async (_command, commandArguments) => {
     const subcommand = commandArguments[0];
     const assignments = commandArguments.slice(4);
+    const failsAfterLabel = state.failGetAfterLabel === true && labelCalls > 0;
+    const failsGet = state.failGet === true || failsAfterLabel;
 
-    if (subcommand === 'get' && state.failGet === true) {
+    if (subcommand === 'get' && failsGet) {
       return failedResult('get refused');
     }
 
@@ -66,6 +89,8 @@ const hcExec = (state: HcState): Exec => {
 
       return succeededResult(snapshot);
     }
+
+    labelCalls += 1;
 
     if (state.failLabel) {
       return failedResult('label refused');
@@ -102,7 +127,7 @@ const contextFor = (sessionId: string, notify: (message: string) => void): Exten
   }) as unknown as ExtensionContext;
 
 const startHarness = (options: HarnessOptions = {}) => {
-  const state: HcState = options.state ?? { labels: new Map(), failLabel: false };
+  const state = options.state ?? hcState();
   const socketDirectory = options.socketDirectory ?? join(root, 'sockets');
   const fake = fakeExtensionApi();
   const notices: string[] = [];
@@ -117,6 +142,7 @@ const startHarness = (options: HarnessOptions = {}) => {
     hc: { exec: hcExec(state), connect: () => Promise.reject(new Error('no connect')), cwd: root },
     socketDirectory: () => socketDirectory,
     inboxDirectory: () => join(root, 'records'),
+    processGroup: () => Promise.resolve(options.processGroup ?? foregroundProcessGroup),
   })(fake.pi);
 
   const emit = async (name: string, event: unknown, context: ExtensionContext) => {
@@ -271,7 +297,7 @@ it('keeps one answering listener when the same session starts twice', async () =
 });
 
 it('closes the unadvertised socket and reports when the label cannot be set', async () => {
-  const harness = startHarness({ state: { labels: new Map(), failLabel: true } });
+  const harness = startHarness({ state: hcState({ failLabel: true }) });
   const sessionId = randomUUID();
 
   await harness.start(sessionId);
@@ -282,9 +308,7 @@ it('closes the unadvertised socket and reports when the label cannot be set', as
 });
 
 it('removes the label it applied when the label reply is malformed', async () => {
-  const harness = startHarness({
-    state: { labels: new Map(), failLabel: false, malformedLabelReply: true },
-  });
+  const harness = startHarness({ state: hcState({ malformedLabelReply: true }) });
 
   const sessionId = randomUUID();
 
@@ -298,7 +322,7 @@ it('removes the label it applied when the label reply is malformed', async () =>
 
 it('reports the label error when removing the applied label also fails', async () => {
   const harness = startHarness({
-    state: { labels: new Map(), failLabel: false, malformedLabelReply: true, failGet: true },
+    state: hcState({ malformedLabelReply: true, failGetAfterLabel: true }),
   });
 
   const sessionId = randomUUID();
@@ -533,7 +557,7 @@ it('refuses to start in a socket directory other users can read', async () => {
 });
 
 it('leaves a replacement listener and its label when a replaced lifecycle shuts down', async () => {
-  const state: HcState = { labels: new Map(), failLabel: false };
+  const state = hcState();
   const replaced = startHarness({ state });
   const replacement = startHarness({ state });
   const first = randomUUID();
@@ -552,7 +576,7 @@ it('leaves a replacement listener and its label when a replaced lifecycle shuts 
 });
 
 it('leaves the label of a replacement with the same session when a replaced lifecycle shuts down', async () => {
-  const state: HcState = { labels: new Map(), failLabel: false };
+  const state = hcState();
   const replaced = startHarness({ state });
   const replacement = startHarness({ state });
   const sessionId = randomUUID();
@@ -588,7 +612,7 @@ it('reports a delivery that fails in the current generation', async () => {
 });
 
 it('keeps the label a replacement wrote while an earlier shutdown was reading it', async () => {
-  const state: HcState = { labels: new Map(), failLabel: false };
+  const state = hcState();
   const earlier = startHarness({ state });
   const replacement = startHarness({ state });
   const first = randomUUID();
@@ -626,4 +650,71 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
   });
 
   expect(Object.fromEntries(state.labels)).toEqual({ 'tau.inbox': `rpc1:${socketOf(second)}` });
+});
+
+it("keeps the foreground session's label when a second Pi on its terminal starts and exits", async () => {
+  const state = hcState({ foregroundPid: 100 });
+  const parent = startHarness({ state, processGroup: 100 });
+  const child = startHarness({ state, processGroup: 200 });
+  const parentSession = randomUUID();
+  const childSession = randomUUID();
+
+  const expectParentInbox = async () => {
+    expect(Object.fromEntries(state.labels)).toEqual({
+      'tau.inbox': `rpc1:${socketOf(parentSession)}`,
+    });
+
+    await expect(
+      exchange(socketOf(parentSession), handoverTo(parentSession)),
+    ).resolves.toMatchObject({ kind: 'queued', sessionId: parentSession });
+  };
+
+  await parent.start(parentSession);
+  cleanups.push(() => parent.shutdown(parentSession));
+  await child.start(childSession);
+  await expectParentInbox();
+  await child.shutdown(childSession);
+  await expectParentInbox();
+
+  expect(existsSync(socketOf(childSession))).toBe(false);
+  expect(child.notices).toEqual([]);
+});
+
+it('starts no inbox when the session ends while the terminal is read', async () => {
+  const state = hcState();
+  const harness = startHarness({ state });
+  const sessionId = randomUUID();
+
+  state.afterRead = () => harness.shutdown(sessionId);
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  expect(Object.fromEntries(state.labels)).toEqual({});
+  expect(existsSync(socketOf(sessionId))).toBe(false);
+  expect(harness.notices).toEqual([]);
+});
+
+it('starts no inbox when the terminal reports no foreground process', async () => {
+  const harness = startHarness({ state: hcState({ foregroundPid: null }) });
+  const sessionId = randomUUID();
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  expect(Object.fromEntries(harness.state.labels)).toEqual({});
+  expect(existsSync(socketOf(sessionId))).toBe(false);
+  expect(harness.notices).toEqual([]);
+});
+
+it('reports that the inbox could not start when the terminal read fails', async () => {
+  const harness = startHarness({ state: hcState({ failGet: true }) });
+  const sessionId = randomUUID();
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  expect(Object.fromEntries(harness.state.labels)).toEqual({});
+  expect(existsSync(socketOf(sessionId))).toBe(false);
+  expect(harness.notices).toEqual([expect.stringContaining('Tau inbox could not start:')]);
 });

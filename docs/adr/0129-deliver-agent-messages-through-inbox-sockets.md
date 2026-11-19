@@ -29,6 +29,9 @@ folder, and replies before the sender reports success.
   advertises the socket path in one `tau.inbox` label on its own terminal.
 - A reload keeps one listener. Shutdown closes the socket and removes the label. A stale socket is
   replaced only when a connect to it is refused, so a live owner is never replaced.
+- A Pi advertises and serves its inbox only when it is in the foreground process group of its
+  `HC_TERMINAL_ID` terminal: hc's `foreground.pid` equals the Pi's process group ID. A Pi started
+  from a session's shell tool, which runs detached, starts none, while `pnpm exec pi` works.
 
 ### Sending
 

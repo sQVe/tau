@@ -122,6 +122,16 @@ const startReceiverSession = async (
     await kill(hc.runtime, terminal).catch(() => undefined);
   });
 
+  const foreground = await vi.waitFor(async () => {
+    const reply = await get(hc.runtime, terminal);
+
+    if (reply.foreground === undefined || reply.foreground === null) {
+      throw new Error(`Terminal ${terminal} reports no foreground process.`);
+    }
+
+    return reply.foreground;
+  });
+
   const socketRoot = mkdtempSync('/tmp/tau-inbox-');
 
   chmodSync(socketRoot, 0o700);
@@ -143,6 +153,7 @@ const startReceiverSession = async (
     hc: hc.runtime,
     socketDirectory: () => socketDirectory,
     inboxDirectory: () => recordDirectory,
+    processGroup: () => Promise.resolve(foreground.pid),
   });
 
   const extensionFactories = hold === undefined ? [inbox] : [inbox, hold.extension];

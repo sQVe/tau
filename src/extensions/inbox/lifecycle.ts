@@ -18,6 +18,7 @@ import { isWorkerProcess } from '../../role/role.js';
 import type { Wake } from '../../wake/wake.js';
 import { holdsArrival } from './arrivalDecision.js';
 import type { ArrivalFacts } from './arrivalDecision.js';
+import { ownsTerminal } from './ownerDecision.js';
 import type { StartupGate } from './startup.js';
 
 export interface InboxLifecycleDependencies {
@@ -27,6 +28,7 @@ export interface InboxLifecycleDependencies {
   inboxDirectory: () => string;
   gate: StartupGate;
   wake: Wake;
+  processGroup: () => Promise<number>;
 }
 
 interface Generation {
@@ -105,6 +107,21 @@ export const registerInboxLifecycle = (
     const terminal = dependencies.terminal();
 
     if (terminal === undefined) {
+      return;
+    }
+
+    const [snapshot, processGroup] = await Promise.all([
+      get(hc, terminal),
+      dependencies.processGroup(),
+    ]);
+
+    if (current.controller.signal.aborted) {
+      return;
+    }
+
+    const foregroundPid = snapshot.foreground?.pid;
+
+    if (!ownsTerminal({ foregroundPid, processGroup })) {
       return;
     }
 
