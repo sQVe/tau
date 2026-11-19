@@ -37,6 +37,9 @@ export type LiveAskResult =
 const noLeadInbox =
   'This lead session has no working inbox, so the answer cannot reach it. Reload Pi, then ask again.';
 
+const missingRecordNote =
+  'The question may be in the architect inbox, but its ask record is gone, so the architect cannot answer it. Call architect ask again with the question.';
+
 // A retry sends these exact bytes again, so the text depends only on the record.
 const questionText = (record: LiveAskRecord): string =>
   `Ask ${record.askId} from the lead: "${record.question}". Answer it with architect answer and askId ${record.askId}. Update the ticket if the answer changes it. If you need the user, ask the user directly.`;
@@ -115,7 +118,11 @@ const sendQuestion = async (
       };
     }
 
-    if (settled.change?.changed === false) {
+    if (settled.change === undefined) {
+      return { status: 'unknown', askId, terminal: sent.terminal, note: missingRecordNote };
+    }
+
+    if (!settled.change.changed) {
       return {
         status: 'unknown',
         askId,
@@ -143,7 +150,11 @@ const sendQuestion = async (
     };
   }
 
-  if (settled.change?.changed === false) {
+  if (settled.change === undefined) {
+    return { status: 'queued', askId, terminal: sent.terminal, note: missingRecordNote };
+  }
+
+  if (!settled.change.changed) {
     return {
       status: 'queued',
       askId,

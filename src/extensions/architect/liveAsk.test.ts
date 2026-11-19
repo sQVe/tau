@@ -338,6 +338,9 @@ it('an ask retry refuses a question beside the ask ID', async ({ onTestFinished:
   expect(commands(hc)).toEqual([]);
 });
 
+const missingRecordNote =
+  'The question may be in the architect inbox, but its ask record is gone, so the architect cannot answer it. Call architect ask again with the question.';
+
 const startHeldQuestion = async (cleanup: Cleanup) => {
   const { root } = await setup(cleanup);
   const hc = createHcFake();
@@ -450,8 +453,54 @@ it('a lost reply on a deleted ask returns unknown and leaves no record', async (
 
   const asked = await asking;
 
-  expect(asked.details).toMatchObject({ action: 'ask', status: 'unknown', askId: record.askId });
+  expect(asked.details).toMatchObject({
+    action: 'ask',
+    status: 'unknown',
+    askId: record.askId,
+    note: missingRecordNote,
+  });
+
   await expect(readAskRecord(root, record.askId)).resolves.toBeUndefined();
+});
+
+it('a confirmed send on a deleted ask returns queued and tells the lead to ask again', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = createHcFake();
+  let askId = '';
+
+  const inbox = await startCapturingInbox(
+    cleanup,
+    'session-architect',
+    'reply',
+    async (messageId) => {
+      askId = messageId;
+      await rm(askRecordPath(root, messageId), { force: true });
+    },
+  );
+
+  await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
+  await holdLock(root, root);
+  await startLeadInbox(cleanup, hc);
+  replyTerminal(hc, 't-architect', `rpc1:${inbox.path}`);
+
+  const result = await createArchitectTool({ ...hc, cwd: root }).execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(result.details).toMatchObject({
+    action: 'ask',
+    status: 'queued',
+    askId,
+    note: missingRecordNote,
+  });
+
+  await expect(readAskRecord(root, askId)).resolves.toBeUndefined();
 });
 
 it('a live ask reports a confirmed send when the ask closed before its record update', async ({
