@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
@@ -11,7 +18,7 @@ import type { Exec } from '../../command.js';
 import type { Connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
 import type { HcTerminal } from '../../hc/hc.js';
-import { writeAssignment } from './assignment.js';
+import { assignmentDirectory, writeAssignment } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
 import { Admission, executeLaunch } from './launch.js';
@@ -19,6 +26,7 @@ import type { LaunchRuntime } from './launch.js';
 import type { LaunchParameters } from './launchParameters.js';
 import * as loadouts from './loadout.js';
 import * as packageSnapshot from './packageSnapshot.js';
+import { scratchRootFor } from './workerScratch.js';
 
 vi.mock(import('./assignment.js'), { spy: true });
 vi.mock(import('./loadout.js'), { spy: true });
@@ -47,7 +55,11 @@ const terminalRun = (fake: HcFake) => {
     const request = call.find((message) => message.method === 'terminal.run');
 
     if (request !== undefined) {
-      return request.params as { name: string; labels: Record<string, string> };
+      return request.params as {
+        name: string;
+        labels: Record<string, string>;
+        env: Record<string, string>;
+      };
     }
   }
 
@@ -64,7 +76,12 @@ const succeeded = (value: unknown) => ({
 
 const setup = (
   options: { children?: HcTerminal[]; managerLabels?: Record<string, string> } = {},
-): { fake: HcFake; runtime: LaunchRuntime; refuseCapacity: ReturnType<typeof vi.fn> } => {
+): {
+  fake: HcFake;
+  runtime: LaunchRuntime;
+  refuseCapacity: ReturnType<typeof vi.fn>;
+  scratchExistedAtRun: () => boolean | undefined;
+} => {
   const directory = temporaryDirectory(onTestFinished, 'tau-launch-');
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -82,6 +99,7 @@ const setup = (
 
   const children = options.children ?? [];
   const launched: HcTerminal[] = [];
+  let scratchExistedAtRun: boolean | undefined;
 
   fake.replyConnect('hello', 1, {
     generation: 1,
@@ -125,11 +143,16 @@ const setup = (
     const request = lines
       .map(
         (line) =>
-          JSON.parse(line) as { method: string; params?: { labels?: Record<string, string> } },
+          JSON.parse(line) as {
+            method: string;
+            params?: { labels?: Record<string, string>; env?: Record<string, string> };
+          },
       )
       .find((message) => message.method === 'terminal.run');
 
     if (request !== undefined) {
+      scratchExistedAtRun = existsSync(request.params?.env?.TMPDIR ?? '');
+
       launched.push({
         address: 't-worker',
         state: 'live',
@@ -154,7 +177,7 @@ const setup = (
     refuseCapacity,
   };
 
-  return { fake, runtime, refuseCapacity };
+  return { fake, runtime, refuseCapacity, scratchExistedAtRun: () => scratchExistedAtRun };
 };
 
 const context = {
@@ -240,6 +263,12 @@ const uncertainSetup = (
   };
 
   return { directory, fake, runtime, launches: () => launches };
+};
+
+const scratchNames = (directory: string): string[] => {
+  const root = scratchRootFor(directory);
+
+  return existsSync(root) ? readdirSync(root) : [];
 };
 
 const snapshotNames = (directory: string): string[] => {
@@ -409,6 +438,7 @@ it.each(['missing_reply', 'read_failed', 'malformed', 'unexpected'] as const)(
 
     expect(result.isError).not.toBe(true);
     expect(result.details?.address).toBe('worker');
+    expect(scratchNames(state.directory)).toHaveLength(1);
   },
 );
 
@@ -446,12 +476,16 @@ it('reconciles an aborted launch request that started the worker', async () => {
   expect(result.isError).not.toBe(true);
   expect(result.details?.address).toBe('worker');
   expect(snapshotNames(state.directory)).toHaveLength(1);
+  expect(scratchNames(state.directory)).toHaveLength(1);
 });
 
-it('frees the slot when an unclear launch finds no worker', async () => {
+it('frees the slot and removes the scratch folder when an unclear launch finds no worker', async () => {
   const state = uncertainSetup('missing_reply');
 
   const first = await launch(state.runtime, {});
+
+  expect(scratchNames(state.directory)).toEqual([]);
+
   const second = await launch(state.runtime, {});
 
   expect(first.isError).toBe(true);
@@ -485,7 +519,7 @@ const reconciliationFailureSetup = (failure: 'ls' | 'get') => {
 };
 
 it.each(['ls', 'get'] as const)(
-  'keeps the reservation and snapshot when reconciliation %s fails',
+  'keeps the reservation, snapshot, and scratch folder when reconciliation %s fails',
   async (failure) => {
     const state = reconciliationFailureSetup(failure);
 
@@ -495,6 +529,7 @@ it.each(['ls', 'get'] as const)(
     expect(result.content[0]?.text).toContain('unclear');
     expect(result.content[0]?.text).toContain('hc ls');
     expect(snapshotNames(state.directory)).toHaveLength(1);
+    expect(scratchNames(state.directory)).toHaveLength(1);
 
     const empty = createHcFake();
 
@@ -563,6 +598,53 @@ it('removes the snapshot after a definite launch failure', async () => {
 
   expect(result.isError).toBe(true);
   expect(snapshotNames(state.directory)).toEqual([]);
+});
+
+it('creates the scratch folder before the worker starts', async () => {
+  const { fake, runtime, scratchExistedAtRun } = setup();
+
+  const result = await launch(runtime, {});
+  const request = terminalRun(fake);
+  const scratch = request?.env.TMPDIR ?? '';
+
+  expect(result.isError).not.toBe(true);
+  const launchedId = vi.mocked(writeAssignment).mock.calls.at(-1)?.[0].assignmentId ?? '';
+
+  expect(launchedId).not.toBe('');
+  expect(scratchExistedAtRun()).toBe(true);
+  expect(scratch).toBe(join(scratchRootFor(runtime.agentDirectory), launchedId));
+  expect(request?.env.TAU_ASSIGNMENT_DIRECTORY).toBe(assignmentDirectory(launchedId));
+  expect([request?.env.TMP, request?.env.TEMP]).toEqual([scratch, scratch]);
+  expect(scratchNames(runtime.agentDirectory)).toHaveLength(1);
+});
+
+it('removes the scratch folder after a definite launch failure', async () => {
+  const state = uncertainSetup('spawn_failed');
+  const result = await launch(state.runtime, {});
+
+  expect(result.isError).toBe(true);
+  expect(scratchNames(state.directory)).toEqual([]);
+});
+
+it('keeps the scratch cleanup error in the launch error', async () => {
+  const state = uncertainSetup('spawn_failed');
+  const elsewhere = temporaryDirectory(onTestFinished, 'tau-launch-redirect-');
+
+  state.runtime.hc.connect = async () => {
+    const root = scratchRootFor(state.directory);
+
+    renameSync(root, join(elsewhere, 'moved'));
+    symlinkSync(join(elsewhere, 'moved'), root);
+
+    throw new HcError('spawn_failed', 'launch failure');
+  };
+
+  const result = await launch(state.runtime, {});
+
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('launch failure');
+  expect(result.content[0]?.text).toContain('Also failed to remove the worker scratch folder');
+  expect(readdirSync(join(elsewhere, 'moved'))).toHaveLength(1);
 });
 
 it('saves installed extension packages', async () => {
@@ -715,6 +797,39 @@ it('frees a confirmed slot when hc removed the child before the next launch', as
 
   expect(second.isError).not.toBe(true);
   expect(terminalRun(emptied)).toBeDefined();
+});
+
+it('removes the scratch folder when the signal aborts after admission', async () => {
+  const { fake, runtime } = setup();
+  const controller = new AbortController();
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  const originalExec = runtime.hc.exec;
+
+  runtime.hc.exec = async (command, commandArguments, execOptions) => {
+    if (command === 'hc' && commandArguments[0] === 'get' && commandArguments.at(-1) === manager) {
+      entered.resolve(undefined);
+      await release.promise;
+    }
+
+    return originalExec(command, commandArguments, execOptions);
+  };
+
+  const pending = launch(runtime, {}, controller.signal);
+
+  await entered.promise;
+
+  const createdWhileWaiting = scratchNames(runtime.agentDirectory);
+
+  controller.abort();
+  release.resolve(undefined);
+
+  const result = await pending;
+
+  expect(createdWhileWaiting).toHaveLength(1);
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(scratchNames(runtime.agentDirectory)).toEqual([]);
 });
 
 it('refuses a foreground launch whose signal aborts during the manager label read', async () => {

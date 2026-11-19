@@ -12,5 +12,5 @@ when they add evidence. Separate what you observed from what you assume. Stop wh
 answered; do not fix what you find or widen the scope.
 
 Put the answer first, in Decisions, with file:line references in Evidence. Keep the summary under
-3,000 characters and save longer details to the file the task names or a `mktemp` file outside the
-repository. An answer of "no" or "broken" is still success.
+3,000 characters and save longer details to the file the task names or a file in
+`$TAU_ASSIGNMENT_DIRECTORY`. An answer of "no" or "broken" is still success.

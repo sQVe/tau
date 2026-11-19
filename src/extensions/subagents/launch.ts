@@ -27,6 +27,11 @@ import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
 import { placementLabels } from './workerPlacement.js';
+import {
+  createScratchDirectory,
+  errorAfterScratchCleanup,
+  scratchDirectoryFor,
+} from './workerScratch.js';
 
 export interface LaunchRuntime {
   pi: ExtensionAPI;
@@ -273,7 +278,12 @@ const startAssignmentWorker = async (
     skillTools,
   );
 
-  const environment = workerEnvironment(runtime.processEnvironment, runtime.agentDirectory);
+  const environment = workerEnvironment(
+    runtime.processEnvironment,
+    runtime.agentDirectory,
+    scratchDirectoryFor(runtime.agentDirectory, assignment.assignmentId),
+    assignmentDirectory(assignment.assignmentId),
+  );
 
   const labels: Record<string, string> = {
     'tau.assignment': join(assignmentDirectory(assignment.assignmentId), 'assignment.json'),
@@ -317,6 +327,8 @@ export const startReservedWorker = async (
   try {
     facts.signal?.throwIfAborted();
 
+    await createScratchDirectory(runtime.agentDirectory, assignmentId);
+
     const manager = await readCurrentTerminal(runtime.hc);
     const placement = placementLabels(manager?.labels ?? {});
 
@@ -359,13 +371,14 @@ export const startReservedWorker = async (
 
     runtime.admission.remove(assignmentId);
 
+    const failure = await errorAfterScratchCleanup(runtime.agentDirectory, assignmentId, error);
     const onDefiniteFailure = hooks.onDefiniteFailure;
 
     if (onDefiniteFailure === undefined) {
-      throw error;
+      throw failure;
     }
 
-    throw await onDefiniteFailure(error);
+    throw await onDefiniteFailure(failure);
   }
 };
 

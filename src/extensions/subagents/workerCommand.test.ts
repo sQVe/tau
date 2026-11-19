@@ -16,6 +16,11 @@ afterEach(() => {
 
 const agentDirectory = '/agent';
 const sessionFile = '/records/session.jsonl';
+const scratchDirectory = '/agent/tmp/tau-worker-scratch/one';
+const assignmentFolder = '/agent/tau/checkout/assignments/one';
+
+const environmentFor = (input: NodeJS.ProcessEnv) =>
+  workerEnvironment(input, agentDirectory, scratchDirectory, assignmentFolder);
 
 const pi = (directory: string, mode: number) => {
   mkdirSync(directory, { recursive: true });
@@ -87,7 +92,23 @@ it.each([
     expected: agentDirectory,
   },
 ])('$name', ({ input, variable, expected }) => {
-  expect(workerEnvironment(input, agentDirectory)[variable]).toBe(expected);
+  expect(environmentFor(input)[variable]).toBe(expected);
+});
+
+it('gives the worker its scratch folder as TMPDIR, TMP, and TEMP', () => {
+  const environment = environmentFor({ TMPDIR: '/tmp', TMP: '/tmp', TEMP: '/tmp' });
+
+  expect([environment.TMPDIR, environment.TMP, environment.TEMP]).toEqual([
+    scratchDirectory,
+    scratchDirectory,
+    scratchDirectory,
+  ]);
+});
+
+it('gives the worker its assignment folder', () => {
+  const environment = environmentFor({ TAU_ASSIGNMENT_DIRECTORY: '/manager/assignment' });
+
+  expect(environment.TAU_ASSIGNMENT_DIRECTORY).toBe(assignmentFolder);
 });
 
 it('passes no lead-only tool to a worker that loads the slice skill', () => {

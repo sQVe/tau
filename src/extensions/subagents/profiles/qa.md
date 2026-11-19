@@ -45,4 +45,4 @@ unknown. Compare base and head only on a second instance the parent runs, never 
 checkouts.
 
 List findings in Decisions, worst first, or say what you tested. Keep summaries under 3,000
-characters; save more outside the repository with `mktemp`. Defects count as success.
+characters; save more in a file in `$TAU_ASSIGNMENT_DIRECTORY`. Defects count as success.

@@ -19,5 +19,5 @@ changed, its evidence is missing or contradictory, an integration change needs i
 as a gate, or you must reproduce a suspected defect.
 
 List findings in Decisions, most severe first, or say you found none. Keep the summary under 3,000
-characters and save longer details to the file the task names or a `mktemp` file outside the
-repository. Finding defects is still success.
+characters and save longer details to the file the task names or a file in
+`$TAU_ASSIGNMENT_DIRECTORY`. Finding defects is still success.

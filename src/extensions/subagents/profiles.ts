@@ -276,6 +276,11 @@ export const workerInstructions = (loadout: Loadout): string =>
       'Preserve unrelated edits.',
       "Never type into another agent's terminal.",
     ].join(' '),
+    [
+      'Make scratch files and copies with `mktemp` under `$TMPDIR`, never at a fixed path such as `/tmp` or `/dev/shm`.',
+      'Tau removes `$TMPDIR` when you end.',
+      'Save files the parent must read in `$TAU_ASSIGNMENT_DIRECTORY`.',
+    ].join(' '),
   ].join('\n\n');
 
 const acceptanceList = (assignment: Assignment): string[] => {

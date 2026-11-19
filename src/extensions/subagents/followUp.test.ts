@@ -37,7 +37,7 @@ const terminalRun = (fake: HcFake) => {
     const request = call.find((message) => message.method === 'terminal.run');
 
     if (request !== undefined) {
-      return request.params as { labels: Record<string, string> };
+      return request.params as { labels: Record<string, string>; env: Record<string, string> };
     }
   }
 
@@ -495,6 +495,12 @@ it('starts a new child that resumes the source session', async () => {
   expect(assignment.previousAssignmentId).toBe(source.assignmentId);
   expect(assignment.extensionPackages).toEqual([{ source: 'pkg', path: extensionPath }]);
   expect(assignment.deadline).toBe(31_000);
+
+  expect(request?.env.TMPDIR).toBe(
+    join(directory, 'tmp', 'tau-worker-scratch', assignment.assignmentId),
+  );
+
+  expect(request?.env.TAU_ASSIGNMENT_DIRECTORY).toBe(assignmentDirectory(assignment.assignmentId));
 });
 
 it('refuses a cancelled follow-up before it writes or starts anything', async () => {
