@@ -1,5 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { cp, readFile, writeFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
@@ -33,5 +33,30 @@ it('asks Git for the object format, bare state, and check state at most once in 
 
   expect(countCalls(calls, 'rev-parse --show-object-format')).toBeLessThanOrEqual(1);
   expect(countCalls(calls, 'rev-parse --is-bare-repository')).toBeLessThanOrEqual(1);
+  expect(countCalls(calls, 'version')).toBe(1);
+});
+
+it('probes the object format and bare state on a cold root', async () => {
+  const { root, directory, runIn } = await createEvidenceRepository(onTestFinished);
+  const copy = join(temporaryDirectory(onTestFinished, 'tau-evidence-cold-'), 'repository');
+
+  await cp(root, copy, { recursive: true });
+
+  const copiedDirectory = join(copy, relative(root, directory));
+  const logPath = join(temporaryDirectory(onTestFinished, 'tau-evidence-git-calls-'), 'calls.log');
+
+  await writeFile(logPath, '');
+
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [logCommandCalls(logPath)],
+  });
+
+  await runIn(copy, { remote: 'origin', review: copiedDirectory });
+
+  const calls = await readCalls(logPath);
+
+  expect(countCalls(calls, 'rev-parse --show-object-format')).toBe(1);
+  expect(countCalls(calls, 'rev-parse --is-bare-repository')).toBe(1);
   expect(countCalls(calls, 'version')).toBe(1);
 });
