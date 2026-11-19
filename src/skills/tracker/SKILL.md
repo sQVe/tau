@@ -66,11 +66,14 @@ This list is the one approval rule; other skills link here.
    - Labels: use only fitting step 3 label IDs. Never create labels. Containers and slices get none.
    - For a bug or human ticket, call `ticket` `prepare` with the lower-case identifier when it
      exists, else a title slug. Save `title.md` and `ticket.md` in the returned `directory`; never
-     write `draft.json`. Keep the type, route, parent, and labels in the preview.
-   - Before review, call `ticket` `read` with `ticket` for an existing ID. Resolve `problems`.
+     write `draft.json`.
+   - Before the write, call `ticket` `read` with `ticket` for an existing ID. Resolve `problems`.
      Review `current` and `writes` for changed fields and dropped Linear edits. Repeat on changes.
 
-5. Approval rule for each draft, in this order.
+5. Write a new ticket, or a title or body edit on the user's own ticket, without a dialog, and
+   report it in step 8. Run this review loop only when the user asked to review the draft, with the
+   options Write as drafted (Accept) or Request changes, or when a calling skill's own dialog runs
+   it; that dialog's approve options count as Accept when it has them.
    1. Before the question, call `draft_review` `open`, title before body. On `opened`, tell the user
       to submit comments and save edits before answering; `collect` loses unsubmitted text. On
       `manual`, give its `command` and tell the user to quit tuicr before answering.
@@ -81,15 +84,12 @@ This list is the one approval rule; other skills link here.
    4. Request changes: act on the comments, edits, and typed answer. With none, ask what to change,
       then revise, `open`, and ask again.
    5. Closed dialog: write nothing. Report each comment and edit with its status, and stop.
-   - Stop: before a new ticket or a title or body edit, except on an agent ticket, ask with
-     `ask_user_question`: Write as drafted (Accept), or Request changes. Comments, relations, and
-     status changes get no stop. An approval preview, or a calling skill's own dialog, uses the same
-     rule, with its approve options as Accept. A review is never approval.
+   - A review is never approval.
    - Preview: for approval-needing writes under [Hard rules](#hard-rules), unless the calling skill
      shows them. Show each ticket's type, title, team, project, labels, and parent, and each
      relation or status change.
 
-6. Write in the previewed order. Stop on a partial failure and report what was written.
+6. Write in the drafted order. Stop on a partial failure and report what was written.
    - Containers and slices: use the [slice skill](../slice/SKILL.md), which uses the `slice` tool.
    - Bug or human ticket: `read` again, then `apply` with its `stateToken` and the same arguments.
      Pass `ticket` to both for an existing ticket; `parent` and label IDs only for a create. Report
@@ -106,4 +106,6 @@ This list is the one approval rule; other skills link here.
 7. Link the ticket from the PR. Write `Fixes <id>` only for the ticket the PR completes, such as the
    slice, and `Related to <id>` for the rest. Never list an agent ticket or a container as fixed.
 
-8. Report each ticket with its identifier and URL, and each relation and status change made.
+8. Report each ticket with its identifier and URL, plus the type, and the team, project, parent, and
+   labels passed to the write. Label these as the values the write used, not values read back from
+   Linear. Report each relation and status change made.
