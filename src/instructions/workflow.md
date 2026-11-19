@@ -62,13 +62,18 @@ when you stop. Follow explicit user instructions and repository conventions over
   handover files and Linear, not the conversation.
 - As manager, when a space blocks on a question, restart it with the answer in its start brief. If
   you do not know the answer, ask the user with `ask_user_question` first. Never guess the answer.
+- As manager, end a blocked handover session with `hc kill <terminal>` before you restart it, and
+  check with `hc get <terminal>` that its program ended. A live blocked session can continue in the
+  same checkout once someone answers its dialog.
 - As manager, restart an ordinary handover session in a new tab.
 - As lead, when the architect waits on an `ask_user_question` dialog, tell the user that the
   architect's pane to the left of the lead holds the question. Never answer the dialog yourself and
   never type into the architect's pane.
-- As lead, when the user gives you the answer instead, send it to the architect with `handover`
-  `send`, then ask the user to press Escape on the dialog. The architect reads a sent message only
-  after its dialog closes.
+- As lead, when the user gives you the answer instead, ask the user to close the dialog with one
+  Escape press first.
+- As lead, send that answer with `handover` `send` only after the architect's run ends, as
+  `hc wait <terminal>` shows. A message sent while the dialog is open can arrive without starting
+  the architect's turn.
 - As lead, never stop the architect to deliver an answer.
 - As lead, reopen the architect with `architect` `open` and the answer in its `request` only when no
   architect runs. `open` on a running architect returns its terminal and delivers nothing.
