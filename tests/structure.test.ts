@@ -15,7 +15,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 // Local state, such as review captures under .pi/, can hold test files that no project runs.
 const ignoredDirectories = new Set(['node_modules', '.git', '.tau', '.pi', 'dist', 'coverage']);
 
-// tests/lint.test.ts writes these probe folders under src/ while other test files run.
+// tests/lint.test.ts names its temporary probe folders with this prefix.
 const isLintProbe = (path: string) =>
   path.split('/').some((segment) => segment.startsWith('tau-lint-'));
 

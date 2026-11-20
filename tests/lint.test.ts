@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, it } from 'vitest';
 
+import { readTauArtifactInputs } from '../src/tau/tauArtifact.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -98,34 +99,49 @@ it('keeps size thresholds advisory without weakening other lint checks', async (
   expect(result.stdout).not.toContain('max-params');
 }, 30_000);
 
-it('keeps test helpers out of production code', async ({ onTestFinished }) => {
-  // The directory must sit inside the repository, under `src/`. Its own manifest keeps it out of
-  // the artifact key, so a running full check keeps its bundle.
-  const directory = await mkdtemp(join(root, 'src', 'tau-lint-imports-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+// The lint config matches `src/**` below the working directory, so the fixture is its own package
+// with the repository config, plugin, helpers, and dependencies linked in. It sits outside the
+// checkout, so key calculation on the real tree never sees its files.
+const createImportFixture = async (
+  onTestFinished: (cleanup: () => void) => void,
+): Promise<string> => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-lint-imports-');
+
+  await writeFile(join(directory, 'package.json'), '{"name":"tau-lint-imports"}\n');
+
+  for (const name of ['vite.config.ts', 'node_modules', 'tests', 'lint']) {
+    await symlink(join(root, name), join(directory, name));
+  }
 
   const packageDirectory = join(directory, 'src');
   const helperPath = join(root, 'tests', 'gitRepository.js');
   const helper = `import { initializeRepository } from '${relative(packageDirectory, helperPath)}';\n`;
+  const probe = `${helper}\nexport const value = initializeRepository;\n`;
 
   await mkdir(packageDirectory, { recursive: true });
-  await writeFile(join(directory, 'package.json'), '{}\n');
+  await writeFile(join(packageDirectory, 'probe.ts'), probe);
+  await writeFile(join(packageDirectory, 'probe.test.ts'), probe);
 
-  await writeFile(
-    join(packageDirectory, 'probe.ts'),
-    `${helper}\nexport const value = initializeRepository;\n`,
+  return directory;
+};
+
+it('keeps test helpers out of production code', async ({ onTestFinished }) => {
+  const directory = await createImportFixture(onTestFinished);
+
+  // A full check may key the real checkout while this fixture exists.
+  await expect(readTauArtifactInputs(root)).resolves.toHaveProperty('key');
+
+  // The repository binary runs the linked config without pnpm, which would try to install into
+  // the linked node_modules.
+  const result = spawnSync(
+    join(root, 'node_modules', '.bin', 'vp'),
+    ['lint', '--format', 'agent', 'src'],
+    {
+      cwd: directory,
+      encoding: 'utf8',
+      timeout: 20_000,
+    },
   );
-
-  await writeFile(
-    join(packageDirectory, 'probe.test.ts'),
-    `${helper}\nexport const value = initializeRepository;\n`,
-  );
-
-  const result = spawnSync('pnpm', ['lint', '--format', 'agent', packageDirectory], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
 
   const diagnostics = result.stdout
     .split('\n')
@@ -134,7 +150,7 @@ it('keeps test helpers out of production code', async ({ onTestFinished }) => {
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(diagnostics).toHaveLength(1);
-  expect(diagnostics[0]).toContain('/probe.ts:');
+  expect(diagnostics[0]).toContain('src/probe.ts:');
 }, 30_000);
 
 const lintModuleBoundaries = (files: string[]) => {
@@ -209,21 +225,16 @@ it('keeps extensions out of shared modules, including the package entry', async 
   expect(linesFor(entry)[0]).toContain('"tau" must not import extension "commit"');
 }, 30_000);
 
-it('keeps private controller files out of the rest of the subagents extension', async ({
-  onTestFinished,
-}) => {
-  // The directory must sit inside the repository, under `src/`. Its own manifest keeps it out of
-  // the artifact key, so a running full check keeps its bundle.
-  const directory = await mkdtemp(
-    join(root, 'src', 'extensions', 'subagents', 'tau-lint-private-'),
-  );
-
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
+// The fixture is its own package outside the checkout, so the rule reads its `src/` layout and key
+// calculation on the real tree never sees its files.
+const createPrivateFixture = async (
+  onTestFinished: (cleanup: () => void) => void,
+): Promise<string> => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-lint-private-');
   const probe = join(directory, 'src', 'extensions', 'subagents', 'probe.ts');
 
+  await writeFile(join(directory, 'package.json'), '{"name":"tau-lint-private"}\n');
   await mkdir(dirname(probe), { recursive: true });
-  await writeFile(join(directory, 'package.json'), '{}\n');
 
   await writeFile(
     probe,
@@ -237,6 +248,17 @@ it('keeps private controller files out of the rest of the subagents extension', 
       '',
     ].join('\n'),
   );
+
+  return probe;
+};
+
+it('keeps private controller files out of the rest of the subagents extension', async ({
+  onTestFinished,
+}) => {
+  const probe = await createPrivateFixture(onTestFinished);
+
+  // A full check may key the real checkout while this fixture exists.
+  await expect(readTauArtifactInputs(root)).resolves.toHaveProperty('key');
 
   const { result, diagnostics } = lintModuleBoundaries([probe]);
 
