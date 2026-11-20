@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "kind": "shadow",
+  "cohort": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "sessionId": "session-1",
+  "question": {
+    "question": "Which route?",
+    "problem": "The route is open.",
+    "impact": "The wrong route wastes a day.",
+    "options": [
+      { "label": "Fast", "description": "Ship now.", "recommended": true },
+      { "label": "Careful", "description": "Check first.", "recommended": false }
+    ]
+  },
+  "confidence": 0.8,
+  "judges": {
+    "classifier": { "verdict": { "kind": "answered", "confidence": 0.9 }, "milliseconds": 12 },
+    "classifierExamples": { "verdict": { "kind": "timeout" }, "milliseconds": 30000 },
+    "panel": { "verdict": { "kind": "answered", "confidence": 0.66 }, "milliseconds": 100 },
+    "panelExamples": { "verdict": { "kind": "error" }, "milliseconds": 5 },
+    "agent": { "verdict": { "kind": "unavailable" }, "milliseconds": 0 }
+  },
+  "answer": { "kind": "answered", "selected": ["Fast"], "typed": false }
+}

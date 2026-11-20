@@ -483,6 +483,11 @@ const versionedRecords = [
     fixtures: 'src/improvement/fixtures',
     names: ['event-v1-merge.json', 'event-v2-pass.json', 'event-v2-class.json'],
   },
+  {
+    writer: 'src/questionGate/record.ts',
+    fixtures: 'src/questionGate/fixtures/record',
+    names: ['current.json', 'newer.json', 'malformed.json'],
+  },
 ];
 
 const recordFormatProblems = ({ writer, fixtures, names }: (typeof versionedRecords)[number]) => {

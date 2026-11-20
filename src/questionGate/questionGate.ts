@@ -1,29 +1,12 @@
 import type { JsonObject } from '@earendil-works/pi-ai';
 
-export interface JudgeOption {
-  label: string;
-  description: string;
-  recommended: boolean;
-}
-
-export interface JudgeQuestion {
-  question: string;
-  problem: string;
-  impact: string;
-  options: JudgeOption[];
-}
-
-export type PastOutcome =
-  | { kind: 'recommended' }
-  | { kind: 'otherOption'; label: string }
-  | { kind: 'typed'; text: string };
-
-export interface PastAnswer {
-  // Milliseconds since the Unix epoch.
-  time: number;
-  question: JudgeQuestion;
-  outcome: PastOutcome;
-}
+export type {
+  JudgeOption,
+  JudgeQuestion,
+  PastAnswer,
+  PastOutcome,
+  ShadowVariant,
+} from '../judgeSchema.ts';
 
 export type JudgeVerdict =
   | { kind: 'answered'; confidence: number }
@@ -57,3 +40,13 @@ export type PanelMember = (prompt: PanelPrompt, signal: AbortSignal) => Promise<
 
 export { judgeWithClassifier } from './classifierJudge.ts';
 export { judgeWithPanel, panelTimeoutMilliseconds } from './panelJudge.ts';
+export { readShadowRecords, writeShadowRecord } from './record.ts';
+
+export type {
+  ShadowRecord,
+  ShadowRecordGap,
+  ShadowRecordRead,
+  ShadowRecordReadOptions,
+  ShadowRecordReader,
+  ShadowRecordWriter,
+} from './record.ts';
