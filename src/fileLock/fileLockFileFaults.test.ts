@@ -10,7 +10,7 @@ import { cancelled, fixture, heldLocks, ownerJson } from './fixtures/fileLockHar
 const fileFaults = vi.hoisted(() => ({
   storageFull: false,
   truncateFails: false,
-  removeFailsOnceFor: undefined as string | undefined,
+  removeFault: undefined as { suffix: string; error: Error } | undefined,
   afterOwnerRead: undefined as (() => Promise<void>) | undefined,
 }));
 
@@ -34,12 +34,12 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   };
 
   const faultyRemove: typeof original.rm = async (path, options) => {
-    const suffix = fileFaults.removeFailsOnceFor;
+    const fault = fileFaults.removeFault;
 
-    if (suffix !== undefined && String(path).endsWith(suffix)) {
-      fileFaults.removeFailsOnceFor = undefined;
+    if (fault !== undefined && String(path).endsWith(fault.suffix)) {
+      fileFaults.removeFault = undefined;
 
-      throw Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
+      throw fault.error;
     }
 
     await original.rm(path, options);
@@ -68,7 +68,15 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 const clearFileFaults = () => {
   fileFaults.storageFull = false;
   fileFaults.truncateFails = false;
-  fileFaults.removeFailsOnceFor = undefined;
+  fileFaults.removeFault = undefined;
+};
+
+const failRemoveOnce = (suffix: string): Error => {
+  const error = Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
+
+  fileFaults.removeFault = { suffix, error };
+
+  return error;
 };
 
 it('releases the lock when storage refuses new files, so the next caller acquires it without waiting', async () => {
@@ -129,12 +137,12 @@ it('releases a new claim when staging file removal fails', async () => {
     onWaiting: () => undefined,
   };
 
-  fileFaults.removeFailsOnceFor = '.staging';
+  const acquisitionError = failRemoveOnce('.staging');
 
   const run = vi.fn<() => Promise<string>>(async () => 'ran');
   const outcome = withFileLock(options, run);
 
-  await expect(outcome).rejects.toThrow('EIO');
+  await expect(outcome).rejects.toBe(acquisitionError);
   expect(run).not.toHaveBeenCalled();
 
   const controller = new AbortController();
@@ -176,12 +184,12 @@ it('releases a new claim when older generation cleanup fails', async () => {
     onWaiting: () => undefined,
   };
 
-  fileFaults.removeFailsOnceFor = olderPath;
+  const acquisitionError = failRemoveOnce(olderPath);
 
   const run = vi.fn<() => Promise<string>>(async () => 'ran');
   const outcome = withFileLock(options, run);
 
-  await expect(outcome).rejects.toThrow('EIO');
+  await expect(outcome).rejects.toBe(acquisitionError);
   expect(run).not.toHaveBeenCalled();
 
   const controller = new AbortController();
@@ -210,8 +218,7 @@ it('reports the claim error and the release error when the release fails too', a
 
   onTestFinished(clearFileFaults);
 
-  fileFaults.removeFailsOnceFor = '.staging';
-
+  const acquisitionError = failRemoveOnce('.staging');
   const run = vi.fn<() => Promise<string>>(async () => 'ran');
 
   const outcome = withFileLock(
@@ -231,10 +238,14 @@ it('reports the claim error and the release error when the release fails too', a
     run,
   );
 
-  await expect(outcome).rejects.toThrow(
+  const thrown: unknown = await outcome.catch((error: unknown) => error);
+  const failure = thrown as Error;
+
+  expect(failure.message).toBe(
     'The claim failed: EIO: i/o error; releasing it failed: The release read failed.',
   );
 
+  expect(failure.cause).toBe(acquisitionError);
   expect(run).not.toHaveBeenCalled();
 });
 
