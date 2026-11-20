@@ -14,78 +14,93 @@ description:
 Use this skill when the user asks you to act on review findings or comments, or after a review of
 the user's own work. Read `ownership` from the review capture or PR evidence that started this
 skill. Treat the work as the user's own only when `ownership.status` is `own`, following the
-[code-review ownership rule](../code-review/SKILL.md#hard-rules). Without that evidence, do not act
-unless the user asked you to act on the findings. Do not start this skill on your own for findings
-on someone else's work, or after a request for a read-only review.
+[code-review ownership rule](../code-review/SKILL.md#hard-rules).
 
 ## Goal
 
-Treat the findings as claims to verify, not a task list. Fix the supported findings that are worth
-changing and within the requested scope. Explain the rest.
+Treat findings as claims to verify, not a task list. Choose which supported findings to fix or file.
+Explain what stays open.
 
 ## Hard rules
 
-- When the workflow that started this skill commits, such as `pr`, commit the fixes on its feature
-  branch with the [commit skill](../commit/SKILL.md). Otherwise leave them uncommitted. Approval to
-  fix never authorizes pushes or posted replies to people. Linear writes follow
-  [Hard rules](../tracker/SKILL.md#hard-rules).
-- Ask before expanding scope. Mark a finding Blocked when its fix needs a decision about scope,
-  intended product behavior, or policy, or when you cannot settle a disputed claim against the code.
-  Fixing a defect so the code does what the task intends needs no decision. Make the safe fixes
-  first, then ask about the Blocked findings.
-- The lead sends each supported fix to a `worker` and checks its report. The lead makes no edit
-  itself.
+- Ask before acting on work that is not the user's own, unless the user already approved that
+  action. Do not act after a read-only or no-changes request unless the user approves changing that
+  scope. Ask when a rule or skill requires approval, such as for a compatibility choice.
+- Approval to fix never authorizes a push or a reply to a person. It does not authorize filing on
+  work that is not the user's own.
+- Ask before expanding scope or deciding intended product behavior or policy. Fixing a defect so the
+  code does what the task intends needs no decision.
+- When the calling workflow commits, such as `pr`, commit the fixes on its feature branch with the
+  [commit skill](../commit/SKILL.md). Otherwise leave them uncommitted.
 - Making the reviewer happy is not a reason to change code.
 
 ## Procedure
 
-1. Verify each finding against the code before you act on it.
-   - Check the project rules and callers that apply.
-   - For a change-specific finding, inspect the actual diff. Separate problems the change introduced
-     from existing ones.
+1. Verify each finding against the current code before you act on it.
+   - Check the project rules and callers that apply. Inspect the diff for a change-specific finding.
+     Separate problems the change introduced from existing ones.
    - Treat a behavior finding as supported only when you can name the input, state, or caller that
      reaches it.
-2. Give each finding one outcome:
-   - Fixed: supported, worth changing, and within scope.
-   - Not worth changing: valid, but the fix costs more than the concern.
-   - Incorrect: the code does not support the finding.
-   - Blocked: you cannot settle the finding against the code. Or it is valid, but you cannot make
-     the change without access, a decision, or information you do not have.
-   - On the user's own work, a supported finding that is worth changing is Fixed without asking when
-     behavior stays the same, every caller of the changed code is in the repository, and checks
-     cover the change. Moving a helper between modules and updating its callers in the repository
-     needs no question.
-   - Hold a supported, worthwhile finding for the question in step 5 when its fix needs a design
-     decision of its own, or when its behavior is uncertain. Hold it too when it edits files that
-     another slice in the stack owns, or when code outside the repository uses the contract it
-     changes, such as a published API or CLI, a config file users own, or saved data.
-   - Hold the findings for step 5 when their fixes together would grow the change a lot. Take about
-     100 added lines or about 3 more files as guidance, not a cutoff. File count alone does not
-     decide.
-   - The `local` and `restructure` labels of code-quality are the finder's estimate. Decide by the
-     rules above, not by the label.
-3. Send the findings whose outcome is Fixed to a `worker`.
-   - Weigh each fix against the branches, guards, and abstractions it adds.
-   - Put defensive checks where untrusted input enters, not inside trusted code.
-   - When a simpler change covers the concern, make that one instead.
-   - For a surviving mutant, follow the mutation step of the [tdd skill](../tdd/SKILL.md).
-   - The worker runs the mutation and check steps and reports the results. The lead checks its
-     report and makes no edit itself.
-4. Have the worker run the checks that cover the changes.
-5. Report every finding under one heading per outcome, in this order: Fixed, Not worth changing,
-   Incorrect, and Blocked. Write "None" under an empty heading.
-   - Use one bullet per finding. Start it with a descriptive title or a short summary of the
-     finding. Never use a finding number or ID in its place.
-   - Make each bullet understandable without the original findings.
-   - Include the file and line, the evidence, and what you changed or why you left it.
-   - Under Blocked, also state what you need to continue.
-   - After the safe fixes, ask about the held findings in one `ask_user_question` call, with one
-     question per finding: fix it in this branch, or file a follow-up ticket. Give the size and risk
-     of each fix. Recommend fixing it in this branch, except when code outside the repository uses
-     the contract it changes; then recommend the follow-up ticket. When the held findings exceed the
-     tool's question limit, ask the rest in as many further calls as the limit requires.
-   - On this branch, fix it, run step 4 again, and report it under Fixed. On follow-up, file the
-     ticket with acceptance criteria with the [tracker skill](../tracker/SKILL.md). Keep the finding
-     under Blocked, with the ticket identifier in place of what you need to continue. A follow-up is
-     not Fixed. It is a scope decision only when it waives no promised behavior or mandatory check.
-6. End with a Checks section. It holds no findings. List the commands you ran and their results.
+   - When the first review and fix review both report the same problem, combine the claims and keep
+     both report references. A path outside the fix review or an omission from its report does not
+     settle a first-review finding.
+2. Select an action for each verified finding.
+   - Mark a claim the code disproves Incorrect. Mark a valid finding whose fix costs more than the
+     concern Not worth changing. Mark an unresolved claim Blocked. Do not act on it.
+   - After the lead's one fix review, use the [post-fix selection rule](#after-the-leads-fix-review)
+     for supported, worthwhile findings.
+   - In ordinary triage, hold a supported, worthwhile finding when its fix needs a design choice,
+     its intended behavior is uncertain, it touches files another slice owns, or it changes a
+     contract used outside the repository. Hold the findings too when their fixes together would
+     grow the change a lot. About 100 added lines or three more files are guidance, not cutoffs.
+   - For other supported, worthwhile findings in ordinary triage, select an in-branch fix if it
+     stays in scope. A helper move that keeps behavior unchanged and updates every caller in the
+     repository needs no question.
+   - Do not use the code-quality finder's `local` or `restructure` label to decide the action.
+3. Carry out the selected actions. Apply the approval rules above before each action. If an approval
+   is declined or an action cannot proceed, keep the finding Blocked and say why.
+   - Send the in-branch fixes to a `worker`. After the lead's one fix review, send them in one batch
+     and do not start another routine fix review. The lead checks the report and makes no edits
+     itself.
+   - Prefer a simpler fix when it covers the concern. Put defensive checks where untrusted input
+     enters. For a surviving mutant, follow the mutation step of the [tdd skill](../tdd/SKILL.md).
+   - Have the worker run the checks that cover the changes. Mark a fix Fixed only after its checks
+     pass.
+   - File selected follow-ups with acceptance criteria through the
+     [tracker skill](../tracker/SKILL.md). Keep each written ticket's identifier and URL. On partial
+     failure, follow the tracker skill's stop and retry rules. Do not treat an unfiled follow-up as
+     accepted.
+   - After the safe fixes, ask about the findings held in ordinary triage. Use one
+     `ask_user_question` question per finding. Offer an in-branch fix or a follow-up. Give the size
+     and risk. Recommend the in-branch fix unless it changes a contract used outside the repository.
+     Split the questions only when the tool limit requires it. Carry out approved actions with the
+     same worker, check, and filing rules above.
+4. Report every finding under Fixed, Not worth changing, Incorrect, or Blocked, in that order. Write
+   "None" under an empty heading. Give one bullet per finding with a short title, file and line,
+   evidence, and what you changed or why you left it.
+   - Under Blocked, state what would resolve the finding. For a filed follow-up, link its ticket and
+     say why the finding can wait. Mark it as an accepted follow-up only when waiting waives no
+     promised behavior or mandatory check. A follow-up is not Fixed.
+   - If a finding must be fixed before the PR is ready and it could not be fixed or checked, mark it
+     as a PR required action and name its completion condition.
+   - After the lead's one fix review, save the outcomes in `triage.md` beside the fix review's
+     `report.md`. For an empty fix capture, save it beside the first review's report instead. Keep
+     each finding's original report reference, priority if assigned, evidence, and outcome. Record
+     any accepted follow-up with its link and reason for waiting. Record each required action with
+     its completion condition. Do not change the capture or repost the review report.
+   - End with a Checks section. List the commands you ran and their results. Include no findings in
+     that section.
+
+### After the lead's fix review
+
+Assign a priority only to supported, worthwhile findings. Use the impact of shipping this branch,
+not the size of the fix or the reviewer's confidence. Select the action by priority:
+
+- P1: shipping would leave promised behavior unmet, a mandatory check unsatisfied, or a material
+  risk that must be fixed before the PR is ready. Select an in-branch fix.
+- P2: the finding has a concrete cost, but can wait without waiving promised behavior or a mandatory
+  check. Select one follow-up ticket for the finding.
+- P3: the finding has a smaller, local cost and meets the same condition for waiting. Select one
+  follow-up ticket for the finding.
+
+Do not ask the user to choose the action. Ask only for an approval required by the hard rules.

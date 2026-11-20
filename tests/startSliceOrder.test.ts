@@ -31,6 +31,7 @@ it('runs prune-comments, then code-quality, code-review, finish-slice, and pr af
     'prune-comments',
     'code-quality',
     'code-review',
+    'commit',
     'finish-slice',
     'pr',
   ]);

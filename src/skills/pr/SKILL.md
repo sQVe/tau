@@ -36,10 +36,11 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
   changes. Ask when ownership is unclear or unrelated changes could affect review or checks.
 - Treat the PR or branch as the user's own only when `pr` `evidence` returns `ownership.status` as
   `own`.
-- On the user's own PR or branch, fix supported, in-scope review findings and the in-scope causes of
-  failing checks without asking, unless the user asked for a read-only review or no changes. On
-  anyone else's, fix only with the user's approval. Never weaken a check or add a retry to hide a
-  failure.
+- Follow recorded triage for review findings. Use [triage-findings](../triage-findings/SKILL.md) for
+  other findings the PR must act on. On the user's own PR or branch, make the selected in-branch
+  fixes and fix in-scope causes of failing checks without asking, unless the user asked for a
+  read-only review or no changes. On anyone else's work, fix only with the user's approval. Never
+  weaken a check or add a retry to hide a failure.
 - On updates, keep title and body text you did not write this session. Change only wrong or missing
   facts, and preview each change.
 - After a partial failure, stop and report what completed. Before retrying, read the remote branch
@@ -121,6 +122,10 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - Read each returned `chain` entry's `report.md` and worker reports (`reviewer.md`, or
      `finder.md` and `checker.md`). Check completion, verdicts, findings, dispositions, fix scope,
      and relevant caller or rule changes outside captures. Unstated completion is unknown.
+   - Read `triage.md` beside each known review report when present. Include reports read manually
+     and first-review reports with notes from an empty fix capture. Carry checked fixes, open
+     findings, required actions, and follow-up links and reasons into the session report. Keep the
+     links even when a later review supplies coverage.
    - An unfinished reviewer, unreadable required report, fix beyond its findings, or relevant
      outside change leaves a named required action, even with `match`. State the missing evidence or
      scope and its completion condition for step 6; shallow reading alone stays a note.
@@ -208,10 +213,15 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    reachable or worsened, not another route to existing behavior. Report unrelated issues as plain
    limitations when they affect use, otherwise in the session report.
 
-   Accepted follow-ups are not required actions only if they waive no promised behavior or mandatory
-   check. Findings close through a checked fix, rereview, or user dismissal as not a defect. Record
-   dismissal reasons. Deferred, Blocked, and unfixed findings stay open unless accepted as such a
-   follow-up. Coverage matches do not close findings or replace this judgment.
+   Recheck recorded triage against the publication tree. An accepted follow-up is not a required
+   action when its reason for waiting still holds and it waives no promised behavior or mandatory
+   check. Do not ask again for acceptance in that case. Keep each recorded required action open
+   until current evidence meets its completion condition. Judge other open findings against the
+   required-action bases above. A ticket link alone does not settle a finding.
+
+   Findings close through a checked fix, rereview, or user dismissal as not a defect. Record
+   dismissal reasons. Deferred, Blocked, and unfixed findings stay open unless accepted as
+   follow-ups. Coverage matches do not close findings or replace this judgment.
 
    Keep per-link report paths, verdicts, fix-scope assessments, shallow-reading notes, and accepted
    checked fixes in the session report. When another independent review of the change is known, add
@@ -246,8 +256,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      Never list files, functions, hooks, or types.
    - Code names: use one only where a reviewer must search for it, such as a flag, an environment
      variable, or a route. Explain it at first use. Never put one in the lead.
-   - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected. Link
-     any follow-up ticket in Verification. Never promise a delivery time.
+   - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected.
+     Never promise a delivery time.
    - Decisions: list consequential choices with rejected options and reasons. Put code-local reasons
      in allowed code comments or commit messages. Leave draft upstream issues and attachments out.
    - Decision evidence: put the conclusion, supporting evidence, and approved gap exceptions with
@@ -257,14 +267,19 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      after the summary. Give each check or scenario one line naming behavior and outcome, and the
      review result one line. Name test machinery or setup only to judge coverage or repeat a check.
      Add a `[ ]` line only for each step 6 required action, with its completion condition. Drop test
-     counts. Put decision-relevant limitations as plain lines and accepted follow-ups as links in
-     their template slots. Put deferred audit items in its deferred verification section.
-     Bookkeeping, record matching, and unrelated issues belong in the session report.
-   - Issues: internal ticket references follow the repository's rule. Link Linear tickets as the
-     [tracker skill](../tracker/SKILL.md) says where the repository allows them, and leave them out
-     where it forbids them. For other issues, use `Fixes <issue>` only for issues this PR completes;
-     use `Related to <issue>` for others. A slice with an open acceptance item gets `Related to`,
-     since `Fixes` closes it on merge.
+     counts. Put decision-relevant limitations as plain lines in their template slots. Put deferred
+     audit items in its deferred verification section. Bookkeeping, record matching, and unrelated
+     issues belong in the session report.
+   - Follow-ups: use the template's follow-up slot, or put the list under Verification after the
+     check lines. List each filed post-fix ticket, other accepted follow-up, and ticket for
+     unfinished work once. For each Linear follow-up, write
+     `- Related to <ticket ID>: [<what it will address>](<ticket URL>).`
+   - Issues: repository rules on internal ticket references take precedence over the follow-up list.
+     When the repository forbids references, keep those tickets only in the session report. When it
+     forbids links but allows IDs, use the ID and description without a link. Follow the
+     [tracker skill](../tracker/SKILL.md) for Linear ticket references. For other issues, use
+     `Fixes <issue>` only for issues this PR completes and `Related to <issue>` for others. A slice
+     with an open acceptance item gets `Related to`, since `Fixes` closes it on merge.
    - Repository template: map these rules to matching sections. Omit empty optional sections; keep
      required headings with the shortest true content, such as "None". Changes holds only parts,
      decisions, and unrelated changes. Keep the template's checklist intact; the required-action

@@ -30,9 +30,9 @@ Limitations, only when they affect reviewing, using, or deploying this change:
 
 - A limitation in plain words.
 
-Accepted follow-ups, only when a scope decision explains them:
+Follow-ups, only when there is a ticket to link:
 
-- A link to the follow-up, with the decision it explains.
+- Related to <ticket ID>: [<what it will address>](<ticket URL>).
 
 ##### Deferred verification
 

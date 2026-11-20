@@ -29,7 +29,7 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 - Mode: fast unless the user asks for deep. "Full diff" names the scope, not the mode. Fast launches
   one reviewer. Deep launches a finder, then a fresh checker.
 - A first review covers the whole target. A fix review covers only the fix diff, its callers, and
-  the findings it closes. Never reuse earlier findings or verdicts.
+  the findings it closes. Never reuse earlier findings or verdicts as fix-review results.
 - Launch the fast reviewer and the deep finder with the `reviewer` profile, and the deep checker
   with the `checker` profile. Give each the [review assignment](review-assignment.md). Omit `model`
   unless the user names one. Omit `timeoutSeconds` unless the user names a cheap model; then set a
@@ -40,17 +40,19 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 - Aim for about 5 minutes for fast and 10 for deep. Give the fast reviewer the budget in the review
   assignment. Put no deadline or budget in a deep assignment. Never sleep or poll, and never cancel
   a worker only because the aim passed.
-- After the report, fix findings only on the user's own work, and never after a request for a
-  read-only review or "no changes". Fixing never approves a publish or absorbing unrelated changes.
+- After the report, act on findings without asking only on the user's own work. Respect requests for
+  a read-only review or "no changes". Approval to act never approves a publish or unrelated changes.
 
 ## Procedure
 
 1. Resolve the target as in [Resolve the target](phases.md#resolve-the-target).
-   - After an earlier review of this target in this session whose findings were fixed: a `fix`
-     target. Its `review` is the newest completed review in this target's chain: the first review or
-     an earlier fix review, never an older link. Its `findingPaths` are the paths of the closed
-     findings. Capture the whole target instead when the user asks to review the whole target or the
-     earlier review left no usable snapshot.
+   - For the lead's one fix review, keep the first review's directory. Keep it even when the batch
+     made no change or the capture falls back to the whole target.
+   - After the lead's first-review batch, or after fixing findings from another review of this
+     target in this session: a `fix` target. Its `review` is the newest completed review in this
+     target's chain: the first review or an earlier fix review, never an older link. Its
+     `findingPaths` are the paths of the closed findings. Capture the whole target instead when the
+     user asks to review the whole target or the earlier review left no usable snapshot.
    - Otherwise, when you or a calling skill review one ticket's work on a longer branch, such as one
      agent ticket, target only that work: a `range` of its commits, or a `workingTree` from the
      commit before it when the work is uncommitted. Never fall back to the merge base, which reads
@@ -63,6 +65,11 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 2. Prepare and capture as in [Handle the capture result](phases.md#handle-the-capture-result).
    - After the `unmatched` gaps and before the `empty` check, a `fix` capture with
      `scope: "wholeTarget"` widened the change: capture the whole target fresh.
+   - After the lead's first-review batch, an empty fix capture with no gaps and the expected base
+     and HEAD means there is no fix diff to review. State that result. Skip the report and comment
+     steps. Continue at the read-only guard in step 8 with the first review's report and no new
+     findings. Use ownership from the fix capture. Do not start a reviewer or claim the earlier
+     findings are closed. Use the shared capture rules for all other cases.
    - Keep the capture result's `identity` for `report.md`.
 
 3. Gather evidence as in [Gather evidence](phases.md#gather-evidence). Include the applicable
@@ -89,7 +96,8 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
    [decision evidence recheck rules](../shared/decision-evidence.md#reuse-and-recheck) to relevant
    sources outside the capture too; tool freshness alone does not check them.
 
-7. Post `$dir/report.md` to the ticket, before any fixing. Skip this step without a ticket.
+7. Post `$dir/report.md` to the ticket, before any fixing. Skip this step without a ticket. Skip the
+   post if the user's request prohibits outside writes.
    - When the work is not the user's own, ask with `ask_user_question` before posting and skip the
      post if declined. On the user's own work, do not ask separately. The tool confirms for another
      person's ticket under [Hard rules](../tracker/SKILL.md#hard-rules).
@@ -101,11 +109,20 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 
 8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.
    Name any Linear edits the update replaced.
-   - Findings on the user's own work, without a request for a read-only review or "no changes":
-     continue with the [triage-findings](../triage-findings/SKILL.md) skill without asking. Then ask
-     about Blocked findings and any gap, failure, or stale result that needs a decision.
-   - Any other findings: end with one question that proposes actions, such as "Fix 1 and 2, and
-     investigate 3?", and includes any decision a gap or stale result needs. Act on the approved
-     findings with triage-findings.
-   - Without findings, ask only about a gap, failure, or stale result that needs a decision. Never
-     call an incomplete or stale review clean.
+   - For a read-only review or "no changes", report the findings without acting on them. Act only if
+     the user approves changing that scope.
+   - When the lead will batch first-review fixes under its worker-run guideline, return the findings
+     to the lead for that batch instead of starting triage here.
+   - After the lead's one fix review, start [triage-findings](../triage-findings/SKILL.md) once in
+     its post-fix phase. Give it the new findings and the first-review findings that the batch did
+     not settle. Include their report references. Do this even if the fix review has no findings.
+     Leave out earlier findings only when current evidence supports their closure, such as a checked
+     fix or a supported dismissal. A worker's claim alone does not settle a finding. Leave approval
+     and action selection to triage.
+   - For findings on the user's own work in other reviews, continue with
+     [triage-findings](../triage-findings/SKILL.md) without asking. That skill owns the disposition
+     questions.
+   - For other findings on work that is not the user's own, ask which actions to take. Use triage
+     only for the actions the user approves.
+   - Ask about a gap, failure, or stale result only when it needs a decision. Never call an
+     incomplete or stale review clean.

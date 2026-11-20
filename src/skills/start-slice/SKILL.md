@@ -201,10 +201,13 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       `ownership.status` as `own`, following the
       [code-review ownership rule](../code-review/SKILL.md#hard-rules).
     - On the user's own branch, reused branches included, code-quality triage and the review fixes
-      proceed without asking.
+      proceed without asking. Keep any approvals that a rule or skill requires.
     - Run a first review with the [code-review skill](../code-review/SKILL.md) on the whole slice,
       not only the code-quality fixes, with the slice as the ticket under review. Run it once.
-    - Apply the manager guideline on a first review's findings to the whole-slice review.
+    - Apply the lead's first-review batch and one fix review to the whole slice. Let `code-review`
+      route remaining findings to
+      [post-fix triage](../triage-findings/SKILL.md#after-the-leads-fix-review).
+    - Commit the checked fixes before QA or the audit with the [commit skill](../commit/SKILL.md).
     - When the slice or an agent ticket has a user-visible acceptance item or a journey item, send
       the committed tree to `qa` by [the QA launch procedure](../shared/qa-launch.md) before the
       audit. Save the report in `$slicedir` with the commit it tested, for the audit to cite.
