@@ -33,6 +33,7 @@ interface PiSessionOptions {
   settings?: Parameters<typeof SettingsManager.inMemory>[0];
   sessionManager?: SessionManager;
   sessionStartEvent?: SessionStartEvent;
+  trusted?: boolean;
 }
 
 // A raw AgentSession.dispose() invalidates the runner without a shutdown event. Pi's runtime emits
@@ -53,6 +54,10 @@ export const createPiSession = async (
   const settingsManager = SettingsManager.inMemory(
     options.settings ?? { compaction: { enabled: false } },
   );
+
+  if (options.trusted === true) {
+    settingsManager.setProjectTrusted(true);
+  }
 
   const loader = new DefaultResourceLoader({
     cwd,

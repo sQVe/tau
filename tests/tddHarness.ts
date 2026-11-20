@@ -12,7 +12,7 @@ import type { TestContext } from 'vitest';
 import { expect } from 'vitest';
 
 import type { ObservationResult } from '../src/extensions/tdd/types.js';
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { initializeRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
@@ -60,6 +60,7 @@ export const createHarness = async (
   cleanup: TestContext['onTestFinished'],
   extensionFactories: ExtensionFactory[] = [],
   reused?: string,
+  tauFactory: ExtensionFactory = tauRegistration,
 ): Promise<Harness> => {
   const cwd = reused ?? (await createWorktree(cleanup));
   const agentDirectory = join(cwd, 'agent');
@@ -75,7 +76,7 @@ export const createHarness = async (
     providers: [faux],
     tools: ['read', 'bash', 'edit', 'write', 'run_tests', 'commit'],
     extensionPaths: [resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js')],
-    extensionFactories: [tauExtension, ...extensionFactories],
+    extensionFactories: [tauFactory, ...extensionFactories],
   });
 
   await session.prompt('/typescript-rules');

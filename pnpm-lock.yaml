@@ -112,6 +112,9 @@ importers:
 
   .:
     dependencies:
+      '@voidzero-dev/vite-plus-core':
+        specifier: 0.3.0
+        version: 0.3.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0)
       '@xmldom/xmldom':
         specifier: 0.9.12
         version: 0.9.12

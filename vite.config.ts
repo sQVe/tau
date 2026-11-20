@@ -186,7 +186,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['**/*.test.ts', '**/fixtures/**', 'src/tau.ts'],
+      exclude: ['**/*.test.ts', '**/fixtures/**', 'src/tau/tau.ts'],
     },
   },
   lint: {

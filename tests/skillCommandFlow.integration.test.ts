@@ -5,7 +5,7 @@ import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { createBoundSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -30,7 +30,7 @@ const createSession = async (registerCleanup: TestContext['onTestFinished']) => 
     agentDirectory,
     providers: [faux],
     tools: ['read'],
-    extensionFactories: [tauExtension],
+    extensionFactories: [tauRegistration],
     skillPaths: [skillsDirectory],
   });
 

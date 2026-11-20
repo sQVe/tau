@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, it } from 'vitest';
@@ -99,22 +99,29 @@ it('keeps size thresholds advisory without weakening other lint checks', async (
 }, 30_000);
 
 it('keeps test helpers out of production code', async ({ onTestFinished }) => {
-  // The directory must sit inside the repository, under `src/`.
+  // The directory must sit inside the repository, under `src/`. Its own manifest keeps it out of
+  // the artifact key, so a running full check keeps its bundle.
   const directory = await mkdtemp(join(root, 'src', 'tau-lint-imports-'));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
-  const helper = "import { initializeRepository } from '../../tests/gitRepository.js';\n";
+
+  const packageDirectory = join(directory, 'src');
+  const helperPath = join(root, 'tests', 'gitRepository.js');
+  const helper = `import { initializeRepository } from '${relative(packageDirectory, helperPath)}';\n`;
+
+  await mkdir(packageDirectory, { recursive: true });
+  await writeFile(join(directory, 'package.json'), '{}\n');
 
   await writeFile(
-    join(directory, 'probe.ts'),
+    join(packageDirectory, 'probe.ts'),
     `${helper}\nexport const value = initializeRepository;\n`,
   );
 
   await writeFile(
-    join(directory, 'probe.test.ts'),
+    join(packageDirectory, 'probe.test.ts'),
     `${helper}\nexport const value = initializeRepository;\n`,
   );
 
-  const result = spawnSync('pnpm', ['lint', '--format', 'agent', directory], {
+  const result = spawnSync('pnpm', ['lint', '--format', 'agent', packageDirectory], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
@@ -177,7 +184,7 @@ it('fails new shared files and shared imports that the module table does not lis
   expect(linesFor(typeImport)[0]).toContain('"errors" must not import module "schema"');
 }, 30_000);
 
-it('keeps extensions out of shared modules but lets the package entry load them', async ({
+it('keeps extensions out of shared modules, including the package entry', async ({
   onTestFinished,
 }) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-modules-');
@@ -193,37 +200,45 @@ it('keeps extensions out of shared modules but lets the package entry load them'
   await writeFile(entry, extension);
 
   const { result, diagnostics } = lintModuleBoundaries([shared, entry]);
+  const linesFor = (file: string) => diagnostics.filter((line) => line.includes(file));
 
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
-  expect(diagnostics).toHaveLength(1);
-  expect(diagnostics[0]).toContain(shared);
+  expect(diagnostics).toHaveLength(2);
+  expect(linesFor(shared)[0]).toContain('"skillTools" must not import extension "commit"');
+  expect(linesFor(entry)[0]).toContain('"tau" must not import extension "commit"');
 }, 30_000);
 
 it('keeps private controller files out of the rest of the subagents extension', async ({
   onTestFinished,
 }) => {
-  // The directory must sit inside the repository, under `src/`.
+  // The directory must sit inside the repository, under `src/`. Its own manifest keeps it out of
+  // the artifact key, so a running full check keeps its bundle.
   const directory = await mkdtemp(
     join(root, 'src', 'extensions', 'subagents', 'tau-lint-private-'),
   );
 
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
 
+  const probe = join(directory, 'src', 'extensions', 'subagents', 'probe.ts');
+
+  await mkdir(dirname(probe), { recursive: true });
+  await writeFile(join(directory, 'package.json'), '{}\n');
+
   await writeFile(
-    join(directory, 'probe.ts'),
+    probe,
     [
-      "import { launchTiming } from '../controller/budget.js';",
-      "import { WorkerController } from '../controller/controller.js';",
-      "import { EvidenceUnavailableError } from '../controller/record.js';",
-      "import { stopOwnedWorker } from '../controller/stop.js';",
+      "import { launchTiming } from './controller/budget.js';",
+      "import { WorkerController } from './controller/controller.js';",
+      "import { EvidenceUnavailableError } from './controller/record.js';",
+      "import { stopOwnedWorker } from './controller/stop.js';",
       '',
       'export const value = [launchTiming, WorkerController, EvidenceUnavailableError, stopOwnedWorker];',
       '',
     ].join('\n'),
   );
 
-  const { result, diagnostics } = lintModuleBoundaries([join(directory, 'probe.ts')]);
+  const { result, diagnostics } = lintModuleBoundaries([probe]);
 
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);

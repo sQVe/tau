@@ -12,10 +12,11 @@
   ],
   "type": "module",
   "scripts": {
+    "build:tau": "node scripts/buildTauExtension.ts",
     "changeset": "changeset",
     "changeset:check": "changeset status --since=origin/main",
     "changeset:version": "changeset version && vp fmt",
-    "check": "pnpm pi-version:check && pnpm run \"/^check:static:/\" && node scripts/runTestProjects.ts",
+    "check": "pnpm pi-version:check && pnpm run \"/^check:static:/\" && pnpm build:tau && node scripts/runTestProjects.ts",
     "check:static:format": "pnpm format:check",
     "check:static:knip": "pnpm knip",
     "check:static:stomme": "mise exec -- stomme check",
@@ -29,7 +30,7 @@
     "lint": "vp lint --deny-warnings",
     "style:check": "stomme-ts-style",
     "style:fix": "stomme-ts-style --fix",
-    "prepare": "node scripts/prepare.ts",
+    "prepare": "node scripts/buildTauExtension.ts && node scripts/prepare.ts",
     "question-gate-score": "node scripts/questionGateScore.ts",
     "session-health": "node scripts/sessionHealth.ts",
     "test": "vp test",
@@ -44,6 +45,7 @@
     "release:github": "pnpm changeset git-tag"
   },
   "dependencies": {
+    "@voidzero-dev/vite-plus-core": "0.3.0",
     "@xmldom/xmldom": "0.9.12",
     "cc-safety-net": "2.4.1",
     "minimatch": "11.0.3",

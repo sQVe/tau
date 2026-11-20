@@ -16,23 +16,31 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
-Pi loads the TypeScript source directly; there is no build step.
+`pnpm install` runs the build that lets Pi load Tau quickly. It writes one generated bundle under
+the ignored `dist/tau/` folder, named after a hash of the package inputs, and Pi loads that bundle
+only while its hash still matches the sources. An edited source tree, or an install that skipped
+scripts, falls back to the TypeScript source. Run `pnpm build:tau` after an edit to refresh the
+bundle; `pnpm check` builds it before the tests. The build takes a module only when its suffix is
+`.ts`, `.mts`, `.js`, `.mjs`, or `.json`, because the hash covers only those; any other suffix fails
+the build. See
+[ADR 0146](./adr/0146-load-one-generated-tau-bundle-that-matches-the-package-inputs.md).
 
 ## Check changes
 
-| Command                                        | Use                                                                                                                                                |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm check`                                   | Check the installed Pi minor, run typechecking, lint, formatting, and knip together, then run test projects. Unchanged projects replay from cache. |
-| `pnpm test:changed`                            | Run tests affected by uncommitted changes. Add `origin/main` to include branch commits.                                                            |
-| `pnpm test src/extensions/commit/tool.test.ts` | Run one test file.                                                                                                                                 |
-| `pnpm test:unit`                               | Skip `*.integration.test.ts` files.                                                                                                                |
-| `pnpm test:coverage`                           | Run the full test suite and report coverage.                                                                                                       |
-| `pnpm test`                                    | Run the full test suite without the cache, including package loading through Pi.                                                                   |
-| `pnpm style:check`                             | Check all lint rules, including house style.                                                                                                       |
-| `pnpm style:fix`                               | Apply safe lint fixes, then format.                                                                                                                |
-| `pnpm check:static:stomme`                     | Check the shared stomme rules.                                                                                                                     |
-| `pnpm lint`                                    | Run ordinary lint diagnostics, as editors do.                                                                                                      |
-| `pnpm format`                                  | Format files.                                                                                                                                      |
+| Command                                        | Use                                                                                                                                                                     |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm check`                                   | Check the installed Pi minor, run typechecking, lint, formatting, and knip together, build the Pi bundle, then run test projects. Unchanged projects replay from cache. |
+| `pnpm build:tau`                               | Build the Pi bundle under `dist/tau/` for the current sources.                                                                                                          |
+| `pnpm test:changed`                            | Run tests affected by uncommitted changes. Add `origin/main` to include branch commits.                                                                                 |
+| `pnpm test src/extensions/commit/tool.test.ts` | Run one test file.                                                                                                                                                      |
+| `pnpm test:unit`                               | Skip `*.integration.test.ts` files.                                                                                                                                     |
+| `pnpm test:coverage`                           | Run the full test suite and report coverage.                                                                                                                            |
+| `pnpm test`                                    | Run the full test suite without the cache, including package loading through Pi.                                                                                        |
+| `pnpm style:check`                             | Check all lint rules, including house style.                                                                                                                            |
+| `pnpm style:fix`                               | Apply safe lint fixes, then format.                                                                                                                                     |
+| `pnpm check:static:stomme`                     | Check the shared stomme rules.                                                                                                                                          |
+| `pnpm lint`                                    | Run ordinary lint diagnostics, as editors do.                                                                                                                           |
+| `pnpm format`                                  | Format files.                                                                                                                                                           |
 
 Tests use temporary directories and need no model API. Changed-test selection follows imports;
 changes to `vite.config.ts` or `package.json` run the full suite.

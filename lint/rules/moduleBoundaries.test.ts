@@ -20,12 +20,24 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: flatFilename,
     },
     {
-      code: "import commit from './extensions/commit/commit.js';\nimport coding from './extensions/coding.js';\n\nexport default [commit, coding];",
+      code: "import commit from '../extensions/commit/commit.js';\nimport coding from '../extensions/coding.js';\n\nexport default [commit, coding];",
+      filename: '/repository/src/tau/tau.ts',
+    },
+    {
+      code: "import { readOwnedWorker } from '../extensions/subagents/controller/record.js';\n\nexport const value = readOwnedWorker;",
+      filename: '/repository/src/tau/tau.ts',
+    },
+    {
+      code: "import tauRegistration from './tau/tau.js';\n\nexport default tauRegistration;",
       filename: '/repository/src/tau.ts',
     },
     {
-      code: "import { readOwnedWorker } from './extensions/subagents/controller/record.js';\n\nexport const value = readOwnedWorker;",
+      code: "import { readTauArtifactKey } from './tau/tauArtifact.js';\n\nexport const value = readTauArtifactKey;",
       filename: '/repository/src/tau.ts',
+    },
+    {
+      code: 'export const load = (path: string) => import(path);',
+      filename: '/repository/src/tau/tauSelection.ts',
     },
     {
       code: "import { readOwnedWorker } from './controller/record.js';\nimport { names } from './names.js';\n\nexport const value = [readOwnedWorker, names];",
@@ -193,9 +205,39 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       errors: [{ messageId: 'private', data: { folder: 'config', file: 'allowedModels' } }],
     },
     {
-      code: "import { effectiveAllowedModels } from './config/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
-      filename: '/repository/src/tau.ts',
+      code: "import { effectiveAllowedModels } from '../config/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
+      filename: '/repository/src/tau/tau.ts',
       errors: [{ messageId: 'private', data: { folder: 'config', file: 'allowedModels' } }],
+    },
+    {
+      code: "import tau from './tau.js';\n\nexport const registration = tau;",
+      filename: '/repository/src/tau/tauSelection.test.ts',
+      errors: [{ messageId: 'root', data: { source: 'tau' } }],
+    },
+    {
+      code: "import tauRegistration from './tau/tau.js';\n\nexport default tauRegistration;",
+      filename: '/repository/src/skillTools.ts',
+      errors: [{ messageId: 'root', data: { source: 'skillTools' } }],
+    },
+    {
+      code: "import commit from '../extensions/commit/commit.js';\n\nexport const value = commit;",
+      filename: '/repository/src/tau/tauArtifact.ts',
+      errors: [{ messageId: 'sharedToExtension', data: { source: 'tau', target: 'commit' } }],
+    },
+    {
+      code: "import commit from '../extensions/commit/commit.js';\n\nexport const value = commit;",
+      filename: '/repository/src/tau/tauSelection.ts',
+      errors: [{ messageId: 'sharedToExtension', data: { source: 'tau', target: 'commit' } }],
+    },
+    {
+      code: "import { readTauArtifactKey } from './tau/tauArtifact.js';\n\nexport const value = readTauArtifactKey;",
+      filename: '/repository/src/skillTools.ts',
+      errors: [{ messageId: 'notAllowed', data: { source: 'skillTools', target: 'tau' } }],
+    },
+    {
+      code: 'export const load = (path: string) => import(path);',
+      filename: '/repository/src/tau.ts',
+      errors: [{ messageId: 'computedImport' }],
     },
     {
       code: 'export const value = 1;',

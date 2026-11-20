@@ -5,7 +5,13 @@
     "related": true
   },
   "coverageAnalysis": "perTest",
-  "mutate": ["src/**/*.ts", "!src/**/*.test.ts", "!src/**/fixtures/**", "!src/tau.ts"],
+  "mutate": [
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "!src/**/fixtures/**",
+    "!src/tau.ts",
+    "!src/tau/tau.ts"
+  ],
   "tsconfigFile": "stryker-no-tsconfig.json",
   "checkers": [],
   "plugins": ["@stryker-mutator/vitest-runner"],

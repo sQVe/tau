@@ -22,7 +22,7 @@ import { releaseRegistration } from '../src/inbox/inbox.js';
 import type { RoleKind } from '../src/role/role.js';
 import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
 import { createHcFake } from './hcFake.js';
 import { writeStommeProject } from './stommeProjectHarness.js';
@@ -81,7 +81,7 @@ const loadTools = async (role: RoleKind, agentDirectory: string) => {
 
   const fake = fakeExtensionApi();
 
-  await tauExtension(fake.pi);
+  await tauRegistration(fake.pi);
   // No session starts, so no session_shutdown releases the inbox that loading Tau claimed.
   releaseRegistration();
 

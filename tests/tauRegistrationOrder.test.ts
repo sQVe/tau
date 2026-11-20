@@ -9,7 +9,7 @@ import { architectLockPath } from '../src/extensions/architect/lock.js';
 import { readLiveLockHolder } from '../src/fileLock/fileLock.js';
 import { socketDirectoryFor, socketPathFor } from '../src/inbox/endpoint.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { succeededResult } from './execFake.js';
 import { fakeExtensionApi } from './extensionApi.js';
 import { createTemporaryRepository } from './gitRepository.js';
@@ -103,7 +103,7 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
     on(name, handler);
   }) as unknown as typeof fake.pi.on;
 
-  await tauExtension(fake.pi);
+  await tauRegistration(fake.pi);
 
   const fromFile = (name: string, file: string): Registration[] =>
     registered.filter((entry) => entry.name === name && entry.stack.includes(file));

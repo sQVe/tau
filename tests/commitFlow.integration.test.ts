@@ -11,7 +11,7 @@ import type {
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { createTemporaryRepository, git } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
@@ -77,7 +77,7 @@ const createHarness = async (
       providers: [faux],
       tools: ['read', 'bash', 'edit', 'write', 'commit'],
       extensionPaths: [bundledWebAccessExtensionPath],
-      extensionFactories: [tauExtension],
+      extensionFactories: [tauRegistration],
     },
     uiOptions,
   );
