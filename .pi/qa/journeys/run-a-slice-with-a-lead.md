@@ -17,10 +17,11 @@ By hand, because it needs live Opus and DeepSeek sessions and Linear.
 ## Steps
 
 1. Open a worktree and tell its lead to start a slice, such as `start ME-1234`.
-   The lead calls `architect` `open`, and a tab opens on `roles.architect.model`.
+   The lead calls `architect` `open`, and the architect opens in a pane to the right of the lead in
+   the lead's tab on `roles.architect.model`.
    The architect runs the start-slice design conversation with the user and writes the agent
    tickets in Linear. It sends the step 11 handover to the lead with `handover` `send` and ends its
-   turn. The tab closes, and the architect lock is released.
+   turn. Only the architect's pane closes, and the architect lock is released.
 2. Check the architect record and the lead's inbox.
    `.tau/architect/record.json` names the architect session file, and `.tau/architect/lock` is gone.
    The lead's inbox holds the step 11 handover.

@@ -95,7 +95,7 @@ it('open starts the architect in the pane of the lead terminal', async ({
   const split = app.calls.find((call) => call.commandArguments[1] === 'pane.split');
 
   expect(argumentAfter(split?.commandArguments ?? [], '--pane')).toBe('p-lead');
-  expect(app.calls).toHaveLength(3);
+  expect(app.calls).toHaveLength(2);
 });
 
 it('open passes the task as the pi message in the split argv, with no task flag', async ({
@@ -342,7 +342,7 @@ it('open splits when no live holder keeps the lock, even if the recorded termina
 
   expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
   expect(appCommands(app)).toContain('pane.split');
-  expect(app.calls).toHaveLength(3);
+  expect(app.calls).toHaveLength(2);
 });
 
 it('open starts the architect beside the lead when the lock is released during the terminal lookup', async ({
@@ -359,7 +359,7 @@ it('open starts the architect beside the lead when the lock is released during t
 
   expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
   expect(appCommands(app)).toContain('pane.split');
-  expect(app.calls).toHaveLength(4);
+  expect(app.calls).toHaveLength(3);
 });
 
 it('open refuses and starts nothing when a different holder takes the lock during the terminal lookup', async ({

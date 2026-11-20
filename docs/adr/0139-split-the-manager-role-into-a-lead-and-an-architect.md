@@ -27,7 +27,7 @@ refuses a launch or follow-up of an editing profile from an architect session. A
 ### The architect session
 
 The lead opens the architect with the `architect` tool. `open` starts or resumes the checkout's
-architect to the left of the lead when the lead terminal has a `herdr.space` label, and in a new
+architect to the right of the lead when the lead terminal has a `herdr.space` label, and in a new
 named space when it has none. `ask` does not follow that placement rule. It sends one question to
 the architect and has two paths. `gate` classifies a user request that no skill covers.
 
@@ -71,7 +71,7 @@ of refusing. A question in the inbox of a live architect in this checkout needs 
 
 ### The lead's tab
 
-The lead's tab holds only the lead on the right and the architect on the left. Workers open in
+The lead's tab holds only the lead on the left and the architect on the right. Workers open in
 `<lead tab>-workers`, and `draft_review` opens tuicr in `<caller tab>-review`. For other terminals
 that agents start, the rule is to open a new tab with `tab.new`.
 
