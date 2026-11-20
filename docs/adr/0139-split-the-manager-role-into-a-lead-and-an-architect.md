@@ -71,14 +71,14 @@ of refusing. A question in the inbox of a live architect in this checkout needs 
 
 ### The lead's tab
 
-The lead's tab is the first tab of its workspace. Once the lead starts, only the lead on the right
-and the architect on the left may use that tab. Workers open in `<lead tab>-workers`, and
-`draft_review` opens tuicr in `<caller tab>-review`.
+The lead's tab holds only the lead on the right and the architect on the left. Workers open in
+`<lead tab>-workers`, and `draft_review` opens tuicr in `<caller tab>-review`. For other terminals
+that agents start, the rule is to open a new tab with `tab.new`.
 
-When a checkout has no workspace and a handover follows, `handover start` creates the workspace with
-Pi and its task in the first tab. The operation that starts Pi also creates the workspace so the
-user sees the task in the first tab instead of an empty shell. In an existing workspace,
-`handover start` opens a new tab and leaves existing panes alone.
+The exception is `handover start` when no workspace exists for the checkout. It creates the
+workspace with Pi and its task in the first tab. The operation that starts Pi also creates the
+workspace so the user sees the task in the first tab instead of an empty shell. In an existing
+workspace, `handover start` uses `tab.new` and leaves existing panes alone.
 
 ### Models
 
