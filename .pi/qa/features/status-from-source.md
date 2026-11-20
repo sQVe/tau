@@ -14,12 +14,13 @@ and sends one prompt.
 
 ## Driving steps
 
-1. Set the run name and the scratch root, then create the sync fixture. It sets `sync`. Do not add a
-   `mise.toml`; no case installs the Stomme CLI.
+1. Set the run name, the scratch root, and one random token for the run, then create the sync
+   fixture. It sets `sync`. Do not add a `mise.toml`; no case installs the Stomme CLI.
 
 ```sh
 run=<run>
 root=/tmp/tau-verification-$run
+token=$(openssl rand -hex 8)
 mkdir -p "$root"
 sync=$(mktemp -d "$root/qa-sync-XXXXXX")
 git -C "$sync" init --quiet
@@ -41,6 +42,7 @@ jobs:
       app-id: ${{ secrets.STOMME_APP_ID }}
       app-private-key: ${{ secrets.STOMME_APP_PRIVATE_KEY }}
 WORKFLOW
+  printf '# fixture-token: %s-%s\n' "$token" "$project" >> "$directory/renovate-stomme.yml"
   cat > "$sync/repos/$project/stomme.toml" <<'CONFIG'
 schema = 1
 version = "0.1.0"
@@ -99,10 +101,12 @@ cat > "$silent/mend/renovate-job.log" <<'LOG'
 2026-01-05T09:00:03Z INFO  Dependency Dashboard issue skipped because mode=silent
 2026-01-05T09:00:04Z INFO  Job finished with no update pull requests
 LOG
+printf 'fixture-token: %s-silent\n' "$token" >> "$silent/mend/renovate-job.log"
 ```
 
 3. Create the unreadable fixture. It sets `unreadable`. Its workflow names the Mend log path, and the
-   file does not exist:
+   file does not exist. The prompt for this case does not name the log path; the session learns it
+   only from this workflow:
 
 ```sh
 unreadable=$(mktemp -d "$root/qa-unreadable-XXXXXX")
@@ -125,11 +129,12 @@ jobs:
     steps:
       - run: mend renovate --log mend/renovate-job.log
 WORKFLOW
+printf '# fixture-token: %s-unreadable\n' "$token" >> "$unreadable/.github/workflows/mend-job.yml"
 ```
 
 4. Write the sync prompt outside the fixture, run the session with the brief's model, and set `log1`
-   to the printed `Event log:` path. Run the worktree proof from the [QA guide](../../qa.md#reach-it-1);
-   it prints this worktree's path.
+   to the printed `Event log:` path. Then copy the log into the scratch root, because the worker's
+   scratch directory is removed when the worker ends:
 
 ```sh
 cat > "$sync.prompt" <<'PROMPT'
@@ -138,26 +143,26 @@ PROMPT
 pnpm pi-session --cwd "$sync" --model <pattern> --timeout 300 --prompt-file "$sync.prompt"
 ```
 
-5. Grade the sync case. The evidence check ties each project to its own caller file. It prints one
-   line per project whose caller was read in a successful call that held the `uses:` reference:
+```sh
+events1="$root/events-sync.jsonl"
+cp "$log1" "$events1"
+```
+
+   Run the worktree proof from the [QA guide](../../qa.md#reach-it-1); it prints this worktree's
+   path.
+
+5. Grade the sync case from the copy. The evidence check prints one line per project whose own
+   token and the `uses:` reference appear in the same successful tool result:
 
 ```sh
-jq -s -r --arg silentName "$(basename "$silent")" --arg unreadableName "$(basename "$unreadable")" '
-  (map(select(.type == "tool_execution_end" and .isError == false))
-    | map({key: .toolCallId, value: ([.result.content[]? | select(.type == "text") | .text] | join("\n"))})
-    | from_entries) as $results
-  | .[]
-  | select(.type == "tool_execution_start")
-  | (.args.command // .args.path // .args.pattern // .args.code // "") as $input
-  | ($results[.toolCallId] // "") as $result
-  | select(($input | contains($silentName)) | not)
-  | select(($input | contains($unreadableName)) | not)
-  | select($result | contains("sync-update.yml@v0.1.0"))
+jq -s -r --arg token "$token" '
+  [ .[] | select(.type == "tool_execution_end" and .isError == false)
+    | .result.content[]? | select(.type == "text") | .text ] as $texts
   | ["ruta", "tikk", "greppa"][]
   | . as $project
-  | select($input | test("repos/" + $project + "([/\\s]|$)"))
+  | select(any($texts[]; contains($token + "-" + $project) and contains("sync-update.yml@v0.1.0")))
   | $project
-' "$log1" | sort -u
+' "$events1" | sort -u
 ```
 
    It prints exactly these three lines:
@@ -172,15 +177,16 @@ jq -s -r --arg silentName "$(basename "$silent")" --arg unreadableName "$(basena
 
 ```sh
 jq -r 'select(.type == "message_end" and .message.role == "assistant")
-  | .message.content[] | select(.type == "text") | .text' "$log1"
+  | .message.content[] | select(.type == "text") | .text' "$events1"
 ```
 
    The case passes when the reply reports sync configured in ruta, tikk, and greppa, and names the
    caller file `renovate-stomme.yml` or the `sync-update.yml` reference. It fails when the reply
    reports sync missing or disabled for any project, or names no source.
 
-6. Write the silent prompt outside the fixture, run the session, and set `log2` to the printed
-   `Event log:` path. Run the worktree proof from the [QA guide](../../qa.md#reach-it-1) again.
+6. Write the silent prompt outside the fixture, run the session, set `log2` to the printed
+   `Event log:` path, and copy the log into the scratch root. Run the worktree proof from the
+   [QA guide](../../qa.md#reach-it-1) again.
 
 ```sh
 cat > "$silent.prompt" <<'PROMPT'
@@ -189,41 +195,40 @@ PROMPT
 pnpm pi-session --cwd "$silent" --model <pattern> --timeout 300 --prompt-file "$silent.prompt"
 ```
 
-7. Grade the silent case. The evidence check requires one successful call that read the case's own
-   log and saw both the installation line and the silent mode. It prints at least one line:
+```sh
+events2="$root/events-silent.jsonl"
+cp "$log2" "$events2"
+```
+
+7. Grade the silent case from the copy. The evidence check requires one successful tool result that
+   holds the case's own token, the installation line, and the silent mode. It prints `silent`:
 
 ```sh
-jq -s -r --arg syncName "$(basename "$sync")" --arg unreadableName "$(basename "$unreadable")" '
-  (map(select(.type == "tool_execution_end" and .isError == false))
-    | map({key: .toolCallId, value: ([.result.content[]? | select(.type == "text") | .text] | join("\n"))})
-    | from_entries) as $results
-  | .[]
-  | select(.type == "tool_execution_start")
-  | (.args.command // .args.path // .args.pattern // .args.code // "") as $input
-  | ($results[.toolCallId] // "") as $result
-  | select(($input | contains($syncName)) | not)
-  | select(($input | contains($unreadableName)) | not)
-  | select($input | contains("mend/renovate-job.log"))
-  | select($result | contains("Renovate app installed"))
-  | select($result | contains("mode=silent"))
-  | [.toolCallId, $input] | @tsv
-' "$log2"
+jq -s -r --arg token "$token" '
+  [ .[] | select(.type == "tool_execution_end" and .isError == false)
+    | .result.content[]? | select(.type == "text") | .text ] as $texts
+  | select(any($texts[];
+      contains($token + "-silent")
+      and contains("Renovate app installed")
+      and contains("mode=silent")))
+  | "silent"
+' "$events2"
 ```
 
    The reply check prints the session's reply:
 
 ```sh
 jq -r 'select(.type == "message_end" and .message.role == "assistant")
-  | .message.content[] | select(.type == "text") | .text' "$log2"
+  | .message.content[] | select(.type == "text") | .text' "$events2"
 ```
 
    The case passes when the reply reports Renovate installed and in Silent mode, and names the log
    it read (`mend/renovate-job.log` or the Mend job log). It fails when the reply reports Renovate
    disabled, missing, or not installed, or names no source.
 
-8. Write the same prompt as the silent case, run it in the unreadable fixture, and set `log3` to the
-   printed `Event log:` path. The maintainer's report is the same. Run the worktree proof from the
-   [QA guide](../../qa.md#reach-it-1) again.
+8. Write the same prompt as the silent case, run it in the unreadable fixture, set `log3` to the
+   printed `Event log:` path, and copy the log into the scratch root. The maintainer's report is the
+   same. Run the worktree proof from the [QA guide](../../qa.md#reach-it-1) again.
 
 ```sh
 cat > "$unreadable.prompt" <<'PROMPT'
@@ -232,33 +237,28 @@ PROMPT
 pnpm pi-session --cwd "$unreadable" --model <pattern> --timeout 300 --prompt-file "$unreadable.prompt"
 ```
 
-9. Grade the unreadable case. The tool-call check prints each call that names the case's own log,
-   with its status: `failed` when the call failed, `absent` when a result line names the log and
-   says it is absent, and `present` otherwise. It must print at least one `failed` or `absent` line:
+```sh
+events3="$root/events-unreadable.jsonl"
+cp "$log3" "$events3"
+```
+
+9. Grade the unreadable case from the copy. The evidence check requires one successful tool result
+   that holds the token from the workflow that names the log. It prints `unreadable`:
 
 ```sh
-jq -s -r --arg syncName "$(basename "$sync")" --arg silentName "$(basename "$silent")" '
-  (map(select(.type == "tool_execution_end")) | map({key: .toolCallId, value: .}) | from_entries) as $ends
-  | .[]
-  | select(.type == "tool_execution_start")
-  | (.args.command // .args.path // .args.pattern // .args.code // "") as $input
-  | select($input | contains("mend/renovate-job.log"))
-  | select(($input | contains($syncName)) | not)
-  | select(($input | contains($silentName)) | not)
-  | ($ends[.toolCallId] // {}) as $end
-  | ([($end.result.content // [])[]? | select(.type == "text") | .text] | join("\n")) as $result
-  | (if $end.isError == true then "failed"
-     elif ($result | split("\n") | any(test("mend/renovate-job\\.log") and test("No such file or directory|does not exist|ENOENT"; "i"))) then "absent"
-     else "present" end) as $status
-  | [.toolName, $status, $input] | join(" | ")
-' "$log3"
+jq -s -r --arg token "$token" '
+  [ .[] | select(.type == "tool_execution_end" and .isError == false)
+    | .result.content[]? | select(.type == "text") | .text ] as $texts
+  | select(any($texts[]; contains($token + "-unreadable")))
+  | "unreadable"
+' "$events3"
 ```
 
    The reply check prints the session's reply:
 
 ```sh
 jq -r 'select(.type == "message_end" and .message.role == "assistant")
-  | .message.content[] | select(.type == "text") | .text' "$log3"
+  | .message.content[] | select(.type == "text") | .text' "$events3"
 ```
 
    The case passes when the reply reports `unknown` for Renovate's state and names the log it could
@@ -270,22 +270,21 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
 - Each session command exits with code 0.
 - The sync evidence check prints `greppa`, `ruta`, and `tikk`, one per line, and the reply reports
   sync configured in all three projects and names the caller or the reference.
-- The silent evidence check prints at least one line, and the reply reports Renovate installed in
-  Silent mode and names the log.
-- The unreadable evidence check prints at least one `failed` or `absent` line, and the reply reports
-  `unknown` and names the log it could not read.
+- The silent evidence check prints `silent`, and the reply reports Renovate installed in Silent mode
+  and names the log.
+- The unreadable evidence check prints `unreadable`, and the reply reports `unknown` and names the
+  log it could not read.
 
 ## Grading rules
 
-| Case       | Evidence the log must show                                                                                                       | Pass                                                                     | Fail                                                          |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
-| Sync       | For each project, a successful call whose input names `repos/<project>` and whose result holds `sync-update.yml@v0.1.0`          | Sync configured in ruta, tikk, greppa, and the caller or reference named | Sync missing or disabled for any project, or no source named   |
-| Silent     | A successful call whose input names `mend/renovate-job.log` and whose result holds `Renovate app installed` and `mode=silent`    | Renovate installed and in Silent mode, and the log named                 | Renovate disabled, missing, or absent, or no source named      |
-| Unreadable | A failed call naming the case's own `mend/renovate-job.log`, or a result line naming it and saying it is absent                 | `unknown` for Renovate's state, and the log it could not read named       | Missing or disabled, or no log named                          |
+| Case       | Evidence the log must show                                                                                          | Pass                                                                     | Fail                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| Sync       | For each project, a successful result holds `sync-update.yml@v0.1.0` and `<token>-<project>`                        | Sync configured in ruta, tikk, greppa, and the caller or reference named | Sync missing or disabled for any project, or no source named   |
+| Silent     | A successful result holds `<token>-silent`, `Renovate app installed`, and `mode=silent`                              | Renovate installed and in Silent mode, and the log named                 | Renovate disabled, missing, or absent, or no source named      |
+| Unreadable | A successful result holds `<token>-unreadable`, the token in the workflow that names the log                        | `unknown` for Renovate's state, and the log it could not read named       | Missing or disabled, or no log named                          |
 
-Grade from the event log and the reply, never from the session's own claim about what it read. A
-pass needs both the evidence and the reply. Evidence from another case's fixture does not count:
-each check rejects a call whose input names another case's fixture directory.
+The token exists only in the case's own source, so a result from another case's fixture cannot pass.
+The checks do not look at command input or at text the session prints without reading the source.
 
 ## Negative controls
 
@@ -304,7 +303,7 @@ them on demand.
 
 ## End state
 
-Three event logs, one per case, each with its evidence check and reply graded. The two negative
+Three event logs, one per case, each copied into the scratch root and graded. The two negative
 controls fail.
 
 ## Gotchas
@@ -314,5 +313,5 @@ controls fail.
 - The fixtures are synthetic. No live GitHub, Mend, or Renovate service is needed.
 - The fixtures stay uncommitted because Tau blocks `git commit` in agent bash and the `qa` profile
   has no `commit` tool. The cases read files only, so no check depends on Git history.
-- The `read` and `bash` tools mark a missing file as an error, so the failed-read check does not
-  depend on file permissions.
+- The event logs are copied into the scratch root because the worker's scratch directory is removed
+  when the worker ends.
