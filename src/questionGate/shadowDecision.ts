@@ -35,7 +35,6 @@ const recommendedCount = (question: ShadowQuestionFacts): number =>
 const previewedOption = (question: ShadowQuestionFacts): boolean =>
   question.options.some((option) => option.preview !== undefined);
 
-// A shadow sample stands in for dialogs the gate could replace, not for every dialog.
 export const shadowEligibility = (questions: readonly ShadowQuestionFacts[]): ShadowDecision => {
   if (questions.length !== 1) {
     return { kind: 'skip', reason: 'multipleQuestions' };
