@@ -9,6 +9,7 @@ import {
 } from './workerFolderDecision.js';
 import type {
   SnapshotFolder,
+  StartingWorker,
   WorkerFolder,
   WorkerFolderFacts,
   WorkerFolderRemoval,
@@ -43,6 +44,23 @@ const terminal = (
 const unread = (assignmentPrefix: string | undefined): WorkerTerminalFact => ({
   kind: 'unread',
   assignmentPrefix,
+});
+
+const starting = (
+  assignmentId: string,
+  packageSnapshot: string | null,
+  terminalAddress: string,
+): StartingWorker => ({
+  kind: 'read',
+  assignmentId,
+  running: true,
+  packageSnapshot,
+  terminalAddress,
+});
+
+const finished = (terminalAddress: string): WorkerTerminalFact => ({
+  kind: 'finished',
+  terminalAddress,
 });
 
 const table: {
@@ -327,6 +345,94 @@ const table: {
     },
     expected: { snapshots: ['snapshot-a'] },
   },
+  {
+    name: 'drops a starting hint whose terminal finished',
+    facts: {
+      now,
+      scratch: [],
+      snapshots: [snapshot('snapshot-a', undefined)],
+      terminals: [starting('assignment-a', 'snapshot-a', 't-a'), finished('t-a')],
+    },
+    expected: { markUnused: ['snapshot-a'] },
+  },
+  {
+    name: 'removes a snapshot a finished starting hint no longer uses',
+    facts: {
+      now,
+      scratch: [],
+      snapshots: [snapshot('snapshot-a', snapshotFollowUpWindow)],
+      terminals: [starting('assignment-a', 'snapshot-a', 't-a'), finished('t-a')],
+    },
+    expected: { snapshots: ['snapshot-a'] },
+  },
+  {
+    name: 'keeps a starting hint when another terminal finished',
+    facts: {
+      now,
+      scratch: [],
+      snapshots: [snapshot('snapshot-a', hour)],
+      terminals: [starting('assignment-a', 'snapshot-a', 't-a'), finished('t-b')],
+    },
+    expected: { clearUnused: ['snapshot-a'] },
+  },
+  {
+    name: 'keeps a starting hint when nothing finished',
+    facts: {
+      now,
+      scratch: [],
+      snapshots: [snapshot('snapshot-a', hour)],
+      terminals: [starting('assignment-a', 'snapshot-a', 't-a')],
+    },
+    expected: { clearUnused: ['snapshot-a'] },
+  },
+  {
+    name: 'keeps young scratch when a list-only finish supersedes its launch hint',
+    facts: {
+      now,
+      scratch: [folder('assignment-a', 10 * second)],
+      snapshots: [],
+      terminals: [starting('assignment-a', null, 't-a'), finished('t-a')],
+    },
+    expected: { scratch: [] },
+  },
+  {
+    name: 'removes scratch at the launch grace when a list-only finish supersedes its hint',
+    facts: {
+      now,
+      scratch: [folder('assignment-a', scratchLaunchGrace)],
+      snapshots: [],
+      terminals: [starting('assignment-a', null, 't-a'), finished('t-a')],
+    },
+    expected: { scratch: ['assignment-a'] },
+  },
+  {
+    name: 'removes young scratch when a labeled finish names its assignment',
+    facts: {
+      now,
+      scratch: [folder('assignment-a', 10 * second)],
+      snapshots: [],
+      terminals: [
+        starting('assignment-a', null, 't-a'),
+        finished('t-a'),
+        terminal('assignment-a', false, null),
+      ],
+    },
+    expected: { scratch: ['assignment-a'] },
+  },
+  {
+    name: 'keeps a snapshot a live worker names when the starting hint finished',
+    facts: {
+      now,
+      scratch: [],
+      snapshots: [snapshot('snapshot-a', hour)],
+      terminals: [
+        starting('assignment-a', 'snapshot-a', 't-a'),
+        finished('t-a'),
+        terminal('assignment-b', true, 'snapshot-a'),
+      ],
+    },
+    expected: { clearUnused: ['snapshot-a'] },
+  },
 ];
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { facts, expected }) => {
@@ -390,12 +496,9 @@ it('clears only the markers of snapshots a starting worker names when the list i
     snapshot('snapshot-c', undefined),
   ];
 
-  const starting = [
-    terminal('assignment-a', true, 'snapshot-a'),
-    terminal('x', true, 'snapshot-c'),
-  ];
+  const hints = [starting('assignment-a', 'snapshot-a', 't-a'), starting('x', 'snapshot-c', 't-x')];
 
-  expect(decideUnreadListRemoval(snapshots, starting)).toEqual({
+  expect(decideUnreadListRemoval(snapshots, hints)).toEqual({
     scratch: [],
     snapshots: [],
     markUnused: [],
@@ -404,13 +507,13 @@ it('clears only the markers of snapshots a starting worker names when the list i
 });
 
 it('clears no marker when no starting worker names a snapshot', () => {
-  const starting = [
-    terminal('a', true, null),
-    terminal('b', true, 'unread'),
-    terminal('c', false, 'snapshot-a'),
+  const hints = [
+    starting('a', null, 't-a'),
+    starting('b', 'unread', 't-b'),
+    starting('c', 'snapshot-b', 't-c'),
   ];
 
-  expect(decideUnreadListRemoval([snapshot('snapshot-a', hour)], starting)).toEqual({
+  expect(decideUnreadListRemoval([snapshot('snapshot-a', hour)], hints)).toEqual({
     scratch: [],
     snapshots: [],
     markUnused: [],

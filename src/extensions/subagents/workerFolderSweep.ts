@@ -2,6 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
+import { withFileLock } from '../../fileLock/fileLock.js';
 import { get, ls } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { readAssignment } from './assignment.js';
@@ -18,6 +19,7 @@ import {
 } from './workerFolderDecision.js';
 import type {
   SnapshotFolder,
+  StartingWorker,
   WorkerFolder,
   WorkerFolderRemoval,
   WorkerTerminalFact,
@@ -32,15 +34,20 @@ export interface WorkerFolderSweep {
 
 interface TerminalRead {
   fact: WorkerTerminalFact | undefined;
+  finishedAddress: string | undefined;
   error: string | undefined;
 }
 
 interface TerminalFacts {
   terminals: readonly WorkerTerminalFact[] | 'unread';
+  finishedAddresses: string[];
   errors: string[];
 }
 
 const terminalReadTimeout = 10_000;
+
+const sweepLockPath = (agentDirectory: string): string =>
+  join(agentDirectory, '.tau-worker-folder-sweep.lock');
 
 const readBornAt = async (path: string): Promise<number | undefined> => {
   try {
@@ -134,29 +141,34 @@ const readTerminalFact = async (hc: HcRuntime, listed: HcTerminal): Promise<Term
 
   try {
     terminal = await get(hc, listed.address, { timeout: terminalReadTimeout });
+
+    if (terminal.address !== listed.address) {
+      throw new Error(`the reply named ${terminal.address}`);
+    }
   } catch (error) {
     return {
       fact: { kind: 'unread', assignmentPrefix: assignmentPrefixFromName(listed.name) },
+      finishedAddress: undefined,
       error: `Reading terminal ${listed.address} failed: ${errorMessage(error)}. Kept its folders.`,
     };
   }
 
+  const finished = isFinished(terminal);
+  const finishedAddress = finished ? listed.address : undefined;
   const label = terminal.labels?.['tau.assignment'];
 
   if (label === undefined || label === '') {
-    return { fact: undefined, error: undefined };
+    return { fact: undefined, finishedAddress, error: undefined };
   }
-
-  const running = !isFinished(terminal);
 
   const fact: WorkerTerminalFact = {
     kind: 'read',
     assignmentId: basename(dirname(label)),
-    running,
-    packageSnapshot: running ? await readPackageSnapshot(label) : null,
+    running: !finished,
+    packageSnapshot: finished ? null : await readPackageSnapshot(label),
   };
 
-  return { fact, error: undefined };
+  return { fact, finishedAddress, error: undefined };
 };
 
 const readTerminalFacts = async (hc: HcRuntime): Promise<TerminalFacts> => {
@@ -167,9 +179,12 @@ const readTerminalFacts = async (hc: HcRuntime): Promise<TerminalFacts> => {
   } catch (error) {
     return {
       terminals: 'unread',
+      finishedAddresses: [],
       errors: [`Listing hc terminals failed: ${errorMessage(error)}. Removed nothing.`],
     };
   }
+
+  const listedFinished = list.terminals.filter(isFinished).map((terminal) => terminal.address);
 
   const candidates = list.terminals.filter(isWorkerCandidate);
 
@@ -179,6 +194,12 @@ const readTerminalFacts = async (hc: HcRuntime): Promise<TerminalFacts> => {
 
   return {
     terminals: reads.flatMap(({ fact }) => (fact === undefined ? [] : [fact])),
+    finishedAddresses: [
+      ...listedFinished,
+      ...reads.flatMap(({ finishedAddress }) =>
+        finishedAddress === undefined ? [] : [finishedAddress],
+      ),
+    ],
     errors: reads.flatMap(({ error }) => (error === undefined ? [] : [error])),
   };
 };
@@ -234,19 +255,31 @@ const updateUnusedMarkers = async (
   return results.flatMap((error) => (error === undefined ? [] : [error]));
 };
 
-export const sweepWorkerFolders = async (
+const sweepUnderLock = async (
   hc: HcRuntime,
   agentDirectory: string,
-  now: number,
-  starting: readonly WorkerTerminalFact[],
+  readNow: () => number,
+  starting: readonly StartingWorker[],
 ): Promise<WorkerFolderSweep> => {
-  const { terminals, errors: readErrors } = await readTerminalFacts(hc);
+  const now = readNow();
+
+  const { terminals, finishedAddresses, errors: readErrors } = await readTerminalFacts(hc);
 
   const facts = {
     now,
     scratch: await readFolders(scratchRootFor(agentDirectory)),
     snapshots: await readSnapshots(snapshotRootFor(agentDirectory)),
-    terminals: terminals === 'unread' ? terminals : [...terminals, ...starting],
+    terminals:
+      terminals === 'unread'
+        ? terminals
+        : [
+            ...terminals,
+            ...finishedAddresses.map((terminalAddress): WorkerTerminalFact => ({
+              kind: 'finished',
+              terminalAddress,
+            })),
+            ...starting,
+          ],
   };
 
   const decision =
@@ -262,3 +295,30 @@ export const sweepWorkerFolders = async (
     errors: [...readErrors, ...markerErrors, ...removal.errors],
   };
 };
+
+export const withFolderSweepLock = <Value>(
+  agentDirectory: string,
+  signal: AbortSignal | undefined,
+  run: () => Promise<Value>,
+): Promise<Value> =>
+  withFileLock(
+    {
+      lockPath: sweepLockPath(agentDirectory),
+      checkout: agentDirectory,
+      signal,
+      pollMilliseconds: 25,
+      onWaiting: () => undefined,
+      cancelled: () => new Error('The worker folder sweep lock was cancelled.'),
+    },
+    run,
+  );
+
+export const sweepWorkerFolders = async (
+  hc: HcRuntime,
+  agentDirectory: string,
+  readNow: () => number,
+  starting: readonly StartingWorker[],
+): Promise<WorkerFolderSweep> =>
+  withFolderSweepLock(agentDirectory, undefined, () =>
+    sweepUnderLock(hc, agentDirectory, readNow, starting),
+  );

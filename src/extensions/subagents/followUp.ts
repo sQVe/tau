@@ -16,12 +16,14 @@ import type { ToolResult } from './errorResult.js';
 import type { FollowUpParameters } from './followUpParameters.js';
 import { capacityRefusal, startReservedWorker } from './launch.js';
 import type { LaunchRuntime, LaunchStatus } from './launch.js';
+import { missingPackagePath, missingPackagePathError } from './packageSnapshot.js';
 import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { decideSessionUse } from './sessionUse.js';
 import type { SessionUse, SessionUseTerminal } from './sessionUse.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { readWorkerChild } from './workerDelivery.js';
 import type { WorkerChildRead } from './workerDelivery.js';
+import { packagesNeedSnapshot } from './workerPackages.js';
 
 export interface FollowUpRequest {
   parameters: FollowUpParameters;
@@ -63,18 +65,6 @@ const sessionUse = async (runtime: LaunchRuntime, source: Assignment): Promise<S
   });
 };
 
-const missingPackagePath = (
-  packages: readonly { source: string; path: string }[],
-): string | undefined => {
-  for (const extension of packages) {
-    if (!existsSync(extension.path)) {
-      return extension.path;
-    }
-  }
-
-  return undefined;
-};
-
 const followUpAssignment = (
   source: Assignment,
   parameters: FollowUpParameters,
@@ -91,7 +81,7 @@ const followUpAssignment = (
   profile: source.profile,
   loadout: source.loadout,
   routing: source.routing,
-  packageSnapshot: source.packageSnapshot,
+  packageSnapshot: packagesNeedSnapshot(extensionPackages) ? source.packageSnapshot : null,
   session: source.session,
   parentSession,
   cwd: source.cwd,
@@ -148,7 +138,13 @@ const followUpSource = async (
   const missingPath = missingPackagePath(extensionPackages);
 
   if (missingPath !== undefined) {
-    throw new Error(`Missing worker package path ${missingPath}; no follow-up can load it.`);
+    throw missingPackagePathError(missingPath);
+  }
+
+  if (packagesNeedSnapshot(extensionPackages) && source.packageSnapshot === null) {
+    throw new Error(
+      `Assignment ${source.assignmentId} has copied packages but no package snapshot; no follow-up can load them.`,
+    );
   }
 
   return { source, extensionPackages };

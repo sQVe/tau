@@ -164,6 +164,7 @@ it('retries a failed discovery scan and arms timers when it recovers', async () 
   const { hcFake, hc } = hcFor();
   const steps = createSteps();
   const realExec = hcFake.exec;
+  const recovered = deferred();
   let listAttempts = 0;
 
   hc.exec = async (command, commandArguments, options) => {
@@ -178,11 +179,31 @@ it('retries a failed discovery scan and arms timers when it recovers', async () 
     return realExec(command, commandArguments, options);
   };
 
-  await scanFor(hc, steps.delivery, steps.deadline).scan(steps.context);
+  const deadline: DeadlineWatchdog = {
+    ...steps.deadline,
+    apply: async (context, managerTerminal, children) => {
+      await steps.deadline.apply(context, managerTerminal, children);
+      recovered.resolve();
+    },
+  };
+
+  const scanner = scanFor(hc, steps.delivery, deadline);
+
+  onTestFinished(async () => {
+    vi.stubEnv('HC_TERMINAL_ID', '');
+    await scanner.scan(steps.context);
+  });
+
+  await scanner.scan(steps.context);
 
   expect(steps.order).toEqual([]);
 
   await vi.advanceTimersByTimeAsync(5_000);
+  await recovered.promise;
+
+  // Queue behind the retry's sweep, so its lock is released before teardown.
+  vi.stubEnv('HC_TERMINAL_ID', '');
+  await scanner.scan(steps.context);
 
   expect(listAttempts).toBe(3);
   expect(steps.order).toEqual(['deliver', 'deadline']);

@@ -79,7 +79,7 @@ export const createWorkerScan = (
 
   const sweepFolders = async (context: WorkerScanContext): Promise<void> => {
     try {
-      const sweep = await sweepWorkerFolders(hc, agentDirectory, Date.now(), []);
+      const sweep = await sweepWorkerFolders(hc, agentDirectory, Date.now, []);
 
       for (const error of sweep.errors) {
         notifyFailure(context, `Worker folder sweep failed: ${error}`);

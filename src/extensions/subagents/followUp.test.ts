@@ -1,5 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
@@ -8,6 +18,8 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { holdFileLock } from '../../fileLock/fileLock.js';
+import { HcError } from '../../hc/hc.js';
 import {
   assignmentDirectory,
   assignmentPath,
@@ -20,6 +32,10 @@ import { fixtureLoadout } from './fixtures/loadout.js';
 import { executeFollowUp } from './followUp.js';
 import { Admission } from './launch.js';
 import type { LaunchRuntime } from './launch.js';
+import type { StartingWorker } from './workerFolderDecision.js';
+import { sweepWorkerFolders } from './workerFolderSweep.js';
+
+vi.mock(import('node:fs/promises'), { spy: true });
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -537,4 +553,381 @@ it('refuses a follow-up when the capacity is full', async () => {
   expect(terminalRun(fake)).toBeUndefined();
   expect(assignmentFolders(directory)).toEqual(before);
   expect(runtime.refuseCapacity).toHaveBeenCalledOnce();
+});
+
+it('starts a fresh unused window after a follow-up that no sweep saw running', async () => {
+  const { directory, fake, runtime } = setup();
+  const hour = 3_600_000;
+  const base = Date.now();
+  const snapshot = join(directory, 'tmp', 'tau-worker-packages', 'snapshot-source');
+  const marker = join(snapshot, '.tau-unused-since');
+  const extensionPath = join(snapshot, 'node_modules', 'review-package', 'extension.js');
+
+  mkdirSync(join(snapshot, 'node_modules', 'review-package'), { recursive: true });
+  writeFileSync(extensionPath, '');
+  writeFileSync(marker, '');
+  utimesSync(marker, base / 1000, base / 1000);
+
+  const source = sourceAssignment(directory, {
+    packageSnapshot: snapshot,
+    extensionPackages: [{ source: 'npm:review-package', path: extensionPath }],
+  });
+
+  await writeAssignment(source);
+
+  const heldSweep = Promise.withResolvers<unknown>();
+  let heldStarting: StartingWorker | undefined;
+
+  runtime.sweepFolders = (starting) => {
+    heldStarting = starting;
+
+    return heldSweep.promise;
+  };
+
+  let clock = base + 22 * hour;
+
+  vi.spyOn(Date, 'now').mockImplementation(() => clock);
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-follow-up', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).not.toBe(true);
+  expect(heldStarting?.terminalAddress).toBe('t-follow-up');
+
+  if (heldStarting === undefined) {
+    throw new Error('The follow-up started no sweep.');
+  }
+
+  // The follow-up ends at hour 23, and no sweep ever saw it running.
+  clock = base + 23 * hour;
+  fake.reply('ls', JSON.stringify({ terminals: [{ address: 't-follow-up', state: 'finished' }] }));
+
+  await sweepWorkerFolders(runtime.hc, directory, () => clock, []);
+
+  clock = base + 24 * hour;
+  await sweepWorkerFolders(runtime.hc, directory, () => clock, []);
+
+  // The hour-0 marker must not remove the snapshot one hour after the follow-up ended.
+  expect(existsSync(snapshot)).toBe(true);
+  expect(statSync(marker).mtimeMs).toBeCloseTo(base + 23 * hour, -1);
+
+  // The delayed launch sweep must not rewrite the marker its finish evidence superseded.
+  await sweepWorkerFolders(runtime.hc, directory, () => clock, [heldStarting]);
+  heldSweep.resolve(undefined);
+
+  expect(statSync(marker).mtimeMs).toBeCloseTo(base + 23 * hour, -1);
+
+  clock = base + 47 * hour - 1000;
+  await sweepWorkerFolders(runtime.hc, directory, () => clock, []);
+  expect(existsSync(snapshot)).toBe(true);
+
+  clock = base + 47 * hour;
+  await sweepWorkerFolders(runtime.hc, directory, () => clock, []);
+  expect(existsSync(snapshot)).toBe(false);
+});
+
+it('resumes an existing local-only assignment without a snapshot directory', async () => {
+  const { directory, fake, runtime } = setup();
+  const extensionPath = join(directory, 'local-extension.js');
+  const bogusSnapshot = join(directory, 'tmp', 'tau-worker-packages', 'snapshot-source');
+
+  writeFileSync(extensionPath, '');
+
+  const source = sourceAssignment(directory, {
+    packageSnapshot: bogusSnapshot,
+    extensionPackages: [{ source: extensionPath, path: extensionPath }],
+  });
+
+  await writeAssignment(source);
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-follow-up', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).not.toBe(true);
+  expect(existsSync(bogusSnapshot)).toBe(false);
+
+  const path = terminalRun(fake)?.labels['tau.assignment'];
+
+  if (path === undefined) {
+    throw new Error('The follow-up returned no assignment label.');
+  }
+
+  const started = await readAssignment(path);
+
+  expect(started?.packageSnapshot).toBeNull();
+
+  expect((await readAssignment(assignmentPath(source.assignmentId)))?.packageSnapshot).toBe(
+    bogusSnapshot,
+  );
+});
+
+const packageBackedSource = async (
+  directory: string,
+): Promise<{ source: Assignment; snapshot: string; extensionPath: string }> => {
+  const snapshot = join(directory, 'tmp', 'tau-worker-packages', 'snapshot-source');
+  const extensionPath = join(snapshot, 'node_modules', 'review-package', 'extension.js');
+
+  mkdirSync(join(snapshot, 'node_modules', 'review-package'), { recursive: true });
+  writeFileSync(extensionPath, '');
+
+  const source = sourceAssignment(directory, {
+    packageSnapshot: snapshot,
+    extensionPackages: [{ source: 'npm:review-package', path: extensionPath }],
+  });
+
+  await writeAssignment(source);
+
+  return { source, snapshot, extensionPath };
+};
+
+const lockPathFor = (directory: string): string => join(directory, '.tau-worker-folder-sweep.lock');
+
+const listCalls = (fake: HcFake): number =>
+  fake.calls.filter((call) => call.commandArguments[0] === 'ls').length;
+
+const followUpWithSignal = (
+  runtime: LaunchRuntime,
+  sourceAssignmentId: string,
+  signal: AbortSignal,
+) =>
+  executeFollowUp(
+    runtime,
+    {
+      parameters: {
+        sourceAssignmentId,
+        task: 'Continue the work.',
+        acceptance: ['The follow-up is done.'],
+      },
+      startedAt: { wall: 1000, monotonic: 2 },
+      parentSession: '/work/parent.jsonl',
+    },
+    signal,
+    context,
+  );
+
+it('cancels a package-backed follow-up that waits for the sweep lock', async () => {
+  const { directory, fake, runtime } = setup();
+  const { source } = await packageBackedSource(directory);
+
+  const held = await holdFileLock({
+    lockPath: lockPathFor(directory),
+    checkout: directory,
+    terminal: undefined,
+  });
+
+  if (held.kind !== 'held') {
+    throw new Error('Another session already holds the sweep lock.');
+  }
+
+  onTestFinished(() => held.release());
+
+  const controller = new AbortController();
+  const result = followUpWithSignal(runtime, source.assignmentId, controller.signal);
+
+  await vi.waitFor(() => {
+    expect(listCalls(fake)).toBe(2);
+  });
+
+  controller.abort();
+
+  await expect(result).resolves.toMatchObject({ isError: true });
+  expect(terminalRun(fake)).toBeUndefined();
+});
+
+it('starts no terminal when a waited follow-up lost its package paths', async () => {
+  const { directory, fake, runtime } = setup();
+  const { source, snapshot } = await packageBackedSource(directory);
+
+  const held = await holdFileLock({
+    lockPath: lockPathFor(directory),
+    checkout: directory,
+    terminal: undefined,
+  });
+
+  if (held.kind !== 'held') {
+    throw new Error('Another session already holds the sweep lock.');
+  }
+
+  onTestFinished(() => held.release());
+
+  const result = followUp(runtime, source.assignmentId);
+
+  await vi.waitFor(() => {
+    expect(listCalls(fake)).toBe(2);
+  });
+
+  rmSync(snapshot, { recursive: true, force: true });
+  await held.release();
+
+  await expect(result).resolves.toMatchObject({ isError: true });
+  expect(terminalRun(fake)).toBeUndefined();
+});
+
+it('starts no terminal and releases the lock when the old marker clear fails', async () => {
+  const { directory, fake, runtime } = setup();
+  const { source, snapshot } = await packageBackedSource(directory);
+  const marker = join(snapshot, '.tau-unused-since');
+  const priorMarker = Date.now() - 3_600_000;
+
+  mkdirSync(marker);
+  utimesSync(marker, priorMarker / 1000, priorMarker / 1000);
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('Clearing the unused marker');
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(existsSync(marker)).toBe(true);
+  expect(statSync(marker).mtimeMs).toBeCloseTo(priorMarker, -1);
+
+  const held = await holdFileLock({
+    lockPath: lockPathFor(directory),
+    checkout: directory,
+    terminal: undefined,
+  });
+
+  expect(held.kind).toBe('held');
+
+  if (held.kind === 'held') {
+    await held.release();
+  }
+});
+
+it('restores the prior marker when a package-backed follow-up fails to start', async () => {
+  const { directory, fake, runtime } = setup();
+  const { source, snapshot } = await packageBackedSource(directory);
+  const marker = join(snapshot, '.tau-unused-since');
+  const priorMarker = Date.now() - 3_600_000;
+
+  writeFileSync(marker, '');
+  utimesSync(marker, priorMarker / 1000, priorMarker / 1000);
+
+  runtime.hc.connect = () => Promise.reject(new HcError('spawn_failed', 'launch failure'));
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(statSync(marker).mtimeMs).toBeCloseTo(priorMarker, -1);
+});
+
+it('keeps the marker cleared when a package-backed follow-up start is unclear', async () => {
+  const { directory, runtime } = setup();
+  const { source, snapshot } = await packageBackedSource(directory);
+  const marker = join(snapshot, '.tau-unused-since');
+
+  writeFileSync(marker, '');
+  utimesSync(marker, (Date.now() - 3_600_000) / 1000, (Date.now() - 3_600_000) / 1000);
+
+  runtime.hc.connect = () => Promise.reject(new HcError('connect_failed', 'launch failure'));
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).toBe(true);
+  expect(existsSync(marker)).toBe(false);
+});
+
+it('keeps the started follow-up and warns when the sweep lock release fails', async () => {
+  const { directory, fake, runtime } = setup();
+  const { source } = await packageBackedSource(directory);
+  const generation = `${lockPathFor(directory)}.1`;
+  const actual = await vi.importActual<typeof fsPromises>('node:fs/promises');
+  const rename = vi.mocked(fsPromises.rename);
+  const truncate = vi.mocked(fsPromises.truncate);
+  const originalRename = rename.getMockImplementation() ?? actual.rename;
+  const originalTruncate = truncate.getMockImplementation() ?? actual.truncate;
+
+  rename.mockImplementation(((from: string, to: string) =>
+    to === generation
+      ? Promise.reject(new Error('rename failed'))
+      : originalRename(from, to)) as typeof fsPromises.rename);
+
+  truncate.mockImplementation(((path: string, length?: number) =>
+    path === generation
+      ? Promise.reject(new Error('truncate failed'))
+      : originalTruncate(path, length)) as typeof fsPromises.truncate);
+
+  onTestFinished(() => {
+    rename.mockImplementation(originalRename);
+    truncate.mockImplementation(originalTruncate);
+  });
+
+  const sweepFolders = vi.fn<NonNullable<LaunchRuntime['sweepFolders']>>(() => Promise.resolve());
+
+  runtime.sweepFolders = sweepFolders;
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-follow-up', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).not.toBe(true);
+  expect(result.details?.address).toBe('t-follow-up');
+  expect(result.details?.warning).toContain('not released');
+  expect(terminalRun(fake)).toBeDefined();
+  expect(sweepFolders).not.toHaveBeenCalled();
+});
+
+it('submits the background sweep after releasing the copied snapshot lock', async () => {
+  const { directory, fake, runtime } = setup();
+  const { source } = await packageBackedSource(directory);
+  const generation = `${lockPathFor(directory)}.1`;
+  const releasedAtSubmission: boolean[] = [];
+
+  const sweepFolders = vi.fn<NonNullable<LaunchRuntime['sweepFolders']>>(() => {
+    const owner = existsSync(generation)
+      ? (JSON.parse(readFileSync(generation, 'utf8')) as { released?: boolean })
+      : undefined;
+
+    releasedAtSubmission.push(owner?.released === true);
+
+    return Promise.resolve();
+  });
+
+  runtime.sweepFolders = sweepFolders;
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-follow-up', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).not.toBe(true);
+  expect(sweepFolders).toHaveBeenCalledTimes(1);
+  expect(releasedAtSubmission).toEqual([true]);
 });

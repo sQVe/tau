@@ -18,13 +18,22 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import type { HcRuntime } from '../../hc/hc.js';
 import { assignmentPath, writeAssignment } from './assignment.js';
 import { savedAssignment } from './fixtures/deliveryManager.js';
+import type { StartingWorker } from './workerFolderDecision.js';
 import { sweepWorkerFolders } from './workerFolderSweep.js';
+import type { WorkerFolderSweep } from './workerFolderSweep.js';
 import { scratchRootFor } from './workerScratch.js';
 
 vi.mock(import('node:fs/promises'), { spy: true });
 
 const minute = 60_000;
 const hour = 3_600_000;
+
+const sweepAt = (
+  hc: HcRuntime,
+  agentDirectory: string,
+  now: number,
+  starting: readonly StartingWorker[],
+): Promise<WorkerFolderSweep> => sweepWorkerFolders(hc, agentDirectory, () => now, starting);
 
 beforeEach(() => {
   vi.stubEnv('PI_CODING_AGENT_DIR', '');
@@ -171,7 +180,7 @@ it('removes the scratch folder of a finished worker', async () => {
 
   listTerminals([{ assignmentId: 'assignment-a', state: 'finished' }]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
+  const result = await sweepAt(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
 
   expect(existsSync(folder)).toBe(false);
   expect(result).toEqual({ removed: [folder], errors: [] });
@@ -183,7 +192,7 @@ it('removes the scratch folder of a worker hc no longer lists', async () => {
 
   listTerminals([]);
 
-  await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
+  await sweepAt(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
 
   expect(existsSync(folder)).toBe(false);
 });
@@ -195,7 +204,7 @@ it('keeps the scratch folder of a running worker', async () => {
 
   listTerminals([{ assignmentId: runningId, state: 'live' }]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
+  const result = await sweepAt(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
 
   expect(existsSync(folder)).toBe(true);
   expect(result).toEqual({ removed: [], errors: [] });
@@ -209,7 +218,7 @@ it('reports a failed hc list', async () => {
   hcFake.fail('ls', 'boom', 1);
 
   const now = Math.max(bornAt(scratch), bornAt(snapshot)) + 25 * hour;
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+  const result = await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(scratch)).toBe(true);
   expect(existsSync(snapshot)).toBe(true);
@@ -224,7 +233,7 @@ it("keeps every snapshot when a running worker's assignment file is missing", as
 
   listTerminals([{ assignmentId: 'assignment-without-file', state: 'live' }]);
 
-  await sweepWorkerFolders(hc, agentDirectory, bornAt(snapshot) + 25 * hour, []);
+  await sweepAt(hc, agentDirectory, bornAt(snapshot) + 25 * hour, []);
 
   expect(existsSync(snapshot)).toBe(true);
 });
@@ -239,7 +248,7 @@ it("keeps every snapshot when a running worker's assignment file is malformed", 
 
   listTerminals([{ assignmentId: 'assignment-malformed', state: 'live' }]);
 
-  await sweepWorkerFolders(hc, agentDirectory, bornAt(snapshot) + 25 * hour, []);
+  await sweepAt(hc, agentDirectory, bornAt(snapshot) + 25 * hour, []);
 
   expect(existsSync(snapshot)).toBe(true);
 });
@@ -255,7 +264,7 @@ it('removes a snapshot unused for a day and keeps the one a running worker names
   writeUnusedMarker(used, now - 25 * hour);
   listTerminals([{ assignmentId: runningId, state: 'live' }]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+  const result = await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(unused)).toBe(false);
   expect(existsSync(used)).toBe(true);
@@ -268,10 +277,137 @@ it('keeps the old snapshot a starting follow-up reuses', async () => {
 
   listTerminals([]);
 
-  await sweepWorkerFolders(hc, agentDirectory, bornAt(snapshot) + 25 * hour, [
-    { kind: 'read', assignmentId: 'follow-up', running: true, packageSnapshot: 'snapshot-source' },
+  await sweepAt(hc, agentDirectory, bornAt(snapshot) + 25 * hour, [
+    {
+      kind: 'read',
+      assignmentId: 'follow-up',
+      running: true,
+      packageSnapshot: 'snapshot-source',
+      terminalAddress: 't-follow-up',
+    },
   ]);
 
+  expect(existsSync(snapshot)).toBe(true);
+});
+
+it('keeps the marker when a detail read shows the starting worker finished', async () => {
+  const { agentDirectory, details, hc, snapshotRoot, listTerminals } = setup();
+  const snapshot = makeFolder(snapshotRoot, 'snapshot-source');
+  const marker = join(snapshot, unusedMarkerName);
+  const now = Date.now();
+  const id = 'follow-up';
+
+  writeUnusedMarker(snapshot, now - hour);
+  listTerminals([{ assignmentId: id, state: 'live', name: 'worker-0123abcd' }]);
+
+  details.set(
+    `t-${id}`,
+    JSON.stringify({
+      address: `t-${id}`,
+      state: 'finished',
+      labels: { 'tau.assignment': assignmentPath(id) },
+    }),
+  );
+
+  await sweepAt(hc, agentDirectory, now, [
+    {
+      kind: 'read',
+      assignmentId: id,
+      running: true,
+      packageSnapshot: 'snapshot-source',
+      terminalAddress: `t-${id}`,
+    },
+  ]);
+
+  expect(existsSync(marker)).toBe(true);
+  expect(existsSync(snapshot)).toBe(true);
+});
+
+it('keeps a starting snapshot when its detail reply names another terminal', async () => {
+  const { agentDirectory, details, hc, snapshotRoot, listTerminals } = setup();
+  const startingSnapshot = makeFolder(snapshotRoot, 'snapshot-a');
+  const unrelatedSnapshot = makeFolder(snapshotRoot, 'snapshot-b');
+  const now = Date.now();
+  const id = 'follow-up';
+
+  writeUnusedMarker(startingSnapshot, now - 25 * hour);
+  writeUnusedMarker(unrelatedSnapshot, now - 25 * hour);
+  listTerminals([{ assignmentId: id, state: 'live', name: 'worker-0123abcd' }]);
+
+  details.set(
+    `t-${id}`,
+    JSON.stringify({
+      address: 't-other',
+      state: 'finished',
+      labels: { 'tau.assignment': assignmentPath('other') },
+    }),
+  );
+
+  const result = await sweepAt(hc, agentDirectory, now, [
+    {
+      kind: 'read',
+      assignmentId: id,
+      running: true,
+      packageSnapshot: 'snapshot-a',
+      terminalAddress: `t-${id}`,
+    },
+  ]);
+
+  expect(existsSync(join(startingSnapshot, unusedMarkerName))).toBe(false);
+  expect(existsSync(startingSnapshot)).toBe(true);
+  expect(existsSync(join(unrelatedSnapshot, unusedMarkerName))).toBe(true);
+  expect(existsSync(unrelatedSnapshot)).toBe(true);
+  expect(result.errors).toHaveLength(1);
+});
+
+it('keeps the starting hint when only another terminal finished', async () => {
+  const { agentDirectory, hc, snapshotRoot, listTerminals } = setup();
+  const snapshot = makeFolder(snapshotRoot, 'snapshot-source');
+  const marker = join(snapshot, unusedMarkerName);
+  const now = Date.now();
+
+  writeUnusedMarker(snapshot, now - hour);
+  listTerminals([{ assignmentId: 'other', state: 'finished' }]);
+
+  await sweepAt(hc, agentDirectory, now, [
+    {
+      kind: 'read',
+      assignmentId: 'follow-up',
+      running: true,
+      packageSnapshot: 'snapshot-source',
+      terminalAddress: 't-follow-up',
+    },
+  ]);
+
+  expect(existsSync(marker)).toBe(false);
+  expect(existsSync(snapshot)).toBe(true);
+});
+
+it('keeps the snapshot a live worker names when the starting hint finished', async () => {
+  const { agentDirectory, hc, snapshotRoot, listTerminals } = setup();
+  const snapshot = makeFolder(snapshotRoot, 'snapshot-used');
+  const marker = join(snapshot, unusedMarkerName);
+  const runningId = await saveAssignmentWithSnapshot(agentDirectory, 'snapshot-used');
+  const now = Date.now();
+
+  writeUnusedMarker(snapshot, now - hour);
+
+  listTerminals([
+    { assignmentId: runningId, state: 'live' },
+    { assignmentId: 'follow-up', state: 'finished' },
+  ]);
+
+  await sweepAt(hc, agentDirectory, now, [
+    {
+      kind: 'read',
+      assignmentId: 'follow-up',
+      running: true,
+      packageSnapshot: 'snapshot-used',
+      terminalAddress: 't-follow-up',
+    },
+  ]);
+
+  expect(existsSync(marker)).toBe(false);
   expect(existsSync(snapshot)).toBe(true);
 });
 
@@ -283,7 +419,7 @@ it('keeps a snapshot unused for just under a day', async () => {
   writeUnusedMarker(snapshot, now - 24 * hour + 1000);
   listTerminals([]);
 
-  await sweepWorkerFolders(hc, agentDirectory, now, []);
+  await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(snapshot)).toBe(true);
 });
@@ -294,8 +430,14 @@ it('keeps the scratch folder of a starting launch', async () => {
 
   listTerminals([]);
 
-  await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 2 * minute, [
-    { kind: 'read', assignmentId: 'assignment-starting', running: true, packageSnapshot: null },
+  await sweepAt(hc, agentDirectory, bornAt(folder) + 2 * minute, [
+    {
+      kind: 'read',
+      assignmentId: 'assignment-starting',
+      running: true,
+      packageSnapshot: null,
+      terminalAddress: 't-assignment-starting',
+    },
   ]);
 
   expect(existsSync(folder)).toBe(true);
@@ -309,7 +451,7 @@ it('ignores files in the folder roots and a missing root', async () => {
 
   listTerminals([]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, Date.now() + 2 * minute, []);
+  const result = await sweepAt(hc, agentDirectory, Date.now() + 2 * minute, []);
 
   expect(existsSync(join(scratchRoot, 'stray-file'))).toBe(true);
   expect(result.removed).toEqual([join(scratchRoot, 'assignment-a')]);
@@ -326,7 +468,7 @@ it('reports a removal error and keeps the redirected folder', async () => {
 
   listTerminals([]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, bornAt(target) + 2 * minute, []);
+  const result = await sweepAt(hc, agentDirectory, bornAt(target) + 2 * minute, []);
 
   expect(existsSync(target)).toBe(true);
   expect(result.removed).toEqual([]);
@@ -355,7 +497,7 @@ it('dates a folder by its birth time when the file system reports one', async ()
 
   listTerminals([]);
 
-  await sweepWorkerFolders(hc, agentDirectory, now, []);
+  await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(folder)).toBe(false);
 });
@@ -368,7 +510,7 @@ it('dates a folder by its modification time when the birth time is 0', async () 
   replaceStat(folder, () => Promise.resolve({ birthtimeMs: 0, mtimeMs: now - 30_000 }));
   listTerminals([]);
 
-  await sweepWorkerFolders(hc, agentDirectory, now, []);
+  await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(folder)).toBe(true);
 });
@@ -381,7 +523,7 @@ it('skips a folder that vanishes while the sweep reads it', async () => {
 
   listTerminals([]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, bornAt(staying) + 2 * minute, []);
+  const result = await sweepAt(hc, agentDirectory, bornAt(staying) + 2 * minute, []);
 
   expect(existsSync(staying)).toBe(false);
   expect(result).toEqual({ removed: [staying], errors: [] });
@@ -394,7 +536,7 @@ it('fails the sweep when a folder cannot be read for another reason', async () =
 
   listTerminals([]);
 
-  await expect(sweepWorkerFolders(hc, agentDirectory, Date.now(), [])).rejects.toThrow('denied');
+  await expect(sweepAt(hc, agentDirectory, Date.now(), [])).rejects.toThrow('denied');
   expect(existsSync(folder)).toBe(true);
 });
 
@@ -425,7 +567,7 @@ it('ignores terminals without a tau.assignment label', async () => {
 
   writeUnusedMarker(snapshot, now - 25 * hour);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+  const result = await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(scratch)).toBe(false);
   expect(existsSync(snapshot)).toBe(false);
@@ -442,7 +584,7 @@ it('does not let a running worker without a snapshot protect snapshots', async (
   writeUnusedMarker(snapshot, now - 25 * hour);
   listTerminals([{ assignmentId: runningId, state: 'live' }]);
 
-  await sweepWorkerFolders(hc, agentDirectory, now, []);
+  await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(snapshot)).toBe(false);
 });
@@ -456,7 +598,7 @@ it('does not read the assignment of a finished worker for its snapshot', async (
   writeUnusedMarker(snapshot, now - 25 * hour);
   listTerminals([{ assignmentId: 'assignment-without-file', state: 'finished' }]);
 
-  await sweepWorkerFolders(hc, agentDirectory, now, []);
+  await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(snapshot)).toBe(false);
 });
@@ -471,7 +613,7 @@ it('keeps the scratch folder and snapshot of a running worker that hc ls lists w
 
   const now = Math.max(bornAt(scratch), bornAt(snapshot)) + 25 * hour;
 
-  await sweepWorkerFolders(hc, agentDirectory, now, []);
+  await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(scratch)).toBe(true);
   expect(existsSync(snapshot)).toBe(true);
@@ -483,7 +625,7 @@ it('keeps a scratch folder no terminal names inside the launch grace', async () 
 
   listTerminals([]);
 
-  await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 5_000, []);
+  await sweepAt(hc, agentDirectory, bornAt(folder) + 5_000, []);
 
   expect(existsSync(folder)).toBe(true);
 });
@@ -511,7 +653,7 @@ it.each(readFailures)('removes nothing when $name', async ({ arrange }) => {
   arrange(state);
 
   const now = Math.max(bornAt(scratch), bornAt(snapshot)) + 25 * hour;
-  const result = await sweepWorkerFolders(state.hc, state.agentDirectory, now, []);
+  const result = await sweepAt(state.hc, state.agentDirectory, now, []);
 
   expect(existsSync(scratch)).toBe(true);
   expect(existsSync(snapshot)).toBe(true);
@@ -542,7 +684,7 @@ it("keeps only the failed terminal's scratch folder", async () => {
   details.delete(`t-${idA}`);
 
   const now = Math.max(bornAt(folderA), bornAt(folderB), bornAt(snapshot)) + 25 * hour;
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+  const result = await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(folderA)).toBe(true);
   expect(existsSync(snapshot)).toBe(true);
@@ -561,7 +703,7 @@ it('keeps the failed terminal folders when hc get returns malformed output', asy
   listTerminals([{ assignmentId: idA, state: 'live', name: 'worker-0123abcd' }]);
   details.set(`t-${idA}`, 'not json');
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, bornAt(folderA) + 2 * minute, []);
+  const result = await sweepAt(hc, agentDirectory, bornAt(folderA) + 2 * minute, []);
 
   expect(existsSync(folderA)).toBe(true);
   expect(existsSync(folderB)).toBe(false);
@@ -578,7 +720,7 @@ it('keeps every folder when a failed terminal has no worker name', async () => {
   details.delete(`t-${idA}`);
 
   const now = Math.max(bornAt(folderA), bornAt(folderB), bornAt(snapshot)) + 25 * hour;
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+  const result = await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(folderA)).toBe(true);
   expect(existsSync(folderB)).toBe(true);
@@ -594,12 +736,7 @@ it('reads no finished terminal', async () => {
 
   listTerminals(ids.map((assignmentId) => ({ assignmentId, state: 'finished' })));
 
-  const result = await sweepWorkerFolders(
-    hc,
-    agentDirectory,
-    bornAt(folders[0] ?? '') + 2 * minute,
-    [],
-  );
+  const result = await sweepAt(hc, agentDirectory, bornAt(folders[0] ?? '') + 2 * minute, []);
 
   expect(gets.started).toEqual([]);
   expect(result.removed.toSorted()).toEqual(folders.toSorted());
@@ -615,7 +752,7 @@ it('skips live terminals that are not workers', async () => {
     { assignmentId: 'assignment-short', state: 'live', name: 'worker-0123ABCD' },
   ]);
 
-  await sweepWorkerFolders(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
+  await sweepAt(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
 
   expect(gets.started).toEqual([]);
   expect(existsSync(folder)).toBe(false);
@@ -633,7 +770,7 @@ it('runs at most four terminal reads at once', async () => {
   gets.hold = true;
   listTerminals(rows);
 
-  const sweep = sweepWorkerFolders(hc, agentDirectory, Date.now(), []);
+  const sweep = sweepAt(hc, agentDirectory, Date.now(), []);
 
   await vi.waitFor(() => {
     expect(gets.started).toHaveLength(4);
@@ -667,7 +804,7 @@ it('writes the unused marker and removes the snapshot a day later', async () => 
 
   listTerminals([]);
 
-  const first = await sweepWorkerFolders(hc, agentDirectory, firstSweep, []);
+  const first = await sweepAt(hc, agentDirectory, firstSweep, []);
 
   expect(existsSync(snapshot)).toBe(true);
   expect(statSync(marker).mtimeMs).toBeCloseTo(firstSweep, -1);
@@ -675,11 +812,11 @@ it('writes the unused marker and removes the snapshot a day later', async () => 
 
   const markedAt = statSync(marker).mtimeMs;
 
-  await sweepWorkerFolders(hc, agentDirectory, markedAt + 24 * hour - 1000, []);
+  await sweepAt(hc, agentDirectory, markedAt + 24 * hour - 1000, []);
 
   expect(existsSync(snapshot)).toBe(true);
 
-  const second = await sweepWorkerFolders(hc, agentDirectory, markedAt + 24 * hour, []);
+  const second = await sweepAt(hc, agentDirectory, markedAt + 24 * hour, []);
 
   expect(existsSync(snapshot)).toBe(false);
   expect(second).toEqual({ removed: [snapshot], errors: [] });
@@ -694,7 +831,7 @@ it('clears the marker when a running worker names the snapshot', async () => {
   writeUnusedMarker(snapshot, now - 25 * hour);
   listTerminals([{ assignmentId: runningId, state: 'live' }]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+  const result = await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(snapshot)).toBe(true);
   expect(readdirSync(snapshot)).toEqual([]);
@@ -714,7 +851,7 @@ it('reports a marker that cannot be written and still removes the other folders'
 
   listTerminals([]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, bornAt(scratch) + 2 * minute, []);
+  const result = await sweepAt(hc, agentDirectory, bornAt(scratch) + 2 * minute, []);
 
   expect(existsSync(scratch)).toBe(false);
   expect(result.removed).toEqual([scratch]);
@@ -732,7 +869,7 @@ it('passes a 10 s limit to each hc get', async () => {
     { assignmentId: 'assignment-b', state: 'live' },
   ]);
 
-  await sweepWorkerFolders(hc, agentDirectory, Date.now(), []);
+  await sweepAt(hc, agentDirectory, Date.now(), []);
 
   expect(gets.timeouts).toEqual([10_000, 10_000]);
 });
@@ -750,7 +887,7 @@ it('keeps folders and reports a timed-out read', async () => {
 
   writeUnusedMarker(snapshot, now - 25 * hour);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+  const result = await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(folderA)).toBe(true);
   expect(existsSync(snapshot)).toBe(true);
@@ -771,8 +908,14 @@ it('clears the marker of the starting snapshot when hc ls fails and removes noth
   writeUnusedMarker(other, now - 25 * hour);
   hcFake.fail('ls', 'boom', 1);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, [
-    { kind: 'read', assignmentId: 'follow-up', running: true, packageSnapshot: 'snapshot-reused' },
+  const result = await sweepAt(hc, agentDirectory, now, [
+    {
+      kind: 'read',
+      assignmentId: 'follow-up',
+      running: true,
+      packageSnapshot: 'snapshot-reused',
+      terminalAddress: 't-follow-up',
+    },
   ]);
 
   expect(existsSync(join(reused, unusedMarkerName))).toBe(false);
@@ -791,7 +934,7 @@ it('writes no marker when hc ls fails', async () => {
 
   hcFake.fail('ls', 'boom', 1);
 
-  await sweepWorkerFolders(hc, agentDirectory, Date.now(), []);
+  await sweepAt(hc, agentDirectory, Date.now(), []);
 
   expect(existsSync(join(snapshot, unusedMarkerName))).toBe(false);
 });
@@ -809,7 +952,7 @@ it('refuses a redirected snapshot root for marker changes', async () => {
   symlinkSync(elsewhere, snapshotRoot);
   listTerminals([{ assignmentId: runningId, state: 'live' }]);
 
-  const result = await sweepWorkerFolders(hc, agentDirectory, now, []);
+  const result = await sweepAt(hc, agentDirectory, now, []);
 
   expect(existsSync(join(unnamed, unusedMarkerName))).toBe(false);
   expect(existsSync(join(named, unusedMarkerName))).toBe(true);

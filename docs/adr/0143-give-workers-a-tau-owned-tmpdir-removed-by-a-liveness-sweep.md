@@ -43,9 +43,35 @@ the marker of its starting worker's snapshot when `hc ls` fails, and marks and r
 Marker changes use the same redirected-root guard as removals and never follow a link at the marker
 path. A follow-up reuses the snapshot of its source assignment, and a follow-up is the only reader
 that starts after a worker ended. The 24-hour window protects a follow-up that another manager or a
-scan has not yet seen as running. The sweep takes no lock. One race stays as a known limit: a
-follow-up of another manager that starts between its validation and the `hc` listing, on a snapshot
-whose marker is already older than 24 hours, can lose that snapshot.
+scan has not yet seen as running.
+
+The sweep takes one lock at `<agentDirectory>/.tau-worker-folder-sweep.lock`, shared by every
+manager that sweeps the same agent directory. It takes the lock before it reads the `hc` listing,
+the folders, and the markers, and holds it until it has written every marker and removed every
+folder, including the fallback that keeps everything when the listing fails. Evidence and effects
+must come from one view: a sweep that read a snapshot as unused before a launch cleared its marker
+would otherwise write that stale marker back after the launch. A sweep that finds the lock held
+waits for it, because skipping its launch sweep could lose the clear. The clock is sampled once,
+after the lock is taken, so a wait never backdates a new marker. A launch does not wait: it starts
+its sweep without awaiting it. A launch's sweep carries the exact terminal address of the worker it
+started. The lock does not grant claims in the order they were submitted, so an end scan can take
+the lock and write the unused marker before an earlier launch sweep runs. The launch sweep therefore
+drops its starting fact when the fresh listing or a terminal read reports that exact address as
+finished. A live worker that names the snapshot still protects it, and unread, missing, or unrelated
+evidence leaves the starting fact in place. A lock failure reaches the scan's error handler or the
+launch's catch, like any other sweep failure.
+
+A follow-up that reuses a package snapshot waits for the sweep lock before it starts. Under the lock
+it checks the package paths again, clears the snapshot's old marker with the same guards, and keeps
+the lock through the terminal request and its reconciliation. It releases the lock before it starts
+its sweep and does not await the sweep. The wait uses the request's cancellation signal. If a
+definite start failure follows the clear, the follow-up restores the old marker time. If the worker
+may have started, it leaves the marker cleared. A release error after a confirmed start keeps the
+started result and reports a warning. This narrows the old limitation: a manager that shares the
+lock cannot start a follow-up on a snapshot that a sweep removes between validation and listing,
+because the package path check runs again under the lock. A follow-up of a manager that does not
+share the lock, on a snapshot whose marker is already older than 24 hours, can still lose that
+snapshot.
 
 The sweep fails closed. It removes nothing when the `hc` list cannot be read. When `hc get` fails
 for a live terminal, the sweep keeps every snapshot and the scratch folders that terminal may own.
@@ -76,6 +102,8 @@ no timer is needed.
   starts at the first sweep that sees it unused.
 - A sweep adds one `hc ls` read and one `hc get` per live worker terminal to each scan and launch. A
   slow terminal delays the sweep by up to 10 seconds plus the kill grace.
+- A sweep waits for another sweep of the same agent directory, so its own reads and effects can be
+  delayed by that sweep's terminal reads.
 - A folder named by a finished worker, and younger than a minute, stays until the next sweep.
 - Tests cannot use the worker's `TMPDIR`, because it sits inside the real HOME and makes Unix socket
   paths too long. In a worker session the test run sets `TMPDIR` to `/tmp`, and each test removes

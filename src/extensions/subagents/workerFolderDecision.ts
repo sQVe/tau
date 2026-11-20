@@ -19,6 +19,21 @@ interface ReadTerminalFact {
   packageSnapshot: string | null;
 }
 
+// A worker whose launch returned but whose sweep has not read it yet.
+export interface StartingWorker {
+  kind: 'read';
+  assignmentId: string;
+  running: true;
+  packageSnapshot: string | null;
+  terminalAddress: string;
+}
+
+// A terminal the fresh listing or a detail read reports as finished.
+interface FinishedTerminalFact {
+  kind: 'finished';
+  terminalAddress: string;
+}
+
 // A terminal whose labels could not be read. The prefix is the start of its assignment id when its
 // name gives one.
 interface UnreadTerminalFact {
@@ -26,7 +41,11 @@ interface UnreadTerminalFact {
   assignmentPrefix: string | undefined;
 }
 
-export type WorkerTerminalFact = ReadTerminalFact | UnreadTerminalFact;
+export type WorkerTerminalFact =
+  | ReadTerminalFact
+  | StartingWorker
+  | FinishedTerminalFact
+  | UnreadTerminalFact;
 
 export interface WorkerFolderFacts {
   now: number;
@@ -52,8 +71,29 @@ const ageAtLeast = (folder: WorkerFolder, now: number, limit: number): boolean =
 const isRead = (terminal: WorkerTerminalFact): terminal is ReadTerminalFact =>
   terminal.kind === 'read';
 
+const isStarting = (terminal: ReadTerminalFact): terminal is StartingWorker =>
+  terminal.running && 'terminalAddress' in terminal && typeof terminal.terminalAddress === 'string';
+
 const isUnread = (terminal: WorkerTerminalFact): terminal is UnreadTerminalFact =>
   terminal.kind === 'unread';
+
+const isFinishedFact = (terminal: WorkerTerminalFact): terminal is FinishedTerminalFact =>
+  terminal.kind === 'finished';
+
+const finishedAddresses = (terminals: readonly WorkerTerminalFact[]): Set<string> => {
+  const finishedList = terminals.filter(isFinishedFact);
+
+  return new Set(finishedList.map((terminal) => terminal.terminalAddress));
+};
+
+// A launch hint yields to a matching finish, since the lock need not grant claims in arrival order.
+const observedTerminals = (
+  terminals: readonly WorkerTerminalFact[],
+  finished: ReadonlySet<string>,
+): ReadTerminalFact[] =>
+  terminals
+    .filter(isRead)
+    .filter((terminal) => !(isStarting(terminal) && finished.has(terminal.terminalAddress)));
 
 const runningTerminals = (terminals: readonly ReadTerminalFact[]): ReadTerminalFact[] =>
   terminals.filter((terminal) => terminal.running);
@@ -130,7 +170,7 @@ export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolde
     return { scratch: [], snapshots: [], markUnused: [], clearUnused: [] };
   }
 
-  const terminals = facts.terminals.filter(isRead);
+  const terminals = observedTerminals(facts.terminals, finishedAddresses(facts.terminals));
   const unread = facts.terminals.filter(isUnread);
   const running = runningTerminals(terminals);
 
@@ -155,9 +195,9 @@ export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolde
 // starting is known without the list, and its snapshot loses any marker.
 export const decideUnreadListRemoval = (
   snapshots: readonly SnapshotFolder[],
-  starting: readonly WorkerTerminalFact[],
+  starting: readonly StartingWorker[],
 ): WorkerFolderRemoval => {
-  const running = runningTerminals(starting.filter(isRead));
+  const running = runningTerminals(starting);
 
   return {
     scratch: [],

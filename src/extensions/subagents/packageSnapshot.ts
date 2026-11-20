@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { cp, mkdir } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 
@@ -23,6 +24,19 @@ class SnapshotError extends Error {
 }
 
 export const snapshotRootName = 'tau-worker-packages';
+
+export const missingPackagePath = (packages: readonly { path: string }[]): string | undefined => {
+  for (const extension of packages) {
+    if (!existsSync(extension.path)) {
+      return extension.path;
+    }
+  }
+
+  return undefined;
+};
+
+export const missingPackagePathError = (path: string): Error =>
+  new Error(`Missing worker package path ${path}; no follow-up can load it.`);
 
 export const snapshotRootFor = (agentDirectory: string): string =>
   join(agentDirectory, 'tmp', snapshotRootName);

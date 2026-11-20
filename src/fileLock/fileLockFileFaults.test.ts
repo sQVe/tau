@@ -10,6 +10,7 @@ import { cancelled, fixture, heldLocks, ownerJson } from './fixtures/fileLockHar
 const fileFaults = vi.hoisted(() => ({
   storageFull: false,
   truncateFails: false,
+  removeFault: undefined as { suffix: string; error: Error } | undefined,
   afterOwnerRead: undefined as (() => Promise<void>) | undefined,
 }));
 
@@ -32,6 +33,18 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
     await original.truncate(path, length);
   };
 
+  const faultyRemove: typeof original.rm = async (path, options) => {
+    const fault = fileFaults.removeFault;
+
+    if (fault !== undefined && String(path).endsWith(fault.suffix)) {
+      fileFaults.removeFault = undefined;
+
+      throw fault.error;
+    }
+
+    await original.rm(path, options);
+  };
+
   const pausingReadFile = (async (...readArguments: Parameters<typeof original.readFile>) => {
     const text = await original.readFile(...readArguments);
     const afterOwnerRead = fileFaults.afterOwnerRead;
@@ -45,6 +58,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const faults = {
     writeFile: faultyWriteFile,
     truncate: faultyTruncate,
+    rm: faultyRemove,
     readFile: pausingReadFile,
   };
 
@@ -54,6 +68,16 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 const clearFileFaults = () => {
   fileFaults.storageFull = false;
   fileFaults.truncateFails = false;
+  fileFaults.removeFault = undefined;
+  fileFaults.afterOwnerRead = undefined;
+};
+
+const failRemoveOnce = (suffix: string): Error => {
+  const error = Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
+
+  fileFaults.removeFault = { suffix, error };
+
+  return error;
 };
 
 it('releases the lock when storage refuses new files, so the next caller acquires it without waiting', async () => {
@@ -98,6 +122,115 @@ it('releases the lock when storage refuses new files, so the next caller acquire
   expect(next).toBe('next ran');
   expect(waitedFor).toEqual([]);
   expect(await heldLocks(lockPath)).toEqual([]);
+});
+
+const claimFaultCases: [
+  name: string,
+  releasedGeneration: number,
+  prepare: (lockPath: string) => Promise<Error>,
+][] = [
+  [
+    'releases a new claim when staging file removal fails',
+    1,
+    async () => failRemoveOnce('.staging'),
+  ],
+  [
+    'releases a new claim when older generation cleanup fails',
+    2,
+    async (lockPath) => {
+      const olderPath = `${lockPath}.1`;
+
+      await mkdir(dirname(lockPath), { recursive: true });
+      await writeFile(olderPath, ownerJson('older', true));
+
+      return failRemoveOnce(olderPath);
+    },
+  ],
+];
+
+it.each(claimFaultCases)('%s', async (_name, releasedGeneration, prepare) => {
+  const { lockPath } = fixture();
+
+  onTestFinished(clearFileFaults);
+
+  const acquisitionError = await prepare(lockPath);
+
+  const options = {
+    lockPath,
+    checkout: '/holder',
+    signal: undefined,
+    pollMilliseconds: 60_000,
+    cancelled,
+    onWaiting: () => undefined,
+  };
+
+  const run = vi.fn<() => Promise<string>>(async () => 'ran');
+  const outcome = withFileLock(options, run);
+
+  await expect(outcome).rejects.toBe(acquisitionError);
+  expect(run).not.toHaveBeenCalled();
+
+  const released = JSON.parse(await readFile(`${lockPath}.${releasedGeneration}`, 'utf8')) as {
+    checkout?: string;
+    released?: boolean;
+  };
+
+  expect(released).toMatchObject({ checkout: '/holder', released: true });
+
+  const controller = new AbortController();
+  const waitedFor: unknown[] = [];
+
+  const next = await withFileLock(
+    {
+      ...options,
+      checkout: '/next',
+      signal: controller.signal,
+      onWaiting: (holder) => {
+        waitedFor.push(holder);
+        controller.abort();
+      },
+    },
+    async () => 'next ran',
+  );
+
+  expect(next).toBe('next ran');
+  expect(waitedFor).toEqual([]);
+  expect(await heldLocks(lockPath)).toEqual([]);
+});
+
+it('reports the claim error and the release error when the release fails too', async () => {
+  const { lockPath } = fixture();
+
+  onTestFinished(clearFileFaults);
+
+  const acquisitionError = failRemoveOnce('.staging');
+  const run = vi.fn<() => Promise<string>>(async () => 'ran');
+
+  const outcome = withFileLock(
+    {
+      lockPath,
+      checkout: '/holder',
+      signal: undefined,
+      pollMilliseconds: 60_000,
+      cancelled,
+      onWaiting: () => undefined,
+      beforeLink: async () => {
+        fileFaults.afterOwnerRead = async () => {
+          throw new Error('The release read failed.');
+        };
+      },
+    },
+    run,
+  );
+
+  const thrown: unknown = await outcome.catch((error: unknown) => error);
+  const failure = thrown as Error;
+
+  expect(failure.message).toContain('The claim failed: EIO: i/o error');
+  expect(failure.message).toContain('releasing it failed: The release read failed.');
+
+  expect(failure.cause).toBe(acquisitionError);
+  expect(run).not.toHaveBeenCalled();
 });
 
 it.each([

@@ -2,7 +2,7 @@ import { link, mkdir, readdir, readFile, rename, rm, truncate, writeFile } from 
 import { basename, dirname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { hasErrorCode, isMissingFile } from '../errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
 import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
@@ -111,9 +111,12 @@ const readOwner = async (lockPath: string): Promise<LockOwner | undefined> => {
 const generationPath = (lockPath: string, generation: number): string =>
   `${lockPath}.${generation}`;
 
-// Links a fully written file into place, so no reader ever sees a partly written lock.
+const stagingPath = (path: string, owner: LockOwner): string => `${path}.${owner.token}.staging`;
+
+// Links a fully written file into place, so no reader ever sees a partly written lock. A successful
+// link leaves its staging file for the caller, which releases the claim if removing it fails.
 const tryCreate = async (path: string, owner: LockOwner): Promise<boolean> => {
-  const staging = `${path}.${owner.token}.staging`;
+  const staging = stagingPath(path, owner);
 
   await writeFile(staging, JSON.stringify(owner), { flag: 'wx' });
 
@@ -122,13 +125,13 @@ const tryCreate = async (path: string, owner: LockOwner): Promise<boolean> => {
 
     return true;
   } catch (error) {
+    await rm(staging, { force: true });
+
     if (hasErrorCode(error, 'EEXIST')) {
       return false;
     }
 
     throw error;
-  } finally {
-    await rm(staging, { force: true });
   }
 };
 
@@ -295,15 +298,32 @@ const claimGeneration = async (
     return undefined;
   }
 
-  const current = await listGenerations(lockPath);
+  try {
+    await rm(stagingPath(path, owner), { force: true });
 
-  if (current.some((generation) => generation > next)) {
-    await rm(path, { force: true });
+    const current = await listGenerations(lockPath);
 
-    return undefined;
+    if (current.some((generation) => generation > next)) {
+      await rm(path, { force: true });
+
+      return undefined;
+    }
+
+    await removeOlderGenerations(lockPath, next);
+  } catch (claimError) {
+    const releaseError = await releaseOwnFile(path, owner).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    if (releaseError === undefined) {
+      throw claimError;
+    }
+
+    const message = `The claim failed: ${errorMessage(claimError)}; releasing it failed: ${errorMessage(releaseError)}`;
+
+    throw new Error(message, { cause: claimError });
   }
-
-  await removeOlderGenerations(lockPath, next);
 
   return owner;
 };

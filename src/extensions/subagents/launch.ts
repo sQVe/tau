@@ -21,14 +21,25 @@ import type { LaunchParameters } from './launchParameters.js';
 import { resolveLoadout } from './loadout.js';
 import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
-import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot.js';
+import {
+  missingPackagePath,
+  missingPackagePathError,
+  removeSnapshotDirectory,
+  snapshotDirectoryFor,
+} from './packageSnapshot.js';
 import { piPackageManager } from './piPackageManager.js';
 import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
+import {
+  clearSnapshotMarker,
+  markSnapshotUnused,
+  readSnapshotUnusedSince,
+} from './snapshotMarker.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
-import type { WorkerTerminalFact } from './workerFolderDecision.js';
-import { sweepWorkerFolders } from './workerFolderSweep.js';
+import type { StartingWorker } from './workerFolderDecision.js';
+import { sweepWorkerFolders, withFolderSweepLock } from './workerFolderSweep.js';
 import { workerName } from './workerName.js';
+import { packagesNeedSnapshot } from './workerPackages.js';
 import { placementLabels } from './workerPlacement.js';
 import {
   createScratchDirectory,
@@ -45,7 +56,7 @@ export interface LaunchRuntime {
   admission: Admission;
   refuseCapacity?: (() => void) | undefined;
   readSkillTools?: (() => SkillTools | undefined) | undefined;
-  sweepFolders?: ((starting: WorkerTerminalFact) => Promise<unknown>) | undefined;
+  sweepFolders?: ((starting: StartingWorker) => Promise<unknown>) | undefined;
   packageManager?: (loadout: Assignment['loadout']) => WorkerPackageManager;
   buildCommand?: (
     sessionFile: string,
@@ -69,6 +80,7 @@ export interface LaunchStatus {
   labels: Record<string, string>;
   model: string;
   modelReason: string;
+  warning?: string;
 }
 
 type Reconciliation =
@@ -84,6 +96,11 @@ export interface WorkerStart {
   skillTools: SkillTools;
   modelReason: string;
   signal: AbortSignal | undefined;
+}
+
+interface StartedFollowUp {
+  terminal: HcTerminal;
+  warning?: string;
 }
 
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
@@ -314,22 +331,136 @@ const startAssignmentWorker = async (
   );
 };
 
-const startFolderSweep = (runtime: LaunchRuntime, assignment: Assignment): void => {
+const startFolderSweep = (
+  runtime: LaunchRuntime,
+  assignment: Assignment,
+  terminal: HcTerminal,
+): void => {
   const snapshot = assignment.packageSnapshot;
 
-  const starting: WorkerTerminalFact = {
+  const starting: StartingWorker = {
     kind: 'read',
     assignmentId: assignment.assignmentId,
     running: true,
     packageSnapshot: snapshot === null ? null : basename(snapshot),
+    terminalAddress: terminal.address,
   };
 
   const sweep =
     runtime.sweepFolders ??
-    ((fact) => sweepWorkerFolders(runtime.hc, runtime.agentDirectory, Date.now(), [fact]));
+    ((fact) => sweepWorkerFolders(runtime.hc, runtime.agentDirectory, Date.now, [fact]));
 
   // A sweep failure never fails a launch. The next scan reports it.
   sweep(starting).catch(() => undefined);
+};
+
+const startWithReconciliation = async (
+  runtime: LaunchRuntime,
+  facts: WorkerStart,
+  placement: Record<string, string>,
+): Promise<HcTerminal> => {
+  try {
+    return await startAssignmentWorker(runtime, facts, placement);
+  } catch (error) {
+    if (!isUnclearLaunch(error)) {
+      throw error;
+    }
+
+    const name = workerName(facts.assignment.profile, facts.assignment.assignmentId);
+    const reconciled = await reconcileUnclearLaunch(runtime, name);
+
+    if (reconciled.kind === 'missing') {
+      throw error;
+    }
+
+    if (reconciled.kind === 'unclear') {
+      throw new UnclearLaunchError(name);
+    }
+
+    return reconciled.terminal;
+  }
+};
+
+// A reused snapshot may carry a marker older than its new user. The follow-up clears it under the
+// sweep lock, so no sweep can start an unused window before the worker runs.
+const startPackageBackedFollowUp = async (
+  runtime: LaunchRuntime,
+  facts: WorkerStart,
+  placement: Record<string, string>,
+): Promise<StartedFollowUp> => {
+  const { assignment } = facts;
+  const snapshot = assignment.packageSnapshot;
+
+  if (snapshot === null) {
+    throw new Error('A package-backed follow-up needs a package snapshot.');
+  }
+
+  const snapshotName = basename(snapshot);
+  let started: HcTerminal | undefined;
+
+  try {
+    const terminal = await withFolderSweepLock(runtime.agentDirectory, facts.signal, async () => {
+      const missingPath = missingPackagePath(facts.extensionPackages);
+
+      if (missingPath !== undefined) {
+        throw missingPackagePathError(missingPath);
+      }
+
+      let priorMarker: number | undefined;
+
+      try {
+        priorMarker = await readSnapshotUnusedSince(runtime.agentDirectory, snapshotName);
+      } catch (error) {
+        throw new Error(
+          `Reading the unused marker of snapshot ${snapshotName} failed: ${errorMessage(error)}`,
+          { cause: error },
+        );
+      }
+
+      const clearError = await clearSnapshotMarker(runtime.agentDirectory, snapshotName);
+
+      if (clearError !== undefined) {
+        throw new Error(clearError);
+      }
+
+      try {
+        await createScratchDirectory(runtime.agentDirectory, assignment.assignmentId);
+        started = await startWithReconciliation(runtime, facts, placement);
+      } catch (error) {
+        const mayHaveStarted = isUnclearLaunch(error) || error instanceof UnclearLaunchError;
+
+        if (priorMarker !== undefined && !mayHaveStarted) {
+          const restoreError = await markSnapshotUnused(
+            runtime.agentDirectory,
+            snapshotName,
+            priorMarker,
+          );
+
+          if (restoreError !== undefined) {
+            throw new Error(
+              `${errorMessage(error)}; restoring the unused marker failed: ${restoreError}`,
+              { cause: error },
+            );
+          }
+        }
+
+        throw error;
+      }
+
+      return started;
+    });
+
+    return { terminal };
+  } catch (error) {
+    if (started === undefined) {
+      throw error;
+    }
+
+    return {
+      terminal: started,
+      warning: `The folder sweep lock was not released after the follow-up started: ${errorMessage(error)}`,
+    };
+  }
 };
 
 export const startReservedWorker = async (
@@ -348,42 +479,37 @@ export const startReservedWorker = async (
     const manager = await readCurrentTerminal(runtime.hc);
     const placement = placementLabels(manager?.labels ?? {});
 
-    // A sweep removes a scratch folder 60 s after creation, so no slow read may sit between the
-    // creation and the request.
-    await createScratchDirectory(runtime.agentDirectory, assignmentId);
+    const waitsForSweepLock =
+      assignment.previousAssignmentId !== null && assignment.packageSnapshot !== null;
 
     let terminal: HcTerminal;
+    let warning: string | undefined;
 
-    try {
-      terminal = await startAssignmentWorker(runtime, facts, placement);
-    } catch (error) {
-      if (!isUnclearLaunch(error)) {
-        throw error;
-      }
+    if (waitsForSweepLock) {
+      const started = await startPackageBackedFollowUp(runtime, facts, placement);
 
-      const name = workerName(assignment.profile, assignment.assignmentId);
-      const reconciled = await reconcileUnclearLaunch(runtime, name);
-
-      if (reconciled.kind === 'missing') {
-        throw error;
-      }
-
-      if (reconciled.kind === 'unclear') {
-        throw new UnclearLaunchError(name);
-      }
-
-      terminal = reconciled.terminal;
+      terminal = started.terminal;
+      warning = started.warning;
+    } else {
+      // A sweep removes a scratch folder 60 s after creation, so no slow read may sit between the
+      // creation and the request.
+      await createScratchDirectory(runtime.agentDirectory, assignmentId);
+      terminal = await startWithReconciliation(runtime, facts, placement);
     }
 
     runtime.admission.remove(assignmentId);
-    startFolderSweep(runtime, assignment);
+
+    if (warning === undefined) {
+      startFolderSweep(runtime, assignment, terminal);
+    }
 
     const modelReason = facts.modelReason;
     const status = launchStatus(terminal, assignment.loadout.model, modelReason);
+    const details = warning === undefined ? status : { ...status, warning };
 
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify(status) }],
-      details: status,
+      content: [{ type: 'text' as const, text: JSON.stringify(details) }],
+      details,
     };
   } catch (error) {
     if (error instanceof UnclearLaunchError) {
@@ -473,8 +599,10 @@ export const executeLaunch = async (
         snapshotDirectory,
       );
 
+      const needsSnapshot = packagesNeedSnapshot(extensionPackages);
+
       const errorAfterCleanup = async (error: unknown): Promise<unknown> => {
-        if (extensionPackages.length === 0) {
+        if (!needsSnapshot) {
           return error;
         }
 
@@ -497,7 +625,7 @@ export const executeLaunch = async (
       let assignment: Assignment;
 
       try {
-        const snapshotPath = extensionPackages.length === 0 ? undefined : snapshotDirectory;
+        const snapshotPath = needsSnapshot ? snapshotDirectory : undefined;
 
         assignment = buildAssignment(
           assignmentId,
