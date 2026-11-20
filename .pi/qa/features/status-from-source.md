@@ -225,8 +225,8 @@ rm -rf "$silent"
 
 7. Create the unreadable fixture under the scratch root. It sets `unreadable` and `unreadableToken`.
    A short repository document says the update mode is an app setting, so no repository file
-   settles it. Its workflow names the Mend log path, and the file does not exist. The prompt for
-   this case does not name the log path; the session learns it only from this workflow:
+   settles it. Its workflow names the Mend log path, and the file does not exist. The prompt names
+   the path, so the case tests the unknown fallback rather than finding it:
 
 ```sh
 unreadableToken=$(openssl rand -hex 8)
@@ -265,7 +265,7 @@ printf '# fixture-token: %s\n' "$unreadableToken" >> "$unreadable/.github/workfl
 
 ```sh
 cat > "$root/unreadable.prompt" <<'PROMPT'
-This is an automated check with no user present. Never call ask_user_question. This repository uses Mend for dependency updates. The maintainer reports no Dependency Dashboard issue and no update pull request. Work only inside this repository. The answer must come from the job log the repository's workflow writes. Report which mode Renovate runs in.
+This is an automated check with no user present. Never call ask_user_question. This repository uses Mend for dependency updates. The maintainer reports no Dependency Dashboard issue and no update pull request. Work only inside this repository. The job log is mend/renovate-job.log in this repository, and the answer must come from it. Report which mode Renovate runs in.
 PROMPT
 pnpm pi-session --cwd "$unreadable" --model <pattern> --timeout 300 --prompt-file "$root/unreadable.prompt"
 ```
@@ -276,8 +276,8 @@ cp "$log3" "$events3"
 ```
 
 9. Grade the unreadable case from the copy. The evidence check takes the workflow token from a
-   successful result and requires an observed absence of the log or its `mend` directory, or a
-   failed call naming either. It prints `unreadable` and the access it relied on:
+   successful result and requires an observed absence of `mend/renovate-job.log`, or a failed call
+   naming that path. It prints `unreadable` and the access it relied on:
 
 ```sh
 jq -s -r --arg token "$unreadableToken" '
@@ -294,10 +294,10 @@ jq -s -r --arg token "$unreadableToken" '
   | [ $calls[] | select(.isError == false) | .result ] as $successTexts
   | [ $calls[] | select(.isError == false)
       | .result | split("\n")[]
-      | select(test("renovate-job\\.log|mend"; "i")
+      | select(test("mend/renovate-job\\.log")
           and test("No such file or directory|does not exist|ENOENT"; "i")) ] as $absentLines
   | [ $calls[] | select(.isError == true)
-      | select((.input + "\n" + .result) | test("renovate-job\\.log|mend"; "i")) ] as $failedCalls
+      | select(.input | test("mend/renovate-job\\.log")) ] as $failedCalls
   | select(($token | length) > 0)
   | select(any($successTexts[]; contains($token)))
   | select(($absentLines | length > 0) or ($failedCalls | length > 0))
@@ -307,8 +307,8 @@ jq -s -r --arg token "$unreadableToken" '
 ' "$events3"
 ```
 
-   The check proves the session read the workflow that names the log and that it saw the log or its
-   directory absent, or tried the log and failed. The reply rule decides the answer.
+   The check proves the session read the workflow that names the log and that it saw the log absent,
+   or tried the log and failed. The reply rule decides the answer.
 
    The reply check prints the session's reply:
 
@@ -337,10 +337,10 @@ rm -rf "$unreadable"
 - The silent evidence check prints `silent`, and the reply reports Renovate installed in Silent mode
   and names the log.
 - The unreadable evidence check prints `unreadable` and the absent or failed access when a
-  successful result holds the workflow token and a result reports the log or `mend` absent, or a
-  failed call names either. The reply reports the app's setting as `unknown` and names the log it
-  could not read. A documented default is allowed only when marked as the default and qualified by
-  the app override.
+  successful result holds the workflow token and a result reports `mend/renovate-job.log` absent, or
+  a failed call names that path. The reply reports the app's setting as `unknown` and names the log
+  it could not read. A documented default is allowed only when marked as the default and qualified
+  by the app override.
 
 ## Grading rules
 
@@ -348,7 +348,7 @@ rm -rf "$unreadable"
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | Sync       | For each project, a successful result holds `sync-update.yml@v0.1.0` and that project's own token                                  | Sync configured in ruta, tikk, greppa, and the caller or reference named | Sync missing or disabled for any project, or no source named   |
 | Silent     | A successful result holds the case's token, `Renovate app installed`, and `mode=silent`                                            | Renovate installed and in Silent mode, and the log named                 | Renovate disabled, missing, or absent, or no source named      |
-| Unreadable | A successful result holds the workflow token, and a result reports the log or `mend` absent, or a failed call names either | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
+| Unreadable | A successful result holds the workflow token, and a result reports `mend/renovate-job.log` absent, or a failed call names that path | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
 
 The token exists only in the case's own source, so a result from another case's fixture cannot pass.
 The unreadable check prints the access it relied on.
