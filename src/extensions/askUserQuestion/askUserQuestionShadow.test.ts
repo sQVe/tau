@@ -13,7 +13,7 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
 import type { ShadowRecord, ShadowRecordWriter } from '../../questionGate/questionGate.js';
-import { ensureTauDirectory } from '../../tauDirectory.js';
+import { ensureTauDirectory, findSharedRepositoryRoot } from '../../tauDirectory.js';
 import askUserQuestionExtension from './askUserQuestion.js';
 import type { DialogResult } from './dialog.js';
 import { shadowAnswer } from './shadow.js';
@@ -71,6 +71,9 @@ interface HarnessOptions {
   rejectWith?: Promise<unknown>;
   openWithoutFactory?: boolean | undefined;
   writeRecord?: ShadowRecordWriter;
+  findRootGate?: Deferred<undefined>;
+  directoryGate?: Deferred<undefined>;
+  dialogResult?: Deferred<DialogResult | undefined>;
 }
 
 const deferred = <T>(): Deferred<T> => {
@@ -256,6 +259,8 @@ const createHarness = async (
   const scheduled: (() => Promise<void>)[] = [];
   const saved: SavedRecord[] = [];
   const preparedDirectories: string[] = [];
+  const findRootStarted = deferred<undefined>();
+  const directoryStarted = deferred<undefined>();
   let writeStarted = 0;
   const saveGate = options.saveGate ?? deferred<undefined>();
   const saveStarted = deferred<undefined>();
@@ -283,8 +288,22 @@ const createHarness = async (
       schedule: (work) => {
         scheduled.push(work);
       },
+      ...(options.findRootGate === undefined
+        ? {}
+        : {
+            findSharedRoot: async (cwd: string, signal: AbortSignal) => {
+              findRootStarted.resolve(undefined);
+
+              await options.findRootGate?.promise;
+
+              return findSharedRepositoryRoot(cwd, { signal });
+            },
+          }),
       ensureDirectory: async (root, path) => {
         preparedDirectories.push(path);
+        directoryStarted.resolve(undefined);
+
+        await options.directoryGate?.promise;
 
         return ensureTauDirectory(root, path);
       },
@@ -309,8 +328,13 @@ const createHarness = async (
     }
 
     const build = factory as (...args: unknown[]) => OpenDialog;
+    const done = options.dialogResult === undefined ? settled.resolve : () => undefined;
 
-    dialogs.push(build(terminal, theme, undefined, settled.resolve));
+    dialogs.push(build(terminal, theme, undefined, done));
+
+    if (options.dialogResult !== undefined) {
+      return options.dialogResult.promise;
+    }
 
     if (options.rejectWith !== undefined) {
       options.rejectWith
@@ -385,6 +409,8 @@ const createHarness = async (
     saved,
     saveGate,
     saveStarted,
+    findRootStarted,
+    directoryStarted,
     preparedDirectories,
     writeStarted: () => writeStarted,
     dialogs,
@@ -448,6 +474,39 @@ it("opens the dialog and returns the user's result before judges finish", async 
   await shadowDone;
 
   expect(harness.saved).toHaveLength(1);
+});
+
+it('saves one record when the user answers while judges are in flight', async ({
+  onTestFinished,
+}) => {
+  const harness = await createHarness(onTestFinished, { config: configWithShadow() });
+
+  const pending = harness.run([eligibleQuestion]);
+  const shadowDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  expect(harness.registry.classify).toHaveBeenCalledTimes(2);
+
+  harness.latest().handleInput('\r');
+
+  const result = await pending;
+
+  expect(result.details).toEqual(answeredDetails);
+  expect(textOf(result)).toBe(answeredText);
+  expect(harness.saved).toEqual([]);
+
+  harness.registry.judgeGate.resolve(undefined);
+  harness.saveGate.resolve(undefined);
+  await shadowDone;
+
+  expect(harness.saved).toHaveLength(1);
+
+  expect(recordOf(harness)).toMatchObject({
+    answer: { kind: 'answered', selected: ['Stacked'], typed: false },
+  });
 });
 
 it('saves a record when judges settle before the answer', async ({ onTestFinished }) => {
@@ -762,6 +821,87 @@ it('aborts in-flight work and saves no record when the dialog throws', async ({
   expect(harness.saved).toEqual([]);
 });
 
+it('saves no record when the dialog fails before the scheduled job starts', async ({
+  onTestFinished,
+}) => {
+  const rejection = deferred<unknown>();
+
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    rejectWith: rejection.promise,
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+
+  rejection.resolve(new Error('dialog failed'));
+
+  await expect(pending).rejects.toThrow('dialog failed');
+  await harness.start();
+
+  expect(harness.registry.classify).not.toHaveBeenCalled();
+  expect(harness.registry.complete).not.toHaveBeenCalled();
+  expect(harness.saved).toEqual([]);
+});
+
+it('saves no record when the dialog fails during shared-root preflight', async ({
+  onTestFinished,
+}) => {
+  const findRootGate = deferred<undefined>();
+  const rejection = deferred<unknown>();
+
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    findRootGate,
+    rejectWith: rejection.promise,
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+  const shadowDone = harness.start();
+
+  await harness.findRootStarted.promise;
+  rejection.resolve(new Error('dialog failed'));
+  await expect(pending).rejects.toThrow('dialog failed');
+
+  findRootGate.resolve(undefined);
+  await shadowDone;
+
+  expect(harness.registry.classify).not.toHaveBeenCalled();
+  expect(harness.registry.complete).not.toHaveBeenCalled();
+  expect(harness.saved).toEqual([]);
+});
+
+it('saves no record when the dialog fails while directory creation is pending', async ({
+  onTestFinished,
+}) => {
+  const directoryGate = deferred<undefined>();
+  const dialogResult = deferred<DialogResult | undefined>();
+
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    directoryGate,
+    dialogResult,
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+  const shadowDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  harness.latest().handleInput('\r');
+  harness.registry.judgeGate.resolve(undefined);
+
+  await harness.directoryStarted.promise;
+  dialogResult.reject(new Error('dialog failed'));
+  await expect(pending).rejects.toThrow('dialog failed');
+
+  directoryGate.resolve(undefined);
+  await shadowDone;
+
+  expect(harness.saved).toEqual([]);
+});
+
 const refusedRows: {
   name: string;
   config: unknown;
@@ -783,6 +923,11 @@ const refusedRows: {
     openWithoutFactory: true,
   },
   { name: 'missing root', config: configWithShadow(), question: eligibleQuestion, git: false },
+  {
+    name: 'denied model',
+    config: { allowedModels: ['tau-fixture/allowed'], questionGate: frozenConfig() },
+    question: eligibleQuestion,
+  },
 ];
 
 for (const row of refusedRows) {
