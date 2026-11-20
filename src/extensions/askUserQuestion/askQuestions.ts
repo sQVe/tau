@@ -108,6 +108,8 @@ export const askQuestions = async (
 
     const result: DialogResult = opened ?? { kind: 'declined' };
 
+    job?.settle(result);
+
     return { content: [{ type: 'text', text: responseText(result) }], details: result };
   } catch (error) {
     job?.abort();

@@ -662,6 +662,35 @@ it('saves a declined answer as declined', async ({ onTestFinished }) => {
   expect(recordOf(harness)).toMatchObject({ answer: { kind: 'declined' } });
 });
 
+it('saves a declined record when the dialog closes with no result', async ({ onTestFinished }) => {
+  const dialogResult = deferred<DialogResult | undefined>();
+
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    dialogResult,
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+  const shadowDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  dialogResult.resolve(undefined);
+
+  const result = await pending;
+
+  expect(result.details).toEqual({ kind: 'declined' });
+
+  harness.registry.judgeGate.resolve(undefined);
+  harness.saveGate.resolve(undefined);
+  await shadowDone;
+
+  expect(harness.saved).toHaveLength(1);
+  expect(recordOf(harness)).toMatchObject({ answer: { kind: 'declined' } });
+});
+
 it('uses the supplied confidence for the agent verdict', async ({ onTestFinished }) => {
   const harness = await createHarness(onTestFinished, { config: configWithShadow() });
 
