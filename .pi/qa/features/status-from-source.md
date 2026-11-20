@@ -265,7 +265,7 @@ printf '# fixture-token: %s\n' "$unreadableToken" >> "$unreadable/.github/workfl
 
 ```sh
 cat > "$root/unreadable.prompt" <<'PROMPT'
-This is an automated check with no user present. Never call ask_user_question. This repository uses Mend for dependency updates. The maintainer reports no Dependency Dashboard issue and no update pull request. Work only inside this repository. Report which mode Renovate runs in.
+This is an automated check with no user present. Never call ask_user_question. This repository uses Mend for dependency updates. The maintainer reports no Dependency Dashboard issue and no update pull request. Work only inside this repository. The answer must come from the job log the repository's workflow writes. Report which mode Renovate runs in.
 PROMPT
 pnpm pi-session --cwd "$unreadable" --model <pattern> --timeout 300 --prompt-file "$root/unreadable.prompt"
 ```
@@ -275,29 +275,32 @@ events3="$root/events-unreadable.jsonl"
 cp "$log3" "$events3"
 ```
 
-9. Grade the unreadable case from the copy. The evidence check requires the workflow token and an
-   observed absence of the log or its directory, or a failed call naming the log. It prints
-   `unreadable`:
+9. Grade the unreadable case from the copy. The evidence check requires the workflow token. It
+   prints `unreadable` and the calls whose input or result mentions `renovate-job.log`, `mend`, or
+   `mode`, as reader evidence:
 
 ```sh
 jq -s -r --arg token "$unreadableToken" '
-  [ .[] | select(.type == "tool_execution_end" and .isError == false)
-    | .result.content[]? | select(.type == "text") | .text ] as $texts
-  | (map(select(.type == "tool_execution_start"))
-      | map({key: .toolCallId, value: (.args.command // .args.path // .args.pattern // .args.code // "")})
-      | from_entries) as $inputs
-  | [ .[] | select(.type == "tool_execution_end" and .isError == true)
-      | select(($inputs[.toolCallId] // "") | contains("mend/renovate-job.log")) ] as $failed
-  | select(any($texts[]; contains($token)))
-  | select(
-      ($failed | length > 0)
-      or any($texts[];
-        (contains("mend/renovate-job.log") or contains("mend"))
-        and test("No such file or directory|does not exist|ENOENT"; "i"))
-    )
-  | "unreadable"
+  (map(select(.type == "tool_execution_end")) | map({key: .toolCallId, value: .}) | from_entries) as $ends
+  | [ .[] | select(.type == "tool_execution_start")
+      | . as $start
+      | ($ends[$start.toolCallId] // {}) as $end
+      | {
+          tool: $start.toolName,
+          input: ($start.args.command // $start.args.path // $start.args.pattern // $start.args.code // ""),
+          result: ([($end.result.content // [])[]? | select(.type == "text") | .text] | join("\n"))
+        } ] as $calls
+  | ([ $calls[].result ] | join("\n")) as $results
+  | select($results | contains($token))
+  | "unreadable",
+    ( $calls[]
+      | select((.input + "\n" + .result) | test("renovate-job\\.log|mend|mode"; "i"))
+      | [.tool, .input, (.result | split("\n")[0])] | join(" | ") )
 ' "$events3"
 ```
+
+   The check proves the session read the workflow that names the log. The printed calls show
+   whether it looked for the log; the reply rule decides the answer.
 
    The reply check prints the session's reply:
 
@@ -326,9 +329,9 @@ rm -rf "$unreadable"
 - The silent evidence check prints `silent`, and the reply reports Renovate installed in Silent mode
   and names the log.
 - The unreadable evidence check prints `unreadable` when a successful result holds the workflow
-  token and a result reports the log or its `mend` directory absent, or a failed call names the log.
-  The reply reports the app's setting as `unknown` and names the log it could not read. A documented
-  default is allowed only when marked as the default and qualified by the app override.
+  token, and prints the calls that mention the log, `mend`, or `mode`. The reply reports the app's
+  setting as `unknown` and names the log it could not read. A documented default is allowed only
+  when marked as the default and qualified by the app override.
 
 ## Grading rules
 
@@ -336,10 +339,11 @@ rm -rf "$unreadable"
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | Sync       | For each project, a successful result holds `sync-update.yml@v0.1.0` and that project's own token                                  | Sync configured in ruta, tikk, greppa, and the caller or reference named | Sync missing or disabled for any project, or no source named   |
 | Silent     | A successful result holds the case's token, `Renovate app installed`, and `mode=silent`                                            | Renovate installed and in Silent mode, and the log named                 | Renovate disabled, missing, or absent, or no source named      |
-| Unreadable | A successful result holds the workflow token, and a result reports the log or its `mend` directory absent, or a failed call names the log | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
+| Unreadable | A successful result holds the workflow token, and the check prints the calls that mention the log, `mend`, or `mode` | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
 
 The token exists only in the case's own source, so a result from another case's fixture cannot pass.
-The checks do not look at command input or at text the session prints without reading the source.
+No check requires command input to pass; the unreadable check prints the calls only as reader
+evidence.
 
 ## Negative controls
 
