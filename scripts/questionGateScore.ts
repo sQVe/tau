@@ -19,7 +19,7 @@ import type {
   PanelMember,
   PastAnswer,
 } from '../src/questionGate/questionGate.ts';
-import { readLoggedQuestions } from './questionGateScore/questionGateScoreLog.ts';
+import { questionLogReader } from './questionGateScore/questionGateScoreLog.ts';
 import type { LoggedQuestion, SessionLog } from './questionGateScore/questionGateScoreLog.ts';
 import { formatScoreReport, scoreReport } from './questionGateScore/questionGateScoreReport.ts';
 import type { JudgeVariant, ScoreItem } from './questionGateScore/questionGateScoreReport.ts';
@@ -263,9 +263,17 @@ const main = async () => {
   }
 
   const sessionFiles = await findSessionFiles(agentDirectory);
-  const reads = await readInTurn(sessionFiles.managerSessions, readSession);
-  const logs = reads.filter((log): log is SessionLog => log !== undefined);
-  const log = readLoggedQuestions(logs);
+  const reader = questionLogReader();
+
+  await readInTurn(sessionFiles.managerSessions, async (path) => {
+    const session = await readSession(path);
+
+    if (session !== undefined) {
+      reader.add(session);
+    }
+  });
+
+  const log = reader.finish();
 
   const inWindowQuestions = log.questions.filter((question) => inWindow(question.time, args));
   const selected = selectQuestions(inWindowQuestions, args.limit);

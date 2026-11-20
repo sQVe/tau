@@ -53,8 +53,7 @@ type QuestionRead =
   | { kind: 'malformed' };
 
 interface ParsedLog {
-  file: SessionLog;
-  entries: Entry[];
+  path: string;
   malformedLines: number;
   parent: string | undefined;
 }
@@ -109,6 +108,9 @@ interface LogState {
   questions: LoggedQuestion[];
   skipped: SkippedQuestions;
   entries: Map<string, EntryRecord>;
+  // The first file that held each copy key, so every later copy links its file to that one.
+  firstFiles: Map<string, string>;
+  sharedFiles: [string, string][];
 }
 
 interface CompletedCall {
@@ -135,6 +137,11 @@ interface RawOption {
 type ScanEvent =
   | { index: number; kind: 'call'; call: CallOccurrence }
   | { index: number; kind: 'result'; result: ResultOccurrence };
+
+export interface QuestionLogReader {
+  add: (file: SessionLog) => void;
+  finish: () => QuestionLog;
+}
 
 const recommendedSuffix = ' (Recommended)';
 
@@ -214,6 +221,27 @@ const isQuestionDetails = (details: unknown) => {
 // Older logs lack the result's tool name, so only their details can identify a question result.
 const isQuestionResult = (toolName: string | undefined, details: unknown) =>
   toolName === undefined ? isQuestionDetails(details) : toolName === 'ask_user_question';
+
+// Every other entry cannot affect a question, so it is counted and dropped without being kept.
+const isQuestionEntry = (entry: Entry): boolean => {
+  const message = entry.message;
+
+  if (!isRecord(message)) {
+    return false;
+  }
+
+  if (message.role === 'assistant') {
+    return assistantCalls(message).calls.some((called) => called.tool === 'ask_user_question');
+  }
+
+  if (message.role === 'toolResult') {
+    const { result } = toolResult(message);
+
+    return isQuestionResult(text(message.toolName), result.details);
+  }
+
+  return false;
+};
 
 const isIndexedRow = (row: Entry) => typeof row.questionIndex === 'number';
 
@@ -437,31 +465,22 @@ const unionGroups = (groups: Map<string, string>, left: string, right: string) =
 // A session group holds every file linked by a parentSession path or by a shared entry.
 const sessionKeys = (
   logs: readonly ParsedLog[],
-  entries: ReadonlyMap<string, EntryRecord>,
+  sharedFiles: readonly (readonly [string, string])[],
 ): Map<string, string> => {
   const groups = new Map<string, string>();
   const nodes = new Set<string>();
 
-  for (const { file, parent } of logs) {
-    nodes.add(file.path);
+  for (const { path, parent } of logs) {
+    nodes.add(path);
 
     if (parent !== undefined) {
       nodes.add(parent);
-      unionGroups(groups, file.path, parent);
+      unionGroups(groups, path, parent);
     }
   }
 
-  for (const { places } of entries.values()) {
-    const files = [...new Set(places.map((place) => place.file))];
-    const [first, ...rest] = files;
-
-    if (first === undefined) {
-      continue;
-    }
-
-    for (const file of rest) {
-      unionGroups(groups, first, file);
-    }
+  for (const [first, copy] of sharedFiles) {
+    unionGroups(groups, first, copy);
   }
 
   const minimum = new Map<string, string>();
@@ -477,10 +496,10 @@ const sessionKeys = (
 
   const keys = new Map<string, string>();
 
-  for (const { file } of logs) {
-    const root = findGroup(groups, file.path);
+  for (const { path } of logs) {
+    const root = findGroup(groups, path);
 
-    keys.set(file.path, minimum.get(root) ?? file.path);
+    keys.set(path, minimum.get(root) ?? path);
   }
 
   return keys;
@@ -743,6 +762,22 @@ const collectEntry = (state: LogState, file: string, index: number, entry: Entry
   }
 
   const key = copyKey(entry);
+  const first = state.firstFiles.get(key);
+
+  if (first === undefined) {
+    state.firstFiles.set(key, file);
+  } else {
+    state.skipped.copiedEntries += 1;
+
+    if (first !== file) {
+      state.sharedFiles.push([first, file]);
+    }
+  }
+
+  if (!isQuestionEntry(entry)) {
+    return;
+  }
+
   const known = state.entries.get(key);
 
   if (known === undefined) {
@@ -751,34 +786,52 @@ const collectEntry = (state: LogState, file: string, index: number, entry: Entry
     return;
   }
 
-  state.skipped.copiedEntries += 1;
   known.places.push({ file, index });
 };
 
-export const readLoggedQuestions = (files: readonly SessionLog[]): QuestionLog => {
-  const logs: ParsedLog[] = files.map((file) => {
+export const questionLogReader = (): QuestionLogReader => {
+  const logs: ParsedLog[] = [];
+
+  const state: LogState = {
+    questions: [],
+    skipped: zeroSkipped(),
+    entries: new Map(),
+    firstFiles: new Map(),
+    sharedFiles: [],
+  };
+
+  const add = (file: SessionLog) => {
     const { entries, malformedLines } = parseEntries(file.text);
 
-    return { file, entries, malformedLines, parent: sessionParent(entries) };
-  });
-
-  const state: LogState = { questions: [], skipped: zeroSkipped(), entries: new Map() };
-
-  for (const { file, entries, malformedLines } of logs) {
+    logs.push({ path: file.path, malformedLines, parent: sessionParent(entries) });
     state.skipped.malformedLines += malformedLines;
 
     for (const [index, entry] of entries.entries()) {
       collectEntry(state, file.path, index, entry);
     }
+  };
+
+  const finish = (): QuestionLog => {
+    const keys = sessionKeys(logs, state.sharedFiles);
+    const { calls, results } = readOccurrences(state, keys);
+
+    pairCalls(state, calls, results);
+
+    return {
+      questions: state.questions.toSorted((left, right) => left.time - right.time),
+      skipped: state.skipped,
+    };
+  };
+
+  return { add, finish };
+};
+
+export const readLoggedQuestions = (files: readonly SessionLog[]): QuestionLog => {
+  const reader = questionLogReader();
+
+  for (const file of files) {
+    reader.add(file);
   }
 
-  const keys = sessionKeys(logs, state.entries);
-  const { calls, results } = readOccurrences(state, keys);
-
-  pairCalls(state, calls, results);
-
-  return {
-    questions: state.questions.toSorted((left, right) => left.time - right.time),
-    skipped: state.skipped,
-  };
+  return reader.finish();
 };

@@ -3,7 +3,10 @@ import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { readLoggedQuestions } from './questionGateScore/questionGateScoreLog.ts';
+import {
+  questionLogReader,
+  readLoggedQuestions,
+} from './questionGateScore/questionGateScoreLog.ts';
 import type { SessionLog, SkippedQuestions } from './questionGateScore/questionGateScoreLog.ts';
 
 const at = (second: number) => `2026-11-01T10:00:${String(second).padStart(2, '0')}.000Z`;
@@ -395,6 +398,16 @@ it('keeps a legacy typed value that equals the normalized recommended label', ()
   expect(log.questions.map((entry) => entry.outcome)).toEqual([
     { kind: 'typed', text: 'Postgres' },
   ]);
+});
+
+it('reads the same log when files arrive one at a time', () => {
+  const { fork, original } = forkScenario();
+  const reader = questionLogReader();
+
+  reader.add(fork);
+  reader.add(original);
+
+  expect(reader.finish()).toEqual(readLoggedQuestions([fork, original]));
 });
 
 it('gives a fork and its original one session key', () => {

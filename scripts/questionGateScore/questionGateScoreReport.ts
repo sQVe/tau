@@ -18,7 +18,7 @@ export interface ScoreInput {
   items: readonly ScoreItem[];
 }
 
-export interface CutoffScore {
+interface CutoffScore {
   cutoff: number;
   decided: number;
   decideShare: number;
@@ -26,11 +26,11 @@ export interface CutoffScore {
   lowerBound: number;
 }
 
-export interface HeldOutScore extends CutoffScore {
+interface HeldOutScore extends CutoffScore {
   meetsBar: boolean;
 }
 
-export interface VerdictCounts {
+interface VerdictCounts {
   answered: number;
   timeout: number;
   error: number;
