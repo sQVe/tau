@@ -1,8 +1,7 @@
 # Synthesis
 
 Apply each criterion to every finding. Drop a finding that fails durability, specificity,
-existing-skill-first, convergence, decision-changing, skill-was-used, or already-covered. The
-structural criterion moves a finding to Backlog.
+existing-skill-first, convergence, decision-changing, skill-was-used, or already-covered.
 
 - Durability: still true in 6 months, after paths, commits, tool versions, and code shapes change.
 - Specificity: broad enough to apply across tasks, precise enough that a future agent recognizes
@@ -13,16 +12,19 @@ structural criterion moves a finding to Backlog.
   must clear a higher bar on the other criteria.
 - Decision-changing: a future agent does something different because of the change, not just reads
   more text.
-- Structural: route to Backlog when a lint rule, script, metadata flag, or runtime check already
-  enforces the rule or could enforce it cheaply. Skill prose is for what a check cannot enforce.
+- Structural: move a finding to Backlog when its route is a Tau skill, tool, or instruction or a
+  stomme rule, and a lint rule, test, script, type, metadata flag, or runtime guard already enforces
+  the rule or could enforce it cheaply. Skill prose is for what a check cannot enforce. A repo
+  proposal is not moved to Backlog for this reason. A stomme finding moves to Backlog, with the
+  stomme repository named in the row.
+- Repo proposal: one verified incident in the task's own repository may produce an Accepted row when
+  the proposal is a concrete setup, fixture, test-command, CI, or verification change that could
+  have prevented it. One incident is enough. The row states the repository, the observed gap, the
+  change, and the past failure the change must catch. A row missing any of the four does not reach
+  Accepted.
 - Skill-was-used: accept only a finding that routes to a skill, tool, or instruction the transcripts
-  used. When a skill should have fired but did not, route to a description tune. Otherwise reject
-  it.
+  used, to a repo proposal, or to a stomme rule. When a skill should have fired but did not, route
+  to a description tune. Otherwise reject it.
 - Already-covered: read the target skill before accepting a body edit. Reject a duplicate of clear,
   well-placed guidance. When the guidance is buried or easy to skip, accept a wording or placement
   change that makes it fire.
-
-## Structural rule
-
-Move any Accepted row that a check could enforce to Backlog. A check is a lint rule, a test, a
-script, a type, or a runtime guard. Keep prose for judgment.
