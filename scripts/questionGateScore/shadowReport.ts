@@ -144,7 +144,7 @@ export const shadowReport = (input: ShadowReportInput): ShadowReport => {
 export const formatShadowReport = (report: ShadowReport): string =>
   [
     `Shadow report for cohort ${report.cohort}`,
-    `Variant: ${report.variant} at cutoff ${report.cutoff.toFixed(2)}`,
+    `Variant: ${report.variant} at cutoff ${report.cutoff}`,
     `Sampled dialogs: ${report.sampled}`,
     `Predictions: ${report.predictions} from ${report.predictionSessions} sessions`,
     `Agreement: ${percent(report.agreement)}`,

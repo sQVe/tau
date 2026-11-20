@@ -154,6 +154,14 @@ it('reports n/a for share and time without records', () => {
   expect(text).toContain('Judge time: n/a mean');
 });
 
+it('prints the exact configured cutoff', () => {
+  const score = report([record({ judges: judges(10, 0.802) })], { cutoff: 0.804 });
+  const text = formatShadowReport(score);
+
+  expect(text).toContain('Variant: classifier at cutoff 0.804');
+  expect(score.predictions).toBe(0);
+});
+
 it('prints one decimal place for percentages and milliseconds', () => {
   const text = formatShadowReport(report([record(), record({ sessionId: 'second' })]));
 
