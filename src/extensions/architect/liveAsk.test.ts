@@ -8,13 +8,12 @@ import type { onTestFinished } from 'vitest';
 
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
-import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { createAnswerTracker } from './answer.js';
 import { createAskAdmissions } from './ask/askAcceptance.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
+import { startLiveArchitect } from './fixtures/liveArchitect.js';
 import { contextOf, holdLock, recordSession, setup } from './fixtures/toolHarness.js';
 import {
   askRecordDirectory,
@@ -49,28 +48,8 @@ const getTargets = (hc: HcFake): (string | undefined)[] =>
     .filter((call) => call.commandArguments[0] === 'get')
     .map((call) => call.commandArguments.at(-1));
 
-const liveArchitect = async (cleanup: Cleanup, withLeadInbox = true) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const sockets = temporaryDirectory(cleanup, 'tau-live-ask-');
-
-  const receiver = await startHandoverReceiver(cleanup, sockets, 't-architect', {
-    sessionId: 'session-architect',
-    accepts: { 'architect-ask': (_request, save) => save() },
-    outsideSlot: true,
-  });
-
-  await recordSession(root, { terminal: 't-architect', sessionId: 'session-architect' });
-  await holdLock(root, root);
-
-  if (withLeadInbox) {
-    await startLeadInbox(cleanup, hc);
-  }
-
-  replyTerminal(hc, 't-architect', `rpc1:${receiver.path}`);
-
-  return { root, hc, receiver, tool: createArchitectTool({ ...hc, cwd: root }) };
-};
+const liveArchitect = (cleanup: Cleanup, withLeadInbox = true) =>
+  startLiveArchitect(cleanup, { withLeadInbox });
 
 const liveRecord = (status: LiveAskRecord['status']): LiveAskRecord => ({
   version: 2,

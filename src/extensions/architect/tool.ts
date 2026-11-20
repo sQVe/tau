@@ -14,8 +14,8 @@ import { askArchitect } from './ask/ask.js';
 import type { AskResult } from './ask/ask.js';
 import { runGate } from './gate.js';
 import type { GateResult } from './gate.js';
-import { createAskRefusalProofs, retryLiveAsk } from './liveAsk.js';
-import type { AskRefusalProofs } from './liveAsk.js';
+import { createLiveAskOperations } from './liveAsk.js';
+import type { LiveAskOperations } from './liveAsk.js';
 import { openArchitect } from './open/open.js';
 import type { OpenResult } from './open/open.js';
 
@@ -79,7 +79,7 @@ const runAsk = (
   context: ExtensionToolContext,
   input: ArchitectInput,
   root: string,
-  refusals: AskRefusalProofs,
+  liveAsk: LiveAskOperations,
 ): Promise<AskResult> => {
   const leadSessionId = context.sessionManager.getSessionId();
 
@@ -88,7 +88,7 @@ const runAsk = (
       throw new Error('action ask with askId does not take question.');
     }
 
-    return retryLiveAsk({ root, askId: requireAskId(input.askId), leadSessionId, hc, refusals });
+    return liveAsk.retry({ root, askId: requireAskId(input.askId), leadSessionId, hc });
   }
 
   return askArchitect({
@@ -100,7 +100,7 @@ const runAsk = (
     location: readConfigLocation(root, {}, context),
     ui: context.ui,
     hc,
-    refusals,
+    liveAsk: liveAsk.ask,
   });
 };
 
@@ -109,7 +109,7 @@ const runAction = async (
   context: ExtensionToolContext,
   input: ArchitectInput,
   signal: AbortSignal | undefined,
-  refusals: AskRefusalProofs,
+  liveAsk: LiveAskOperations,
 ): Promise<ArchitectDetails> => {
   const root = await findTauRoot(context.cwd, 'architect');
   const location = readConfigLocation(root, {}, context);
@@ -133,7 +133,7 @@ const runAction = async (
   if (input.action === 'ask') {
     rejectUnexpected(input, ['request', 'restatement']);
 
-    return { action: 'ask', ...(await runAsk({ ...hc, signal }, context, input, root, refusals)) };
+    return { action: 'ask', ...(await runAsk({ ...hc, signal }, context, input, root, liveAsk)) };
   }
 
   rejectUnexpected(input, ['question', 'askId']);
@@ -154,7 +154,7 @@ const runAction = async (
 export const createArchitectTool = (
   hc: HcRuntime,
 ): ToolDefinition<typeof parameters, ArchitectDetails> => {
-  const refusals = createAskRefusalProofs();
+  const liveAsk = createLiveAskOperations();
 
   return defineTool({
     name: 'architect',
@@ -170,7 +170,7 @@ Every gate call writes a record under .tau/lead/gate.`,
     async execute(_toolCallId, input, signal, _onUpdate, context) {
       signal?.throwIfAborted();
 
-      const details = await runAction(hc, context, input, signal, refusals);
+      const details = await runAction(hc, context, input, signal, liveAsk);
 
       return {
         content: [{ type: 'text', text: JSON.stringify(details, null, 2) }],
