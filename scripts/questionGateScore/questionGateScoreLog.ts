@@ -1,12 +1,17 @@
-import { assistantCalls, parseEntries, text, toolResult } from '../src/improvement/transcript.ts';
-import type { CallResult, Entry } from '../src/improvement/transcript.ts';
+import {
+  assistantCalls,
+  parseEntries,
+  text,
+  toolResult,
+} from '../../src/improvement/transcript.ts';
+import type { CallResult, Entry } from '../../src/improvement/transcript.ts';
 import type {
   JudgeOption,
   JudgeQuestion,
   PastAnswer,
   PastOutcome,
-} from '../src/questionGate/questionGate.ts';
-import { isRecord } from '../src/schema.ts';
+} from '../../src/questionGate/questionGate.ts';
+import { isRecord } from '../../src/schema.ts';
 
 export interface SessionLog {
   path: string;
@@ -16,6 +21,8 @@ export interface SessionLog {
 export interface LoggedQuestion extends PastAnswer {
   // The smallest path in the entry's lineage group, so every copy keeps one origin.
   session: string;
+  // Milliseconds since the Unix epoch when the user was asked, before the result arrived.
+  callTime: number;
 }
 
 export interface SkippedQuestions {
@@ -68,6 +75,7 @@ interface CallOccurrence {
   callId: string;
   parameters: Entry | undefined;
   places: EntryPlace[];
+  time: number;
 }
 
 interface ResultOccurrence {
@@ -108,6 +116,7 @@ interface CompletedCall {
   result: CallResult;
   session: string;
   time: number;
+  callTime: number;
 }
 
 interface QuestionShape {
@@ -386,6 +395,7 @@ const readCall = (state: LogState, call: CompletedCall) => {
     } else {
       state.questions.push({
         time: call.time,
+        callTime: call.callTime,
         session: call.session,
         question: read.question,
         outcome: read.outcome,
@@ -498,7 +508,14 @@ const readOccurrences = (state: LogState, keys: ReadonlyMap<string, string>): Oc
 
       for (const called of asked) {
         nextId += 1;
-        calls.push({ id: nextId, callId: called.callId, parameters: called.arguments, places });
+
+        calls.push({
+          id: nextId,
+          callId: called.callId,
+          parameters: called.arguments,
+          places,
+          time,
+        });
       }
     } else if (message.role === 'toolResult') {
       const { callId, result } = toolResult(message);
@@ -702,6 +719,7 @@ const pairCalls = (
         result: pair.result.result,
         session: pair.result.session,
         time: pair.result.time,
+        callTime: pair.call.time,
       });
     }
 

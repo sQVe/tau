@@ -268,6 +268,25 @@ Add a health rule as one entry in [scripts/sessionHealthRules.ts](../scripts/ses
 A rule names its tool and checks the calls of one day. It runs on every day with any logged tool
 call, also when its own tool has none that day.
 
+## Scoring question judges
+
+Judge the user's past eligible questions with the classifier and the panel, each with and without
+past examples:
+
+```sh
+pnpm question-gate-score --limit 20
+```
+
+`--since` and `--until` take the same values as in `pnpm token-usage` and default to all logs.
+`--limit` takes whole sessions, newest first, until it reaches that many questions, and defaults
+to 500. `--holdout` is the share of sessions kept for the held-out check and defaults to 0.3.
+
+The script reads `questionGate` from the user `tau.json` and makes eight model calls per question.
+It prints decide share and agreement at cutoffs from 0.50 to 1.00 on tuning sessions, the lowest
+cutoff that reaches 95% agreement, and that cutoff's result on held-out sessions. It explores only
+and sets no launch cutoff. The logs lack question kind and full context, and older logs cannot tell
+a click from typed text equal to an option label.
+
 ## Evaluating agent behavior
 
 Use this procedure to test whether a prompt or skill change improves how models behave. CI never

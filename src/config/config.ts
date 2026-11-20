@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { CONFIG_DIR_NAME, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionUIContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 
-import { isMissingFile } from '../errors.js';
-import { findUnknownKeys, isRecord, reportedId, unreportedKeys } from '../schema.js';
-import type { KnownKeys } from '../schema.js';
+import { isMissingFile } from '../errors.ts';
+import { findUnknownKeys, isRecord, reportedId, unreportedKeys } from '../schema.ts';
+import type { KnownKeys } from '../schema.ts';
 
 export type ConfigWarnings = Pick<ExtensionUIContext, 'notify'>;
 

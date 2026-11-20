@@ -19,7 +19,10 @@ const usage = `Usage: node scripts/tokenUsage.ts [--since 7d] [--until <time>] [
 --since and --until take an ISO date or time, or an age such as 12h or 3d.`;
 
 // Reads started together would open more files than the process may hold.
-const readInTurn = async <Item, Result>(items: Item[], read: (item: Item) => Promise<Result>) => {
+export const readInTurn = async <Item, Result>(
+  items: Item[],
+  read: (item: Item) => Promise<Result>,
+): Promise<Result[]> => {
   const results: Result[] = [];
 
   for (const item of items) {

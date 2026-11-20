@@ -4,10 +4,10 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { effectiveAllowedModels } from './allowedModels.js';
-import type { AllowedModels } from './allowedModels.js';
-import { readTauConfig, requireKnownKey } from './config.js';
-import type { ConfigFile, ConfigLocation } from './config.js';
+import { effectiveAllowedModels } from './allowedModels.ts';
+import type { AllowedModels } from './allowedModels.ts';
+import { readTauConfig, requireKnownKey } from './config.ts';
+import type { ConfigFile, ConfigLocation } from './config.ts';
 
 interface ModelReference {
   provider: string;

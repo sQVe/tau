@@ -10,7 +10,7 @@ session; a `qa` worker only checks its saved output and records the result.
 
 | Section     | Test it when the change touches                                               |
 | ----------- | ----------------------------------------------------------------------------- |
-| Scripts     | `pnpm token-usage`, `pnpm session-health`, or their entries in `package.json` |
+| Scripts     | `pnpm token-usage`, `pnpm session-health`, `pnpm question-gate-score`, or their entries in `package.json` |
 | Pi sessions | Anything else under `src/`, or the `package.json` `pi` manifest               |
 
 Cross-effects:
@@ -94,6 +94,8 @@ pnpm session-health --since 1d
   records on the second. Tables for tokens, turns, top sessions, and tool output follow.
 - `pnpm session-health` prints the window, then the count of session files, then the failed rules,
   then one table per UTC day. An empty window prints `None` under the failed rules.
+- `pnpm question-gate-score --limit 0` exits 1 and names `0`. It costs model calls, so check only
+  argument errors.
 - A bad option or time exits with code 1 and names the bad value.
 
 ## Pi sessions

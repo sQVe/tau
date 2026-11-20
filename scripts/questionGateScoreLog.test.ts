@@ -3,8 +3,8 @@ import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { readLoggedQuestions } from './questionGateScoreLog.ts';
-import type { SessionLog, SkippedQuestions } from './questionGateScoreLog.ts';
+import { readLoggedQuestions } from './questionGateScore/questionGateScoreLog.ts';
+import type { SessionLog, SkippedQuestions } from './questionGateScore/questionGateScoreLog.ts';
 
 const at = (second: number) => `2026-11-01T10:00:${String(second).padStart(2, '0')}.000Z`;
 
@@ -156,6 +156,7 @@ it('reads the recommended answer of a current-shape call', () => {
   expect(log.questions).toEqual([
     {
       time: Date.parse('2026-11-01T09:00:09.000Z'),
+      callTime: Date.parse('2026-11-01T09:00:01.000Z'),
       session: '/logs/current.jsonl',
       question: {
         question: 'Which database should the service use?',
@@ -171,6 +172,21 @@ it('reads the recommended answer of a current-shape call', () => {
   ]);
 
   expect(log.skipped).toEqual(noSkips);
+});
+
+it('keeps the question call time apart from its result time', () => {
+  const log = readLoggedQuestions([
+    inlineLog([
+      call('call-times', at(1), [question()]),
+      result('call-times', at(9), {
+        details: answered([{ question: 'Which database?', selected: ['Postgres'], typed: false }]),
+      }),
+    ]),
+  ]);
+
+  expect(log.questions.map(({ time, callTime }) => ({ time, callTime }))).toEqual([
+    { time: Date.parse(at(9)), callTime: Date.parse(at(1)) },
+  ]);
 });
 
 it('reads a typed answer from the current shape', () => {

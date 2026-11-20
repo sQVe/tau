@@ -1,12 +1,12 @@
 import type { JsonObject } from '@earendil-works/pi-ai';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { parseModelReference } from '../config/models.js';
-import { classifierTimeoutMilliseconds } from './choice.js';
-import type { ChoiceOutcome, ChoiceQuestion } from './choice.js';
+import { parseModelReference } from '../config/models.ts';
+import { classifierTimeoutMilliseconds } from './choice.ts';
+import type { ChoiceOutcome, ChoiceQuestion } from './choice.ts';
 
-export { classifierTimeoutMilliseconds } from './choice.js';
-export type { ChoiceOutcome, ChoiceQuestion } from './choice.js';
+export { classifierTimeoutMilliseconds } from './choice.ts';
+export type { ChoiceOutcome, ChoiceQuestion } from './choice.ts';
 
 export const classifyChoice = async (
   context: Pick<ExtensionContext, 'modelRegistry'>,

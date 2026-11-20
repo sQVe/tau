@@ -1,0 +1,165 @@
+import { expect, it } from 'vitest';
+
+import type { JudgeVerdict, PastOutcome } from '../src/questionGate/questionGate.ts';
+import type { SkippedQuestions } from './questionGateScore/questionGateScoreLog.ts';
+import {
+  formatScoreReport,
+  scoreCutoffs,
+  scoreReport,
+  wilsonLowerBound,
+} from './questionGateScore/questionGateScoreReport.ts';
+import type {
+  JudgeVariant,
+  ScoreInput,
+  ScoreItem,
+  ScoreReport,
+  VariantScore,
+} from './questionGateScore/questionGateScoreReport.ts';
+
+const skipped = (overrides: Partial<SkippedQuestions> = {}): SkippedQuestions => ({
+  malformedLines: 0,
+  copiedEntries: 0,
+  declinedCalls: 0,
+  failedCalls: 0,
+  unansweredCalls: 0,
+  unmatchedResults: 0,
+  ambiguousEntries: 0,
+  malformedAnswers: 0,
+  noRecommendation: 0,
+  multiSelect: 0,
+  preview: 0,
+  ...overrides,
+});
+
+const answered = (confidence: number): Record<JudgeVariant, JudgeVerdict> => ({
+  classifier: { kind: 'answered', confidence },
+  classifierExamples: { kind: 'answered', confidence },
+  panel: { kind: 'answered', confidence },
+  panelExamples: { kind: 'answered', confidence },
+});
+
+const sameVerdict = (verdict: JudgeVerdict): Record<JudgeVariant, JudgeVerdict> => ({
+  classifier: verdict,
+  classifierExamples: verdict,
+  panel: verdict,
+  panelExamples: verdict,
+});
+
+const item = (fields: Partial<ScoreItem> = {}): ScoreItem => ({
+  session: '/logs/tuning.jsonl',
+  split: 'tuning',
+  outcome: { kind: 'recommended' },
+  verdicts: answered(1),
+  ...fields,
+});
+
+const typedMiss: PastOutcome = { kind: 'typed', text: 'MySQL' };
+
+const holdoutMiss = (session = '/logs/holdout.jsonl') =>
+  item({ session, split: 'holdout', outcome: typedMiss });
+
+const input = (items: ScoreItem[], overrides: Partial<ScoreInput> = {}): ScoreInput => ({
+  models: {
+    classifier: 'tau-fixture/judge-a',
+    panel: ['tau-fixture/judge-b', 'tau-fixture/judge-c', 'tau-fixture/judge-d'],
+  },
+  skipped: skipped(),
+  items,
+  ...overrides,
+});
+
+const variant = (report: ScoreReport, name: JudgeVariant): VariantScore => {
+  const found = report.variants.find((entry) => entry.variant === name);
+
+  if (found === undefined) {
+    throw new Error(`missing ${name}`);
+  }
+
+  return found;
+};
+
+it('computes the Wilson lower bound', () => {
+  expect(wilsonLowerBound(95, 100)).toBeCloseTo(0.888, 3);
+  expect(wilsonLowerBound(0, 0)).toBe(0);
+});
+
+it('lowers agreement when a decided item is typed', () => {
+  const report = scoreReport(input([item(), item({ outcome: typedMiss })]));
+  const [firstCutoff] = variant(report, 'classifier').cutoffs;
+
+  expect(firstCutoff?.decided).toBe(2);
+  expect(firstCutoff?.agreement).toBe(0.5);
+});
+
+it('takes the cutoff from tuning items only', () => {
+  const tuningHits = Array.from({ length: 19 }, () => item({ verdicts: answered(0.9) }));
+  const tuningMiss = item({ outcome: typedMiss, verdicts: answered(0.9) });
+  const heldOutMisses = Array.from({ length: 50 }, () => holdoutMiss());
+  const report = scoreReport(input([...tuningHits, tuningMiss, ...heldOutMisses]));
+  const classifier = variant(report, 'classifier');
+
+  expect(classifier.cutoff).toBe(0.5);
+  expect(classifier.heldOut?.meetsBar).toBe(false);
+});
+
+it('gives no cutoff and no held-out line with fewer than 20 decided tuning items', () => {
+  const tuning = Array.from({ length: 19 }, () => item());
+  const heldOut = Array.from({ length: 30 }, () => holdoutMiss());
+  const report = scoreReport(input([...tuning, ...heldOut]));
+
+  expect(variant(report, 'classifier').cutoff).toBeUndefined();
+  expect(formatScoreReport(report)).not.toContain('Held out');
+});
+
+it.for<[number, boolean]>([
+  [100, true],
+  [95, false],
+])('reports whether %i held-out hits meet the 95%% bar', ([hits, meetsBar]) => {
+  const tuning = Array.from({ length: 20 }, () => item());
+
+  const heldOutHits = Array.from({ length: hits }, () =>
+    item({ session: '/logs/holdout.jsonl', split: 'holdout' }),
+  );
+
+  const heldOutMisses = Array.from({ length: 100 - hits }, () => holdoutMiss());
+  const report = scoreReport(input([...tuning, ...heldOutHits, ...heldOutMisses]));
+
+  expect(variant(report, 'classifier').heldOut?.meetsBar).toBe(meetsBar);
+});
+
+it('counts timeout and unavailable verdicts and does not decide them', () => {
+  const timeout = item({ verdicts: sameVerdict({ kind: 'timeout' }) });
+  const unavailable = item({ verdicts: sameVerdict({ kind: 'unavailable' }) });
+  const report = scoreReport(input([timeout, unavailable]));
+  const classifier = variant(report, 'classifier');
+
+  expect(classifier.verdicts).toEqual({ answered: 0, timeout: 1, error: 0, unavailable: 1 });
+  expect(classifier.cutoffs.every((row) => row.decided === 0)).toBe(true);
+});
+
+it('states the exploration limits and shows every skip counter', () => {
+  const report = scoreReport(input([item()], { skipped: skipped({ ambiguousEntries: 3 }) }));
+  const [first, second] = formatScoreReport(report).split('\n');
+
+  expect(first).toBe(
+    'Exploration only: past logs lack question kind and full context. This sets no launch cutoff.',
+  );
+
+  expect(second).toContain('typed text');
+  expect(formatScoreReport(report)).toContain('3 ambiguous entries');
+});
+
+it('prints one section per variant with decide share and agreement at every cutoff', () => {
+  const text = formatScoreReport(scoreReport(input([item()])));
+
+  for (const name of ['classifier', 'classifierExamples', 'panel', 'panelExamples']) {
+    expect(text).toContain(`\n${name}\n`);
+  }
+
+  for (const cutoff of scoreCutoffs) {
+    expect(text).toContain(cutoff.toFixed(2));
+  }
+
+  expect(text).toContain('decide share');
+  expect(text).toContain('agreement');
+});
