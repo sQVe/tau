@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
+import { shadowReport } from '../../scripts/questionGateScore/shadowReport.ts';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
 import { readVersionedRecord, writeRecord } from '../record.ts';
 import { readShadowRecords, writeShadowRecord } from './record.ts';
@@ -182,6 +183,52 @@ it('names schema-valid records with an invalid recommendation count and hard lin
   expect(gaps[2]?.reason).toContain(hardLinkPath);
   expect(after).toEqual(before);
   expectNoWorkerAction();
+});
+
+it('names records with confidence outside the unit range as gaps', async ({ onTestFinished }) => {
+  const directory = shadowDirectory(onTestFinished);
+  const validPath = join(directory, shadowName('1'));
+  const highPath = join(directory, shadowName('2'));
+  const judgePath = join(directory, shadowName('3'));
+  const record = currentRecord();
+
+  const withConfidence = (confidence: number): string => JSON.stringify({ ...record, confidence });
+
+  const withJudgeConfidence = (confidence: number): string => {
+    const copy = structuredClone(record);
+
+    copy.judges.panel.verdict = { kind: 'answered', confidence };
+
+    return JSON.stringify(copy);
+  };
+
+  await writeFile(validPath, fixture('current.json'));
+  await writeFile(highPath, withConfidence(2));
+  await writeFile(judgePath, withJudgeConfidence(2));
+
+  const { records, gaps } = await readShadowRecords(directory, readVersionedRecord);
+
+  expect(records).toEqual([currentRecord()]);
+  expect(gaps.map((gap) => gap.path)).toEqual([highPath, judgePath]);
+  expect(gaps[0]?.reason).toContain(highPath);
+  expect(gaps[1]?.reason).toContain(judgePath);
+
+  const score = shadowReport({
+    records,
+    cohort: record.cohort,
+    variant: 'classifier',
+    cutoff: 0.8,
+  });
+
+  const validOnly = shadowReport({
+    records: [record],
+    cohort: record.cohort,
+    variant: 'classifier',
+    cutoff: 0.8,
+  });
+
+  expect(score).toEqual(validOnly);
+  expect(score.agreement).toBe(1);
 });
 
 it('fails a directory read error with its path', async ({ onTestFinished }) => {

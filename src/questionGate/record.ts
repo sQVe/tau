@@ -44,9 +44,11 @@ const shadowFileMode = 0o600;
 const shadowFileName =
   /^shadow-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/u;
 
+const confidenceSchema = Type.Number({ minimum: 0, maximum: 1 });
+
 const judgeVerdictSchema = Type.Union([
   Type.Object(
-    { kind: Type.Literal('answered'), confidence: Type.Number() },
+    { kind: Type.Literal('answered'), confidence: confidenceSchema },
     { additionalProperties: false },
   ),
   Type.Object({ kind: Type.Literal('timeout') }, { additionalProperties: false }),
@@ -92,7 +94,7 @@ const recordSchema = Type.Object(
     cohort: Type.String({ minLength: 1 }),
     sessionId: Type.String({ minLength: 1 }),
     question: judgeQuestionSchema,
-    confidence: Type.Union([Type.Number(), Type.Null()]),
+    confidence: Type.Union([confidenceSchema, Type.Null()]),
     judges: judgesSchema,
     answer: answerSchema,
   },
