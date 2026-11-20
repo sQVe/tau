@@ -40,8 +40,9 @@ proposed checks.
      work, and the past mistake its check must fail on. Do not apply [synthesis.md](synthesis.md)'s
      structural-to-Backlog rule. The check is the proposal.
 6. Ask approve, reject, or redirect for each class with `ask_user_question`. Ask at most 4 classes
-   per call. A redirect approves nothing: rewrite the class, show it again, and ask again before
-   step 8.
+   per call. A redirect approves nothing: rewrite the class, apply step 3 again to its rewritten
+   evidence, then submit it as a one-element `classes` array to `improvement` `action: correct`.
+   Show it and ask again before step 7 only when the returned `classes` array holds it.
 7. For each class, find its owning project: the project root with the most occurrences in
    `eventOwners`. Ask when two roots tie or an occurrence has no owner. Then call `improvement` with
    `action: record`, `kind: class`, `projectRoot` set to that root, and the `identity`, `level`,
