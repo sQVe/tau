@@ -8,7 +8,7 @@ import { get, kill, run, wait } from '../../../hc/hc.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { piArguments } from '../../../piStart/piArguments.js';
 import { askLiveArchitect } from '../liveAsk.js';
-import type { LiveAskResult } from '../liveAsk.js';
+import type { AskRefusalProofs, LiveAskResult } from '../liveAsk.js';
 import { architectLockPath } from '../lock.js';
 import {
   askRecordPath,
@@ -30,6 +30,7 @@ export interface AskRequest {
   location: ConfigLocation;
   ui: ConfigWarnings;
   hc: HcRuntime;
+  refusals: AskRefusalProofs;
 }
 
 export type AskResult =

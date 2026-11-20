@@ -204,20 +204,29 @@ it('a refused live ask marks its record failed', async ({ onTestFinished: cleanu
 
   replyTerminal(hc, 't-architect', leadLabel('session-newer'));
 
-  await expect(
-    tool.execute(
+  const failure = await tool
+    .execute(
       'call',
       { action: 'ask', question: 'Which flag name?' },
       undefined,
       undefined,
       contextOf(root),
-    ),
-  ).rejects.toThrow(/changed session.*Nothing was queued/);
+    )
+    .then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toMatch(/changed session.*Nothing was queued/);
 
   const { records } = await readAskRecords(root);
+  const record = records[0] as LiveAskRecord;
 
   expect(records).toMatchObject([{ route: 'live', status: 'failed' }]);
-  expect((records[0] as LiveAskRecord).detail).toMatch(/changed session/);
+  expect(record.detail).toMatch(/changed session/);
+  expect((failure as Error).message).not.toContain(record.askId);
+  expect((failure as Error).message).not.toContain('Call architect ask again');
 });
 
 it('an unknown live ask retried with its ask ID resends the same bytes and saves once', async ({
