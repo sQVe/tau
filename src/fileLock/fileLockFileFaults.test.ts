@@ -69,6 +69,7 @@ const clearFileFaults = () => {
   fileFaults.storageFull = false;
   fileFaults.truncateFails = false;
   fileFaults.removeFault = undefined;
+  fileFaults.afterOwnerRead = undefined;
 };
 
 const failRemoveOnce = (suffix: string): Error => {
@@ -123,57 +124,36 @@ it('releases the lock when storage refuses new files, so the next caller acquire
   expect(await heldLocks(lockPath)).toEqual([]);
 });
 
-it('releases a new claim when staging file removal fails', async () => {
-  const { lockPath } = fixture();
+const claimFaultCases: [
+  name: string,
+  releasedGeneration: number,
+  prepare: (lockPath: string) => Promise<Error>,
+][] = [
+  [
+    'releases a new claim when staging file removal fails',
+    1,
+    async () => failRemoveOnce('.staging'),
+  ],
+  [
+    'releases a new claim when older generation cleanup fails',
+    2,
+    async (lockPath) => {
+      const olderPath = `${lockPath}.1`;
 
-  onTestFinished(clearFileFaults);
+      await mkdir(dirname(lockPath), { recursive: true });
+      await writeFile(olderPath, ownerJson('older', true));
 
-  const options = {
-    lockPath,
-    checkout: '/holder',
-    signal: undefined,
-    pollMilliseconds: 60_000,
-    cancelled,
-    onWaiting: () => undefined,
-  };
-
-  const acquisitionError = failRemoveOnce('.staging');
-
-  const run = vi.fn<() => Promise<string>>(async () => 'ran');
-  const outcome = withFileLock(options, run);
-
-  await expect(outcome).rejects.toBe(acquisitionError);
-  expect(run).not.toHaveBeenCalled();
-
-  const controller = new AbortController();
-  const waitedFor: unknown[] = [];
-
-  const next = await withFileLock(
-    {
-      ...options,
-      checkout: '/next',
-      signal: controller.signal,
-      onWaiting: (holder) => {
-        waitedFor.push(holder);
-        controller.abort();
-      },
+      return failRemoveOnce(olderPath);
     },
-    async () => 'next ran',
-  );
+  ],
+];
 
-  expect(next).toBe('next ran');
-  expect(waitedFor).toEqual([]);
-  expect(await heldLocks(lockPath)).toEqual([]);
-});
-
-it('releases a new claim when older generation cleanup fails', async () => {
+it.each(claimFaultCases)('%s', async (_name, releasedGeneration, prepare) => {
   const { lockPath } = fixture();
-  const olderPath = `${lockPath}.1`;
 
   onTestFinished(clearFileFaults);
 
-  await mkdir(dirname(lockPath), { recursive: true });
-  await writeFile(olderPath, ownerJson('older', true));
+  const acquisitionError = await prepare(lockPath);
 
   const options = {
     lockPath,
@@ -184,13 +164,18 @@ it('releases a new claim when older generation cleanup fails', async () => {
     onWaiting: () => undefined,
   };
 
-  const acquisitionError = failRemoveOnce(olderPath);
-
   const run = vi.fn<() => Promise<string>>(async () => 'ran');
   const outcome = withFileLock(options, run);
 
   await expect(outcome).rejects.toBe(acquisitionError);
   expect(run).not.toHaveBeenCalled();
+
+  const released = JSON.parse(await readFile(`${lockPath}.${releasedGeneration}`, 'utf8')) as {
+    checkout?: string;
+    released?: boolean;
+  };
+
+  expect(released).toMatchObject({ checkout: '/holder', released: true });
 
   const controller = new AbortController();
   const waitedFor: unknown[] = [];
