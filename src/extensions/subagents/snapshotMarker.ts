@@ -21,6 +21,26 @@ const markerPathFor = async (agentDirectory: string, name: string): Promise<stri
   return join(folder, unusedMarkerName);
 };
 
+// Reads the marker through the same guarded snapshot directory that clear and mark use.
+export const readSnapshotUnusedSince = async (
+  agentDirectory: string,
+  name: string,
+): Promise<number | undefined> => {
+  const marker = await markerPathFor(agentDirectory, name);
+
+  try {
+    const stats = await lstat(marker);
+
+    return stats.mtimeMs;
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
+
 // The marker's own time, never its target's: a link at the marker path is not followed.
 export const readUnusedSince = async (snapshot: string): Promise<number | undefined> => {
   try {

@@ -292,20 +292,29 @@ const sweepUnderLock = async (
   };
 };
 
+export const withFolderSweepLock = <Value>(
+  agentDirectory: string,
+  signal: AbortSignal | undefined,
+  run: () => Promise<Value>,
+): Promise<Value> =>
+  withFileLock(
+    {
+      lockPath: sweepLockPath(agentDirectory),
+      checkout: agentDirectory,
+      signal,
+      pollMilliseconds: 25,
+      onWaiting: () => undefined,
+      cancelled: () => new Error('The worker folder sweep lock was cancelled.'),
+    },
+    run,
+  );
+
 export const sweepWorkerFolders = async (
   hc: HcRuntime,
   agentDirectory: string,
   readNow: () => number,
   starting: readonly StartingWorker[],
 ): Promise<WorkerFolderSweep> =>
-  withFileLock(
-    {
-      lockPath: sweepLockPath(agentDirectory),
-      checkout: agentDirectory,
-      signal: undefined,
-      pollMilliseconds: 25,
-      onWaiting: () => undefined,
-      cancelled: () => new Error('The worker folder sweep was cancelled.'),
-    },
-    () => sweepUnderLock(hc, agentDirectory, readNow, starting),
+  withFolderSweepLock(agentDirectory, undefined, () =>
+    sweepUnderLock(hc, agentDirectory, readNow, starting),
   );

@@ -59,9 +59,19 @@ the lock and write the unused marker before an earlier launch sweep runs. The la
 drops its starting fact when the fresh listing or a terminal read reports that exact address as
 finished. A live worker that names the snapshot still protects it, and unread, missing, or unrelated
 evidence leaves the starting fact in place. A lock failure reaches the scan's error handler or the
-launch's catch, like any other sweep failure. One race stays as a known limit: a follow-up of
-another manager that starts between its validation and the `hc` listing, on a snapshot whose marker
-is already older than 24 hours, can lose that snapshot.
+launch's catch, like any other sweep failure.
+
+A follow-up that reuses a package snapshot waits for the sweep lock before it starts. Under the lock
+it checks the package paths again, clears the snapshot's old marker with the same guards, and keeps
+the lock through the terminal request and its reconciliation. It releases the lock before it starts
+its sweep and does not await the sweep. The wait uses the request's cancellation signal. If a
+definite start failure follows the clear, the follow-up restores the old marker time. If the worker
+may have started, it leaves the marker cleared. A release error after a confirmed start keeps the
+started result and reports a warning. This narrows the old limitation: a manager that shares the
+lock cannot start a follow-up on a snapshot that a sweep removes between validation and listing,
+because the package path check runs again under the lock. A follow-up of a manager that does not
+share the lock, on a snapshot whose marker is already older than 24 hours, can still lose that
+snapshot.
 
 The sweep fails closed. It removes nothing when the `hc` list cannot be read. When `hc get` fails
 for a live terminal, the sweep keeps every snapshot and the scratch folders that terminal may own.

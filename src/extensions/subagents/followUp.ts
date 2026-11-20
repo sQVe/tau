@@ -16,6 +16,7 @@ import type { ToolResult } from './errorResult.js';
 import type { FollowUpParameters } from './followUpParameters.js';
 import { capacityRefusal, startReservedWorker } from './launch.js';
 import type { LaunchRuntime, LaunchStatus } from './launch.js';
+import { missingPackagePath, missingPackagePathError } from './packageSnapshot.js';
 import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { decideSessionUse } from './sessionUse.js';
 import type { SessionUse, SessionUseTerminal } from './sessionUse.js';
@@ -61,18 +62,6 @@ const sessionUse = async (runtime: LaunchRuntime, source: Assignment): Promise<S
     sourceSessionFile: source.session.file,
     terminals: children.map(sessionUseTerminal),
   });
-};
-
-const missingPackagePath = (
-  packages: readonly { source: string; path: string }[],
-): string | undefined => {
-  for (const extension of packages) {
-    if (!existsSync(extension.path)) {
-      return extension.path;
-    }
-  }
-
-  return undefined;
 };
 
 const followUpAssignment = (
@@ -148,7 +137,7 @@ const followUpSource = async (
   const missingPath = missingPackagePath(extensionPackages);
 
   if (missingPath !== undefined) {
-    throw new Error(`Missing worker package path ${missingPath}; no follow-up can load it.`);
+    throw missingPackagePathError(missingPath);
   }
 
   return { source, extensionPackages };
