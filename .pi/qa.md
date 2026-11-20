@@ -42,7 +42,6 @@ No launch, and unclear impact:
 | Feature | Section | Target | Update it when the change touches |
 | ------- | ------- | ------ | --------------------------------- |
 | [Prompt in a Pi session](qa/features/pi-session-prompt.md) | Pi sessions | `pi-session` | Behavior inside a session that launches no worker |
-| [Status from the system's own source](qa/features/status-from-source.md) | Pi sessions | `pi-session` | A rule about reporting an integration or workflow as missing, disabled, or unknown |
 | [Worker launch in a Pi session](qa/features/pi-session-worker-launch.md) | Pi sessions | `pi-session` | Behavior that launches workers |
 
 ## Before a launch
@@ -147,9 +146,6 @@ and ask the parent.
 - [Prompt in a Pi session](qa/features/pi-session-prompt.md): a `qa` worker runs it, for behavior
   that launches no worker. Change the prompt after its first two sentences to trigger the changed
   behavior.
-- [Status from the system's own source](qa/features/status-from-source.md): a `qa` worker runs its
-  three cases, for a rule about reporting an integration or workflow as missing, disabled, or
-  unknown.
 - [Worker launch in a Pi session](qa/features/pi-session-worker-launch.md): only the manager runs
   its session, for behavior that launches workers.
 
