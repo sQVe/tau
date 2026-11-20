@@ -3,8 +3,9 @@
 Tau ships Pi extensions, skills, and hand-run scripts. A `qa` worker can test the scripts. It can
 test behavior inside a Pi session with `pnpm pi-session`, but not the terminal user interface.
 
-One exception: the manager runs the [worker-launch feature](qa/features/pi-session-worker-launch.md)
-session; a `qa` worker only checks its saved output and records the result.
+Two exceptions: the manager runs the [worker-launch feature](qa/features/pi-session-worker-launch.md)
+and the [question gate shadow feature](qa/features/question-gate-shadow.md) sessions; a `qa` worker
+only checks their saved output and records the result.
 
 ## Choose sections
 
@@ -20,6 +21,9 @@ Cross-effects:
   code that writes them needs "Pi sessions".
 - A change to behavior that launches workers needs "Pi sessions". The manager runs its
   [worker-launch session](qa/features/pi-session-worker-launch.md) and a `qa` worker records it.
+- A change to the question gate sampling rule, the shadow record, or `ask_user_question` needs
+  "Pi sessions". The manager runs its
+  [question gate shadow session](qa/features/question-gate-shadow.md) and a `qa` worker records it.
 
 No launch, and unclear impact:
 
@@ -43,6 +47,7 @@ No launch, and unclear impact:
 | ------- | ------- | ------ | --------------------------------- |
 | [Prompt in a Pi session](qa/features/pi-session-prompt.md) | Pi sessions | `pi-session` | Behavior inside a session that launches no worker |
 | [Worker launch in a Pi session](qa/features/pi-session-worker-launch.md) | Pi sessions | `pi-session` | Behavior that launches workers |
+| [Question gate shadow record](qa/features/question-gate-shadow.md) | Pi sessions | `pi-session` | `ask_user_question`, the question gate sampling rule, or shadow records |
 
 ## Before a launch
 
@@ -148,6 +153,8 @@ and ask the parent.
   behavior.
 - [Worker launch in a Pi session](qa/features/pi-session-worker-launch.md): only the manager runs
   its session, for behavior that launches workers.
+- [Question gate shadow record](qa/features/question-gate-shadow.md): only the manager runs its
+  session, for `ask_user_question`, the question gate sampling rule, or shadow records.
 
 ## Not testable
 

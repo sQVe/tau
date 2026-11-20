@@ -42,6 +42,19 @@ export { judgeWithClassifier } from './classifierJudge.ts';
 export { judgeWithPanel, panelTimeoutMilliseconds } from './panelJudge.ts';
 export { readShadowRecords, writeShadowRecord } from './record.ts';
 
+export {
+  shadowBatchIntervalMilliseconds,
+  shadowDecision,
+  shadowEligibility,
+} from './shadowDecision.ts';
+
+export type {
+  ShadowDecision,
+  ShadowDecisionFacts,
+  ShadowQuestionFacts,
+  ShadowSkipReason,
+} from './shadowDecision.ts';
+
 export type {
   ShadowRecord,
   ShadowRecordGap,

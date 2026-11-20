@@ -27,6 +27,11 @@ it.each([
   },
   { rule: 'a question preview', questions: [{ ...layout, preview: 'draft' }] },
   {
+    rule: 'a choice kind with a confidence',
+    questions: [{ ...layout, kind: 'choice' as const, confidence: 0.8 }],
+  },
+  { rule: 'an approval kind', questions: [{ ...layout, kind: 'approval' as const }] },
+  {
     rule: 'two different questions',
     questions: [layout, { ...layout, question: 'Which theme should the dashboard use?' }],
   },
@@ -90,6 +95,26 @@ it.each([
     rule: 'a blank preview',
     questions: [withOptions([{ preview: ' ' }, { preview: 'two' }])],
     error: /blank/u,
+  },
+  {
+    rule: 'an unknown kind',
+    questions: [{ ...layout, kind: 'design' } as unknown as QuestionInput],
+    error: /invalid kind/u,
+  },
+  {
+    rule: 'a confidence below zero',
+    questions: [{ ...layout, confidence: -0.1 }],
+    error: /from 0 to 1/u,
+  },
+  {
+    rule: 'a confidence above one',
+    questions: [{ ...layout, confidence: 1.1 }],
+    error: /from 0 to 1/u,
+  },
+  {
+    rule: 'a confidence that is not a number',
+    questions: [{ ...layout, confidence: Number.NaN }],
+    error: /from 0 to 1/u,
   },
 ])('rejects $rule', ({ questions, error }) => {
   expect(() => {

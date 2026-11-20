@@ -208,6 +208,7 @@ const pureModules = [
   'src/questionGate/decision.ts',
   'src/questionGate/examples.ts',
   'src/questionGate/panelVerdict.ts',
+  'src/questionGate/shadowDecision.ts',
   'src/reviewBots/reviewBotDecisions.ts',
   'src/reviewCapture/chainSelectionDecision.ts',
   'src/reviewCapture/coverageDecision.ts',
