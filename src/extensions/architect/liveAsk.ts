@@ -4,6 +4,7 @@ import { errorMessage } from '../../errors.js';
 import { get } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { ownInboxReady, sendInboxMessage } from '../../inbox/inbox.js';
+import { readFailureDecision } from './readFailureDecision.js';
 import { changeAskRecord, isOpenLiveAsk, readAskRecord, writeAskRecord } from './record.js';
 import type { AskRecord, AskRecordChange, ChangeAskOptions, LiveAskRecord } from './record.js';
 
@@ -372,18 +373,6 @@ const requireSavedLiveAsk = (
   return record;
 };
 
-const isNodeFileError = (error: unknown): boolean => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const code = 'code' in error ? error.code : undefined;
-  const errno = 'errno' in error ? error.errno : undefined;
-  const syscall = 'syscall' in error ? error.syscall : undefined;
-
-  return typeof code === 'string' && typeof errno === 'number' && typeof syscall === 'string';
-};
-
 const recordReadFailure = (refusal: unknown, askId: string, error: unknown): Error =>
   new Error(
     `${errorMessage(refusal)} Ask ${askId}: the ask record could not be read: ${errorMessage(error)}. Restore record access, then retry architect ask with askId ${askId} in this session. Do not reload Pi.`,
@@ -404,7 +393,12 @@ const retryLiveAsk = async (
   try {
     saved = await readAskRecord(request.root, request.askId);
   } catch (error) {
-    if (leadProof !== undefined && isNodeFileError(error)) {
+    const readDecision = readFailureDecision({
+      hasRefusalProof: leadProof !== undefined,
+      error,
+    });
+
+    if (readDecision === 'filesystem' && leadProof !== undefined) {
       throw recordReadFailure(leadProof.refusal, request.askId, error);
     }
 
