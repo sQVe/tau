@@ -4,10 +4,17 @@ import { customWithBlockedStatus } from '../../dialog/blockedStatus.js';
 import { questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult } from './dialog.js';
 import type { Answer } from './questionnaire.js';
+import type { ShadowJob, ShadowRunner } from './shadow.js';
 import { refuseUnrepliedTypedAnswer } from './typedAnswerReply.js';
 import { validateQuestions } from './validation.js';
 
-type QuestionInput = Omit<DialogQuestion, 'multiSelect'> & { multiSelect?: boolean };
+type QuestionInput = Omit<DialogQuestion, 'multiSelect'> & {
+  multiSelect?: boolean;
+  kind?: 'choice' | 'approval';
+  confidence?: number;
+};
+
+type OpenQuestionDialog = ReturnType<typeof questionDialog>;
 
 interface QuestionResponse {
   content: { type: 'text'; text: string }[];
@@ -38,9 +45,20 @@ const responseText = (result: DialogResult) => {
   return `User has answered your questions: ${segments} ${ending}`;
 };
 
+const sessionIdOf = (sessionManager: ExtensionContext['sessionManager']): string | undefined => {
+  try {
+    const sessionId = sessionManager.getSessionId();
+
+    return sessionId === '' ? undefined : sessionId;
+  } catch {
+    return undefined;
+  }
+};
+
 export const askQuestions = async (
   input: QuestionInput[],
   context: ExtensionContext,
+  shadow: ShadowRunner,
 ): Promise<QuestionResponse> => {
   if (context.mode !== 'tui') {
     throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
@@ -55,13 +73,47 @@ export const askQuestions = async (
     multiSelect: question.multiSelect === true,
   }));
 
-  const opened = await customWithBlockedStatus<DialogResult | undefined>(
-    context,
-    { kind: 'question', message: questions[0]?.header ?? '' },
-    questionDialog(questions),
-  );
+  const open = questionDialog(questions);
 
-  const result: DialogResult = opened ?? { kind: 'declined' };
+  let job: ShadowJob | undefined;
 
-  return { content: [{ type: 'text', text: responseText(result) }], details: result };
+  const openWithShadow: OpenQuestionDialog = (terminal, theme, keybindings, done) => {
+    const settle = (result: DialogResult) => {
+      job?.settle(result);
+      done(result);
+    };
+
+    const dialog = open(terminal, theme, keybindings, settle);
+    const sessionId = sessionIdOf(context.sessionManager);
+
+    if (sessionId !== undefined) {
+      job = shadow.start({
+        questions,
+        sessionId,
+        cwd: context.cwd,
+        projectTrusted: context.isProjectTrusted(),
+        registry: context.modelRegistry,
+      });
+    }
+
+    return dialog;
+  };
+
+  try {
+    const opened = await customWithBlockedStatus<DialogResult | undefined>(
+      context,
+      { kind: 'question', message: questions[0]?.header ?? '' },
+      openWithShadow,
+    );
+
+    const result: DialogResult = opened ?? { kind: 'declined' };
+
+    job?.settle(result);
+
+    return { content: [{ type: 'text', text: responseText(result) }], details: result };
+  } catch (error) {
+    job?.abort();
+
+    throw error;
+  }
 };

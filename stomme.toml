@@ -419,7 +419,7 @@ public = [
   "src/config/roleModels.ts",
   "src/config/verificationTargets.ts",
 ]
-imports = ["errors", "role", "schema"]
+imports = ["errors", "judgeSchema", "role", "schema"]
 
 [modules.dialog]
 entry = "src/dialog/dialog.ts"
@@ -518,6 +518,11 @@ public = [
 ]
 imports = ["errors"]
 
+[modules.judgeSchema]
+entry = "src/judgeSchema.ts"
+public = []
+imports = []
+
 [modules.linear]
 entry = "src/linear/linear.ts"
 public = ["src/linear/descriptionMatch.ts", "src/linear/ownership.ts"]
@@ -536,7 +541,7 @@ imports = ["errors"]
 [modules.questionGate]
 entry = "src/questionGate/questionGate.ts"
 public = ["src/questionGate/decision.ts", "src/questionGate/examples.ts"]
-imports = []
+imports = ["errors", "judgeSchema", "schema"]
 
 [modules.record]
 entry = "src/record.ts"

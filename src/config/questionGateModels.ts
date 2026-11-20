@@ -1,6 +1,10 @@
+import { createHash } from 'node:crypto';
+
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { pastAnswerSchema, shadowVariantSchema } from '../judgeSchema.ts';
+import type { PastAnswer, ShadowVariant } from '../judgeSchema.ts';
 import { readUserOnlyKey } from './config.ts';
 import type { ConfigLocation } from './config.ts';
 import { parseModelReference } from './models.ts';
@@ -10,13 +14,39 @@ export interface QuestionGateModels {
   panel: readonly [string, string, string];
 }
 
+export interface ShadowConfig {
+  variant: ShadowVariant;
+  cutoff: number;
+  examples: PastAnswer[];
+}
+
+export interface QuestionGateConfig extends QuestionGateModels {
+  shadow?: ShadowConfig;
+}
+
 const questionGateModelsSchema = Type.Object(
   {
     classifier: Type.String(),
     panel: Type.Tuple([Type.String(), Type.String(), Type.String()]),
+    shadow: Type.Optional(Type.Unknown()),
   },
   { additionalProperties: false },
 );
+
+const shadowSchema = Type.Object(
+  {
+    variant: shadowVariantSchema,
+    cutoff: Type.Number({ minimum: 0, maximum: 1 }),
+    examples: Type.Optional(Type.Array(pastAnswerSchema, { maxItems: 5 })),
+  },
+  { additionalProperties: false },
+);
+
+const modelsMessage =
+  'questionGate needs classifier, a provider/model-id string, and panel, an array of three provider/model-id strings.';
+
+const shadowMessage =
+  'questionGate shadow needs a variant, a cutoff from 0 to 1, and up to five past-answer examples.';
 
 const invalid = (source: string, message: string): Error =>
   new Error(`Invalid Tau config ${source}: ${message}`);
@@ -32,9 +62,33 @@ const requireModelReference = (source: string, value: string): string => {
   return value;
 };
 
-export const readQuestionGateModels = (
+const usesExamples = (variant: ShadowVariant): boolean =>
+  variant === 'classifierExamples' || variant === 'panelExamples';
+
+const readShadow = (source: string, value: unknown): ShadowConfig | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Value.Check(shadowSchema, value)) {
+    throw invalid(source, shadowMessage);
+  }
+
+  const examples = value.examples ?? [];
+
+  if (usesExamples(value.variant) && examples.length === 0) {
+    throw invalid(
+      source,
+      `questionGate shadow variant ${JSON.stringify(value.variant)} needs at least one example.`,
+    );
+  }
+
+  return { variant: value.variant, cutoff: value.cutoff, examples };
+};
+
+export const readQuestionGateConfig = (
   location: ConfigLocation,
-): QuestionGateModels | undefined => {
+): QuestionGateConfig | undefined => {
   const user = readUserOnlyKey(location, 'questionGate');
 
   if (user === undefined) {
@@ -44,13 +98,11 @@ export const readQuestionGateModels = (
   const { source, value } = user;
 
   if (!Value.Check(questionGateModelsSchema, value)) {
-    throw invalid(
-      source,
-      'questionGate needs classifier, a provider/model-id string, and panel, an array of three provider/model-id strings.',
-    );
+    throw invalid(source, modelsMessage);
   }
 
   const [first, second, third] = value.panel;
+  const shadow = readShadow(source, value.shadow);
 
   return {
     classifier: requireModelReference(source, value.classifier),
@@ -59,5 +111,47 @@ export const readQuestionGateModels = (
       requireModelReference(source, second),
       requireModelReference(source, third),
     ],
+    ...(shadow === undefined ? {} : { shadow }),
   };
+};
+
+const canonicalQuestion = (question: PastAnswer['question']) => ({
+  question: question.question,
+  problem: question.problem,
+  impact: question.impact,
+  options: question.options.map((option) => ({
+    label: option.label,
+    description: option.description,
+    recommended: option.recommended,
+  })),
+});
+
+const canonicalOutcome = (outcome: PastAnswer['outcome']) => {
+  if (outcome.kind === 'recommended') {
+    return { kind: outcome.kind };
+  }
+
+  if (outcome.kind === 'otherOption') {
+    return { kind: outcome.kind, label: outcome.label };
+  }
+
+  return { kind: outcome.kind, text: outcome.text };
+};
+
+const canonicalExample = (answer: PastAnswer) => ({
+  time: answer.time,
+  question: canonicalQuestion(answer.question),
+  outcome: canonicalOutcome(answer.outcome),
+});
+
+export const shadowCohort = (config: QuestionGateConfig & { shadow: ShadowConfig }): string => {
+  const canonical = JSON.stringify({
+    classifier: config.classifier,
+    panel: [...config.panel],
+    variant: config.shadow.variant,
+    cutoff: config.shadow.cutoff,
+    examples: config.shadow.examples.map(canonicalExample),
+  });
+
+  return createHash('sha256').update(canonical).digest('hex');
 };

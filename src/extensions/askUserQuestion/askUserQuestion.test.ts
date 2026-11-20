@@ -425,6 +425,12 @@ it('accepts a call of ordinary size', () => {
   expect(Value.Check(tool.parameters, limitCall({}))).toBe(true);
 });
 
+it('accepts a question kind and confidence', () => {
+  const { tool } = registeredTool();
+
+  expect(Value.Check(tool.parameters, limitCall({ kind: 'choice', confidence: 0.5 }))).toBe(true);
+});
+
 const long = 'x'.repeat(1000);
 
 const manyOptions = Array.from({ length: 20 }, (_, index) => ({
@@ -438,6 +444,9 @@ it.each([
   { limit: 'a very long problem', call: limitCall({ problem: long }) },
   { limit: 'a very long impact', call: limitCall({ impact: long }) },
   { limit: 'a very long header', call: limitCall({ header: long }) },
+  { limit: 'an unknown kind', call: limitCall({ kind: 'design' }) },
+  { limit: 'a confidence below zero', call: limitCall({ confidence: -0.1 }) },
+  { limit: 'a confidence above one', call: limitCall({ confidence: 1.1 }) },
   { limit: 'many options', call: limitCall({ options: manyOptions }) },
   { limit: 'no options', call: limitCall({ options: [] }) },
   {

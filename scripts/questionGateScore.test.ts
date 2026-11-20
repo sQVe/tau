@@ -2,9 +2,9 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 import { fauxAssistantMessage } from '@earendil-works/pi-ai';
-import type { AssistantMessage } from '@earendil-works/pi-ai';
+import type { AssistantMessage, Context } from '@earendil-works/pi-ai';
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.ts';
 import { panelMember, parseScoreArguments, writePanelMemberErrors } from './questionGateScore.ts';
@@ -90,11 +90,25 @@ it('names its own usage when a time is invalid', () => {
 
 it('defaults to 500 questions and a 0.3 holdout', () => {
   expect(parseScoreArguments([], 0)).toEqual({
+    kind: 'history',
     since: undefined,
     until: undefined,
     limit: 500,
     holdout: 0.3,
   });
+});
+
+it('returns the shadow variant without historical defaults', () => {
+  expect(parseScoreArguments(['--shadow'], 0)).toEqual({ kind: 'shadow' });
+});
+
+it.for<[string, string]>([
+  ['--since', '1'],
+  ['--until', '1'],
+  ['--limit', '3'],
+  ['--holdout', '0.2'],
+])('rejects %s with --shadow', ([flag, value]) => {
+  expect(() => parseScoreArguments(['--shadow', flag, value], 0)).toThrow(flag);
 });
 
 it('gives unavailable for an unknown reference', async () => {
@@ -146,6 +160,35 @@ it('retries a rate-limited reply and returns the later reply', async () => {
   expect(await member(prompt, signal)).toEqual({ kind: 'replied', text: 'Postgres' });
   expect(callCount()).toBe(2);
   expect(errors).toEqual([]);
+});
+
+it('stamps the request time on each retry attempt', async () => {
+  const retried = fauxAssistantMessage('Postgres');
+  const timestamps: unknown[] = [];
+
+  const complete = vi.fn<(model: unknown, context: Context) => Promise<AssistantMessage>>(
+    async (_model, context) => {
+      timestamps.push(context.messages[0]?.timestamp);
+
+      return timestamps.length === 1 ? rateLimited : retried;
+    },
+  );
+
+  const fake = {
+    find: (provider: string, id: string) => ({ provider, id }),
+    complete,
+  } as unknown as ModelRegistry;
+
+  const now = vi.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
+
+  try {
+    const member = panelMember(fake, 'tau-fixture/judge-a', diagnostics());
+
+    expect(await member(prompt, signal)).toEqual({ kind: 'replied', text: 'Postgres' });
+    expect(timestamps).toEqual([1_000, 2_000]);
+  } finally {
+    now.mockRestore();
+  }
 });
 
 it('records the error message when retries are exhausted', async () => {

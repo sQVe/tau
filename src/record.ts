@@ -147,13 +147,17 @@ const recordText = (value: unknown): string => `${JSON.stringify(value, null, 2)
 
 // Writes a new file and renames it over the record, so a failed write keeps the old record or none.
 // The rename replaces a link at the path instead of following it.
-export const writeRecord = async (path: string, value: unknown): Promise<void> => {
+export const writeRecord = async (path: string, value: unknown, mode?: number): Promise<void> => {
   const temporary = temporaryPathFor(path);
 
   await refuseSymlink(path);
 
   try {
-    await writeFile(temporary, recordText(value), { flag: 'wx' });
+    await writeFile(temporary, recordText(value), {
+      flag: 'wx',
+      ...(mode === undefined ? {} : { mode }),
+    });
+
     await rename(temporary, path);
   } catch (error) {
     await rm(temporary, { force: true });
