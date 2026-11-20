@@ -91,7 +91,8 @@ when you stop. Follow explicit user instructions and repository conventions over
   workflow as missing or disabled.
 - Treat a filename scan or missing output as no evidence. The setting may live in another file, and
   a run with no output may be silent by design.
-- Report `unknown` when you cannot read that source, and name the source you tried to read.
+- Report `unknown` for a fact that only that source would settle, and name the source you could not
+  read.
 
 ## Report status in the user's terms
 
