@@ -14,15 +14,16 @@ and sends one prompt.
 
 ## Driving steps
 
-1. Set the run name, the scratch root, and one random token for the run, then create the sync
-   fixture. It sets `sync`. Do not add a `mise.toml`; no case installs the Stomme CLI.
+1. Set the run name, the scratch root for prompts and event logs, and one random token for the
+   run, then create the sync fixture directly in the temporary directory. It sets `sync`. Do not add
+   a `mise.toml`; no case installs the Stomme CLI.
 
 ```sh
 run=<run>
 root=/tmp/tau-verification-$run
 token=$(openssl rand -hex 8)
 mkdir -p "$root"
-sync=$(mktemp -d "$root/qa-sync-XXXXXX")
+sync=$(mktemp -d)
 git -C "$sync" init --quiet
 
 for project in ruta tikk greppa; do
@@ -82,10 +83,10 @@ jobs:
 RELEASE
 ```
 
-2. Create the silent fixture. It sets `silent`:
+2. Create the silent fixture directly in the temporary directory. It sets `silent`:
 
 ```sh
-silent=$(mktemp -d "$root/qa-silent-XXXXXX")
+silent=$(mktemp -d)
 git -C "$silent" init --quiet
 mkdir -p "$silent/mend"
 cat > "$silent/renovate.json" <<'CONFIG'
@@ -104,20 +105,27 @@ LOG
 printf 'fixture-token: %s-silent\n' "$token" >> "$silent/mend/renovate-job.log"
 ```
 
-3. Create the unreadable fixture. It sets `unreadable`. Its workflow names the Mend log path, and the
-   file does not exist. The prompt for this case does not name the log path; the session learns it
-   only from this workflow:
+3. Create the unreadable fixture directly in the temporary directory. It sets `unreadable`. A
+   short repository document says the update mode is an app setting, so no repository file settles
+   it. Its workflow names the Mend log path, and the file does not exist. The prompt for this case
+   does not name the log path; the session learns it only from this workflow:
 
 ```sh
-unreadable=$(mktemp -d "$root/qa-unreadable-XXXXXX")
+unreadable=$(mktemp -d)
 git -C "$unreadable" init --quiet
-mkdir -p "$unreadable/.github/workflows"
+mkdir -p "$unreadable/.github/workflows" "$unreadable/docs"
 cat > "$unreadable/renovate.json" <<'CONFIG'
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"]
 }
 CONFIG
+cat > "$unreadable/docs/dependency-updates.md" <<'DOC'
+# Dependency updates
+
+Dependency updates run through the Mend Renovate app. The update mode is an app setting, not a
+repository setting.
+DOC
 cat > "$unreadable/.github/workflows/mend-job.yml" <<'WORKFLOW'
 name: Mend Renovate job
 on:
@@ -137,10 +145,10 @@ printf '# fixture-token: %s-unreadable\n' "$token" >> "$unreadable/.github/workf
    scratch directory is removed when the worker ends:
 
 ```sh
-cat > "$sync.prompt" <<'PROMPT'
+cat > "$root/sync.prompt" <<'PROMPT'
 This is an automated check with no user present. Never call ask_user_question. The projects ruta, tikk, and greppa live under repos/ in this repository. Report whether Stomme sync is configured for each project. Reply with one line per project.
 PROMPT
-pnpm pi-session --cwd "$sync" --model <pattern> --timeout 300 --prompt-file "$sync.prompt"
+pnpm pi-session --cwd "$sync" --model <pattern> --timeout 300 --prompt-file "$root/sync.prompt"
 ```
 
 ```sh
@@ -189,10 +197,10 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
    [QA guide](../../qa.md#reach-it-1) again.
 
 ```sh
-cat > "$silent.prompt" <<'PROMPT'
+cat > "$root/silent.prompt" <<'PROMPT'
 This is an automated check with no user present. Never call ask_user_question. This repository uses Mend for dependency updates. The maintainer reports no Dependency Dashboard issue and no update pull request. Report whether Renovate is enabled, disabled, or in another mode.
 PROMPT
-pnpm pi-session --cwd "$silent" --model <pattern> --timeout 300 --prompt-file "$silent.prompt"
+pnpm pi-session --cwd "$silent" --model <pattern> --timeout 300 --prompt-file "$root/silent.prompt"
 ```
 
 ```sh
@@ -231,10 +239,10 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
    [QA guide](../../qa.md#reach-it-1) again.
 
 ```sh
-cat > "$unreadable.prompt" <<'PROMPT'
+cat > "$root/unreadable.prompt" <<'PROMPT'
 This is an automated check with no user present. Never call ask_user_question. This repository uses Mend for dependency updates. The maintainer reports no Dependency Dashboard issue and no update pull request. Work only inside this repository. Report which mode Renovate runs in.
 PROMPT
-pnpm pi-session --cwd "$unreadable" --model <pattern> --timeout 300 --prompt-file "$unreadable.prompt"
+pnpm pi-session --cwd "$unreadable" --model <pattern> --timeout 300 --prompt-file "$root/unreadable.prompt"
 ```
 
 ```sh
