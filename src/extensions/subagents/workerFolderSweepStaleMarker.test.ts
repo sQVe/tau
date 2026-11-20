@@ -4,14 +4,17 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { holdFileLock } from '../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { assignmentPath, writeAssignment } from './assignment.js';
-import { savedAssignment } from './fixtures/deliveryManager.js';
+import type { WorkerTerminalFact } from './workerFolderDecision.js';
 import { sweepWorkerFolders } from './workerFolderSweep.js';
+
+interface HeldList {
+  called: Promise<void>;
+  release: () => void;
+}
 
 vi.mock(import('node:fs/promises'), { spy: true });
 
@@ -36,81 +39,17 @@ const makeFolder = (root: string, name: string): string => {
 
 const setup = () => {
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-sweep-');
+  const hcFake = createHcFake();
+  const hc: HcRuntime = { exec: hcFake.exec, connect: hcFake.connect, cwd: agentDirectory };
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
-  const hcFake = createHcFake();
-  const details = new Map<string, string>();
-
-  const gets = {
-    started: [] as string[],
-    hold: false,
-    pending: [] as (() => void)[],
+  return {
+    agentDirectory,
+    hc,
+    hcFake,
+    snapshotRoot: join(agentDirectory, 'tmp', 'tau-worker-packages'),
   };
-
-  const exec: HcRuntime['exec'] = (command, commandArguments, options) => {
-    if (command === 'hc' && commandArguments[0] === 'get') {
-      const address = commandArguments.at(-1) ?? '';
-      const reply = details.get(address);
-      const result = reply === undefined ? failedResult('not_found') : succeededResult(reply);
-
-      gets.started.push(address);
-
-      if (!gets.hold) {
-        return Promise.resolve(result);
-      }
-
-      return new Promise((resolve) => {
-        gets.pending.push(() => {
-          resolve(result);
-        });
-      });
-    }
-
-    return hcFake.exec(command, commandArguments, options);
-  };
-
-  const hc: HcRuntime = { exec, connect: hcFake.connect, cwd: agentDirectory };
-  const snapshotRoot = join(agentDirectory, 'tmp', 'tau-worker-packages');
-
-  const listTerminals = (
-    rows: { assignmentId: string; state: string; name?: string | null }[],
-  ): void => {
-    const terminals = rows.map(({ assignmentId, state, name }) => ({
-      address: `t-${assignmentId}`,
-      state,
-      ...(name === undefined ? {} : { name }),
-    }));
-
-    hcFake.reply('ls', JSON.stringify({ terminals }));
-
-    for (const row of rows) {
-      details.set(
-        `t-${row.assignmentId}`,
-        JSON.stringify({
-          address: `t-${row.assignmentId}`,
-          state: row.state,
-          labels: { 'tau.assignment': assignmentPath(row.assignmentId) },
-        }),
-      );
-    }
-  };
-
-  return { agentDirectory, hc, gets, snapshotRoot, listTerminals };
-};
-
-const saveAssignmentWithSnapshot = async (
-  agentDirectory: string,
-  snapshotName: string | null,
-): Promise<string> => {
-  const assignment = savedAssignment(agentDirectory, null);
-
-  assignment.packageSnapshot =
-    snapshotName === null ? null : join(agentDirectory, 'tmp', 'tau-worker-packages', snapshotName);
-
-  await writeAssignment(assignment);
-
-  return assignment.assignmentId;
 };
 
 const sweepLockPath = (agentDirectory: string): string =>
@@ -118,58 +57,125 @@ const sweepLockPath = (agentDirectory: string): string =>
 
 const unusedMarkerName = '.tau-unused-since';
 
-const lockAttempts = (agentDirectory: string): number =>
-  vi.mocked(fsPromises.readdir).mock.calls.filter(([path]) => path === agentDirectory).length;
+const terminalList = (terminals: { address: string; state: string }[]): string =>
+  JSON.stringify({ terminals });
 
-const waitsForLock = (agentDirectory: string, baseline: number): Promise<'waiting' | 'timeout'> =>
-  vi
-    .waitFor(() => {
-      expect(lockAttempts(agentDirectory)).toBeGreaterThan(baseline);
-    })
-    .then(() => 'waiting' as const)
-    .catch(() => 'timeout' as const);
+// Holds the first `hc ls` reply, so a sweep keeps the evidence it read before the hold.
+const holdNextList = (hc: HcRuntime): HeldList => {
+  const realExec = hc.exec;
+  const called = Promise.withResolvers<undefined>();
+  const held = Promise.withResolvers<Awaited<ReturnType<HcRuntime['exec']>>>();
+  let captured: Awaited<ReturnType<HcRuntime['exec']>> | undefined;
+  let taken = false;
+  let released = false;
+
+  const release = (): void => {
+    released = true;
+
+    if (captured !== undefined) {
+      held.resolve(captured);
+    }
+  };
+
+  hc.exec = (command, commandArguments, options) => {
+    if (taken || commandArguments[0] !== 'ls') {
+      return realExec(command, commandArguments, options);
+    }
+
+    taken = true;
+
+    const result = realExec(command, commandArguments, options);
+
+    void result.then(
+      (value) => {
+        captured = value;
+        called.resolve(undefined);
+
+        if (released) {
+          held.resolve(value);
+        }
+      },
+      (error: unknown) => {
+        called.reject(error);
+        held.reject(error);
+      },
+    );
+
+    return held.promise;
+  };
+
+  return { called: called.promise, release };
+};
+
+const actualFsPromises = await vi.importActual<typeof fsPromises>('node:fs/promises');
+
+// Resolves on the waiting sweep's read of the lock generation its holder published.
+const signalActiveGenerationRead = (agentDirectory: string): Promise<void> => {
+  const path = `${sweepLockPath(agentDirectory)}.1`;
+  const { promise, resolve } = Promise.withResolvers<undefined>();
+  const readFile = vi.mocked(fsPromises.readFile);
+  const original = readFile.getMockImplementation() ?? actualFsPromises.readFile;
+
+  readFile.mockImplementation(((target: string, ...rest: never[]) => {
+    if (target === path) {
+      resolve(undefined);
+    }
+
+    return original(target, ...rest);
+  }) as typeof fsPromises.readFile);
+
+  onTestFinished(() => {
+    readFile.mockImplementation(original);
+  });
+
+  return promise;
+};
 
 it('keeps a snapshot for a day after the follow-up that reused it ends', async () => {
-  const { agentDirectory, hc, gets, snapshotRoot, listTerminals } = setup();
+  const { agentDirectory, hc, hcFake, snapshotRoot } = setup();
   const snapshot = makeFolder(snapshotRoot, 'snapshot-source');
-  const followUpId = await saveAssignmentWithSnapshot(agentDirectory, 'snapshot-source');
-  const bystanderId = await saveAssignmentWithSnapshot(agentDirectory, null);
   const startedAt = Date.now();
 
-  listTerminals([{ assignmentId: bystanderId, state: 'live' }]);
-  gets.hold = true;
+  const followUp: WorkerTerminalFact = {
+    kind: 'read',
+    assignmentId: 'follow-up',
+    running: true,
+    packageSnapshot: 'snapshot-source',
+  };
+
+  const pending: Promise<unknown>[] = [];
+
+  hcFake.reply('ls', terminalList([]));
+
+  const stale = holdNextList(hc);
+
+  onTestFinished(async () => {
+    stale.release();
+    await Promise.allSettled(pending);
+  });
 
   const staleSweep = sweepWorkerFolders(hc, agentDirectory, () => startedAt, []);
 
-  await vi.waitFor(() => {
-    expect(gets.started).toHaveLength(1);
-  });
+  pending.push(staleSweep);
 
-  listTerminals([]);
+  await stale.called;
 
-  const baseline = lockAttempts(agentDirectory);
+  const contenderRead = signalActiveGenerationRead(agentDirectory);
+  const launchSweep = sweepWorkerFolders(hc, agentDirectory, () => startedAt, [followUp]);
 
-  const launchSweep = sweepWorkerFolders(hc, agentDirectory, () => startedAt, [
-    {
-      kind: 'read',
-      assignmentId: followUpId,
-      running: true,
-      packageSnapshot: 'snapshot-source',
-    },
-  ]);
+  pending.push(launchSweep);
 
-  // Base: the launch sweep finishes. Fixed: it waits for the first sweep's lock.
-  await Promise.race([launchSweep, waitsForLock(agentDirectory, baseline)]);
+  // On the base the launch sweep completes; with the lock it waits for the held generation.
+  await Promise.race([launchSweep, contenderRead]);
 
-  gets.hold = false;
-  gets.pending.shift()?.();
+  stale.release();
 
   await staleSweep;
   await launchSweep;
 
   const endedAt = startedAt + 25 * hour;
 
-  listTerminals([{ assignmentId: followUpId, state: 'finished' }]);
+  hcFake.reply('ls', terminalList([{ address: 't-follow-up', state: 'finished' }]));
 
   await sweepWorkerFolders(hc, agentDirectory, () => endedAt, []);
 
@@ -181,13 +187,13 @@ it('keeps a snapshot for a day after the follow-up that reused it ends', async (
 });
 
 it('starts the unused window after a sweep waits for the lock', async () => {
-  const { agentDirectory, hc, snapshotRoot, listTerminals } = setup();
+  const { agentDirectory, hc, hcFake, snapshotRoot } = setup();
   const snapshot = makeFolder(snapshotRoot, 'snapshot-a');
   const marker = join(snapshot, unusedMarkerName);
   const startedAt = Date.now();
   let now = startedAt;
 
-  listTerminals([]);
+  hcFake.reply('ls', terminalList([]));
 
   const held = await holdFileLock({
     lockPath: sweepLockPath(agentDirectory),
@@ -199,12 +205,12 @@ it('starts the unused window after a sweep waits for the lock', async () => {
     throw new Error('Another session already holds the sweep lock.');
   }
 
-  const baseline = lockAttempts(agentDirectory);
+  onTestFinished(() => held.release());
+
+  const contenderRead = signalActiveGenerationRead(agentDirectory);
   const sweep = sweepWorkerFolders(hc, agentDirectory, () => now, []);
 
-  await vi.waitFor(() => {
-    expect(lockAttempts(agentDirectory)).toBeGreaterThan(baseline);
-  });
+  await contenderRead;
 
   now = startedAt + 30 * minute;
 
