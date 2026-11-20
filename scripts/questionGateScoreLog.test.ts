@@ -381,11 +381,11 @@ it('keeps a legacy typed value that equals the normalized recommended label', ()
   ]);
 });
 
-it('groups a fork copied first under its original session', () => {
-  const { originalPath, fork, original } = forkScenario();
+it('gives a fork and its original one session key', () => {
+  const { fork, original } = forkScenario();
   const log = readLoggedQuestions([fork, original]);
 
-  expect(log.questions.map((entry) => entry.session)).toEqual([originalPath, originalPath]);
+  expect(log.questions.map((entry) => entry.session)).toEqual([fork.path, fork.path]);
   expect(log.skipped).toEqual({ ...noSkips, copiedEntries: 2 });
 });
 
@@ -647,9 +647,10 @@ it('counts ambiguous cross-file pairs with one call ID', () => {
   expect(log).toEqual({ questions: [], skipped: { ...noSkips, ambiguousEntries: 4 } });
 });
 
-it('gives every copy the original session when a parent is missing', () => {
+it('gives every copy one session key when a parent is missing', () => {
   const originalPath = '/logs/original.jsonl';
   const intermediatePath = '/logs/intermediate.jsonl';
+  const groupKey = '/logs/grandchild.jsonl';
 
   const copied = [
     call('call-copied', at(1), [question()]),
@@ -668,7 +669,7 @@ it('gives every copy the original session when a parent is missing', () => {
   ];
 
   const grandchild: SessionLog = {
-    path: '/logs/grandchild.jsonl',
+    path: groupKey,
     text: logText(copied, header('session-grandchild', intermediatePath)),
   };
 
@@ -680,6 +681,95 @@ it('gives every copy the original session when a parent is missing', () => {
   for (const order of permutations([grandchild, original])) {
     const log = readLoggedQuestions(order);
 
-    expect(log.questions.map((entry) => entry.session)).toEqual([originalPath, originalPath]);
+    expect(log.questions.map((entry) => entry.session)).toEqual([groupKey, groupKey]);
+  }
+});
+
+it('keeps each outcome when a call-only copy is read first', () => {
+  const originalPath = '/logs/a.jsonl';
+
+  const databaseCall = call('shared', at(1), [
+    question({ question: 'Database?', options: [option('Yes', true), option('No')] }),
+  ]);
+
+  const databaseResult = result('shared', at(2), {
+    details: answered([{ question: 'Database?', selected: ['Yes'], typed: false }]),
+  });
+
+  const cacheCall = call('shared', at(3), [
+    question({ question: 'Cache?', options: [option('Yes', true), option('No')] }),
+  ]);
+
+  const cacheResult = result('shared', at(4), {
+    details: answered([{ question: 'Cache?', selected: ['No'], typed: false }]),
+  });
+
+  const original: SessionLog = {
+    path: originalPath,
+    text: logText([databaseCall, databaseResult], header('session-a')),
+  };
+
+  const branch: SessionLog = {
+    path: '/logs/branch.jsonl',
+    text: logText(
+      [databaseCall, databaseResult, cacheCall, cacheResult],
+      header('session-branch', originalPath),
+    ),
+  };
+
+  const prefix: SessionLog = {
+    path: '/logs/prefix-copy.jsonl',
+    text: logText([databaseCall], header('session-prefix', originalPath)),
+  };
+
+  const expected = [
+    ['Database?', { kind: 'recommended' }],
+    ['Cache?', { kind: 'otherOption', label: 'No' }],
+  ];
+
+  for (const order of permutations([prefix, branch, original])) {
+    const log = readLoggedQuestions(order);
+    const seen = log.questions.map((entry) => [entry.question.question, entry.outcome]);
+
+    expect(seen).toEqual(expected);
+  }
+});
+
+it('gives surviving descendants one session key when ancestors are missing', () => {
+  const originalPath = '/logs/original.jsonl';
+  const intermediatePath = '/logs/intermediate.jsonl';
+
+  const database = [
+    call('database', at(1), [question({ question: 'Database?' })]),
+    result('database', at(2), {
+      details: answered([{ question: 'Database?', selected: ['Postgres'], typed: false }]),
+    }),
+  ];
+
+  const cache = [
+    call('cache', at(3), [
+      question({ question: 'Cache?', options: [option('Postgres', true), option('Redis')] }),
+    ]),
+    result('cache', at(4), {
+      details: answered([{ question: 'Cache?', selected: ['Redis'], typed: false }]),
+    }),
+  ];
+
+  const grandchild: SessionLog = {
+    path: '/logs/grandchild.jsonl',
+    text: logText(database, header('session-grandchild', intermediatePath)),
+  };
+
+  const lateCopy: SessionLog = {
+    path: '/logs/later-copy.jsonl',
+    text: logText([...database, ...cache], header('session-later-copy', originalPath)),
+  };
+
+  const expected = '/logs/grandchild.jsonl';
+
+  for (const order of permutations([grandchild, lateCopy])) {
+    const log = readLoggedQuestions(order);
+
+    expect(log.questions.map((entry) => entry.session)).toEqual([expected, expected]);
   }
 });
