@@ -85,6 +85,14 @@ when you stop. Follow explicit user instructions and repository conventions over
   change you can make, such as moving a slice to In Progress. Treat a proposal the user has
   effectively accepted as decided and do not ask again.
 
+## Read the system's own source before reporting a gap
+
+- Read the configuration or run record the system itself keeps before you report an integration or
+  workflow as missing or disabled.
+- Treat a filename scan or missing output as no evidence. The setting may live in another file, and
+  a run with no output may be silent by design.
+- Report `unknown` when you cannot read that source, and name the source you tried to read.
+
 ## Report status in the user's terms
 
 - Answer the feature the workspace exists for.
