@@ -1,5 +1,6 @@
 import {
   assistantCalls,
+  copyKey,
   parseEntries,
   text,
   toolResult,
@@ -154,8 +155,6 @@ const zeroSkipped = (): SkippedQuestions => ({
   multiSelect: 0,
   preview: 0,
 });
-
-const copyKey = (entry: Entry) => `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
 
 const stripRecommendation = (label: string) =>
   label.endsWith(recommendedSuffix) ? label.slice(0, -recommendedSuffix.length) : label;

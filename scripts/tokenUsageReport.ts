@@ -1,3 +1,4 @@
+import { copyKey } from '../src/improvement/transcript.ts';
 import type { WorkerTask } from '../src/improvement/workerRecord.ts';
 import { isRecord } from '../src/schema.ts';
 
@@ -296,7 +297,7 @@ const countInWindow = (
   }
 
   // Forks and clones copy entries with their IDs and timestamps, so each copy counts once.
-  const key = `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
+  const key = copyKey(entry);
   const inWindow = time >= report.window.since && time < report.window.until;
 
   if (!inWindow) {

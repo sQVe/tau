@@ -1,6 +1,7 @@
 import {
   assistantCalls,
   codemodeCalls,
+  copyKey,
   parseEntries,
   text,
   toolResult,
@@ -141,8 +142,7 @@ const isInWindow = (collection: HealthCollection, time: number) =>
   time >= collection.window.since && time < collection.window.until;
 
 const isCopy = (collection: HealthCollection, entry: Entry, time: number) => {
-  // Forks and follow-ups copy entries with their IDs and timestamps, so each copy counts once.
-  const key = `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
+  const key = copyKey(entry);
   const copied = collection.seen.has(key);
 
   collection.seen.add(key);
