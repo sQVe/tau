@@ -67,6 +67,7 @@ it('a space start names its first tab', async () => {
       task: 'Next steps\n',
       model: undefined,
       session: undefined,
+      bareRoot: false,
       environment: undefined,
     },
   );
