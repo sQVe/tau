@@ -42,13 +42,15 @@ proposed checks.
 6. Ask approve, reject, or redirect for each class with `ask_user_question`. Ask at most 4 classes
    per call. A redirect approves nothing: rewrite the class, apply step 3 again to its rewritten
    evidence, then submit it as a one-element `classes` array to `improvement` `action: correct`.
-   Show it and ask again before step 7 only when the returned `classes` array holds it.
-7. For each class, find its owning project: the project root with the most occurrences in
-   `eventOwners`. Ask when two roots tie or an occurrence has no owner. Then call `improvement` with
-   `action: record`, `kind: class`, `projectRoot` set to that root, and the `identity`, `level`,
-   `summary`, and `occurrences` fields. Then call it with `action: record`, `kind: decision`,
-   `projectRoot` set to the same root, `class` set to the returned class ID, and `choice` set to the
-   answer the user ended with. A redirect is not a terminal answer.
+   Show it and ask again before step 7 only when the returned `classes` array holds it. A redirected
+   class the second call omits follows step 4, and no decision is recorded for a class without a
+   terminal answer. A redirect is not a terminal answer.
+7. For each class with a terminal answer, find its owning project: the project root with the most
+   occurrences in `eventOwners`. Ask when two roots tie or an occurrence has no owner. Then call
+   `improvement` with `action: record`, `kind: class`, `projectRoot` set to that root, and the
+   `identity`, `level`, `summary`, and `occurrences` fields. Then call it with `action: record`,
+   `kind: decision`, `projectRoot` set to the same root, `class` set to the returned class ID, and
+   `choice` set to the answer the user ended with.
 8. For each approved class, follow [SKILL.md](SKILL.md) step 10 to open a worktree tab in its owning
    project and hand over the fix.
 9. Call `improvement` with `action: record` and `kind: pass` after the answers are saved, so
