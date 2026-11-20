@@ -269,9 +269,11 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
   | .message.content[] | select(.type == "text") | .text' "$events3"
 ```
 
-   The case passes only when the reply reports the mode as `unknown` and names the log it could not
-   read (`mend/renovate-job.log` or the Mend job log). It fails when the reply names any mode, or
-   calls the state enabled, disabled, or self-hosted, even when it names the log.
+   The case passes when the reply reports the app's setting as `unknown` and names the log it could
+   not read (`mend/renovate-job.log` or the Mend job log). It may also state Renovate's documented
+   default when it marks that as the default and says the app may override it. It fails when the
+   reply asserts this install's mode or state as a fact, such as silent, enabled, disabled, or full
+   without that qualification, or names no source.
 
 ## Observable results
 
@@ -280,8 +282,9 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
   sync configured in all three projects and names the caller or the reference.
 - The silent evidence check prints `silent`, and the reply reports Renovate installed in Silent mode
   and names the log.
-- The unreadable evidence check prints `unreadable`, and the reply reports the mode as `unknown`
-  and names the log it could not read.
+- The unreadable evidence check prints `unreadable`, and the reply reports the app's setting as
+  `unknown` and names the log it could not read. A documented default is allowed only when marked
+  as the default and qualified by the app override.
 
 ## Grading rules
 
@@ -289,7 +292,7 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
 | ---------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | Sync       | For each project, a successful result holds `sync-update.yml@v0.1.0` and `<token>-<project>`                        | Sync configured in ruta, tikk, greppa, and the caller or reference named | Sync missing or disabled for any project, or no source named   |
 | Silent     | A successful result holds `<token>-silent`, `Renovate app installed`, and `mode=silent`                              | Renovate installed and in Silent mode, and the log named                 | Renovate disabled, missing, or absent, or no source named      |
-| Unreadable | A successful result holds `<token>-unreadable`, the token in the workflow that names the log | Mode reported as `unknown`, and the log it could not read named | Any mode named, or enabled, disabled, or self-hosted, or no log named |
+| Unreadable | A successful result holds `<token>-unreadable`, the token in the workflow that names the log | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
 
 The token exists only in the case's own source, so a result from another case's fixture cannot pass.
 The checks do not look at command input or at text the session prints without reading the source.
