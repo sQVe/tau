@@ -64,6 +64,12 @@ const nameRows: { name: string; role: string; detail?: string; expected: string 
     detail: 'xy',
     expected: 'abcdefghijklmnopqrstu: x',
   },
+  {
+    name: 'a detail cut away by the budget',
+    role: 'abcdefghijklmnopqrstu',
+    detail: '😀',
+    expected: 'abcdefghijklmnopqrstu',
+  },
 ];
 
 it.each(nameRows)('names a tab for $name', ({ role, detail, expected }) => {

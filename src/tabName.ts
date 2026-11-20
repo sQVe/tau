@@ -35,14 +35,19 @@ const fitDetail = (detail: string, budget: number): string => {
 
 export const tabName = (role: string, detail?: string): string => {
   const fittedRole = sliceAtCharacterBoundary(normalized(role), maximumTabNameLength).trimEnd();
-  const fittedDetail = normalized(detail ?? '');
   const budget = maximumTabNameLength - fittedRole.length - 2;
 
-  if (fittedDetail === '' || budget < 1) {
+  if (budget < 1) {
     return fittedRole;
   }
 
-  return `${fittedRole}: ${fitDetail(fittedDetail, budget)}`;
+  const fittedDetail = fitDetail(normalized(detail ?? ''), budget);
+
+  if (fittedDetail === '') {
+    return fittedRole;
+  }
+
+  return `${fittedRole}: ${fittedDetail}`;
 };
 
 const isDefaultName = (name: string): boolean => {
