@@ -66,6 +66,28 @@ it.for<[string[], RegExp]>([
   expect(() => parseScoreArguments(argv, 0)).toThrow(value);
 });
 
+const invalidTimeMessage = (argv: string[]) => {
+  try {
+    parseScoreArguments(argv, 0);
+  } catch (error) {
+    return error instanceof Error ? error.message : '';
+  }
+
+  return '';
+};
+
+it('names its own usage when a time is invalid', () => {
+  expect(invalidTimeMessage(['--since', '7'])).toContain(
+    'Usage: node scripts/questionGateScore.ts',
+  );
+
+  expect(invalidTimeMessage(['--until', 'soon'])).toContain(
+    'Usage: node scripts/questionGateScore.ts',
+  );
+
+  expect(invalidTimeMessage(['--since', '7'])).not.toContain('Usage: node scripts/tokenUsage.ts');
+});
+
 it('defaults to 500 questions and a 0.3 holdout', () => {
   expect(parseScoreArguments([], 0)).toEqual({
     since: undefined,

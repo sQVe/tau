@@ -71,8 +71,8 @@ export const parseScoreArguments = (argv: string[], now: number): ScoreSelection
     },
   });
 
-  const since = values.since === undefined ? undefined : parseTime(values.since, now);
-  const until = values.until === undefined ? undefined : parseTime(values.until, now);
+  const since = values.since === undefined ? undefined : parseTime(values.since, now, usage);
+  const until = values.until === undefined ? undefined : parseTime(values.until, now, usage);
   const limit = Number(values.limit);
 
   if (!Number.isInteger(limit) || limit < 1) {

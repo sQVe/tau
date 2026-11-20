@@ -113,8 +113,8 @@ const main = async () => {
   });
 
   const now = Date.now();
-  const since = parseTime(values.since, now);
-  const until = values.until === undefined ? now : parseTime(values.until, now);
+  const since = parseTime(values.since, now, usage);
+  const until = values.until === undefined ? now : parseTime(values.until, now, usage);
 
   if (since >= until) {
     throw new Error(`--since must be before --until. ${usage}`);
