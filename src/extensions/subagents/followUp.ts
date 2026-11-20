@@ -23,6 +23,7 @@ import type { SessionUse, SessionUseTerminal } from './sessionUse.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { readWorkerChild } from './workerDelivery.js';
 import type { WorkerChildRead } from './workerDelivery.js';
+import { packagesNeedSnapshot } from './workerPackages.js';
 
 export interface FollowUpRequest {
   parameters: FollowUpParameters;
@@ -80,7 +81,7 @@ const followUpAssignment = (
   profile: source.profile,
   loadout: source.loadout,
   routing: source.routing,
-  packageSnapshot: source.packageSnapshot,
+  packageSnapshot: packagesNeedSnapshot(extensionPackages) ? source.packageSnapshot : null,
   session: source.session,
   parentSession,
   cwd: source.cwd,
@@ -138,6 +139,12 @@ const followUpSource = async (
 
   if (missingPath !== undefined) {
     throw missingPackagePathError(missingPath);
+  }
+
+  if (packagesNeedSnapshot(extensionPackages) && source.packageSnapshot === null) {
+    throw new Error(
+      `Assignment ${source.assignmentId} has copied packages but no package snapshot; no follow-up can load them.`,
+    );
   }
 
   return { source, extensionPackages };

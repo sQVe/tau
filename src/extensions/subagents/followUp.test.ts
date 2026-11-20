@@ -560,16 +560,16 @@ it('starts a fresh unused window after a follow-up that no sweep saw running', a
   const base = Date.now();
   const snapshot = join(directory, 'tmp', 'tau-worker-packages', 'snapshot-source');
   const marker = join(snapshot, '.tau-unused-since');
-  const extensionPath = join(directory, 'extension.js');
+  const extensionPath = join(snapshot, 'node_modules', 'review-package', 'extension.js');
 
-  mkdirSync(snapshot, { recursive: true });
+  mkdirSync(join(snapshot, 'node_modules', 'review-package'), { recursive: true });
   writeFileSync(extensionPath, '');
   writeFileSync(marker, '');
   utimesSync(marker, base / 1000, base / 1000);
 
   const source = sourceAssignment(directory, {
     packageSnapshot: snapshot,
-    extensionPackages: [{ source: 'pkg', path: extensionPath }],
+    extensionPackages: [{ source: 'npm:review-package', path: extensionPath }],
   });
 
   await writeAssignment(source);
@@ -635,18 +635,63 @@ it('starts a fresh unused window after a follow-up that no sweep saw running', a
   expect(existsSync(snapshot)).toBe(false);
 });
 
+it('resumes an existing local-only assignment without a snapshot directory', async () => {
+  const { directory, fake, runtime } = setup();
+  const extensionPath = join(directory, 'local-extension.js');
+  const bogusSnapshot = join(directory, 'tmp', 'tau-worker-packages', 'snapshot-source');
+
+  writeFileSync(extensionPath, '');
+
+  const source = sourceAssignment(directory, {
+    packageSnapshot: bogusSnapshot,
+    extensionPackages: [{ source: extensionPath, path: extensionPath }],
+  });
+
+  await writeAssignment(source);
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-follow-up', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).not.toBe(true);
+  expect(existsSync(bogusSnapshot)).toBe(false);
+
+  const path = terminalRun(fake)?.labels['tau.assignment'];
+
+  if (path === undefined) {
+    throw new Error('The follow-up returned no assignment label.');
+  }
+
+  const started = await readAssignment(path);
+
+  expect(started?.packageSnapshot).toBeNull();
+
+  expect((await readAssignment(assignmentPath(source.assignmentId)))?.packageSnapshot).toBe(
+    bogusSnapshot,
+  );
+});
+
 const packageBackedSource = async (
   directory: string,
 ): Promise<{ source: Assignment; snapshot: string; extensionPath: string }> => {
   const snapshot = join(directory, 'tmp', 'tau-worker-packages', 'snapshot-source');
-  const extensionPath = join(directory, 'extension.js');
+  const extensionPath = join(snapshot, 'node_modules', 'review-package', 'extension.js');
 
-  mkdirSync(snapshot, { recursive: true });
+  mkdirSync(join(snapshot, 'node_modules', 'review-package'), { recursive: true });
   writeFileSync(extensionPath, '');
 
   const source = sourceAssignment(directory, {
     packageSnapshot: snapshot,
-    extensionPackages: [{ source: 'pkg', path: extensionPath }],
+    extensionPackages: [{ source: 'npm:review-package', path: extensionPath }],
   });
 
   await writeAssignment(source);
@@ -710,7 +755,7 @@ it('cancels a package-backed follow-up that waits for the sweep lock', async () 
 
 it('starts no terminal when a waited follow-up lost its package paths', async () => {
   const { directory, fake, runtime } = setup();
-  const { source, extensionPath } = await packageBackedSource(directory);
+  const { source, snapshot } = await packageBackedSource(directory);
 
   const held = await holdFileLock({
     lockPath: lockPathFor(directory),
@@ -730,7 +775,7 @@ it('starts no terminal when a waited follow-up lost its package paths', async ()
     expect(listCalls(fake)).toBe(2);
   });
 
-  rmSync(extensionPath);
+  rmSync(snapshot, { recursive: true, force: true });
   await held.release();
 
   await expect(result).resolves.toMatchObject({ isError: true });

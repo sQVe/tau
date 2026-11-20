@@ -39,6 +39,7 @@ import { workerCommand, workerEnvironment } from './workerCommand.js';
 import type { StartingWorker } from './workerFolderDecision.js';
 import { sweepWorkerFolders, withFolderSweepLock } from './workerFolderSweep.js';
 import { workerName } from './workerName.js';
+import { packagesNeedSnapshot } from './workerPackages.js';
 import { placementLabels } from './workerPlacement.js';
 import {
   createScratchDirectory,
@@ -595,8 +596,10 @@ export const executeLaunch = async (
         snapshotDirectory,
       );
 
+      const needsSnapshot = packagesNeedSnapshot(extensionPackages);
+
       const errorAfterCleanup = async (error: unknown): Promise<unknown> => {
-        if (extensionPackages.length === 0) {
+        if (!needsSnapshot) {
           return error;
         }
 
@@ -619,7 +622,7 @@ export const executeLaunch = async (
       let assignment: Assignment;
 
       try {
-        const snapshotPath = extensionPackages.length === 0 ? undefined : snapshotDirectory;
+        const snapshotPath = needsSnapshot ? snapshotDirectory : undefined;
 
         assignment = buildAssignment(
           assignmentId,

@@ -710,6 +710,27 @@ it('returns before the sweep settles', async () => {
   });
 });
 
+it('records no package snapshot for a local-only package list', async () => {
+  const { fake, runtime } = setup();
+  const localPackage = join(runtime.agentDirectory, 'local-package.js');
+
+  writeFileSync(localPackage, '');
+
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({
+    ...fixtureLoadout(runtime.agentDirectory),
+    packages: [localPackage],
+  });
+
+  const result = await launch(runtime, {});
+
+  expect(result.isError).not.toBe(true);
+  expect(terminalRun(fake)).toBeDefined();
+
+  const assignment = vi.mocked(writeAssignment).mock.calls.at(-1)?.[0];
+
+  expect(assignment?.packageSnapshot).toBeNull();
+});
+
 it('passes the starting fact with the basename of the snapshot to the sweep', async () => {
   const { runtime } = setup();
   const sweepFolders = vi.fn<NonNullable<LaunchRuntime['sweepFolders']>>(() => Promise.resolve());

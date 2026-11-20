@@ -16,6 +16,10 @@ export const isLocalPackage = (source: string): boolean => {
   return !trimmed.startsWith('git:') && !gitUrlPattern.test(trimmed);
 };
 
+// A nonlocal source is installed into a copied snapshot; a local source loads in place.
+export const packagesNeedSnapshot = (packages: readonly { source: string }[]): boolean =>
+  packages.some((pkg) => !isLocalPackage(pkg.source));
+
 const npmName = (spec: string): string =>
   spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@.+)?$/)?.[1] ?? spec;
 
