@@ -773,3 +773,34 @@ it('gives surviving descendants one session key when ancestors are missing', () 
     expect(log.questions.map((entry) => entry.session)).toEqual([expected, expected]);
   }
 });
+
+it('counts overlapping same-ID calls in one file as ambiguous', () => {
+  const databaseCall = call('shared', at(1), [
+    question({ question: 'Database?', options: [option('Yes', true), option('No')] }),
+  ]);
+
+  const cacheCall = call('shared', at(3), [
+    question({ question: 'Cache?', options: [option('Yes', true), option('No')] }),
+  ]);
+
+  const databaseResult = result('shared', at(5), {
+    details: answered([{ question: 'Database?', selected: ['Yes'], typed: false }]),
+  });
+
+  const cacheResult = result('shared', at(6), {
+    details: answered([{ question: 'Cache?', selected: ['No'], typed: false }]),
+  });
+
+  const log = readLoggedQuestions([
+    {
+      path: '/logs/overlap.jsonl',
+      text: logText(
+        [databaseCall, cacheCall, databaseResult, cacheResult],
+        header('session-overlap'),
+      ),
+    },
+  ]);
+
+  expect(log.questions).toEqual([]);
+  expect(log.skipped).toEqual({ ...noSkips, ambiguousEntries: 4 });
+});

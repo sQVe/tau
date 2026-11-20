@@ -613,7 +613,8 @@ const scanEvents = (
   return events.toSorted((left, right) => left.index - right.index);
 };
 
-// Within one file, a result answers the nearest preceding open call with the same ID.
+// Within one file, a result answers only the single open call with the same ID. Several open
+// calls leave the evidence ambiguous, so no pair is recorded from this file.
 const scanFile = (
   file: string,
   calls: readonly CallOccurrence[],
@@ -627,6 +628,10 @@ const scanFile = (
     if (event.kind === 'call') {
       open.push(event.call);
 
+      continue;
+    }
+
+    if (open.length !== 1) {
       continue;
     }
 
