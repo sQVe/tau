@@ -1,4 +1,4 @@
-import type { Exec } from '../command.js';
+import type { CommandRuntime, Exec } from '../command.js';
 import { errorMessage } from '../errors.js';
 import type { Connect } from './connect.js';
 import { HcError, isAbortError, parseCliError, parseCommandReply } from './replies.js';
@@ -11,11 +11,8 @@ import type {
   HcWaitResult,
 } from './replies.js';
 
-export interface HcRuntime {
-  exec: Exec;
+export interface HcRuntime extends CommandRuntime {
   connect: Connect;
-  cwd: string;
-  signal?: AbortSignal | undefined;
 }
 
 export interface RunRequest {
@@ -51,7 +48,7 @@ const startFailure = (label: string, error: unknown): HcError =>
     : new HcError('spawn_failed', `${label} failed to start: ${errorMessage(error)}`);
 
 const runHc = async <Command extends HcCommand>(
-  runtime: HcRuntime,
+  runtime: CommandRuntime,
   command: Command,
   commandArguments: string[],
   label: string,
@@ -108,7 +105,7 @@ export const run = (runtime: HcRuntime, request: RunRequest): Promise<HcTerminal
 };
 
 export const get = (
-  runtime: HcRuntime,
+  runtime: CommandRuntime,
   terminal: string,
   options: { timeout?: number } = {},
 ): Promise<HcTerminal> =>

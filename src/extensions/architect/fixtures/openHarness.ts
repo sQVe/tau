@@ -2,73 +2,57 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { contextOf } from '../../../../tests/architectToolHarness.js';
-import {
-  argumentAfter,
-  createExecFake,
-  failedResult,
-  succeededResult,
-} from '../../../../tests/execFake.js';
+import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
 import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
+import { createHerdrAppFake } from '../../../../tests/herdrAppFake.js';
+import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
 import type { Exec } from '../../../command.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { architectRecordPath, writeArchitectRecord, writeAskRecord } from '../record.js';
 import { createArchitectTool } from '../tool.js';
 
-export type AppKey = 'ls' | 'pane.split' | 'pane.swap' | 'space.new';
-
 interface OpenTool {
   hc: HcFake;
-  app: ExecFake<AppKey>;
+  app: ExecFake<HerdrAppCommand>;
   terminals: Map<string, ExecResult>;
   tool: ReturnType<typeof createArchitectTool>;
   runtime: HcRuntime;
 }
 
-const appFake = (): ExecFake<AppKey> =>
-  createExecFake<AppKey>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
-      }
-
-      return commandArguments[0] === 'ls' ? 'ls' : (commandArguments[1] as AppKey);
+const appLayout = JSON.stringify({
+  spaces: [
+    {
+      tabs: [
+        {
+          terminals: [
+            { terminal: 't-lead', pane: 'p-lead' },
+            { terminal: 't-architect', pane: 'p-shown' },
+          ],
+        },
+      ],
     },
-    handlerFor: (key) => () => {
-      if (key === 'ls') {
-        return succeededResult(
-          JSON.stringify({
-            spaces: [
-              {
-                tabs: [
-                  {
-                    terminals: [
-                      { terminal: 't-lead', pane: 'p-lead' },
-                      { terminal: 't-architect', pane: 'p-shown' },
-                    ],
-                  },
-                ],
-              },
-            ],
-          }),
-        );
-      }
+  ],
+});
 
-      if (key === 'pane.split') {
-        return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
-      }
+const appSplit = '{"pane":"p-architect","terminal":"t-architect"}';
 
-      return succeededResult('{"ok":true}');
-    },
-  });
+const appFake = (): ExecFake<HerdrAppCommand> => {
+  const app = createHerdrAppFake();
+
+  app.overrideOutput('ls', appLayout);
+  app.overrideOutput('pane.split', appSplit);
+
+  return app;
+};
 
 const leadTerminal = 't-lead';
 
 const routedExec =
   (
     hc: HcFake,
-    app: ExecFake<AppKey>,
+    app: ExecFake<HerdrAppCommand>,
     terminals: Map<string, ExecResult>,
     afterTerminalLookup: () => Promise<void>,
   ): Exec =>
@@ -138,10 +122,10 @@ export const open = (
 ): ReturnType<OpenTool['tool']['execute']> =>
   tool.execute('call', { action: 'open', ...input }, undefined, undefined, contextOf(root));
 
-export const appCommands = (app: ExecFake<AppKey>): string[] =>
+export const appCommands = (app: ExecFake<HerdrAppCommand>): string[] =>
   app.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0] ?? '');
 
-export const architectArgv = (app: ExecFake<AppKey>): string[] => {
+export const architectArgv = (app: ExecFake<HerdrAppCommand>): string[] => {
   const split = app.calls.find((call) => call.commandArguments[1] === 'pane.split');
 
   return JSON.parse(argumentAfter(split?.commandArguments ?? [], '--argv') ?? '[]') as string[];

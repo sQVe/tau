@@ -71,10 +71,14 @@ of refusing. A question in the inbox of a live architect in this checkout needs 
 
 ### The lead's tab
 
-The lead's tab, the first tab of its work space, holds only the architect on the left and the lead
-on the right. Every other pane opens in another tab of the same space. Workers open in
-`<lead tab>-workers`, `draft_review`'s tuicr opens in `<caller tab>-review`, and a terminal an agent
-starts opens in a new tab from `tab.new`.
+The lead's tab holds only the lead on the right and the architect on the left. Workers open in
+`<lead tab>-workers`, and `draft_review` opens tuicr in `<caller tab>-review`. For other terminals
+that agents start, the rule is to open a new tab with `tab.new`.
+
+The exception is `handover start` when no workspace exists for the checkout. It creates the
+workspace with Pi and its task in the first tab. The operation that starts Pi also creates the
+workspace so the user sees the task in the first tab instead of an empty shell. In an existing
+workspace, `handover start` uses `tab.new` and leaves existing panes alone.
 
 ### Models
 
@@ -159,3 +163,15 @@ the rest and sends a note, so the lead learns the truth.
 
 Pass design rules and decisions to the lead in handover text. Rejected because the rules drift, each
 consult starts cold, and the model depends on how the session started.
+
+### Create a shell tab before starting Pi
+
+Create the workspace from the worktree skill, then open Pi in a second tab. Rejected because the
+first tab shows an empty shell instead of the task the user asked to start. The worktree skill still
+opens a plain workspace when no handover follows.
+
+### Reuse a tab that appears to hold an idle shell
+
+Split the shell pane to start Pi, then close the shell pane. Rejected because a shell can run a
+builtin while remaining the foreground program. Checking the shell name and folder again before
+closing does not show that the shell is idle. An extra tab is preferable to ending a user's command.

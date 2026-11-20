@@ -1,22 +1,17 @@
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
   createTemporaryRepository,
 } from '../../tests/gitRepository.js';
+import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
+import type { HerdrAppCommand } from '../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { startPiSession, startPiSessionLeftOf } from './piStart.js';
 
-const createAppFake = (): ExecFake<'app'> =>
-  createExecFake<'app'>({
-    keyOf: (command) => (command === 'herdr-app' ? 'app' : undefined),
-    handlerFor: () => () => succeededResult('{"ok":true}'),
-  });
-
-it('a tab start passes the argv as JSON', async () => {
-  const fake = createAppFake();
+it('a space start opens one tab with the argv as JSON', async () => {
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await startPiSession(
@@ -57,7 +52,7 @@ it('a tab start passes the argv as JSON', async () => {
 });
 
 it('a true bare repository root starts a session', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryBareRepository(onTestFinished);
 
   const result = await startPiSession(
@@ -78,7 +73,7 @@ it('a true bare repository root starts a session', async () => {
 });
 
 it('a folder that is not a Git checkout is refused', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-');
 
@@ -100,24 +95,8 @@ it('a folder that is not a Git checkout is refused', async () => {
   expect(fake.calls).toEqual([]);
 });
 
-const paneAppFake = (splitReply: string): ExecFake<'split' | 'swap'> =>
-  createExecFake<'split' | 'swap'>({
-    keyOf: (command, commandArguments) => {
-      if (command !== 'herdr-app') {
-        return undefined;
-      }
-
-      return commandArguments[1] === 'pane.split' ? 'split' : 'swap';
-    },
-    handlerFor: (key) => () => {
-      const reply = key === 'split' ? splitReply : '{"ok":true}';
-
-      return succeededResult(reply);
-    },
-  });
-
 it('a left-of start splits right with the task in the argv, then swaps the new pane left', async () => {
-  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await startPiSessionLeftOf(
@@ -151,7 +130,10 @@ it('a left-of start splits right with the task in the argv, then swaps the new p
 });
 
 it('a pane split reply without a pane ends the start before the swap', async () => {
-  const fake = paneAppFake('{"terminal":"t-new"}');
+  const fake = createHerdrAppFake();
+
+  fake.overrideOutput('pane.split', '{"terminal":"t-new"}');
+
   const root = await createTemporaryRepository(onTestFinished);
 
   await expect(
@@ -172,15 +154,13 @@ it('a pane split reply without a pane ends the start before the swap', async () 
   expect(fake.calls).toHaveLength(1);
 });
 
-const failingSwapFake = (): ExecFake<'split' | 'swap'> =>
-  createExecFake<'split' | 'swap'>({
-    keyOf: (command, commandArguments) =>
-      command === 'herdr-app' && commandArguments[1] === 'pane.split' ? 'split' : 'swap',
-    handlerFor: (key) => () =>
-      key === 'split'
-        ? succeededResult('{"pane":"p-new","terminal":"t-new"}')
-        : failedResult('no such pane'),
-  });
+const failingSwapFake = (): ExecFake<HerdrAppCommand> => {
+  const fake = createHerdrAppFake();
+
+  fake.failCommand('pane.swap', 'no such pane');
+
+  return fake;
+};
 
 const paneRequest = (root: string) => ({
   folder: root,
@@ -216,12 +196,9 @@ it('a failed swap names the created pane and terminal and where the architect ru
 it('a cancel after the split skips the swap and names the created pane', async () => {
   const controller = new AbortController();
 
-  const fake = createExecFake<'split'>({
-    keyOf: () => 'split',
-    handlerFor: () => () => {
+  const fake = createHerdrAppFake({
+    beforeReply: () => {
       controller.abort();
-
-      return succeededResult('{"pane":"p-new","terminal":"t-new"}');
     },
   });
 
@@ -239,7 +216,7 @@ it('a cancel after the split skips the swap and names the created pane', async (
 });
 
 it('a left-of start in a folder that is not a Git checkout runs no command', async () => {
-  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-');
 
@@ -251,7 +228,7 @@ it('a left-of start in a folder that is not a Git checkout runs no command', asy
 });
 
 it('a left-of start with an aborted signal runs no command', async () => {
-  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const controller = new AbortController();
 

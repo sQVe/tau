@@ -46,11 +46,17 @@ creates the worktree and runs the repository's add hooks, such as dependency ins
    - Find a space to reuse by its folder in `herdr-app ls`, never by its name. When a space has the
      checkout as its folder, show it with `herdr-app do space.select --id <id>`.
    - Never rename a reused space. The user may have renamed it by hand.
-   - With no space for the checkout, run
-     `herdr-app do space.new --name "<title>" --folder "<checkout>" --focus false`. The space opens
-     in the background, so the user keeps their shown space and focus.
+   - With no space for the checkout, choose who creates it:
+     - A handover will follow and no Pi session runs in the checkout: start no space yourself. The
+       [handover skill](../handover/SKILL.md) `handover start` with `name` creates the space with Pi
+       as its first tab, with `<title>` as its `name`.
+     - Otherwise run `herdr-app do space.new --name "<title>" --folder "<checkout>" --focus false`,
+       because no later step creates the space: either no handover follows, or the handover sends to
+       a Pi session already running in the checkout instead of starting Pi. The space opens in the
+       background, so the user keeps their shown space and focus.
    - Make `<title>` a short title of what the work does, such as `completion uses the read record`:
      about 40 characters, lowercase, one line, and no ticket ID.
-4. Send a handover to the new space with the [handover skill](../handover/SKILL.md) when the user
-   asked for one. From the bare repository root, also send the approved implementation task without
-   waiting to be asked.
+4. Send a handover for the new checkout with the [handover skill](../handover/SKILL.md) when the
+   user asked for one. From the bare repository root, also send the approved implementation task
+   without waiting to be asked. The handover skill passes the `<title>` from step 3 as `name` only
+   when it finds neither a receiver nor a space for the checkout.
