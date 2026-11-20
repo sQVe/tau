@@ -71,32 +71,46 @@ This is a manager-run check with a user at the terminal. Call the tool ask_user_
 PROMPT
 ```
 
-4. Start the session in a terminal tab where the user can answer the dialog. The user presses Enter
-   on the recommended option `Stacked`.
+4. Start the session from the scratch repository in a terminal tab where the user can answer the dialog.
+   The user presses Enter on the recommended option `Stacked`.
 
 ```sh
+cd "$scratch"
 PI_CODING_AGENT_DIR="$agent" pi --no-extensions --extension "$checkout/src/tau.ts" \
   --model <model> --session-dir "$agent/sessions" "$(cat "$scratch.prompt")"
 ```
 
-5. Record the branch-loaded source and the three probes before the audit. No skipped probe passes.
+5. Record the branch-loaded source and the three probes before the audit. Run the package version
+   check from the checkout. No skipped probe passes.
 
 ```sh
 printf '%s\n' "$checkout" > "$evidence/source.txt"
 test -d "$scratch" && echo "scratch: present" > "$evidence/scratch.txt"
 pi --version > "$evidence/pi-version.txt"
-pnpm pi-version:check > "$evidence/pi-version-check.txt" 2>&1
+(cd "$checkout" && pnpm pi-version:check) > "$evidence/pi-version-check.txt" 2>&1
 ```
 
-6. Record the input, the dialog result, and the shadow record. The session log is under
-   `$agent/sessions`.
+6. Record the input, the dialog result, and the shadow record. Run this from the scratch repository.
+   The session log is under `$agent/sessions`. Pi saves messages, not live events: the assistant
+   message holds the `toolCall` content and the `toolResult` message holds the dialog result. Match
+   the two by call ID and fail when either message is missing.
 
 ```sh
+cd "$scratch"
 log=$(find "$agent/sessions" -name '*.jsonl' -type f | head -n 1)
-jq -c 'select(.type == "tool_execution_start" and .toolName == "ask_user_question") | .args' \
+call_id=$(jq -r 'select(.message.role == "assistant") | .message.content[]?
+  | select(.type == "toolCall" and .name == "ask_user_question") | .id' "$log")
+test "$(printf '%s\n' "$call_id" | grep -c .)" -eq 1 \
+  || { echo "expected one ask_user_question call in $log" >&2; exit 1; }
+jq -c --arg id "$call_id" 'select(.message.role == "assistant") | .message.content[]?
+  | select(.type == "toolCall" and .id == $id) | .arguments' \
   "$log" > "$evidence/input.json"
-jq -c 'select(.type == "tool_execution_end" and .toolName == "ask_user_question") | .result.details' \
-  "$log" > "$evidence/dialog-result.json"
+jq -c --arg id "$call_id" 'select(.message.role == "toolResult" and .message.toolCallId == $id)
+  | .message.details' "$log" > "$evidence/dialog-result.json"
+test -s "$evidence/input.json" \
+  || { echo "no tool call arguments for $call_id in $log" >&2; exit 1; }
+test -s "$evidence/dialog-result.json" \
+  || { echo "no tool result for $call_id in $log" >&2; exit 1; }
 record=$(find "$scratch/.tau/questions" -name 'shadow-*.json' -type f | head -n 1)
 cp "$record" "$evidence/record.json"
 printf '%s\n' "$log" > "$evidence/session-log.txt"
