@@ -1,19 +1,35 @@
+import { execFile, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { lstat, readdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import { link, lstat, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
 import { readVersionedRecord, writeRecord } from '../record.ts';
 import { readShadowRecords, writeShadowRecord } from './record.ts';
-import type { ShadowRecord } from './record.ts';
+import type { ShadowRecord, ShadowRecordReader } from './record.ts';
 
 interface SnapshotEntry {
   name: string;
   kind: 'file' | 'other';
   text: string | undefined;
 }
+
+vi.mock(import('node:child_process'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    execFile: vi.fn<typeof actual.execFile>() as unknown as typeof actual.execFile,
+    spawn: vi.fn<typeof actual.spawn>() as unknown as typeof actual.spawn,
+  };
+});
+
+const expectNoWorkerAction = (): void => {
+  expect(spawn).not.toHaveBeenCalled();
+  expect(execFile).not.toHaveBeenCalled();
+};
 
 const shadowName = (digit: string): string =>
   `shadow-${digit.repeat(8)}-${digit.repeat(4)}-4${digit.repeat(3)}-8${digit.repeat(3)}-${digit.repeat(12)}.json`;
@@ -56,6 +72,35 @@ it('reads valid shadow records without changing evidence', async ({ onTestFinish
 
   expect(read).toEqual({ records: [currentRecord()], gaps: [] });
   expect(after).toEqual(before);
+  expectNoWorkerAction();
+});
+
+it('names a record that disappears between listing and reading as a gap', async ({
+  onTestFinished,
+}) => {
+  const directory = shadowDirectory(onTestFinished);
+  const validPath = join(directory, shadowName('1'));
+  const disappearingPath = join(directory, shadowName('2'));
+
+  await writeFile(validPath, fixture('current.json'));
+  await writeFile(disappearingPath, fixture('current.json'));
+
+  const readAfterRemoval: ShadowRecordReader = async (path, options) => {
+    if (path === disappearingPath) {
+      await rm(path);
+    }
+
+    return readVersionedRecord(path, options);
+  };
+
+  const before = readFileSync(validPath);
+  const { records, gaps } = await readShadowRecords(directory, readAfterRemoval);
+
+  expect(records).toEqual([currentRecord()]);
+  expect(gaps.map((gap) => gap.path)).toEqual([disappearingPath]);
+  expect(gaps[0]?.reason).toContain(disappearingPath);
+  expect(readFileSync(validPath)).toEqual(before);
+  expectNoWorkerAction();
 });
 
 it('returns no records for a missing directory without creating it', async ({ onTestFinished }) => {
@@ -92,6 +137,51 @@ it('keeps valid records and names each bad peer as a gap', async ({ onTestFinish
   expect(gaps[1]?.reason).toContain('newer format');
   expect(gaps[2]?.reason).toContain(linkedPath);
   expect(after).toEqual(before);
+  expectNoWorkerAction();
+});
+
+it('names schema-valid records with an invalid recommendation count and hard links as gaps', async ({
+  onTestFinished,
+}) => {
+  const directory = shadowDirectory(onTestFinished);
+  const sourceDirectory = shadowDirectory(onTestFinished);
+  const validPath = join(directory, shadowName('1'));
+  const zeroPath = join(directory, shadowName('2'));
+  const twoPath = join(directory, shadowName('3'));
+  const hardLinkPath = join(directory, shadowName('4'));
+  const record = currentRecord();
+
+  const withRecommended = (flags: readonly [boolean, boolean]): string => {
+    const copy = structuredClone(record);
+
+    copy.question.options = copy.question.options.map((option, index) => ({
+      ...option,
+      recommended: flags[index] ?? false,
+    }));
+
+    return JSON.stringify(copy);
+  };
+
+  await writeFile(validPath, fixture('current.json'));
+  await writeFile(zeroPath, withRecommended([false, false]));
+  await writeFile(twoPath, withRecommended([true, true]));
+
+  const sourcePath = join(sourceDirectory, 'source.json');
+
+  await writeFile(sourcePath, fixture('current.json'));
+  await link(sourcePath, hardLinkPath);
+
+  const before = await snapshot(directory);
+  const { records, gaps } = await readShadowRecords(directory, readVersionedRecord);
+  const after = await snapshot(directory);
+
+  expect(records).toEqual([currentRecord()]);
+  expect(gaps.map((gap) => gap.path)).toEqual([zeroPath, twoPath, hardLinkPath]);
+  expect(gaps[0]?.reason).toContain('exactly one recommended option');
+  expect(gaps[1]?.reason).toContain('exactly one recommended option');
+  expect(gaps[2]?.reason).toContain(hardLinkPath);
+  expect(after).toEqual(before);
+  expectNoWorkerAction();
 });
 
 it('fails a directory read error with its path', async ({ onTestFinished }) => {

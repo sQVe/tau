@@ -39,6 +39,12 @@ const pastAnswer = (time: number, text: string, questionText?: string): PastAnsw
   outcome: { kind: 'typed', text },
 });
 
+const otherAnswer = (time: number, label: string): PastAnswer => ({
+  time,
+  question: question(),
+  outcome: { kind: 'otherOption', label },
+});
+
 const frozenConfig = (): FrozenConfig => ({
   ...models,
   shadow: {
@@ -236,29 +242,39 @@ it.each<[string, unknown]>([
   expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
-it('refuses an examples variant with no examples', ({ onTestFinished }) => {
-  const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
-    onTestFinished,
-    'tau-question-gate-',
-  );
+it.each(['classifierExamples', 'panelExamples'] as const)(
+  'refuses %s with no examples',
+  (variant) => {
+    const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
+      registerTestCleanup,
+      'tau-question-gate-',
+    );
 
-  writeUser({
-    questionGate: {
-      ...models,
-      shadow: { variant: 'classifierExamples', cutoff: 0.5, examples: [] },
-    },
-  });
+    writeUser({
+      questionGate: {
+        ...models,
+        shadow: { variant, cutoff: 0.5, examples: [] },
+      },
+    });
 
-  const before = readBytes(userFile, repositoryFile);
-  const read = () => readQuestionGateConfig(location);
+    const before = readBytes(userFile, repositoryFile);
+    const read = () => readQuestionGateConfig(location);
 
-  expect(read).toThrow(userFile);
+    expect(read).toThrow(userFile);
 
-  expect(read).toThrow(
-    'questionGate shadow variant "classifierExamples" needs at least one example.',
-  );
+    expect(read).toThrow(
+      `questionGate shadow variant ${JSON.stringify(variant)} needs at least one example.`,
+    );
 
-  expectBytesUnchanged(before, userFile, repositoryFile);
+    expectBytesUnchanged(before, userFile, repositoryFile);
+  },
+);
+
+it('changes the cohort when an other-option label changes', () => {
+  const careful = withShadow(frozenConfig(), { examples: [otherAnswer(1, 'Careful')] });
+  const fast = withShadow(frozenConfig(), { examples: [otherAnswer(1, 'Fast')] });
+
+  expect(shadowCohort(careful)).not.toBe(shadowCohort(fast));
 });
 
 it('keeps the cohort when JSON keys are reordered', () => {

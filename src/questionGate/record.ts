@@ -178,9 +178,16 @@ export const readShadowRecords = async (
       // oxlint-disable-next-line no-await-in-loop -- Reading in name order keeps gap order stable.
       const record = await readRecord(path, recordOptions);
 
-      if (record !== undefined) {
-        records.push(record);
+      if (record === undefined) {
+        gaps.push({
+          path,
+          reason: `Shadow record ${path} disappeared before it could be read.`,
+        });
+
+        continue;
       }
+
+      records.push(record);
     } catch (error) {
       gaps.push({ path, reason: errorMessage(error) });
     }
