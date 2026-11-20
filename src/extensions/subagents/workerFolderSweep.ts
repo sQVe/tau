@@ -2,6 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
+import { withFileLock } from '../../fileLock/fileLock.js';
 import { get, ls } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { readAssignment } from './assignment.js';
@@ -41,6 +42,9 @@ interface TerminalFacts {
 }
 
 const terminalReadTimeout = 10_000;
+
+const sweepLockPath = (agentDirectory: string): string =>
+  join(agentDirectory, '.tau-worker-folder-sweep.lock');
 
 const readBornAt = async (path: string): Promise<number | undefined> => {
   try {
@@ -234,12 +238,15 @@ const updateUnusedMarkers = async (
   return results.flatMap((error) => (error === undefined ? [] : [error]));
 };
 
-export const sweepWorkerFolders = async (
+const sweepUnderLock = async (
   hc: HcRuntime,
   agentDirectory: string,
-  now: number,
+  readNow: () => number,
   starting: readonly WorkerTerminalFact[],
 ): Promise<WorkerFolderSweep> => {
+  // Sampled after the lock wait, so waiting never backdates a new marker.
+  const now = readNow();
+
   const { terminals, errors: readErrors } = await readTerminalFacts(hc);
 
   const facts = {
@@ -262,3 +269,23 @@ export const sweepWorkerFolders = async (
     errors: [...readErrors, ...markerErrors, ...removal.errors],
   };
 };
+
+// The evidence and the effects share one lock, so a sweep cannot clear a marker from a stale read
+// and then write it back after another manager's launch saw no marker.
+export const sweepWorkerFolders = async (
+  hc: HcRuntime,
+  agentDirectory: string,
+  readNow: () => number,
+  starting: readonly WorkerTerminalFact[],
+): Promise<WorkerFolderSweep> =>
+  withFileLock(
+    {
+      lockPath: sweepLockPath(agentDirectory),
+      checkout: agentDirectory,
+      signal: undefined,
+      pollMilliseconds: 25,
+      onWaiting: () => undefined,
+      cancelled: () => new Error('The worker folder sweep was cancelled.'),
+    },
+    () => sweepUnderLock(hc, agentDirectory, readNow, starting),
+  );

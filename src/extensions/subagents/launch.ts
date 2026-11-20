@@ -326,7 +326,7 @@ const startFolderSweep = (runtime: LaunchRuntime, assignment: Assignment): void 
 
   const sweep =
     runtime.sweepFolders ??
-    ((fact) => sweepWorkerFolders(runtime.hc, runtime.agentDirectory, Date.now(), [fact]));
+    ((fact) => sweepWorkerFolders(runtime.hc, runtime.agentDirectory, Date.now, [fact]));
 
   // A sweep failure never fails a launch. The next scan reports it.
   sweep(starting).catch(() => undefined);

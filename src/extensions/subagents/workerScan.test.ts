@@ -184,7 +184,11 @@ it('retries a failed discovery scan and arms timers when it recovers', async () 
 
   await vi.advanceTimersByTimeAsync(5_000);
 
-  expect(listAttempts).toBe(3);
+  // The retry's sweep takes its lock with real file work, which no fake timer drives.
+  await vi.waitFor(() => {
+    expect(listAttempts).toBe(3);
+  });
+
   expect(steps.order).toEqual(['deliver', 'deadline']);
 });
 
