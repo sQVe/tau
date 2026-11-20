@@ -42,6 +42,7 @@ import type {
   PanelMemberError,
   ScoreItem,
 } from './questionGateScore/questionGateScoreReport.ts';
+import { runShadowReport } from './questionGateScore/shadowScore.ts';
 import { parseTime, readInTurn } from './tokenUsage.ts';
 
 interface Judges {
@@ -54,38 +55,57 @@ export interface PanelMemberDiagnostics {
   recordError: (message: string) => void;
 }
 
+type ScoreArguments = ({ kind: 'history' } & ScoreSelection) | { kind: 'shadow' };
+
 const usage =
   'Usage: node scripts/questionGateScore.ts [--since <time>] [--until <time>] [--limit 500] [--holdout 0.3]';
+
+const shadowUsage = 'Usage: node scripts/questionGateScore.ts --shadow';
+
+const historicalFlags = ['since', 'until', 'limit', 'holdout'] as const;
 
 const judgeChunkSize = 4;
 const progressStep = 25;
 
-export const parseScoreArguments = (argv: string[], now: number): ScoreSelection => {
+export const parseScoreArguments = (argv: string[], now: number): ScoreArguments => {
   const { values } = parseArgs({
     args: argv,
     options: {
+      shadow: { type: 'boolean' },
       since: { type: 'string' },
       until: { type: 'string' },
-      limit: { type: 'string', default: '500' },
-      holdout: { type: 'string', default: '0.3' },
+      limit: { type: 'string' },
+      holdout: { type: 'string' },
     },
   });
 
+  if (values.shadow === true) {
+    const supplied = historicalFlags.find((flag) => values[flag] !== undefined);
+
+    if (supplied !== undefined) {
+      throw new TypeError(`--shadow cannot be combined with --${supplied}. ${shadowUsage}`);
+    }
+
+    return { kind: 'shadow' };
+  }
+
   const since = values.since === undefined ? undefined : parseTime(values.since, now, usage);
   const until = values.until === undefined ? undefined : parseTime(values.until, now, usage);
-  const limit = Number(values.limit);
+  const limitText = values.limit ?? '500';
+  const limit = Number(limitText);
 
   if (!Number.isInteger(limit) || limit < 1) {
-    throw new TypeError(`--limit must be a positive integer, not "${values.limit}". ${usage}`);
+    throw new TypeError(`--limit must be a positive integer, not "${limitText}". ${usage}`);
   }
 
-  const holdout = Number(values.holdout);
+  const holdoutText = values.holdout ?? '0.3';
+  const holdout = Number(holdoutText);
 
   if (!(holdout > 0 && holdout < 1)) {
-    throw new TypeError(`--holdout must be above 0 and below 1, not "${values.holdout}". ${usage}`);
+    throw new TypeError(`--holdout must be above 0 and below 1, not "${holdoutText}". ${usage}`);
   }
 
-  return { since, until, limit, holdout };
+  return { kind: 'history', since, until, limit, holdout };
 };
 
 export const panelMember = (
@@ -242,6 +262,13 @@ const buildJudges = (
 
 const main = async () => {
   const args = parseScoreArguments(process.argv.slice(2), Date.now());
+
+  if (args.kind === 'shadow') {
+    process.stdout.write(await runShadowReport(process.cwd()));
+
+    return;
+  }
+
   const agentDirectory = getAgentDir();
   const location = { cwd: process.cwd(), agentDirectory, projectTrusted: false };
   const models = readQuestionGateConfig(location);

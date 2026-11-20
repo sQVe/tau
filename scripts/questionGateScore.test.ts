@@ -90,11 +90,25 @@ it('names its own usage when a time is invalid', () => {
 
 it('defaults to 500 questions and a 0.3 holdout', () => {
   expect(parseScoreArguments([], 0)).toEqual({
+    kind: 'history',
     since: undefined,
     until: undefined,
     limit: 500,
     holdout: 0.3,
   });
+});
+
+it('returns the shadow variant without historical defaults', () => {
+  expect(parseScoreArguments(['--shadow'], 0)).toEqual({ kind: 'shadow' });
+});
+
+it.for<[string, string]>([
+  ['--since', '1'],
+  ['--until', '1'],
+  ['--limit', '3'],
+  ['--holdout', '0.2'],
+])('rejects %s with --shadow', ([flag, value]) => {
+  expect(() => parseScoreArguments(['--shadow', flag, value], 0)).toThrow(flag);
 });
 
 it('gives unavailable for an unknown reference', async () => {

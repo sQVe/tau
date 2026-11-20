@@ -48,6 +48,7 @@ No launch, and unclear impact:
 | [Prompt in a Pi session](qa/features/pi-session-prompt.md) | Pi sessions | `pi-session` | Behavior inside a session that launches no worker |
 | [Worker launch in a Pi session](qa/features/pi-session-worker-launch.md) | Pi sessions | `pi-session` | Behavior that launches workers |
 | [Question gate shadow record](qa/features/question-gate-shadow.md) | Pi sessions | `pi-session` | `ask_user_question`, the question gate sampling rule, or shadow records |
+| [Question gate shadow score](qa/features/question-gate-score-shadow.md) | Scripts | none | `pnpm question-gate-score --shadow` or its shadow report |
 
 ## Before a launch
 
