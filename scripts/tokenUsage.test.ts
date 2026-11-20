@@ -21,6 +21,7 @@ import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.js'
 let agentDirectory: string;
 
 const since = Date.parse('2026-09-01T00:00:00Z');
+const usage = 'Usage: test';
 
 const write = async (path: string, content: string) => {
   const target = join(agentDirectory, path);
@@ -390,9 +391,20 @@ it.each([
     time: Date.parse('2026-08-01T00:00:00Z'),
   },
 ])('$rule', ({ value, time }) => {
-  expect(parseTime(value, since)).toBe(time);
+  expect(parseTime(value, since, usage)).toBe(time);
 });
 
 it.each(['7', 'soon'])('rejects the time "%s"', (value) => {
-  expect(() => parseTime(value, since)).toThrow(TypeError);
+  expect(() => parseTime(value, since, usage)).toThrow(TypeError);
+});
+
+it('names its own usage when a time is invalid', () => {
+  const result = spawnSync(
+    process.execPath,
+    [join(import.meta.dirname, 'tokenUsage.ts'), '--since', '7'],
+    { encoding: 'utf8', env: { ...process.env, HOME: agentDirectory } },
+  );
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('Usage: node scripts/tokenUsage.ts');
 });

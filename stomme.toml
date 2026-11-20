@@ -412,6 +412,7 @@ imports = ["schema"]
 entry = "src/config/config.ts"
 public = [
   "src/config/models.ts",
+  "src/config/questionGateModels.ts",
   "src/config/repositoryCommand.ts",
   "src/config/repositoryEntry.ts",
   "src/config/repositorySection.ts",
@@ -531,6 +532,11 @@ imports = ["command", "config", "errors", "tauDirectory"]
 entry = "src/process/process.ts"
 public = []
 imports = ["errors"]
+
+[modules.questionGate]
+entry = "src/questionGate/questionGate.ts"
+public = ["src/questionGate/decision.ts", "src/questionGate/examples.ts"]
+imports = []
 
 [modules.record]
 entry = "src/record.ts"

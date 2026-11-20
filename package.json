@@ -30,6 +30,7 @@
     "style:check": "stomme-ts-style",
     "style:fix": "stomme-ts-style --fix",
     "prepare": "node scripts/prepare.ts",
+    "question-gate-score": "node scripts/questionGateScore.ts",
     "session-health": "node scripts/sessionHealth.ts",
     "test": "vp test",
     "test:changed": "vp test --changed",

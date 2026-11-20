@@ -261,6 +261,19 @@ Search providers and the default answer model belong to
 [pi-web-access](https://www.npmjs.com/package/pi-web-access). Tau does not set them. Tau checks an
 `answerModel` that a `fetch_content` call passes in answer mode against `allowedModels`.
 
+### `questionGate` (user file)
+
+`questionGate` names the classifier and the three-judge panel. `pnpm question-gate-score` reads it.
+
+```json
+{
+  "questionGate": {
+    "classifier": "provider/classifier-id",
+    "panel": ["provider/judge-a", "provider/judge-b", "provider/judge-c"]
+  }
+}
+```
+
 ## Workers
 
 ### `subagents.capacity` (user file)

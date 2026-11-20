@@ -61,6 +61,9 @@ The pure modules are `errors`, `schema`, `shell`, and `tabName`. None of their f
 criterion above. Every other module in `importTable` is an I/O module. Each of its edges to a pure
 module follows the shared rule and is not listed.
 
+`questionGate` is an I/O module because its judges call models and set timers. It imports no I/O
+module, so it has no line below.
+
 Each line names a module and the I/O modules it may import:
 
 - `checkRecord`: `git`, `record`

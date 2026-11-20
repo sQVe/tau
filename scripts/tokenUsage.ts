@@ -19,7 +19,10 @@ const usage = `Usage: node scripts/tokenUsage.ts [--since 7d] [--until <time>] [
 --since and --until take an ISO date or time, or an age such as 12h or 3d.`;
 
 // Reads started together would open more files than the process may hold.
-const readInTurn = async <Item, Result>(items: Item[], read: (item: Item) => Promise<Result>) => {
+export const readInTurn = async <Item, Result>(
+  items: Item[],
+  read: (item: Item) => Promise<Result>,
+): Promise<Result[]> => {
   const results: Result[] = [];
 
   for (const item of items) {
@@ -129,7 +132,7 @@ export const findUsageRecords = async (
 const hoursPerDay = 24;
 const millisecondsPerHour = 3_600_000;
 
-export const parseTime = (value: string, now: number): number => {
+export const parseTime = (value: string, now: number, usageText: string): number => {
   const age = /^(\d+)([hd])$/.exec(value);
 
   if (age !== null) {
@@ -140,13 +143,13 @@ export const parseTime = (value: string, now: number): number => {
 
   // Date.parse reads a bare number as a year or month, such as 7 as July 2001.
   if (/^\d+$/.test(value)) {
-    throw new TypeError(`Add a unit to "${value}", such as ${value}h or ${value}d. ${usage}`);
+    throw new TypeError(`Add a unit to "${value}", such as ${value}h or ${value}d. ${usageText}`);
   }
 
   const time = Date.parse(value);
 
   if (Number.isNaN(time)) {
-    throw new TypeError(`Cannot read the time "${value}". ${usage}`);
+    throw new TypeError(`Cannot read the time "${value}". ${usageText}`);
   }
 
   return time;
@@ -162,8 +165,8 @@ const main = async () => {
   });
 
   const now = Date.now();
-  const since = parseTime(values.since, now);
-  const until = values.until === undefined ? now : parseTime(values.until, now);
+  const since = parseTime(values.since, now, usage);
+  const until = values.until === undefined ? now : parseTime(values.until, now, usage);
   const top = Number(values.top);
 
   if (!Number.isInteger(top) || top < 1) {

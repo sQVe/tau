@@ -83,6 +83,10 @@ export type TranscriptState = Static<typeof transcriptStateSchema>;
 export const text = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
+// Forks and follow-ups copy entries with their IDs and timestamps, so a copy shares its original's key.
+export const copyKey = (entry: Entry): string =>
+  `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
+
 const parseEntry = (source: string): Entry | undefined => {
   try {
     const value: unknown = JSON.parse(source);
