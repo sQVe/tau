@@ -207,7 +207,6 @@ const isHeldOut = (session: string, holdout: number): boolean => {
   return fraction < holdout;
 };
 
-// Examples use when a question was asked, because a live gate cannot see an answer that came later.
 const answersByCallTime = (questions: readonly LoggedQuestion[]): PastAnswer[] =>
   questions.map((question) => ({
     time: question.callTime,

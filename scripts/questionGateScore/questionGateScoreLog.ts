@@ -19,9 +19,7 @@ export interface SessionLog {
 }
 
 export interface LoggedQuestion extends PastAnswer {
-  // The smallest path in the entry's lineage group, so every copy keeps one origin.
   session: string;
-  // Milliseconds since the Unix epoch when the user was asked, before the result arrived.
   callTime: number;
 }
 
@@ -32,7 +30,6 @@ export interface SkippedQuestions {
   failedCalls: number;
   unansweredCalls: number;
   unmatchedResults: number;
-  // Call or result occurrences left unmatched because their call ID had several candidates.
   ambiguousEntries: number;
   malformedAnswers: number;
   noRecommendation: number;
@@ -108,7 +105,6 @@ interface LogState {
   questions: LoggedQuestion[];
   skipped: SkippedQuestions;
   entries: Map<string, EntryRecord>;
-  // The first file that held each copy key, so every later copy links its file to that one.
   firstFiles: Map<string, string>;
   sharedFiles: [string, string][];
 }
@@ -159,7 +155,6 @@ const zeroSkipped = (): SkippedQuestions => ({
   preview: 0,
 });
 
-// Forks and follow-ups copy entries with their IDs and timestamps, so each copy counts once.
 const copyKey = (entry: Entry) => `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
 
 const stripRecommendation = (label: string) =>
@@ -218,11 +213,9 @@ const isQuestionDetails = (details: unknown) => {
   return answered || isClosed(details);
 };
 
-// Older logs lack the result's tool name, so only their details can identify a question result.
 const isQuestionResult = (toolName: string | undefined, details: unknown) =>
   toolName === undefined ? isQuestionDetails(details) : toolName === 'ask_user_question';
 
-// Every other entry cannot affect a question, so it is counted and dropped without being kept.
 const isQuestionEntry = (entry: Entry): boolean => {
   const message = entry.message;
 
@@ -649,8 +642,6 @@ const scanEvents = (
   return events.toSorted((left, right) => left.index - right.index);
 };
 
-// Within one file, a result answers only the single open call with the same ID. Several open
-// calls leave the evidence ambiguous, so no pair is recorded from this file.
 const scanFile = (
   file: string,
   calls: readonly CallOccurrence[],
