@@ -368,6 +368,8 @@ remains. The two negative controls fail.
 ## Gotchas
 
 - A failed session exits with code 1 and prints a `FAIL` line.
+- When a session exits with a `FAIL` timeout, run that case once more with the same fixture recipe and
+  the same tokens, grade the completed attempt, and keep both event logs.
 - Each prompt starts with the two sentences above, so the session asks no question.
 - The fixtures are synthetic. No live GitHub, Mend, or Renovate service is needed.
 - The fixtures stay uncommitted because Tau blocks `git commit` in agent bash and the `qa` profile
