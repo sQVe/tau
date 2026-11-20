@@ -5,7 +5,7 @@ import { Type } from 'typebox';
 
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
-import { errorMessage, isMissingFile } from '../errors.js';
+import { isMissingFile } from '../errors.js';
 import { existingEntry } from '../tauDirectory.js';
 import { piArguments } from './piArguments.js';
 
@@ -24,7 +24,7 @@ export interface PiStartRequest extends PiSessionRequest {
   bareRoot: boolean;
 }
 
-export interface PiStartLeftOfRequest extends PiSessionRequest {
+export interface PiStartRightOfRequest extends PiSessionRequest {
   pane: string;
   bareRoot: boolean;
 }
@@ -80,54 +80,10 @@ const splitArguments = (request: PiSessionRequest, pane: string): string[] => [
   JSON.stringify(['env', '-C', request.folder, ...argvOf(request, request.task)]),
 ];
 
-const swapArguments = (pane: string, target: string): string[] => [
-  'do',
-  'pane.swap',
-  '--pane',
-  pane,
-  '--target',
-  target,
-];
-
 const startArguments = (request: PiStartRequest): string[] =>
   'space' in request.target
     ? tabArguments(request, request.target.space)
     : spaceArguments(request, request.target.name);
-
-const startInPane = async (
-  runtime: CommandRuntime,
-  request: PiSessionRequest,
-  pane: string,
-): Promise<string> => {
-  const reply = await runCommand(
-    runtime,
-    'herdr-app',
-    splitArguments(request, pane),
-    'herdr-app do pane.split',
-  );
-
-  const created = parseJson('herdr-app do pane.split', reply);
-
-  checkOutput('herdr-app do pane.split', splitReplySchema, created);
-
-  try {
-    runtime.signal?.throwIfAborted();
-
-    await runCommand(
-      runtime,
-      'herdr-app',
-      swapArguments(created.pane, pane),
-      'herdr-app do pane.swap',
-    );
-  } catch (error) {
-    throw new Error(
-      `The session runs in pane ${created.pane} (terminal ${created.terminal}), but the swap did not finish: ${errorMessage(error)}`,
-      { cause: error },
-    );
-  }
-
-  return reply;
-};
 
 const isDirectory = (path: string): Promise<boolean> =>
   stat(path).then(
@@ -176,11 +132,22 @@ export const startPiSession = async (
   return { reply };
 };
 
-export const startPiSessionLeftOf = async (
+export const startPiSessionRightOf = async (
   runtime: CommandRuntime,
-  request: PiStartLeftOfRequest,
+  request: PiStartRightOfRequest,
 ): Promise<{ reply: string }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
-  return { reply: await startInPane(runtime, request, request.pane) };
+  const reply = await runCommand(
+    runtime,
+    'herdr-app',
+    splitArguments(request, request.pane),
+    'herdr-app do pane.split',
+  );
+
+  const created = parseJson('herdr-app do pane.split', reply);
+
+  checkOutput('herdr-app do pane.split', splitReplySchema, created);
+
+  return { reply };
 };

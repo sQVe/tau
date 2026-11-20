@@ -36,7 +36,7 @@ const requestFor = (
   hc,
 });
 
-it('starts the architect from a real bare repository left of the lead', async () => {
+it('opens the architect in one split to the right of the lead from a bare repository', async () => {
   const root = await createTemporaryBareRepository(onTestFinished);
   const { app, runtime } = openTool(root);
 
@@ -51,8 +51,9 @@ it('starts the architect from a real bare repository left of the lead', async ()
   const folderArguments = argv.slice(0, 3);
 
   expect(argumentAfter(splitArguments, '--pane')).toBe('p-lead');
+  expect(argumentAfter(splitArguments, '--direction')).toBe('right');
   expect(folderArguments).toEqual(['env', '-C', root]);
-  expect(appCommands(app)).toEqual(['ls', 'pane.split', 'pane.swap']);
+  expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });
 
 it('starts from a repository with a .git entry without asking Git whether it is bare', async () => {

@@ -11,7 +11,7 @@ import { isBareRootWithoutGitEntry } from '../../../git.js';
 import { get } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
-import { startPiSession, startPiSessionLeftOf } from '../../../piStart/piStart.js';
+import { startPiSession, startPiSessionRightOf } from '../../../piStart/piStart.js';
 import { architectLockPath } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
@@ -184,7 +184,7 @@ const startArchitect = async (
 
     await startPiSession(request.hc, { ...start, target });
   } else {
-    await startPiSessionLeftOf(request.hc, { ...start, pane });
+    await startPiSessionRightOf(request.hc, { ...start, pane });
   }
 
   return session;

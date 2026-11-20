@@ -19,8 +19,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 - Read your space from the `herdr.space` label of `hc get $HC_TERMINAL_ID`.
 - Start a terminal with
   `herdr-app do tab.new --space <your space> --folder <folder> --argv '["<program>"]'`. It names the
-  space. Do not use `pane.split` in the lead's tab: it adds a pane to the tab it splits, and the
-  lead's tab holds only the architect and the lead.
+  space. Use a new tab for other terminals. The lead's tab holds only the lead and architect;
+  `architect` `open` puts the architect on the right.
 - Give a new space its task when you start it, through the `architect` `open` `request` or the
   `handover` `start` file. Never start a space empty and send the task later, and never open the
   architect with no topic.
@@ -68,7 +68,7 @@ when you stop. Follow explicit user instructions and repository conventions over
   same checkout once someone answers its dialog.
 - As manager, restart an ordinary handover session in a new tab.
 - As lead, when the architect waits on an `ask_user_question` dialog, tell the user that the
-  architect's pane to the left of the lead holds the question. Never answer the dialog yourself and
+  architect's pane to the right of the lead holds the question. Never answer the dialog yourself and
   never type into the architect's pane.
 - As lead, when the user gives you the answer instead, ask the user to close the dialog with one
   Escape press first.
