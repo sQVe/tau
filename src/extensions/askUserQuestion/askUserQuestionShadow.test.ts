@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { validateToolArguments } from '@earendil-works/pi-ai';
@@ -8,7 +8,7 @@ import { expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { initializeRepository } from '../../../tests/gitRepository.js';
+import { git, initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
@@ -74,6 +74,9 @@ interface HarnessOptions {
   findRootGate?: Deferred<string | undefined>;
   directoryGate?: Deferred<undefined>;
   dialogResult?: Deferred<DialogResult | undefined>;
+  projectTrusted?: boolean;
+  // Prepares the repository and returns the checkout the tool runs in.
+  prepareRepository?: (repository: string) => Promise<string>;
 }
 
 const deferred = <T>(): Deferred<T> => {
@@ -243,6 +246,11 @@ const createHarness = async (
     await initializeRepository(repository);
   }
 
+  const activeDirectory =
+    options.prepareRepository === undefined
+      ? repository
+      : await options.prepareRepository(repository);
+
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-shadow-agent-');
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
@@ -357,8 +365,8 @@ const createHarness = async (
 
   const context = {
     mode: 'tui',
-    cwd: repository,
-    isProjectTrusted: () => false,
+    cwd: activeDirectory,
+    isProjectTrusted: () => options.projectTrusted === true,
     modelRegistry: registry.registry,
     ui: { custom },
     sessionManager: {
@@ -412,6 +420,7 @@ const createHarness = async (
   return {
     agentDirectory,
     repository,
+    cwd: activeDirectory,
     registry,
     clock,
     saved,
@@ -446,6 +455,37 @@ const answeredDetails = {
 
 const recordOf = (harness: { saved: SavedRecord[] }): ShadowRecord | undefined =>
   harness.saved[0]?.record;
+
+const judgeModels = [
+  'tau-fixture/classifier',
+  'tau-fixture/panel-a',
+  'tau-fixture/panel-b',
+  'tau-fixture/panel-c',
+];
+
+const withoutPanelB = judgeModels.filter((model) => model !== 'tau-fixture/panel-b');
+
+const writeAllowedModels = (directory: string, models: string[]) => {
+  mkdirSync(join(directory, '.pi'), { recursive: true });
+  writeFileSync(join(directory, '.pi', 'tau.json'), JSON.stringify({ allowedModels: models }));
+};
+
+// A linked checkout of the repository, with its own narrower allowlist than the shared root.
+const addLinkedCheckout = async (
+  onTestFinished: (cleanup: () => void) => void,
+  repository: string,
+): Promise<string> => {
+  writeAllowedModels(repository, judgeModels);
+  await git(repository, 'add', '.pi/tau.json');
+  await git(repository, 'commit', '--quiet', '-m', 'allow the judge models');
+
+  const checkout = join(temporaryDirectory(onTestFinished, 'tau-shadow-checkout-'), 'checkout');
+
+  await git(repository, 'worktree', 'add', '--quiet', '--detach', checkout, 'HEAD');
+  writeAllowedModels(checkout, withoutPanelB);
+
+  return checkout;
+};
 
 it("opens the dialog and returns the user's result before judges finish", async ({
   onTestFinished,
@@ -929,6 +969,77 @@ it('saves no record when a preflight that ignores the abort returns a shared roo
   await second;
   harness.saveGate.resolve(undefined);
   await secondDone;
+
+  expect(harness.saved).toHaveLength(1);
+});
+
+it('reads the allowlist of the checkout that asked, not the shared root', async ({
+  onTestFinished,
+}) => {
+  const saveGate = deferred<undefined>();
+  const registry = fakeRegistry();
+
+  saveGate.resolve(undefined);
+  registry.judgeGate.resolve(undefined);
+
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    projectTrusted: true,
+    saveGate,
+    registry,
+    prepareRepository: (repository) => addLinkedCheckout(onTestFinished, repository),
+  });
+
+  const denied = harness.run([eligibleQuestion]);
+  const deniedDone = harness.start();
+
+  harness.latest().handleInput('\r');
+  await denied;
+  await deniedDone;
+
+  expect(harness.registry.classify).not.toHaveBeenCalled();
+  expect(harness.registry.complete).not.toHaveBeenCalled();
+  expect(harness.saved).toEqual([]);
+
+  writeAllowedModels(harness.cwd, judgeModels);
+
+  const allowed = harness.run([eligibleQuestion]);
+  const allowedDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  expect(harness.registry.classify).toHaveBeenCalledTimes(2);
+
+  harness.latest().handleInput('\r');
+  await allowed;
+  await allowedDone;
+
+  expect(harness.saved).toHaveLength(1);
+});
+
+it('ignores the checkout allowlist when the project is untrusted', async ({ onTestFinished }) => {
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    projectTrusted: false,
+    prepareRepository: (repository) => addLinkedCheckout(onTestFinished, repository),
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+  const shadowDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  expect(harness.registry.classify).toHaveBeenCalledTimes(2);
+
+  harness.latest().handleInput('\r');
+  await pending;
+  harness.registry.judgeGate.resolve(undefined);
+  harness.saveGate.resolve(undefined);
+  await shadowDone;
 
   expect(harness.saved).toHaveLength(1);
 });

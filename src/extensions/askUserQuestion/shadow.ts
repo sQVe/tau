@@ -227,7 +227,7 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
       const sharedRoot = await ports.findSharedRoot(request.cwd, controller.signal);
 
       const location: ConfigLocation = {
-        cwd: sharedRoot,
+        cwd: request.cwd,
         agentDirectory: getAgentDir(),
         projectTrusted: request.projectTrusted,
       };
