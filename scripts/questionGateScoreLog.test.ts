@@ -714,6 +714,54 @@ it('gives every copy one session key when a parent is missing', () => {
   }
 });
 
+it('gives two files one session key when a copied non-question entry is their only bridge', () => {
+  const bridge = JSON.stringify({
+    type: 'message',
+    id: 'bridge-entry',
+    timestamp: at(0),
+    message: { role: 'user', content: [{ type: 'text', text: 'Start here.' }] },
+  });
+
+  const database = [
+    bridge,
+    call('call-database', at(1), [question()]),
+    result('call-database', at(2), {
+      details: answered([{ question: 'Which database?', selected: ['Postgres'], typed: false }]),
+    }),
+  ];
+
+  const cache = [
+    bridge,
+    call('call-cache', at(3), [
+      question({ question: 'Which cache?', options: [option('Postgres', true), option('Redis')] }),
+    ]),
+    result('call-cache', at(4), {
+      details: answered([{ question: 'Which cache?', selected: ['Postgres'], typed: false }]),
+    }),
+  ];
+
+  const first: SessionLog = {
+    path: '/logs/b-question.jsonl',
+    text: logText(cache, header('session-cache')),
+  };
+
+  const second: SessionLog = {
+    path: '/logs/a-question.jsonl',
+    text: logText(database, header('session-database')),
+  };
+
+  for (const order of permutations([first, second])) {
+    const log = readLoggedQuestions(order);
+
+    expect(log.questions.map((entry) => entry.session)).toEqual([
+      '/logs/a-question.jsonl',
+      '/logs/a-question.jsonl',
+    ]);
+
+    expect(log.skipped.copiedEntries).toBe(1);
+  }
+});
+
 it('keeps each outcome when a call-only copy is read first', () => {
   const originalPath = '/logs/a.jsonl';
 

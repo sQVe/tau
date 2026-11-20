@@ -50,12 +50,6 @@ type QuestionRead =
   | { kind: 'skip'; counter: SkipCounter }
   | { kind: 'malformed' };
 
-interface ParsedLog {
-  path: string;
-  malformedLines: number;
-  parent: string | undefined;
-}
-
 interface EntryPlace {
   file: string;
   index: number;
@@ -107,7 +101,7 @@ interface LogState {
   skipped: SkippedQuestions;
   entries: Map<string, EntryRecord>;
   firstFiles: Map<string, string>;
-  sharedFiles: [string, string][];
+  groups: Map<string, string>;
 }
 
 interface CompletedCall {
@@ -454,30 +448,20 @@ const unionGroups = (groups: Map<string, string>, left: string, right: string) =
   }
 };
 
+const addGroupNode = (groups: Map<string, string>, node: string) => {
+  if (!groups.has(node)) {
+    groups.set(node, node);
+  }
+};
+
 // A session group holds every file linked by a parentSession path or by a shared entry.
 const sessionKeys = (
-  logs: readonly ParsedLog[],
-  sharedFiles: readonly (readonly [string, string])[],
+  groups: Map<string, string>,
+  paths: readonly string[],
 ): Map<string, string> => {
-  const groups = new Map<string, string>();
-  const nodes = new Set<string>();
-
-  for (const { path, parent } of logs) {
-    nodes.add(path);
-
-    if (parent !== undefined) {
-      nodes.add(parent);
-      unionGroups(groups, path, parent);
-    }
-  }
-
-  for (const [first, copy] of sharedFiles) {
-    unionGroups(groups, first, copy);
-  }
-
   const minimum = new Map<string, string>();
 
-  for (const node of nodes) {
+  for (const node of groups.keys()) {
     const root = findGroup(groups, node);
     const current = minimum.get(root);
 
@@ -488,7 +472,7 @@ const sessionKeys = (
 
   const keys = new Map<string, string>();
 
-  for (const { path } of logs) {
+  for (const path of paths) {
     const root = findGroup(groups, path);
 
     keys.set(path, minimum.get(root) ?? path);
@@ -760,7 +744,7 @@ const collectEntry = (state: LogState, file: string, index: number, entry: Entry
     state.skipped.copiedEntries += 1;
 
     if (first !== file) {
-      state.sharedFiles.push([first, file]);
+      unionGroups(state.groups, first, file);
     }
   }
 
@@ -780,21 +764,29 @@ const collectEntry = (state: LogState, file: string, index: number, entry: Entry
 };
 
 export const questionLogReader = (): QuestionLogReader => {
-  const logs: ParsedLog[] = [];
+  const paths: string[] = [];
 
   const state: LogState = {
     questions: [],
     skipped: zeroSkipped(),
     entries: new Map(),
     firstFiles: new Map(),
-    sharedFiles: [],
+    groups: new Map(),
   };
 
   const add = (file: SessionLog) => {
     const { entries, malformedLines } = parseEntries(file.text);
+    const parent = sessionParent(entries);
 
-    logs.push({ path: file.path, malformedLines, parent: sessionParent(entries) });
+    paths.push(file.path);
     state.skipped.malformedLines += malformedLines;
+
+    addGroupNode(state.groups, file.path);
+
+    if (parent !== undefined) {
+      addGroupNode(state.groups, parent);
+      unionGroups(state.groups, file.path, parent);
+    }
 
     for (const [index, entry] of entries.entries()) {
       collectEntry(state, file.path, index, entry);
@@ -802,7 +794,7 @@ export const questionLogReader = (): QuestionLogReader => {
   };
 
   const finish = (): QuestionLog => {
-    const keys = sessionKeys(logs, state.sharedFiles);
+    const keys = sessionKeys(state.groups, paths);
     const { calls, results } = readOccurrences(state, keys);
 
     pairCalls(state, calls, results);
