@@ -276,8 +276,8 @@ cp "$log3" "$events3"
 ```
 
 9. Grade the unreadable case from the copy. The evidence check takes the workflow token from a
-   successful result and requires an observed absence of `mend/renovate-job.log`, or a failed call
-   naming that path. It prints `unreadable` and the access it relied on:
+   successful result and requires an observed absence of `mend/renovate-job.log` or its `mend`
+   directory, or a failed call naming either. It prints `unreadable` and the access it relied on:
 
 ```sh
 jq -s -r --arg token "$unreadableToken" '
@@ -292,12 +292,12 @@ jq -s -r --arg token "$unreadableToken" '
           isError: ($end.isError // false)
         } ] as $calls
   | [ $calls[] | select(.isError == false) | .result ] as $successTexts
-  | [ $calls[] | select(.isError == false)
+  | [ $calls[]
       | .result | split("\n")[]
-      | select(test("mend/renovate-job\\.log")
+      | select(test("mend/renovate-job\\.log|mend/|\u0027mend\u0027|\"mend\"")
           and test("No such file or directory|does not exist|ENOENT"; "i")) ] as $absentLines
   | [ $calls[] | select(.isError == true)
-      | select(.input | test("mend/renovate-job\\.log")) ] as $failedCalls
+      | select(.input | test("mend/renovate-job\\.log|mend/|\u0027mend\u0027|\"mend\"")) ] as $failedCalls
   | select(($token | length) > 0)
   | select(any($successTexts[]; contains($token)))
   | select(($absentLines | length > 0) or ($failedCalls | length > 0))
@@ -307,8 +307,8 @@ jq -s -r --arg token "$unreadableToken" '
 ' "$events3"
 ```
 
-   The check proves the session read the workflow that names the log and that it saw the log absent,
-   or tried the log and failed. The reply rule decides the answer.
+   The check proves the session read the workflow that names the log and that it saw the log or its
+   directory absent, or tried the log and failed. The reply rule decides the answer.
 
    The reply check prints the session's reply:
 
@@ -337,10 +337,10 @@ rm -rf "$unreadable"
 - The silent evidence check prints `silent`, and the reply reports Renovate installed in Silent mode
   and names the log.
 - The unreadable evidence check prints `unreadable` and the absent or failed access when a
-  successful result holds the workflow token and a result reports `mend/renovate-job.log` absent, or
-  a failed call names that path. The reply reports the app's setting as `unknown` and names the log
-  it could not read. A documented default is allowed only when marked as the default and qualified
-  by the app override.
+  successful result holds the workflow token and a result reports `mend/renovate-job.log` or its
+  `mend` directory absent, or a failed call names either. The reply reports the app's setting as
+  `unknown` and names the log it could not read. A documented default is allowed only when marked
+  as the default and qualified by the app override.
 
 ## Grading rules
 
@@ -348,7 +348,7 @@ rm -rf "$unreadable"
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | Sync       | For each project, a successful result holds `sync-update.yml@v0.1.0` and that project's own token                                  | Sync configured in ruta, tikk, greppa, and the caller or reference named | Sync missing or disabled for any project, or no source named   |
 | Silent     | A successful result holds the case's token, `Renovate app installed`, and `mode=silent`                                            | Renovate installed and in Silent mode, and the log named                 | Renovate disabled, missing, or absent, or no source named      |
-| Unreadable | A successful result holds the workflow token, and a result reports `mend/renovate-job.log` absent, or a failed call names that path | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
+| Unreadable | A successful result holds the workflow token, and a result reports `mend/renovate-job.log` or its `mend` directory absent, or a failed call names either | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
 
 The token exists only in the case's own source, so a result from another case's fixture cannot pass.
 The unreadable check prints the access it relied on.
