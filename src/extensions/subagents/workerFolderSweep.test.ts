@@ -28,7 +28,6 @@ vi.mock(import('node:fs/promises'), { spy: true });
 const minute = 60_000;
 const hour = 3_600_000;
 
-// The sweep samples the clock inside its lock; these cases pass one fixed time.
 const sweepAt = (
   hc: HcRuntime,
   agentDirectory: string,

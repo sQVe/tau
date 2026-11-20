@@ -244,7 +244,6 @@ const sweepUnderLock = async (
   readNow: () => number,
   starting: readonly WorkerTerminalFact[],
 ): Promise<WorkerFolderSweep> => {
-  // Sampled after the lock wait, so waiting never backdates a new marker.
   const now = readNow();
 
   const { terminals, errors: readErrors } = await readTerminalFacts(hc);
@@ -270,8 +269,6 @@ const sweepUnderLock = async (
   };
 };
 
-// The evidence and the effects share one lock, so a sweep cannot clear a marker from a stale read
-// and then write it back after another manager's launch saw no marker.
 export const sweepWorkerFolders = async (
   hc: HcRuntime,
   agentDirectory: string,

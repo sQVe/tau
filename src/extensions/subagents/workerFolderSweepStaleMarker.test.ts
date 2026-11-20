@@ -145,7 +145,6 @@ it('keeps a snapshot for a day after the follow-up that reused it ends', async (
     expect(gets.started).toHaveLength(1);
   });
 
-  // The follow-up starts while the first sweep still holds its stale view.
   listTerminals([]);
 
   const baseline = lockAttempts(agentDirectory);
@@ -168,7 +167,6 @@ it('keeps a snapshot for a day after the follow-up that reused it ends', async (
   await staleSweep;
   await launchSweep;
 
-  // The follow-up ends after more than a day of work. Its scan keeps the snapshot.
   const endedAt = startedAt + 25 * hour;
 
   listTerminals([{ assignmentId: followUpId, state: 'finished' }]);
@@ -177,7 +175,6 @@ it('keeps a snapshot for a day after the follow-up that reused it ends', async (
 
   expect(existsSync(snapshot)).toBe(true);
 
-  // A snapshot nobody named for a day still expires.
   await sweepWorkerFolders(hc, agentDirectory, () => endedAt + 24 * hour, []);
 
   expect(existsSync(snapshot)).toBe(false);
@@ -209,7 +206,6 @@ it('starts the unused window after a sweep waits for the lock', async () => {
     expect(lockAttempts(agentDirectory)).toBeGreaterThan(baseline);
   });
 
-  // The clock moves while the sweep waits, so its marker must not start at the pre-wait time.
   now = startedAt + 30 * minute;
 
   await held.release();
