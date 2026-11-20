@@ -56,8 +56,11 @@ const leadWorkerRunGuidelines = [
   'When a worker asks a question, answer it with `subagent_answer`.',
   'Report a refused `subagent_answer` to the user.',
   "Never type into another agent's terminal.",
-  'When a first review finds issues in delegated work, send in-scope fixes back to the worker in one batch. Skip fixes on a read-only or no-changes request. Ask first when ownership is not `own` or a rule or skill requires approval.',
-  'After that batch, run one `code-review` fix review. Let it route the remaining findings to `triage-findings`.',
+  'When a first review finds issues in delegated work, send in-scope fixes back to the worker in one batch.',
+  'Skip fixes on a read-only or no-changes request.',
+  'Ask first when ownership is not `own` or a rule or skill requires approval.',
+  'After that batch, run one `code-review` fix review.',
+  'Let it route the remaining findings to `triage-findings`.',
   'After any worker report, start the next step you own. Ask only when that step needs a decision you cannot make, and report and stop when the work is done.',
 ];
 
