@@ -34,7 +34,8 @@ being read as a prose rule, and loading by default means no skill has to be load
   wording of code comments.
 - `coding` governs code the agent writes, including whether a comment should exist.
 - `workflow.md` governs how the agent carries out a task: the commands it runs, the checkouts it
-  touches, the scope it keeps, and when it stops.
+  touches, the scope it keeps, and when it stops. The subject of a status report and the naming of
+  work in it belong here too, because they decide what the report covers, not how a sentence reads.
 - `browser.md` is opt-in for workers that drive a browser
   ([ADR 0076](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)).
 
@@ -75,7 +76,8 @@ may replace the prompt.
 - Prompt rules cannot guarantee good writing or readable code.
 - A broken or blank file-backed default set stops Tau from loading.
 - A broken or blank file-backed worker set fails that worker's first `before_agent_start`.
-- Rules near a boundary, such as comments, can drift between two sets.
+- Rules near a boundary, such as comments, or a status report's subject and its wording, can drift
+  between two sets.
 
 ## Alternatives considered
 
@@ -83,6 +85,17 @@ may replace the prompt.
 
 Put all rules in one file. Rejected because prose, code, and workflow rules then govern each other's
 subjects, and agents read a code rule as a prose rule.
+
+### Status report rules in the writing set
+
+Put the subject of a status report and the naming of its work in `writing.md`, beside the other
+reply rules. Rejected because both decide what a report covers, not how a sentence reads.
+
+### Work naming in the writing set
+
+Keep the subject rule in `workflow.md` and move only the naming rule to `writing.md`. Rejected
+because the two rules lean on each other: a report on the right feature still fails when it names
+work by a ticket identifier. One report rule in one file is also easier to follow.
 
 ### Rules in a skill
 

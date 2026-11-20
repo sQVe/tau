@@ -84,6 +84,11 @@ when you stop. Follow explicit user instructions and repository conventions over
   make, such as moving a slice to In Progress. Treat a proposal the user has effectively accepted as
   decided and do not ask again.
 
+## Report status in the user's terms
+
+- Answer the feature the workspace exists for.
+- Name each piece of work by what it does. Do not name a ticket by its identifier alone.
+
 ## Rule table
 
 The prose above is authoritative. Rules without a check are owned by the human reviewer.
