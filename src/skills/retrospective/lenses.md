@@ -45,7 +45,9 @@ Scan for:
 - file and path conventions that are not obvious from the code;
 - test commands, CI flags, and how to reproduce a failing run locally;
 - debugging entry points, such as where logs land and which command captures a trace;
-- build, package-manager, and sandbox surprises that cost time the first time.
+- build, package-manager, and sandbox surprises that cost time the first time;
+- a setup or verification gap in the task's own repo that cost time, such as a test run that failed
+  late because a required service was missing.
 
 Also flag each moment the user supplied context the agent could have fetched itself with a tool or
 another skill. Name the lookup the agent should have made.
@@ -69,10 +71,12 @@ Each finding has:
 
 - Principle: one sentence naming the durable rule or technical fact.
 - Evidence: `path:line` or the transcript entry ID.
-- Route: the skill, tool, instruction, repository check, or stomme rule to change.
+- Route: the skill, tool, instruction, stomme rule, or repo proposal to change, using the repo
+  proposal criteria in [synthesis.md](synthesis.md).
 
-Route only to a skill, tool, or instruction the transcripts used. When a skill should have fired but
-did not, route to a description tune for that skill. Drop a finding with no route.
+Route only to a skill, tool, or instruction the transcripts used, a repo proposal, or a stomme rule.
+When a skill should have fired but did not, route to a description tune for that skill. Drop a
+finding with no route.
 
 Skip typos, retries, and anything already obvious from the skill the task followed. Skip details
 that drift, such as a commit hash, a current path, a version number, or an exact byte count.

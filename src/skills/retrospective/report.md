@@ -6,11 +6,12 @@
 
 ## Accepted
 
-| Problem        | Proposal | Route                                      | Evidence           |
-| -------------- | -------- | ------------------------------------------ | ------------------ |
-| <failure mode> | <change> | <skill, tool, instruction, check, or rule> | Verified: <source> |
+| Problem        | Proposal | Route                                              | Evidence           |
+| -------------- | -------- | -------------------------------------------------- | ------------------ |
+| <failure mode> | <change> | <skill, tool, instruction, rule, or repo proposal> | Verified: <source> |
 
-At most 5 rows. Write None when no row is supported.
+At most 5 rows. Write None when no row is supported. A repo proposal row follows the criteria and
+row shape in [synthesis.md](synthesis.md).
 
 ## Rejected
 
@@ -18,7 +19,7 @@ At most 5 rows. Write None when no row is supported.
 
 ## Backlog
 
-- <Pattern, what it hit, and the check that could enforce it>
+- <Pattern, what it hit, the check that could enforce it, and the repository that owns it>
 
 ## Attention
 
