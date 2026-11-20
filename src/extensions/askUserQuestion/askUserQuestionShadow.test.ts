@@ -570,6 +570,100 @@ it('records a rejected judge as error without changing the result', async ({ onT
   });
 });
 
+it('records the elapsed milliseconds for a clock that advances', async ({ onTestFinished }) => {
+  const clock = { now: 0 };
+  const registry = fakeRegistry();
+
+  registry.classify.mockImplementation(async () => {
+    clock.now += 10;
+
+    return {
+      stopReason: 'stop',
+      answers: {
+        choice: { type: 'choice', choice: 'accept', probabilities: {}, confidence: 0.9 },
+      },
+    };
+  });
+
+  registry.complete.mockImplementation(async () => {
+    clock.now += 10;
+
+    return { stopReason: 'stop', content: [{ type: 'text', text: 'Stacked' }] };
+  });
+
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    registry,
+    now: () => clock.now,
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await pending;
+
+  const shadowDone = harness.start();
+
+  harness.saveGate.resolve(undefined);
+  await shadowDone;
+
+  expect(recordOf(harness)).toMatchObject({
+    judges: {
+      classifier: { milliseconds: 80 },
+      classifierExamples: { milliseconds: 70 },
+      panel: { milliseconds: 60 },
+      panelExamples: { milliseconds: 30 },
+    },
+  });
+});
+
+it('records zero milliseconds when the clock goes backwards', async ({ onTestFinished }) => {
+  const clock = { now: 0 };
+  const registry = fakeRegistry();
+
+  registry.classify.mockImplementation(async () => {
+    clock.now -= 10;
+
+    return {
+      stopReason: 'stop',
+      answers: {
+        choice: { type: 'choice', choice: 'accept', probabilities: {}, confidence: 0.9 },
+      },
+    };
+  });
+
+  registry.complete.mockImplementation(async () => {
+    clock.now -= 10;
+
+    return { stopReason: 'stop', content: [{ type: 'text', text: 'Stacked' }] };
+  });
+
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    registry,
+    now: () => clock.now,
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await pending;
+
+  const shadowDone = harness.start();
+
+  harness.saveGate.resolve(undefined);
+  await shadowDone;
+
+  expect(recordOf(harness)).toMatchObject({
+    judges: {
+      classifier: { milliseconds: 0 },
+      classifierExamples: { milliseconds: 0 },
+      panel: { milliseconds: 0 },
+      panelExamples: { milliseconds: 0 },
+    },
+  });
+});
+
 it('leaves the tool result unchanged when the save fails', async ({ onTestFinished }) => {
   const saveGate = deferred<undefined>();
 

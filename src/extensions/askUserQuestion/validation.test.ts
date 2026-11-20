@@ -30,6 +30,8 @@ it.each([
     rule: 'a choice kind with a confidence',
     questions: [{ ...layout, kind: 'choice' as const, confidence: 0.8 }],
   },
+  { rule: 'a zero confidence', questions: [{ ...layout, confidence: 0 }] },
+  { rule: 'a one confidence', questions: [{ ...layout, confidence: 1 }] },
   { rule: 'an approval kind', questions: [{ ...layout, kind: 'approval' as const }] },
   {
     rule: 'two different questions',

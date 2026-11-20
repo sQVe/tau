@@ -45,6 +45,19 @@ const otherAnswer = (time: number, label: string): PastAnswer => ({
   outcome: { kind: 'otherOption', label },
 });
 
+const withFirstOption = (
+  answer: PastAnswer,
+  change: Partial<PastAnswer['question']['options'][number]>,
+): PastAnswer => ({
+  ...answer,
+  question: {
+    ...answer.question,
+    options: answer.question.options.map((option, index) =>
+      index === 0 ? { ...option, ...change } : option,
+    ),
+  },
+});
+
 const frozenConfig = (): FrozenConfig => ({
   ...models,
   shadow: {
@@ -338,6 +351,26 @@ it.each<[string, (config: FrozenConfig) => FrozenConfig]>([
     (config) =>
       withShadow(config, {
         examples: [pastAnswer(1, 'first', 'Which database?'), pastAnswer(2, 'second')],
+      }),
+  ],
+  [
+    'example question option label',
+    (config) =>
+      withShadow(config, {
+        examples: [
+          withFirstOption(pastAnswer(1, 'first'), { label: 'Quick' }),
+          pastAnswer(2, 'second'),
+        ],
+      }),
+  ],
+  [
+    'example question option description',
+    (config) =>
+      withShadow(config, {
+        examples: [
+          withFirstOption(pastAnswer(1, 'first'), { description: 'Ship faster.' }),
+          pastAnswer(2, 'second'),
+        ],
       }),
   ],
   [
