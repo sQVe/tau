@@ -73,13 +73,12 @@ of refusing. A question in the inbox of a live architect in this checkout needs 
 
 The lead's tab is the first tab of its workspace. Once the lead starts, only the lead on the right
 and the architect on the left may use that tab. Workers open in `<lead tab>-workers`, and
-`draft_review` opens tuicr in `<caller tab>-review`. Other terminals that agents open in an existing
-workspace use `tab.new`, with one exception for `handover start`.
+`draft_review` opens tuicr in `<caller tab>-review`.
 
-`handover start` can reuse a workspace's only tab if that tab has one terminal with no app and
-`hc get` reports a foreground shell in the requested folder. It starts Pi by splitting the shell
-pane instead of opening a new tab. It closes the shell pane only if a second foreground check still
-finds a shell in that folder. A tab with a running lead does not qualify for reuse.
+When a checkout has no workspace and a handover follows, `handover start` creates the workspace with
+Pi and its task in the first tab. The operation that starts Pi also creates the workspace so the
+user sees the task in the first tab instead of an empty shell. In an existing workspace,
+`handover start` opens a new tab and leaves existing panes alone.
 
 ### Models
 
@@ -164,3 +163,15 @@ the rest and sends a note, so the lead learns the truth.
 
 Pass design rules and decisions to the lead in handover text. Rejected because the rules drift, each
 consult starts cold, and the model depends on how the session started.
+
+### Create a shell tab before starting Pi
+
+Create the workspace from the worktree skill, then open Pi in a second tab. Rejected because the
+first tab shows an empty shell instead of the task the user asked to start. The worktree skill still
+opens a plain workspace when no handover follows.
+
+### Reuse a tab that appears to hold an idle shell
+
+Split the shell pane to start Pi, then close the shell pane. Rejected because a shell can run a
+builtin while remaining the foreground program. Checking the shell name and folder again before
+closing does not show that the shell is idle. An extra tab is preferable to ending a user's command.
