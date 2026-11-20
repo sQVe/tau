@@ -8,10 +8,15 @@ import { createHcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { holdFileLock } from '../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import type { WorkerTerminalFact } from './workerFolderDecision.js';
+import type { StartingWorker } from './workerFolderDecision.js';
 import { sweepWorkerFolders } from './workerFolderSweep.js';
 
 interface HeldList {
+  called: Promise<void>;
+  release: () => void;
+}
+
+interface HeldLink {
   called: Promise<void>;
   release: () => void;
 }
@@ -109,6 +114,37 @@ const holdNextList = (hc: HcRuntime): HeldList => {
 
 const actualFsPromises = await vi.importActual<typeof fsPromises>('node:fs/promises');
 
+// Holds the first hard link, so a queued lock claim cannot publish its generation yet.
+const holdNextLink = (): HeldLink => {
+  const link = vi.mocked(fsPromises.link);
+  const original = link.getMockImplementation() ?? actualFsPromises.link;
+  const called = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  let taken = false;
+
+  link.mockImplementation(((source: string, target: string) => {
+    if (taken) {
+      return original(source, target);
+    }
+
+    taken = true;
+    called.resolve(undefined);
+
+    return released.promise.then(() => original(source, target));
+  }) as typeof fsPromises.link);
+
+  onTestFinished(() => {
+    link.mockImplementation(original);
+  });
+
+  return {
+    called: called.promise,
+    release: () => {
+      released.resolve(undefined);
+    },
+  };
+};
+
 // Resolves on the waiting sweep's read of the lock generation its holder published.
 const signalActiveGenerationRead = (agentDirectory: string): Promise<void> => {
   const path = `${sweepLockPath(agentDirectory)}.1`;
@@ -136,11 +172,12 @@ it('keeps a snapshot for a day after the follow-up that reused it ends', async (
   const snapshot = makeFolder(snapshotRoot, 'snapshot-source');
   const startedAt = Date.now();
 
-  const followUp: WorkerTerminalFact = {
+  const followUp: StartingWorker = {
     kind: 'read',
     assignmentId: 'follow-up',
     running: true,
     packageSnapshot: 'snapshot-source',
+    terminalAddress: 't-follow-up',
   };
 
   const pending: Promise<unknown>[] = [];
@@ -219,4 +256,60 @@ it('starts the unused window after a sweep waits for the lock', async () => {
   await sweep;
 
   expect(statSync(marker).mtimeMs).toBeCloseTo(now, -1);
+});
+
+it('keeps the unused window when the end sweep overtakes the launch sweep', async () => {
+  const { agentDirectory, hc, hcFake, snapshotRoot } = setup();
+  const snapshot = makeFolder(snapshotRoot, 'snapshot-source');
+  const marker = join(snapshot, unusedMarkerName);
+  const endedAt = Date.now();
+
+  const followUp: StartingWorker = {
+    kind: 'read',
+    assignmentId: 'follow-up',
+    running: true,
+    packageSnapshot: 'snapshot-source',
+    terminalAddress: 't-follow-up',
+  };
+
+  const pending: Promise<unknown>[] = [];
+
+  hcFake.reply('ls', terminalList([{ address: 't-follow-up', state: 'finished' }]));
+
+  const gate = holdNextLink();
+
+  onTestFinished(async () => {
+    gate.release();
+    await Promise.allSettled(pending);
+  });
+
+  const launchSweep = sweepWorkerFolders(hc, agentDirectory, () => endedAt + hour, [followUp]);
+
+  pending.push(launchSweep);
+
+  await gate.called;
+
+  // The end scan wins the free lock while the launch's claim is still held at its link.
+  const endSweep = sweepWorkerFolders(hc, agentDirectory, () => endedAt, []);
+
+  pending.push(endSweep);
+
+  await endSweep;
+
+  expect(existsSync(marker)).toBe(true);
+  expect(statSync(marker).mtimeMs).toBeCloseTo(endedAt, -1);
+
+  gate.release();
+
+  await launchSweep;
+
+  expect(statSync(marker).mtimeMs).toBeCloseTo(endedAt, -1);
+
+  await sweepWorkerFolders(hc, agentDirectory, () => endedAt + 24 * hour - 1000, []);
+
+  expect(existsSync(snapshot)).toBe(true);
+
+  await sweepWorkerFolders(hc, agentDirectory, () => endedAt + 24 * hour, []);
+
+  expect(existsSync(snapshot)).toBe(false);
 });

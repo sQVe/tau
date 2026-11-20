@@ -26,7 +26,7 @@ import { piPackageManager } from './piPackageManager.js';
 import { roleLaunchRefusal } from './roleLaunchRefusal.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
-import type { WorkerTerminalFact } from './workerFolderDecision.js';
+import type { StartingWorker } from './workerFolderDecision.js';
 import { sweepWorkerFolders } from './workerFolderSweep.js';
 import { workerName } from './workerName.js';
 import { placementLabels } from './workerPlacement.js';
@@ -45,7 +45,7 @@ export interface LaunchRuntime {
   admission: Admission;
   refuseCapacity?: (() => void) | undefined;
   readSkillTools?: (() => SkillTools | undefined) | undefined;
-  sweepFolders?: ((starting: WorkerTerminalFact) => Promise<unknown>) | undefined;
+  sweepFolders?: ((starting: StartingWorker) => Promise<unknown>) | undefined;
   packageManager?: (loadout: Assignment['loadout']) => WorkerPackageManager;
   buildCommand?: (
     sessionFile: string,
@@ -314,14 +314,19 @@ const startAssignmentWorker = async (
   );
 };
 
-const startFolderSweep = (runtime: LaunchRuntime, assignment: Assignment): void => {
+const startFolderSweep = (
+  runtime: LaunchRuntime,
+  assignment: Assignment,
+  terminal: HcTerminal,
+): void => {
   const snapshot = assignment.packageSnapshot;
 
-  const starting: WorkerTerminalFact = {
+  const starting: StartingWorker = {
     kind: 'read',
     assignmentId: assignment.assignmentId,
     running: true,
     packageSnapshot: snapshot === null ? null : basename(snapshot),
+    terminalAddress: terminal.address,
   };
 
   const sweep =
@@ -376,7 +381,7 @@ export const startReservedWorker = async (
     }
 
     runtime.admission.remove(assignmentId);
-    startFolderSweep(runtime, assignment);
+    startFolderSweep(runtime, assignment, terminal);
 
     const modelReason = facts.modelReason;
     const status = launchStatus(terminal, assignment.loadout.model, modelReason);

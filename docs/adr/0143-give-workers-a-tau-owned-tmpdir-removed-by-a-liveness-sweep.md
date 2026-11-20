@@ -53,10 +53,15 @@ must come from one view: a sweep that read a snapshot as unused before a launch 
 would otherwise write that stale marker back after the launch. A sweep that finds the lock held
 waits for it, because skipping its launch sweep could lose the clear. The clock is sampled once,
 after the lock is taken, so a wait never backdates a new marker. A launch does not wait: it starts
-its sweep without awaiting it. A lock failure reaches the scan's error handler or the launch's
-catch, like any other sweep failure. One race stays as a known limit: a follow-up of another manager
-that starts between its validation and the `hc` listing, on a snapshot whose marker is already older
-than 24 hours, can lose that snapshot.
+its sweep without awaiting it. A launch's sweep carries the exact terminal address of the worker it
+started. The lock does not grant claims in the order they were submitted, so an end scan can take
+the lock and write the unused marker before an earlier launch sweep runs. The launch sweep therefore
+drops its starting fact when the fresh listing or a terminal read reports that exact address as
+finished. A live worker that names the snapshot still protects it, and unread, missing, or unrelated
+evidence leaves the starting fact in place. A lock failure reaches the scan's error handler or the
+launch's catch, like any other sweep failure. One race stays as a known limit: a follow-up of
+another manager that starts between its validation and the `hc` listing, on a snapshot whose marker
+is already older than 24 hours, can lose that snapshot.
 
 The sweep fails closed. It removes nothing when the `hc` list cannot be read. When `hc get` fails
 for a live terminal, the sweep keeps every snapshot and the scratch folders that terminal may own.

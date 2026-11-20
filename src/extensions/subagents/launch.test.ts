@@ -706,6 +706,7 @@ it('returns before the sweep settles', async () => {
     assignmentId: launchedId,
     running: true,
     packageSnapshot: null,
+    terminalAddress: 't-worker',
   });
 });
 
@@ -738,6 +739,7 @@ it('passes the starting fact with the basename of the snapshot to the sweep', as
     assignmentId: assignment.assignmentId,
     running: true,
     packageSnapshot: 'source-launch',
+    terminalAddress: 't-worker',
   });
 });
 
