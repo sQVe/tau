@@ -85,25 +85,6 @@ const startArguments = (request: PiStartRequest): string[] =>
     ? tabArguments(request, request.target.space)
     : spaceArguments(request, request.target.name);
 
-const startInPane = async (
-  runtime: CommandRuntime,
-  request: PiSessionRequest,
-  pane: string,
-): Promise<string> => {
-  const reply = await runCommand(
-    runtime,
-    'herdr-app',
-    splitArguments(request, pane),
-    'herdr-app do pane.split',
-  );
-
-  const created = parseJson('herdr-app do pane.split', reply);
-
-  checkOutput('herdr-app do pane.split', splitReplySchema, created);
-
-  return reply;
-};
-
 const isDirectory = (path: string): Promise<boolean> =>
   stat(path).then(
     (stats) => stats.isDirectory(),
@@ -157,5 +138,16 @@ export const startPiSessionRightOf = async (
 ): Promise<{ reply: string }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
-  return { reply: await startInPane(runtime, request, request.pane) };
+  const reply = await runCommand(
+    runtime,
+    'herdr-app',
+    splitArguments(request, request.pane),
+    'herdr-app do pane.split',
+  );
+
+  const created = parseJson('herdr-app do pane.split', reply);
+
+  checkOutput('herdr-app do pane.split', splitReplySchema, created);
+
+  return { reply };
 };

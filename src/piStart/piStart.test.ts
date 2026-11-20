@@ -170,6 +170,29 @@ const paneRequest = (root: string) => ({
   environment: undefined,
 });
 
+it('a split Herdr reports successful stays successful when the signal aborts during the call', async () => {
+  const controller = new AbortController();
+
+  const fake = createExecFake<'split'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'split' : undefined),
+    handlerFor: () => () => {
+      controller.abort(new Error('cancelled during the split'));
+
+      return succeededResult('{"pane":"p-new","terminal":"t-new"}');
+    },
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSessionRightOf(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    paneRequest(root),
+  );
+
+  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+  expect(fake.calls).toHaveLength(1);
+});
+
 it('a right-of start in a folder that is not a Git checkout runs no command', async () => {
   const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
   const root = await createTemporaryRepository(onTestFinished);
