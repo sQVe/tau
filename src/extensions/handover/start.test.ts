@@ -3,20 +3,15 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { argumentAfter } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { createHcFake } from '../../../tests/hcFake.js';
-import type { HcFake } from '../../../tests/hcFake.js';
 import { createHerdrAppFake } from '../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import type { Exec } from '../../command.js';
+import type { PiStartTarget } from '../../piStart/piStart.js';
 import { startHandover } from './start.js';
-import type { StartHandoverRequest, StartHandoverTarget } from './start.js';
-
-const emptyLayout = JSON.stringify({ spaces: [] });
-
-const createAppFake = (): ExecFake<HerdrAppCommand> => createHerdrAppFake({ layout: emptyLayout });
+import type { StartHandoverRequest } from './start.js';
 
 const runtimeOf = (fake: ExecFake<HerdrAppCommand>, cwd: string) => ({
   exec: fake.exec,
@@ -33,11 +28,7 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const requestFor = (
-  root: string,
-  file: string,
-  target: StartHandoverTarget,
-): StartHandoverRequest => ({
+const requestFor = (root: string, file: string, target: PiStartTarget): StartHandoverRequest => ({
   cwd: root,
   file,
   folder: root,
@@ -50,7 +41,7 @@ const commandsOf = (fake: ExecFake<HerdrAppCommand>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
 
 it('opens a tab in the space with the file text as its task', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
@@ -62,10 +53,6 @@ it('opens a tab in the space with the file text as its task', async () => {
   expect(result).toEqual({ reply: '{"ok":true}' });
 
   expect(commandsOf(fake)).toEqual([
-    {
-      command: 'herdr-app',
-      commandArguments: ['ls'],
-    },
     {
       command: 'herdr-app',
       commandArguments: [
@@ -86,8 +73,8 @@ it('opens a tab in the space with the file text as its task', async () => {
   ]);
 });
 
-it('opens a new space with a tab when no space is given', async () => {
-  const fake = createAppFake();
+it('opens a new space with Pi in its only tab', async () => {
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
@@ -114,131 +101,26 @@ it('opens a new space with a tab when no space is given', async () => {
   ]);
 });
 
-const shellLayout = JSON.stringify({
-  spaces: [
-    {
-      id: 'space-1',
-      tabs: [{ terminals: [{ terminal: 't-shell', pane: 'p-shell', app: null }] }],
-    },
-  ],
-});
-
-const shellAppFake = (): ExecFake<HerdrAppCommand> => createHerdrAppFake({ layout: shellLayout });
-
-const routedExec =
-  (app: ExecFake<HerdrAppCommand>, hc: HcFake): Exec =>
-  (command, commandArguments, options) =>
-    command === 'herdr-app'
-      ? app.exec(command, commandArguments, options)
-      : hc.exec(command, commandArguments, options);
-
-const appSteps = (app: ExecFake<HerdrAppCommand>): string[] =>
-  app.calls.map(({ commandArguments }) => commandArguments[1] ?? commandArguments[0] ?? '');
-
-const abortingHcExec =
-  (app: ExecFake<HerdrAppCommand>, controller: AbortController): Exec =>
-  (command, commandArguments, options) => {
-    if (command === 'hc') {
-      controller.abort();
-
-      return Promise.reject(
-        Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }),
-      );
-    }
-
-    return app.exec(command, commandArguments, options);
-  };
-
-it('a space start reads the shell foreground with hc get and takes over the tab', async () => {
-  const app = shellAppFake();
-  const hc = createHcFake();
+it.each([
+  { label: 'a task that begins with ---', task: '---\nlead: task\n' },
+  { label: 'a task that begins with --help', task: '--help\n' },
+  { label: 'a task that begins with @', task: '@file\n' },
+  { label: 'a task at the handover byte limit', task: 'x'.repeat(102_400) },
+])('passes $label after --task unchanged', async ({ task }) => {
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
+  const file = await writeHandover(root, task);
 
-  hc.replyGet(
-    't-shell',
-    JSON.stringify({
-      address: 't-shell',
-      state: 'live',
-      foreground: { pid: 1, name: 'zsh', argv: ['zsh'], cwd: root },
-    }),
-  );
+  await startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' }));
 
-  const result = await startHandover(
-    { exec: routedExec(app, hc), cwd: root },
-    requestFor(root, file, { space: 'space-1' }),
-  );
+  const [launch] = fake.calls;
 
-  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
-
-  expect(app.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0])).toEqual([
-    'ls',
-    'pane.split',
-    'pane.close',
-  ]);
-
-  expect(hc.calls.map((call) => call.commandArguments)).toEqual([
-    ['get', '--json', '--', 't-shell'],
-    ['get', '--json', '--', 't-shell'],
-  ]);
-});
-
-it('a terminal hc get reports missing still opens a tab', async () => {
-  const app = shellAppFake();
-  const hc = createHcFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  hc.fail(
-    'get',
-    JSON.stringify({ error: { kind: 'not_found', message: 'terminal t-shell is gone' } }),
-    3,
-  );
-
-  const result = await startHandover(
-    { exec: routedExec(app, hc), cwd: root },
-    requestFor(root, file, { space: 'space-1' }),
-  );
-
-  expect(result).toEqual({ reply: '{"ok":true}' });
-  expect(appSteps(app)).toEqual(['ls', 'tab.new']);
-});
-
-it('a failed hc get stops the start instead of opening a tab', async () => {
-  const app = shellAppFake();
-  const hc = createHcFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  hc.fail('get', JSON.stringify({ error: { kind: 'failed', message: 'hc is unreachable' } }), 1);
-
-  await expect(
-    startHandover(
-      { exec: routedExec(app, hc), cwd: root },
-      requestFor(root, file, { space: 'space-1' }),
-    ),
-  ).rejects.toThrow(/hc is unreachable/);
-
-  expect(appSteps(app)).toEqual(['ls']);
-});
-
-it('a cancelled hc get stops the start instead of opening a tab', async () => {
-  const app = shellAppFake();
-  const controller = new AbortController();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  const failure = await startHandover(
-    { exec: abortingHcExec(app, controller), cwd: root, signal: controller.signal },
-    requestFor(root, file, { space: 'space-1' }),
-  ).catch((error: unknown) => error);
-
-  expect(failure).toMatchObject({ name: 'HcError', kind: 'aborted' });
-  expect(appSteps(app)).toEqual(['ls']);
+  expect(argumentAfter(launch?.commandArguments ?? [], '--argv')).toBe('["pi"]');
+  expect(argumentAfter(launch?.commandArguments ?? [], '--task')).toBe(task);
 });
 
 it('refuses a file outside .tau/handovers before any herdr-app call', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = join(root, 'message.md');
 
@@ -246,13 +128,13 @@ it('refuses a file outside .tau/handovers before any herdr-app call', async () =
 
   await expect(
     startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' })),
-  ).rejects.toThrow(/outside the .tau\/handovers directory/);
+  ).rejects.toThrow(/outside the \.tau\/handovers directory/);
 
   expect(fake.calls).toEqual([]);
 });
 
 it('refuses an empty file before any herdr-app call', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, '');
 
@@ -264,7 +146,7 @@ it('refuses an empty file before any herdr-app call', async () => {
 });
 
 it('refuses a handover too large for one command argument before any herdr-app call', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'x'.repeat(102_401));
 
@@ -276,7 +158,7 @@ it('refuses a handover too large for one command argument before any herdr-app c
 });
 
 it('refuses a folder that is not a Git checkout before any herdr-app call', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
   const folder = temporaryDirectory(onTestFinished, 'tau-start-');
@@ -292,7 +174,7 @@ it('refuses a folder that is not a Git checkout before any herdr-app call', asyn
 });
 
 it('runs nothing when the signal is already aborted', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
   const controller = new AbortController();

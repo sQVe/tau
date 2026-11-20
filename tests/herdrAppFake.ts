@@ -1,13 +1,7 @@
 import { createExecFake, succeededResult } from './execFake.js';
 import type { ExecFake } from './execFake.js';
 
-export type HerdrAppCommand =
-  | 'ls'
-  | 'pane.close'
-  | 'pane.split'
-  | 'pane.swap'
-  | 'space.new'
-  | 'tab.new';
+export type HerdrAppCommand = 'ls' | 'pane.split' | 'pane.swap' | 'space.new' | 'tab.new';
 
 export interface HerdrAppReplies {
   layout?: string;
@@ -20,7 +14,6 @@ const defaultSplit = JSON.stringify({ pane: 'p-new', terminal: 't-new' });
 
 const commands = new Set<HerdrAppCommand>([
   'ls',
-  'pane.close',
   'pane.split',
   'pane.swap',
   'space.new',

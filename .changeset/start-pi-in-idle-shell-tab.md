@@ -2,10 +2,5 @@
 'tau': patch
 ---
 
-`handover start` takes over a space's idle shell tab instead of opening another tab. When the space
-has one tab with one idle shell in the request's folder, Pi starts by splitting that shell's pane
-and then closing the shell. The shell closes only when `hc get` still reports a shell in that folder
-after the split. Every other case opens a tab as before.
-
-The worktree skill leaves space creation to `handover start` when a handover follows, so the space
-starts with Pi as its first tab.
+`handover start` creates a new space with Pi in its first and only tab. In an existing space it
+opens a new tab and leaves every existing pane alone.

@@ -385,9 +385,7 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const emptyLayout = JSON.stringify({ spaces: [] });
-
-const createAppFake = (): ExecFake<HerdrAppCommand> => createHerdrAppFake({ layout: emptyLayout });
+const createAppFake = (): ExecFake<HerdrAppCommand> => createHerdrAppFake();
 
 const createStartTool = (app: ExecFake<HerdrAppCommand>) =>
   createHandoverTool({ exec: app.exec, connect: createHcFake().connect, cwd: '/repository' });
@@ -452,7 +450,6 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
   expect(result.details).toEqual({ reply: '{"ok":true}' });
 
   expect(app.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0])).toEqual([
-    'ls',
     'tab.new',
   ]);
 });

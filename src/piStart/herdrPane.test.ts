@@ -15,7 +15,6 @@ const layoutOf = (stdout: string) => {
 const layout = JSON.stringify({
   spaces: [
     {
-      id: 'space-1',
       tabs: [
         { terminals: [{ terminal: 't1', pane: 'p1' }] },
         {
@@ -26,7 +25,7 @@ const layout = JSON.stringify({
         },
       ],
     },
-    { id: 'space-2', tabs: [{ terminals: [{ terminal: 't4', pane: 'p4' }] }] },
+    { tabs: [{ terminals: [{ terminal: 't4', pane: 'p4' }] }] },
   ],
 });
 
@@ -45,22 +44,6 @@ it.each([
 
 it('a layout of the wrong shape is refused', async () => {
   const { runtime } = layoutOf('{"spaces":"none"}');
-
-  await expect(findPane(runtime, 't1')).rejects.toThrow('herdr-app ls printed unexpected output');
-});
-
-it('refuses a space without a string id', async () => {
-  const { runtime } = layoutOf(JSON.stringify({ spaces: [{ tabs: [] }] }));
-
-  await expect(findPane(runtime, 't1')).rejects.toThrow('herdr-app ls printed unexpected output');
-});
-
-it('refuses a terminal whose app has the wrong type', async () => {
-  const { runtime } = layoutOf(
-    JSON.stringify({
-      spaces: [{ id: 'space-1', tabs: [{ terminals: [{ terminal: 't1', app: 1 }] }] }],
-    }),
-  );
 
   await expect(findPane(runtime, 't1')).rejects.toThrow('herdr-app ls printed unexpected output');
 });

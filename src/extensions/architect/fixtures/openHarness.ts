@@ -41,7 +41,6 @@ const appFake = (): ExecFake<AppKey> =>
           JSON.stringify({
             spaces: [
               {
-                id: 'space-1',
                 tabs: [
                   {
                     terminals: [

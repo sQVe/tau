@@ -205,7 +205,6 @@ const pureModules = [
   'src/instructions/syncRecord.ts',
   'src/linear/descriptionMatch.ts',
   'src/linear/ownership.ts',
-  'src/piStart/idleShellDecision.ts',
   'src/process/stateDecision.ts',
   'src/reviewBots/reviewBotDecisions.ts',
   'src/reviewCapture/chainSelectionDecision.ts',
