@@ -7,6 +7,7 @@ import { Value } from 'typebox/value';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { installCommandShim, logCommandCalls } from '../../../tests/commandShimFake.js';
+import { argumentAfter } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
@@ -385,13 +386,8 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const createAppFake = (): ExecFake<HerdrAppCommand> => createHerdrAppFake();
-
 const createStartTool = (app: ExecFake<HerdrAppCommand>) =>
   createHandoverTool({ exec: app.exec, connect: createHcFake().connect, cwd: '/repository' });
-
-const argvOf = ({ commandArguments }: { commandArguments: string[] }) =>
-  commandArguments[commandArguments.indexOf('--argv') + 1];
 
 const modelContext = (
   root: string,
@@ -437,7 +433,7 @@ it('refuses an already-aborted send before any hc call', async () => {
 it('starts a tab in a space and returns the herdr-app reply', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   const result = await createStartTool(app).execute(
     'call',
@@ -448,16 +444,18 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
   );
 
   expect(result.details).toEqual({ reply: '{"ok":true}' });
+  expect(app.calls).toHaveLength(1);
 
-  expect(app.calls.map((call) => call.commandArguments[1] ?? call.commandArguments[0])).toEqual([
-    'tab.new',
-  ]);
+  const [launch] = app.calls;
+
+  expect(argumentAfter(launch?.commandArguments ?? [], '--space')).toBe('space-1');
+  expect(argumentAfter(launch?.commandArguments ?? [], '--folder')).toBe(root);
 });
 
 it('starts a tab from a real bare repository root', async () => {
   const root = await createTemporaryBareRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   const result = await createStartTool(app).execute(
     'call',
@@ -477,7 +475,7 @@ const countBareProbes = (calls: string): number =>
 it('starts from a repository with a .git entry without asking Git whether it is bare', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
   const logPath = join(temporaryDirectory(onTestFinished, 'tau-handover-git-calls-'), 'calls.log');
 
   await writeFile(logPath, '');
@@ -502,7 +500,7 @@ it('starts from a repository with a .git entry without asking Git whether it is 
 it('passes the model to the new Pi through herdr-app', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   await createStartTool(app).execute(
     'call',
@@ -518,18 +516,20 @@ it('passes the model to the new Pi through herdr-app', async () => {
     modelContext(root, onTestFinished),
   );
 
-  const launchArgvs = app.calls
-    .filter(({ commandArguments }) => commandArguments.includes('--argv'))
-    .map(argvOf);
+  expect(app.calls).toHaveLength(1);
 
-  expect(launchArgvs).toEqual(['["pi","--provider","morph","--model","morph-dsv41flash-1017"]']);
+  const [launch] = app.calls;
+
+  expect(argumentAfter(launch?.commandArguments ?? [], '--argv')).toBe(
+    '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
+  );
 });
 
 it('refuses a regular file as the start folder before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
   const folder = join(root, 'folder-file');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   await writeFile(folder, 'not a directory\n');
 
@@ -549,7 +549,7 @@ it('refuses a regular file as the start folder before any herdr-app call', async
 it('refuses a start without a space or name before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   const execution = createStartTool(app).execute(
     'call',
@@ -570,7 +570,7 @@ it.each([
 ])('refuses a start with $name before any herdr-app call', async ({ folder }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   const execution = createStartTool(app).execute(
     'call',
@@ -588,7 +588,7 @@ it.each([
 it('refuses a malformed start model before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   const execution = createStartTool(app).execute(
     'call',
@@ -606,7 +606,7 @@ it('refuses a malformed start model before any herdr-app call', async () => {
 it('refuses a start model outside allowedModels before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   await mkdir(join(root, '.pi'), { recursive: true });
 
@@ -686,7 +686,7 @@ it('refuses final outside send', async () => {
 it('refuses an already-aborted start before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const app = createAppFake();
+  const app = createHerdrAppFake();
 
   const execution = createStartTool(app).execute(
     'call',

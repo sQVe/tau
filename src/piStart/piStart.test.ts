@@ -130,7 +130,10 @@ it('a left-of start splits right with the task in the argv, then swaps the new p
 });
 
 it('a pane split reply without a pane ends the start before the swap', async () => {
-  const fake = createHerdrAppFake({ split: '{"terminal":"t-new"}' });
+  const fake = createHerdrAppFake();
+
+  fake.overrideOutput('pane.split', '{"terminal":"t-new"}');
+
   const root = await createTemporaryRepository(onTestFinished);
 
   await expect(

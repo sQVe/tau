@@ -11,11 +11,8 @@ import type {
   HcWaitResult,
 } from './replies.js';
 
-export interface HcRuntime {
-  exec: Exec;
+export interface HcRuntime extends CommandRuntime {
   connect: Connect;
-  cwd: string;
-  signal?: AbortSignal | undefined;
 }
 
 export interface RunRequest {

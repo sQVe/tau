@@ -3,9 +3,7 @@ import type { ExecFake } from './execFake.js';
 
 export type HerdrAppCommand = 'ls' | 'pane.split' | 'pane.swap' | 'space.new' | 'tab.new';
 
-export interface HerdrAppReplies {
-  layout?: string;
-  split?: string;
+export interface HerdrAppFakeOptions {
   beforeReply?: (key: HerdrAppCommand) => void;
 }
 
@@ -44,24 +42,24 @@ const commandOf = (
   return isHerdrAppCommand(name) ? name : undefined;
 };
 
-const replyFor = (key: HerdrAppCommand, replies: HerdrAppReplies): string => {
+const replyFor = (key: HerdrAppCommand): string => {
   if (key === 'ls') {
-    return replies.layout ?? emptyLayout;
+    return emptyLayout;
   }
 
   if (key === 'pane.split') {
-    return replies.split ?? defaultSplit;
+    return defaultSplit;
   }
 
   return '{"ok":true}';
 };
 
-export const createHerdrAppFake = (replies: HerdrAppReplies = {}): ExecFake<HerdrAppCommand> =>
+export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<HerdrAppCommand> =>
   createExecFake<HerdrAppCommand>({
     keyOf: commandOf,
     handlerFor: (key) => () => {
-      replies.beforeReply?.(key);
+      options.beforeReply?.(key);
 
-      return succeededResult(replyFor(key, replies));
+      return succeededResult(replyFor(key));
     },
   });

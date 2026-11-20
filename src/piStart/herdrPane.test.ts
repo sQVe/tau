@@ -1,13 +1,12 @@
 import { expect, it } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../tests/execFake.js';
+import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
 import { findPane } from './herdrPane.js';
 
 const layoutOf = (stdout: string) => {
-  const fake = createExecFake<'app'>({
-    keyOf: (command) => (command === 'herdr-app' ? 'app' : undefined),
-    handlerFor: () => () => succeededResult(stdout),
-  });
+  const fake = createHerdrAppFake();
+
+  fake.overrideOutput('ls', stdout);
 
   return { fake, runtime: { exec: fake.exec, cwd: '/tmp' } };
 };
