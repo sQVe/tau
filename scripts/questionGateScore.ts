@@ -2,8 +2,14 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 
-import { contentText } from '@earendil-works/pi-ai';
-import { getAgentDir, ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
+import { contentText, retryAssistantCall } from '@earendil-works/pi-ai';
+import type { RetryPolicy } from '@earendil-works/pi-ai';
+import {
+  getAgentDir,
+  ModelRegistry,
+  ModelRuntime,
+  SettingsManager,
+} from '@earendil-works/pi-coding-agent';
 
 import { classifyChoice } from '../src/classifier/classifier.ts';
 import { userConfigPath } from '../src/config/config.ts';
@@ -21,8 +27,17 @@ import type {
 } from '../src/questionGate/questionGate.ts';
 import { questionLogReader } from './questionGateScore/questionGateScoreLog.ts';
 import type { LoggedQuestion, SessionLog } from './questionGateScore/questionGateScoreLog.ts';
-import { formatScoreReport, scoreReport } from './questionGateScore/questionGateScoreReport.ts';
-import type { JudgeVariant, ScoreItem } from './questionGateScore/questionGateScoreReport.ts';
+import {
+  formatPanelMemberErrors,
+  formatScoreReport,
+  panelMemberErrorCounts,
+  scoreReport,
+} from './questionGateScore/questionGateScoreReport.ts';
+import type {
+  JudgeVariant,
+  PanelMemberError,
+  ScoreItem,
+} from './questionGateScore/questionGateScoreReport.ts';
 import { parseTime, readInTurn } from './tokenUsage.ts';
 
 export interface ScoreArguments {
@@ -40,6 +55,11 @@ interface ScoredQuestion {
 interface Judges {
   classify: ClassifyQuestion;
   members: [PanelMember, PanelMember, PanelMember];
+}
+
+export interface PanelMemberDiagnostics {
+  retry: RetryPolicy;
+  recordError: (message: string) => void;
 }
 
 const usage =
@@ -79,7 +99,11 @@ export const parseScoreArguments = (argv: string[], now: number): ScoreArguments
   return { since, until, limit, holdout };
 };
 
-export const panelMember = (registry: ModelRegistry, reference: string): PanelMember => {
+export const panelMember = (
+  registry: ModelRegistry,
+  reference: string,
+  diagnostics: PanelMemberDiagnostics,
+): PanelMember => {
   return async (prompt, signal) => {
     const parsed = parseModelReference(reference);
 
@@ -95,22 +119,48 @@ export const panelMember = (registry: ModelRegistry, reference: string): PanelMe
     }
 
     try {
-      const reply = await registry.complete(
-        model,
-        {
-          systemPrompt: prompt.system,
-          messages: [{ role: 'user', content: prompt.user, timestamp: Date.now() }],
-        },
-        { signal },
+      const reply = await retryAssistantCall(
+        () =>
+          registry.complete(
+            model,
+            {
+              systemPrompt: prompt.system,
+              messages: [{ role: 'user', content: prompt.user, timestamp: Date.now() }],
+            },
+            { signal },
+          ),
+        diagnostics.retry,
+        signal,
       );
 
-      return reply.stopReason === 'stop'
-        ? { kind: 'replied', text: contentText(reply.content).trim() }
-        : { kind: 'error' };
-    } catch {
+      if (reply.stopReason === 'stop') {
+        return { kind: 'replied', text: contentText(reply.content).trim() };
+      }
+
+      if (reply.stopReason !== 'aborted') {
+        diagnostics.recordError(reply.errorMessage ?? reply.stopReason);
+      }
+
+      return { kind: 'error' };
+    } catch (error) {
+      if (!signal.aborted) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        diagnostics.recordError(message);
+      }
+
       return { kind: 'error' };
     }
   };
+};
+
+export const writePanelMemberErrors = (
+  errors: readonly PanelMemberError[],
+  write: (line: string) => void,
+): void => {
+  for (const line of formatPanelMemberErrors(panelMemberErrorCounts(errors))) {
+    write(line);
+  }
 };
 
 const inWindow = (time: number, args: ScoreArguments): boolean => {
@@ -231,16 +281,29 @@ const readSession = async (path: string): Promise<SessionLog | undefined> => {
   }
 };
 
-const buildJudges = (registry: ModelRegistry, models: QuestionGateModels): Judges => {
+const buildJudges = (
+  registry: ModelRegistry,
+  models: QuestionGateModels,
+  retry: RetryPolicy,
+  recordError: (model: string, message: string) => void,
+): Judges => {
   const classify: ClassifyQuestion = (state, question, signal) =>
     classifyChoice({ modelRegistry: registry }, models.classifier, state, question, signal);
 
   const [first, second, third] = models.panel;
 
+  const memberFor = (reference: string): PanelMember =>
+    panelMember(registry, reference, {
+      retry,
+      recordError: (message) => {
+        recordError(reference, message);
+      },
+    });
+
   const members: [PanelMember, PanelMember, PanelMember] = [
-    panelMember(registry, first),
-    panelMember(registry, second),
-    panelMember(registry, third),
+    memberFor(first),
+    memberFor(second),
+    memberFor(third),
   ];
 
   return { classify, members };
@@ -285,8 +348,22 @@ const main = async () => {
 
   const runtime = await ModelRuntime.create({});
   const registry = new ModelRegistry(runtime);
-  const judges = buildJudges(registry, models);
+
+  const retry = SettingsManager.create(process.cwd(), agentDirectory, {
+    projectTrusted: false,
+  }).getRetrySettings();
+
+  const panelErrors: PanelMemberError[] = [];
+
+  const judges = buildJudges(registry, models, retry, (model, message) =>
+    panelErrors.push({ model, message }),
+  );
+
   const items = await judgeAll(judges, scored, answersByCallTime(log.questions));
+
+  writePanelMemberErrors(panelErrors, (line) => {
+    process.stderr.write(`${line}\n`);
+  });
 
   process.stdout.write(formatScoreReport(scoreReport({ models, skipped: log.skipped, items })));
 };

@@ -3,13 +3,16 @@ import { expect, it } from 'vitest';
 import type { JudgeVerdict, PastOutcome } from '../src/questionGate/questionGate.ts';
 import type { SkippedQuestions } from './questionGateScore/questionGateScoreLog.ts';
 import {
+  formatPanelMemberErrors,
   formatScoreReport,
+  panelMemberErrorCounts,
   scoreCutoffs,
   scoreReport,
   wilsonLowerBound,
 } from './questionGateScore/questionGateScoreReport.ts';
 import type {
   JudgeVariant,
+  PanelMemberError,
   ScoreInput,
   ScoreItem,
   ScoreReport,
@@ -162,4 +165,35 @@ it('prints one section per variant with decide share and agreement at every cuto
 
   expect(text).toContain('decide share');
   expect(text).toContain('agreement');
+});
+
+const panelError = (model: string, message: string): PanelMemberError => ({ model, message });
+
+it('prints one line per model with its error count and first message', () => {
+  const errors = [
+    panelError('openai/one', 'OpenAI API error (429): rate limit exceeded'),
+    panelError('openai/two', 'Our servers are currently overloaded.'),
+    panelError('openai/one', 'a later message is not shown'),
+  ];
+
+  expect(formatPanelMemberErrors(panelMemberErrorCounts(errors))).toEqual([
+    'Panel member errors: openai/one: 2 errors, first: OpenAI API error (429): rate limit exceeded',
+    'Panel member errors: openai/two: 1 error, first: Our servers are currently overloaded.',
+  ]);
+});
+
+it('prints none when no panel member errored', () => {
+  expect(formatPanelMemberErrors(panelMemberErrorCounts([]))).toEqual([
+    'Panel member errors: none',
+  ]);
+});
+
+it('cuts a long first message to one line', () => {
+  const message = 'x'.repeat(500);
+
+  const [line] = formatPanelMemberErrors(
+    panelMemberErrorCounts([panelError('openai/one', message)]),
+  );
+
+  expect(line).toBe(`Panel member errors: openai/one: 1 error, first: ${'x'.repeat(200)}...`);
 });

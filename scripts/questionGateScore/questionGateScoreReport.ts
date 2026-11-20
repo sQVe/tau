@@ -53,6 +53,17 @@ export interface ScoreReport {
   variants: VariantScore[];
 }
 
+export interface PanelMemberError {
+  model: string;
+  message: string;
+}
+
+export interface PanelMemberErrorCount {
+  model: string;
+  errors: number;
+  firstMessage: string;
+}
+
 const judgeVariants: readonly JudgeVariant[] = [
   'classifier',
   'classifierExamples',
@@ -251,6 +262,42 @@ const modelsLine = (models: QuestionGateModels): string =>
 
 const explorationLine =
   'Exploration only: past logs lack question kind and full context. This sets no launch cutoff.';
+
+const panelMessageLimit = 200;
+
+const shortMessage = (message: string): string =>
+  message.length <= panelMessageLimit ? message : `${message.slice(0, panelMessageLimit)}...`;
+
+export const panelMemberErrorCounts = (
+  errors: readonly PanelMemberError[],
+): PanelMemberErrorCount[] => {
+  const counts = new Map<string, PanelMemberErrorCount>();
+
+  for (const { model, message } of errors) {
+    const known = counts.get(model);
+
+    if (known === undefined) {
+      counts.set(model, { model, errors: 1, firstMessage: shortMessage(message) });
+    } else {
+      known.errors += 1;
+    }
+  }
+
+  return [...counts.values()];
+};
+
+const errorWord = (count: number): string => (count === 1 ? 'error' : 'errors');
+
+export const formatPanelMemberErrors = (counts: readonly PanelMemberErrorCount[]): string[] => {
+  if (counts.length === 0) {
+    return ['Panel member errors: none'];
+  }
+
+  return counts.map(
+    (count) =>
+      `Panel member errors: ${count.model}: ${count.errors} ${errorWord(count.errors)}, first: ${count.firstMessage}`,
+  );
+};
 
 const limitationLine =
   'Older logs cannot tell a click from typed text that equals an exact option label, so a typed miss can count as a pick.';
