@@ -117,7 +117,26 @@ it('gives examples from answers outside the window and from groups it does not s
   );
 
   expect(examples).toEqual([
-    { time: hour, question: 'old answer', outcome: { kind: 'otherOption', label: 'No' } },
-    { time: 3 * hour, question: 'unscored answer', outcome: { kind: 'typed', text: 'Custom' } },
+    { time: 2 * hour, question: 'old answer', outcome: { kind: 'otherOption', label: 'No' } },
+    { time: 4 * hour, question: 'unscored answer', outcome: { kind: 'typed', text: 'Custom' } },
   ]);
+});
+
+it('leaves out an answer written after the scored question was asked', () => {
+  const records = [
+    logged('/logs/alpha.jsonl', hour, 5 * hour, 'answered later'),
+    logged('/logs/gamma.jsonl', 3 * hour, 6 * hour, 'asked during'),
+    logged('/logs/delta.jsonl', 7 * hour, 8 * hour, 'asked after'),
+  ];
+
+  const prepared = prepareScoreQuestions(records, selection({ since: 0 }));
+
+  const examplesOf = (question: string) => {
+    const found = prepared.find((item) => item.question.question === question);
+
+    return found?.examples.map((example) => example.question.question);
+  };
+
+  expect(examplesOf('asked during')).toEqual([]);
+  expect(examplesOf('asked after')).toEqual(['answered later', 'asked during']);
 });

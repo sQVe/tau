@@ -73,7 +73,7 @@ const isHeldOut = (session: string, holdout: number): boolean => {
 };
 
 const pastAnswer = (question: LoggedQuestion): PastAnswer => ({
-  time: question.askedAt,
+  time: question.answeredAt,
   question: question.question,
   outcome: question.outcome,
 });
