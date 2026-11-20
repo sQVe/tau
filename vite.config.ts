@@ -173,20 +173,19 @@ export default defineConfig({
       GIT_COMMITTER_DATE: '2005-04-07T22:13:13Z',
       TZ: 'UTC',
     },
-    // tests/lint.test.ts writes probe folders under src/ while other projects collect their tests.
     projects: testProjects.map(({ name, include, exclude, globalSetup }) => ({
       extends: true,
       test: {
         name,
         include,
-        exclude: [...exclude, '**/tau-lint-*/**'],
+        exclude,
         ...(globalSetup === undefined ? {} : { globalSetup }),
       },
     })),
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['**/*.test.ts', '**/fixtures/**', 'src/tau.ts'],
+      exclude: ['**/*.test.ts', '**/fixtures/**', 'src/tau/tau.ts'],
     },
   },
   lint: {

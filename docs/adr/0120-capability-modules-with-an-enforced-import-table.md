@@ -92,11 +92,15 @@ to the table updates the list in the same commit until the mirror ends.
 ### Tau's structure
 
 - Feature code stays in `src/extensions/<feature>/`.
-- Shared modules never import extensions, and no module imports `src/tau.ts`. Extensions import
-  shared modules and never import each other.
-- `src/tau.ts` is the package entry and installs every extension. `package.json` points
-  `pi.extensions` at that file, because Pi loads every `.ts` file of a folder it scans. `src/` has
-  no `index.*` files and no barrel files.
+- Shared modules never import extensions, and no module imports `src/tau.ts` or `src/tau/tau.ts`.
+  Extensions import shared modules and never import each other.
+- `src/tau.ts` is the package entry and selects the registration. `package.json` points
+  `pi.extensions` at that file, because Pi loads every `.ts` file of a folder it scans. The entry
+  imports `src/tau/tau.ts`, which installs every extension, so only the entry may import the
+  registration owner and only the registration owner may import extensions. The `tau` module has no
+  import-table row. `src/tau/tauSelection.ts` picks the artifact or the source registration,
+  `src/tau/tauArtifact.ts` holds the artifact key and path, and `src/tau/tau.ts` registers the
+  extensions. `src/` has no `index.*` files and no barrel files.
 - `src/extensions/` and `src/skills/` group files and are not modules.
 - Other modules import a folder module through its entry file. A module may list extra public files
   in `stomme.toml`. An `eslint/no-restricted-imports` override in `vite.config.ts` lists Tau's extra

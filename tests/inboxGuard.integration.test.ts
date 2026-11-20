@@ -9,7 +9,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { terminalTypingReason } from '../src/extensions/inbox/guard.js';
 import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
 import { skillTools } from '../src/skillTools.js';
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { installHcCommand } from './hcCommandHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
@@ -86,7 +86,7 @@ const bashResult = async (command: string) => {
     agentDirectory: directory,
     providers: [provider],
     tools: ['bash'],
-    extensionFactories: [tauExtension],
+    extensionFactories: [tauRegistration],
   });
 
   const results: { isError: boolean; text: string }[] = [];

@@ -4,7 +4,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { notifyOnce } from '../src/config/config.js';
 import type { ConfigWarnings } from '../src/config/config.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
 
 // Every feature may report config notices in its own session_start handler, so Tau must forget the
@@ -14,7 +14,7 @@ it('forgets config notices in the first session_start handler after the session 
 
   // No session starts, so no session_shutdown releases the inbox that loading Tau claims.
   onTestFinished(releaseRegistration);
-  await tauExtension(fake.pi);
+  await tauRegistration(fake.pi);
 
   const notify = vi.fn<ConfigWarnings['notify']>();
   const ui: ConfigWarnings = { notify };

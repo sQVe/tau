@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { appendFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { appendFile, readdir, rm } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -11,6 +11,7 @@ import { targetArguments } from '../src/extensions/tdd/runner/nextestArguments.j
 import tddExtension from '../src/extensions/tdd/tdd.js';
 import type { ObservationResult } from '../src/extensions/tdd/types.js';
 import { fakeExtensionApi } from './extensionApi.js';
+import { writeFileMap } from './fileMap.js';
 import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 export interface NextestToolResult {
@@ -36,18 +37,6 @@ export interface NextestTool {
 
 export const nextestConfig = JSON.stringify({ tdd: { runner: 'nextest' } });
 
-export const writeFiles = async (
-  directory: string,
-  files: Record<string, string>,
-): Promise<void> => {
-  for (const [path, content] of Object.entries(files)) {
-    const target = join(directory, path);
-
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, content);
-  }
-};
-
 export const createCrate = async (
   cleanup: Parameters<typeof temporaryDirectory>[0],
   name: string,
@@ -55,7 +44,7 @@ export const createCrate = async (
 ): Promise<string> => {
   const directory = temporaryDirectory(cleanup, `tau-nextest-${name}-`);
 
-  await writeFiles(directory, files);
+  await writeFileMap(directory, files);
 
   return directory;
 };

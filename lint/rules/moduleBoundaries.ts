@@ -149,7 +149,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'shell', entry: 'shell', publicFiles: [] },
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
   { name: 'tabName', entry: 'tabName', publicFiles: [] },
-  { name: 'tau', entry: 'tau', publicFiles: [] },
+  { name: 'tau', entry: 'tau/tau', publicFiles: ['tau/tauArtifact', 'tau/tauSelection'] },
   { name: 'tauDirectory', entry: 'tauDirectory', publicFiles: [] },
   {
     name: 'verification',
@@ -159,8 +159,8 @@ export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'wake', entry: 'wake/wake', publicFiles: [] },
 ];
 
-// The shared modules each module may import, one row per module. src/tau.ts is the composition
-// root and has no row.
+// The shared modules each module may import, one row per module. src/tau/tau.ts is the
+// composition root and has no row.
 export const importTable: Readonly<Record<string, readonly string[]>> = {
   checkRecord: ['errors', 'git', 'record'],
   classifier: ['config'],
@@ -254,9 +254,28 @@ const extensionOf = (segments: string[]): string | undefined => {
   return segments.length === 2 ? name.split('.')[0] : name;
 };
 
-// src/tau.ts loads every extension, so importing it crosses every boundary at once.
-const isCompositionRoot = (segments: string[]): boolean =>
+// src/tau/tau.ts loads every extension, so importing it crosses every boundary at once. The
+// package entry may import it, because that is how Pi reaches the registration.
+const isRegistrationOwner = (segments: string[]): boolean =>
+  segments.length === 2 && segments[0] === 'tau' && withoutExtension(segments[1] ?? '') === 'tau';
+
+const isPackageEntry = (segments: string[]): boolean =>
   segments.length === 1 && withoutExtension(segments[0] ?? '') === 'tau';
+
+const isTestFile = (segments: string[]): boolean => (segments.at(-1) ?? '').endsWith('.test.ts');
+
+const crossesEveryBoundary = (segments: string[]): boolean =>
+  isPackageEntry(segments) || isRegistrationOwner(segments);
+
+// The artifact path is a content hash, so only the loader may import it through a computed path.
+const isTauLoader = (segments: string[]): boolean =>
+  segments.length === 2 &&
+  segments[0] === 'tau' &&
+  withoutExtension(segments[1] ?? '') === 'tauSelection';
+
+// The package entry reaches the registration owner, and only the package entry may.
+const isRegistrationEntry = (source: string[], target: string[]): boolean =>
+  isPackageEntry(source) && isRegistrationOwner(target);
 
 // The most specific declared module that contains the path, such as a nested controller folder
 // inside an extension.
@@ -306,12 +325,13 @@ const isExempt = (segments: string[]): boolean => {
   return segments[0] === 'skills' || folders.some((folder) => exemptFolders.has(folder));
 };
 
-const isTestFile = (segments: string[]): boolean => (segments.at(-1) ?? '').endsWith('.test.ts');
-
 const describeSource = (segments: string[]) => {
   const sourceExtension = extensionOf(segments);
   const sourceDeclaration = sourceExtension === undefined ? moduleOf(segments) : undefined;
-  const sharedSource = sourceDeclaration?.name === 'tau' ? undefined : sourceDeclaration;
+
+  // The registration owner installs every extension, so it alone skips the shared-module rules.
+  // Another file in the tau module still follows them.
+  const sharedSource = isRegistrationOwner(segments) ? undefined : sourceDeclaration;
 
   return {
     sourceExtension,
@@ -329,7 +349,7 @@ export const moduleBoundariesRule: Rule = {
     messages: {
       crossing:
         'Extension "{{source}}" must not import from extension "{{target}}". Move shared code under src/.',
-      root: 'Module "{{source}}" must not import src/tau.ts, which loads every extension.',
+      root: 'Module "{{source}}" must not import src/tau.ts or src/tau/tau.ts, which load every extension.',
       private:
         'Import module "{{folder}}" through its entry file, not its private file "{{file}}". Make the file public in the module list of the module-boundaries rule if other modules depend on it.',
       unknownFile:
@@ -357,7 +377,7 @@ export const moduleBoundariesRule: Rule = {
     const ownSegments = segmentsOf(filename) ?? [];
 
     // Tests and support files skip the private-file, import table, and unknown-file checks, but
-    // still obey the extension and src/tau.ts boundaries.
+    // still obey the extension and registration boundaries.
     const isSupportFile = isTestFile(ownSegments) || isExempt(ownSegments);
 
     const { sourceExtension, sourceFolder, sourceDeclaration, sharedSource, sourceName } =
@@ -396,7 +416,8 @@ export const moduleBoundariesRule: Rule = {
       }
     };
 
-    // Reports shared modules only; src/tau.ts is the one shared file that may load extensions.
+    // Reports shared modules only; the registration owner is the one shared file that may load
+    // extensions.
     const checkSharedImport = (node: ESTree.Node, target: string[], source: ModuleDeclaration) => {
       const targetExtension = extensionOf(target);
 
@@ -437,7 +458,7 @@ export const moduleBoundariesRule: Rule = {
         checkPrivateFile(node, target);
       }
 
-      if (isCompositionRoot(target)) {
+      if (crossesEveryBoundary(target) && !isRegistrationEntry(ownSegments, target)) {
         context.report({ node, messageId: 'root', data: { source: sourceName } });
       } else if (sourceExtension !== undefined) {
         checkExtensionBoundary(node, target, sourceExtension);
@@ -464,7 +485,7 @@ export const moduleBoundariesRule: Rule = {
       ImportExpression(node) {
         if (node.source.type === 'Literal') {
           check(node, node.source.value);
-        } else if (!isSupportFile) {
+        } else if (!isSupportFile && !isTauLoader(ownSegments)) {
           context.report({ node, messageId: 'computedImport' });
         }
       },

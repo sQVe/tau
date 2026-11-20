@@ -39,10 +39,10 @@ verification.
 
 ## Architecture
 
-`src/tau.ts` is the entry point. It registers each extension. `src/extensions/` is the open feature
-tier, with one folder or file per feature. Shared modules never import extensions, no module imports
-`src/tau.ts`, and extensions never import each other
-([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
+`src/tau.ts` is the entry point. It selects the registration in `src/tau/tau.ts`, which registers
+each extension. `src/extensions/` is the open feature tier, with one folder or file per feature.
+Shared modules never import extensions, no module imports `src/tau.ts`, and extensions never import
+each other ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
 
 Shared code under `src/` forms capability modules. The module list and import table live in
 `stomme.toml` ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)). Until

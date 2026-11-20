@@ -7,6 +7,6 @@ export default {
   test: {
     ...test,
     include: ['src/**/*.test.ts'],
-    exclude: ['**/*.integration.test.ts', '**/node_modules/**', '**/tau-lint-*/**'],
+    exclude: ['**/*.integration.test.ts', '**/node_modules/**'],
   },
 };

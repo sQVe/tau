@@ -579,8 +579,8 @@ public = []
 imports = []
 
 [modules.tau]
-entry = "src/tau.ts"
-public = []
+entry = "src/tau/tau.ts"
+public = ["src/tau/tauArtifact.ts", "src/tau/tauSelection.ts"]
 imports = []
 
 [modules.tauDirectory]

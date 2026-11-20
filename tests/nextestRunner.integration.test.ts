@@ -11,12 +11,12 @@ import type {
   RunTestsInput,
   SpawnCommand,
 } from '../src/extensions/tdd/runner/types.js';
+import { writeFileMap } from './fileMap.js';
 import {
   cargoPackage,
   createCrate,
   libraryWith,
   useSharedCargoEnvironment,
-  writeFiles,
 } from './nextestHarness.js';
 import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -45,7 +45,7 @@ useSharedCargoEnvironment('nextest-runner');
 beforeAll(async () => {
   basicCrate = temporaryDirectory(registerCleanup, 'tau-nextest-basic-');
 
-  await writeFiles(basicCrate, {
+  await writeFileMap(basicCrate, {
     'Cargo.toml': cargoPackage('probe_basic'),
     'src/lib.rs': [
       'pub fn adds(a: i32, b: i32) -> i32 { a + b }',

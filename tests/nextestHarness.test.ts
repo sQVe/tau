@@ -3,7 +3,8 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import { removeDepInfoFiles, writeFiles } from './nextestHarness.js';
+import { writeFileMap } from './fileMap.js';
+import { removeDepInfoFiles } from './nextestHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const targetWithFiles = async (
@@ -12,7 +13,7 @@ const targetWithFiles = async (
 ): Promise<string> => {
   const target = temporaryDirectory(onTestFinished, 'tau-nextest-layout-');
 
-  await writeFiles(target, Object.fromEntries(files.map((file) => [file, ''])));
+  await writeFileMap(target, Object.fromEntries(files.map((file) => [file, ''])));
 
   vi.stubEnv('CARGO_TARGET_DIR', target);
 

@@ -18,7 +18,7 @@ import type { TestContext } from 'vitest';
 import { expect, it, vi } from 'vitest';
 
 import { loadSnippets } from '../src/extensions/snippets/snippet.js';
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -147,7 +147,7 @@ const createHarness = async (registerCleanup: RegisterCleanup, options: HarnessO
     providers: [faux],
     // These tests send no tool calls; the list only has to be valid.
     tools: ['read'],
-    extensionFactories: [tauExtension],
+    extensionFactories: [tauRegistration],
     ...(options.sessionManager === undefined
       ? {}
       : { sessionManager: options.sessionManager(directory) }),

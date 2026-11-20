@@ -9,7 +9,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { sessionLockPath } from '../src/extensions/sessionLock/hold.js';
 import { holdFileLock } from '../src/fileLock/fileLock.js';
 import { get, kill, run } from '../src/hc/hc.js';
-import tauExtension from '../src/tau.js';
+import tauRegistration from '../src/tau/tau.js';
 import { exitedPid } from './exitedPid.js';
 import { startHcSession } from './hcSessionHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
@@ -68,7 +68,7 @@ const startTauOnSessionFile = async (prepare: (lockPath: string) => Promise<void
     cwd: hc.root,
     agentDirectory,
     providers: [fauxProvider()],
-    extensionFactories: [tauExtension],
+    extensionFactories: [tauRegistration],
     sessionManager: SessionManager.open(sessionFile),
   });
 
