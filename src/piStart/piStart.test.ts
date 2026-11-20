@@ -170,6 +170,69 @@ const paneRequest = (root: string) => ({
   environment: undefined,
 });
 
+it('a refused split rejects with the command context and no second command', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+
+  fake.failCommand('split', 'pane p-lead is gone');
+
+  const failure = await startPiSessionRightOf(
+    { exec: fake.exec, cwd: root },
+    paneRequest(root),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('herdr-app do pane.split failed');
+  expect((failure as Error).message).toContain('pane p-lead is gone');
+  expect(fake.calls).toHaveLength(1);
+});
+
+it('a killed split rejects even with a valid reply and issues one command', async () => {
+  const controller = new AbortController();
+
+  const fake = createExecFake<'split'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'split' : undefined),
+    handlerFor: () => (_commandArguments, options) => {
+      controller.abort(new Error('cancelled during the split'));
+
+      return {
+        code: 0,
+        killed: options?.signal?.aborted === true,
+        truncated: false,
+        stdout: '{"pane":"p-new","terminal":"t-new"}',
+        stderr: '',
+      };
+    },
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const failure = await startPiSessionRightOf(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    paneRequest(root),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('herdr-app do pane.split failed');
+  expect((failure as Error).message).toContain('p-new');
+  expect(fake.calls).toHaveLength(1);
+});
+
+it('a split reply that is not JSON rejects with the command context and no second command', async () => {
+  const fake = paneAppFake('not json');
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const failure = await startPiSessionRightOf(
+    { exec: fake.exec, cwd: root },
+    paneRequest(root),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('herdr-app do pane.split');
+  expect((failure as Error).message).toContain('is not JSON');
+  expect(fake.calls).toHaveLength(1);
+});
+
 it('a split Herdr reports successful stays successful when the signal aborts during the call', async () => {
   const controller = new AbortController();
 
