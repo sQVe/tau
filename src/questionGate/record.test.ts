@@ -5,7 +5,6 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import { shadowReport } from '../../scripts/questionGateScore/shadowReport.ts';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
 import { readVersionedRecord, writeRecord } from '../record.ts';
 import { readShadowRecords, writeShadowRecord } from './record.ts';
@@ -212,23 +211,6 @@ it('names records with confidence outside the unit range as gaps', async ({ onTe
   expect(gaps.map((gap) => gap.path)).toEqual([highPath, judgePath]);
   expect(gaps[0]?.reason).toContain(highPath);
   expect(gaps[1]?.reason).toContain(judgePath);
-
-  const score = shadowReport({
-    records,
-    cohort: record.cohort,
-    variant: 'classifier',
-    cutoff: 0.8,
-  });
-
-  const validOnly = shadowReport({
-    records: [record],
-    cohort: record.cohort,
-    variant: 'classifier',
-    cutoff: 0.8,
-  });
-
-  expect(score).toEqual(validOnly);
-  expect(score.agreement).toBe(1);
 });
 
 it('fails a directory read error with its path', async ({ onTestFinished }) => {

@@ -16,7 +16,7 @@ import type { ShadowRecord, ShadowRecordWriter } from '../../questionGate/questi
 import { ensureTauDirectory, findSharedRepositoryRoot } from '../../tauDirectory.js';
 import askUserQuestionExtension from './askUserQuestion.js';
 import type { DialogResult } from './dialog.js';
-import { shadowAnswer } from './shadow.js';
+import { createShadowRunner, shadowAnswer } from './shadow.js';
 
 interface OpenDialog {
   handleInput: (data: string) => void;
@@ -68,10 +68,10 @@ interface HarnessOptions {
   saveGate?: Deferred<undefined>;
   now?: () => number;
   sessionId?: string;
-  rejectWith?: Promise<unknown>;
+  rejectWith?: () => Promise<unknown> | undefined;
   openWithoutFactory?: boolean | undefined;
   writeRecord?: ShadowRecordWriter;
-  findRootGate?: Deferred<undefined>;
+  findRootGate?: Deferred<string | undefined>;
   directoryGate?: Deferred<undefined>;
   dialogResult?: Deferred<DialogResult | undefined>;
 }
@@ -260,6 +260,7 @@ const createHarness = async (
   const saved: SavedRecord[] = [];
   const preparedDirectories: string[] = [];
   const findRootStarted = deferred<undefined>();
+  let findRootCalls = 0;
   const directoryStarted = deferred<undefined>();
   let writeStarted = 0;
   const saveGate = options.saveGate ?? deferred<undefined>();
@@ -288,17 +289,20 @@ const createHarness = async (
       schedule: (work) => {
         scheduled.push(work);
       },
-      ...(options.findRootGate === undefined
-        ? {}
-        : {
-            findSharedRoot: async (cwd: string, signal: AbortSignal) => {
-              findRootStarted.resolve(undefined);
+      findSharedRoot: async (cwd, signal) => {
+        findRootCalls += 1;
+        findRootStarted.resolve(undefined);
 
-              await options.findRootGate?.promise;
+        if (options.findRootGate !== undefined) {
+          const gatedRoot = await options.findRootGate.promise;
 
-              return findSharedRepositoryRoot(cwd, { signal });
-            },
-          }),
+          if (gatedRoot !== undefined) {
+            return gatedRoot;
+          }
+        }
+
+        return findSharedRepositoryRoot(cwd, { signal });
+      },
       ensureDirectory: async (root, path) => {
         preparedDirectories.push(path);
         directoryStarted.resolve(undefined);
@@ -337,11 +341,15 @@ const createHarness = async (
     }
 
     if (options.rejectWith !== undefined) {
-      options.rejectWith
-        .then((error) => {
-          settled.reject(error);
-        })
-        .catch(() => undefined);
+      const rejection = options.rejectWith();
+
+      if (rejection !== undefined) {
+        rejection
+          .then((error) => {
+            settled.reject(error);
+          })
+          .catch(() => undefined);
+      }
     }
 
     return settled.promise;
@@ -410,6 +418,7 @@ const createHarness = async (
     saveGate,
     saveStarted,
     findRootStarted,
+    findRootCalls: () => findRootCalls,
     directoryStarted,
     preparedDirectories,
     writeStarted: () => writeStarted,
@@ -802,7 +811,7 @@ it('aborts in-flight work and saves no record when the dialog throws', async ({
 
   const harness = await createHarness(onTestFinished, {
     config: configWithShadow(),
-    rejectWith: rejection.promise,
+    rejectWith: () => rejection.promise,
   });
 
   const pending = harness.run([eligibleQuestion]);
@@ -828,7 +837,7 @@ it('saves no record when the dialog fails before the scheduled job starts', asyn
 
   const harness = await createHarness(onTestFinished, {
     config: configWithShadow(),
-    rejectWith: rejection.promise,
+    rejectWith: () => rejection.promise,
   });
 
   const pending = harness.run([eligibleQuestion]);
@@ -838,6 +847,7 @@ it('saves no record when the dialog fails before the scheduled job starts', asyn
   await expect(pending).rejects.toThrow('dialog failed');
   await harness.start();
 
+  expect(harness.findRootCalls()).toBe(0);
   expect(harness.registry.classify).not.toHaveBeenCalled();
   expect(harness.registry.complete).not.toHaveBeenCalled();
   expect(harness.saved).toEqual([]);
@@ -846,13 +856,13 @@ it('saves no record when the dialog fails before the scheduled job starts', asyn
 it('saves no record when the dialog fails during shared-root preflight', async ({
   onTestFinished,
 }) => {
-  const findRootGate = deferred<undefined>();
+  const findRootGate = deferred<string | undefined>();
   const rejection = deferred<unknown>();
 
   const harness = await createHarness(onTestFinished, {
     config: configWithShadow(),
     findRootGate,
-    rejectWith: rejection.promise,
+    rejectWith: () => rejection.promise,
   });
 
   const pending = harness.run([eligibleQuestion]);
@@ -868,6 +878,59 @@ it('saves no record when the dialog fails during shared-root preflight', async (
   expect(harness.registry.classify).not.toHaveBeenCalled();
   expect(harness.registry.complete).not.toHaveBeenCalled();
   expect(harness.saved).toEqual([]);
+});
+
+it('saves no record when a preflight that ignores the abort returns a shared root', async ({
+  onTestFinished,
+}) => {
+  const findRootGate = deferred<string | undefined>();
+  const rejection = deferred<unknown>();
+  let dialogs = 0;
+
+  const harness = await createHarness(onTestFinished, {
+    config: configWithShadow(),
+    findRootGate,
+    rejectWith: () => {
+      dialogs += 1;
+
+      return dialogs === 1 ? rejection.promise : undefined;
+    },
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+  const shadowDone = harness.start();
+
+  await harness.findRootStarted.promise;
+  rejection.resolve(new Error('dialog failed'));
+  await expect(pending).rejects.toThrow('dialog failed');
+
+  const sharedRoot = await findSharedRepositoryRoot(harness.repository);
+
+  findRootGate.resolve(sharedRoot);
+  harness.registry.judgeGate.resolve(undefined);
+  await shadowDone;
+
+  expect(harness.registry.find).not.toHaveBeenCalled();
+  expect(harness.registry.findOfType).not.toHaveBeenCalled();
+  expect(harness.registry.classify).not.toHaveBeenCalled();
+  expect(harness.registry.complete).not.toHaveBeenCalled();
+  expect(harness.saved).toEqual([]);
+
+  const second = harness.run([eligibleQuestion]);
+  const secondDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  expect(harness.registry.classify).toHaveBeenCalledTimes(2);
+
+  harness.latest().handleInput('\r');
+  await second;
+  harness.saveGate.resolve(undefined);
+  await secondDone;
+
+  expect(harness.saved).toHaveLength(1);
 });
 
 it('saves no record when the dialog fails while directory creation is pending', async ({
@@ -900,6 +963,57 @@ it('saves no record when the dialog fails while directory creation is pending', 
   await shadowDone;
 
   expect(harness.saved).toEqual([]);
+});
+
+it('saves no record when the dialog aborts while the answer is read', async () => {
+  const prepared: string[] = [];
+  const saved: ShadowRecord[] = [];
+  const registry = fakeRegistry();
+  let scheduled: (() => Promise<void>) | undefined;
+
+  registry.judgeGate.resolve(undefined);
+
+  const runner = createShadowRunner({
+    now: () => 0,
+    findSharedRoot: async () => '/shared-root',
+    readConfig: () => frozenConfig(),
+    requireModel: () => undefined,
+    ensureDirectory: async (_root, path) => {
+      prepared.push(path);
+
+      return path;
+    },
+    writeRecord: async (_path, record) => {
+      saved.push(record);
+    },
+    schedule: (work) => {
+      scheduled = work;
+    },
+  });
+
+  const job = runner.start({
+    questions: [{ ...eligibleQuestion, kind: 'choice' as const, multiSelect: false }],
+    sessionId: 'session-shadow-1',
+    cwd: '/repository',
+    projectTrusted: false,
+    registry: registry.registry,
+  });
+
+  // This getter aborts after run's own abort check, so only save's guard can stop the write.
+  const result = {
+    kind: 'answered' as const,
+    get answers() {
+      job.abort();
+
+      return [{ question: eligibleQuestion.question, selected: ['Stacked'], typed: false }];
+    },
+  };
+
+  job.settle(result);
+  await scheduled?.();
+
+  expect(prepared).toEqual([]);
+  expect(saved).toEqual([]);
 });
 
 const refusedRows: {
