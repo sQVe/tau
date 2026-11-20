@@ -1,4 +1,4 @@
-# ADR 0146: Measure the question gate in shadow mode
+# ADR 0147: Measure the question gate in shadow mode
 
 **Date**: 2026-11-20\
 **Status**: Accepted
