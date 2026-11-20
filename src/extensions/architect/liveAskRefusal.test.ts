@@ -8,6 +8,7 @@ import { startLiveArchitect } from './fixtures/liveArchitect.js';
 import { contextOf } from './fixtures/toolHarness.js';
 import { blockFinalHandover, failOpenLiveAsks } from './open/openLiveAsks.js';
 import { askRecordDirectory, askRecordPath, readAskRecord } from './record.js';
+import { createArchitectTool } from './tool.js';
 
 type LiveTool = Awaited<ReturnType<typeof startLiveArchitect>>['tool'];
 
@@ -24,6 +25,7 @@ const faults = vi.hoisted(() => ({
   lockReleaseFails: false,
   lockTruncateFails: false,
   lockReadFails: false,
+  recordReadFails: false,
   trapPoll: false,
   polls: 0,
 }));
@@ -35,6 +37,7 @@ const resetFaults = (): void => {
   faults.lockReleaseFails = false;
   faults.lockTruncateFails = false;
   faults.lockReadFails = false;
+  faults.recordReadFails = false;
   faults.trapPoll = false;
   faults.polls = 0;
 };
@@ -82,6 +85,15 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
     },
     readFile: (async (...parameters: Parameters<typeof original.readFile>) => {
       const path = parameters[0];
+
+      if (typeof path === 'string' && targetsRecord(path) && faults.recordReadFails) {
+        throw Object.assign(new Error(`EACCES: permission denied, open '${path}'`), {
+          code: 'EACCES',
+          errno: -13,
+          syscall: 'open',
+          path,
+        });
+      }
 
       if (typeof path === 'string' && targetsLock(path) && faults.lockReadFails) {
         throw new Error('lock acquisition read failed');
@@ -409,12 +421,16 @@ it('a failed live ask repair does not claim the ask is still sending', async ({
 
   faults.lockReadFails = false;
 
+  const bytesBeforeNoop = await readFile(recordPath, 'utf8');
+  const attemptsBeforeNoop = faults.recordAttempts;
   const repaired = await repairAsk(tool, root, state.askId);
 
   expect(repaired).toBeInstanceOf(Error);
   expect((repaired as Error).message).toContain(`Ask ${state.askId} is failed.`);
   expect((repaired as Error).message).toContain('Call architect ask again with the question.');
   expect(await readAskRecord(root, state.askId)).toMatchObject({ status: 'failed' });
+  expect(await readFile(recordPath, 'utf8')).toBe(bytesBeforeNoop);
+  expect(faults.recordAttempts).toBe(attemptsBeforeNoop);
 
   const repeated = await repairAsk(tool, root, state.askId);
 
@@ -423,4 +439,96 @@ it('a failed live ask repair does not claim the ask is still sending', async ({
   expect((repeated as Error).message).not.toContain('Call architect ask again');
   expect(state.deliveries).toBe(1);
   expect(receiver.savedRecords()).toEqual([]);
+});
+
+it('a same-ID live ask retry keeps refusal guidance when the ask record cannot be read', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, hc, receiver, state, tool } = await setupRefusingArchitect(cleanup, (armed) => {
+    armed.recordWriteFailures = Number.POSITIVE_INFINITY;
+  });
+
+  const failure = await askQuestion(tool, root);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect(faults.recordAttempts).toBe(2);
+  expect(await readAskRecord(root, state.askId)).toMatchObject({ status: 'sending' });
+
+  faults.recordWriteFailures = 0;
+  faults.recordReadFails = true;
+
+  const attemptsBefore = faults.recordAttempts;
+  const guided = await repairAsk(tool, root, state.askId);
+
+  expect(guided).toBeInstanceOf(Error);
+
+  expect((guided as Error).message).toContain(
+    'The architect refused this question. Nothing was queued.',
+  );
+
+  expect((guided as Error).message).toContain(`askId ${state.askId}`);
+  expect((guided as Error).message).toContain('could not be read');
+  expect((guided as Error).message).toContain('EACCES');
+  expect((guided as Error).message).toContain('Restore record access');
+  expect((guided as Error).message).not.toContain('Call architect ask again');
+  expect(faults.recordAttempts).toBe(attemptsBefore);
+  expect(state.deliveries).toBe(1);
+
+  const otherSession = await repairAsk(tool, root, state.askId, 'session-other');
+
+  expect(otherSession).toBeInstanceOf(Error);
+  expect((otherSession as Error).message).toContain('EACCES');
+  expect((otherSession as Error).message).not.toContain('could not be read');
+  expect((otherSession as Error).message).not.toContain('The architect refused this question');
+  expect(faults.recordAttempts).toBe(attemptsBefore);
+
+  const freshTool = createArchitectTool({ ...hc, cwd: root });
+  const fresh = await repairAsk(freshTool, root, state.askId);
+
+  expect(fresh).toBeInstanceOf(Error);
+  expect((fresh as Error).message).toContain('EACCES');
+  expect((fresh as Error).message).not.toContain('could not be read');
+  expect(faults.recordAttempts).toBe(attemptsBefore);
+
+  faults.recordReadFails = false;
+
+  const repaired = await repairAsk(tool, root, state.askId);
+
+  expect(repaired).toBeInstanceOf(Error);
+  expect((repaired as Error).message).toContain(`Ask ${state.askId} is failed.`);
+  expect(faults.recordAttempts).toBe(attemptsBefore + 1);
+  expect(await readAskRecord(root, state.askId)).toMatchObject({ status: 'failed' });
+  expect(state.deliveries).toBe(1);
+  expect(receiver.savedRecords()).toEqual([]);
+
+  const blocked = await blockFinalHandover(finalHandover, {
+    root,
+    sessionId: 'session-architect',
+  });
+
+  expect(blocked).toBeUndefined();
+});
+
+it('a same-ID live ask retry keeps a malformed record error when proof exists', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, state, tool } = await setupRefusingArchitect(cleanup, (armed) => {
+    armed.recordWriteFailures = Number.POSITIVE_INFINITY;
+  });
+
+  const failure = await askQuestion(tool, root);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect(faults.recordAttempts).toBe(2);
+
+  faults.recordWriteFailures = 0;
+  await writeFile(askRecordPath(root, state.askId), '{"version": 2');
+
+  const malformed = await repairAsk(tool, root, state.askId);
+
+  expect(malformed).toBeInstanceOf(Error);
+  expect((malformed as Error).message).toContain('Malformed ask record');
+  expect((malformed as Error).message).not.toContain('Restore record access');
+  expect((malformed as Error).message).not.toContain('could not be read');
+  expect((malformed as Error).message).not.toContain('The architect refused this question');
 });

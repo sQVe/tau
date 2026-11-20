@@ -5,7 +5,7 @@ import { get } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { ownInboxReady, sendInboxMessage } from '../../inbox/inbox.js';
 import { changeAskRecord, isOpenLiveAsk, readAskRecord, writeAskRecord } from './record.js';
-import type { AskRecordChange, ChangeAskOptions, LiveAskRecord } from './record.js';
+import type { AskRecord, AskRecordChange, ChangeAskOptions, LiveAskRecord } from './record.js';
 
 interface AskRefusalProof {
   leadSessionId: string;
@@ -349,9 +349,11 @@ const askLiveArchitect = async (
   return sendQuestion(request, record, refusals);
 };
 
-const savedLiveAsk = async (request: LiveAskRetry): Promise<LiveAskRecord> => {
+const requireSavedLiveAsk = (
+  request: LiveAskRetry,
+  record: AskRecord | undefined,
+): LiveAskRecord => {
   const { askId } = request;
-  const record = await readAskRecord(request.root, askId);
 
   if (record === undefined) {
     throw new Error(`No ask record ${askId} exists. Call architect ask with the question.`);
@@ -370,19 +372,53 @@ const savedLiveAsk = async (request: LiveAskRetry): Promise<LiveAskRecord> => {
   return record;
 };
 
+const isNodeFileError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const code = 'code' in error ? error.code : undefined;
+  const errno = 'errno' in error ? error.errno : undefined;
+  const syscall = 'syscall' in error ? error.syscall : undefined;
+
+  return typeof code === 'string' && typeof errno === 'number' && typeof syscall === 'string';
+};
+
+const recordReadFailure = (refusal: unknown, askId: string, error: unknown): Error =>
+  new Error(
+    `${errorMessage(refusal)} Ask ${askId}: the ask record could not be read: ${errorMessage(error)}. Restore record access, then retry architect ask with askId ${askId} in this session. Do not reload Pi.`,
+    { cause: refusal },
+  );
+
 const retryLiveAsk = async (
   request: LiveAskRetry,
   refusals: AskRefusalProofs,
 ): Promise<LiveAskResult> => {
-  const record = await savedLiveAsk(request);
   const proof = refusals.get(proofKey(request.root, request.askId));
 
-  if (proof !== undefined && proof.leadSessionId === record.leadSessionId) {
+  const leadProof =
+    proof !== undefined && proof.leadSessionId === request.leadSessionId ? proof : undefined;
+
+  let saved: AskRecord | undefined;
+
+  try {
+    saved = await readAskRecord(request.root, request.askId);
+  } catch (error) {
+    if (leadProof !== undefined && isNodeFileError(error)) {
+      throw recordReadFailure(leadProof.refusal, request.askId, error);
+    }
+
+    throw error;
+  }
+
+  const record = requireSavedLiveAsk(request, saved);
+
+  if (leadProof !== undefined) {
     return repairRefusedAsk({
       root: request.root,
       askId: record.askId,
       leadSessionId: record.leadSessionId,
-      refusal: proof.refusal,
+      refusal: leadProof.refusal,
       refusals,
     });
   }
