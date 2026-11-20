@@ -52,7 +52,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 
 - Editing comments does not permit refactoring or scope growth.
 - When you find a defect, fix it at its cause in its own space. If you cannot fix it now, file a bug
-  ticket. Never leave the defect as an out-of-scope note or a workaround.
+  ticket. Never leave the defect as an out-of-scope note or a workaround. After the lead's one fix
+  review, use `triage-findings` instead of this rule.
 - When a check fails, fix its cause, or file a bug ticket when you cannot fix it now. Never skip the
   check or cap its resources, such as memory or a mutant count, to hide the cause.
 - Continue the work unless it needs user input.
@@ -79,10 +80,9 @@ when you stop. Follow explicit user instructions and repository conventions over
   architect runs. `open` on a running architect returns its terminal and delivers nothing.
 - As manager, when the user corrects you, fix the mistake, save it with `improvement` `record`, and
   propose a rule or check for the user to approve.
-- As manager, do the work you can do instead of handing it back to the user. Fix a bug you find
-  right away in its own space, not only as a backlog ticket. Make the tracker status change you can
-  make, such as moving a slice to In Progress. Treat a proposal the user has effectively accepted as
-  decided and do not ask again.
+- As manager, do the work you can do instead of handing it back to the user. Make the tracker status
+  change you can make, such as moving a slice to In Progress. Treat a proposal the user has
+  effectively accepted as decided and do not ask again.
 
 ## Report status in the user's terms
 
