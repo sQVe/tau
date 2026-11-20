@@ -13,6 +13,7 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
 import type { ShadowRecord, ShadowRecordWriter } from '../../questionGate/questionGate.js';
+import { ensureTauDirectory } from '../../tauDirectory.js';
 import askUserQuestionExtension from './askUserQuestion.js';
 import type { DialogResult } from './dialog.js';
 import { shadowAnswer } from './shadow.js';
@@ -35,6 +36,7 @@ interface RegistryHarness {
   find: Mock;
   findOfType: Mock;
   judgeGate: Deferred<undefined>;
+  judgeBatchDone: Deferred<undefined>;
   classifierSignals: (AbortSignal | undefined)[];
   panelSignals: (AbortSignal | undefined)[];
 }
@@ -151,28 +153,54 @@ const fakeRegistry = (
   options: { missingPanel?: string; missingClassifier?: boolean } = {},
 ): RegistryHarness => {
   const judgeGate = deferred<undefined>();
+  const judgeBatchDone = deferred<undefined>();
   const classifierSignals: (AbortSignal | undefined)[] = [];
   const panelSignals: (AbortSignal | undefined)[] = [];
+  let inFlight = 0;
+
+  const beginCall = () => {
+    inFlight += 1;
+  };
+
+  const endCall = () => {
+    inFlight -= 1;
+
+    if (inFlight === 0) {
+      setTimeout(() => {
+        judgeBatchDone.resolve(undefined);
+      }, 0);
+    }
+  };
 
   const classify = vi.fn<ClassifyMock>(async (_model, _context, callOptions) => {
+    beginCall();
     classifierSignals.push(callOptions?.signal);
 
-    await judgeGate.promise;
+    try {
+      await judgeGate.promise;
 
-    return {
-      stopReason: 'stop',
-      answers: {
-        choice: { type: 'choice', choice: 'accept', probabilities: {}, confidence: 0.9 },
-      },
-    };
+      return {
+        stopReason: 'stop',
+        answers: {
+          choice: { type: 'choice', choice: 'accept', probabilities: {}, confidence: 0.9 },
+        },
+      };
+    } finally {
+      endCall();
+    }
   });
 
   const complete = vi.fn<ClassifyMock>(async (_model, _context, callOptions) => {
+    beginCall();
     panelSignals.push(callOptions?.signal);
 
-    await judgeGate.promise;
+    try {
+      await judgeGate.promise;
 
-    return { stopReason: 'stop', content: [{ type: 'text', text: 'Stacked' }] };
+      return { stopReason: 'stop', content: [{ type: 'text', text: 'Stacked' }] };
+    } finally {
+      endCall();
+    }
   });
 
   const find = vi.fn<FindMock>((_provider, id) =>
@@ -190,6 +218,7 @@ const fakeRegistry = (
     find,
     findOfType,
     judgeGate,
+    judgeBatchDone,
     classifierSignals,
     panelSignals,
   };
@@ -226,6 +255,8 @@ const createHarness = async (
   const clock = { now: 0 };
   const scheduled: (() => Promise<void>)[] = [];
   const saved: SavedRecord[] = [];
+  const preparedDirectories: string[] = [];
+  let writeStarted = 0;
   const saveGate = options.saveGate ?? deferred<undefined>();
   const saveStarted = deferred<undefined>();
   const registry = options.registry ?? fakeRegistry();
@@ -236,6 +267,7 @@ const createHarness = async (
   });
 
   const writeRecord: ShadowRecordWriter = async (path, record, mode) => {
+    writeStarted += 1;
     saveStarted.resolve(undefined);
 
     await saveGate.promise;
@@ -250,6 +282,11 @@ const createHarness = async (
       now: options.now ?? (() => clock.now),
       schedule: (work) => {
         scheduled.push(work);
+      },
+      ensureDirectory: async (root, path) => {
+        preparedDirectories.push(path);
+
+        return ensureTauDirectory(root, path);
       },
       writeRecord: options.writeRecord ?? writeRecord,
     },
@@ -348,6 +385,8 @@ const createHarness = async (
     saved,
     saveGate,
     saveStarted,
+    preparedDirectories,
+    writeStarted: () => writeStarted,
     dialogs,
     run,
     latest,
@@ -422,11 +461,10 @@ it('saves a record when judges settle before the answer', async ({ onTestFinishe
   });
 
   harness.registry.judgeGate.resolve(undefined);
+  await harness.registry.judgeBatchDone.promise;
 
-  await waitFor(() => {
-    expect(harness.registry.classify).toHaveBeenCalledTimes(2);
-  });
-
+  expect(harness.preparedDirectories).toEqual([]);
+  expect(harness.writeStarted()).toBe(0);
   expect(harness.saved).toEqual([]);
 
   harness.latest().handleInput('\r');
@@ -434,6 +472,9 @@ it('saves a record when judges settle before the answer', async ({ onTestFinishe
   await pending;
   harness.saveGate.resolve(undefined);
   await shadowDone;
+
+  expect(harness.preparedDirectories).toEqual(['questions']);
+  expect(harness.writeStarted()).toBe(1);
 
   expect(recordOf(harness)).toMatchObject({
     version: 1,

@@ -120,10 +120,7 @@ export const shadowReport = (input: ShadowReportInput): ShadowReport => {
   const predictions = sessionValues.reduce((total, score) => total + score.predictions, 0);
   const hits = sessionValues.reduce((total, score) => total + score.hits, 0);
   const agreement = share(hits, predictions);
-
-  const potentialSaves = matching.filter((record) =>
-    isPredictedDecision(record, input.variant, input.cutoff),
-  ).length;
+  const potentialSaves = predictions;
 
   return {
     cohort: input.cohort,

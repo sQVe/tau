@@ -4,7 +4,7 @@ import { customWithBlockedStatus } from '../../dialog/blockedStatus.js';
 import { questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult } from './dialog.js';
 import type { Answer } from './questionnaire.js';
-import type { ShadowJob, ShadowQuestion, ShadowRunner } from './shadow.js';
+import type { ShadowJob, ShadowRunner } from './shadow.js';
 import { refuseUnrepliedTypedAnswer } from './typedAnswerReply.js';
 import { validateQuestions } from './validation.js';
 
@@ -55,23 +55,6 @@ const sessionIdOf = (sessionManager: ExtensionContext['sessionManager']): string
   }
 };
 
-const shadowQuestionsOf = (input: readonly QuestionInput[]): ShadowQuestion[] =>
-  input.map((question) => ({
-    question: question.question,
-    problem: question.problem,
-    impact: question.impact,
-    kind: question.kind,
-    confidence: question.confidence,
-    multiSelect: question.multiSelect === true,
-    preview: question.preview,
-    options: question.options.map((option) => ({
-      label: option.label,
-      description: option.description,
-      recommended: option.recommended === true,
-      preview: option.preview,
-    })),
-  }));
-
 export const askQuestions = async (
   input: QuestionInput[],
   context: ExtensionContext,
@@ -91,7 +74,6 @@ export const askQuestions = async (
   }));
 
   const open = questionDialog(questions);
-  const shadowQuestions = shadowQuestionsOf(input);
 
   let job: ShadowJob | undefined;
 
@@ -106,7 +88,7 @@ export const askQuestions = async (
 
     if (sessionId !== undefined) {
       job = shadow.start({
-        questions: shadowQuestions,
+        questions,
         sessionId,
         cwd: context.cwd,
         projectTrusted: context.isProjectTrusted(),

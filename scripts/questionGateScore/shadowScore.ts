@@ -30,7 +30,15 @@ export const runShadowReport = async (cwd: string): Promise<string> => {
 
   const { records, gaps } = await readShadowRecords(directory, readVersionedRecord);
   const cohort = shadowCohort({ ...config, shadow });
-  const excluded = records.filter((record) => record.cohort !== cohort).length;
+
+  const report = shadowReport({
+    records,
+    cohort,
+    variant: shadow.variant,
+    cutoff: shadow.cutoff,
+  });
+
+  const excluded = records.length - report.sampled;
 
   process.stderr.write(`Excluded ${excluded} shadow records from other cohorts.\n`);
 
@@ -38,7 +46,5 @@ export const runShadowReport = async (cwd: string): Promise<string> => {
     process.stderr.write(`Shadow record warning: ${gap.reason}\n`);
   }
 
-  return formatShadowReport(
-    shadowReport({ records, cohort, variant: shadow.variant, cutoff: shadow.cutoff }),
-  );
+  return formatShadowReport(report);
 };

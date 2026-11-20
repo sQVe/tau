@@ -1,5 +1,4 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
-import { contentText } from '@earendil-works/pi-ai';
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
@@ -11,8 +10,9 @@ import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGate
 import {
   judgeWithClassifier,
   judgeWithPanel,
-  shadowDecision,
+  panelMember,
   shadowEligibility,
+  shadowRateAllows,
   writeShadowRecord,
 } from '../../questionGate/questionGate.js';
 import type {
@@ -25,23 +25,7 @@ import type {
 } from '../../questionGate/questionGate.js';
 import { writeRecord } from '../../record.js';
 import { ensureTauDirectory, findSharedRepositoryRoot } from '../../tauDirectory.js';
-import type { DialogResult } from './dialog.js';
-
-export interface ShadowQuestion {
-  question: string;
-  problem: string;
-  impact: string;
-  kind: 'choice' | 'approval' | undefined;
-  confidence: number | undefined;
-  multiSelect: boolean;
-  preview: string | undefined;
-  options: readonly {
-    label: string;
-    description: string;
-    recommended: boolean;
-    preview: string | undefined;
-  }[];
-}
+import type { DialogQuestion, DialogResult } from './dialog.js';
 
 export interface ShadowPorts {
   now: () => number;
@@ -54,19 +38,19 @@ export interface ShadowPorts {
 }
 
 interface ShadowStart {
-  questions: readonly ShadowQuestion[];
+  questions: readonly (DialogQuestion & {
+    kind?: 'choice' | 'approval' | undefined;
+    confidence?: number | undefined;
+  })[];
   sessionId: string;
   cwd: string;
   projectTrusted: boolean;
   registry: ModelRegistry;
 }
 
-type ShadowOutcome = { kind: 'saved' } | { kind: 'discarded'; reason: string };
-
 export interface ShadowJob {
   settle: (result: DialogResult) => void;
   abort: () => void;
-  completion: Promise<ShadowOutcome>;
 }
 
 export interface ShadowRunner {
@@ -98,14 +82,16 @@ const defaultShadowPorts: ShadowPorts = {
   },
 };
 
-const judgeQuestionOf = (question: ShadowQuestion): JudgeQuestion => ({
+const judgeQuestionOf = (
+  question: DialogQuestion & { confidence?: number | undefined },
+): JudgeQuestion => ({
   question: question.question,
   problem: question.problem,
   impact: question.impact,
   options: question.options.map((option) => ({
     label: option.label,
     description: option.description,
-    recommended: option.recommended,
+    recommended: option.recommended === true,
   })),
 });
 
@@ -155,29 +141,6 @@ const panelModelsOf = (
   return [first, second, third];
 };
 
-const panelMember = (registry: ModelRegistry, model: Model<Api>): PanelMember => {
-  return async (prompt, signal) => {
-    try {
-      const reply = await registry.complete(
-        model,
-        {
-          systemPrompt: prompt.system,
-          messages: [{ role: 'user', content: prompt.user, timestamp: Date.now() }],
-        },
-        { signal },
-      );
-
-      if (reply.stopReason !== 'stop') {
-        return { kind: 'error' };
-      }
-
-      return { kind: 'replied', text: contentText(reply.content).trim() };
-    } catch {
-      return { kind: 'error' };
-    }
-  };
-};
-
 const agentVerdict = (confidence: number | undefined): JudgeVerdict =>
   confidence === undefined ? { kind: 'unavailable' } : { kind: 'answered', confidence };
 
@@ -185,13 +148,22 @@ const judgeAll = async (
   ports: ShadowPorts,
   request: ShadowStart,
   config: FrozenConfig,
-  question: ShadowQuestion,
+  question: JudgeQuestion,
+  confidence: number | undefined,
   signal: AbortSignal,
 ): Promise<ShadowRecord['judges']> => {
   const examples = config.shadow.examples;
   const hasExamples = examples.length > 0;
   const panelModels = panelModelsOf(request.registry, config.panel);
-  const judgeQuestion = judgeQuestionOf(question);
+
+  const members: [PanelMember, PanelMember, PanelMember] | undefined =
+    panelModels === undefined
+      ? undefined
+      : [
+          panelMember(request.registry, panelModels[0]),
+          panelMember(request.registry, panelModels[1]),
+          panelMember(request.registry, panelModels[2]),
+        ];
 
   const classify: ClassifyQuestion = (state, choiceQuestion, judgeSignal) =>
     classifyChoice(
@@ -213,25 +185,19 @@ const judgeAll = async (
 
     const chosenExamples = useExamples ? examples : [];
 
-    return judgeWithClassifier(classify, judgeQuestion, chosenExamples, signal);
+    return judgeWithClassifier(classify, question, chosenExamples, signal);
   };
 
   const panelWork = (useExamples: boolean): Promise<JudgeVerdict> => {
     const missingExamples = useExamples && !hasExamples;
 
-    if (panelModels === undefined || missingExamples) {
+    if (members === undefined || missingExamples) {
       return Promise.resolve(unavailable);
     }
 
-    const members: [PanelMember, PanelMember, PanelMember] = [
-      panelMember(request.registry, panelModels[0]),
-      panelMember(request.registry, panelModels[1]),
-      panelMember(request.registry, panelModels[2]),
-    ];
-
     const chosenExamples = useExamples ? examples : [];
 
-    return judgeWithPanel(members, judgeQuestion, chosenExamples, signal);
+    return judgeWithPanel(members, question, chosenExamples, signal);
   };
 
   const [classifier, classifierExamples, panel, panelExamples] = await Promise.all([
@@ -246,7 +212,7 @@ const judgeAll = async (
     classifierExamples,
     panel,
     panelExamples,
-    agent: { verdict: agentVerdict(question.confidence), milliseconds: 0 },
+    agent: { verdict: agentVerdict(confidence), milliseconds: 0 },
   };
 };
 
@@ -285,18 +251,19 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
   const save = async (
     sharedRoot: string,
     config: FrozenConfig,
-    question: ShadowQuestion,
+    question: JudgeQuestion,
+    confidence: number | undefined,
     judges: ShadowRecord['judges'],
     result: DialogResult,
-  ): Promise<ShadowOutcome> => {
+  ): Promise<void> => {
     const recordAnswer = shadowAnswer(question.question, result);
 
     if (recordAnswer === undefined) {
-      return { kind: 'discarded', reason: 'answer' };
+      return;
     }
 
     if (isAborted()) {
-      return { kind: 'discarded', reason: 'aborted' };
+      return;
     }
 
     const record: ShadowRecord = {
@@ -304,8 +271,8 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
       kind: 'shadow',
       cohort: shadowCohort(config),
       sessionId: request.sessionId,
-      question: judgeQuestionOf(question),
-      confidence: question.confidence ?? null,
+      question,
+      confidence: confidence ?? null,
       judges,
       answer: recordAnswer,
     };
@@ -314,78 +281,73 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
       const directory = await ports.ensureDirectory(sharedRoot, 'questions');
 
       if (isAborted()) {
-        return { kind: 'discarded', reason: 'aborted' };
+        return;
       }
 
       await writeShadowRecord(directory, record, ports.writeRecord);
     } catch {
-      return { kind: 'discarded', reason: 'save' };
+      return;
     }
-
-    return { kind: 'saved' };
   };
 
-  const run = async (): Promise<ShadowOutcome> => {
+  const run = async (): Promise<void> => {
     if (isAborted()) {
-      return { kind: 'discarded', reason: 'aborted' };
+      return;
     }
 
     const eligibility = shadowEligibility(request.questions);
 
     if (eligibility.kind === 'skip') {
-      return { kind: 'discarded', reason: eligibility.reason };
+      return;
     }
 
     const prepared = await preflight();
 
     if (prepared === undefined) {
-      return { kind: 'discarded', reason: 'preflight' };
+      return;
     }
 
     if (isAborted()) {
-      return { kind: 'discarded', reason: 'aborted' };
+      return;
     }
 
     const now = ports.now();
 
-    const decision = shadowDecision({
-      questions: request.questions,
-      lastBatchStartedAt: rate.lastBatchStartedAt,
-      now,
-    });
-
-    if (decision.kind === 'skip') {
-      return { kind: 'discarded', reason: decision.reason };
+    if (!shadowRateAllows(rate.lastBatchStartedAt, now)) {
+      return;
     }
 
     rate.lastBatchStartedAt = now;
 
-    const question = request.questions[0];
+    const question = eligibility.question;
+    const judgeQuestion = judgeQuestionOf(question);
 
-    if (question === undefined) {
-      return { kind: 'discarded', reason: 'multipleQuestions' };
-    }
+    const judges = await judgeAll(
+      ports,
+      request,
+      prepared.config,
+      judgeQuestion,
+      question.confidence,
+      controller.signal,
+    );
 
-    const judges = await judgeAll(ports, request, prepared.config, question, controller.signal);
     const result = await answer.promise;
 
     if (isAborted() || result === undefined) {
-      return { kind: 'discarded', reason: 'aborted' };
+      return;
     }
 
-    return save(prepared.sharedRoot, prepared.config, question, judges, result);
+    await save(
+      prepared.sharedRoot,
+      prepared.config,
+      judgeQuestion,
+      question.confidence,
+      judges,
+      result,
+    );
   };
 
-  const completion = new Promise<ShadowOutcome>((resolve) => {
-    ports.schedule(async () => {
-      const outcome = await run().catch((): ShadowOutcome => ({
-        kind: 'discarded',
-        reason: 'error',
-      }));
-
-      resolve(outcome);
-    });
-  });
+  ports.schedule(run);
 
   return {
     settle: (result) => {
@@ -404,7 +366,6 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
       controller.abort();
       answer.resolve(undefined);
     },
-    completion,
   };
 };
 

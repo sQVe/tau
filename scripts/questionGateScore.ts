@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 
-import { contentText, retryAssistantCall } from '@earendil-works/pi-ai';
+import { retryAssistantCall } from '@earendil-works/pi-ai';
 import type { RetryPolicy } from '@earendil-works/pi-ai';
 import {
   getAgentDir,
@@ -16,7 +16,11 @@ import { parseModelReference, requireAllowedModel } from '../src/config/models.t
 import { readQuestionGateConfig } from '../src/config/questionGateModels.ts';
 import type { QuestionGateModels } from '../src/config/questionGateModels.ts';
 import { findSessionFiles } from '../src/improvement/improvement.ts';
-import { judgeWithClassifier, judgeWithPanel } from '../src/questionGate/questionGate.ts';
+import {
+  judgeWithClassifier,
+  judgeWithPanel,
+  panelMember as sharedPanelMember,
+} from '../src/questionGate/questionGate.ts';
 import type {
   ClassifyQuestion,
   JudgeQuestion,
@@ -127,39 +131,25 @@ export const panelMember = (
       return { kind: 'unavailable' };
     }
 
-    try {
-      const reply = await retryAssistantCall(
-        () =>
-          registry.complete(
-            model,
-            {
-              systemPrompt: prompt.system,
-              messages: [{ role: 'user', content: prompt.user, timestamp: Date.now() }],
-            },
-            { signal },
-          ),
-        diagnostics.retry,
-        signal,
-      );
+    return sharedPanelMember(registry, model, async (work, memberSignal) => {
+      try {
+        const reply = await retryAssistantCall(work, diagnostics.retry, memberSignal);
 
-      if (reply.stopReason === 'stop') {
-        return { kind: 'replied', text: contentText(reply.content).trim() };
+        if (reply.stopReason !== 'stop' && reply.stopReason !== 'aborted') {
+          diagnostics.recordError(reply.errorMessage ?? reply.stopReason);
+        }
+
+        return reply;
+      } catch (error) {
+        if (!memberSignal.aborted) {
+          const message = error instanceof Error ? error.message : String(error);
+
+          diagnostics.recordError(message);
+        }
+
+        throw error;
       }
-
-      if (reply.stopReason !== 'aborted') {
-        diagnostics.recordError(reply.errorMessage ?? reply.stopReason);
-      }
-
-      return { kind: 'error' };
-    } catch (error) {
-      if (!signal.aborted) {
-        const message = error instanceof Error ? error.message : String(error);
-
-        diagnostics.recordError(message);
-      }
-
-      return { kind: 'error' };
-    }
+    })(prompt, signal);
   };
 };
 

@@ -3,10 +3,10 @@ import { expect, it } from 'vitest';
 
 import {
   shadowBatchIntervalMilliseconds,
-  shadowDecision,
   shadowEligibility,
+  shadowRateAllows,
 } from './shadowDecision.ts';
-import type { ShadowDecision, ShadowQuestionFacts } from './shadowDecision.ts';
+import type { ShadowEligibility, ShadowQuestionFacts } from './shadowDecision.ts';
 
 const eligible = (overrides: Partial<ShadowQuestionFacts> = {}): ShadowQuestionFacts => ({
   kind: 'choice',
@@ -19,9 +19,13 @@ const eligible = (overrides: Partial<ShadowQuestionFacts> = {}): ShadowQuestionF
   ...overrides,
 });
 
-const sample: ShadowDecision = { kind: 'sample' };
+const selected = eligible();
 
-const skip = (reason: Extract<ShadowDecision, { kind: 'skip' }>['reason']): ShadowDecision => ({
+const sample: ShadowEligibility<ShadowQuestionFacts> = { kind: 'eligible', question: selected };
+
+const skip = (
+  reason: Extract<ShadowEligibility<ShadowQuestionFacts>, { kind: 'skip' }>['reason'],
+): ShadowEligibility<ShadowQuestionFacts> => ({
   kind: 'skip',
   reason,
 });
@@ -29,30 +33,22 @@ const skip = (reason: Extract<ShadowDecision, { kind: 'skip' }>['reason']): Shad
 it.each([
   {
     name: 'samples a single explicit choice with one recommendation and no preview',
-    questions: [eligible()],
-    lastBatchStartedAt: undefined,
-    now: 0,
+    questions: [selected],
     expected: sample,
   },
   {
     name: 'refuses more than one question',
     questions: [eligible(), eligible()],
-    lastBatchStartedAt: undefined,
-    now: 0,
     expected: skip('multipleQuestions'),
   },
   {
     name: 'refuses a question without a kind',
     questions: [eligible({ kind: undefined })],
-    lastBatchStartedAt: undefined,
-    now: 0,
     expected: skip('kindMissing'),
   },
   {
     name: 'refuses an approval question',
     questions: [eligible({ kind: 'approval' })],
-    lastBatchStartedAt: undefined,
-    now: 0,
     expected: skip('kindApproval'),
   },
   {
@@ -65,8 +61,6 @@ it.each([
         ],
       }),
     ],
-    lastBatchStartedAt: undefined,
-    now: 0,
     expected: skip('noRecommendation'),
   },
   {
@@ -79,15 +73,11 @@ it.each([
         ],
       }),
     ],
-    lastBatchStartedAt: undefined,
-    now: 0,
     expected: skip('manyRecommendations'),
   },
   {
     name: 'refuses a question preview',
     questions: [eligible({ preview: 'draft' })],
-    lastBatchStartedAt: undefined,
-    now: 0,
     expected: skip('questionPreview'),
   },
   {
@@ -100,52 +90,44 @@ it.each([
         ],
       }),
     ],
-    lastBatchStartedAt: undefined,
-    now: 0,
     expected: skip('optionPreview'),
   },
   {
     name: 'refuses a multi-select question',
     questions: [eligible({ multiSelect: true })],
-    lastBatchStartedAt: undefined,
-    now: 0,
     expected: skip('multiSelect'),
   },
+] as const)('$name', ({ questions, expected }) => {
+  expect(shadowEligibility(questions)).toEqual(expected);
+});
+
+it.each([
   {
-    name: 'samples when no batch started before',
-    questions: [eligible()],
+    name: 'allows a batch when no batch started before',
     lastBatchStartedAt: undefined,
     now: 1_000,
-    expected: sample,
+    expected: true,
   },
   {
     name: 'refuses a batch one millisecond inside the interval',
-    questions: [eligible()],
     lastBatchStartedAt: 1_000,
     now: 1_000 + shadowBatchIntervalMilliseconds - 1,
-    expected: skip('recentBatch'),
+    expected: false,
   },
   {
-    name: 'samples a batch at the interval boundary',
-    questions: [eligible()],
+    name: 'allows a batch at the interval boundary',
     lastBatchStartedAt: 1_000,
     now: 1_000 + shadowBatchIntervalMilliseconds,
-    expected: sample,
+    expected: true,
   },
   {
-    name: 'samples a batch after the interval',
-    questions: [eligible()],
+    name: 'allows a batch after the interval',
     lastBatchStartedAt: 1_000,
     now: 1_000 + shadowBatchIntervalMilliseconds + 1,
-    expected: sample,
+    expected: true,
   },
-] as const)('$name', ({ questions, lastBatchStartedAt, now, expected }) => {
-  expect(shadowDecision({ questions, lastBatchStartedAt, now })).toEqual(expected);
-});
-
-it('checks eligibility without the batch interval', () => {
-  expect(shadowEligibility([eligible()])).toEqual(sample);
-  expect(shadowEligibility([eligible({ kind: 'approval' })])).toEqual(skip('kindApproval'));
+] as const)('$name', ({ lastBatchStartedAt, now, expected }) => {
+  expect(shadowRateAllows(lastBatchStartedAt, now)).toBe(expected);
 });
 
 it('starts accepted batches at least 60 seconds apart', () => {
@@ -157,13 +139,13 @@ it('starts accepted batches at least 60 seconds apart', () => {
       for (const gap of gaps) {
         now += gap;
 
-        const decision = shadowDecision({
-          questions: [eligible()],
-          lastBatchStartedAt,
-          now,
-        });
+        const eligibility = shadowEligibility([eligible()]);
 
-        if (decision.kind === 'skip') {
+        if (eligibility.kind === 'skip') {
+          continue;
+        }
+
+        if (!shadowRateAllows(lastBatchStartedAt, now)) {
           continue;
         }
 

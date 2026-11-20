@@ -39,21 +39,17 @@ export type PanelReply =
 export type PanelMember = (prompt: PanelPrompt, signal: AbortSignal) => Promise<PanelReply>;
 
 export { judgeWithClassifier } from './classifierJudge.ts';
+export { panelMember } from './panelMember.ts';
 export { judgeWithPanel, panelTimeoutMilliseconds } from './panelJudge.ts';
 export { readShadowRecords, writeShadowRecord } from './record.ts';
 
 export {
   shadowBatchIntervalMilliseconds,
-  shadowDecision,
   shadowEligibility,
+  shadowRateAllows,
 } from './shadowDecision.ts';
 
-export type {
-  ShadowDecision,
-  ShadowDecisionFacts,
-  ShadowQuestionFacts,
-  ShadowSkipReason,
-} from './shadowDecision.ts';
+export type { ShadowEligibility, ShadowQuestionFacts, ShadowSkipReason } from './shadowDecision.ts';
 
 export type {
   ShadowRecord,

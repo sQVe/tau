@@ -1,10 +1,10 @@
 export interface ShadowQuestionFacts {
-  kind: 'choice' | 'approval' | undefined;
+  kind?: 'choice' | 'approval' | undefined;
   multiSelect: boolean;
-  preview: string | undefined;
+  preview?: string | undefined;
   options: readonly {
-    recommended: boolean;
-    preview: string | undefined;
+    recommended?: boolean | undefined;
+    preview?: string | undefined;
   }[];
 }
 
@@ -16,26 +16,23 @@ export type ShadowSkipReason =
   | 'manyRecommendations'
   | 'questionPreview'
   | 'optionPreview'
-  | 'multiSelect'
-  | 'recentBatch';
+  | 'multiSelect';
 
-export type ShadowDecision = { kind: 'sample' } | { kind: 'skip'; reason: ShadowSkipReason };
-
-export interface ShadowDecisionFacts {
-  questions: readonly ShadowQuestionFacts[];
-  lastBatchStartedAt: number | undefined;
-  now: number;
-}
+export type ShadowEligibility<Question extends ShadowQuestionFacts> =
+  | { kind: 'eligible'; question: Question }
+  | { kind: 'skip'; reason: ShadowSkipReason };
 
 export const shadowBatchIntervalMilliseconds = 60_000;
 
 const recommendedCount = (question: ShadowQuestionFacts): number =>
-  question.options.filter((option) => option.recommended).length;
+  question.options.filter((option) => option.recommended === true).length;
 
 const previewedOption = (question: ShadowQuestionFacts): boolean =>
   question.options.some((option) => option.preview !== undefined);
 
-export const shadowEligibility = (questions: readonly ShadowQuestionFacts[]): ShadowDecision => {
+export const shadowEligibility = <Question extends ShadowQuestionFacts>(
+  questions: readonly Question[],
+): ShadowEligibility<Question> => {
   if (questions.length !== 1) {
     return { kind: 'skip', reason: 'multipleQuestions' };
   }
@@ -76,24 +73,8 @@ export const shadowEligibility = (questions: readonly ShadowQuestionFacts[]): Sh
     return { kind: 'skip', reason: 'multiSelect' };
   }
 
-  return { kind: 'sample' };
+  return { kind: 'eligible', question };
 };
 
-export const shadowDecision = (facts: ShadowDecisionFacts): ShadowDecision => {
-  const eligibility = shadowEligibility(facts.questions);
-
-  if (eligibility.kind === 'skip') {
-    return eligibility;
-  }
-
-  const { lastBatchStartedAt, now } = facts;
-
-  if (
-    lastBatchStartedAt !== undefined &&
-    now - lastBatchStartedAt < shadowBatchIntervalMilliseconds
-  ) {
-    return { kind: 'skip', reason: 'recentBatch' };
-  }
-
-  return { kind: 'sample' };
-};
+export const shadowRateAllows = (lastBatchStartedAt: number | undefined, now: number): boolean =>
+  lastBatchStartedAt === undefined || now - lastBatchStartedAt >= shadowBatchIntervalMilliseconds;
