@@ -9,7 +9,6 @@ import type { CallResult, Entry } from '../../src/improvement/transcript.ts';
 import type {
   JudgeOption,
   JudgeQuestion,
-  PastAnswer,
   PastOutcome,
 } from '../../src/questionGate/questionGate.ts';
 import { isRecord } from '../../src/schema.ts';
@@ -19,9 +18,12 @@ export interface SessionLog {
   text: string;
 }
 
-export interface LoggedQuestion extends PastAnswer {
+export interface LoggedQuestion {
   session: string;
-  callTime: number;
+  askedAt: number;
+  answeredAt: number;
+  question: JudgeQuestion;
+  outcome: PastOutcome;
 }
 
 export interface SkippedQuestions {
@@ -108,8 +110,8 @@ interface CompletedCall {
   parameters: Entry | undefined;
   result: CallResult;
   session: string;
-  time: number;
-  callTime: number;
+  askedAt: number;
+  answeredAt: number;
 }
 
 interface QuestionShape {
@@ -408,8 +410,8 @@ const readCall = (state: LogState, call: CompletedCall) => {
       state.skipped.malformedAnswers += 1;
     } else {
       state.questions.push({
-        time: call.time,
-        callTime: call.callTime,
+        answeredAt: call.answeredAt,
+        askedAt: call.askedAt,
         session: call.session,
         question: read.question,
         outcome: read.outcome,
@@ -711,8 +713,8 @@ const pairCalls = (
         parameters: pair.call.parameters,
         result: pair.result.result,
         session: pair.result.session,
-        time: pair.result.time,
-        callTime: pair.call.time,
+        askedAt: pair.call.time,
+        answeredAt: pair.result.time,
       });
     }
 
@@ -800,7 +802,7 @@ export const questionLogReader = (): QuestionLogReader => {
     pairCalls(state, calls, results);
 
     return {
-      questions: state.questions.toSorted((left, right) => left.time - right.time),
+      questions: state.questions.toSorted((left, right) => left.answeredAt - right.answeredAt),
       skipped: state.skipped,
     };
   };

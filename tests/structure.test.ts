@@ -63,6 +63,7 @@ const pureModules = [
   'scripts/piSmokeChecks.ts',
   'scripts/piVersionDrift.ts',
   'scripts/questionGateScore/questionGateScoreLog.ts',
+  'scripts/questionGateScore/questionGateScorePrepare.ts',
   'scripts/questionGateScore/questionGateScoreReport.ts',
   'scripts/sessionHealthReport.ts',
   'scripts/sessionHealthRules.ts',
@@ -278,6 +279,7 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 
 // The outside libraries a registered module may import, by module path.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
+  'scripts/questionGateScore/questionGateScorePrepare.ts': ['node:crypto'],
   'src/extensions/modelFallback/fallbackRoute.ts': ['typebox', 'typebox/value'],
   'src/extensions/improvement/recordRequest.ts': ['node:path', 'typebox'],
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],

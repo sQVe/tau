@@ -158,8 +158,8 @@ it('reads the recommended answer of a current-shape call', () => {
 
   expect(log.questions).toEqual([
     {
-      time: Date.parse('2026-11-01T09:00:09.000Z'),
-      callTime: Date.parse('2026-11-01T09:00:01.000Z'),
+      answeredAt: Date.parse('2026-11-01T09:00:09.000Z'),
+      askedAt: Date.parse('2026-11-01T09:00:01.000Z'),
       session: '/logs/current.jsonl',
       question: {
         question: 'Which database should the service use?',
@@ -187,8 +187,8 @@ it('keeps the question call time apart from its result time', () => {
     ]),
   ]);
 
-  expect(log.questions.map(({ time, callTime }) => ({ time, callTime }))).toEqual([
-    { time: Date.parse(at(9)), callTime: Date.parse(at(1)) },
+  expect(log.questions.map(({ answeredAt, askedAt }) => ({ answeredAt, askedAt }))).toEqual([
+    { answeredAt: Date.parse(at(9)), askedAt: Date.parse(at(1)) },
   ]);
 });
 

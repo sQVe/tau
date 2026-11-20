@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 
@@ -17,16 +16,21 @@ import { parseModelReference, requireAllowedModel } from '../src/config/models.t
 import { readQuestionGateModels } from '../src/config/questionGateModels.ts';
 import type { QuestionGateModels } from '../src/config/questionGateModels.ts';
 import { findSessionFiles } from '../src/improvement/improvement.ts';
-import { exampleCount, pastExamples } from '../src/questionGate/examples.ts';
 import { judgeWithClassifier, judgeWithPanel } from '../src/questionGate/questionGate.ts';
 import type {
   ClassifyQuestion,
+  JudgeQuestion,
   JudgeVerdict,
   PanelMember,
   PastAnswer,
 } from '../src/questionGate/questionGate.ts';
 import { questionLogReader } from './questionGateScore/questionGateScoreLog.ts';
-import type { LoggedQuestion, SessionLog } from './questionGateScore/questionGateScoreLog.ts';
+import type { SessionLog } from './questionGateScore/questionGateScoreLog.ts';
+import { prepareScoreQuestions } from './questionGateScore/questionGateScorePrepare.ts';
+import type {
+  PreparedQuestion,
+  ScoreSelection,
+} from './questionGateScore/questionGateScorePrepare.ts';
 import {
   formatPanelMemberErrors,
   formatScoreReport,
@@ -39,18 +43,6 @@ import type {
   ScoreItem,
 } from './questionGateScore/questionGateScoreReport.ts';
 import { parseTime, readInTurn } from './tokenUsage.ts';
-
-export interface ScoreArguments {
-  since: number | undefined;
-  until: number | undefined;
-  limit: number;
-  holdout: number;
-}
-
-interface ScoredQuestion {
-  question: LoggedQuestion;
-  split: 'tuning' | 'holdout';
-}
 
 interface Judges {
   classify: ClassifyQuestion;
@@ -67,11 +59,8 @@ const usage =
 
 const judgeChunkSize = 4;
 const progressStep = 25;
-const hashHexDigits = 8;
-const hashBits = 32;
-const hashSpace = 2 ** hashBits;
 
-export const parseScoreArguments = (argv: string[], now: number): ScoreArguments => {
+export const parseScoreArguments = (argv: string[], now: number): ScoreSelection => {
   const { values } = parseArgs({
     args: argv,
     options: {
@@ -163,92 +152,35 @@ export const writePanelMemberErrors = (
   }
 };
 
-const inWindow = (time: number, args: ScoreArguments): boolean => {
-  const afterStart = args.since === undefined || time >= args.since;
-  const beforeEnd = args.until === undefined || time < args.until;
-
-  return afterStart && beforeEnd;
-};
-
-const lastTime = (questions: readonly LoggedQuestion[]): number => questions.at(-1)?.time ?? 0;
-
-// A live gate would have every question in a session it reads, so the limit takes whole sessions.
-const selectQuestions = (questions: readonly LoggedQuestion[], limit: number): LoggedQuestion[] => {
-  const groups = new Map<string, LoggedQuestion[]>();
-
-  for (const question of questions) {
-    const group = groups.get(question.session) ?? [];
-
-    group.push(question);
-    groups.set(question.session, group);
-  }
-
-  const newestFirst = [...groups.values()].toSorted(
-    (left, right) => lastTime(right) - lastTime(left),
-  );
-
-  const selected: LoggedQuestion[] = [];
-
-  for (const group of newestFirst) {
-    if (selected.length >= limit) {
-      break;
-    }
-
-    selected.push(...group);
-  }
-
-  return selected;
-};
-
-const isHeldOut = (session: string, holdout: number): boolean => {
-  const digest = createHash('sha256').update(session).digest('hex').slice(0, hashHexDigits);
-  const fraction = Number.parseInt(digest, 16) / hashSpace;
-
-  return fraction < holdout;
-};
-
-const answersByCallTime = (questions: readonly LoggedQuestion[]): PastAnswer[] =>
-  questions.map((question) => ({
-    time: question.callTime,
-    question: question.question,
-    outcome: question.outcome,
-  }));
-
 const judgeQuestion = async (
   judges: Judges,
-  question: LoggedQuestion,
+  question: JudgeQuestion,
   examples: readonly PastAnswer[],
 ): Promise<Record<JudgeVariant, JudgeVerdict>> => {
   const [classifier, classifierExamples, panel, panelExamples] = await Promise.all([
-    judgeWithClassifier(judges.classify, question.question, [], undefined),
-    judgeWithClassifier(judges.classify, question.question, examples, undefined),
-    judgeWithPanel(judges.members, question.question, [], undefined),
-    judgeWithPanel(judges.members, question.question, examples, undefined),
+    judgeWithClassifier(judges.classify, question, [], undefined),
+    judgeWithClassifier(judges.classify, question, examples, undefined),
+    judgeWithPanel(judges.members, question, [], undefined),
+    judgeWithPanel(judges.members, question, examples, undefined),
   ] as const);
 
   return { classifier, classifierExamples, panel, panelExamples };
 };
 
-const judgeItem = async (
-  judges: Judges,
-  scored: ScoredQuestion,
-  answers: readonly PastAnswer[],
-): Promise<ScoreItem> => {
-  const examples = pastExamples(answers, scored.question.callTime, exampleCount);
-  const verdicts = await judgeQuestion(judges, scored.question, examples);
+const judgeItem = async (judges: Judges, prepared: PreparedQuestion): Promise<ScoreItem> => {
+  const verdicts = await judgeQuestion(judges, prepared.question, prepared.examples);
 
   return {
-    session: scored.question.session,
-    split: scored.split,
-    outcome: scored.question.outcome,
+    session: prepared.session,
+    split: prepared.split,
+    outcome: prepared.outcome,
     verdicts,
   };
 };
 
 const judgeAll = async (
   judges: Judges,
-  questions: readonly ScoredQuestion[],
-  answers: readonly PastAnswer[],
+  questions: readonly PreparedQuestion[],
 ): Promise<ScoreItem[]> => {
   const items: ScoreItem[] = [];
   let nextReport = progressStep;
@@ -256,7 +188,7 @@ const judgeAll = async (
   for (let start = 0; start < questions.length; start += judgeChunkSize) {
     const chunk = questions.slice(start, start + judgeChunkSize);
     // oxlint-disable-next-line no-await-in-loop -- Each chunk reports progress before the next starts.
-    const judged = await Promise.all(chunk.map((scored) => judgeItem(judges, scored, answers)));
+    const judged = await Promise.all(chunk.map((prepared) => judgeItem(judges, prepared)));
 
     items.push(...judged);
 
@@ -336,14 +268,7 @@ const main = async () => {
   });
 
   const log = reader.finish();
-
-  const inWindowQuestions = log.questions.filter((question) => inWindow(question.time, args));
-  const selected = selectQuestions(inWindowQuestions, args.limit);
-
-  const scored = selected.map((question) => ({
-    question,
-    split: isHeldOut(question.session, args.holdout) ? ('holdout' as const) : ('tuning' as const),
-  }));
+  const prepared = prepareScoreQuestions(log.questions, args);
 
   const runtime = await ModelRuntime.create({});
   const registry = new ModelRegistry(runtime);
@@ -358,7 +283,7 @@ const main = async () => {
     panelErrors.push({ model, message }),
   );
 
-  const items = await judgeAll(judges, scored, answersByCallTime(log.questions));
+  const items = await judgeAll(judges, prepared);
 
   writePanelMemberErrors(panelErrors, (line) => {
     process.stderr.write(`${line}\n`);
