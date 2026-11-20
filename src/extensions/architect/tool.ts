@@ -14,7 +14,8 @@ import { askArchitect } from './ask/ask.js';
 import type { AskResult } from './ask/ask.js';
 import { runGate } from './gate.js';
 import type { GateResult } from './gate.js';
-import { retryLiveAsk } from './liveAsk.js';
+import { createLiveAskOperations } from './liveAsk.js';
+import type { LiveAskOperations } from './liveAsk.js';
 import { openArchitect } from './open/open.js';
 import type { OpenResult } from './open/open.js';
 
@@ -78,6 +79,7 @@ const runAsk = (
   context: ExtensionToolContext,
   input: ArchitectInput,
   root: string,
+  liveAsk: LiveAskOperations,
 ): Promise<AskResult> => {
   const leadSessionId = context.sessionManager.getSessionId();
 
@@ -86,7 +88,7 @@ const runAsk = (
       throw new Error('action ask with askId does not take question.');
     }
 
-    return retryLiveAsk({ root, askId: requireAskId(input.askId), leadSessionId, hc });
+    return liveAsk.retry({ root, askId: requireAskId(input.askId), leadSessionId, hc });
   }
 
   return askArchitect({
@@ -98,6 +100,7 @@ const runAsk = (
     location: readConfigLocation(root, {}, context),
     ui: context.ui,
     hc,
+    liveAsk: liveAsk.ask,
   });
 };
 
@@ -106,6 +109,7 @@ const runAction = async (
   context: ExtensionToolContext,
   input: ArchitectInput,
   signal: AbortSignal | undefined,
+  liveAsk: LiveAskOperations,
 ): Promise<ArchitectDetails> => {
   const root = await findTauRoot(context.cwd, 'architect');
   const location = readConfigLocation(root, {}, context);
@@ -129,7 +133,7 @@ const runAction = async (
   if (input.action === 'ask') {
     rejectUnexpected(input, ['request', 'restatement']);
 
-    return { action: 'ask', ...(await runAsk({ ...hc, signal }, context, input, root)) };
+    return { action: 'ask', ...(await runAsk({ ...hc, signal }, context, input, root, liveAsk)) };
   }
 
   rejectUnexpected(input, ['question', 'askId']);
@@ -149,8 +153,10 @@ const runAction = async (
 
 export const createArchitectTool = (
   hc: HcRuntime,
-): ToolDefinition<typeof parameters, ArchitectDetails> =>
-  defineTool({
+): ToolDefinition<typeof parameters, ArchitectDetails> => {
+  const liveAsk = createLiveAskOperations();
+
+  return defineTool({
     name: 'architect',
     label: 'Architect',
     description: `Open, ask, or gate the checkout's architect.
@@ -164,7 +170,7 @@ Every gate call writes a record under .tau/lead/gate.`,
     async execute(_toolCallId, input, signal, _onUpdate, context) {
       signal?.throwIfAborted();
 
-      const details = await runAction(hc, context, input, signal);
+      const details = await runAction(hc, context, input, signal, liveAsk);
 
       return {
         content: [{ type: 'text', text: JSON.stringify(details, null, 2) }],
@@ -172,6 +178,7 @@ Every gate call writes a record under .tau/lead/gate.`,
       };
     },
   });
+};
 
 const answerParameters = Type.Object({
   action: Type.Literal('answer'),

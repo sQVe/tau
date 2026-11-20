@@ -79,6 +79,7 @@ const pureModules = [
   'src/extensions/architect/gateDecision.ts',
   'src/extensions/architect/open/openReuseDecision.ts',
   'src/extensions/architect/queuedHandover.ts',
+  'src/extensions/architect/readFailureDecision.ts',
   'src/extensions/askUserQuestion/layout.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/askUserQuestion/typedAnswerGuard.ts',

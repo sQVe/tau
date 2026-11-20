@@ -7,8 +7,7 @@ import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { get, kill, run, wait } from '../../../hc/hc.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { piArguments } from '../../../piStart/piArguments.js';
-import { askLiveArchitect } from '../liveAsk.js';
-import type { LiveAskResult } from '../liveAsk.js';
+import type { LiveAskResult, StartLiveAsk } from '../liveAsk.js';
 import { architectLockPath } from '../lock.js';
 import {
   askRecordPath,
@@ -30,6 +29,7 @@ export interface AskRequest {
   location: ConfigLocation;
   ui: ConfigWarnings;
   hc: HcRuntime;
+  liveAsk: StartLiveAsk;
 }
 
 export type AskResult =
@@ -218,7 +218,7 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
   }
 
   if (route.kind === 'live') {
-    return askLiveArchitect(request, route);
+    return request.liveAsk(request, route);
   }
 
   return askHiddenArchitect(request, route.sessionFile);

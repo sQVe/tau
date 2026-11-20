@@ -4,16 +4,24 @@ import { errorMessage } from '../../errors.js';
 import { get } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { ownInboxReady, sendInboxMessage } from '../../inbox/inbox.js';
+import { readFailureDecision } from './readFailureDecision.js';
 import { changeAskRecord, isOpenLiveAsk, readAskRecord, writeAskRecord } from './record.js';
-import type { LiveAskRecord } from './record.js';
+import type { AskRecord, AskRecordChange, ChangeAskOptions, LiveAskRecord } from './record.js';
 
-export interface LiveAskRoute {
+interface AskRefusalProof {
+  leadSessionId: string;
+  refusal: unknown;
+}
+
+type AskRefusalProofs = Map<string, AskRefusalProof>;
+
+interface LiveAskRoute {
   terminal: string;
   sessionId: string;
   lockToken: string;
 }
 
-export interface LiveAskRequest {
+interface LiveAskRequest {
   root: string;
   question: string;
   leadTerminal: string;
@@ -22,7 +30,7 @@ export interface LiveAskRequest {
   hc: HcRuntime;
 }
 
-export interface LiveAskRetry {
+interface LiveAskRetry {
   root: string;
   askId: string;
   leadSessionId: string;
@@ -33,6 +41,32 @@ export type LiveAskResult =
   | { status: 'needsOpen'; reason: string }
   | { status: 'queued'; askId: string; terminal: string; note: string }
   | { status: 'unknown'; askId: string; terminal: string; note: string };
+
+export type StartLiveAsk = (request: LiveAskRequest, route: LiveAskRoute) => Promise<LiveAskResult>;
+
+type RetryLiveAsk = (request: LiveAskRetry) => Promise<LiveAskResult>;
+
+export interface LiveAskOperations {
+  ask: StartLiveAsk;
+  retry: RetryLiveAsk;
+}
+
+interface RefusedAskRepair {
+  root: string;
+  askId: string;
+  leadSessionId: string;
+  refusal: unknown;
+  refusals: AskRefusalProofs;
+}
+
+class AskLockHeldError extends Error {
+  constructor(askId: string) {
+    super(`The ask lock for ${askId} is held.`);
+    this.name = 'AskLockHeldError';
+  }
+}
+
+const proofKey = (root: string, askId: string): string => `${root}\n${askId}`;
 
 const noLeadInbox =
   'This lead session has no working inbox, so the answer cannot reach it. Reload Pi, then ask again.';
@@ -68,6 +102,101 @@ const settleOpenAsk = (
 ) =>
   changeAskRecord(root, askId, (current) => (isOpenLiveAsk(current) ? update(current) : undefined));
 
+const failSendingAsk = (
+  root: string,
+  askId: string,
+  leadSessionId: string,
+  refusal: unknown,
+  options: ChangeAskOptions = {},
+): Promise<AskRecordChange | undefined> =>
+  changeAskRecord(
+    root,
+    askId,
+    (current) => {
+      if (current.route !== 'live') {
+        return undefined;
+      }
+
+      const ownedSending = current.status === 'sending' && current.leadSessionId === leadSessionId;
+
+      return ownedSending
+        ? { ...current, status: 'failed', detail: errorMessage(refusal) }
+        : undefined;
+    },
+    options,
+  );
+
+const refusedSettlementSucceeded = async (
+  root: string,
+  askId: string,
+  leadSessionId: string,
+  refusal: unknown,
+): Promise<boolean> => {
+  try {
+    await failSendingAsk(root, askId, leadSessionId, refusal);
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const recordState = (change: AskRecordChange | undefined): string =>
+  change === undefined ? 'missing' : change.record.status;
+
+const repairedRefusal = (
+  refusal: unknown,
+  askId: string,
+  change: AskRecordChange | undefined,
+): Error => {
+  const state = recordState(change);
+  const advice = state === 'failed' ? ' Call architect ask again with the question.' : '';
+
+  return new Error(`${errorMessage(refusal)} Ask ${askId} is ${state}.${advice}`, {
+    cause: refusal,
+  });
+};
+
+const repairRecovery = (askId: string, error: unknown): string =>
+  error instanceof AskLockHeldError
+    ? `Retry architect ask with askId ${askId} in this session after the lock releases. Do not reload Pi.`
+    : `Restore record access, then retry architect ask with askId ${askId} in this session. Do not reload Pi.`;
+
+const repairFailed = (refusal: unknown, askId: string, error: unknown): Error =>
+  new Error(
+    `${errorMessage(refusal)} Ask ${askId}: the record repair could not finish: ${errorMessage(error)}. ${repairRecovery(askId, error)}`,
+    { cause: refusal },
+  );
+
+const repairRefusedAsk = async (request: RefusedAskRepair): Promise<never> => {
+  let change: AskRecordChange | undefined;
+
+  try {
+    change = await failSendingAsk(
+      request.root,
+      request.askId,
+      request.leadSessionId,
+      request.refusal,
+      {
+        onWaiting: () => {
+          throw new AskLockHeldError(request.askId);
+        },
+      },
+    );
+  } catch (error) {
+    request.refusals.set(proofKey(request.root, request.askId), {
+      leadSessionId: request.leadSessionId,
+      refusal: request.refusal,
+    });
+
+    throw repairFailed(request.refusal, request.askId, error);
+  }
+
+  request.refusals.delete(proofKey(request.root, request.askId));
+
+  throw repairedRefusal(request.refusal, request.askId, change);
+};
+
 const settleSentAsk = async (
   root: string,
   askId: string,
@@ -83,14 +212,14 @@ const settleSentAsk = async (
 };
 
 const sendQuestion = async (
-  root: string,
-  hc: HcRuntime,
+  request: LiveAskRequest | LiveAskRetry,
   record: LiveAskRecord,
+  refusals: AskRefusalProofs,
 ): Promise<LiveAskResult> => {
   const earlierSendUnknown = record.status === 'unknown';
 
   const sent = await sendInboxMessage({
-    hc,
+    hc: request.hc,
     target: record.architectTerminal,
     sessionId: record.architectSessionId,
     messageId: record.askId,
@@ -104,19 +233,30 @@ const sendQuestion = async (
       throw new Error(`${errorMessage(error)} ${firstCopyNote(record.askId)}`, { cause: error });
     }
 
-    await settleOpenAsk(root, record.askId, (current) => ({
-      ...current,
-      status: 'failed',
-      detail: errorMessage(error),
-    }));
+    const settled = await refusedSettlementSucceeded(
+      request.root,
+      record.askId,
+      record.leadSessionId,
+      error,
+    );
 
-    throw error;
+    if (settled) {
+      throw error;
+    }
+
+    return repairRefusedAsk({
+      root: request.root,
+      askId: record.askId,
+      leadSessionId: record.leadSessionId,
+      refusal: error,
+      refusals,
+    });
   });
 
   const { askId } = record;
 
   if (sent.status === 'unknown') {
-    const settled = await settleSentAsk(root, askId, 'unknown');
+    const settled = await settleSentAsk(request.root, askId, 'unknown');
 
     if (settled.kind === 'failed') {
       return {
@@ -148,7 +288,7 @@ const sendQuestion = async (
     };
   }
 
-  const settled = await settleSentAsk(root, askId, 'queued');
+  const settled = await settleSentAsk(request.root, askId, 'queued');
 
   if (settled.kind === 'failed') {
     return {
@@ -180,9 +320,10 @@ const sendQuestion = async (
   };
 };
 
-export const askLiveArchitect = async (
+const askLiveArchitect = async (
   request: LiveAskRequest,
   route: LiveAskRoute,
+  refusals: AskRefusalProofs,
 ): Promise<LiveAskResult> => {
   if (!(await leadInboxWorks(request))) {
     return { status: 'needsOpen', reason: noLeadInbox };
@@ -206,12 +347,14 @@ export const askLiveArchitect = async (
 
   await writeAskRecord(request.root, record);
 
-  return sendQuestion(request.root, request.hc, record);
+  return sendQuestion(request, record, refusals);
 };
 
-const retryableRecord = async (request: LiveAskRetry): Promise<LiveAskRecord> => {
+const requireSavedLiveAsk = (
+  request: LiveAskRetry,
+  record: AskRecord | undefined,
+): LiveAskRecord => {
   const { askId } = request;
-  const record = await readAskRecord(request.root, askId);
 
   if (record === undefined) {
     throw new Error(`No ask record ${askId} exists. Call architect ask with the question.`);
@@ -227,15 +370,65 @@ const retryableRecord = async (request: LiveAskRetry): Promise<LiveAskRecord> =>
     );
   }
 
-  if (record.status !== 'unknown') {
-    throw new Error(`Ask ${askId} is ${record.status}. Only an unknown ask can retry.`);
-  }
-
   return record;
 };
 
-export const retryLiveAsk = async (request: LiveAskRetry): Promise<LiveAskResult> => {
-  const record = await retryableRecord(request);
+const recordReadFailure = (refusal: unknown, askId: string, error: unknown): Error =>
+  new Error(
+    `${errorMessage(refusal)} Ask ${askId}: the ask record could not be read: ${errorMessage(error)}. Restore record access, then retry architect ask with askId ${askId} in this session. Do not reload Pi.`,
+    { cause: refusal },
+  );
 
-  return sendQuestion(request.root, request.hc, record);
+const retryLiveAsk = async (
+  request: LiveAskRetry,
+  refusals: AskRefusalProofs,
+): Promise<LiveAskResult> => {
+  const proof = refusals.get(proofKey(request.root, request.askId));
+
+  const leadProof =
+    proof !== undefined && proof.leadSessionId === request.leadSessionId ? proof : undefined;
+
+  let saved: AskRecord | undefined;
+
+  try {
+    saved = await readAskRecord(request.root, request.askId);
+  } catch (error) {
+    const readDecision = readFailureDecision({
+      hasRefusalProof: leadProof !== undefined,
+      error,
+    });
+
+    if (readDecision === 'filesystem' && leadProof !== undefined) {
+      throw recordReadFailure(leadProof.refusal, request.askId, error);
+    }
+
+    throw error;
+  }
+
+  const record = requireSavedLiveAsk(request, saved);
+
+  if (leadProof !== undefined) {
+    return repairRefusedAsk({
+      root: request.root,
+      askId: record.askId,
+      leadSessionId: record.leadSessionId,
+      refusal: leadProof.refusal,
+      refusals,
+    });
+  }
+
+  if (record.status !== 'unknown') {
+    throw new Error(`Ask ${request.askId} is ${record.status}. Only an unknown ask can retry.`);
+  }
+
+  return sendQuestion(request, record, refusals);
+};
+
+export const createLiveAskOperations = (): LiveAskOperations => {
+  const refusals: AskRefusalProofs = new Map();
+
+  return {
+    ask: (request, route) => askLiveArchitect(request, route, refusals),
+    retry: (request) => retryLiveAsk(request, refusals),
+  };
 };
