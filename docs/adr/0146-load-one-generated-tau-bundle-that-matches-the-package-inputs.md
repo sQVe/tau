@@ -43,13 +43,15 @@ repeat. The key refuses a layout whose bytes it cannot cover, each with its own 
 anywhere under `src/`, including `src/` itself, because retargeting it changes the bundle without
 changing the key; a directory under `src/` that holds its own `package.json`, because Rolldown
 resolves requests through that manifest; and a `tsconfig.json` below the package root, because
-Rolldown can select a nearer config whose `extends` base is not keyed. The key reads a TypeScript
-config that holds comments, trailing commas, and a leading byte order mark. It refuses a chain that
-names a package, leaves the package by resolved path, or reaches a config whose real path leaves the
-package, so a config symlink cannot key a file outside it. The key returns its full inventory: the
-keyed `src/` files, `package.json`, `tsconfig.json`, the build script, and the root `tsconfig.json`
-extends chain. The loader selects the exact key only, and reading the key never starts Git, runs a
-build, or reads user configuration.
+Rolldown can select a nearer config whose `extends` base is not keyed. The same refusal covers a
+`package.json` in any directory between a keyed file outside `src/`, such as the build script or an
+inherited config, and the package root, because Rolldown reads that manifest's `sideEffects`; the
+root `package.json` stays keyed. The key reads a TypeScript config that holds comments, trailing
+commas, and a leading byte order mark. It refuses a chain that names a package, leaves the package
+by resolved path, or reaches a config whose real path leaves the package, so a config symlink cannot
+key a file outside it. The key returns its full inventory: the keyed `src/` files, `package.json`,
+`tsconfig.json`, the build script, and the root `tsconfig.json` extends chain. The loader selects
+the exact key only, and reading the key never starts Git, runs a build, or reads user configuration.
 
 ### The build
 

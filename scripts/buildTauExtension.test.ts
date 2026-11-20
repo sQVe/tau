@@ -317,6 +317,18 @@ it('refuses a linked module whose link-path manifest changes the side effects', 
   expect(await readFile(stale, 'utf8')).toBe('stale code\n');
 });
 
+it('refuses a manifest beside the build script the bundle imports', async ({ onTestFinished }) => {
+  const root = await createFixture(onTestFinished, {
+    'src/tau/tau.ts':
+      "import '../../scripts/buildTauExtension.ts';\n\nexport default async function register() {}\n",
+    'scripts/package.json': '{"sideEffects":false}\n',
+  });
+
+  await expect(buildTauExtension(root)).rejects.toThrow(/scripts\/package\.json/u);
+
+  expect(await artifactFiles(root)).toEqual([]);
+});
+
 it('refuses an unkeyed re-export that tree shaking removes', async ({ onTestFinished }) => {
   const root = await createFixture(onTestFinished, {
     'src/tau/tau.ts': [

@@ -259,6 +259,26 @@ it('refuses a tsconfig.json below the root', async ({ onTestFinished }) => {
   await expect(readTauArtifactKey(root)).rejects.toThrow(/tsconfig\.json below the root/u);
 });
 
+it('refuses a package.json beside the build script', async ({ onTestFinished }) => {
+  const root = await createPackageRoot(onTestFinished, {
+    ...defaultSources,
+    'scripts/package.json': '{"sideEffects":false}\n',
+  });
+
+  await expect(readTauArtifactKey(root)).rejects.toThrow(/scripts\/package\.json/u);
+});
+
+it('refuses a package.json beside an inherited config', async ({ onTestFinished }) => {
+  const root = await createPackageRoot(onTestFinished, {
+    ...defaultSources,
+    'tsconfig.json': '{"extends":"./config/base.json"}\n',
+    'config/base.json': '{"compilerOptions":{}}\n',
+    'config/package.json': '{}\n',
+  });
+
+  await expect(readTauArtifactKey(root)).rejects.toThrow(/config\/package\.json/u);
+});
+
 it('refuses a TypeScript config that is a symlink outside the package', async ({
   onTestFinished,
 }) => {

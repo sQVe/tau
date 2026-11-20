@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join, relative } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { readTauArtifactInputs } from '../src/tau/tauArtifact.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -99,13 +100,35 @@ it('keeps size thresholds advisory without weakening other lint checks', async (
   expect(result.stdout).not.toContain('max-params');
 }, 30_000);
 
+// A temp root inside the checkout would let a fixture write into the real source tree.
+const assertOutsideCheckout = (directory: string): void => {
+  const relativePath = relative(root, directory);
+  const escapes = relativePath.startsWith('..') || isAbsolute(relativePath);
+  const inside = relativePath === '' || !escapes;
+
+  if (inside) {
+    throw new Error(`The lint fixture temp root ${directory} is inside the checkout.`);
+  }
+};
+
+const createFixtureRoot = (
+  onTestFinished: (cleanup: () => void) => void,
+  prefix: string,
+): string => {
+  const temporaryRoot = resolve(tmpdir());
+
+  assertOutsideCheckout(temporaryRoot);
+
+  return temporaryDirectory(onTestFinished, prefix);
+};
+
 // The lint config matches `src/**` below the working directory, so the fixture is its own package
 // with the repository config, plugin, helpers, and dependencies linked in. It sits outside the
 // checkout, so key calculation on the real tree never sees its files.
 const createImportFixture = async (
   onTestFinished: (cleanup: () => void) => void,
 ): Promise<string> => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-lint-imports-');
+  const directory = createFixtureRoot(onTestFinished, 'tau-lint-imports-');
 
   await writeFile(join(directory, 'package.json'), '{"name":"tau-lint-imports"}\n');
 
@@ -124,6 +147,16 @@ const createImportFixture = async (
 
   return directory;
 };
+
+it('refuses a lint fixture temp root inside the checkout', async ({ onTestFinished }) => {
+  vi.stubEnv('TMPDIR', join(root, 'src'));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  await expect(createImportFixture(onTestFinished)).rejects.toThrow(/inside the checkout/u);
+});
 
 it('keeps test helpers out of production code', async ({ onTestFinished }) => {
   const directory = await createImportFixture(onTestFinished);
@@ -230,7 +263,7 @@ it('keeps extensions out of shared modules, including the package entry', async 
 const createPrivateFixture = async (
   onTestFinished: (cleanup: () => void) => void,
 ): Promise<string> => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-lint-private-');
+  const directory = createFixtureRoot(onTestFinished, 'tau-lint-private-');
   const probe = join(directory, 'src', 'extensions', 'subagents', 'probe.ts');
 
   await writeFile(join(directory, 'package.json'), '{"name":"tau-lint-private"}\n');

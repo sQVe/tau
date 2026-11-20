@@ -15,13 +15,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 // Local state, such as review captures under .pi/, can hold test files that no project runs.
 const ignoredDirectories = new Set(['node_modules', '.git', '.tau', '.pi', 'dist', 'coverage']);
 
-// tests/lint.test.ts names its temporary probe folders with this prefix.
-const isLintProbe = (path: string) =>
-  path.split('/').some((segment) => segment.startsWith('tau-lint-'));
-
 // Skips ignored directories before descending, so state that appears and vanishes there, such as
-// .pi/format-probe-* and the lint probe folders, is never read. A directory removed during the
-// walk counts as empty.
+// .pi/format-probe-*, is never read. A directory removed during the walk counts as empty.
 const walkRepository = (directory: string): string[] => {
   let entries: Dirent[];
 
@@ -38,7 +33,7 @@ const walkRepository = (directory: string): string[] => {
   return entries.flatMap((entry) => {
     const path = directory === '' ? entry.name : `${directory}/${entry.name}`;
 
-    if (ignoredDirectories.has(entry.name) || isLintProbe(path)) {
+    if (ignoredDirectories.has(entry.name)) {
       return [];
     }
 

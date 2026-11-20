@@ -367,6 +367,34 @@ const tsconfigChainInputs = async (packageRoot: string): Promise<InputFile[]> =>
   return readChain(packageRoot, realRoot, [join(packageRoot, 'tsconfig.json')], new Set(), []);
 };
 
+// Rolldown reads the manifest beside a keyed file outside src/ to decide `sideEffects`, and the key
+// cannot cover that manifest. The root manifest is keyed, so only directories below it are checked.
+const assertNoNestedManifests = (packageRoot: string, inputs: readonly InputFile[]): void => {
+  const sourceRoot = join(packageRoot, 'src');
+
+  for (const { path } of inputs) {
+    if (path.startsWith(`${sourceRoot}${sep}`)) {
+      continue;
+    }
+
+    let directory = dirname(path);
+
+    while (directory !== packageRoot && isInside(packageRoot, directory)) {
+      const manifest = join(directory, 'package.json');
+
+      if (existsSync(manifest)) {
+        const name = relative(packageRoot, manifest).split(sep).join('/');
+
+        throw new Error(
+          `Tau artifact input ${name} is a nested package manifest, so the key cannot cover what Rolldown resolves through it.`,
+        );
+      }
+
+      directory = dirname(directory);
+    }
+  }
+};
+
 const readInputDigest = async ({ name, path }: InputFile): Promise<string> => {
   const content = await readFile(path).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -391,6 +419,8 @@ export const readTauArtifactInputs = async (packageRoot: string): Promise<TauArt
   const chain = await tsconfigChainInputs(packageRoot);
 
   const inputs = uniqueInputs([...fixed, ...sources, ...chain]).toSorted(compareNames);
+
+  assertNoNestedManifests(packageRoot, inputs);
 
   const digests = await Promise.all(inputs.map((input) => readInputDigest(input)));
   const key = createHash('sha256').update(digests.join('\n')).digest('hex');
