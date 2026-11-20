@@ -55,7 +55,7 @@ it('a space start opens one tab with the argv as JSON', async () => {
 });
 
 it('a space start names its first tab', async () => {
-  const fake = createAppFake();
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await startPiSession(

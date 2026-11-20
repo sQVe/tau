@@ -30,6 +30,13 @@ export interface PiStartRightOfRequest extends PiSessionRequest {
   bareRoot: boolean;
 }
 
+interface LaunchPlacement {
+  command: string;
+  destinationFlag: string;
+  destination: string;
+  tabNameFlag: string;
+}
+
 const splitReplySchema = Type.Object({ pane: Type.String(), terminal: Type.String() });
 
 const argvOf = (request: PiSessionRequest, message: string | undefined): string[] =>
@@ -40,31 +47,29 @@ const argvOf = (request: PiSessionRequest, message: string | undefined): string[
     message,
   });
 
-const tabArguments = (request: PiStartRequest, space: string): string[] => [
-  'do',
-  'tab.new',
-  '--space',
-  space,
-  '--folder',
-  request.folder,
-  '--name',
-  request.tabName,
-  '--argv',
-  JSON.stringify(argvOf(request, undefined)),
-  '--task',
-  request.task,
-  '--focus',
-  'false',
-];
+const placementOf = (target: PiStartTarget): LaunchPlacement =>
+  'space' in target
+    ? {
+        command: 'tab.new',
+        destinationFlag: '--space',
+        destination: target.space,
+        tabNameFlag: '--name',
+      }
+    : {
+        command: 'space.new',
+        destinationFlag: '--name',
+        destination: target.name,
+        tabNameFlag: '--tab',
+      };
 
-const spaceArguments = (request: PiStartRequest, name: string): string[] => [
+const launchArguments = (request: PiStartRequest, placement: LaunchPlacement): string[] => [
   'do',
-  'space.new',
-  '--name',
-  name,
+  placement.command,
+  placement.destinationFlag,
+  placement.destination,
   '--folder',
   request.folder,
-  '--tab',
+  placement.tabNameFlag,
   request.tabName,
   '--argv',
   JSON.stringify(argvOf(request, undefined)),
@@ -86,9 +91,7 @@ const splitArguments = (request: PiSessionRequest, pane: string): string[] => [
 ];
 
 const startArguments = (request: PiStartRequest): string[] =>
-  'space' in request.target
-    ? tabArguments(request, request.target.space)
-    : spaceArguments(request, request.target.name);
+  launchArguments(request, placementOf(request.target));
 
 const isDirectory = (path: string): Promise<boolean> =>
   stat(path).then(
