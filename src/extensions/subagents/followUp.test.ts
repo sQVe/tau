@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -871,7 +872,9 @@ it('keeps the started follow-up and warns when the sweep lock release fails', as
     truncate.mockImplementation(originalTruncate);
   });
 
-  runtime.sweepFolders = () => Promise.resolve();
+  const sweepFolders = vi.fn<NonNullable<LaunchRuntime['sweepFolders']>>(() => Promise.resolve());
+
+  runtime.sweepFolders = sweepFolders;
 
   fake.replyConnect('hello', 1, {
     generation: 1,
@@ -890,4 +893,41 @@ it('keeps the started follow-up and warns when the sweep lock release fails', as
   expect(result.details?.address).toBe('t-follow-up');
   expect(result.details?.warning).toContain('not released');
   expect(terminalRun(fake)).toBeDefined();
+  expect(sweepFolders).not.toHaveBeenCalled();
+});
+
+it('submits the background sweep after releasing the copied snapshot lock', async () => {
+  const { directory, fake, runtime } = setup();
+  const { source } = await packageBackedSource(directory);
+  const generation = `${lockPathFor(directory)}.1`;
+  const releasedAtSubmission: boolean[] = [];
+
+  const sweepFolders = vi.fn<NonNullable<LaunchRuntime['sweepFolders']>>(() => {
+    const owner = existsSync(generation)
+      ? (JSON.parse(readFileSync(generation, 'utf8')) as { released?: boolean })
+      : undefined;
+
+    releasedAtSubmission.push(owner?.released === true);
+
+    return Promise.resolve();
+  });
+
+  runtime.sweepFolders = sweepFolders;
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-follow-up', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).not.toBe(true);
+  expect(sweepFolders).toHaveBeenCalledTimes(1);
+  expect(releasedAtSubmission).toEqual([true]);
 });

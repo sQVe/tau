@@ -498,7 +498,10 @@ export const startReservedWorker = async (
     }
 
     runtime.admission.remove(assignmentId);
-    startFolderSweep(runtime, assignment, terminal);
+
+    if (warning === undefined) {
+      startFolderSweep(runtime, assignment, terminal);
+    }
 
     const modelReason = facts.modelReason;
     const status = launchStatus(terminal, assignment.loadout.model, modelReason);
