@@ -2,7 +2,7 @@ import { link, mkdir, readdir, readFile, rename, rm, truncate, writeFile } from 
 import { basename, dirname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { hasErrorCode, isMissingFile } from '../errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
 import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
@@ -111,25 +111,27 @@ const readOwner = async (lockPath: string): Promise<LockOwner | undefined> => {
 const generationPath = (lockPath: string, generation: number): string =>
   `${lockPath}.${generation}`;
 
-// Links a fully written file into place, so no reader ever sees a partly written lock.
-const tryCreate = async (path: string, owner: LockOwner): Promise<boolean> => {
+// Links a fully written file into place, so no reader ever sees a partly written lock. Returns the
+// staging path that it linked, or undefined when another owner won the link. The caller removes the
+// staging file, so a failed removal still leaves the claim known to the caller.
+const tryCreate = async (path: string, owner: LockOwner): Promise<string | undefined> => {
   const staging = `${path}.${owner.token}.staging`;
 
   await writeFile(staging, JSON.stringify(owner), { flag: 'wx' });
 
   try {
     await link(staging, path);
-
-    return true;
   } catch (error) {
+    await rm(staging, { force: true });
+
     if (hasErrorCode(error, 'EEXIST')) {
-      return false;
+      return undefined;
     }
 
     throw error;
-  } finally {
-    await rm(staging, { force: true });
   }
+
+  return staging;
 };
 
 const waitForNextPoll = async (
@@ -275,10 +277,33 @@ export const readLiveLockHolder = async (lockPath: string): Promise<LiveLockHold
   return toLiveHolder(holder);
 };
 
+// Marks the claim released before its error leaves. The file keeps its generation, and the owner
+// token keeps the release from touching a file that another owner linked over it.
+const releaseAfterFailedClaim = async (
+  path: string,
+  owner: LockOwner,
+  claimError: unknown,
+): Promise<never> => {
+  const releaseError = await releaseOwnFile(path, owner).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+
+  if (releaseError === undefined) {
+    throw claimError;
+  }
+
+  const message = `The claim failed: ${errorMessage(claimError)}; releasing it failed: ${errorMessage(releaseError)}`;
+
+  throw new Error(message, { cause: claimError });
+};
+
 // Links generation `next`, and keeps it only if no higher generation exists. A stalled session can
 // link a number that was deleted while a higher generation is live. The owner's start time is
 // stamped here, after the attempt saw the old holder gone, so a lock is never older than anything
-// its previous holder wrote while it held the lock. A tie in one millisecond is possible.
+// its previous holder wrote while it held the lock. A tie in one millisecond is possible. Once the
+// link succeeds, any failure releases the claim before it rejects, so no caller strands a live lock
+// for itself.
 const claimGeneration = async (
   options: FileLockOptions,
   claim: LockClaim,
@@ -290,20 +315,27 @@ const claimGeneration = async (
   await options.beforeLink?.();
 
   const owner: LockOwner = { ...claim, startedAt: new Date().toISOString() };
+  const staging = await tryCreate(path, owner);
 
-  if (!(await tryCreate(path, owner))) {
+  if (staging === undefined) {
     return undefined;
   }
 
-  const current = await listGenerations(lockPath);
+  try {
+    await rm(staging, { force: true });
 
-  if (current.some((generation) => generation > next)) {
-    await rm(path, { force: true });
+    const current = await listGenerations(lockPath);
 
-    return undefined;
+    if (current.some((generation) => generation > next)) {
+      await rm(path, { force: true });
+
+      return undefined;
+    }
+
+    await removeOlderGenerations(lockPath, next);
+  } catch (error) {
+    await releaseAfterFailedClaim(path, owner, error);
   }
-
-  await removeOlderGenerations(lockPath, next);
 
   return owner;
 };
