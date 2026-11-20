@@ -80,18 +80,23 @@ const isUnread = (terminal: WorkerTerminalFact): terminal is UnreadTerminalFact 
 const isFinishedFact = (terminal: WorkerTerminalFact): terminal is FinishedTerminalFact =>
   terminal.kind === 'finished';
 
-// A launch hint yields to a matching finish, since the lock need not grant claims in arrival order.
-const runningTerminals = (terminals: readonly WorkerTerminalFact[]): ReadTerminalFact[] => {
+const finishedAddresses = (terminals: readonly WorkerTerminalFact[]): Set<string> => {
   const finishedList = terminals.filter(isFinishedFact);
-  const finished = new Set(finishedList.map((terminal) => terminal.terminalAddress));
 
-  return terminals
-    .filter(isRead)
-    .filter(
-      (terminal) =>
-        terminal.running && !(isStarting(terminal) && finished.has(terminal.terminalAddress)),
-    );
+  return new Set(finishedList.map((terminal) => terminal.terminalAddress));
 };
+
+// A launch hint yields to a matching finish, since the lock need not grant claims in arrival order.
+const observedTerminals = (
+  terminals: readonly WorkerTerminalFact[],
+  finished: ReadonlySet<string>,
+): ReadTerminalFact[] =>
+  terminals
+    .filter(isRead)
+    .filter((terminal) => !(isStarting(terminal) && finished.has(terminal.terminalAddress)));
+
+const runningTerminals = (terminals: readonly ReadTerminalFact[]): ReadTerminalFact[] =>
+  terminals.filter((terminal) => terminal.running);
 
 const namesAssignment = (terminals: readonly ReadTerminalFact[], name: string): boolean =>
   terminals.some((terminal) => terminal.assignmentId === name);
@@ -165,9 +170,9 @@ export const decideWorkerFolderRemoval = (facts: WorkerFolderFacts): WorkerFolde
     return { scratch: [], snapshots: [], markUnused: [], clearUnused: [] };
   }
 
-  const terminals = facts.terminals.filter(isRead);
+  const terminals = observedTerminals(facts.terminals, finishedAddresses(facts.terminals));
   const unread = facts.terminals.filter(isUnread);
-  const running = runningTerminals(facts.terminals);
+  const running = runningTerminals(terminals);
 
   const scratch = facts.scratch
     .filter(

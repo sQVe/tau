@@ -323,6 +323,43 @@ it('keeps the marker when a detail read shows the starting worker finished', asy
   expect(existsSync(snapshot)).toBe(true);
 });
 
+it('keeps a starting snapshot when its detail reply names another terminal', async () => {
+  const { agentDirectory, details, hc, snapshotRoot, listTerminals } = setup();
+  const startingSnapshot = makeFolder(snapshotRoot, 'snapshot-a');
+  const unrelatedSnapshot = makeFolder(snapshotRoot, 'snapshot-b');
+  const now = Date.now();
+  const id = 'follow-up';
+
+  writeUnusedMarker(startingSnapshot, now - 25 * hour);
+  writeUnusedMarker(unrelatedSnapshot, now - 25 * hour);
+  listTerminals([{ assignmentId: id, state: 'live', name: 'worker-0123abcd' }]);
+
+  details.set(
+    `t-${id}`,
+    JSON.stringify({
+      address: 't-other',
+      state: 'finished',
+      labels: { 'tau.assignment': assignmentPath('other') },
+    }),
+  );
+
+  const result = await sweepAt(hc, agentDirectory, now, [
+    {
+      kind: 'read',
+      assignmentId: id,
+      running: true,
+      packageSnapshot: 'snapshot-a',
+      terminalAddress: `t-${id}`,
+    },
+  ]);
+
+  expect(existsSync(join(startingSnapshot, unusedMarkerName))).toBe(false);
+  expect(existsSync(startingSnapshot)).toBe(true);
+  expect(existsSync(join(unrelatedSnapshot, unusedMarkerName))).toBe(true);
+  expect(existsSync(unrelatedSnapshot)).toBe(true);
+  expect(result.errors).toHaveLength(1);
+});
+
 it('keeps the starting hint when only another terminal finished', async () => {
   const { agentDirectory, hc, snapshotRoot, listTerminals } = setup();
   const snapshot = makeFolder(snapshotRoot, 'snapshot-source');

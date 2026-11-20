@@ -386,6 +386,40 @@ const table: {
     expected: { clearUnused: ['snapshot-a'] },
   },
   {
+    name: 'keeps young scratch when a list-only finish supersedes its launch hint',
+    facts: {
+      now,
+      scratch: [folder('assignment-a', 10 * second)],
+      snapshots: [],
+      terminals: [starting('assignment-a', null, 't-a'), finished('t-a')],
+    },
+    expected: { scratch: [] },
+  },
+  {
+    name: 'removes scratch at the launch grace when a list-only finish supersedes its hint',
+    facts: {
+      now,
+      scratch: [folder('assignment-a', scratchLaunchGrace)],
+      snapshots: [],
+      terminals: [starting('assignment-a', null, 't-a'), finished('t-a')],
+    },
+    expected: { scratch: ['assignment-a'] },
+  },
+  {
+    name: 'removes young scratch when a labeled finish names its assignment',
+    facts: {
+      now,
+      scratch: [folder('assignment-a', 10 * second)],
+      snapshots: [],
+      terminals: [
+        starting('assignment-a', null, 't-a'),
+        finished('t-a'),
+        terminal('assignment-a', false, null),
+      ],
+    },
+    expected: { scratch: ['assignment-a'] },
+  },
+  {
     name: 'keeps a snapshot a live worker names when the starting hint finished',
     facts: {
       now,

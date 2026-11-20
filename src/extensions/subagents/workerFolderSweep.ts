@@ -141,6 +141,10 @@ const readTerminalFact = async (hc: HcRuntime, listed: HcTerminal): Promise<Term
 
   try {
     terminal = await get(hc, listed.address, { timeout: terminalReadTimeout });
+
+    if (terminal.address !== listed.address) {
+      throw new Error(`the reply named ${terminal.address}`);
+    }
   } catch (error) {
     return {
       fact: { kind: 'unread', assignmentPrefix: assignmentPrefixFromName(listed.name) },
