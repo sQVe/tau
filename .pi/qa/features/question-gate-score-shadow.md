@@ -15,6 +15,7 @@ A `qa` worker runs this feature. The command reads shadow records and makes no m
 ```sh
 run=<run>
 checkout=<worktree path from the brief>
+mkdir -p "/tmp/tau-verification-$run"
 scratch=$(mktemp -d "/tmp/tau-verification-$run/qa-XXXXXX")
 agent=$(mktemp -d "/tmp/tau-verification-$run/agent-XXXXXX")
 evidence=$(mktemp -d "/tmp/tau-verification-$run/evidence-XXXXXX")
