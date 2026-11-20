@@ -27,6 +27,18 @@ const nameRows: { name: string; role: string; detail?: string; expected: string 
     detail: 'supercalifragilisticexpialidocious',
     expected: 'worker: supercalifragili',
   },
+  {
+    name: 'a detail cut inside an emoji',
+    role: 'lead',
+    detail: 'abcdefghijklmnopq😀',
+    expected: 'lead: abcdefghijklmnopq',
+  },
+  {
+    name: 'a role cut inside an emoji',
+    role: 'abcdefghijklmnopqrstuvw😀',
+    detail: 'task',
+    expected: 'abcdefghijklmnopqrstuvw',
+  },
   { name: 'an empty detail', role: 'lead', detail: '', expected: 'lead' },
   {
     name: 'a long role',
