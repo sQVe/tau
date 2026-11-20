@@ -225,6 +225,7 @@ const pureModules = [
   'src/role/roleTools.ts',
   'src/schema.ts',
   'src/shell.ts',
+  'src/tabName.ts',
   'src/verification/freshness.ts',
   'src/verification/selection.ts',
   'src/wake/deliveryStep.ts',

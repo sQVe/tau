@@ -483,6 +483,7 @@ it.each([
     const args = app.calls[0]?.commandArguments ?? [];
 
     expect(argumentAfter(args, '--name')).toBe(`architect-${basename(root)}`);
+    expect(argumentAfter(args, '--tab')).toBe('architect');
     expect(argumentAfter(args, '--task')).toContain(openRequest);
   },
 );

@@ -567,6 +567,11 @@ entry = "src/skillTools.ts"
 public = []
 imports = []
 
+[modules.tabName]
+entry = "src/tabName.ts"
+public = []
+imports = []
+
 [modules.tau]
 entry = "src/tau.ts"
 public = []
