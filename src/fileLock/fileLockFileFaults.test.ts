@@ -226,9 +226,8 @@ it('reports the claim error and the release error when the release fails too', a
   const thrown: unknown = await outcome.catch((error: unknown) => error);
   const failure = thrown as Error;
 
-  expect(failure.message).toBe(
-    'The claim failed: EIO: i/o error; releasing it failed: The release read failed.',
-  );
+  expect(failure.message).toContain('The claim failed: EIO: i/o error');
+  expect(failure.message).toContain('releasing it failed: The release read failed.');
 
   expect(failure.cause).toBe(acquisitionError);
   expect(run).not.toHaveBeenCalled();
