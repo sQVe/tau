@@ -27,26 +27,33 @@ export const panelVerdict = (
     return { kind: 'error' };
   }
 
-  const normalized = results.map((result) => normalizeReply(result, trimmedLabels));
-  const kinds = new Set(normalized.map((result) => result.kind));
+  const votes: string[] = [];
+  const failures = new Set<Exclude<MemberResult['kind'], 'replied'>>();
 
-  if (kinds.has('unavailable')) {
+  for (const result of results) {
+    const normalized = normalizeReply(result, trimmedLabels);
+
+    if (normalized.kind === 'replied') {
+      votes.push(normalized.text);
+    } else {
+      failures.add(normalized.kind);
+    }
+  }
+
+  if (failures.has('unavailable')) {
     return { kind: 'unavailable' };
   }
 
-  if (kinds.has('timeout')) {
+  if (failures.has('timeout')) {
     return { kind: 'timeout' };
   }
 
-  if (kinds.has('error')) {
+  if (failures.has('error')) {
     return { kind: 'error' };
   }
 
   const wanted = recommended.trim();
+  const matching = votes.filter((text) => text === wanted).length;
 
-  const matching = normalized.filter(
-    (result) => result.kind === 'replied' && result.text === wanted,
-  ).length;
-
-  return { kind: 'answered', confidence: matching / normalized.length };
+  return { kind: 'answered', confidence: matching / votes.length };
 };

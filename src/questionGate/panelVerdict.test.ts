@@ -58,6 +58,13 @@ const cases = [
     { kind: 'error' },
   ],
   [
+    'only replied results count as votes',
+    labels,
+    'Fast',
+    [{ kind: 'error' }, replied('Fast'), replied('Careful')],
+    { kind: 'error' },
+  ],
+  [
     'replies with surrounding spaces match',
     labels,
     'Fast',

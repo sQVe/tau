@@ -38,10 +38,20 @@ it('returns the newest count older answers, oldest first', () => {
   expect(pastExamples(answers, 7, 2)).toEqual([answer(5), answer(6)]);
 });
 
+it('sorts older answers before keeping the newest count', () => {
+  const answers = [answer(6), answer(1), answer(5), answer(2), answer(4), answer(3)];
+
+  expect(pastExamples(answers, 7, 2)).toEqual([answer(5), answer(6)]);
+});
+
 it('returns an empty list when no answer is older', () => {
   expect(pastExamples([answer(1), answer(2)], 1, exampleCount)).toEqual([]);
 });
 
-it('returns an empty list for a count of 0', () => {
+it('returns an empty list for a count of 0 even with older answers', () => {
   expect(pastExamples([answer(1), answer(2)], 3, 0)).toEqual([]);
+});
+
+it('returns an empty list for a negative count even with older answers', () => {
+  expect(pastExamples([answer(1), answer(2)], 3, -1)).toEqual([]);
 });

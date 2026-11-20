@@ -14,5 +14,5 @@ export const pastExamples = (
   const older = answers.filter((answer) => answer.time < before);
   const oldestFirst = older.toSorted((left, right) => left.time - right.time);
 
-  return oldestFirst.slice(Math.max(0, oldestFirst.length - count));
+  return oldestFirst.slice(-count);
 };

@@ -174,3 +174,18 @@ it('the user prompt keeps examples but no current recommendation', async () => {
     });
   }
 });
+
+it('the user prompt has no examples part when there are no examples', async () => {
+  const first = replying('Fast');
+  const second = replying('Fast');
+  const third = replying('Fast');
+  const members = [first.member, second.member, third.member] as const;
+
+  await judgeWithPanel(members, question, [], undefined);
+
+  for (const fixture of [first, second, third]) {
+    const user: unknown = JSON.parse(fixture.calls[0]?.prompt.user ?? '{}');
+
+    expect(user).not.toHaveProperty('examples');
+  }
+});
