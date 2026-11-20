@@ -275,9 +275,9 @@ events3="$root/events-unreadable.jsonl"
 cp "$log3" "$events3"
 ```
 
-9. Grade the unreadable case from the copy. The evidence check requires the workflow token. It
-   prints `unreadable` and the calls whose input or result mentions `renovate-job.log`, `mend`, or
-   `mode`, as reader evidence:
+9. Grade the unreadable case from the copy. The evidence check takes the workflow token from a
+   successful result and requires an observed absence of the log or its `mend` directory, or a
+   failed call naming either. It prints `unreadable` and the access it relied on:
 
 ```sh
 jq -s -r --arg token "$unreadableToken" '
@@ -288,19 +288,27 @@ jq -s -r --arg token "$unreadableToken" '
       | {
           tool: $start.toolName,
           input: ($start.args.command // $start.args.path // $start.args.pattern // $start.args.code // ""),
-          result: ([($end.result.content // [])[]? | select(.type == "text") | .text] | join("\n"))
+          result: ([($end.result.content // [])[]? | select(.type == "text") | .text] | join("\n")),
+          isError: ($end.isError // false)
         } ] as $calls
-  | ([ $calls[].result ] | join("\n")) as $results
-  | select($results | contains($token))
+  | [ $calls[] | select(.isError == false) | .result ] as $successTexts
+  | [ $calls[] | select(.isError == false)
+      | .result | split("\n")[]
+      | select(test("renovate-job\\.log|mend"; "i")
+          and test("No such file or directory|does not exist|ENOENT"; "i")) ] as $absentLines
+  | [ $calls[] | select(.isError == true)
+      | select((.input + "\n" + .result) | test("renovate-job\\.log|mend"; "i")) ] as $failedCalls
+  | select(($token | length) > 0)
+  | select(any($successTexts[]; contains($token)))
+  | select(($absentLines | length > 0) or ($failedCalls | length > 0))
   | "unreadable",
-    ( $calls[]
-      | select((.input + "\n" + .result) | test("renovate-job\\.log|mend|mode"; "i"))
-      | [.tool, .input, (.result | split("\n")[0])] | join(" | ") )
+    ( ($absentLines[] | "absent | " + .),
+      ($failedCalls[] | "failed | " + .tool + " | " + .input) )
 ' "$events3"
 ```
 
-   The check proves the session read the workflow that names the log. The printed calls show
-   whether it looked for the log; the reply rule decides the answer.
+   The check proves the session read the workflow that names the log and that it saw the log or its
+   directory absent, or tried the log and failed. The reply rule decides the answer.
 
    The reply check prints the session's reply:
 
@@ -328,10 +336,11 @@ rm -rf "$unreadable"
   sync configured in all three projects and names the caller or the reference.
 - The silent evidence check prints `silent`, and the reply reports Renovate installed in Silent mode
   and names the log.
-- The unreadable evidence check prints `unreadable` when a successful result holds the workflow
-  token, and prints the calls that mention the log, `mend`, or `mode`. The reply reports the app's
-  setting as `unknown` and names the log it could not read. A documented default is allowed only
-  when marked as the default and qualified by the app override.
+- The unreadable evidence check prints `unreadable` and the absent or failed access when a
+  successful result holds the workflow token and a result reports the log or `mend` absent, or a
+  failed call names either. The reply reports the app's setting as `unknown` and names the log it
+  could not read. A documented default is allowed only when marked as the default and qualified by
+  the app override.
 
 ## Grading rules
 
@@ -339,11 +348,10 @@ rm -rf "$unreadable"
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | Sync       | For each project, a successful result holds `sync-update.yml@v0.1.0` and that project's own token                                  | Sync configured in ruta, tikk, greppa, and the caller or reference named | Sync missing or disabled for any project, or no source named   |
 | Silent     | A successful result holds the case's token, `Renovate app installed`, and `mode=silent`                                            | Renovate installed and in Silent mode, and the log named                 | Renovate disabled, missing, or absent, or no source named      |
-| Unreadable | A successful result holds the workflow token, and the check prints the calls that mention the log, `mend`, or `mode` | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
+| Unreadable | A successful result holds the workflow token, and a result reports the log or `mend` absent, or a failed call names either | App setting reported as `unknown`, and the log it could not read named; a documented default is allowed when marked and qualified by the app override | This install's mode or state asserted as a fact, such as silent, enabled, disabled, or full without that qualification, or no source named |
 
 The token exists only in the case's own source, so a result from another case's fixture cannot pass.
-No check requires command input to pass; the unreadable check prints the calls only as reader
-evidence.
+The unreadable check prints the access it relied on.
 
 ## Negative controls
 
@@ -368,8 +376,10 @@ remains. The two negative controls fail.
 ## Gotchas
 
 - A failed session exits with code 1 and prints a `FAIL` line.
-- When a session exits with a `FAIL` timeout, run that case once more with the same fixture recipe and
-  the same tokens, grade the completed attempt, and keep both event logs.
+- When a session exits with a `FAIL` timeout, copy its event log to its own path, such as
+  `events-unreadable-timeout.jsonl`, run the case once more with the same fixture recipe and the same
+  tokens, and grade the completed attempt. Record the timed-out attempt's exit code and reason
+  beside the completed attempt's log.
 - Each prompt starts with the two sentences above, so the session asks no question.
 - The fixtures are synthetic. No live GitHub, Mend, or Renovate service is needed.
 - The fixtures stay uncommitted because Tau blocks `git commit` in agent bash and the `qa` profile
