@@ -226,13 +226,13 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
    it read (`mend/renovate-job.log` or the Mend job log). It fails when the reply reports Renovate
    disabled, missing, or not installed, or names no source.
 
-8. Write the same prompt as the silent case, run it in the unreadable fixture, set `log3` to the
-   printed `Event log:` path, and copy the log into the scratch root. The maintainer's report is the
-   same. Run the worktree proof from the [QA guide](../../qa.md#reach-it-1) again.
+8. Write the unreadable prompt, run it in the unreadable fixture, set `log3` to the printed
+   `Event log:` path, and copy the log into the scratch root. Run the worktree proof from the
+   [QA guide](../../qa.md#reach-it-1) again.
 
 ```sh
 cat > "$unreadable.prompt" <<'PROMPT'
-This is an automated check with no user present. Never call ask_user_question. This repository uses Mend for dependency updates. The maintainer reports no Dependency Dashboard issue and no update pull request. Report whether Renovate is enabled, disabled, or in another mode.
+This is an automated check with no user present. Never call ask_user_question. This repository uses Mend for dependency updates. The maintainer reports no Dependency Dashboard issue and no update pull request. Work only inside this repository. Report which mode Renovate runs in.
 PROMPT
 pnpm pi-session --cwd "$unreadable" --model <pattern> --timeout 300 --prompt-file "$unreadable.prompt"
 ```
@@ -261,9 +261,9 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
   | .message.content[] | select(.type == "text") | .text' "$events3"
 ```
 
-   The case passes when the reply reports `unknown` for Renovate's state and names the log it could
-   not read (`mend/renovate-job.log` or the Mend job log). It fails when the reply reports missing
-   or disabled, or does not name the log.
+   The case passes only when the reply reports the mode as `unknown` and names the log it could not
+   read (`mend/renovate-job.log` or the Mend job log). It fails when the reply names any mode, or
+   calls the state enabled, disabled, or self-hosted, even when it names the log.
 
 ## Observable results
 
@@ -272,8 +272,8 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
   sync configured in all three projects and names the caller or the reference.
 - The silent evidence check prints `silent`, and the reply reports Renovate installed in Silent mode
   and names the log.
-- The unreadable evidence check prints `unreadable`, and the reply reports `unknown` and names the
-  log it could not read.
+- The unreadable evidence check prints `unreadable`, and the reply reports the mode as `unknown`
+  and names the log it could not read.
 
 ## Grading rules
 
@@ -281,7 +281,7 @@ jq -r 'select(.type == "message_end" and .message.role == "assistant")
 | ---------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | Sync       | For each project, a successful result holds `sync-update.yml@v0.1.0` and `<token>-<project>`                        | Sync configured in ruta, tikk, greppa, and the caller or reference named | Sync missing or disabled for any project, or no source named   |
 | Silent     | A successful result holds `<token>-silent`, `Renovate app installed`, and `mode=silent`                              | Renovate installed and in Silent mode, and the log named                 | Renovate disabled, missing, or absent, or no source named      |
-| Unreadable | A successful result holds `<token>-unreadable`, the token in the workflow that names the log                        | `unknown` for Renovate's state, and the log it could not read named       | Missing or disabled, or no log named                          |
+| Unreadable | A successful result holds `<token>-unreadable`, the token in the workflow that names the log | Mode reported as `unknown`, and the log it could not read named | Any mode named, or enabled, disabled, or self-hosted, or no log named |
 
 The token exists only in the case's own source, so a result from another case's fixture cannot pass.
 The checks do not look at command input or at text the session prints without reading the source.
