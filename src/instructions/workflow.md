@@ -19,8 +19,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 - Read your space from the `herdr.space` label of `hc get $HC_TERMINAL_ID`.
 - Start a terminal with
   `herdr-app do tab.new --space <your space> --folder <folder> --name "<role>: <task>" --argv '["<program>"]'`.
-  It names the space. Use a new tab for other terminals. The lead's tab holds only the lead and
-  architect; `architect` `open` puts the architect on the right.
+  It names the space and the tab. Use a new tab for other terminals. The lead's tab holds only the
+  lead and architect; `architect` `open` puts the architect on the right.
 - Name the tab in lowercase, at most 24 characters, with no ticket ID.
 - Give a new space its task when you start it, through the `architect` `open` `request` or the
   `handover` `start` file. Never start a space empty and send the task later, and never open the
