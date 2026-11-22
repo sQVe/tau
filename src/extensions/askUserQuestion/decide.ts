@@ -161,6 +161,23 @@ const decidedAnswers = (record: DecisionRecord): Answer[] =>
     typed: false,
   }));
 
+const saveDecision = async (
+  ports: DecidePorts,
+  request: DecideRequest,
+  sharedRoot: string,
+  record: DecisionRecord,
+  notice: string,
+): Promise<DecideOutcome> => {
+  try {
+    const directory = await ports.ensureDirectory(sharedRoot, 'questions');
+    const path = await writeDecisionRecord(directory, record, ports.writeRecord);
+
+    return { kind: 'decided', answers: decidedAnswers(record), record: path, notice };
+  } catch {
+    return isCancelled(request) ? { kind: 'cancelled' } : { kind: 'ask' };
+  }
+};
+
 const runDecision = async (
   ports: DecidePorts,
   request: DecideRequest,
@@ -219,15 +236,7 @@ const runDecision = async (
 
     request.notify(notice);
 
-    const directory = await ports.ensureDirectory(sharedRoot, 'questions');
-
-    if (isCancelled(request)) {
-      return { kind: 'cancelled' };
-    }
-
-    const path = await writeDecisionRecord(directory, record, ports.writeRecord);
-
-    return { kind: 'decided', answers: decidedAnswers(record), record: path, notice };
+    return await saveDecision(ports, request, sharedRoot, record, notice);
   } catch {
     return isCancelled(request) ? { kind: 'cancelled' } : { kind: 'ask' };
   } finally {

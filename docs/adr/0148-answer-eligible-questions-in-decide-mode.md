@@ -45,6 +45,13 @@ nothing and opens the dialog. If the record cannot be saved after the notice, Ta
 for the same question. A failed save can therefore show a notice for a question that is then asked,
 and the dialog corrects it. No record exists for a call that fell back to the dialog.
 
+### Treat the notice as the commit point
+
+Cancellation before the notice shows nothing, asks nothing, and writes nothing. After the notice,
+Tau finishes writing the record even when the call is cancelled, because the user has already seen
+the answer. If the write fails, Tau asks, unless the call was cancelled: Pi drops the result of a
+cancelled call, so opening a dialog for it would ask a question nobody receives.
+
 ### Mark the result as the gate's
 
 A gate answer returns a `decided` result kind with the chosen labels and the record path. Its text
@@ -71,6 +78,7 @@ records, which the report shows with their time and head so a reader can tell th
 - An eligible call costs no dialog when the frozen candidate is confident enough.
 - The candidate that answered is the candidate that shadow records measured.
 - A failed save or notice leaves the user with the dialog instead of a silent answer.
+- A cancelled call before the notice leaves no notice, no record, and no dialog.
 - The record makes each gate answer visible after the fact.
 
 ### Negative

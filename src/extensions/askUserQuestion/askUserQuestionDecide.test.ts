@@ -34,6 +34,8 @@ interface HarnessOptions {
   signal?: AbortSignal;
   readBranch?: DecidePorts['readBranch'];
   requireModel?: DecidePorts['requireModel'];
+  ensureDirectory?: DecidePorts['ensureDirectory'];
+  now?: DecidePorts['now'];
 }
 
 const eligibleQuestion = {
@@ -92,12 +94,12 @@ const createHarness = (options: HarnessOptions = {}) => {
   };
 
   const ports: DecidePorts = {
-    now: () => 1_760_000_000_000,
+    now: options.now ?? (() => 1_760_000_000_000),
     findSharedRoot: async () => '/shared-root',
     readConfig: () => options.config ?? decideConfig(),
     requireModel: options.requireModel ?? (() => undefined),
     readBranch: options.readBranch ?? (async () => ({ branch: 'me-1623-decide', head: 'abc1234' })),
-    ensureDirectory: async () => '/shared-root/.tau/questions',
+    ensureDirectory: options.ensureDirectory ?? (async () => '/shared-root/.tau/questions'),
     writeRecord: async (path, record, mode) => {
       writes.push({ path, record, mode });
       events.push('write');
@@ -191,9 +193,13 @@ it('answers an eligible call after showing the notice and saving the record', as
     return result;
   });
 
-  await new Promise((resolve) => {
-    setTimeout(resolve, 0);
+  const flushed = Promise.withResolvers<undefined>();
+
+  queueMicrotask(() => {
+    flushed.resolve(undefined);
   });
+
+  await flushed.promise;
 
   expect(settled).toBe(false);
 
@@ -421,15 +427,107 @@ it('keeps answers and saved rows in input order when judges finish out of order'
     confidence: [0.95, 0.97, 0.99][index],
   }));
 
-  const notice = questions
-    .map(
-      (question) =>
-        `Decided: ${question.options[1]?.label}, because Uses wide screens, but needs a fallback.`,
-    )
-    .join('\n');
-
   expect(harness.writes[0]?.record).toMatchObject({ decisions });
-  expect(harness.notices).toEqual([notice]);
+
+  const noticeLines = harness.notices.flatMap((notice) => notice.split('\n'));
+
+  expect(noticeLines).toHaveLength(questions.length);
+
+  questions.forEach((question, index) => {
+    expect(noticeLines[index]).toContain(question.options[1]?.label);
+  });
+});
+
+it('cancels before the notice without a notice, record, or dialog', async () => {
+  const controller = new AbortController();
+
+  const harness = createHarness({
+    signal: controller.signal,
+    now: () => {
+      controller.abort();
+
+      return 1_760_000_000_000;
+    },
+  });
+
+  const cancelled = harness.run([eligibleQuestion]).catch((error: unknown) => error);
+  const error = await cancelled;
+
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toMatch(/cancelled/i);
+
+  expect(harness.notices).toEqual([]);
+  expect(harness.writes).toEqual([]);
+  expect(harness.custom).not.toHaveBeenCalled();
+});
+
+it('finishes the record when the signal aborts while ensuring the directory', async () => {
+  const controller = new AbortController();
+
+  const harness = createHarness({
+    signal: controller.signal,
+    ensureDirectory: async () => {
+      controller.abort();
+
+      return '/shared-root/.tau/questions';
+    },
+  });
+
+  const result = await harness.run([eligibleQuestion]);
+
+  expect(result.details).toMatchObject({
+    kind: 'decided',
+    record: harness.writes[0]?.path,
+  });
+
+  expect(harness.notices).toEqual([
+    'Decided: Stacked, because One column. Simple, but wide screens waste space.',
+  ]);
+
+  expect(harness.events).toEqual(['notice', 'write']);
+  expect(harness.writes).toHaveLength(1);
+  expect(harness.custom).not.toHaveBeenCalled();
+});
+
+it('asks when the record save fails after the notice without an abort', async () => {
+  const controller = new AbortController();
+
+  const harness = createHarness({
+    signal: controller.signal,
+    writeRecord: async () => {
+      throw new Error('The record could not be saved.');
+    },
+  });
+
+  const result = await harness.run([eligibleQuestion]);
+
+  expect(result.details).toEqual(answeredDetails);
+  expect(harness.custom).toHaveBeenCalledTimes(1);
+  expect(harness.notices).toHaveLength(1);
+  expect(harness.writes).toHaveLength(1);
+});
+
+it('cancels without a dialog when the record save fails after an abort', async () => {
+  const controller = new AbortController();
+
+  const harness = createHarness({
+    signal: controller.signal,
+    writeRecord: async () => {
+      controller.abort();
+
+      throw new Error('The record could not be saved.');
+    },
+  });
+
+  const cancelled = harness.run([eligibleQuestion]).catch((error: unknown) => error);
+  const error = await cancelled;
+
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toMatch(/cancelled/i);
+
+  expect(harness.notices).toHaveLength(1);
+  expect(harness.writes).toHaveLength(1);
+  expect(harness.custom).not.toHaveBeenCalled();
 });
 
 it('reads an attached, a detached, and an unborn HEAD through the default Git adapter', async ({
