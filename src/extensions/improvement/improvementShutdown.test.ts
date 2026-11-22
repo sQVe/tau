@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
@@ -8,8 +8,7 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createSweepFixture } from '../../../tests/sweepHarness.js';
 import type { SweepFixture } from '../../../tests/sweepHarness.js';
-import type { Exec } from '../../command.js';
-import { runSweep } from '../../improvement/sweep.js';
+import { sessionHeader } from '../../../tests/transcriptHarness.js';
 import type { SweepOptions, SweepOutcome } from '../../improvement/sweep.js';
 import { writeSweepIndex } from '../../improvement/sweepIndex.js';
 import improvementExtension from './improvement.js';
@@ -22,63 +21,40 @@ const sessionContext = (cwd: string, setStatus: SetStatus = () => undefined) =>
   ({ cwd, hasUI: true, ui: { setStatus } }) as unknown as ExtensionContext;
 
 const writeManagerSession = (fixture: SweepFixture): void => {
-  fixture.writeSession(
-    'manager.jsonl',
-    `${JSON.stringify({
-      type: 'session',
-      id: 'manager',
-      timestamp: '2026-11-01T00:00:00.000Z',
-      cwd: fixture.repository,
-    })}\n`,
-  );
+  fixture.writeSession('manager.jsonl', `${sessionHeader(fixture.repository)}\n`);
 };
 
-const gateMergedList = (fixture: SweepFixture) => {
+const holdSweepCompletion = (fixture: SweepFixture) => {
   const reached = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
 
-  const exec: Exec = (command, commandArguments, options) => {
-    const isMergedList =
-      command === 'gh' && commandArguments[0] === 'pr' && commandArguments[1] === 'list';
-
-    if (!isMergedList) {
-      return fixture.fake.exec(command, commandArguments, options);
-    }
+  const run: SweepRunner = async (options) => {
+    const outcome = await fixture.run({ ...options, exec: fixture.fake.exec });
 
     reached.resolve(undefined);
+    await released.promise;
 
-    const signal = options?.signal;
-
-    if (signal === undefined) {
-      throw new Error('The sweep passed no signal to the merged list.');
-    }
-
-    const aborted = Promise.withResolvers<never>();
-
-    signal.addEventListener(
-      'abort',
-      () => {
-        aborted.reject(signal.reason);
-      },
-      { once: true },
-    );
-
-    return aborted.promise;
+    return outcome;
   };
 
-  return { exec, reached: reached.promise };
+  return {
+    run,
+    reached: reached.promise,
+    release: () => {
+      released.resolve(undefined);
+    },
+  };
 };
 
-const directoryListing = (directory: string): { path: string; size: number }[] => {
-  const entries = readdirSync(directory, { recursive: true, withFileTypes: true })
+const directoryContents = (directory: string): { path: string; content: string }[] =>
+  readdirSync(directory, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => {
       const path = join(entry.parentPath, entry.name);
 
-      return { path: relative(directory, path), size: statSync(path).size };
-    });
-
-  return entries.toSorted((left, right) => left.path.localeCompare(right.path));
-};
+      return { path: relative(directory, path), content: readFileSync(path, 'utf8') };
+    })
+    .toSorted((left, right) => left.path.localeCompare(right.path));
 
 const flushImmediate = (): Promise<void> =>
   new Promise((resolve) => {
@@ -105,43 +81,87 @@ afterEach(() => {
 it('stops a running sweep at session shutdown and writes nothing afterwards', async () => {
   vi.stubEnv('TAU_ROLE', undefined);
   const fixture = await createSweepFixture(onTestFinished);
-  const { exec, reached } = gateMergedList(fixture);
-  const shutdown = Promise.withResolvers<undefined>();
+  const gate = fixture.gateMergedList();
+  const held = holdSweepCompletion(fixture);
 
   writeManagerSession(fixture);
   vi.stubEnv('PI_CODING_AGENT_DIR', fixture.agentDirectory);
 
-  let settled = false;
-
-  const run: SweepRunner = async (options) => {
-    try {
-      return await runSweep({ ...options, exec });
-    } finally {
-      settled = true;
-      shutdown.resolve(undefined);
-    }
-  };
-
   const fake = fakeExtensionApi();
-  improvementExtension(fake.pi, { runSweep: run });
+  improvementExtension(fake.pi, { runSweep: held.run });
 
   fake.handler('session_start')({}, sessionContext(fixture.repository));
-  await reached;
-  await fake.handler('session_shutdown')({}, sessionContext(fixture.repository));
+  await gate.reached;
 
-  const before = directoryListing(fixture.agentDirectory);
+  let resolved = false;
+  const shutdownHandler = fake.handler('session_shutdown');
+  const shutdownResult = shutdownHandler({}, sessionContext(fixture.repository));
+
+  const shutdown = Promise.resolve(shutdownResult).then(() => {
+    resolved = true;
+
+    return undefined;
+  });
+
+  await held.reached;
+
+  expect(resolved).toBe(false);
+
+  held.release();
+  await shutdown;
+
+  const contents = directoryContents(fixture.agentDirectory);
 
   await flushImmediate();
 
   expect({
-    settled,
     lastSweep: (await fixture.readIndex()).lastSweep,
-    listing: directoryListing(fixture.agentDirectory),
+    contents: directoryContents(fixture.agentDirectory),
   }).toEqual({
-    settled: true,
     lastSweep: expect.objectContaining({ outcome: 'budget' }) as unknown,
-    listing: before,
+    contents,
   });
+});
+
+it('makes two overlapping shutdowns await the same drain', async () => {
+  vi.stubEnv('TAU_ROLE', undefined);
+  const fixture = await createSweepFixture(onTestFinished);
+  const gate = fixture.gateMergedList();
+  const held = holdSweepCompletion(fixture);
+  const settled: string[] = [];
+
+  writeManagerSession(fixture);
+  vi.stubEnv('PI_CODING_AGENT_DIR', fixture.agentDirectory);
+
+  const fake = fakeExtensionApi();
+  improvementExtension(fake.pi, { runSweep: held.run });
+
+  const shutdown = (name: string) => {
+    const handler = fake.handler('session_shutdown');
+    const result = handler({}, sessionContext(fixture.repository));
+
+    return Promise.resolve(result).then(() => {
+      settled.push(name);
+
+      return undefined;
+    });
+  };
+
+  fake.handler('session_start')({}, sessionContext(fixture.repository));
+  await gate.reached;
+
+  const first = shutdown('first');
+  const second = shutdown('second');
+
+  await held.reached;
+  await flushImmediate();
+
+  expect(settled).toEqual([]);
+
+  held.release();
+  await Promise.all([first, second]);
+
+  expect(settled.toSorted()).toEqual(['first', 'second']);
 });
 
 it('does not refresh the status after a stopped sweep', async () => {

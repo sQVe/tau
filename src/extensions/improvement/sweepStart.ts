@@ -12,17 +12,12 @@ interface SweepSession {
 type SweepRunner = (options: SweepOptions) => Promise<SweepOutcome>;
 
 export interface SweepLifecycle {
-  start: (
-    session: Omit<SweepSession, 'signal'>,
-    onOutcome: (outcome: SweepOutcome) => unknown,
-  ) => void;
+  start: (session: Omit<SweepSession, 'signal'>, refresh: () => Promise<void>) => void;
   stop: () => Promise<void>;
+  latest: () => SweepOutcome | undefined;
 }
 
-export const startSweep = async (
-  session: SweepSession,
-  run: SweepRunner,
-): Promise<SweepOutcome> => {
+const startSweep = async (session: SweepSession, run: SweepRunner): Promise<SweepOutcome> => {
   try {
     return await run({
       agentDirectory: session.agentDirectory,
@@ -39,26 +34,28 @@ export const startSweep = async (
 };
 
 export const createSweepLifecycle = (run: SweepRunner): SweepLifecycle => {
-  let current: { controller: AbortController; promise: Promise<unknown> } | undefined;
+  let current: { controller: AbortController; promise: Promise<void> } | undefined;
+  let latest: SweepOutcome | undefined;
 
-  const start: SweepLifecycle['start'] = (session, onOutcome) => {
+  const start: SweepLifecycle['start'] = (session, refresh) => {
     const controller = new AbortController();
 
-    const promise = startSweep({ ...session, signal: controller.signal }, run).then((outcome) => {
+    const promise = (async () => {
+      const outcome = await startSweep({ ...session, signal: controller.signal }, run);
+
       if (controller.signal.aborted) {
-        return undefined;
+        return;
       }
 
-      return onOutcome(outcome);
-    });
+      latest = outcome;
+      await refresh();
+    })();
 
     current = { controller, promise };
   };
 
   const stop = async (): Promise<void> => {
     const running = current;
-
-    current = undefined;
 
     if (running === undefined) {
       return;
@@ -68,5 +65,5 @@ export const createSweepLifecycle = (run: SweepRunner): SweepLifecycle => {
     await running.promise;
   };
 
-  return { start, stop };
+  return { start, stop, latest: () => latest };
 };

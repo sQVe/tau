@@ -17,7 +17,6 @@ import type { PassResult } from './recordPass.js';
 import { parseRecordRequest, parameters } from './recordRequest.js';
 import { createStatusRefresh } from './statusAction.js';
 import { createSweepLifecycle } from './sweepStart.js';
-import { createSweepState } from './sweepState.js';
 import { runTask } from './taskAction.js';
 
 const description = `- record: correction (summary) in session project; review (pullRequest, outcome), backlog (review, item, summary), decision (review, item, or class, plus choice), class (identity, level, summary, occurrences), each with projectRoot, in task project; pass in every project root that has an event. {id,path,outcome} or pass {id,paths,failed}; existing kept.
@@ -34,14 +33,15 @@ export default function improvementExtension(
     return;
   }
 
-  const sweepState = createSweepState();
+  const sweepRunner = options.runSweep ?? runSweep;
+  const lifecycle = createSweepLifecycle(sweepRunner);
 
   const readStatus = (cwd: string) =>
     readImprovementStatus({
       cwd,
       agentDirectory: getAgentDir(),
       now: new Date(),
-      sessionSweep: sweepState.latest(),
+      sessionSweep: lifecycle.latest(),
     });
 
   const refresh = createStatusRefresh(readStatus);
@@ -99,20 +99,12 @@ export default function improvementExtension(
     }),
   );
 
-  const sweepRunner = options.runSweep ?? runSweep;
-  const lifecycle = createSweepLifecycle(sweepRunner);
-
   pi.on('session_start', (_event, context) => {
     // oxlint-disable-next-line typescript/no-floating-promises -- refresh turns every failure into undefined, so it cannot reject.
     void refresh(context);
 
-    lifecycle.start(
-      { cwd: context.cwd, agentDirectory: getAgentDir(), exec: piExec(pi) },
-      (outcome) => {
-        sweepState.record(outcome);
-
-        return refresh(context);
-      },
+    lifecycle.start({ cwd: context.cwd, agentDirectory: getAgentDir(), exec: piExec(pi) }, () =>
+      refresh(context),
     );
   });
 

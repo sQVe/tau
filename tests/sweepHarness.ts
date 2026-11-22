@@ -7,7 +7,7 @@ import type { SweepOptions, SweepOutcome } from '../src/improvement/sweep.ts';
 import { readSweepIndex } from '../src/improvement/sweepIndex.ts';
 import type { SweepIndex } from '../src/improvement/sweepIndex.ts';
 import { createExecFake, succeededResult } from './execFake.ts';
-import type { ExecFake } from './execFake.ts';
+import type { ExecFake, ExecHandler, ExecResult } from './execFake.ts';
 import { createTemporaryRepository, git } from './gitRepository.ts';
 import { temporaryDirectory } from './temporaryDirectoryHarness.ts';
 
@@ -21,11 +21,17 @@ interface MergedListing {
 
 type RegisterCleanup = (cleanup: () => void) => void;
 
+interface MergedGate {
+  // Resolves when the sweep asks for the merged list.
+  reached: Promise<undefined>;
+}
+
 export interface SweepFixture {
   agentDirectory: string;
   repository: string;
   fake: ExecFake<'merged'>;
   setMerged: (next: MergedListing[]) => void;
+  gateMergedList: () => MergedGate;
   setNow: (date: Date) => void;
   advance: (milliseconds: number) => void;
   writeSession: (name: string, content: string) => string;
@@ -50,6 +56,7 @@ export const createSweepFixture = async (
   await git(repository, 'remote', 'add', 'origin', 'https://github.com/sQVe/tau.git');
 
   let listings: MergedListing[] = [];
+  let mergedHandler: ExecHandler | undefined;
   let current = new Date('2026-11-15T12:00:00.000Z');
 
   const fake = createExecFake<'merged'>({
@@ -57,8 +64,43 @@ export const createSweepFixture = async (
       command === 'gh' && commandArguments[0] === 'pr' && commandArguments[1] === 'list'
         ? 'merged'
         : undefined,
-    handlerFor: () => () => succeededResult(JSON.stringify(listings)),
+    handlerFor: () => mergedHandler ?? (() => succeededResult(JSON.stringify(listings))),
   });
+
+  const gateMergedList = (): MergedGate => {
+    const reached = Promise.withResolvers<undefined>();
+
+    mergedHandler = (_commandArguments, options): Promise<ExecResult> => {
+      reached.resolve(undefined);
+
+      const signal = options?.signal;
+
+      if (signal === undefined) {
+        throw new Error('The sweep passed no signal to the merged list.');
+      }
+
+      const abortReason = (): Error =>
+        signal.reason instanceof Error ? signal.reason : new Error('Sweep aborted.');
+
+      return new Promise((_resolve, reject) => {
+        if (signal.aborted) {
+          reject(abortReason());
+
+          return;
+        }
+
+        signal.addEventListener(
+          'abort',
+          () => {
+            reject(abortReason());
+          },
+          { once: true },
+        );
+      });
+    };
+
+    return { reached: reached.promise };
+  };
 
   const writeSession = (name: string, content: string): string => {
     const path = join(agentDirectory, 'sessions', name);
@@ -119,6 +161,7 @@ export const createSweepFixture = async (
     setMerged: (next: MergedListing[]): void => {
       listings = next;
     },
+    gateMergedList,
     setNow: (date: Date): void => {
       current = date;
     },
