@@ -184,6 +184,23 @@ const readShadow = (source: string, value: unknown): ShadowConfig | undefined =>
   return { variant: value.variant, cutoff: value.cutoff, examples };
 };
 
+const readModels = (
+  source: string,
+  value: { classifier: string; panel: [string, string, string] },
+): QuestionGateModels => {
+  const [first, second, third] = value.panel;
+
+  const classifier = requireModelReference(source, value.classifier);
+
+  const panel: [string, string, string] = [
+    requireModelReference(source, first),
+    requireModelReference(source, second),
+    requireModelReference(source, third),
+  ];
+
+  return { classifier, panel };
+};
+
 export const readQuestionGateConfig = (
   location: ConfigLocation,
   ui: ConfigWarnings,
@@ -202,27 +219,22 @@ export const readQuestionGateConfig = (
     throw invalid(source, modelsMessage);
   }
 
-  const [first, second, third] = value.panel;
   const decide = readDecide(source, value.decide);
   const shadow = readShadow(source, value.shadow);
 
-  if (decide && shadow === undefined) {
-    throw invalid(source, decideNeedsShadowMessage);
+  if (decide) {
+    if (shadow === undefined) {
+      throw invalid(source, decideNeedsShadowMessage);
+    }
+
+    return { ...readModels(source, value), decide: true, shadow };
   }
 
-  const classifier = requireModelReference(source, value.classifier);
-
-  const panel: [string, string, string] = [
-    requireModelReference(source, first),
-    requireModelReference(source, second),
-    requireModelReference(source, third),
-  ];
-
-  if (decide && shadow !== undefined) {
-    return { classifier, panel, decide: true, shadow };
-  }
-
-  return { classifier, panel, decide: false, ...(shadow === undefined ? {} : { shadow }) };
+  return {
+    ...readModels(source, value),
+    decide: false,
+    ...(shadow === undefined ? {} : { shadow }),
+  };
 };
 
 export const shadowCohort = (config: QuestionGateConfig & { shadow: ShadowConfig }): string => {
