@@ -133,8 +133,7 @@ const contextFor = (sessionId: string, notify: (message: string) => void): Exten
 const startHarness = (options: HarnessOptions = {}) => {
   const state = options.state ?? hcState();
   const socketDirectory = options.socketDirectory ?? join(root, 'sockets');
-  // A second process has its own inbox slot. The cases below call `releaseInbox` to simulate that
-  // separate slot for a replacement attachment.
+  // The cases below call `releaseInbox` so a replacement attachment can claim the slot again.
   const owner = Symbol('tau inbox');
   const fake = fakeExtensionApi();
   const notices: string[] = [];
