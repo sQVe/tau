@@ -5,11 +5,7 @@ import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 import type { ConfigLocation } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
-import {
-  decideConfig,
-  readQuestionGateConfig,
-  shadowCohort,
-} from '../../config/questionGateModels.js';
+import { readQuestionGateConfig, shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
 import { readGitUnlessMissing } from '../../git.js';
 import {
@@ -27,15 +23,10 @@ import type {
 } from '../../questionGate/questionGate.js';
 import { writeRecord as writeRecordToFile } from '../../record.js';
 import { ensureTauDirectory, findSharedRepositoryRoot } from '../../tauDirectory.js';
-import type { DialogQuestion } from './dialog.js';
+import type { AskedQuestion } from './dialog.js';
 import { judgeQuestionOf, prepareJudges, variantModels } from './judges.js';
 import type { PreparedJudges } from './judges.js';
 import type { Answer } from './questionnaire.js';
-
-export type DecideQuestion = DialogQuestion & {
-  kind?: 'choice' | 'approval' | undefined;
-  confidence?: number | undefined;
-};
 
 export interface DecidePorts {
   now: () => number;
@@ -53,7 +44,7 @@ export interface DecidePorts {
 }
 
 interface DecideRequest {
-  questions: readonly [DecideQuestion, ...DecideQuestion[]];
+  questions: readonly [AskedQuestion, ...AskedQuestion[]];
   sessionId: string | undefined;
   cwd: string;
   projectTrusted: boolean;
@@ -94,7 +85,7 @@ const defaultDecidePorts: DecidePorts = {
   prepareJudges,
 };
 
-const recommendedOption = (question: DecideQuestion): { label: string; description: string } => {
+const recommendedOption = (question: AskedQuestion): { label: string; description: string } => {
   const recommended = question.options.find((option) => option.recommended === true);
 
   if (recommended === undefined) {
@@ -277,9 +268,9 @@ export const createDecider = (overrides: Partial<DecidePorts> = {}): Decider => 
       };
 
       try {
-        const config = decideConfig(ports.readConfig(location));
+        const config = ports.readConfig(location);
 
-        if (config === undefined) {
+        if (config?.decide !== true) {
           return undefined;
         }
 

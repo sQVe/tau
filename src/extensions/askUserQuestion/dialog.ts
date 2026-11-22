@@ -39,6 +39,11 @@ export interface DialogQuestion extends QuestionFacts {
   }[];
 }
 
+export type AskedQuestion = DialogQuestion & {
+  kind?: 'choice' | 'approval' | undefined;
+  confidence?: number | undefined;
+};
+
 export type DialogResult = { kind: 'answered'; answers: Answer[] } | { kind: 'declined' };
 
 type DialogFactory = (

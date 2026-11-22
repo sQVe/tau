@@ -18,7 +18,7 @@ import type {
 } from '../../questionGate/questionGate.js';
 import { writeRecord } from '../../record.js';
 import { ensureTauDirectory, findSharedRepositoryRoot } from '../../tauDirectory.js';
-import type { DialogQuestion, DialogResult } from './dialog.js';
+import type { AskedQuestion, DialogResult } from './dialog.js';
 import { judgeQuestionOf, prepareJudges } from './judges.js';
 
 export interface ShadowPorts {
@@ -32,10 +32,7 @@ export interface ShadowPorts {
 }
 
 interface ShadowStart {
-  questions: readonly (DialogQuestion & {
-    kind?: 'choice' | 'approval' | undefined;
-    confidence?: number | undefined;
-  })[];
+  questions: readonly AskedQuestion[];
   sessionId: string;
   cwd: string;
   projectTrusted: boolean;

@@ -3,8 +3,8 @@ export interface QuestionInput {
   problem: string;
   impact: string;
   preview?: string;
-  kind?: 'choice' | 'approval';
-  confidence?: number;
+  kind?: 'choice' | 'approval' | undefined;
+  confidence?: number | undefined;
   options: readonly { label: string; recommended?: boolean; preview?: string }[];
 }
 

@@ -20,10 +20,8 @@ export interface ShadowConfig {
   examples: PastAnswer[];
 }
 
-export interface QuestionGateConfig extends QuestionGateModels {
-  decide: boolean;
-  shadow?: ShadowConfig;
-}
+export type QuestionGateConfig = QuestionGateModels &
+  ({ decide: false; shadow?: ShadowConfig } | { decide: true; shadow: ShadowConfig });
 
 const questionGateModelsSchema = Type.Object(
   {
@@ -128,26 +126,19 @@ export const readQuestionGateConfig = (
     throw invalid(source, decideNeedsShadowMessage);
   }
 
-  return {
-    classifier: requireModelReference(source, value.classifier),
-    panel: [
-      requireModelReference(source, first),
-      requireModelReference(source, second),
-      requireModelReference(source, third),
-    ],
-    decide,
-    ...(shadow === undefined ? {} : { shadow }),
-  };
-};
+  const classifier = requireModelReference(source, value.classifier);
 
-export const decideConfig = (
-  config: QuestionGateConfig | undefined,
-): (QuestionGateConfig & { shadow: ShadowConfig }) | undefined => {
-  if (config?.decide !== true || config.shadow === undefined) {
-    return undefined;
+  const panel: [string, string, string] = [
+    requireModelReference(source, first),
+    requireModelReference(source, second),
+    requireModelReference(source, third),
+  ];
+
+  if (decide && shadow !== undefined) {
+    return { classifier, panel, decide: true, shadow };
   }
 
-  return { ...config, shadow: config.shadow };
+  return { classifier, panel, decide: false, ...(shadow === undefined ? {} : { shadow }) };
 };
 
 const canonicalQuestion = (question: PastAnswer['question']) => ({

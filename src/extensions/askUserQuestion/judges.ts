@@ -20,7 +20,7 @@ import type {
   PanelMember,
   ShadowVariant,
 } from '../../questionGate/questionGate.js';
-import type { DialogQuestion } from './dialog.js';
+import type { AskedQuestion } from './dialog.js';
 
 export interface PreparedJudges {
   judge: (
@@ -31,9 +31,7 @@ export interface PreparedJudges {
   ) => Promise<JudgeVerdict>;
 }
 
-export const judgeQuestionOf = (
-  question: DialogQuestion & { confidence?: number | undefined },
-): JudgeQuestion => ({
+export const judgeQuestionOf = (question: AskedQuestion): JudgeQuestion => ({
   question: question.question,
   problem: question.problem,
   impact: question.impact,
@@ -65,15 +63,22 @@ const panelModelsOf = (
 const agentVerdict = (confidence: number | undefined): JudgeVerdict =>
   confidence === undefined ? { kind: 'unavailable' } : { kind: 'answered', confidence };
 
-const usesExamples = (variant: ShadowVariant): boolean =>
-  variant === 'classifierExamples' || variant === 'panelExamples';
+const variantJudges = {
+  classifier: { family: 'classifier', examples: false },
+  classifierExamples: { family: 'classifier', examples: true },
+  panel: { family: 'panel', examples: false },
+  panelExamples: { family: 'panel', examples: true },
+  agent: { family: 'agent', examples: false },
+} satisfies Record<ShadowVariant, { family: 'classifier' | 'panel' | 'agent'; examples: boolean }>;
 
 export const variantModels = (variant: ShadowVariant, config: QuestionGateModels): string[] => {
-  if (variant === 'classifier' || variant === 'classifierExamples') {
+  const { family } = variantJudges[variant];
+
+  if (family === 'classifier') {
     return [config.classifier];
   }
 
-  if (variant === 'panel' || variant === 'panelExamples') {
+  if (family === 'panel') {
     return [...config.panel];
   }
 
@@ -115,17 +120,19 @@ export const prepareJudges = (
     signal: AbortSignal,
   ): Promise<JudgeVerdict> => {
     try {
-      if (variant === 'agent') {
+      const { family, examples: wantsExamples } = variantJudges[variant];
+
+      if (family === 'agent') {
         return agentVerdict(confidence);
       }
 
-      if (usesExamples(variant) && !hasExamples) {
+      if (wantsExamples && !hasExamples) {
         return unavailable;
       }
 
-      const chosenExamples = usesExamples(variant) ? examples : [];
+      const chosenExamples = wantsExamples ? examples : [];
 
-      if (variant === 'classifier' || variant === 'classifierExamples') {
+      if (family === 'classifier') {
         return await judgeWithClassifier(classify, question, chosenExamples, signal);
       }
 

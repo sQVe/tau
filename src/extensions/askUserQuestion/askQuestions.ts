@@ -1,18 +1,16 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { customWithBlockedStatus } from '../../dialog/blockedStatus.js';
-import type { DecideQuestion, Decider } from './decide.js';
+import type { Decider } from './decide.js';
 import { questionDialog } from './dialog.js';
-import type { DialogQuestion, DialogResult } from './dialog.js';
+import type { AskedQuestion, DialogResult } from './dialog.js';
 import type { Answer } from './questionnaire.js';
 import type { ShadowJob, ShadowRunner } from './shadow.js';
 import { refuseUnrepliedTypedAnswer } from './typedAnswerReply.js';
 import { validateQuestions } from './validation.js';
 
-type QuestionInput = Omit<DialogQuestion, 'multiSelect'> & {
+type QuestionInput = Omit<AskedQuestion, 'multiSelect'> & {
   multiSelect?: boolean;
-  kind?: 'choice' | 'approval';
-  confidence?: number;
 };
 
 type OpenQuestionDialog = ReturnType<typeof questionDialog>;
@@ -62,8 +60,8 @@ const sessionIdOf = (sessionManager: ExtensionContext['sessionManager']): string
 };
 
 const nonEmptyQuestions = (
-  questions: readonly DecideQuestion[],
-): [DecideQuestion, ...DecideQuestion[]] | undefined => {
+  questions: readonly AskedQuestion[],
+): [AskedQuestion, ...AskedQuestion[]] | undefined => {
   const [first, ...rest] = questions;
 
   return first === undefined ? undefined : [first, ...rest];
@@ -83,7 +81,7 @@ export const askQuestions = async (
 
   validateQuestions(input);
 
-  const questions = input.map((question) => ({
+  const questions: AskedQuestion[] = input.map((question) => ({
     ...question,
     multiSelect: question.multiSelect === true,
   }));

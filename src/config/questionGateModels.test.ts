@@ -4,7 +4,7 @@ import { expect, it, onTestFinished as registerTestCleanup } from 'vitest';
 
 import { temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import type { PastAnswer } from '../questionGate/questionGate.ts';
-import { readQuestionGateConfig, decideConfig, shadowCohort } from './questionGateModels.ts';
+import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
 import type { QuestionGateConfig, ShadowConfig } from './questionGateModels.ts';
 
 interface ConfigBytes {
@@ -247,21 +247,32 @@ it('refuses a decide that is not a boolean', ({ onTestFinished }) => {
   expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
-it('decideConfig returns the narrowed config only when decide is true', () => {
+const decidedShadowOf = (config: QuestionGateConfig): ShadowConfig | null =>
+  config.decide ? config.shadow : null;
+
+it('gives a decide config a shadow without a non-null assertion', () => {
   const shadow: ShadowConfig = {
     variant: 'classifierExamples',
     cutoff: 0.8,
     examples: [pastAnswer(1, 'first')],
   };
 
-  expect(decideConfig({ ...models, decide: true, shadow })).toEqual({
-    ...models,
-    decide: true,
-    shadow,
-  });
+  const config: QuestionGateConfig = { ...models, decide: true, shadow };
 
-  expect(decideConfig({ ...models, decide: false, shadow })).toBeUndefined();
-  expect(decideConfig(undefined)).toBeUndefined();
+  expect(decidedShadowOf(config)).toBe(shadow);
+});
+
+it('still reads a decide config that is off', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+  const shadow = { variant: 'panel', cutoff: 0.5 } as const;
+
+  writeUser({ questionGate: { ...models, decide: false, shadow } });
+
+  expect(readQuestionGateConfig(location)).toEqual({
+    ...models,
+    decide: false,
+    shadow: { ...shadow, examples: [] },
+  });
 });
 
 it('keeps the cohort when decide changes', () => {
