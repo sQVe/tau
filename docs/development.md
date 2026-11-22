@@ -292,10 +292,14 @@ to 500. `--holdout` is the share of sessions kept for the held-out check and def
 The script reads `questionGate` from the user `tau.json` and makes eight model calls per question.
 It retries a panel call that fails with a transient provider error, as the user `retry` settings
 allow. It prints decide share and agreement at cutoffs from 0.50 to 1.00 on tuning sessions, the
-lowest cutoff that reaches 95% agreement, and that cutoff's result on held-out sessions. At the end
-it prints each panel model's error count and first error message on stderr. It explores only and
-sets no launch cutoff. The logs lack question kind and full context, and older logs cannot tell a
-click from typed text equal to an option label.
+lowest cutoff that reaches 95% agreement, and that cutoff's result on held-out sessions. The
+held-out result meets the 95% bar only when both the question-level Wilson bound and the
+session-level bound reach 95%. The session bound treats each held-out session as one observation, as
+[ADR 0147](adr/0147-measure-the-question-gate-in-shadow-mode.md) describes, so the bar needs at
+least 600 held-out sessions with a decided question, more than the default `--limit` can hold. At
+the end it prints each panel model's error count and first error message on stderr. It explores only
+and sets no launch cutoff. The logs lack question kind and full context, and older logs cannot tell
+a click from typed text equal to an option label.
 
 ## Evaluating agent behavior
 

@@ -2,6 +2,8 @@ import type { QuestionGateModels } from '../../src/config/questionGateModels.ts'
 import { questionGateDecision } from '../../src/questionGate/decision/decision.ts';
 import type { JudgeVerdict, PastOutcome } from '../../src/questionGate/questionGate.ts';
 import type { SkippedQuestions } from './questionGateScoreLog.ts';
+import { sessionLowerBound } from './sessionLowerBound.ts';
+import type { SessionTally } from './sessionLowerBound.ts';
 
 export type JudgeVariant = 'classifier' | 'classifierExamples' | 'panel' | 'panelExamples';
 
@@ -27,6 +29,8 @@ interface CutoffScore {
 }
 
 interface HeldOutScore extends CutoffScore {
+  sessions: number;
+  sessionLowerBound: number;
   meetsBar: boolean;
 }
 
@@ -108,12 +112,18 @@ const share = (part: number, total: number): number => (total === 0 ? 0 : part /
 const isDecided = (verdict: JudgeVerdict, cutoff: number): boolean =>
   questionGateDecision({ verdict, cutoff }).decision === 'decide';
 
+const decidedItems = (
+  items: readonly ScoreItem[],
+  variant: JudgeVariant,
+  cutoff: number,
+): ScoreItem[] => items.filter((item) => isDecided(item.verdicts[variant], cutoff));
+
 const cutoffScore = (
   items: readonly ScoreItem[],
   variant: JudgeVariant,
   cutoff: number,
 ): CutoffScore => {
-  const decided = items.filter((item) => isDecided(item.verdicts[variant], cutoff));
+  const decided = decidedItems(items, variant, cutoff);
   const hits = decided.filter((item) => item.outcome.kind === 'recommended').length;
 
   return {
@@ -128,14 +138,39 @@ const cutoffScore = (
 const meetsCutoffBar = (score: CutoffScore): boolean =>
   score.decided >= minimumDecided && score.agreement >= bar;
 
+const sessionTallies = (items: readonly ScoreItem[]): SessionTally[] => {
+  const tallies = new Map<string, SessionTally>();
+
+  for (const item of items) {
+    const known = tallies.get(item.session) ?? { decided: 0, hits: 0 };
+
+    known.decided += 1;
+
+    if (item.outcome.kind === 'recommended') {
+      known.hits += 1;
+    }
+
+    tallies.set(item.session, known);
+  }
+
+  return [...tallies.values()];
+};
+
 const heldOutScore = (
   items: readonly ScoreItem[],
   variant: JudgeVariant,
   cutoff: number,
 ): HeldOutScore => {
   const score = cutoffScore(items, variant, cutoff);
+  const tallies = sessionTallies(decidedItems(items, variant, cutoff));
+  const bound = sessionLowerBound(tallies);
 
-  return { ...score, meetsBar: score.lowerBound >= bar };
+  return {
+    ...score,
+    sessions: tallies.length,
+    sessionLowerBound: bound,
+    meetsBar: score.lowerBound >= bar && bound >= bar,
+  };
 };
 
 const verdictCounts = (items: readonly ScoreItem[], variant: JudgeVariant): VerdictCounts => {
@@ -227,11 +262,15 @@ const heldOutLine = (score: VariantScore): string[] => {
 
   const barResult = heldOut.meetsBar ? 'meets the 95% bar' : 'misses the 95% bar';
 
+  const sessionWord = heldOut.sessions === 1 ? 'session' : 'sessions';
+
   const line = [
     `Held out at ${formatCutoff(heldOut.cutoff)}: ${heldOut.decided} decided,`,
     `decide share ${formatPercent(heldOut.decideShare)},`,
     `agreement ${formatPercent(heldOut.agreement)},`,
-    `lower bound ${formatPercent(heldOut.lowerBound)}: ${barResult}`,
+    `question lower bound ${formatPercent(heldOut.lowerBound)},`,
+    `session lower bound ${formatPercent(heldOut.sessionLowerBound)} over ${heldOut.sessions} ${sessionWord}:`,
+    barResult,
   ].join(' ');
 
   return [line];

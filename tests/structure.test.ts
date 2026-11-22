@@ -60,6 +60,7 @@ const pureModules = [
   'scripts/questionGateScore/questionGateScoreLog.ts',
   'scripts/questionGateScore/questionGateScorePrepare.ts',
   'scripts/questionGateScore/questionGateScoreReport.ts',
+  'scripts/questionGateScore/sessionLowerBound.ts',
   'scripts/questionGateScore/shadowReport.ts',
   'scripts/sessionHealthReport.ts',
   'scripts/sessionHealthRules.ts',

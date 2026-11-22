@@ -41,9 +41,11 @@ recommendation, no preview, and no multi-select. It is not a representative samp
 decide verdict is a potential saved dialog, not a saved dialog. Actual saves stay zero while the
 dialog remains authoritative.
 
-The historical scorer for ME-1678 keeps its own path. It compares judge variants on old logs and
-chooses a cutoff there. This report reads only new shadow records, reports the frozen candidate, and
-does not tune its cutoff.
+The historical scorer keeps its own path for choosing a cutoff. It compares judge variants on old
+logs and chooses a cutoff on tuning sessions. Its held-out check uses this session bound, and it
+meets the 95% bar only when the question-level Wilson bound and the session bound both reach 95%.
+This report reads only new shadow records, reports the frozen candidate, and does not tune its
+cutoff.
 
 ## Consequences
 

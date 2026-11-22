@@ -114,20 +114,43 @@ it('gives no cutoff and no held-out line with fewer than 20 decided tuning items
   expect(formatScoreReport(report)).not.toContain('Held out');
 });
 
-it.for<[number, boolean]>([
-  [100, true],
-  [95, false],
-])('reports whether %i held-out hits meet the 95%% bar', ([hits, meetsBar]) => {
+it('one held-out session with many hits misses the bar', () => {
   const tuning = Array.from({ length: 20 }, () => item());
 
-  const heldOutHits = Array.from({ length: hits }, () =>
+  const heldOut = Array.from({ length: 73 }, () =>
     item({ session: '/logs/holdout.jsonl', split: 'holdout' }),
   );
 
-  const heldOutMisses = Array.from({ length: 100 - hits }, () => holdoutMiss());
-  const report = scoreReport(input([...tuning, ...heldOutHits, ...heldOutMisses]));
+  const report = scoreReport(input([...tuning, ...heldOut]));
+  const heldOutScore = variant(report, 'classifier').heldOut;
 
-  expect(variant(report, 'classifier').heldOut?.meetsBar).toBe(meetsBar);
+  expect(heldOutScore?.lowerBound).toBeGreaterThanOrEqual(0.95);
+  expect(heldOutScore?.sessions).toBe(1);
+  expect(heldOutScore?.sessionLowerBound).toBe(0);
+  expect(heldOutScore?.meetsBar).toBe(false);
+  expect(formatScoreReport(report)).toContain('over 1 session');
+});
+
+it.for<[string, number, number, number, boolean]>([
+  ['600 one-hit sessions', 600, 0, 600, true],
+  ['599 one-hit sessions', 599, 0, 599, false],
+  ['95 hits and 5 misses over 100 sessions', 95, 5, 100, false],
+])('reports whether held-out hits meet the 95% bar: %s', ([, hits, misses, sessions, meetsBar]) => {
+  const tuning = Array.from({ length: 20 }, () => item());
+
+  const heldOutHits = Array.from({ length: hits }, (_, index) =>
+    item({ session: `/logs/holdout-${index}.jsonl`, split: 'holdout' }),
+  );
+
+  const heldOutMisses = Array.from({ length: misses }, (_, index) =>
+    holdoutMiss(`/logs/holdout-miss-${index}.jsonl`),
+  );
+
+  const report = scoreReport(input([...tuning, ...heldOutHits, ...heldOutMisses]));
+  const heldOut = variant(report, 'classifier').heldOut;
+
+  expect(heldOut?.sessions).toBe(sessions);
+  expect(heldOut?.meetsBar).toBe(meetsBar);
 });
 
 it('counts timeout and unavailable verdicts and does not decide them', () => {
