@@ -5,6 +5,7 @@ import type { SkippedQuestions } from './questionGateScore/questionGateScoreLog.
 import {
   formatPanelMemberErrors,
   formatScoreReport,
+  lowerBoundPercent,
   panelMemberErrorCounts,
   scoreCutoffs,
   scoreReport,
@@ -135,7 +136,15 @@ it('one held-out session with many hits misses the bar', () => {
   expect(heldOutScore?.sessions).toBe(1);
   expect(heldOutScore?.sessionLowerBound).toBe(0);
   expect(heldOutScore?.meetsBar).toBe(false);
-  expect(formatScoreReport(report)).toContain('over 1 session');
+});
+
+it.for<[number, number]>([
+  [0.949993888, 94.9],
+  [0.950035577, 95],
+  [0.950006247, 95],
+  [0, 0],
+])('rounds a lower bound down for display: %d gives %d', ([value, expected]) => {
+  expect(lowerBoundPercent(value)).toBeCloseTo(expected, 6);
 });
 
 it.for<[string, number, number, number, boolean]>([
@@ -155,8 +164,11 @@ it.for<[string, number, number, number, boolean]>([
 
   const report = scoreReport(input([...tuning, ...heldOutHits, ...heldOutMisses]));
   const heldOut = variant(report, 'classifier').heldOut;
+  const decided = hits + misses;
 
   expect(heldOut?.sessions).toBe(sessions);
+  expect(heldOut?.agreement).toBeCloseTo(hits / decided, 6);
+  expect(heldOut?.lowerBound).toBeCloseTo(wilsonLowerBound(hits, decided), 6);
   expect(heldOut?.meetsBar).toBe(meetsBar);
 });
 

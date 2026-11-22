@@ -10,40 +10,29 @@ export interface SessionSummary {
   lowerBound: number;
 }
 
-interface SessionTally {
-  decided: number;
-  hits: number;
-}
-
 const confidenceLevel = 20;
 
-const sessionTallies = (observations: readonly SessionObservation[]): SessionTally[] => {
-  const tallies = new Map<string, SessionTally>();
+const decidedCountsBySession = (observations: readonly SessionObservation[]): number[] => {
+  const decidedBySession = new Map<string, number>();
 
   for (const observation of observations) {
-    const known = tallies.get(observation.session) ?? { decided: 0, hits: 0 };
+    const decided = decidedBySession.get(observation.session) ?? 0;
 
-    known.decided += 1;
-
-    if (observation.hit) {
-      known.hits += 1;
-    }
-
-    tallies.set(observation.session, known);
+    decidedBySession.set(observation.session, decided + 1);
   }
 
-  return [...tallies.values()];
+  return [...decidedBySession.values()];
 };
 
-const lowerBound = (tallies: readonly SessionTally[], decided: number, hits: number): number => {
+const lowerBound = (decidedCounts: readonly number[], decided: number, hits: number): number => {
   if (decided === 0) {
     return 0;
   }
 
   const agreement = hits / decided;
 
-  const squaredWeights = tallies.reduce(
-    (total, tally) => total + (tally.decided / decided) ** 2,
+  const squaredWeights = decidedCounts.reduce(
+    (total, sessionDecided) => total + (sessionDecided / decided) ** 2,
     0,
   );
 
@@ -53,14 +42,14 @@ const lowerBound = (tallies: readonly SessionTally[], decided: number, hits: num
 };
 
 export const sessionSummary = (observations: readonly SessionObservation[]): SessionSummary => {
-  const tallies = sessionTallies(observations);
+  const decidedCounts = decidedCountsBySession(observations);
   const decided = observations.length;
   const hits = observations.filter((observation) => observation.hit).length;
 
   return {
     decided,
     hits,
-    sessions: tallies.length,
-    lowerBound: lowerBound(tallies, decided, hits),
+    sessions: decidedCounts.length,
+    lowerBound: lowerBound(decidedCounts, decided, hits),
   };
 };

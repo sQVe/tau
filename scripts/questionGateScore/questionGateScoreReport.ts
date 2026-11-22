@@ -78,6 +78,8 @@ const cutoffCount = 11;
 const firstCutoffPercent = 50;
 const cutoffStepPercent = 5;
 const percentScale = 100;
+const tenthsPerPercent = 10;
+const lowerBoundTenthsScale = percentScale * tenthsPerPercent;
 
 const zScore = 1.96;
 const varianceScale = 4;
@@ -111,6 +113,8 @@ const share = (part: number, total: number): number => (total === 0 ? 0 : part /
 const isDecided = (verdict: JudgeVerdict, cutoff: number): boolean =>
   questionGateDecision({ verdict, cutoff }).decision === 'decide';
 
+const isHit = (item: ScoreItem): boolean => item.outcome.kind === 'recommended';
+
 const decidedItems = (
   items: readonly ScoreItem[],
   variant: JudgeVariant,
@@ -136,7 +140,7 @@ const cutoffScore = (
   cutoff: number,
 ): CutoffScore => {
   const decided = decidedItems(items, variant, cutoff);
-  const hits = decided.filter((item) => item.outcome.kind === 'recommended').length;
+  const hits = decided.filter(isHit).length;
 
   return scoreFromTotals(items.length, cutoff, decided.length, hits);
 };
@@ -152,7 +156,7 @@ const heldOutScore = (
   const decided = decidedItems(items, variant, cutoff);
 
   const summary = sessionSummary(
-    decided.map((item) => ({ session: item.session, hit: item.outcome.kind === 'recommended' })),
+    decided.map((item) => ({ session: item.session, hit: isHit(item) })),
   );
 
   const score = scoreFromTotals(items.length, cutoff, summary.decided, summary.hits);
@@ -204,7 +208,12 @@ export const scoreReport = (input: ScoreInput): ScoreReport => {
   };
 };
 
+export const lowerBoundPercent = (value: number): number =>
+  Math.floor(value * lowerBoundTenthsScale) / tenthsPerPercent;
+
 const formatPercent = (value: number): string => `${(value * percentScale).toFixed(1)}%`;
+
+const formatLowerBound = (value: number): string => `${lowerBoundPercent(value).toFixed(1)}%`;
 
 const formatCutoff = (cutoff: number): string => cutoff.toFixed(2);
 
@@ -254,14 +263,13 @@ const heldOutLine = (score: VariantScore): string[] => {
 
   const barResult = heldOut.meetsBar ? 'meets the 95% bar' : 'misses the 95% bar';
 
-  const sessionWord = heldOut.sessions === 1 ? 'session' : 'sessions';
-
   const line = [
     `Held out at ${formatCutoff(heldOut.cutoff)}: ${heldOut.decided} decided,`,
     `decide share ${formatPercent(heldOut.decideShare)},`,
     `agreement ${formatPercent(heldOut.agreement)},`,
-    `question lower bound ${formatPercent(heldOut.lowerBound)},`,
-    `session lower bound ${formatPercent(heldOut.sessionLowerBound)} over ${heldOut.sessions} ${sessionWord}:`,
+    `question lower bound ${formatLowerBound(heldOut.lowerBound)},`,
+    `session lower bound ${formatLowerBound(heldOut.sessionLowerBound)},`,
+    `contributing sessions ${heldOut.sessions}:`,
     barResult,
   ].join(' ');
 
