@@ -41,9 +41,11 @@ session ID. Every other holder state refuses with a reason the lead can act on: 
 running hidden ask, another checkout, or an architect from a Tau release before routes. That older
 release writes its record after it takes the lock, so its record is never older than its lock. This
 tells it apart from an architect that is still starting. A live route whose terminal shows no
-`tau.inbox` label refuses before it saves an ask record, because the inbox withdraws its label
-before the architect releases its lock, and a Pi that does not own its terminal never advertises
-one. The lead asks again with the question.
+`tau.inbox` label, including an empty value, refuses before it saves an ask record, because the
+inbox withdraws its label with an empty value before the architect releases its lock, and a Pi that
+does not own its terminal never advertises one. The lead asks again with the question. A label
+withdrawn between that check and the send's own read still ends in the send's refusal, and the ask
+is settled failed like any refused first send.
 
 Recovery never turns one question into two. The lead's own inbox must be listening for its current
 session before `ask` sends, because the answer can return only there. The ask ID is the inbox

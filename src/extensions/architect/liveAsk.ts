@@ -4,6 +4,7 @@ import { errorMessage } from '../../errors.js';
 import { get } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { inboxLabelKey, ownInboxReady, sendInboxMessage } from '../../inbox/inbox.js';
+import { decideArchitectInbox } from './architectInboxDecision.js';
 import { readFailureDecision } from './readFailureDecision.js';
 import { changeAskRecord, isOpenLiveAsk, readAskRecord, writeAskRecord } from './record.js';
 import type { AskRecord, AskRecordChange, ChangeAskOptions, LiveAskRecord } from './record.js';
@@ -72,7 +73,7 @@ const noLeadInbox =
   'This lead session has no working inbox, so the answer cannot reach it. Reload Pi, then ask again.';
 
 const architectInboxMissing = (terminal: string): string =>
-  `The live architect in ${terminal} advertises no Tau inbox right now. No ask was saved. If it is reloading, call architect ask again with the question in a few seconds. If this repeats, its Pi started without an inbox, so switch to its pane to talk to it.`;
+  `The live architect in ${terminal} advertises no Tau inbox. No ask was saved. Call architect ask again with the question in a few seconds. If the terminal still shows no inbox, switch to its pane to talk to the architect.`;
 
 const missingRecordNote =
   'The question may be in the architect inbox, but its ask record is gone, so the architect cannot answer it. Call architect ask again with the question.';
@@ -323,6 +324,19 @@ const sendQuestion = async (
   };
 };
 
+const readArchitectTerminal = async (request: LiveAskRequest, route: LiveAskRoute) => {
+  try {
+    return await get(request.hc, route.terminal);
+  } catch (error) {
+    request.hc.signal?.throwIfAborted();
+
+    throw new Error(
+      `The architect terminal ${route.terminal} could not be read: ${errorMessage(error)}. No ask was saved. Call architect ask again with the question.`,
+      { cause: error },
+    );
+  }
+};
+
 const askLiveArchitect = async (
   request: LiveAskRequest,
   route: LiveAskRoute,
@@ -332,12 +346,14 @@ const askLiveArchitect = async (
     return { status: 'needsOpen', reason: noLeadInbox };
   }
 
-  const architectTerminal = await get(request.hc, route.terminal);
+  const architectTerminal = await readArchitectTerminal(request, route);
 
-  if (
-    architectTerminal.state === 'live' &&
-    architectTerminal.labels?.[inboxLabelKey] === undefined
-  ) {
+  const inboxDecision = decideArchitectInbox({
+    state: architectTerminal.state,
+    inboxLabel: architectTerminal.labels?.[inboxLabelKey],
+  });
+
+  if (inboxDecision === 'inboxMissing') {
     return { status: 'needsOpen', reason: architectInboxMissing(route.terminal) };
   }
 

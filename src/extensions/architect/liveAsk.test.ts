@@ -178,30 +178,36 @@ it('a lead label that names this session without a local listener refuses the li
   expect(getTargets(hc)).toEqual(['t-lead']);
 });
 
-it('a live ask to an architect terminal without an inbox label saves no record and sends nothing', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root, hc, receiver, tool } = await liveArchitect(cleanup);
+it.for<{ reply: string }>([
+  {
+    reply: JSON.stringify({ address: 't-architect', name: null, state: 'live', labels: {} }),
+  },
+  { reply: JSON.stringify({ address: 't-architect', name: null, state: 'live' }) },
+])(
+  'a live ask to an architect terminal without an inbox label saves no record and sends nothing',
+  async ({ reply }, { onTestFinished: cleanup }) => {
+    const { root, hc, receiver, tool } = await liveArchitect(cleanup);
 
-  replyTerminal(hc, 't-architect');
+    hc.replyGet('t-architect', reply);
 
-  const result = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
+    const result = await tool.execute(
+      'call',
+      { action: 'ask', question: 'Which flag name?' },
+      undefined,
+      undefined,
+      contextOf(root),
+    );
 
-  expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
+    expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
 
-  expect((result.details as { reason: string }).reason).toContain(
-    't-architect advertises no Tau inbox',
-  );
+    expect((result.details as { reason: string }).reason).toContain(
+      't-architect advertises no Tau inbox',
+    );
 
-  await expect(readAskRecords(root)).resolves.toEqual({ records: [], gaps: [] });
-  expect(savedFiles(receiver)).toEqual([]);
-});
+    await expect(readAskRecords(root)).resolves.toEqual({ records: [], gaps: [] });
+    expect(savedFiles(receiver)).toEqual([]);
+  },
+);
 
 it('a live ask asked again after the architect inbox returns queues one ask', async ({
   onTestFinished: cleanup,
@@ -275,29 +281,30 @@ it("a live ask to a finished architect terminal keeps the sender's refusal", asy
   expect(record.detail).toMatch(/is finished, not live/);
 });
 
-it('a live ask to an architect terminal that reports no labels refuses without saving', async ({
+it('a live ask whose architect terminal cannot be read saves no record', async ({
   onTestFinished: cleanup,
 }) => {
-  const { root, hc, receiver, tool } = await liveArchitect(cleanup);
+  const { root, hc, tool } = await liveArchitect(cleanup);
 
-  hc.replyGet('t-architect', JSON.stringify({ address: 't-architect', name: null, state: 'live' }));
+  hc.failGet('t-architect', 'terminal not found');
 
-  const result = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
+  const failure = await tool
+    .execute(
+      'call',
+      { action: 'ask', question: 'Which flag name?' },
+      undefined,
+      undefined,
+      contextOf(root),
+    )
+    .then(
+      () => undefined,
+      (error: unknown) => error,
+    );
 
-  expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
-
-  expect((result.details as { reason: string }).reason).toContain(
-    't-architect advertises no Tau inbox',
-  );
-
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('could not be read');
+  expect((failure as Error).message).toContain('No ask was saved');
   await expect(readAskRecords(root)).resolves.toEqual({ records: [], gaps: [] });
-  expect(savedFiles(receiver)).toEqual([]);
 });
 
 it('a refused live ask marks its record failed', async ({ onTestFinished: cleanup }) => {
