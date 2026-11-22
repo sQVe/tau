@@ -102,8 +102,8 @@ export const registerInboxLifecycle = (
       });
   };
 
-  // Shutdown waits for a start in flight, because that start binds the socket and writes the
-  // label after shutdown begins.
+  // Shutdown joins a start already in flight, even after that start has bound the socket and
+  // written the label, so it stops the start instead of leaving it serving a dead session.
   const withdraw = async (): Promise<void> => {
     const current = listener;
 
