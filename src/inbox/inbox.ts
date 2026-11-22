@@ -40,7 +40,7 @@ interface InboxSlot {
   endpoint: Endpoint | undefined;
   transition: Promise<unknown>;
   checks: Partial<Record<Family, AcceptCheck>>;
-  registered: boolean;
+  owner: symbol | undefined;
 }
 
 declare global {
@@ -48,12 +48,13 @@ declare global {
 }
 
 // Pi imports an extension again on reload, and a worker loads its own extension file, so module
-// state is not shared. The listener lives in one process-wide slot instead.
+// state is not shared. The listener lives in one process-wide slot instead. A session claims the
+// slot when it starts, because Pi can load a copy and discard it before any session starts.
 const slot: InboxSlot = globalThis.tauInboxSlot ?? {
   endpoint: undefined,
   transition: Promise.resolve(),
   checks: {},
-  registered: false,
+  owner: undefined,
 };
 
 globalThis.tauInboxSlot = slot;
@@ -66,18 +67,22 @@ export const currentInboxPath = (): string | undefined => slot.endpoint?.path;
 
 export const acceptChecks = (): Partial<Record<Family, AcceptCheck>> => slot.checks;
 
-export const claimRegistration = (): boolean => {
-  if (slot.registered) {
-    return false;
+export const claimInbox = (owner: symbol): boolean => {
+  if (slot.owner === undefined || slot.owner === owner) {
+    slot.owner = owner;
+
+    return true;
   }
 
-  slot.registered = true;
-
-  return true;
+  return false;
 };
 
-export const releaseRegistration = (): void => {
-  slot.registered = false;
+export const holdsInbox = (owner: symbol): boolean => slot.owner === owner;
+
+export const releaseInbox = (owner: symbol): void => {
+  if (slot.owner === owner) {
+    slot.owner = undefined;
+  }
 };
 
 const serialize = <T>(work: () => Promise<T>): Promise<T> => {

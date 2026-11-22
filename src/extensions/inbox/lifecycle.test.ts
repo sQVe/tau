@@ -10,8 +10,11 @@ import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
-import { setAcceptCheck } from '../../inbox/inbox.js';
-import { createInboxExtension } from './inbox.js';
+import { currentTerminalAddress } from '../../hc/hc.js';
+import { releaseInbox, setAcceptCheck } from '../../inbox/inbox.js';
+import { createWake } from '../../wake/wake.js';
+import { registerInboxLifecycle } from './lifecycle.js';
+import { createStartupGate } from './startup.js';
 
 interface HcState {
   labels: Map<string, string>;
@@ -130,6 +133,8 @@ const contextFor = (sessionId: string, notify: (message: string) => void): Exten
 const startHarness = (options: HarnessOptions = {}) => {
   const state = options.state ?? hcState();
   const socketDirectory = options.socketDirectory ?? join(root, 'sockets');
+  // The cases below call `releaseInbox` so a replacement attachment can claim the slot again.
+  const owner = Symbol('tau inbox');
   const fake = fakeExtensionApi();
   const notices: string[] = [];
   const firstNotice = Promise.withResolvers<undefined>();
@@ -139,12 +144,16 @@ const startHarness = (options: HarnessOptions = {}) => {
     firstNotice.resolve(undefined);
   };
 
-  createInboxExtension({
+  registerInboxLifecycle(fake.pi, {
+    owner,
     hc: { exec: hcExec(state), connect: () => Promise.reject(new Error('no connect')), cwd: root },
+    terminal: currentTerminalAddress,
     socketDirectory: () => socketDirectory,
     inboxDirectory: () => join(root, 'records'),
     processGroup: () => Promise.resolve(options.processGroup ?? foregroundProcessGroup),
-  })(fake.pi);
+    gate: createStartupGate(fake.pi),
+    wake: createWake(fake.pi),
+  });
 
   const emit = async (name: string, event: unknown, context: ExtensionContext) => {
     for (const handler of fake.handlers.get(name) ?? []) {
@@ -168,6 +177,7 @@ const startHarness = (options: HarnessOptions = {}) => {
 
   return {
     state,
+    owner,
     notices,
     firstNotice: firstNotice.promise,
     sendMessage: fake.sendMessage,
@@ -378,6 +388,31 @@ it('leaves a label that names another socket at shutdown', async () => {
   expect(Object.fromEntries(harness.state.labels)).toEqual({
     'tau.inbox': 'rpc1:/tmp/tau-1000/other.sock',
   });
+});
+
+it('releases the inbox claim when withdrawal fails at shutdown', async () => {
+  const state = hcState();
+  const first = startHarness({ state });
+  const firstSession = randomUUID();
+  const replacement = startHarness({ state });
+  const replacementSession = randomUUID();
+
+  await first.start(firstSession);
+  state.failLabel = true;
+
+  await expect(first.shutdown(firstSession)).rejects.toThrow('hc label t7 failed: label refused');
+
+  state.failLabel = false;
+  await replacement.start(replacementSession);
+  cleanups.push(() => replacement.shutdown(replacementSession));
+
+  expect(Object.fromEntries(state.labels)).toEqual({
+    'tau.inbox': `rpc1:${socketOf(replacementSession)}`,
+  });
+
+  await expect(
+    exchange(socketOf(replacementSession), handoverTo(replacementSession)),
+  ).resolves.toMatchObject({ sessionId: replacementSession });
 });
 
 it('refuses an answer request when a non-worker session has no answer-request check', async () => {
@@ -609,6 +644,36 @@ it('refuses to start in a socket directory other users can read', async () => {
   ]);
 });
 
+it('serves one inbox when a process keeps two lifecycles', async () => {
+  const state = hcState();
+  const first = startHarness({ state });
+  const second = startHarness({ state });
+  const firstSession = randomUUID();
+  const secondSession = randomUUID();
+
+  await first.start(firstSession);
+  await second.start(secondSession);
+  cleanups.push(() => second.shutdown(secondSession));
+  cleanups.push(() => first.shutdown(firstSession));
+
+  expect(Object.fromEntries(state.labels)).toEqual({
+    'tau.inbox': `rpc1:${socketOf(firstSession)}`,
+  });
+
+  expect(existsSync(socketOf(firstSession))).toBe(true);
+  expect(existsSync(socketOf(secondSession))).toBe(false);
+
+  await second.shutdown(secondSession);
+
+  await expect(exchange(socketOf(firstSession), handoverTo(firstSession))).resolves.toMatchObject({
+    sessionId: firstSession,
+  });
+
+  expect(Object.fromEntries(state.labels)).toEqual({
+    'tau.inbox': `rpc1:${socketOf(firstSession)}`,
+  });
+});
+
 it('leaves a replacement listener and its label when a replaced lifecycle shuts down', async () => {
   const state = hcState();
   const replaced = startHarness({ state });
@@ -617,6 +682,7 @@ it('leaves a replacement listener and its label when a replaced lifecycle shuts 
   const second = randomUUID();
 
   await replaced.start(first);
+  releaseInbox(replaced.owner);
   await replacement.start(second);
   cleanups.push(() => replacement.shutdown(second));
   await replaced.shutdown(first);
@@ -635,6 +701,7 @@ it('leaves the label of a replacement with the same session when a replaced life
   const sessionId = randomUUID();
 
   await replaced.start(sessionId);
+  releaseInbox(replaced.owner);
   await replacement.start(sessionId);
   cleanups.push(() => replacement.shutdown(sessionId));
   await replaced.shutdown(sessionId);
@@ -674,6 +741,7 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
   const releaseRead = Promise.withResolvers<undefined>();
 
   await earlier.start(first);
+  releaseInbox(earlier.owner);
 
   state.afterRead = () => {
     readStarted.resolve(undefined);
@@ -724,6 +792,7 @@ it("keeps the foreground session's label when a second Pi on its terminal starts
 
   await parent.start(parentSession);
   cleanups.push(() => parent.shutdown(parentSession));
+  releaseInbox(parent.owner);
   await child.start(childSession);
   await expectParentInbox();
   await child.shutdown(childSession);

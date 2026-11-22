@@ -7,7 +7,7 @@ import { piExec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { claimRegistration, releaseRegistration, socketDirectoryFor } from '../../inbox/inbox.js';
+import { holdsInbox, socketDirectoryFor } from '../../inbox/inbox.js';
 import { createWake } from '../../wake/wake.js';
 import { guardTerminalTyping } from './guard.js';
 import { registerInboxLifecycle } from './lifecycle.js';
@@ -24,9 +24,12 @@ export interface InboxExtensionDependencies {
 export const createInboxExtension =
   (dependencies: InboxExtensionDependencies) =>
   (pi: ExtensionAPI): void => {
-    pi.on('tool_call', guardTerminalTyping);
+    const owner = Symbol('tau inbox');
+
+    pi.on('tool_call', (event) => (holdsInbox(owner) ? guardTerminalTyping(event) : undefined));
 
     registerInboxLifecycle(pi, {
+      owner,
       hc: dependencies.hc,
       terminal: currentTerminalAddress,
       socketDirectory: dependencies.socketDirectory,
@@ -48,12 +51,6 @@ const currentSocketDirectory = (): string => {
 };
 
 export default function inboxExtension(pi: ExtensionAPI): void {
-  if (!claimRegistration()) {
-    return;
-  }
-
-  pi.on('session_shutdown', releaseRegistration);
-
   createInboxExtension({
     hc: { exec: piExec(pi), connect, cwd: process.cwd() },
     socketDirectory: currentSocketDirectory,

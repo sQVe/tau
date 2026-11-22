@@ -8,7 +8,6 @@ import { expect, it, vi } from 'vitest';
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import { readLiveLockHolder } from '../src/fileLock/fileLock.js';
 import { socketDirectoryFor, socketPathFor } from '../src/inbox/endpoint.js';
-import { releaseRegistration } from '../src/inbox/inbox.js';
 import tauRegistration from '../src/tau/tau.js';
 import { succeededResult } from './execFake.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -46,8 +45,6 @@ const waitForMissing = async (path: string): Promise<void> => {
 };
 
 it('inbox closes before the lock frees', async ({ onTestFinished }) => {
-  releaseRegistration();
-
   const uid = process.getuid?.();
 
   if (uid === undefined) {
@@ -149,7 +146,6 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   onTestFinished(async () => {
     releaseWithdrawal.resolve(undefined);
     await waitForMissing(socketPath);
-    releaseRegistration();
     vi.unstubAllEnvs();
   });
 

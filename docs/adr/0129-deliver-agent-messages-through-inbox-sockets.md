@@ -32,6 +32,10 @@ folder, and replies before the sender reports success.
 - A Pi advertises and serves its inbox only when it is in the foreground process group of its
   `HC_TERMINAL_ID` terminal: hc's `foreground.pid` equals the Pi's process group ID. A Pi started
   from a session's shell tool, which runs detached, starts none, while `pnpm exec pi` works.
+- One Tau load per process serves the inbox. Each load claims the inbox in its session start and
+  releases it at its own session shutdown, even when withdrawal fails. The claim lives with the
+  session lifecycle because a session owns the socket and label it protects. A load that Pi discards
+  before any session starts claims nothing.
 
 ### Sending
 

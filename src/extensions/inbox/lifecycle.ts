@@ -7,10 +7,12 @@ import { get, label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import {
   acceptChecks,
+  claimInbox,
   createReceiptStore,
   createReceiver,
   formatInboxLabel,
   inboxLabelKey,
+  releaseInbox,
   startInbox,
 } from '../../inbox/inbox.js';
 import type { InboxListener, Receiver } from '../../inbox/inbox.js';
@@ -22,6 +24,7 @@ import { ownsTerminal } from './ownerDecision.js';
 import type { StartupGate } from './startup.js';
 
 export interface InboxLifecycleDependencies {
+  owner: symbol;
   hc: HcRuntime;
   terminal: () => string | undefined;
   socketDirectory: () => string;
@@ -178,6 +181,10 @@ export const registerInboxLifecycle = (
   };
 
   pi.on('session_start', async (_event, context) => {
+    if (!claimInbox(dependencies.owner)) {
+      return;
+    }
+
     const endedDrain = generation?.drain ?? Promise.resolve();
 
     endGeneration();
@@ -224,6 +231,11 @@ export const registerInboxLifecycle = (
 
   pi.on('session_shutdown', async () => {
     endGeneration();
-    await withdraw();
+
+    try {
+      await withdraw();
+    } finally {
+      releaseInbox(dependencies.owner);
+    }
   });
 };

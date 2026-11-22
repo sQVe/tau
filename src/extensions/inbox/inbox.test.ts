@@ -1,43 +1,103 @@
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { expect, it } from 'vitest';
+import type { ExtensionContext, ToolCallEvent } from '@earendil-works/pi-coding-agent';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { terminalTypingReason } from './guard.js';
 import inboxExtension from './inbox.js';
 
-const registeredEvents = (fake: ReturnType<typeof fakeExtensionApi>): string[] =>
-  [...fake.handlers.keys()].toSorted();
+const context = {
+  ui: { notify: () => undefined },
+  sessionManager: { getSessionId: () => 'session-1', getEntries: () => [] },
+} as unknown as ExtensionContext;
+
+const bashEvent = (command: string): ToolCallEvent => ({
+  type: 'tool_call',
+  toolCallId: 'tool-call-1',
+  toolName: 'bash',
+  input: { command },
+});
+
+const start = async (fake: ReturnType<typeof fakeExtensionApi>): Promise<void> => {
+  for (const handler of fake.handlers.get('session_start') ?? []) {
+    await handler({ type: 'session_start', reason: 'startup' } as never, context);
+  }
+};
 
 const shutdown = async (fake: ReturnType<typeof fakeExtensionApi>): Promise<void> => {
-  const context = { ui: { notify: () => undefined } } as unknown as ExtensionContext;
-
   for (const handler of fake.handlers.get('session_shutdown') ?? []) {
     await handler({ type: 'session_shutdown', reason: 'reload' } as never, context);
   }
 };
 
-it('registers one listener and one guard when a process loads the inbox twice', async () => {
+const blocksTerminalTyping = (fake: ReturnType<typeof fakeExtensionApi>): unknown =>
+  fake.handler('tool_call')(bashEvent('hc send t1 hello'), context);
+
+it('serves the inbox from the kept load when Pi discards an earlier load', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', '');
+
+  const discarded = fakeExtensionApi();
+  const kept = fakeExtensionApi();
+
+  onTestFinished(async () => {
+    await shutdown(kept);
+    await shutdown(discarded);
+    vi.unstubAllEnvs();
+  });
+
+  inboxExtension(discarded.pi);
+  inboxExtension(kept.pi);
+
+  await start(kept);
+
+  expect(blocksTerminalTyping(kept)).toMatchObject({ block: true, reason: terminalTypingReason });
+});
+
+it('serves one inbox when a process keeps two loads', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', '');
+
   const first = fakeExtensionApi();
   const second = fakeExtensionApi();
+
+  onTestFinished(async () => {
+    await shutdown(first);
+    await shutdown(second);
+    vi.unstubAllEnvs();
+  });
 
   inboxExtension(first.pi);
   inboxExtension(second.pi);
 
-  expect(first.handlers.get('tool_call')).toHaveLength(1);
-  expect(registeredEvents(first)).toContain('session_start');
-  expect(registeredEvents(second)).toEqual([]);
+  await start(first);
+  await start(second);
 
-  await shutdown(first);
+  const guards = [first, second].map((fake) => blocksTerminalTyping(fake));
+
+  expect(guards.filter((result) => result !== undefined)).toHaveLength(1);
+
+  await shutdown(second);
+
+  expect(blocksTerminalTyping(first)).toMatchObject({ block: true });
 });
 
-it('registers again after the session shut down, as a reload does', async () => {
+it('claims again after a reload', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', '');
+
   const first = fakeExtensionApi();
   const reloaded = fakeExtensionApi();
 
+  onTestFinished(async () => {
+    await shutdown(first);
+    await shutdown(reloaded);
+    vi.unstubAllEnvs();
+  });
+
   inboxExtension(first.pi);
+  await start(first);
   await shutdown(first);
+
   inboxExtension(reloaded.pi);
+  await start(reloaded);
 
-  expect(registeredEvents(reloaded)).toEqual(registeredEvents(first));
-
-  await shutdown(reloaded);
+  expect(blocksTerminalTyping(reloaded)).toMatchObject({ block: true });
+  expect(blocksTerminalTyping(first)).toBeUndefined();
 });
