@@ -59,14 +59,47 @@ const targetOf = (token: Token): string | undefined => {
   return typeof value === 'string' ? value : undefined;
 };
 
+const childTokensOf = (value: unknown): unknown => {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+
+  return 'tokens' in value ? value.tokens : undefined;
+};
+
+// An image renders no text. An HTML tag renders nothing, while the text between tags does.
+const renderedText = (tokens: unknown): string => {
+  const list: readonly unknown[] = Array.isArray(tokens) ? tokens : [];
+
+  const rendered = list.map((token: unknown) => {
+    if (typeof token !== 'object' || token === null) {
+      return '';
+    }
+
+    const type: unknown = 'type' in token ? token.type : undefined;
+
+    if (type === 'image' || type === 'html') {
+      return '';
+    }
+
+    if (type === 'text' || type === 'codespan' || type === 'escape') {
+      const text: unknown = 'text' in token ? token.text : undefined;
+
+      return typeof text === 'string' ? text : '';
+    }
+
+    return renderedText(childTokensOf(token));
+  });
+
+  return rendered.join('');
+};
+
 const headingTextOf = (token: Token): string | undefined => {
   if (token.type !== 'heading') {
     return undefined;
   }
 
-  const value: unknown = token.text;
-
-  return typeof value === 'string' ? value : undefined;
+  return renderedText(childTokensOf(token));
 };
 
 export const readMarkdownLinks = (markdown: string): MarkdownLinks => {

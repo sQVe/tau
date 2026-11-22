@@ -54,8 +54,9 @@ file in Tau. The set keeps its name, so profiles and saved loadouts stay valid.
   session that loads the coding set shows it, so a worker without `coding` stays quiet.
 - A broken project never falls back to the bundled guides.
 - Tau reads and hashes every file the sync record lists, not only the guides the project loads. A
-  missing file, a hash mismatch, or a bad link in any recorded file, including shared ADRs, makes
-  the whole installation broken.
+  missing file, a hash mismatch, a recorded Markdown file the tokenizer cannot read, or a bad link
+  in any recorded file, including shared ADRs, makes the whole installation broken. A bad link is a
+  target that is missing, leaves the folder, cannot be decoded, or names a missing heading.
 - A project whose `docs` folder or `docs/stomme` folder is a symbolic link reads as a broken
   installation. A symbolic link above `docs` is allowed.
 

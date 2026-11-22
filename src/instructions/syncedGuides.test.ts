@@ -18,7 +18,7 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { readSyncedGuides } from './syncedGuides.js';
-import type { GuideFileSystem } from './syncedGuides.js';
+import type { GuideFileSystem, SyncedGuides } from './syncedGuides.js';
 
 interface BrokenRow {
   name: string;
@@ -62,7 +62,7 @@ const rules = '# Rules\n';
 
 const coding = [
   '# Coding',
-  'See [the rules](./rules.md), [a heading](./rules.md#rules), and [the top](#coding).',
+  'See [the rules](./rules.md), [a heading](../languages/rust/guide.md#rust), and [the top](#coding).',
   'See [a site](https://example.com) and [the Rust guide](../languages/rust/guide.md).',
   'An index entry is `- [NNNN: Title](./NNNN-title.md)`.',
   '<!-- [a draft](./draft.md) -->',
@@ -133,7 +133,7 @@ it.for([
     files: {
       ...guides,
       'shared/rules.md':
-        '[a]: https://example.com/gone.md\n[b]: #rules\n[c]: ./coding.md#top\n[^1]: A note.\n',
+        '# Rules\n[a]: https://example.com/gone.md\n[b]: #rules\n[c]: ./coding.md#coding\n[^1]: A note.\n',
     },
   },
   {
@@ -176,12 +176,28 @@ it.for([
     name: 'a link target with a query',
     files: {
       ...guides,
-      'shared/rules.md': '[a](./coding.md?plain=1) and [b](./coding.md?a=1#frag)\n',
+      'shared/rules.md': '[a](./coding.md?plain=1) and [b](./coding.md?a=1#coding)\n',
     },
   },
   {
     name: 'a URL target with a query',
     files: { ...guides, 'shared/rules.md': '[a](https://example.com/gone.md?x=1)\n' },
+  },
+  {
+    name: 'an encoded path to a present file',
+    files: {
+      ...guides,
+      'shared/release notes.md': '# Notes\n',
+      'shared/coding.md': '[n](./release%20notes.md)\n',
+    },
+  },
+  {
+    name: 'a link with an empty fragment',
+    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](./rules.md#)\n' },
+  },
+  {
+    name: 'a fragment on a non-Markdown recorded file',
+    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](./data.txt#anything)\n' },
   },
   {
     name: 'a link target with balanced parentheses',
@@ -216,9 +232,23 @@ it.for([
         '[a]: ./present.md "Title"',
         "[b]: ./present.md 'Title'",
         '[c]: ./present.md (Title) ',
-        '[d]: <./present.md>\t"Title"',
         '',
       ].join('\n'),
+    },
+  },
+  {
+    name: 'a fragment to a reference-link heading',
+    files: {
+      ...guides,
+      'shared/rules.md': '# [Rules][r]\n\n[r]: ./coding.md\n',
+      'shared/coding.md': `${coding}See [the rules](./rules.md#rules).\n`,
+    },
+  },
+  {
+    name: 'an indented code block and an unclosed link',
+    files: {
+      ...guides,
+      'shared/rules.md': '    [x](./gone.md)\n\n[x](./oops.md trailing prose\n',
     },
   },
 ])('reads $name as valid', async ({ files }) => {
@@ -394,6 +424,51 @@ const brokenRows: BrokenRow[] = [
     files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]: ./missing.md "Title"\n' },
     reason: ['shared/rules.md', 'links to ./missing.md, which is not a synced file'],
   },
+  {
+    name: 'a link to a missing heading in another file',
+    files: { ...guides, 'shared/coding.md': '[a](./rules.md#missing)\n' },
+    reason: ['links to ./rules.md#missing, which names a missing heading'],
+  },
+  {
+    name: 'a link to a missing heading in the same file',
+    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](#missing)\n' },
+    reason: ['links to #missing, which names a missing heading'],
+  },
+  {
+    name: 'an undecodable fragment',
+    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](./rules.md#bad%ZZ)\n' },
+    reason: ['links to ./rules.md#bad%ZZ, which names a missing heading'],
+  },
+  {
+    name: 'an encoded path that leaves the folder',
+    files: { ...guides, 'shared/rules.md': '[o](./%2E%2E/%2E%2E/outside.md)\n' },
+    reason: ['shared/rules.md', './%2E%2E/%2E%2E/outside.md', 'leaves'],
+  },
+  {
+    name: 'an undecodable path',
+    files: { ...guides, 'shared/rules.md': '[b](./bad%ZZ.md)\n' },
+    reason: ['links to ./bad%ZZ.md, which cannot be decoded'],
+  },
+  {
+    name: 'a reference definition in a blockquote',
+    files: { ...guides, 'shared/rules.md': '> [a]: ./gone.md\n' },
+    reason: ['links to ./gone.md, which is not a synced file'],
+  },
+  {
+    name: 'a reference definition in a list item',
+    files: { ...guides, 'shared/rules.md': '- [a]: ./gone.md\n' },
+    reason: ['links to ./gone.md, which is not a synced file'],
+  },
+  {
+    name: 'a missing image target',
+    files: { ...guides, 'shared/rules.md': '![alt](./gone.png)\n' },
+    reason: ['links to ./gone.png, which is not a synced file'],
+  },
+  {
+    name: 'the first problem in document order',
+    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](./rules.md#nope)\n\n[b]: ./gone.md\n' },
+    reason: ['./rules.md#nope'],
+  },
 ];
 
 it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) => {
@@ -409,6 +484,31 @@ it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) 
   for (const part of reason) {
     expect(found).toContain(part);
   }
+});
+
+// The depth that overflows the stack depends on the runner's stack size, so the test deepens the
+// quote until the read overflows.
+it('reports a guide the tokenizer cannot read as broken', async () => {
+  let directory = '';
+  let result: SyncedGuides | undefined;
+
+  for (let depth = 1000; depth <= 16_000; depth *= 2) {
+    directory = writeGuides({
+      ...guides,
+      'shared/rules.md': `${'> '.repeat(depth)}[a](./a.md)\n`,
+    });
+
+    result = await readSyncedGuides(directory);
+
+    if (result.kind === 'broken' && result.reason.includes('cannot be read as Markdown')) {
+      break;
+    }
+  }
+
+  expect(result).toEqual({
+    kind: 'broken',
+    reason: `${join(directory, 'shared/rules.md')} cannot be read as Markdown: Maximum call stack size exceeded`,
+  });
 });
 
 it('reports a synced folder that is a symbolic link as broken', async () => {

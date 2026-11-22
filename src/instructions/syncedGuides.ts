@@ -3,6 +3,8 @@ import { lstat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
+import { readMarkdownLinks } from './markdownLinks.js';
+import type { MarkdownLinks } from './markdownLinks.js';
 import { readRegularFile } from './regularFile.js';
 import { parseSyncRecord } from './syncRecord.js';
 import type { SyncRecord } from './syncRecord.js';
@@ -20,14 +22,6 @@ type TextRead = { text: string; bytes: Uint8Array } | { reason: string };
 
 const recordName = '.sync-record.toml';
 const fix = 'run stomme sync';
-
-// Matches the spans that are not rendered as a link, in document order, so one span cannot hide
-// another: a fence inside an HTML comment stays comment text, and a link after it still renders.
-// Inline code ends at a blank line or a fence, so it cannot reach into a later block. The last two
-// alternatives capture an inline link target and a reference definition target. A definition is the
-// target alone, with an optional title, to the end of the line; other text after a label is prose.
-const markdownToken =
-  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)(?:(?!\n[ \t]*(?:\n|`{3,}|~{3,}))[\s\S])*?\2|\]\(\s*(?:<([^>\n]*)>|((?:[^()\s]|\([^()\s]*\))+))|^ {0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:\n[ \t]*)?(?:<([^>\n]*)>|(\S+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
 
 const urlScheme = /^[a-z][a-z\d+.-]*:/i;
 
@@ -108,44 +102,102 @@ const readGuide = async (
   return read;
 };
 
-const linkTargets = (markdown: string): string[] =>
-  [...markdown.replaceAll('\r\n', '\n').matchAll(markdownToken)].flatMap((match) => {
-    const inlineTarget = match[3] ?? match[4];
-    const definitionTarget = match[5] ?? match[6];
+const targetParts = (target: string) => {
+  const fragmentStart = target.indexOf('#');
+  const reference = fragmentStart === -1 ? target : target.slice(0, fragmentStart);
+  const queryStart = reference.indexOf('?');
 
-    return inlineTarget ?? definitionTarget ?? [];
-  });
+  return {
+    encodedPath: queryStart === -1 ? reference : reference.slice(0, queryStart),
+    fragment: fragmentStart === -1 ? undefined : target.slice(fragmentStart + 1),
+  };
+};
+
+const decoded = (text: string): string | undefined => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return undefined;
+  }
+};
+
+const resolvedPath = (path: string, decodedPath: string) =>
+  decodedPath === '' ? path : posix.normalize(posix.join(posix.dirname(path), decodedPath));
+
+const leavesFolder = (decodedPath: string, resolved: string) =>
+  decodedPath.startsWith('/') || resolved === '..' || resolved.startsWith('../');
+
+const fragmentProblem = (
+  target: string,
+  fragment: string | undefined,
+  resolved: string,
+  links: ReadonlyMap<string, MarkdownLinks>,
+): string | undefined => {
+  if (fragment === undefined || fragment === '' || !resolved.endsWith('.md')) {
+    return undefined;
+  }
+
+  const slug = decoded(fragment);
+
+  if (slug !== undefined && links.get(resolved)?.slugs.has(slug) === true) {
+    return undefined;
+  }
+
+  return `links to ${target}, which names a missing heading`;
+};
 
 const linkProblem = (
   path: string,
   target: string,
+  links: ReadonlyMap<string, MarkdownLinks>,
   recorded: ReadonlyMap<string, string>,
 ): string | undefined => {
-  const [targetPath = ''] = target.split(/[?#]/u);
-
-  if (targetPath === '' || urlScheme.test(target)) {
+  if (urlScheme.test(target)) {
     return undefined;
   }
 
-  const resolved = posix.normalize(posix.join(posix.dirname(path), targetPath));
+  const { encodedPath, fragment } = targetParts(target);
+  const decodedPath = decoded(encodedPath);
 
-  const leavesFolder =
-    targetPath.startsWith('/') || resolved === '..' || resolved.startsWith('../');
+  if (decodedPath === undefined) {
+    return `links to ${target}, which cannot be decoded`;
+  }
 
-  if (leavesFolder) {
+  const resolved = resolvedPath(path, decodedPath);
+
+  if (leavesFolder(decodedPath, resolved)) {
     return `links to ${target}, which leaves the synced folder`;
   }
 
-  return recorded.has(resolved) ? undefined : `links to ${target}, which is not a synced file`;
+  if (!recorded.has(resolved)) {
+    return `links to ${target}, which is not a synced file`;
+  }
+
+  return fragmentProblem(target, fragment, resolved, links);
 };
 
 const firstLinkProblem = (
   directory: string,
   files: ReadonlyMap<string, string>,
 ): string | undefined => {
+  const links = new Map<string, MarkdownLinks>();
+
   for (const [path, text] of files) {
-    const targets = path.endsWith('.md') ? linkTargets(text) : [];
-    const problem = targets.map((target) => linkProblem(path, target, files)).find(Boolean);
+    if (!path.endsWith('.md')) {
+      continue;
+    }
+
+    try {
+      links.set(path, readMarkdownLinks(text));
+    } catch (error) {
+      return `${join(directory, path)} cannot be read as Markdown: ${errorMessage(error)}`;
+    }
+  }
+
+  for (const path of files.keys()) {
+    const targets = links.get(path)?.targets ?? [];
+
+    const problem = targets.map((target) => linkProblem(path, target, links, files)).find(Boolean);
 
     if (problem !== undefined) {
       return `${join(directory, path)} ${problem}; ${fix}`;

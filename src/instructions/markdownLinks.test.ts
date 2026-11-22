@@ -111,6 +111,16 @@ const slugTable: { name: string; markdown: string; expected: readonly string[] }
     expected: ['notes', 'notes-1', 'notes-1-1'],
   },
   {
+    name: 'numbers a third repeated slug',
+    markdown: '# Notes\n\n# Notes\n\n# Notes\n',
+    expected: ['notes', 'notes-1', 'notes-2'],
+  },
+  {
+    name: 'reads the text of a code span in a heading',
+    markdown: '# Run `pnpm check` now',
+    expected: ['run-pnpm-check-now'],
+  },
+  {
     name: 'drops link markup and punctuation from a slug',
     markdown: '## [Linked](../README.md) heading, with punctuation!',
     expected: ['linked-heading-with-punctuation'],
@@ -119,6 +129,21 @@ const slugTable: { name: string; markdown: string; expected: readonly string[] }
     name: 'reads a heading after a byte order mark',
     markdown: '\uFEFF# Top',
     expected: ['top'],
+  },
+  {
+    name: 'reads the rendered text of a reference link in a heading',
+    markdown: '# [Foo][id]\n\n[id]: ./good.md\n',
+    expected: ['foo'],
+  },
+  {
+    name: 'keeps an unresolved reference link in a heading as text',
+    markdown: '# [Foo][missing]\n',
+    expected: ['foomissing'],
+  },
+  {
+    name: 'drops emphasis, escapes, images, and HTML from a slug',
+    markdown: '# _Emph_ and **bold** ![img](x.png) <b>tag</b> \\_x\\_\n',
+    expected: ['emph-and-bold--tag-_x_'],
   },
 ];
 
