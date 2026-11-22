@@ -11,7 +11,7 @@ import {
   shadowCohort,
 } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
-import { runGit } from '../../git.js';
+import { readGitUnlessMissing } from '../../git.js';
 import {
   decideCall,
   decideDeadlineMilliseconds,
@@ -75,25 +75,11 @@ export interface Decider {
 
 type FrozenConfig = QuestionGateConfig & { shadow: ShadowConfig };
 
-const readGitOrNull = async (cwd: string, commandArguments: string[]): Promise<string | null> => {
-  const result = await runGit(cwd, commandArguments);
-
-  if (result.exitCode === 1) {
-    return null;
-  }
-
-  if (result.exitCode !== 0) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
-  }
-
-  return result.stdout.toString('utf8').trim();
-};
-
 const readBranch = async (cwd: string): Promise<{ branch: string | null; head: string | null }> => {
-  const branch = await readGitOrNull(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-  const head = await readGitOrNull(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+  const branch = await readGitUnlessMissing(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  const head = await readGitUnlessMissing(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']);
 
-  return { branch, head };
+  return { branch: branch ?? null, head: head ?? null };
 };
 
 const defaultDecidePorts: DecidePorts = {

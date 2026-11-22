@@ -224,6 +224,24 @@ export const readGit = async (
   return result.stdout.toString('utf8').trim();
 };
 
+export const readGitUnlessMissing = async (
+  cwd: string,
+  commandArguments: string[],
+  options: GitOptions = {},
+): Promise<string | undefined> => {
+  const result = await runGit(cwd, commandArguments, options);
+
+  if (result.exitCode === 1) {
+    return undefined;
+  }
+
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+  }
+
+  return result.stdout.toString('utf8').trim();
+};
+
 export const findCheckoutRoot = async (
   cwd: string,
   toolName: string,

@@ -9,7 +9,13 @@ import { expect, it, vi } from 'vitest';
 import { installCommandShim } from '../tests/commandShimFake.js';
 import { createTemporaryRepository } from '../tests/gitRepository.js';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
-import { findCheckoutRoot, readGit, runGit, withGitEnvironment } from './git.js';
+import {
+  findCheckoutRoot,
+  readGit,
+  readGitUnlessMissing,
+  runGit,
+  withGitEnvironment,
+} from './git.js';
 
 const withWatchdog = async <Value>(pending: Promise<Value>): Promise<Value> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -321,6 +327,33 @@ it('resolves the trimmed output of a Git command that exits 0', async ({ onTestF
   const root = await createTemporaryRepository(onTestFinished);
 
   await expect(readGit(root, ['rev-parse', '--is-inside-work-tree'])).resolves.toBe('true');
+});
+
+it('resolves the branch name when HEAD is on a branch', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(
+    readGitUnlessMissing(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+  ).resolves.toBe('main');
+});
+
+it('resolves undefined when the command exits 1', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await readGit(root, ['commit', '--allow-empty', '-m', 'test: detached head']);
+  await readGit(root, ['checkout', '--quiet', '--detach']);
+
+  await expect(
+    readGitUnlessMissing(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+  ).resolves.toBeUndefined();
+});
+
+it('throws with the Git message when the command exits above 1', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(readGitUnlessMissing(root, ['status', '--no-such-option'])).rejects.toThrow(
+    'git status --no-such-option failed:',
+  );
 });
 
 it('throws with the Git message when Git exits nonzero', async ({ onTestFinished }) => {
