@@ -254,15 +254,29 @@ const createCheckStateReader = (root: string) => {
   return () => (read ??= readCheckState(root));
 };
 
+const createSharedRootReader = (root: string): (() => Promise<string>) => {
+  let read: Promise<string> | undefined;
+
+  return () => {
+    read ??= findSharedRepositoryRoot(root).catch((error: unknown) => {
+      read = undefined;
+
+      throw error;
+    });
+
+    return read;
+  };
+};
+
 const readVerification = async (
-  root: string,
+  readSharedRoot: () => Promise<string>,
   evidence: PublicationEvidence,
   readCurrentCheckState: () => Promise<CheckState>,
 ) => {
   let recordRoot: string;
 
   try {
-    recordRoot = await findSharedRepositoryRoot(root);
+    recordRoot = await readSharedRoot();
   } catch (error) {
     evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
 
@@ -329,7 +343,8 @@ const readPublicationEvidenceOperation = async (
     evidence.gaps.push(readFailure('branch', error));
   }
 
-  const gateDecisions = await readGateDecisions(root, evidence.branch);
+  const readSharedRoot = createSharedRootReader(root);
+  const gateDecisions = await readGateDecisions(readSharedRoot, evidence.branch);
 
   evidence.gateDecisions = gateDecisions.gateDecisions;
   evidence.gaps.push(...gateDecisions.gaps);
@@ -368,7 +383,7 @@ const readPublicationEvidenceOperation = async (
   evidence.fullCheck = checkEvidence.fullCheck;
   evidence.gaps.push(...checkEvidence.gaps);
 
-  await readVerification(root, evidence, readCheckStateOnce);
+  await readVerification(readSharedRoot, evidence, readCheckStateOnce);
 
   return evidence;
 };

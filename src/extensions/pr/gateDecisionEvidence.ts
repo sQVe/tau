@@ -4,7 +4,7 @@ import { errorMessage } from '../../errors.js';
 import { readDecisionRecords } from '../../questionGate/questionGate.js';
 import type { DecisionRecord } from '../../questionGate/questionGate.js';
 import { readVersionedRecord } from '../../record.js';
-import { findSharedRepositoryRoot, rejectTauSymlinks } from '../../tauDirectory.js';
+import { rejectTauSymlinks } from '../../tauDirectory.js';
 import type { PublicationGap } from './evidenceDecisions.js';
 
 export interface GateDecisionEvidence {
@@ -45,7 +45,7 @@ const readFailure = (error: unknown): GateDecisionRead => ({
 });
 
 export const readGateDecisions = async (
-  root: string,
+  readSharedRoot: () => Promise<string>,
   branch: string | null,
 ): Promise<GateDecisionRead> => {
   if (branch === null) {
@@ -58,7 +58,7 @@ export const readGateDecisions = async (
   let directory: string;
 
   try {
-    const sharedRoot = await findSharedRepositoryRoot(root);
+    const sharedRoot = await readSharedRoot();
 
     await rejectTauSymlinks(sharedRoot, 'questions');
     directory = join(sharedRoot, '.tau', 'questions');
