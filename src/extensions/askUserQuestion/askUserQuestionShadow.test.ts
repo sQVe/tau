@@ -1138,6 +1138,7 @@ it('saves no record when the dialog aborts while the answer is read', async () =
     cwd: '/repository',
     projectTrusted: false,
     registry: registry.registry,
+    ui: { notify: () => undefined },
   });
 
   // This getter aborts after run's own abort check, so only save's guard can stop the write.

@@ -571,6 +571,7 @@ it('reads an attached, a detached, and an unborn HEAD through the default Git ad
       registry: {} as ModelRegistry,
       notify: () => undefined,
       signal: undefined,
+      ui: { notify: () => undefined },
     });
 
     expect(outcome?.kind).toBe('decided');

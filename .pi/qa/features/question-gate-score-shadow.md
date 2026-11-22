@@ -42,7 +42,7 @@ CONFIG
 ```sh
 cohort=$(cd "$checkout" && PI_CODING_AGENT_DIR="$agent" node --input-type=module -e '
 import { readQuestionGateConfig, shadowCohort } from "./src/config/questionGateModels.ts";
-const config = readQuestionGateConfig({ cwd: process.cwd(), agentDirectory: process.env.PI_CODING_AGENT_DIR, projectTrusted: false });
+const config = readQuestionGateConfig({ cwd: process.cwd(), agentDirectory: process.env.PI_CODING_AGENT_DIR, projectTrusted: false }, { notify: (message) => console.error(message) });
 if (config?.shadow === undefined) throw new Error("questionGate.shadow is missing");
 console.log(shadowCohort({ ...config, shadow: config.shadow }));
 ')

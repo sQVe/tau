@@ -1,0 +1,157 @@
+import { Value } from 'typebox/value';
+import { expect, it, vi } from 'vitest';
+
+import { temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
+import { pastAnswerSchema } from '../judgeSchema.ts';
+import type { PastAnswer } from '../questionGate/questionGate.ts';
+import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
+import type { ShadowConfig } from './questionGateModels.ts';
+
+const models = {
+  classifier: 'tau-fixture/judge-a',
+  panel: ['tau-fixture/judge-a', 'tau-fixture/judge-b', 'tau-fixture/judge-c'] as [
+    string,
+    string,
+    string,
+  ],
+};
+
+const question = {
+  question: 'Which route?',
+  problem: 'The route is open.',
+  impact: 'The wrong route wastes a day.',
+  options: [
+    { label: 'Fast', description: 'Ship now.', recommended: true },
+    { label: 'Careful', description: 'Check first.', recommended: false },
+  ],
+};
+
+const pastAnswer = (time: number, text: string): PastAnswer => ({
+  time,
+  question,
+  outcome: { kind: 'typed', text },
+});
+
+const shadow: ShadowConfig = {
+  variant: 'classifierExamples',
+  cutoff: 0.8,
+  examples: [pastAnswer(1, 'first')],
+};
+
+const uiFixture = () => ({ notify: vi.fn<(message: string, level?: string) => void>() });
+
+const shadowCohortOf = (value: ShadowConfig): string =>
+  shadowCohort({ ...models, decide: false, shadow: value });
+
+it('reads an extra key beside classifier and warns once with its path', ({ onTestFinished }) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-question-gate-',
+  );
+
+  writeUser({ questionGate: { ...models, extra: true } });
+
+  const ui = uiFixture();
+
+  expect(readQuestionGateConfig(location, ui)).toEqual({ ...models, decide: false });
+
+  expect(ui.notify).toHaveBeenCalledWith(
+    `Tau config ${userFile}: questionGate.extra is not a known key and was ignored.`,
+    'warning',
+  );
+
+  expect(ui.notify).toHaveBeenCalledTimes(1);
+
+  readQuestionGateConfig(location, ui);
+
+  expect(ui.notify).toHaveBeenCalledTimes(1);
+});
+
+it('accepts a field from another outcome variant, drops it, and warns nothing', ({
+  onTestFinished,
+}) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+
+  writeUser({
+    questionGate: {
+      ...models,
+      shadow: {
+        variant: 'classifierExamples',
+        cutoff: 0.8,
+        examples: [{ time: 1, question, outcome: { kind: 'recommended', label: 'ignored' } }],
+      },
+    },
+  });
+
+  const ui = uiFixture();
+
+  expect(readQuestionGateConfig(location, ui)).toEqual({
+    ...models,
+    decide: false,
+    shadow: {
+      variant: 'classifierExamples',
+      cutoff: 0.8,
+      examples: [{ time: 1, question, outcome: { kind: 'recommended' } }],
+    },
+  });
+
+  expect(ui.notify).not.toHaveBeenCalled();
+});
+
+it('reads extra keys inside shadow and examples, warns once per path, and keeps the cohort', ({
+  onTestFinished,
+}) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-question-gate-',
+  );
+
+  writeUser({ questionGate: { ...models, shadow } });
+
+  const cohort = shadowCohortOf(shadow);
+
+  writeUser({
+    questionGate: {
+      ...models,
+      shadow: {
+        ...shadow,
+        extra: true,
+        examples: [
+          {
+            ...pastAnswer(1, 'first'),
+            question: {
+              ...question,
+              options: [{ ...question.options[0], note: 'ignored' }, question.options[1]],
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  const ui = uiFixture();
+  const config = readQuestionGateConfig(location, ui);
+
+  expect(config).toEqual({ ...models, decide: false, shadow });
+
+  const examples = config?.shadow?.examples ?? [];
+
+  expect(examples.every((example) => Value.Check(pastAnswerSchema, example))).toBe(true);
+
+  const readCohort =
+    config?.shadow === undefined ? undefined : shadowCohort({ ...config, shadow: config.shadow });
+
+  expect(readCohort).toBe(cohort);
+
+  expect(ui.notify).toHaveBeenCalledWith(
+    `Tau config ${userFile}: questionGate.shadow.extra is not a known key and was ignored.`,
+    'warning',
+  );
+
+  expect(ui.notify).toHaveBeenCalledWith(
+    `Tau config ${userFile}: questionGate.shadow.examples[0].question.options[0].note is not a known key and was ignored.`,
+    'warning',
+  );
+
+  expect(ui.notify).toHaveBeenCalledTimes(2);
+});

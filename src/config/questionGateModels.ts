@@ -3,10 +3,11 @@ import { createHash } from 'node:crypto';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { pastAnswerSchema, shadowVariantSchema } from '../judgeSchema.ts';
+import { shadowVariantSchema } from '../judgeSchema.ts';
 import type { PastAnswer, ShadowVariant } from '../judgeSchema.ts';
-import { readUserOnlyKey } from './config.ts';
-import type { ConfigLocation } from './config.ts';
+import type { KnownKeys } from '../schema.ts';
+import { readUserOnlyKey, warnUnknownKeys } from './config.ts';
+import type { ConfigLocation, ConfigWarnings } from './config.ts';
 import { parseModelReference } from './models.ts';
 
 export interface QuestionGateModels {
@@ -23,24 +24,75 @@ export interface ShadowConfig {
 export type QuestionGateConfig = QuestionGateModels &
   ({ decide: false; shadow?: ShadowConfig } | { decide: true; shadow: ShadowConfig });
 
-const questionGateModelsSchema = Type.Object(
-  {
-    classifier: Type.String(),
-    panel: Type.Tuple([Type.String(), Type.String(), Type.String()]),
-    decide: Type.Optional(Type.Unknown()),
-    shadow: Type.Optional(Type.Unknown()),
-  },
-  { additionalProperties: false },
-);
+const questionGateModelsSchema = Type.Object({
+  classifier: Type.String(),
+  panel: Type.Tuple([Type.String(), Type.String(), Type.String()]),
+  decide: Type.Optional(Type.Unknown()),
+  shadow: Type.Optional(Type.Unknown()),
+});
 
-const shadowSchema = Type.Object(
-  {
-    variant: shadowVariantSchema,
-    cutoff: Type.Number({ minimum: 0, maximum: 1 }),
-    examples: Type.Optional(Type.Array(pastAnswerSchema, { maxItems: 5 })),
-  },
-  { additionalProperties: false },
-);
+// The config schemas accept unknown keys, which warnUnknownKeys reports. Saved records stay strict
+// in judgeSchema.ts.
+const configOptionSchema = Type.Object({
+  label: Type.String(),
+  description: Type.String(),
+  recommended: Type.Boolean(),
+});
+
+const configQuestionSchema = Type.Object({
+  question: Type.String(),
+  problem: Type.String(),
+  impact: Type.String(),
+  options: Type.Array(configOptionSchema),
+});
+
+const configOutcomeSchema = Type.Union([
+  Type.Object({ kind: Type.Literal('recommended') }),
+  Type.Object({ kind: Type.Literal('otherOption'), label: Type.String() }),
+  Type.Object({ kind: Type.Literal('typed'), text: Type.String() }),
+]);
+
+const configPastAnswerSchema = Type.Object({
+  time: Type.Number(),
+  question: configQuestionSchema,
+  outcome: configOutcomeSchema,
+});
+
+const shadowSchema = Type.Object({
+  variant: shadowVariantSchema,
+  cutoff: Type.Number({ minimum: 0, maximum: 1 }),
+  examples: Type.Optional(Type.Array(configPastAnswerSchema, { maxItems: 5 })),
+});
+
+const knownOptionKeys: KnownKeys = { label: true, description: true, recommended: true };
+
+const knownQuestionKeys: KnownKeys = {
+  question: true,
+  problem: true,
+  impact: true,
+  options: knownOptionKeys,
+};
+
+const knownOutcomeKeys: KnownKeys = { kind: true, label: true, text: true };
+
+const knownExampleKeys: KnownKeys = {
+  time: true,
+  question: knownQuestionKeys,
+  outcome: knownOutcomeKeys,
+};
+
+const knownShadowKeys: KnownKeys = {
+  variant: true,
+  cutoff: true,
+  examples: knownExampleKeys,
+};
+
+const knownQuestionGateKeys: KnownKeys = {
+  classifier: true,
+  panel: true,
+  decide: true,
+  shadow: knownShadowKeys,
+};
 
 const modelsMessage =
   'questionGate needs classifier, a provider/model-id string, and panel, an array of three provider/model-id strings.';
@@ -82,65 +134,6 @@ const readDecide = (source: string, value: unknown): boolean => {
   return value;
 };
 
-const readShadow = (source: string, value: unknown): ShadowConfig | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (!Value.Check(shadowSchema, value)) {
-    throw invalid(source, shadowMessage);
-  }
-
-  const examples = value.examples ?? [];
-
-  if (usesExamples(value.variant) && examples.length === 0) {
-    throw invalid(
-      source,
-      `questionGate shadow variant ${JSON.stringify(value.variant)} needs at least one example.`,
-    );
-  }
-
-  return { variant: value.variant, cutoff: value.cutoff, examples };
-};
-
-export const readQuestionGateConfig = (
-  location: ConfigLocation,
-): QuestionGateConfig | undefined => {
-  const user = readUserOnlyKey(location, 'questionGate');
-
-  if (user === undefined) {
-    return undefined;
-  }
-
-  const { source, value } = user;
-
-  if (!Value.Check(questionGateModelsSchema, value)) {
-    throw invalid(source, modelsMessage);
-  }
-
-  const [first, second, third] = value.panel;
-  const decide = readDecide(source, value.decide);
-  const shadow = readShadow(source, value.shadow);
-
-  if (decide && shadow === undefined) {
-    throw invalid(source, decideNeedsShadowMessage);
-  }
-
-  const classifier = requireModelReference(source, value.classifier);
-
-  const panel: [string, string, string] = [
-    requireModelReference(source, first),
-    requireModelReference(source, second),
-    requireModelReference(source, third),
-  ];
-
-  if (decide && shadow !== undefined) {
-    return { classifier, panel, decide: true, shadow };
-  }
-
-  return { classifier, panel, decide: false, ...(shadow === undefined ? {} : { shadow }) };
-};
-
 const canonicalQuestion = (question: PastAnswer['question']) => ({
   question: question.question,
   problem: question.problem,
@@ -169,6 +162,68 @@ const canonicalExample = (answer: PastAnswer) => ({
   question: canonicalQuestion(answer.question),
   outcome: canonicalOutcome(answer.outcome),
 });
+
+const readShadow = (source: string, value: unknown): ShadowConfig | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Value.Check(shadowSchema, value)) {
+    throw invalid(source, shadowMessage);
+  }
+
+  const examples = (value.examples ?? []).map(canonicalExample);
+
+  if (usesExamples(value.variant) && examples.length === 0) {
+    throw invalid(
+      source,
+      `questionGate shadow variant ${JSON.stringify(value.variant)} needs at least one example.`,
+    );
+  }
+
+  return { variant: value.variant, cutoff: value.cutoff, examples };
+};
+
+export const readQuestionGateConfig = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+): QuestionGateConfig | undefined => {
+  const user = readUserOnlyKey(location, 'questionGate');
+
+  if (user === undefined) {
+    return undefined;
+  }
+
+  const { source, value } = user;
+
+  warnUnknownKeys(ui, source, value, knownQuestionGateKeys, 'questionGate');
+
+  if (!Value.Check(questionGateModelsSchema, value)) {
+    throw invalid(source, modelsMessage);
+  }
+
+  const [first, second, third] = value.panel;
+  const decide = readDecide(source, value.decide);
+  const shadow = readShadow(source, value.shadow);
+
+  if (decide && shadow === undefined) {
+    throw invalid(source, decideNeedsShadowMessage);
+  }
+
+  const classifier = requireModelReference(source, value.classifier);
+
+  const panel: [string, string, string] = [
+    requireModelReference(source, first),
+    requireModelReference(source, second),
+    requireModelReference(source, third),
+  ];
+
+  if (decide && shadow !== undefined) {
+    return { classifier, panel, decide: true, shadow };
+  }
+
+  return { classifier, panel, decide: false, ...(shadow === undefined ? {} : { shadow }) };
+};
 
 export const shadowCohort = (config: QuestionGateConfig & { shadow: ShadowConfig }): string => {
   const canonical = JSON.stringify({

@@ -28,6 +28,7 @@ import type {
   PanelMember,
   PastAnswer,
 } from '../src/questionGate/questionGate.ts';
+import { stderrConfigWarnings } from './questionGateScore/configWarnings.ts';
 import { questionLogReader } from './questionGateScore/questionGateScoreLog.ts';
 import type { SessionLog } from './questionGateScore/questionGateScoreLog.ts';
 import { prepareScoreQuestions } from './questionGateScore/questionGateScorePrepare.ts';
@@ -261,7 +262,7 @@ const main = async () => {
 
   const agentDirectory = getAgentDir();
   const location = { cwd: process.cwd(), agentDirectory, projectTrusted: false };
-  const models = readQuestionGateConfig(location);
+  const models = readQuestionGateConfig(location, stderrConfigWarnings);
 
   if (models === undefined) {
     throw new Error(

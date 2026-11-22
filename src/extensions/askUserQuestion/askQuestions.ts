@@ -118,6 +118,7 @@ export const askQuestions = async (
             context.ui.notify(text, 'info');
           },
           signal,
+          ui: context.ui,
         });
 
   const decision = attempt === undefined ? undefined : await attempt;
@@ -146,6 +147,7 @@ export const askQuestions = async (
         cwd: context.cwd,
         projectTrusted: context.isProjectTrusted(),
         registry: context.modelRegistry,
+        ui: context.ui,
       });
     }
 
