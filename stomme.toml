@@ -478,7 +478,7 @@ imports = ["command", "errors", "git", "schema"]
 
 [modules.hc]
 entry = "src/hc/hc.ts"
-public = ["src/hc/connect.ts", "src/hc/events.ts", "src/hc/ownership.ts", "src/hc/processGroup.ts"]
+public = ["src/hc/connect.ts", "src/hc/events.ts"]
 imports = ["command", "errors", "schema"]
 
 [modules.improvement]

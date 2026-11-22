@@ -6,7 +6,8 @@ import type { StartFacts } from './sessionDecision.js';
 const facts = (changes: Partial<StartFacts> = {}): StartFacts => ({
   interactive: true,
   terminalId: 't7',
-  owner: true,
+  foregroundPid: 100,
+  processPid: 100,
   sessionFile: '/sessions/a.jsonl',
   signalReceived: false,
   ...changes,
@@ -34,7 +35,7 @@ it.each([
 
 it.each([
   {
-    name: 'labels the session when the interactive Pi owns the terminal',
+    name: 'labels the session when the interactive Pi leads the terminal',
     facts: facts(),
     label: true,
   },
@@ -49,8 +50,13 @@ it.each([
     label: false,
   },
   {
-    name: 'skips a Pi that does not own the terminal',
-    facts: facts({ owner: false }),
+    name: 'skips a Pi that is not the foreground process',
+    facts: facts({ foregroundPid: 200 }),
+    label: false,
+  },
+  {
+    name: 'skips a Pi when the terminal has no foreground process',
+    facts: facts({ foregroundPid: undefined }),
     label: false,
   },
   {

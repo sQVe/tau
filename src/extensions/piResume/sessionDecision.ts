@@ -6,7 +6,8 @@ export interface ReadFacts {
 export interface StartFacts {
   interactive: boolean;
   terminalId: string | undefined;
-  owner: boolean;
+  foregroundPid: number | undefined;
+  processPid: number;
   sessionFile: string | undefined;
   signalReceived: boolean;
 }
@@ -14,6 +15,9 @@ export interface StartFacts {
 export interface ShutdownFacts {
   signalReceived: boolean;
 }
+
+const ownsTerminal = (facts: StartFacts): boolean =>
+  facts.foregroundPid !== undefined && facts.foregroundPid === facts.processPid;
 
 export const shouldReadTerminal = (
   facts: ReadFacts,
@@ -36,7 +40,7 @@ export const shouldLabelSession = (
     return false;
   }
 
-  if (!facts.owner) {
+  if (!ownsTerminal(facts)) {
     return false;
   }
 

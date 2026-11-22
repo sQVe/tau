@@ -7,11 +7,11 @@ import { piExec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { readProcessGroup } from '../../hc/processGroup.js';
 import { claimRegistration, releaseRegistration, socketDirectoryFor } from '../../inbox/inbox.js';
 import { createWake } from '../../wake/wake.js';
 import { guardTerminalTyping } from './guard.js';
 import { registerInboxLifecycle } from './lifecycle.js';
+import { readProcessGroup } from './processGroup.js';
 import { createStartupGate } from './startup.js';
 
 export interface InboxExtensionDependencies {

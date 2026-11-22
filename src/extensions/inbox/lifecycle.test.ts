@@ -21,8 +21,6 @@ interface HcState {
   failGetAfterLabel?: boolean;
   foregroundPid?: number | null;
   afterRead?: (() => Promise<void>) | undefined;
-  onLabel?: (() => Promise<void> | void) | undefined;
-  labelWrites: string[];
 }
 
 interface HarnessOptions {
@@ -48,7 +46,6 @@ afterEach(async () => {
     await cleanup();
   }
 
-  vi.useRealTimers();
   vi.unstubAllEnvs();
   rmSync(root, { recursive: true, force: true });
 });
@@ -57,7 +54,6 @@ const hcState = (overrides: Partial<HcState> = {}): HcState => ({
   labels: new Map(),
   failLabel: false,
   foregroundPid: foregroundProcessGroup,
-  labelWrites: [],
   ...overrides,
 });
 
@@ -96,16 +92,10 @@ const hcExec = (state: HcState): Exec => {
     }
 
     labelCalls += 1;
-    state.labelWrites.push(assignments.join(' '));
 
     if (state.failLabel) {
       return failedResult('label refused');
     }
-
-    const onLabel = state.onLabel;
-
-    state.onLabel = undefined;
-    await onLabel?.();
 
     for (const assignment of assignments) {
       const [key = '', value = ''] = assignment.split('=');
@@ -125,17 +115,12 @@ const hcExec = (state: HcState): Exec => {
   };
 };
 
-const socketOf = (sessionId: string): string => join(root, 'sockets', `${sessionId}.sock`);
-
-const contextFor = (
-  sessionId: string,
-  notify: (message: string, level?: string) => void,
-): ExtensionContext =>
+const contextFor = (sessionId: string, notify: (message: string) => void): ExtensionContext =>
   ({
     sessionManager: { getSessionId: () => sessionId, getEntries: () => [] },
     ui: {
-      notify: (message: string, level?: string) => {
-        notify(message, level);
+      notify: (message: string) => {
+        notify(message);
       },
     },
     isIdle: () => true,
@@ -147,12 +132,10 @@ const startHarness = (options: HarnessOptions = {}) => {
   const socketDirectory = options.socketDirectory ?? join(root, 'sockets');
   const fake = fakeExtensionApi();
   const notices: string[] = [];
-  const levels: (string | undefined)[] = [];
   const firstNotice = Promise.withResolvers<undefined>();
 
-  const notify = (message: string, level?: string): void => {
+  const notify = (message: string): void => {
     notices.push(message);
-    levels.push(level);
     firstNotice.resolve(undefined);
   };
 
@@ -177,23 +160,6 @@ const startHarness = (options: HarnessOptions = {}) => {
     return context;
   };
 
-  const waitForInbox = async (sessionId: string): Promise<void> => {
-    await vi.waitFor(
-      () => {
-        expect(state.labels.get('tau.inbox')).toBe(`rpc1:${socketOf(sessionId)}`);
-      },
-      { timeout: 5_000 },
-    );
-  };
-
-  const startAndAdvertise = async (sessionId: string) => {
-    const context = await start(sessionId);
-
-    await waitForInbox(sessionId);
-
-    return context;
-  };
-
   const shutdown = (sessionId: string) =>
     emit('session_shutdown', { reason: 'quit' }, contextFor(sessionId, notify));
 
@@ -203,16 +169,15 @@ const startHarness = (options: HarnessOptions = {}) => {
   return {
     state,
     notices,
-    levels,
     firstNotice: firstNotice.promise,
     sendMessage: fake.sendMessage,
     start,
-    startAndAdvertise,
-    waitForInbox,
     shutdown,
     discover,
   };
 };
+
+const socketOf = (sessionId: string): string => join(root, 'sockets', `${sessionId}.sock`);
 
 const exchange = (path: string, request: unknown): Promise<unknown> =>
   new Promise((resolve, reject) => {
@@ -289,7 +254,7 @@ it('queues a message and advertises its socket after session start', async () =>
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
   await expect(exchange(socketOf(sessionId), handoverTo(sessionId, messageId))).resolves.toEqual({
@@ -305,39 +270,13 @@ it('queues a message and advertises its socket after session start', async () =>
   });
 });
 
-it('advertises its inbox when the terminal reports its foreground only after startup', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-
-  const state = hcState({ foregroundPid: null });
-  const harness = startHarness({ state, processGroup: foregroundProcessGroup });
-  const sessionId = randomUUID();
-
-  state.afterRead = () => {
-    state.foregroundPid = foregroundProcessGroup;
-
-    return Promise.resolve();
-  };
-
-  await harness.start(sessionId);
-  cleanups.push(() => harness.shutdown(sessionId));
-
-  await vi.waitFor(() => {
-    expect(state.labels.get('tau.inbox')).toBe(`rpc1:${socketOf(sessionId)}`);
-  });
-
-  await expect(exchange(socketOf(sessionId), handoverTo(sessionId))).resolves.toMatchObject({
-    kind: 'queued',
-    sessionId,
-  });
-});
-
 it('closes the earlier listener when a second session start arrives without shutdown', async () => {
   const harness = startHarness();
   const first = randomUUID();
   const second = randomUUID();
 
-  await harness.startAndAdvertise(first);
-  await harness.startAndAdvertise(second);
+  await harness.start(first);
+  await harness.start(second);
   cleanups.push(() => harness.shutdown(second));
 
   expect(existsSync(socketOf(first))).toBe(false);
@@ -355,8 +294,8 @@ it('keeps one answering listener when the same session starts twice', async () =
   const harness = startHarness();
   const sessionId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
   await expect(exchange(socketOf(sessionId), handoverTo(sessionId))).resolves.toMatchObject({
@@ -370,7 +309,6 @@ it('closes the unadvertised socket and reports when the label cannot be set', as
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
-  await harness.firstNotice;
 
   expect(existsSync(socketOf(sessionId))).toBe(false);
   expect(harness.notices).toEqual([expect.stringContaining('Tau inbox could not start:')]);
@@ -383,7 +321,6 @@ it('removes the label it applied when the label reply is malformed', async () =>
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
-  await harness.firstNotice;
 
   expect(Object.fromEntries(harness.state.labels)).toEqual({});
   expect(existsSync(socketOf(sessionId))).toBe(false);
@@ -399,7 +336,6 @@ it('reports the label error when removing the applied label also fails', async (
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
-  await harness.firstNotice;
 
   expect(existsSync(socketOf(sessionId))).toBe(false);
   expect(harness.notices).toEqual([expect.stringContaining('hc label t7')]);
@@ -422,7 +358,7 @@ it('removes its socket and label at shutdown', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   await harness.shutdown(sessionId);
 
   expect(existsSync(socketOf(sessionId))).toBe(false);
@@ -433,7 +369,7 @@ it('leaves a label that names another socket at shutdown', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   harness.state.labels.set('tau.inbox', 'rpc1:/tmp/tau-1000/other.sock');
   await harness.shutdown(sessionId);
 
@@ -449,7 +385,7 @@ it('refuses an answer request when a non-worker session has no answer-request ch
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
   await expect(
@@ -485,7 +421,7 @@ it.each([
       sessionId,
     }));
 
-    await harness.startAndAdvertise(sessionId);
+    await harness.start(sessionId);
     cleanups.push(() => harness.shutdown(sessionId));
 
     const request =
@@ -513,7 +449,7 @@ it.each(['', 'architect', 'worker'])(
       forgetAcceptCheck('architect-ask');
     });
 
-    await harness.startAndAdvertise(sessionId);
+    await harness.start(sessionId);
     cleanups.push(() => harness.shutdown(sessionId));
 
     await expect(
@@ -529,7 +465,7 @@ it('refuses an architect-ask without a registered check and saves nothing', asyn
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
   await expect(
@@ -550,7 +486,7 @@ it('refuses a message addressed to another session', async () => {
   const otherSession = randomUUID();
   const messageId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
   await expect(exchange(socketOf(sessionId), handoverTo(otherSession, messageId))).resolves.toEqual(
@@ -567,7 +503,7 @@ it('delivers queued messages only after the startup gate opens', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
   await exchange(socketOf(sessionId), handoverTo(sessionId));
   await settle();
@@ -587,14 +523,14 @@ it('cancels delivery of an ended generation and delivers only in the next one', 
   const harness = startHarness();
   const sessionId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   await exchange(socketOf(sessionId), handoverTo(sessionId));
   await harness.shutdown(sessionId);
   await settle();
 
   expect(harness.sendMessage).not.toHaveBeenCalled();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
   await harness.discover(sessionId);
 
@@ -611,7 +547,7 @@ it('drains again when a message is queued after startup', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
   await harness.discover(sessionId);
   await settle();
@@ -626,7 +562,7 @@ it('refuses a frame that is not valid JSON', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
   await expect(exchange(socketOf(sessionId), '{"protocol":\n')).resolves.toEqual({
@@ -641,7 +577,7 @@ it('refuses a message addressed to another terminal', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
   const request = { ...handoverTo(sessionId, messageId), targetTerminal: 't9' };
@@ -665,7 +601,6 @@ it('refuses to start in a socket directory other users can read', async () => {
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
-  await harness.firstNotice;
 
   expect(existsSync(join(socketDirectory, `${sessionId}.sock`))).toBe(false);
 
@@ -681,8 +616,8 @@ it('leaves a replacement listener and its label when a replaced lifecycle shuts 
   const first = randomUUID();
   const second = randomUUID();
 
-  await replaced.startAndAdvertise(first);
-  await replacement.startAndAdvertise(second);
+  await replaced.start(first);
+  await replacement.start(second);
   cleanups.push(() => replacement.shutdown(second));
   await replaced.shutdown(first);
 
@@ -699,8 +634,8 @@ it('leaves the label of a replacement with the same session when a replaced life
   const replacement = startHarness({ state });
   const sessionId = randomUUID();
 
-  await replaced.startAndAdvertise(sessionId);
-  await replacement.startAndAdvertise(sessionId);
+  await replaced.start(sessionId);
+  await replacement.start(sessionId);
   cleanups.push(() => replacement.shutdown(sessionId));
   await replaced.shutdown(sessionId);
 
@@ -719,7 +654,7 @@ it('reports a delivery that fails in the current generation', async () => {
     throw new Error('display failed');
   });
 
-  await harness.startAndAdvertise(sessionId);
+  await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
   await harness.discover(sessionId);
   await settle();
@@ -738,7 +673,7 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
   const readStarted = Promise.withResolvers<undefined>();
   const releaseRead = Promise.withResolvers<undefined>();
 
-  await earlier.startAndAdvertise(first);
+  await earlier.start(first);
 
   state.afterRead = () => {
     readStarted.resolve(undefined);
@@ -750,7 +685,7 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
 
   await readStarted.promise;
 
-  const starting = replacement.startAndAdvertise(second);
+  const starting = replacement.start(second);
 
   await Promise.race([
     starting,
@@ -787,18 +722,14 @@ it("keeps the foreground session's label when a second Pi on its terminal starts
     ).resolves.toMatchObject({ kind: 'queued', sessionId: parentSession });
   };
 
-  await parent.startAndAdvertise(parentSession);
-  const parentLabelWrites = state.labelWrites.length;
-
+  await parent.start(parentSession);
   cleanups.push(() => parent.shutdown(parentSession));
   await child.start(childSession);
-  await settle();
   await expectParentInbox();
   await child.shutdown(childSession);
   await expectParentInbox();
 
   expect(existsSync(socketOf(childSession))).toBe(false);
-  expect(state.labelWrites).toHaveLength(parentLabelWrites);
   expect(child.notices).toEqual([]);
 });
 
@@ -806,145 +737,27 @@ it('starts no inbox when the session ends while the terminal is read', async () 
   const state = hcState();
   const harness = startHarness({ state });
   const sessionId = randomUUID();
-  const ended = Promise.withResolvers<undefined>();
-  const labelReached = Promise.withResolvers<undefined>();
-  const releaseLabel = Promise.withResolvers<undefined>();
 
-  state.onLabel = () => {
-    labelReached.resolve(undefined);
-
-    return releaseLabel.promise;
-  };
-
-  state.afterRead = () => {
-    const end = async (): Promise<void> => {
-      try {
-        await harness.shutdown(sessionId);
-      } finally {
-        ended.resolve(undefined);
-      }
-    };
-
-    end().catch(() => undefined);
-
-    return Promise.resolve();
-  };
+  state.afterRead = () => harness.shutdown(sessionId);
 
   await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
 
-  const outcome = await Promise.race([
-    ended.promise.then(() => 'ended'),
-    labelReached.promise.then(() => 'label'),
-  ]);
-
-  releaseLabel.resolve(undefined);
-  await ended.promise;
-
-  expect(outcome).toBe('ended');
-  expect(state.labelWrites).toEqual([]);
   expect(Object.fromEntries(state.labels)).toEqual({});
   expect(existsSync(socketOf(sessionId))).toBe(false);
   expect(harness.notices).toEqual([]);
 });
 
-it('stays silent when the terminal read rejects after the session ends', async () => {
-  const state = hcState();
-  const harness = startHarness({ state });
-  const sessionId = randomUUID();
-  const ended = Promise.withResolvers<undefined>();
-
-  state.afterRead = () => {
-    const end = async (): Promise<void> => {
-      try {
-        await harness.shutdown(sessionId);
-      } finally {
-        ended.resolve(undefined);
-      }
-    };
-
-    end().catch(() => undefined);
-
-    return Promise.reject(new Error('read failed after the session ended'));
-  };
-
-  await harness.start(sessionId);
-  await ended.promise;
-
-  expect(state.labelWrites).toEqual([]);
-  expect(Object.fromEntries(state.labels)).toEqual({});
-  expect(existsSync(socketOf(sessionId))).toBe(false);
-  expect(harness.notices).toEqual([]);
-});
-
-it('warns and starts no inbox when the terminal reports no foreground for 10 seconds', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-
+it('starts no inbox when the terminal reports no foreground process', async () => {
   const harness = startHarness({ state: hcState({ foregroundPid: null }) });
   const sessionId = randomUUID();
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
-  await vi.advanceTimersByTimeAsync(9_999);
-
-  expect(harness.notices).toEqual([]);
-  expect(harness.levels).toEqual([]);
-
-  await vi.advanceTimersByTimeAsync(1);
-
-  expect(Object.fromEntries(harness.state.labels)).toEqual({});
-  expect(existsSync(socketOf(sessionId))).toBe(false);
-  expect(harness.notices).toHaveLength(1);
-  expect(harness.levels).toEqual(['warning']);
-});
-
-it('starts no inbox and shows no notice when the session ends during the wait', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-
-  const harness = startHarness({ state: hcState({ foregroundPid: null }) });
-  const sessionId = randomUUID();
-
-  await harness.start(sessionId);
-  await harness.shutdown(sessionId);
-  await vi.advanceTimersByTimeAsync(10_000);
-
-  expect(harness.state.labelWrites).toEqual([]);
   expect(Object.fromEntries(harness.state.labels)).toEqual({});
   expect(existsSync(socketOf(sessionId))).toBe(false);
   expect(harness.notices).toEqual([]);
-});
-
-it('leaves one listener and label when a second session start arrives while the first advertises', async () => {
-  const state = hcState();
-  const harness = startHarness({ state });
-  const first = randomUUID();
-  const second = randomUUID();
-  const labelReached = Promise.withResolvers<undefined>();
-  const releaseLabel = Promise.withResolvers<undefined>();
-
-  state.onLabel = () => {
-    labelReached.resolve(undefined);
-
-    return releaseLabel.promise;
-  };
-
-  await harness.start(first);
-  await labelReached.promise;
-
-  const starting = harness.start(second);
-
-  releaseLabel.resolve(undefined);
-  await starting;
-  await harness.waitForInbox(second);
-  cleanups.push(() => harness.shutdown(second));
-
-  expect(existsSync(socketOf(first))).toBe(false);
-
-  await expect(exchange(socketOf(second), handoverTo(second))).resolves.toMatchObject({
-    sessionId: second,
-  });
-
-  expect(Object.fromEntries(state.labels)).toEqual({ 'tau.inbox': `rpc1:${socketOf(second)}` });
 });
 
 it('reports that the inbox could not start when the terminal read fails', async () => {
@@ -953,7 +766,6 @@ it('reports that the inbox could not start when the terminal read fails', async 
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
-  await harness.firstNotice;
 
   expect(Object.fromEntries(harness.state.labels)).toEqual({});
   expect(existsSync(socketOf(sessionId))).toBe(false);

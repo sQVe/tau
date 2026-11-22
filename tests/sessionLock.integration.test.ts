@@ -22,7 +22,7 @@ const onLinux = process.platform === 'linux';
 // The test process is not the foreground process of its hc terminal, so full Tau would not own it.
 const terminalForeground = vi.hoisted(() => ({ pid: 0 }));
 
-vi.mock(import('../src/hc/processGroup.js'), () => ({
+vi.mock(import('../src/extensions/inbox/processGroup.js'), () => ({
   readProcessGroup: () => Promise.resolve(terminalForeground.pid),
 }));
 

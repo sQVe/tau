@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { failedResult, succeededResult } from '../../tests/execFake.js';
-import type { Exec } from '../command.js';
+import { failedResult, succeededResult } from '../../../tests/execFake.js';
+import type { Exec } from '../../command.js';
 import { readProcessGroup } from './processGroup.js';
 
 const fakeExec = (result: Awaited<ReturnType<Exec>>) => {

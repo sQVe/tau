@@ -30,10 +30,8 @@ folder, and replies before the sender reports success.
 - A reload keeps one listener. Shutdown closes the socket and removes the label. A stale socket is
   replaced only when a connect to it is refused, so a live owner is never replaced.
 - A Pi advertises and serves its inbox only when it is in the foreground process group of its
-  `HC_TERMINAL_ID` terminal: hc's `foreground.pid` equals the Pi's process group ID. hc can report
-  no foreground for the first moments of a terminal's life, so the Pi waits in the background, up to
-  a 10 second deadline, for hc to report one, and decides once. A Pi started from a session's shell
-  tool, which runs detached, starts none, while `pnpm exec pi` works.
+  `HC_TERMINAL_ID` terminal: hc's `foreground.pid` equals the Pi's process group ID. A Pi started
+  from a session's shell tool, which runs detached, starts none, while `pnpm exec pi` works.
 
 ### Sending
 
