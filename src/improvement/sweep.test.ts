@@ -14,6 +14,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.ts';
 import { createSweepFixture, eventHash } from '../../tests/sweepHarness.ts';
+import type { Exec } from '../command.ts';
 import { withFileLock } from '../fileLock/fileLock.ts';
 import { readEvents } from './event.ts';
 import { readSweepIndex, sweepIndexPath } from './sweepIndex.ts';
@@ -395,6 +396,41 @@ it('returns failed for a newer index without changing it', async () => {
 
   expect(readFileSync(path, 'utf8')).toBe(before);
   expect(fixture.eventFiles()).toEqual([]);
+});
+
+it('stops when the caller signal aborts and saves progress', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const controller = new AbortController();
+
+  fixture.writeSession(
+    'manager.jsonl',
+    `${JSON.stringify({
+      type: 'session',
+      id: 'manager',
+      timestamp: '2026-11-01T00:00:00.000Z',
+      cwd: fixture.repository,
+    })}\n`,
+  );
+
+  const exec: Exec = async (command, commandArguments, options) => {
+    const isMergedList =
+      command === 'gh' && commandArguments[0] === 'pr' && commandArguments[1] === 'list';
+
+    if (!isMergedList) {
+      return fixture.fake.exec(command, commandArguments, options);
+    }
+
+    controller.abort();
+
+    const reason: unknown = options?.signal?.reason;
+
+    throw reason instanceof Error ? reason : new Error('The sweep signal was not aborted.');
+  };
+
+  expect(await fixture.run({ signal: controller.signal, exec })).toEqual({ outcome: 'budget' });
+
+  const index = await fixture.readIndex();
+  expect(index.lastSweep).toMatchObject({ outcome: 'budget' });
 });
 
 it('rejects a budget that is not a positive integer', async () => {

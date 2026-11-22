@@ -15,6 +15,7 @@ export interface SweepOptions {
   now: () => Date;
   budgetMilliseconds: number;
   since: string;
+  signal: AbortSignal;
 }
 
 export type SweepOutcome =
@@ -192,7 +193,7 @@ export const runSweep = async (options: SweepOptions): Promise<SweepOutcome> => 
 
   const startedAt = options.now().toISOString();
   const deadline = options.now().getTime() + options.budgetMilliseconds;
-  const signal = AbortSignal.timeout(options.budgetMilliseconds);
+  const signal = AbortSignal.any([options.signal, AbortSignal.timeout(options.budgetMilliseconds)]);
   const lockPath = join(options.agentDirectory, 'tau', 'improvement', 'sweep.lock');
 
   try {

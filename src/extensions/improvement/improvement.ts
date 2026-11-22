@@ -16,7 +16,7 @@ import { runPass } from './recordPass.js';
 import type { PassResult } from './recordPass.js';
 import { parseRecordRequest, parameters } from './recordRequest.js';
 import { createStatusRefresh } from './statusAction.js';
-import { startSweep } from './sweepStart.js';
+import { createSweepLifecycle } from './sweepStart.js';
 import { createSweepState } from './sweepState.js';
 import { runTask } from './taskAction.js';
 
@@ -100,19 +100,23 @@ export default function improvementExtension(
   );
 
   const sweepRunner = options.runSweep ?? runSweep;
+  const lifecycle = createSweepLifecycle(sweepRunner);
 
   pi.on('session_start', (_event, context) => {
     // oxlint-disable-next-line typescript/no-floating-promises -- refresh turns every failure into undefined, so it cannot reject.
     void refresh(context);
 
-    // oxlint-disable-next-line typescript/no-floating-promises -- startSweep turns every failure into a failed outcome, so the sweep cannot reject.
-    void startSweep(
+    lifecycle.start(
       { cwd: context.cwd, agentDirectory: getAgentDir(), exec: piExec(pi) },
-      sweepRunner,
-    ).then((outcome) => {
-      sweepState.record(outcome);
+      (outcome) => {
+        sweepState.record(outcome);
 
-      return refresh(context);
-    });
+        return refresh(context);
+      },
+    );
+  });
+
+  pi.on('session_shutdown', async () => {
+    await lifecycle.stop();
   });
 }

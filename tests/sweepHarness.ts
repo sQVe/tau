@@ -88,6 +88,7 @@ export const createSweepFixture = async (
       now: () => current,
       budgetMilliseconds: 20_000,
       since: '2026-04-09',
+      signal: new AbortController().signal,
       ...options,
     });
 
