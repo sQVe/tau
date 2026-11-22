@@ -27,6 +27,8 @@ import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainEvidence } from './evidenceChain.js';
 import type { CheckLog, PublicationGap } from './evidenceDecisions.js';
+import { readGateDecisions } from './gateDecisionEvidence.js';
+import type { GateDecisionEvidence } from './gateDecisionEvidence.js';
 import { decideSavedReuse } from './reuse.js';
 import type { ReuseResult } from './reuse.js';
 import { decideReviewReuse } from './reuseDecisions.js';
@@ -48,6 +50,7 @@ export interface PublicationEvidence {
   ownership: Ownership;
   target: Target | null;
   branch: string | null;
+  gateDecisions: GateDecisionEvidence[] | null;
   subjects: string[];
   reuse: ReuseResult | null;
   review: PublicationReviewEvidence | null;
@@ -308,6 +311,7 @@ const readPublicationEvidenceOperation = async (
   const evidence: PublicationEvidence = {
     ...(await readPublicationTarget({ ...runtime, cwd: root }, request)),
     branch: null,
+    gateDecisions: null,
     subjects: [],
     reuse: null,
     review: null,
@@ -324,6 +328,11 @@ const readPublicationEvidenceOperation = async (
   } catch (error) {
     evidence.gaps.push(readFailure('branch', error));
   }
+
+  const gateDecisions = await readGateDecisions(root, evidence.branch);
+
+  evidence.gateDecisions = gateDecisions.gateDecisions;
+  evidence.gaps.push(...gateDecisions.gaps);
 
   if (evidence.target !== null) {
     try {

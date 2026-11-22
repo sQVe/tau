@@ -44,7 +44,8 @@ export type PublicationGap =
         | 'checks'
         | 'chain'
         | 'coverage'
-        | 'verification';
+        | 'verification'
+        | 'gateDecision';
       reason: string;
     }
   | { kind: 'reuseMismatch'; reasons: string[] }
@@ -54,7 +55,8 @@ export type PublicationGap =
   | { kind: 'check'; path: string; reasons: CheckReason[] }
   | { kind: 'checkExcerpt'; path: string }
   | { kind: 'fullCheck'; status: 'failed' | 'missing' | 'malformed' }
-  | { kind: 'verificationRecord'; run: string; item: string | null; problem: string };
+  | { kind: 'verificationRecord'; run: string; item: string | null; problem: string }
+  | { kind: 'gateDecisionRecord'; path: string; reason: string };
 
 export type FullCheckDecision =
   | { status: 'passed' | 'failed'; logPath: string; argv: string[] }

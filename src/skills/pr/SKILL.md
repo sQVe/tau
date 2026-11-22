@@ -25,6 +25,9 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
   change after approval needs a new preview, unless the approved option or the user's answer already
   named that exact change and you apply it as stated, or the user made it in tuicr during that
   approval.
+- Publish, push, or change a PR only on the user's answer. A result whose details kind is `decided`
+  is the question gate's answer and never approves; ask again. Every approval question, a retry
+  included, sets `kind: "approval"`.
 - Apply the [decision evidence publication gate](../shared/decision-evidence.md#publication-gate)
   independently of readiness and slice audits, including updates, ready transitions, retries, and
   continue paths. Neither a draft choice nor a ready override bypasses it.
@@ -79,10 +82,10 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      `HEAD`, ask with `ask_user_question`: run a new audit with the
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
      old audit. Then each slice or agent ticket acceptance item no step 5 check covers is not run.
-   - Print target and ticket intent, coverage and reuse evidence, review freshness, skip,
-     suppression, and deleted test markers, and matching check logs and `fullCheck` with paths and
-     bounded excerpts. Keep one gap list for tool gaps, failed or skipped reads, missing intent, and
-     omitted evidence. Read omitted evidence through its returned path when needed.
+   - Print target and ticket intent, gate decisions, coverage and reuse evidence, review freshness,
+     skip, suppression, and deleted test markers, and matching check logs and `fullCheck` with paths
+     and bounded excerpts. Keep one gap list for tool gaps, failed or skipped reads, missing intent,
+     and omitted evidence. Read omitted evidence through its returned path when needed.
    - The script gathers evidence only. It never calls `prepare` or `verify`, and writes nothing
      itself. Target questions, rebases, review runs, previews, and approvals stay outside it.
    - If `target` is null because no head remote or several were found, ask which remote to use and
@@ -305,6 +308,11 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - Include the session report from earlier steps: commits, comment removals, review and check
      sources, reviewed commits, coverage and manual judgments, fixes and their purposes, rebase
      notes, non-blocking machine-local failures, reviewer notes, and the combined gap list.
+   - List each gate decision in the session report with its time, head, question, choice, reason,
+     confidence, and record path, or say the branch has none. Time and head show an older record
+     from a reused branch name. Report `gateDecision` and `gateDecisionRecord` gaps in the gap list.
+     When step 1's output budget cuts the list, print the count and the omitted record paths'
+     directory, and read the rest from there.
    - Only when the slice has a saved `finish.md`, show its refreshed rows with their evidence
      commits in the visible preview, not in the PR body.
    - For a self-review, show the top-level body and each comment's text, file, line, anchor head
