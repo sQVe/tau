@@ -7,6 +7,7 @@ import type { KnownKeys } from './schema.js';
 const known: KnownKeys = {
   model: true,
   routes: { question: true, labels: { [anyKey]: { criterion: true, model: true } } },
+  items: { name: true },
 };
 
 it.for<[string, unknown, string[]]>([
@@ -21,6 +22,11 @@ it.for<[string, unknown, string[]]>([
     'names that Object.prototype also has',
     { model: 'a/b', constructor: 1, toString: 2 },
     ['profiles.worker.constructor', 'profiles.worker.toString'],
+  ],
+  [
+    'keys inside array items',
+    { items: [{ name: 'a', extra: 1 }, 'text'] },
+    ['profiles.worker.items[0].extra'],
   ],
   ['a value that is not an object', 'text', []],
   ['a known key with a wrong type', { routes: 5 }, []],
