@@ -264,15 +264,31 @@ Search providers and the default answer model belong to
 ### `questionGate` (user file)
 
 `questionGate` names the classifier and the three-judge panel. `pnpm question-gate-score` reads it.
+The key is optional; when it is absent, the question gate is off.
 
 ```json
 {
   "questionGate": {
     "classifier": "provider/classifier-id",
-    "panel": ["provider/judge-a", "provider/judge-b", "provider/judge-c"]
+    "panel": ["provider/judge-a", "provider/judge-b", "provider/judge-c"],
+    "shadow": {
+      "variant": "panel",
+      "cutoff": 0.8,
+      "examples": []
+    },
+    "decide": false
   }
 }
 ```
+
+`shadow` freezes the judge variant and cutoff that the gate measures. `variant` is one of
+`classifier`, `classifierExamples`, `panel`, `panelExamples`, or `agent`. `cutoff` is a number from
+0 to 1. `examples` is an optional array of up to five past answers. The `classifierExamples` and
+`panelExamples` variants need at least one example.
+
+`decide` is an optional boolean and defaults to `false`. When it is `true`, Tau answers an eligible
+question with the `shadow` variant and cutoff, and waits at most five seconds for the judge. Decide
+mode is off unless you set it. It needs `shadow`; Tau refuses `decide` without it.
 
 ## Workers
 

@@ -112,6 +112,7 @@ const frozenConfig = (
 ): QuestionGateConfig & { shadow: ShadowConfig } => ({
   classifier: 'tau-fixture/classifier',
   panel: ['tau-fixture/panel-a', 'tau-fixture/panel-b', 'tau-fixture/panel-c'],
+  decide: false,
   shadow,
 });
 
