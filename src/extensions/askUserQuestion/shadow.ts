@@ -1,31 +1,25 @@
-import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
-import { classifyChoice } from '../../classifier/classifier.js';
 import type { ConfigLocation } from '../../config/config.js';
-import { parseModelReference, requireAllowedModel } from '../../config/models.js';
+import { requireAllowedModel } from '../../config/models.js';
 import { readQuestionGateConfig, shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
 import {
-  judgeWithClassifier,
-  judgeWithPanel,
-  panelMember,
   shadowEligibility,
   shadowRateAllows,
   writeShadowRecord,
 } from '../../questionGate/questionGate.js';
 import type {
-  ClassifyQuestion,
   JudgeQuestion,
   JudgeVerdict,
-  PanelMember,
   ShadowRecord,
   ShadowRecordWriter,
 } from '../../questionGate/questionGate.js';
 import { writeRecord } from '../../record.js';
 import { ensureTauDirectory, findSharedRepositoryRoot } from '../../tauDirectory.js';
-import type { DialogQuestion, DialogResult } from './dialog.js';
+import type { AskedQuestion, DialogResult } from './dialog.js';
+import { judgeQuestionOf, prepareJudges } from './judges.js';
 
 export interface ShadowPorts {
   now: () => number;
@@ -38,10 +32,7 @@ export interface ShadowPorts {
 }
 
 interface ShadowStart {
-  questions: readonly (DialogQuestion & {
-    kind?: 'choice' | 'approval' | undefined;
-    confidence?: number | undefined;
-  })[];
+  questions: readonly AskedQuestion[];
   sessionId: string;
   cwd: string;
   projectTrusted: boolean;
@@ -82,19 +73,6 @@ const defaultShadowPorts: ShadowPorts = {
   },
 };
 
-const judgeQuestionOf = (
-  question: DialogQuestion & { confidence?: number | undefined },
-): JudgeQuestion => ({
-  question: question.question,
-  problem: question.problem,
-  impact: question.impact,
-  options: question.options.map((option) => ({
-    label: option.label,
-    description: option.description,
-    recommended: option.recommended === true,
-  })),
-});
-
 export const shadowAnswer = (
   question: string,
   result: DialogResult,
@@ -117,32 +95,11 @@ const timed = async (
   work: () => Promise<JudgeVerdict>,
 ): Promise<TimedVerdict> => {
   const started = now();
-  const verdict = await work().catch((): JudgeVerdict => ({ kind: 'error' }));
+  const verdict = await work();
   const milliseconds = Math.max(0, now() - started);
 
   return { verdict, milliseconds };
 };
-
-const panelModelsOf = (
-  registry: ModelRegistry,
-  references: readonly [string, string, string],
-): [Model<Api>, Model<Api>, Model<Api>] | undefined => {
-  const [first, second, third] = references.map((reference) => {
-    const parsed = parseModelReference(reference);
-
-    // oxlint-disable-next-line unicorn/no-array-method-this-argument -- ModelRegistry.find takes provider and model ID, not an array predicate and thisArg.
-    return parsed === undefined ? undefined : registry.find(parsed.provider, parsed.id);
-  });
-
-  if (first === undefined || second === undefined || third === undefined) {
-    return undefined;
-  }
-
-  return [first, second, third];
-};
-
-const agentVerdict = (confidence: number | undefined): JudgeVerdict =>
-  confidence === undefined ? { kind: 'unavailable' } : { kind: 'answered', confidence };
 
 const judgeAll = async (
   ports: ShadowPorts,
@@ -152,59 +109,13 @@ const judgeAll = async (
   confidence: number | undefined,
   signal: AbortSignal,
 ): Promise<ShadowRecord['judges']> => {
-  const examples = config.shadow.examples;
-  const hasExamples = examples.length > 0;
-  const panelModels = panelModelsOf(request.registry, config.panel);
-
-  const members: [PanelMember, PanelMember, PanelMember] | undefined =
-    panelModels === undefined
-      ? undefined
-      : [
-          panelMember(request.registry, panelModels[0]),
-          panelMember(request.registry, panelModels[1]),
-          panelMember(request.registry, panelModels[2]),
-        ];
-
-  const classify: ClassifyQuestion = (state, choiceQuestion, judgeSignal) =>
-    classifyChoice(
-      { modelRegistry: request.registry },
-      config.classifier,
-      state,
-      choiceQuestion,
-      judgeSignal,
-    );
-
-  const unavailable: JudgeVerdict = { kind: 'unavailable' };
-
-  const classifierWork = (useExamples: boolean): Promise<JudgeVerdict> => {
-    const missingExamples = useExamples && !hasExamples;
-
-    if (missingExamples) {
-      return Promise.resolve(unavailable);
-    }
-
-    const chosenExamples = useExamples ? examples : [];
-
-    return judgeWithClassifier(classify, question, chosenExamples, signal);
-  };
-
-  const panelWork = (useExamples: boolean): Promise<JudgeVerdict> => {
-    const missingExamples = useExamples && !hasExamples;
-
-    if (members === undefined || missingExamples) {
-      return Promise.resolve(unavailable);
-    }
-
-    const chosenExamples = useExamples ? examples : [];
-
-    return judgeWithPanel(members, question, chosenExamples, signal);
-  };
+  const judges = prepareJudges(request.registry, config);
 
   const [classifier, classifierExamples, panel, panelExamples] = await Promise.all([
-    timed(ports.now, () => classifierWork(false)),
-    timed(ports.now, () => classifierWork(true)),
-    timed(ports.now, () => panelWork(false)),
-    timed(ports.now, () => panelWork(true)),
+    timed(ports.now, () => judges.judge('classifier', question, confidence, signal)),
+    timed(ports.now, () => judges.judge('classifierExamples', question, confidence, signal)),
+    timed(ports.now, () => judges.judge('panel', question, confidence, signal)),
+    timed(ports.now, () => judges.judge('panelExamples', question, confidence, signal)),
   ]);
 
   return {
@@ -212,7 +123,7 @@ const judgeAll = async (
     classifierExamples,
     panel,
     panelExamples,
-    agent: { verdict: agentVerdict(confidence), milliseconds: 0 },
+    agent: { verdict: await judges.judge('agent', question, confidence, signal), milliseconds: 0 },
   };
 };
 

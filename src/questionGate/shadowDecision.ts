@@ -18,6 +18,10 @@ export type ShadowSkipReason =
   | 'optionPreview'
   | 'multiSelect';
 
+export type QuestionSkipReason = Exclude<ShadowSkipReason, 'multipleQuestions'>;
+
+type QuestionEligibility = { kind: 'eligible' } | { kind: 'skip'; reason: QuestionSkipReason };
+
 export type ShadowEligibility<Question extends ShadowQuestionFacts> =
   | { kind: 'eligible'; question: Question }
   | { kind: 'skip'; reason: ShadowSkipReason };
@@ -30,19 +34,7 @@ const recommendedCount = (question: ShadowQuestionFacts): number =>
 const previewedOption = (question: ShadowQuestionFacts): boolean =>
   question.options.some((option) => option.preview !== undefined);
 
-export const shadowEligibility = <Question extends ShadowQuestionFacts>(
-  questions: readonly Question[],
-): ShadowEligibility<Question> => {
-  if (questions.length !== 1) {
-    return { kind: 'skip', reason: 'multipleQuestions' };
-  }
-
-  const question = questions[0];
-
-  if (question === undefined) {
-    return { kind: 'skip', reason: 'multipleQuestions' };
-  }
-
+export const questionEligibility = (question: ShadowQuestionFacts): QuestionEligibility => {
   if (question.kind === undefined) {
     return { kind: 'skip', reason: 'kindMissing' };
   }
@@ -71,6 +63,28 @@ export const shadowEligibility = <Question extends ShadowQuestionFacts>(
 
   if (question.multiSelect) {
     return { kind: 'skip', reason: 'multiSelect' };
+  }
+
+  return { kind: 'eligible' };
+};
+
+export const shadowEligibility = <Question extends ShadowQuestionFacts>(
+  questions: readonly Question[],
+): ShadowEligibility<Question> => {
+  if (questions.length !== 1) {
+    return { kind: 'skip', reason: 'multipleQuestions' };
+  }
+
+  const question = questions[0];
+
+  if (question === undefined) {
+    return { kind: 'skip', reason: 'multipleQuestions' };
+  }
+
+  const eligibility = questionEligibility(question);
+
+  if (eligibility.kind === 'skip') {
+    return eligibility;
   }
 
   return { kind: 'eligible', question };

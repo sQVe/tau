@@ -50,6 +50,7 @@ it('reports a blocked question with the first header while the question dialog i
 
   const context = {
     ...opened,
+    isProjectTrusted: () => false,
     sessionManager: { ...opened.sessionManager, getBranch: () => [] },
   };
 

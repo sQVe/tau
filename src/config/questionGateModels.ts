@@ -20,14 +20,14 @@ export interface ShadowConfig {
   examples: PastAnswer[];
 }
 
-export interface QuestionGateConfig extends QuestionGateModels {
-  shadow?: ShadowConfig;
-}
+export type QuestionGateConfig = QuestionGateModels &
+  ({ decide: false; shadow?: ShadowConfig } | { decide: true; shadow: ShadowConfig });
 
 const questionGateModelsSchema = Type.Object(
   {
     classifier: Type.String(),
     panel: Type.Tuple([Type.String(), Type.String(), Type.String()]),
+    decide: Type.Optional(Type.Unknown()),
     shadow: Type.Optional(Type.Unknown()),
   },
   { additionalProperties: false },
@@ -48,6 +48,11 @@ const modelsMessage =
 const shadowMessage =
   'questionGate shadow needs a variant, a cutoff from 0 to 1, and up to five past-answer examples.';
 
+const decideMessage = 'questionGate decide must be true or false.';
+
+const decideNeedsShadowMessage =
+  'questionGate decide needs shadow, the frozen judge and cutoff it uses.';
+
 const invalid = (source: string, message: string): Error =>
   new Error(`Invalid Tau config ${source}: ${message}`);
 
@@ -64,6 +69,18 @@ const requireModelReference = (source: string, value: string): string => {
 
 const usesExamples = (variant: ShadowVariant): boolean =>
   variant === 'classifierExamples' || variant === 'panelExamples';
+
+const readDecide = (source: string, value: unknown): boolean => {
+  if (value === undefined) {
+    return false;
+  }
+
+  if (typeof value !== 'boolean') {
+    throw invalid(source, decideMessage);
+  }
+
+  return value;
+};
 
 const readShadow = (source: string, value: unknown): ShadowConfig | undefined => {
   if (value === undefined) {
@@ -102,17 +119,26 @@ export const readQuestionGateConfig = (
   }
 
   const [first, second, third] = value.panel;
+  const decide = readDecide(source, value.decide);
   const shadow = readShadow(source, value.shadow);
 
-  return {
-    classifier: requireModelReference(source, value.classifier),
-    panel: [
-      requireModelReference(source, first),
-      requireModelReference(source, second),
-      requireModelReference(source, third),
-    ],
-    ...(shadow === undefined ? {} : { shadow }),
-  };
+  if (decide && shadow === undefined) {
+    throw invalid(source, decideNeedsShadowMessage);
+  }
+
+  const classifier = requireModelReference(source, value.classifier);
+
+  const panel: [string, string, string] = [
+    requireModelReference(source, first),
+    requireModelReference(source, second),
+    requireModelReference(source, third),
+  ];
+
+  if (decide && shadow !== undefined) {
+    return { classifier, panel, decide: true, shadow };
+  }
+
+  return { classifier, panel, decide: false, ...(shadow === undefined ? {} : { shadow }) };
 };
 
 const canonicalQuestion = (question: PastAnswer['question']) => ({

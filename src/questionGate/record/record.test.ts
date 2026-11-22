@@ -5,8 +5,8 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
-import { readVersionedRecord, writeRecord } from '../record.ts';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.ts';
+import { readVersionedRecord, writeRecord } from '../../record.ts';
 import { readShadowRecords, writeShadowRecord } from './record.ts';
 import type { ShadowRecord, ShadowRecordReader } from './record.ts';
 

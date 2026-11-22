@@ -41,15 +41,38 @@ export type PanelMember = (prompt: PanelPrompt, signal: AbortSignal) => Promise<
 export { judgeWithClassifier } from './classifierJudge.ts';
 export { panelMember } from './panelMember.ts';
 export { judgeWithPanel, panelTimeoutMilliseconds } from './panelJudge.ts';
-export { readShadowRecords, writeShadowRecord } from './record.ts';
+export { readShadowRecords, writeShadowRecord } from './record/record.ts';
+export { readDecisionRecords, writeDecisionRecord } from './decision/decisionRecord.ts';
+
+export type { QuestionGateDecision } from './decision/decision.ts';
 
 export {
+  decideCall,
+  decideDeadlineMilliseconds,
+  decideEligibility,
+  mapNonEmpty,
+} from './decideDecision.ts';
+
+export type {
+  DecideCall,
+  DecideCallFacts,
+  DecideEligibility,
+  EligibleQuestion,
+} from './decideDecision.ts';
+
+export {
+  questionEligibility,
   shadowBatchIntervalMilliseconds,
   shadowEligibility,
   shadowRateAllows,
 } from './shadowDecision.ts';
 
-export type { ShadowEligibility, ShadowQuestionFacts, ShadowSkipReason } from './shadowDecision.ts';
+export type {
+  QuestionSkipReason,
+  ShadowEligibility,
+  ShadowQuestionFacts,
+  ShadowSkipReason,
+} from './shadowDecision.ts';
 
 export type {
   ShadowRecord,
@@ -58,4 +81,12 @@ export type {
   ShadowRecordReadOptions,
   ShadowRecordReader,
   ShadowRecordWriter,
-} from './record.ts';
+} from './record/record.ts';
+
+export type {
+  DecisionRecord,
+  DecisionRecordRead,
+  DecisionRecordReadOptions,
+  DecisionRecordReader,
+  DecisionRecordWriter,
+} from './decision/decisionRecord.ts';

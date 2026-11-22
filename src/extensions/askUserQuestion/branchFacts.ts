@@ -12,6 +12,8 @@ const hasTypedAnswer = (details: unknown): boolean => {
   return details.answers.some((answer) => isRecord(answer) && answer.typed === true);
 };
 
+const isDecided = (details: unknown): boolean => isRecord(details) && details.kind === 'decided';
+
 const isVisibleText = (block: unknown): boolean => {
   if (!isRecord(block) || block.type !== 'text') {
     return false;
@@ -38,6 +40,10 @@ const factsFor = (entry: SessionEntry): BranchFact[] => {
   const answersQuestions = message.toolName === 'ask_user_question' && message.isError !== true;
 
   if (message.role === 'toolResult' && answersQuestions) {
+    if (isDecided(message.details)) {
+      return [];
+    }
+
     return [{ kind: 'askResult', typed: hasTypedAnswer(message.details) }];
   }
 

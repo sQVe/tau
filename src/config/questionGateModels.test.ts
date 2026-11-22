@@ -60,6 +60,7 @@ const withFirstOption = (
 
 const frozenConfig = (): FrozenConfig => ({
   ...models,
+  decide: false,
   shadow: {
     variant: 'classifierExamples',
     cutoff: 0.8,
@@ -102,7 +103,7 @@ it('reads a model-only user key and leaves the file unchanged', ({ onTestFinishe
 
   const before = readBytes(userFile, repositoryFile);
 
-  expect(readQuestionGateConfig(location)).toEqual(models);
+  expect(readQuestionGateConfig(location)).toEqual({ ...models, decide: false });
   expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
@@ -190,6 +191,97 @@ it('refuses the key in a trusted repository file', ({ onTestFinished }) => {
   expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
+it('refuses decide without shadow', ({ onTestFinished }) => {
+  const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-question-gate-',
+  );
+
+  writeUser({ questionGate: { ...models, decide: true } });
+
+  const before = readBytes(userFile, repositoryFile);
+  const read = () => readQuestionGateConfig(location);
+
+  expect(read).toThrow(userFile);
+
+  expect(read).toThrow('questionGate decide needs shadow, the frozen judge and cutoff it uses.');
+
+  expectBytesUnchanged(before, userFile, repositoryFile);
+});
+
+it('reads decide with shadow', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+
+  const shadow = { variant: 'panel', cutoff: 0.5 } as const;
+
+  writeUser({ questionGate: { ...models, decide: true, shadow } });
+
+  expect(readQuestionGateConfig(location)).toEqual({
+    ...models,
+    decide: true,
+    shadow: { ...shadow, examples: [] },
+  });
+});
+
+it('defaults decide to off', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+
+  writeUser({ questionGate: models });
+
+  expect(readQuestionGateConfig(location)).toEqual({ ...models, decide: false });
+});
+
+it('refuses a decide that is not a boolean', ({ onTestFinished }) => {
+  const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-question-gate-',
+  );
+
+  writeUser({ questionGate: { ...models, decide: 'yes' } });
+
+  const before = readBytes(userFile, repositoryFile);
+  const read = () => readQuestionGateConfig(location);
+
+  expect(read).toThrow(userFile);
+  expect(read).toThrow('questionGate decide must be true or false.');
+  expectBytesUnchanged(before, userFile, repositoryFile);
+});
+
+const decidedShadowOf = (config: QuestionGateConfig): ShadowConfig | null =>
+  config.decide ? config.shadow : null;
+
+it('gives a decide config a shadow without a non-null assertion', () => {
+  const shadow: ShadowConfig = {
+    variant: 'classifierExamples',
+    cutoff: 0.8,
+    examples: [pastAnswer(1, 'first')],
+  };
+
+  const config: QuestionGateConfig = { ...models, decide: true, shadow };
+
+  expect(decidedShadowOf(config)).toBe(shadow);
+});
+
+it('still reads a decide config that is off', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+  const shadow = { variant: 'panel', cutoff: 0.5 } as const;
+
+  writeUser({ questionGate: { ...models, decide: false, shadow } });
+
+  expect(readQuestionGateConfig(location)).toEqual({
+    ...models,
+    decide: false,
+    shadow: { ...shadow, examples: [] },
+  });
+});
+
+it('keeps the cohort when decide changes', () => {
+  const off: FrozenConfig = { ...frozenConfig(), decide: false };
+  const on: FrozenConfig = { ...frozenConfig(), decide: true };
+
+  expect(shadowCohort(on)).toBe(shadowCohort(off));
+});
+
 it('reads a frozen shadow config and leaves the file unchanged', ({ onTestFinished }) => {
   const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
     onTestFinished,
@@ -206,7 +298,7 @@ it('reads a frozen shadow config and leaves the file unchanged', ({ onTestFinish
 
   const before = readBytes(userFile, repositoryFile);
 
-  expect(readQuestionGateConfig(location)).toEqual({ ...models, shadow });
+  expect(readQuestionGateConfig(location)).toEqual({ ...models, decide: false, shadow });
   expectBytesUnchanged(before, userFile, repositoryFile);
 });
 
@@ -217,6 +309,7 @@ it('defaults omitted examples to an empty list', ({ onTestFinished }) => {
 
   expect(readQuestionGateConfig(location)).toEqual({
     ...models,
+    decide: false,
     shadow: { variant: 'panel', cutoff: 0.5, examples: [] },
   });
 });
@@ -326,6 +419,7 @@ it('keeps the cohort when JSON keys are reordered', () => {
     },
     panel: ['tau-fixture/judge-a', 'tau-fixture/judge-b', 'tau-fixture/judge-c'],
     classifier: 'tau-fixture/judge-a',
+    decide: false,
   };
 
   expect(shadowCohort(reordered)).toBe(shadowCohort(frozenConfig()));

@@ -1,24 +1,25 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { customWithBlockedStatus } from '../../dialog/blockedStatus.js';
+import type { DecideOutcome, Decider } from './decide.js';
 import { questionDialog } from './dialog.js';
-import type { DialogQuestion, DialogResult } from './dialog.js';
+import type { AskedQuestion, DialogResult } from './dialog.js';
 import type { Answer } from './questionnaire.js';
 import type { ShadowJob, ShadowRunner } from './shadow.js';
 import { refuseUnrepliedTypedAnswer } from './typedAnswerReply.js';
 import { validateQuestions } from './validation.js';
 
-type QuestionInput = Omit<DialogQuestion, 'multiSelect'> & {
+type QuestionInput = Omit<AskedQuestion, 'multiSelect'> & {
   multiSelect?: boolean;
-  kind?: 'choice' | 'approval';
-  confidence?: number;
 };
 
 type OpenQuestionDialog = ReturnType<typeof questionDialog>;
 
+type QuestionResult = DialogResult | { kind: 'decided'; answers: Answer[]; record: string };
+
 interface QuestionResponse {
   content: { type: 'text'; text: string }[];
-  details: DialogResult;
+  details: QuestionResult;
 }
 
 const answerSegment = (answer: Answer) => {
@@ -45,6 +46,24 @@ const responseText = (result: DialogResult) => {
   return `User has answered your questions: ${segments} ${ending}`;
 };
 
+const decidedText = (notice: string) =>
+  `The question gate answered this call instead of the user:\n${notice}\nThis is not the user's answer. It never approves publishing, pushing, or posting.`;
+
+const decisionResponse = (decision: DecideOutcome | undefined): QuestionResponse | undefined => {
+  if (decision?.kind === 'cancelled') {
+    throw new Error('The ask_user_question call was cancelled.');
+  }
+
+  if (decision?.kind !== 'decided') {
+    return undefined;
+  }
+
+  return {
+    content: [{ type: 'text', text: decidedText(decision.notice) }],
+    details: { kind: 'decided', answers: decision.answers, record: decision.record },
+  };
+};
+
 const sessionIdOf = (sessionManager: ExtensionContext['sessionManager']): string | undefined => {
   try {
     const sessionId = sessionManager.getSessionId();
@@ -55,10 +74,20 @@ const sessionIdOf = (sessionManager: ExtensionContext['sessionManager']): string
   }
 };
 
+const nonEmptyQuestions = (
+  questions: readonly AskedQuestion[],
+): [AskedQuestion, ...AskedQuestion[]] | undefined => {
+  const [first, ...rest] = questions;
+
+  return first === undefined ? undefined : [first, ...rest];
+};
+
 export const askQuestions = async (
   input: QuestionInput[],
   context: ExtensionContext,
   shadow: ShadowRunner,
+  decider: Decider,
+  signal: AbortSignal | undefined,
 ): Promise<QuestionResponse> => {
   if (context.mode !== 'tui') {
     throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
@@ -68,10 +97,35 @@ export const askQuestions = async (
 
   validateQuestions(input);
 
-  const questions = input.map((question) => ({
+  const questions: AskedQuestion[] = input.map((question) => ({
     ...question,
     multiSelect: question.multiSelect === true,
   }));
+
+  const sessionId = sessionIdOf(context.sessionManager);
+  const decideQuestions = nonEmptyQuestions(questions);
+
+  const attempt =
+    decideQuestions === undefined
+      ? undefined
+      : decider.tryDecide({
+          questions: decideQuestions,
+          sessionId,
+          cwd: context.cwd,
+          projectTrusted: context.isProjectTrusted(),
+          registry: context.modelRegistry,
+          notify: (text) => {
+            context.ui.notify(text, 'info');
+          },
+          signal,
+        });
+
+  const decision = attempt === undefined ? undefined : await attempt;
+  const decided = decisionResponse(decision);
+
+  if (decided !== undefined) {
+    return decided;
+  }
 
   const open = questionDialog(questions);
 
@@ -84,7 +138,6 @@ export const askQuestions = async (
     };
 
     const dialog = open(terminal, theme, keybindings, settle);
-    const sessionId = sessionIdOf(context.sessionManager);
 
     if (sessionId !== undefined) {
       job = shadow.start({

@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { errorMessage, isMissingFile } from '../errors.ts';
-import { judgeQuestionSchema } from '../judgeSchema.ts';
-import { isRecord } from '../schema.ts';
+import { judgeQuestionSchema } from '../../judgeSchema.ts';
+import { isRecord } from '../../schema.ts';
+import { readRecordFiles } from './recordFiles.ts';
 
 export interface ShadowRecordGap {
   path: string;
@@ -134,68 +133,18 @@ const recordOptions: ShadowRecordReadOptions = {
   check: recommendedCountProblem,
 };
 
-const listShadowNames = async (directory: string): Promise<string[]> => {
-  try {
-    const names = await readdir(directory);
-
-    return names.filter((name) => shadowFileName.test(name)).toSorted();
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return [];
-    }
-
-    throw new Error(`Could not read shadow records in ${directory}: ${errorMessage(error)}`, {
-      cause: error,
-    });
-  }
-};
-
-const isSingleRegularFile = async (path: string): Promise<boolean> => {
-  const stats = await lstat(path);
-
-  return stats.isFile() && stats.nlink === 1;
-};
-
 export const readShadowRecords = async (
   directory: string,
   readRecord: ShadowRecordReader,
 ): Promise<ShadowRecordRead> => {
-  const names = await listShadowNames(directory);
-  const records: ShadowRecord[] = [];
-  const gaps: ShadowRecordGap[] = [];
+  const { entries, gaps } = await readRecordFiles(
+    directory,
+    shadowFileName,
+    recordOptions.label,
+    (path) => readRecord(path, recordOptions),
+  );
 
-  for (const name of names) {
-    const path = join(directory, name);
-
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- Reading in name order keeps gap order stable.
-      const regular = await isSingleRegularFile(path);
-
-      if (!regular) {
-        gaps.push({ path, reason: `Shadow record ${path} is not a regular file with one link.` });
-
-        continue;
-      }
-
-      // oxlint-disable-next-line no-await-in-loop -- Reading in name order keeps gap order stable.
-      const record = await readRecord(path, recordOptions);
-
-      if (record === undefined) {
-        gaps.push({
-          path,
-          reason: `Shadow record ${path} disappeared before it could be read.`,
-        });
-
-        continue;
-      }
-
-      records.push(record);
-    } catch (error) {
-      gaps.push({ path, reason: errorMessage(error) });
-    }
-  }
-
-  return { records, gaps };
+  return { records: entries.map((entry) => entry.record), gaps };
 };
 
 export const writeShadowRecord = async (

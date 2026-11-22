@@ -35,6 +35,7 @@ const ask = (question: Record<string, unknown>, branch: unknown[] = []) => {
 
   const context = {
     mode: 'tui',
+    isProjectTrusted: () => false,
     ui: { custom },
     sessionManager: { getBranch: () => branch },
   } as unknown as Parameters<ToolDefinition['execute']>[4];
@@ -124,6 +125,7 @@ const driver = () => {
 
     const context = {
       mode: 'tui',
+      isProjectTrusted: () => false,
       ui: { custom },
       sessionManager: { getBranch: () => [], getSessionName: () => undefined },
     } as unknown as Parameters<ToolDefinition['execute']>[4];
@@ -368,6 +370,7 @@ it('fails outside the terminal UI so the model asks in plain text', async () => 
 
   const context = {
     mode: 'rpc',
+    isProjectTrusted: () => false,
     ui: { custom },
     sessionManager: { getBranch: () => [] },
   } as unknown as Parameters<ToolDefinition['execute']>[4];

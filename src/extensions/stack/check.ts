@@ -2,7 +2,7 @@ import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { CommandRuntime } from '../../command.js';
-import { runGit } from '../../git.js';
+import { readGitUnlessMissing, runGit } from '../../git.js';
 import type { Repository } from '../../github/github.js';
 import { resolveBaseRepository, resolveHead } from '../../github/repositoryTarget.js';
 import {
@@ -264,14 +264,12 @@ export const readCheck = async (
   runtime: CommandRuntime,
   request: CheckRequest,
 ): Promise<CheckResult> => {
-  const branchRead = await runGit(runtime.cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-
-  if (branchRead.exitCode !== 0 && branchRead.exitCode !== 1) {
-    throw new Error(`git symbolic-ref --quiet --short HEAD failed: ${branchRead.stderr.trim()}`);
-  }
-
-  const currentBranch =
-    branchRead.exitCode === 0 ? branchRead.stdout.toString('utf8').trim() : undefined;
+  const currentBranch = await readGitUnlessMissing(runtime.cwd, [
+    'symbolic-ref',
+    '--quiet',
+    '--short',
+    'HEAD',
+  ]);
 
   const { branch } = request;
 

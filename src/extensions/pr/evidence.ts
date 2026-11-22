@@ -27,6 +27,8 @@ import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainEvidence } from './evidenceChain.js';
 import type { CheckLog, PublicationGap } from './evidenceDecisions.js';
+import { readGateDecisions } from './gateDecisionEvidence.js';
+import type { GateDecisionEvidence } from './gateDecisionEvidence.js';
 import { decideSavedReuse } from './reuse.js';
 import type { ReuseResult } from './reuse.js';
 import { decideReviewReuse } from './reuseDecisions.js';
@@ -48,6 +50,7 @@ export interface PublicationEvidence {
   ownership: Ownership;
   target: Target | null;
   branch: string | null;
+  gateDecisions: GateDecisionEvidence[] | null;
   subjects: string[];
   reuse: ReuseResult | null;
   review: PublicationReviewEvidence | null;
@@ -251,15 +254,29 @@ const createCheckStateReader = (root: string) => {
   return () => (read ??= readCheckState(root));
 };
 
+const createSharedRootReader = (root: string): (() => Promise<string>) => {
+  let read: Promise<string> | undefined;
+
+  return () => {
+    read ??= findSharedRepositoryRoot(root).catch((error: unknown) => {
+      read = undefined;
+
+      throw error;
+    });
+
+    return read;
+  };
+};
+
 const readVerification = async (
-  root: string,
+  readSharedRoot: () => Promise<string>,
   evidence: PublicationEvidence,
   readCurrentCheckState: () => Promise<CheckState>,
 ) => {
   let recordRoot: string;
 
   try {
-    recordRoot = await findSharedRepositoryRoot(root);
+    recordRoot = await readSharedRoot();
   } catch (error) {
     evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
 
@@ -308,6 +325,7 @@ const readPublicationEvidenceOperation = async (
   const evidence: PublicationEvidence = {
     ...(await readPublicationTarget({ ...runtime, cwd: root }, request)),
     branch: null,
+    gateDecisions: null,
     subjects: [],
     reuse: null,
     review: null,
@@ -324,6 +342,12 @@ const readPublicationEvidenceOperation = async (
   } catch (error) {
     evidence.gaps.push(readFailure('branch', error));
   }
+
+  const readSharedRoot = createSharedRootReader(root);
+  const gateDecisions = await readGateDecisions(readSharedRoot, evidence.branch);
+
+  evidence.gateDecisions = gateDecisions.gateDecisions;
+  evidence.gaps.push(...gateDecisions.gaps);
 
   if (evidence.target !== null) {
     try {
@@ -359,7 +383,7 @@ const readPublicationEvidenceOperation = async (
   evidence.fullCheck = checkEvidence.fullCheck;
   evidence.gaps.push(...checkEvidence.gaps);
 
-  await readVerification(root, evidence, readCheckStateOnce);
+  await readVerification(readSharedRoot, evidence, readCheckStateOnce);
 
   return evidence;
 };
