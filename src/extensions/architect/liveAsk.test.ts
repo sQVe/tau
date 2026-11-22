@@ -178,6 +178,69 @@ it('a lead label that names this session without a local listener refuses the li
   expect(getTargets(hc)).toEqual(['t-lead']);
 });
 
+it('a live ask to an architect terminal without an inbox label saves no record and sends nothing', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, hc, receiver, tool } = await liveArchitect(cleanup);
+
+  replyTerminal(hc, 't-architect');
+
+  const result = await tool.execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(result.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
+
+  expect((result.details as { reason: string }).reason).toContain(
+    't-architect advertises no Tau inbox',
+  );
+
+  await expect(readAskRecords(root)).resolves.toEqual({ records: [], gaps: [] });
+  expect(savedFiles(receiver)).toEqual([]);
+});
+
+it('a live ask asked again after the architect inbox returns queues one ask', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, hc, receiver, tool } = await liveArchitect(cleanup);
+
+  replyTerminal(hc, 't-architect');
+
+  const refused = await tool.execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  expect(refused.details).toMatchObject({ action: 'ask', status: 'needsOpen' });
+
+  replyTerminal(hc, 't-architect', `rpc1:${receiver.path}`);
+
+  const asked = await tool.execute(
+    'call',
+    { action: 'ask', question: 'Which flag name?' },
+    undefined,
+    undefined,
+    contextOf(root),
+  );
+
+  const { askId } = asked.details as { askId: string };
+
+  expect(asked.details).toMatchObject({ action: 'ask', status: 'queued', askId });
+
+  const { records } = await readAskRecords(root);
+
+  expect(records).toHaveLength(1);
+  expect(records[0]).toMatchObject({ askId });
+  expect(savedFiles(receiver)).toEqual([`${receiver.sessionId}/${askId}.json`]);
+});
+
 it('a refused live ask marks its record failed', async ({ onTestFinished: cleanup }) => {
   const { root, hc, tool } = await liveArchitect(cleanup);
 

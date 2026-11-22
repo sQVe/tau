@@ -40,7 +40,10 @@ generation that may write: `/resume` changes the session behind a terminal, and 
 session ID. Every other holder state refuses with a reason the lead can act on: still starting, a
 running hidden ask, another checkout, or an architect from a Tau release before routes. That older
 release writes its record after it takes the lock, so its record is never older than its lock. This
-tells it apart from an architect that is still starting.
+tells it apart from an architect that is still starting. A live route whose terminal shows no
+`tau.inbox` label refuses before it saves an ask record, because the inbox withdraws its label
+before the architect releases its lock, and a Pi that does not own its terminal never advertises
+one. The lead asks again with the question.
 
 Recovery never turns one question into two. The lead's own inbox must be listening for its current
 session before `ask` sends, because the answer can return only there. The ask ID is the inbox
