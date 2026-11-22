@@ -60,6 +60,7 @@ const pureModules = [
   'scripts/questionGateScore/questionGateScoreLog.ts',
   'scripts/questionGateScore/questionGateScorePrepare.ts',
   'scripts/questionGateScore/questionGateScoreReport.ts',
+  'scripts/questionGateScore/shadowReport.ts',
   'scripts/sessionHealthReport.ts',
   'scripts/sessionHealthRules.ts',
   'scripts/tokenUsageReport.ts',
@@ -208,6 +209,7 @@ const pureModules = [
   'src/questionGate/decision.ts',
   'src/questionGate/examples.ts',
   'src/questionGate/panelVerdict.ts',
+  'src/questionGate/shadowDecision.ts',
   'src/reviewBots/reviewBotDecisions.ts',
   'src/reviewCapture/chainSelectionDecision.ts',
   'src/reviewCapture/coverageDecision.ts',
@@ -482,6 +484,11 @@ const versionedRecords = [
     writer: 'src/improvement/event.ts',
     fixtures: 'src/improvement/fixtures',
     names: ['event-v1-merge.json', 'event-v2-pass.json', 'event-v2-class.json'],
+  },
+  {
+    writer: 'src/questionGate/record.ts',
+    fixtures: 'src/questionGate/fixtures/record',
+    names: ['current.json', 'newer.json', 'malformed.json'],
   },
 ];
 

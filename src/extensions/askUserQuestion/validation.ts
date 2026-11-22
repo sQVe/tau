@@ -3,6 +3,8 @@ export interface QuestionInput {
   problem: string;
   impact: string;
   preview?: string;
+  kind?: 'choice' | 'approval';
+  confidence?: number;
   options: readonly { label: string; recommended?: boolean; preview?: string }[];
 }
 
@@ -48,6 +50,30 @@ const validateRecommendation = (question: QuestionInput) => {
   }
 };
 
+const validateKind = (question: QuestionInput) => {
+  const kind: unknown = question.kind;
+
+  if (kind !== undefined && kind !== 'choice' && kind !== 'approval') {
+    throw new Error(
+      `Question "${question.question}" has an invalid kind. Use "choice" or "approval".`,
+    );
+  }
+};
+
+const validateConfidence = (question: QuestionInput) => {
+  const { confidence } = question;
+
+  if (confidence === undefined) {
+    return;
+  }
+
+  const inRange = Number.isFinite(confidence) && confidence >= 0 && confidence <= 1;
+
+  if (!inRange) {
+    throw new Error(`The confidence of "${question.question}" must be a number from 0 to 1.`);
+  }
+};
+
 const validateOptions = (question: QuestionInput) => {
   const labels = question.options.map((option) => option.label);
 
@@ -75,6 +101,8 @@ export const validateQuestions = (questions: readonly QuestionInput[]): void => 
 
   for (const question of questions) {
     validateProblem(question);
+    validateKind(question);
+    validateConfidence(question);
     validateOptions(question);
     validateRecommendation(question);
     validatePreviews(question);

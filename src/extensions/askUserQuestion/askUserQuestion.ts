@@ -2,6 +2,12 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { askQuestions } from './askQuestions.js';
+import { createShadowRunner } from './shadow.js';
+import type { ShadowPorts } from './shadow.js';
+
+export interface AskUserQuestionOptions {
+  shadow?: Partial<ShadowPorts>;
+}
 
 const optionSchema = Type.Object({
   label: Type.String({
@@ -54,6 +60,20 @@ const questionSchema = Type.Object({
     description:
       'MAX 16 CHARACTERS (hard limit). Very short chip/tag shown next to the question. Examples: "Auth method", "Library", "Approach".',
   }),
+  kind: Type.Optional(
+    Type.Union([Type.Literal('choice'), Type.Literal('approval')], {
+      description:
+        'Set "choice" only for a design or process choice. Set "approval" when the user authorizes an action. A question without kind is valid and is never sampled.',
+    }),
+  ),
+  confidence: Type.Optional(
+    Type.Number({
+      minimum: 0,
+      maximum: 1,
+      description:
+        'Optional confidence from 0 to 1 that the user picks your recommended option. Use it with a recommendation.',
+    }),
+  ),
   options: Type.Array(optionSchema, {
     minItems: 2,
     maxItems: 4,
@@ -78,16 +98,23 @@ const questionParams = Type.Object({
   }),
 });
 
-const toolDescription = `Ask the user structured questions when you cannot proceed without a decision. Ask one question by default. Group only questions that do not depend on each other.
+const toolDescription = `Ask the user structured questions when you cannot proceed without a decision. Ask one question by default. Group only independent questions.
 
-Write for a user who has not read your discussion. \`problem\`, \`impact\`, and each option \`description\` must stand alone. Never name who proposed an option. Use no option letters, internal codes, or unexplained ADR or ticket numbers. Keep options in a stable order.
+Write for a user who has not read your discussion. \`problem\`, \`impact\`, and each option \`description\` must stand alone. Never name who proposed an option. Use no option letters, codes, or unexplained ADR or ticket numbers. Keep options stable.
 
-- Every question gets a "Type something." row. Do not author it or an "Other" option.
+- Every question gets a "Type something." row. Do not author it or "Other".
 - Set \`recommended: true\` on at most one option per question.
+- Set \`kind\` to "choice" for a design or process choice, "approval" for authorization. Without \`kind\`, a question is valid and never sampled.
+- Set \`confidence\` 0 to 1 with a recommendation.
 - Set \`multiSelect: true\` when several answers can be valid. A typed answer returns with the checked options.
-- Add \`preview\` to an option to show what it produces, about 10 lines. Add \`preview\` to the question for content every option acts on, such as a draft to approve. An option preview replaces it.`;
+- Add \`preview\` to an option to show what it produces, about 10 lines. Add it to the question for shared content, such as a draft to approve. An option preview replaces it.`;
 
-export default function askUserQuestionExtension(pi: ExtensionAPI): void {
+export default function askUserQuestionExtension(
+  pi: ExtensionAPI,
+  options: AskUserQuestionOptions = {},
+): void {
+  const shadow = createShadowRunner(options.shadow);
+
   pi.registerTool({
     name: 'ask_user_question',
     exposure: 'model-only',
@@ -98,7 +125,7 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
     parameters: questionParams,
 
     async execute(_toolCallId, params, _signal, _onUpdate, context) {
-      return askQuestions(params.questions, context);
+      return askQuestions(params.questions, context, shadow);
     },
   });
 }
