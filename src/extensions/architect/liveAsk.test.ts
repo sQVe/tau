@@ -304,6 +304,7 @@ it('a live ask whose architect terminal cannot be read saves no record', async (
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain('could not be read');
   expect((failure as Error).message).toContain('No ask was saved');
+  expect(((failure as Error).cause as Error).message).toContain('terminal not found');
   await expect(readAskRecords(root)).resolves.toEqual({ records: [], gaps: [] });
 });
 
