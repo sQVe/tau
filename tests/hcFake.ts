@@ -27,6 +27,7 @@ export interface HcFake {
   connectCalls: HcRequestMessage[][];
   reply: (command: HcCommand, stdout: string) => void;
   replyGet: (address: string, stdout: string) => void;
+  failGet: (address: string, stderr?: string) => void;
   fail: (command: HcCommand, stderr: string, code: number) => void;
   recover: (command: HcCommand) => void;
   replyConnect: (method: string, id: number, result: unknown) => void;
@@ -86,6 +87,7 @@ export const createHcFake = (): HcFake => {
   const replies = new Map<HcCommand, string>();
   const failures = new Map<HcCommand, { stderr: string; code: number }>();
   const terminalReplies = new Map<string, string>();
+  const terminalFailures = new Map<string, string>();
 
   const execFake = createExecFake<HcCommand>({
     keyOf: (command, commandArguments) => {
@@ -105,8 +107,13 @@ export const createHcFake = (): HcFake => {
       }
 
       const address = key === 'get' ? commandArguments.at(-1) : undefined;
+      const terminalFailure = address === undefined ? undefined : terminalFailures.get(address);
       const terminalReply = address === undefined ? undefined : terminalReplies.get(address);
       const reply = terminalReply ?? replies.get(key);
+
+      if (terminalFailure !== undefined) {
+        return failedResult(terminalFailure);
+      }
 
       return reply === undefined ? failedResult(`unknown command: ${key}`) : succeededResult(reply);
     },
@@ -197,6 +204,8 @@ export const createHcFake = (): HcFake => {
     },
     reply: (command, stdout) => replies.set(command, stdout),
     replyGet: (address, stdout) => terminalReplies.set(address, stdout),
+    failGet: (address, stderr) =>
+      terminalFailures.set(address, stderr ?? `hc get ${address} failed`),
     fail: (command, stderr, code) => failures.set(command, { stderr, code }),
     recover: (command) => failures.delete(command),
     replyConnect: (method, id, result) => {
