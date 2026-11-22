@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "kind": "decision",
+  "time": 1760000000000,
+  "sessionId": "session-1",
+  "branch": "main",
+  "head": "f13f17eb",
+  "cohort": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "variant": "classifier",
+  "cutoff": 0.7,
+  "decisions": [
+    {
+      "question": {
+        "question": "Which route?",
+        "problem": "The route is open.",
+        "impact": "The wrong route wastes a day.",
+        "options": [
+          { "label": "Fast", "description": "Ship now.", "recommended": true },
+          { "label": "Careful", "description": "Check first.", "recommended": false }
+        ]
+      },
+      "choice": "Fast",
+      "reason": "Ship now.",
+      "confidence": 0.8
+    }
+  ]
+}

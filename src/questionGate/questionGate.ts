@@ -42,6 +42,7 @@ export { judgeWithClassifier } from './classifierJudge.ts';
 export { panelMember } from './panelMember.ts';
 export { judgeWithPanel, panelTimeoutMilliseconds } from './panelJudge.ts';
 export { readShadowRecords, writeShadowRecord } from './record.ts';
+export { readDecisionRecords, writeDecisionRecord } from './decisionRecord.ts';
 
 export type { QuestionGateDecision } from './decision.ts';
 
@@ -70,3 +71,11 @@ export type {
   ShadowRecordReader,
   ShadowRecordWriter,
 } from './record.ts';
+
+export type {
+  DecisionRecord,
+  DecisionRecordRead,
+  DecisionRecordReadOptions,
+  DecisionRecordReader,
+  DecisionRecordWriter,
+} from './decisionRecord.ts';
