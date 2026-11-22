@@ -5,7 +5,10 @@ import { expect, it, vi } from 'vitest';
 
 import { writeStommeProject } from '../../../tests/stommeProjectHarness.js';
 import { codingSetText } from '../../instructions/guideRuns.js';
-import { readInstructionSet } from '../../instructions/instructions.js';
+import {
+  bundledInstructionsDirectory,
+  readInstructionSet,
+} from '../../instructions/instructions.js';
 import type { InstructionSetName } from '../../instructions/instructions.js';
 import { resolveStommeGuides } from '../../instructions/stommeGuides/stommeGuides.js';
 import { writeAssignment } from './assignment.js';
@@ -56,7 +59,11 @@ it('appends the instruction sets and the coding guides of the loadout to each ru
   const prompt = await startRun(fixture);
   const guides = codingSetText(await resolveStommeGuides(fixture.directory));
 
-  const sets = [await readInstructionSet('writing'), guides, await readInstructionSet('workflow')];
+  const sets = [
+    await readInstructionSet('writing', bundledInstructionsDirectory),
+    guides,
+    await readInstructionSet('workflow', bundledInstructionsDirectory),
+  ];
 
   expect(prompt).toContain(`\n\n${sets.join('\n\n')}`);
   expect(prompt.startsWith('Work on the assigned task.')).toBe(true);
@@ -71,7 +78,7 @@ it('leaves out the coding guides when the loadout has no coding set', async () =
   const prompt = await startRun(fixture);
   const guides = codingSetText(await resolveStommeGuides(fixture.directory));
 
-  expect(prompt).toContain(await readInstructionSet('writing'));
+  expect(prompt).toContain(await readInstructionSet('writing', bundledInstructionsDirectory));
   expect(prompt).not.toContain(guides);
 });
 

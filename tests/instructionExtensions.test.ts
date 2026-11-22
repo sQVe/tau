@@ -1,78 +1,66 @@
-import { copyFile, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
+import { registerInstructions } from '../src/extensions/instructions.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+
+interface InstructionFixture {
+  instructionsDirectory: string;
+  loader: DefaultResourceLoader;
+}
 
 const fileInstructionSets = ['writing', 'workflow'] as const;
 
-const copiedFiles = [
-  'errors.ts',
-  'extensions/instructions.ts',
-  'instructions/guideRuns.ts',
-  'instructions/instructions.ts',
-  'instructions/regularFile.ts',
-  'instructions/stommeGuides/stommeGuides.ts',
-  'instructions/stommeGuides/stommeGuidesDecision.ts',
-  'instructions/syncRecord.ts',
-  'instructions/syncedGuides.ts',
-  'instructions/systemPrompt.ts',
-  'instructions/languageRules/languageRules.ts',
-  'instructions/languageRules/languageRulesDecision.ts',
-  'schema.ts',
-  'role/role.ts',
-];
+type FileInstructionSet = (typeof fileInstructionSets)[number];
 
-const copySources = async (workingDirectory: string): Promise<void> => {
-  await mkdir(join(workingDirectory, 'extensions'));
-  await mkdir(join(workingDirectory, 'instructions', 'stommeGuides'), { recursive: true });
-  await mkdir(join(workingDirectory, 'instructions', 'languageRules'), { recursive: true });
+const blankInstructions = ' \n\t';
 
-  await symlink(
-    fileURLToPath(new URL('../node_modules', import.meta.url)),
-    join(workingDirectory, 'node_modules'),
-  );
+const loadInstructionFixture = async (
+  directory: string,
+  blankInstructionSet?: FileInstructionSet,
+): Promise<InstructionFixture> => {
+  const instructionsDirectory = join(directory, 'instructions');
 
-  for (const copiedFile of copiedFiles) {
-    const destination = join(workingDirectory, copiedFile);
+  await mkdir(instructionsDirectory);
 
-    await mkdir(dirname(destination), { recursive: true });
-    await copyFile(new URL(`../src/${copiedFile}`, import.meta.url), destination);
+  for (const instructionSet of fileInstructionSets) {
+    const text =
+      instructionSet === blankInstructionSet ? blankInstructions : `# ${instructionSet}\n`;
+
+    await writeFile(join(instructionsDirectory, `${instructionSet}.md`), text);
   }
+
+  const loader = new DefaultResourceLoader({
+    cwd: directory,
+    agentDir: join(directory, 'agent'),
+    settingsManager: SettingsManager.inMemory(),
+    extensionFactories: [(pi) => registerInstructions(pi, instructionsDirectory)],
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+  });
+
+  await loader.reload();
+
+  return { instructionsDirectory, loader };
 };
 
 for (const instructionSet of fileInstructionSets) {
   it(`rejects invalid ${instructionSet} instructions and reads them again on reload`, async ({
     onTestFinished,
   }) => {
-    const workingDirectory = temporaryDirectory(onTestFinished, `tau-${instructionSet}-`);
+    const directory = temporaryDirectory(onTestFinished, `tau-${instructionSet}-`);
 
-    const extensionPath = join(workingDirectory, 'extensions', 'instructions.ts');
-    const instructionsPath = join(workingDirectory, 'instructions', `${instructionSet}.md`);
+    const { instructionsDirectory, loader } = await loadInstructionFixture(
+      directory,
+      instructionSet,
+    );
 
-    await copySources(workingDirectory);
-
-    for (const otherSet of fileInstructionSets) {
-      await writeFile(join(workingDirectory, 'instructions', `${otherSet}.md`), `# ${otherSet}\n`);
-    }
-
-    await writeFile(instructionsPath, ' \n\t');
-
-    const loader = new DefaultResourceLoader({
-      cwd: workingDirectory,
-      agentDir: join(workingDirectory, 'agent'),
-      settingsManager: SettingsManager.inMemory(),
-      additionalExtensionPaths: [extensionPath],
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-    });
-
-    await loader.reload();
+    const instructionsPath = join(instructionsDirectory, `${instructionSet}.md`);
 
     const { extensions, errors } = loader.getExtensions();
 
@@ -108,30 +96,8 @@ it.for([
 
     vi.stubEnv('TAU_ROLE', role);
     vi.stubEnv('TAU_WORKER_RECORD', undefined);
-    const workingDirectory = temporaryDirectory(onTestFinished, 'tau-instructions-role-');
-    const extensionPath = join(workingDirectory, 'extensions', 'instructions.ts');
-
-    await copySources(workingDirectory);
-
-    for (const instructionSet of fileInstructionSets) {
-      await writeFile(
-        join(workingDirectory, 'instructions', `${instructionSet}.md`),
-        `# ${instructionSet}\n`,
-      );
-    }
-
-    const loader = new DefaultResourceLoader({
-      cwd: workingDirectory,
-      agentDir: join(workingDirectory, 'agent'),
-      settingsManager: SettingsManager.inMemory(),
-      additionalExtensionPaths: [extensionPath],
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-    });
-
-    await loader.reload();
+    const directory = temporaryDirectory(onTestFinished, 'tau-instructions-role-');
+    const { loader } = await loadInstructionFixture(directory);
 
     const { extensions, errors } = loader.getExtensions();
 

@@ -2,6 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { trackGuideRuns } from '../instructions/guideRuns.js';
 import {
+  bundledInstructionsDirectory,
   defaultInstructionSetNames,
   instructionTexts,
   readInstructionSections,
@@ -10,8 +11,8 @@ import { registerLanguageRules } from '../instructions/languageRules/languageRul
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../role/role.js';
 
-export default async function instructionsExtension(pi: ExtensionAPI): Promise<void> {
-  const sections = await readInstructionSections(defaultInstructionSetNames);
+export const registerInstructions = async (pi: ExtensionAPI, directory: string): Promise<void> => {
+  const sections = await readInstructionSections(defaultInstructionSetNames, directory);
 
   // A worker appends the instruction sets its saved task lists.
   if (isWorkerProcess()) {
@@ -27,4 +28,8 @@ export default async function instructionsExtension(pi: ExtensionAPI): Promise<v
       appendSystemPrompt(event, text);
     }
   });
+};
+
+export default async function instructionsExtension(pi: ExtensionAPI): Promise<void> {
+  await registerInstructions(pi, bundledInstructionsDirectory);
 }

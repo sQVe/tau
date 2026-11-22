@@ -1,4 +1,6 @@
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { codingSetText } from './guideRuns.js';
 import type { GuideRuns } from './guideRuns.js';
@@ -6,6 +8,8 @@ import type { GuideRuns } from './guideRuns.js';
 type InstructionFileName = Exclude<InstructionSetName, 'coding'>;
 
 export type InstructionSection = { kind: 'file'; text: string } | { kind: 'coding' };
+
+export const bundledInstructionsDirectory = fileURLToPath(new URL('./', import.meta.url));
 
 export const instructionSetNames = ['writing', 'coding', 'workflow', 'browser'] as const;
 
@@ -17,14 +21,17 @@ export const defaultInstructionSetNames: InstructionSetName[] = ['writing', 'cod
 export const isInstructionSetName = (name: string): name is InstructionSetName =>
   instructionSetNames.some((setName) => setName === name);
 
-export const readInstructionSet = async (name: InstructionFileName): Promise<string> => {
-  const path = new URL(`./${name}.md`, import.meta.url);
+export const readInstructionSet = async (
+  name: InstructionFileName,
+  directory: string,
+): Promise<string> => {
+  const path = join(directory, `${name}.md`);
   const instructions = await readFile(path, 'utf8');
 
   const trimmedInstructions = instructions.trim();
 
   if (!trimmedInstructions) {
-    throw new Error(`The ${name} instructions are empty: ${path.href}`);
+    throw new Error(`The ${name} instructions are empty: ${path}`);
   }
 
   return trimmedInstructions;
@@ -32,6 +39,7 @@ export const readInstructionSet = async (name: InstructionFileName): Promise<str
 
 export const readInstructionSections = (
   names: readonly InstructionSetName[],
+  directory: string,
 ): Promise<InstructionSection[]> => {
   const selected = instructionSetNames.filter((name) => names.includes(name));
 
@@ -41,7 +49,7 @@ export const readInstructionSections = (
         return { kind: 'coding' };
       }
 
-      return { kind: 'file', text: await readInstructionSet(name) };
+      return { kind: 'file', text: await readInstructionSet(name, directory) };
     }),
   );
 };

@@ -1,8 +1,17 @@
-import { expect, it } from 'vitest';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
+import { expect, it, onTestFinished } from 'vitest';
+
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { codingSetText } from './guideRuns.js';
 import type { GuideRuns } from './guideRuns.js';
-import { instructionTexts, readInstructionSections, readInstructionSet } from './instructions.js';
+import {
+  bundledInstructionsDirectory,
+  instructionTexts,
+  readInstructionSections,
+  readInstructionSet,
+} from './instructions.js';
 import type { GuideSnapshot } from './stommeGuides/stommeGuides.js';
 
 const brokenSnapshot = {
@@ -16,17 +25,31 @@ const guideRuns = (snapshot: () => Promise<GuideSnapshot>): Pick<GuideRuns, 'sna
 });
 
 it('reads the selected sets in the fixed order and leaves the coding set to the guides', async () => {
-  const sections = await readInstructionSections(['workflow', 'coding', 'writing']);
+  const directory = temporaryDirectory(onTestFinished, 'tau-instructions-order-');
+
+  await writeFile(join(directory, 'writing.md'), 'Writing rules.\n');
+  await writeFile(join(directory, 'workflow.md'), 'Workflow rules.\n');
+
+  const sections = await readInstructionSections(['workflow', 'coding', 'writing'], directory);
 
   expect(sections).toEqual([
-    { kind: 'file', text: await readInstructionSet('writing') },
+    { kind: 'file', text: 'Writing rules.' },
     { kind: 'coding' },
-    { kind: 'file', text: await readInstructionSet('workflow') },
+    { kind: 'file', text: 'Workflow rules.' },
   ]);
 });
 
+it('rejects a blank set with a message that names its path', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-instructions-empty-');
+  const path = join(directory, 'writing.md');
+
+  await writeFile(path, '  \n\n');
+
+  await expect(readInstructionSet('writing', directory)).rejects.toThrow(path);
+});
+
 it('reads no section for an empty selection', async () => {
-  expect(await readInstructionSections([])).toEqual([]);
+  expect(await readInstructionSections([], bundledInstructionsDirectory)).toEqual([]);
 });
 
 it('puts the guides of the run into the coding section only', async () => {

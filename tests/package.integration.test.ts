@@ -18,7 +18,6 @@ import { expect, it, vi } from 'vitest';
 import manifest from '../package.json' with { type: 'json' };
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
 import { qaGuidePath } from '../src/extensions/subagents/qaBrief.js';
-import { readInstructionSet } from '../src/instructions/instructions.js';
 import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { emptySessionRefusal, installHcCommand } from './hcCommandHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
@@ -232,7 +231,11 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     expect(transcripts[1]?.split(serializedBlock)).toHaveLength(2);
   }
 
-  const browserInstructions = await readInstructionSet('browser');
+  const browserInstructions = (
+    await readFile(join(packageRoot, 'src/instructions/browser.md'), 'utf8')
+  ).trim();
+
+  expect(browserInstructions).not.toBe('');
 
   for (const prompt of prompts) {
     expect(prompt).not.toContain(browserInstructions);
