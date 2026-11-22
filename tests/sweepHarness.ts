@@ -41,6 +41,20 @@ export interface SweepFixture {
   eventFiles: () => string[];
 }
 
+export class MissingMergedListSignalError extends Error {
+  constructor() {
+    super('The sweep passed no signal to the merged list.');
+    this.name = 'MissingMergedListSignalError';
+  }
+}
+
+export class MergedListAbortError extends Error {
+  constructor() {
+    super('Sweep aborted.');
+    this.name = 'MergedListAbortError';
+  }
+}
+
 const fixturePath = (name: string) =>
   join(import.meta.dirname, '..', 'src', 'improvement', 'fixtures', name);
 
@@ -76,11 +90,11 @@ export const createSweepFixture = async (
       const signal = options?.signal;
 
       if (signal === undefined) {
-        throw new Error('The sweep passed no signal to the merged list.');
+        throw new MissingMergedListSignalError();
       }
 
       const abortReason = (): Error =>
-        signal.reason instanceof Error ? signal.reason : new Error('Sweep aborted.');
+        signal.reason instanceof Error ? signal.reason : new MergedListAbortError();
 
       return new Promise((_resolve, reject) => {
         if (signal.aborted) {

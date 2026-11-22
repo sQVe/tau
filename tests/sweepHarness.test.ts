@@ -1,6 +1,10 @@
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createSweepFixture } from './sweepHarness.js';
+import {
+  createSweepFixture,
+  MergedListAbortError,
+  MissingMergedListSignalError,
+} from './sweepHarness.js';
 
 const mergedCommand = ['pr', 'list'];
 
@@ -40,8 +44,8 @@ it('fails a gated merged call that passes no signal', async () => {
 
   fixture.gateMergedList();
 
-  await expect(fixture.fake.exec('gh', mergedCommand, undefined)).rejects.toThrow(
-    'The sweep passed no signal to the merged list.',
+  await expect(fixture.fake.exec('gh', mergedCommand, undefined)).rejects.toBeInstanceOf(
+    MissingMergedListSignalError,
   );
 });
 
@@ -56,4 +60,17 @@ it('fails a gated merged call whose signal is already aborted', async () => {
   await expect(fixture.fake.exec('gh', mergedCommand, { signal: controller.signal })).rejects.toBe(
     reason,
   );
+});
+
+it('rejects a gated merged call aborted with a non-Error reason', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const gate = fixture.gateMergedList();
+  const controller = new AbortController();
+
+  const call = fixture.fake.exec('gh', mergedCommand, { signal: controller.signal });
+
+  await gate.reached;
+  controller.abort('stopped');
+
+  await expect(call).rejects.toBeInstanceOf(MergedListAbortError);
 });
