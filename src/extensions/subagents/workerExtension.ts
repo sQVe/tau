@@ -26,7 +26,11 @@ import { setAcceptCheck } from '../../inbox/inbox.js';
 import { answeredQuestionId } from '../../inbox/receiptDecision.js';
 import { trackGuideRuns } from '../../instructions/guideRuns.js';
 import type { GuideRuns } from '../../instructions/guideRuns.js';
-import { instructionTexts, readInstructionSections } from '../../instructions/instructions.js';
+import {
+  bundledInstructionsDirectory,
+  instructionTexts,
+  readInstructionSections,
+} from '../../instructions/instructions.js';
 import type { InstructionSection } from '../../instructions/instructions.js';
 import { registerLanguageRules } from '../../instructions/languageRules/languageRules.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
@@ -84,7 +88,7 @@ const workerCodemodeGuidelines = (loadout: Loadout): string[] =>
 
 const readWorkerPromptParts = async (loadout: Loadout): Promise<WorkerPromptParts> => ({
   prefix: workerInstructions(loadout),
-  sections: await readInstructionSections(loadout.instructionSets),
+  sections: await readInstructionSections(loadout.instructionSets, bundledInstructionsDirectory),
   suffix: workerCodemodeGuidelines(loadout),
 });
 
