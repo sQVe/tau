@@ -102,8 +102,6 @@ export const registerInboxLifecycle = (
       });
   };
 
-  // Shutdown joins a start already in flight, even after that start has bound the socket and
-  // written the label, so it stops the start instead of leaving it serving a dead session.
   const withdraw = async (): Promise<void> => {
     const current = listener;
 
