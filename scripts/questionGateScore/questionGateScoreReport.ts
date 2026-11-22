@@ -2,8 +2,7 @@ import type { QuestionGateModels } from '../../src/config/questionGateModels.ts'
 import { questionGateDecision } from '../../src/questionGate/decision/decision.ts';
 import type { JudgeVerdict, PastOutcome } from '../../src/questionGate/questionGate.ts';
 import type { SkippedQuestions } from './questionGateScoreLog.ts';
-import { sessionLowerBound } from './sessionLowerBound.ts';
-import type { SessionTally } from './sessionLowerBound.ts';
+import { sessionSummary } from './sessionLowerBound.ts';
 
 export type JudgeVariant = 'classifier' | 'classifierExamples' | 'panel' | 'panelExamples';
 
@@ -118,6 +117,19 @@ const decidedItems = (
   cutoff: number,
 ): ScoreItem[] => items.filter((item) => isDecided(item.verdicts[variant], cutoff));
 
+const scoreFromTotals = (
+  total: number,
+  cutoff: number,
+  decided: number,
+  hits: number,
+): CutoffScore => ({
+  cutoff,
+  decided,
+  decideShare: share(decided, total),
+  agreement: share(hits, decided),
+  lowerBound: wilsonLowerBound(hits, decided),
+});
+
 const cutoffScore = (
   items: readonly ScoreItem[],
   variant: JudgeVariant,
@@ -126,50 +138,30 @@ const cutoffScore = (
   const decided = decidedItems(items, variant, cutoff);
   const hits = decided.filter((item) => item.outcome.kind === 'recommended').length;
 
-  return {
-    cutoff,
-    decided: decided.length,
-    decideShare: share(decided.length, items.length),
-    agreement: share(hits, decided.length),
-    lowerBound: wilsonLowerBound(hits, decided.length),
-  };
+  return scoreFromTotals(items.length, cutoff, decided.length, hits);
 };
 
 const meetsCutoffBar = (score: CutoffScore): boolean =>
   score.decided >= minimumDecided && score.agreement >= bar;
-
-const sessionTallies = (items: readonly ScoreItem[]): SessionTally[] => {
-  const tallies = new Map<string, SessionTally>();
-
-  for (const item of items) {
-    const known = tallies.get(item.session) ?? { decided: 0, hits: 0 };
-
-    known.decided += 1;
-
-    if (item.outcome.kind === 'recommended') {
-      known.hits += 1;
-    }
-
-    tallies.set(item.session, known);
-  }
-
-  return [...tallies.values()];
-};
 
 const heldOutScore = (
   items: readonly ScoreItem[],
   variant: JudgeVariant,
   cutoff: number,
 ): HeldOutScore => {
-  const score = cutoffScore(items, variant, cutoff);
-  const tallies = sessionTallies(decidedItems(items, variant, cutoff));
-  const bound = sessionLowerBound(tallies);
+  const decided = decidedItems(items, variant, cutoff);
+
+  const summary = sessionSummary(
+    decided.map((item) => ({ session: item.session, hit: item.outcome.kind === 'recommended' })),
+  );
+
+  const score = scoreFromTotals(items.length, cutoff, summary.decided, summary.hits);
 
   return {
     ...score,
-    sessions: tallies.length,
-    sessionLowerBound: bound,
-    meetsBar: score.lowerBound >= bar && bound >= bar,
+    sessions: summary.sessions,
+    sessionLowerBound: summary.lowerBound,
+    meetsBar: score.lowerBound >= bar && summary.lowerBound >= bar,
   };
 };
 

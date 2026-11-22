@@ -1,20 +1,29 @@
 import { expect, it } from 'vitest';
 
-import { sessionLowerBound } from './sessionLowerBound.ts';
-import type { SessionTally } from './sessionLowerBound.ts';
+import { sessionSummary } from './sessionLowerBound.ts';
 
-const bar = 0.95;
+const observations = (session: string, hits: number, misses: number) => [
+  ...Array.from({ length: hits }, () => ({ session, hit: true })),
+  ...Array.from({ length: misses }, () => ({ session, hit: false })),
+];
 
-const oneHitSessions = (count: number): SessionTally[] =>
-  Array.from({ length: count }, () => ({ decided: 1, hits: 1 }));
+it('weights sessions by decided questions rather than averaging sessions', () => {
+  const summary = sessionSummary([
+    ...observations('many-hits', 10, 0),
+    ...observations('some-hits', 10, 0),
+    ...observations('few-misses', 0, 2),
+  ]);
 
-it.for<[string, SessionTally[], { isZero: boolean; meetsBar: boolean }]>([
-  ['no tallies', [], { isZero: true, meetsBar: false }],
-  ['one session with 73 hits', [{ decided: 73, hits: 73 }], { isZero: true, meetsBar: false }],
-  ['600 sessions with one hit each', oneHitSessions(600), { isZero: false, meetsBar: true }],
-  ['599 sessions with one hit each', oneHitSessions(599), { isZero: false, meetsBar: false }],
-])('computes the session lower bound: %s', ([, tallies, expected]) => {
-  const bound = sessionLowerBound(tallies);
+  expect(summary.decided).toBe(22);
+  expect(summary.hits).toBe(20);
+  expect(summary.sessions).toBe(3);
+  expect(summary.lowerBound).toBeCloseTo(0.1145, 3);
+});
 
-  expect({ isZero: bound === 0, meetsBar: bound >= bar }).toEqual(expected);
+it('returns zero for no observations', () => {
+  expect(sessionSummary([]).lowerBound).toBe(0);
+});
+
+it('returns zero for one session with many hits', () => {
+  expect(sessionSummary(observations('one', 73, 0)).lowerBound).toBe(0);
 });

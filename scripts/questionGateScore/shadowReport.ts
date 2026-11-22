@@ -1,7 +1,7 @@
 import { questionGateDecision } from '../../src/questionGate/decision/decision.ts';
 import type { ShadowRecord, ShadowVariant } from '../../src/questionGate/questionGate.ts';
-import { sessionLowerBound } from './sessionLowerBound.ts';
-import type { SessionTally } from './sessionLowerBound.ts';
+import { sessionSummary } from './sessionLowerBound.ts';
+import type { SessionObservation } from './sessionLowerBound.ts';
 
 export interface ShadowReportInput {
   records: readonly ShadowRecord[];
@@ -50,30 +50,22 @@ const isPredictedDecision = (
 ): boolean =>
   questionGateDecision({ verdict: record.judges[variant].verdict, cutoff }).decision === 'decide';
 
-const sessionScores = (
+const sessionObservations = (
   records: readonly ShadowRecord[],
   variant: ShadowVariant,
   cutoff: number,
-): Map<string, SessionTally> => {
-  const scores = new Map<string, SessionTally>();
+): SessionObservation[] => {
+  const observations: SessionObservation[] = [];
 
   for (const record of records) {
     if (!isPredictedDecision(record, variant, cutoff)) {
       continue;
     }
 
-    const known = scores.get(record.sessionId) ?? { decided: 0, hits: 0 };
-
-    known.decided += 1;
-
-    if (isHit(record)) {
-      known.hits += 1;
-    }
-
-    scores.set(record.sessionId, known);
+    observations.push({ session: record.sessionId, hit: isHit(record) });
   }
 
-  return scores;
+  return observations;
 };
 
 const meanMilliseconds = (
@@ -97,11 +89,9 @@ const milliseconds = (value: number | undefined): string =>
 
 export const shadowReport = (input: ShadowReportInput): ShadowReport => {
   const matching = input.records.filter((record) => record.cohort === input.cohort);
-  const scores = sessionScores(matching, input.variant, input.cutoff);
-  const sessionValues = [...scores.values()];
-  const predictions = sessionValues.reduce((total, score) => total + score.decided, 0);
-  const hits = sessionValues.reduce((total, score) => total + score.hits, 0);
-  const agreement = share(hits, predictions);
+  const summary = sessionSummary(sessionObservations(matching, input.variant, input.cutoff));
+  const predictions = summary.decided;
+  const agreement = share(summary.hits, predictions);
   const potentialSaves = predictions;
 
   return {
@@ -110,9 +100,9 @@ export const shadowReport = (input: ShadowReportInput): ShadowReport => {
     cutoff: input.cutoff,
     sampled: matching.length,
     predictions,
-    predictionSessions: scores.size,
+    predictionSessions: summary.sessions,
     agreement,
-    lowerBound: agreement === undefined ? undefined : sessionLowerBound(sessionValues),
+    lowerBound: agreement === undefined ? undefined : summary.lowerBound,
     potentialSaves,
     potentialSaveShare: share(potentialSaves, matching.length),
     actualSaves: 0,

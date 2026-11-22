@@ -121,9 +121,16 @@ it('one held-out session with many hits misses the bar', () => {
     item({ session: '/logs/holdout.jsonl', split: 'holdout' }),
   );
 
-  const report = scoreReport(input([...tuning, ...heldOut]));
+  const askOnly = item({
+    session: '/logs/holdout-ask.jsonl',
+    split: 'holdout',
+    verdicts: answered(0.2),
+  });
+
+  const report = scoreReport(input([...tuning, ...heldOut, askOnly]));
   const heldOutScore = variant(report, 'classifier').heldOut;
 
+  expect(report.sessions.holdout).toBe(2);
   expect(heldOutScore?.lowerBound).toBeGreaterThanOrEqual(0.95);
   expect(heldOutScore?.sessions).toBe(1);
   expect(heldOutScore?.sessionLowerBound).toBe(0);
