@@ -207,7 +207,7 @@ const pureModules = [
   'src/linear/ownership.ts',
   'src/process/stateDecision.ts',
   'src/questionGate/decideDecision.ts',
-  'src/questionGate/decision.ts',
+  'src/questionGate/decision/decision.ts',
   'src/questionGate/examples.ts',
   'src/questionGate/panelVerdict.ts',
   'src/questionGate/shadowDecision.ts',
@@ -487,13 +487,13 @@ const versionedRecords = [
     names: ['event-v1-merge.json', 'event-v2-pass.json', 'event-v2-class.json'],
   },
   {
-    writer: 'src/questionGate/record.ts',
-    fixtures: 'src/questionGate/fixtures/record',
+    writer: 'src/questionGate/record/record.ts',
+    fixtures: 'src/questionGate/record/fixtures/record',
     names: ['current.json', 'newer.json', 'malformed.json'],
   },
   {
-    writer: 'src/questionGate/decisionRecord.ts',
-    fixtures: 'src/questionGate/fixtures/decisionRecord',
+    writer: 'src/questionGate/decision/decisionRecord.ts',
+    fixtures: 'src/questionGate/decision/fixtures/decisionRecord',
     names: ['current.json', 'newer.json', 'malformed.json'],
   },
 ];

@@ -52,7 +52,7 @@ export interface DecidePorts {
   ) => PreparedJudges;
 }
 
-export interface DecideRequest {
+interface DecideRequest {
   questions: readonly [DecideQuestion, ...DecideQuestion[]];
   sessionId: string | undefined;
   cwd: string;
@@ -61,11 +61,11 @@ export interface DecideRequest {
   notify: (text: string) => void;
 }
 
-export type DecideOutcome =
+type DecideOutcome =
   | { kind: 'ask' }
   | { kind: 'decided'; answers: Answer[]; record: string; notice: string };
 
-export interface PreparedDecision {
+interface PreparedDecision {
   run: () => Promise<DecideOutcome>;
 }
 

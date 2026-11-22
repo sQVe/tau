@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { judgeQuestionSchema } from '../judgeSchema.ts';
-import { isRecord } from '../schema.ts';
-import type { ShadowRecordGap } from './record.ts';
-import { readRecordFiles } from './recordFiles.ts';
+import { judgeQuestionSchema } from '../../judgeSchema.ts';
+import { isRecord } from '../../schema.ts';
+import type { ShadowRecordGap } from '../record/record.ts';
+import { readRecordFiles } from '../record/recordFiles.ts';
 
 export interface DecisionRecordRead {
   records: { path: string; record: DecisionRecord }[];

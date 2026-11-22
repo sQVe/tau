@@ -1,4 +1,4 @@
-import { questionGateDecision } from '../../src/questionGate/decision.ts';
+import { questionGateDecision } from '../../src/questionGate/decision/decision.ts';
 import type { ShadowRecord, ShadowVariant } from '../../src/questionGate/questionGate.ts';
 
 export interface ShadowReportInput {

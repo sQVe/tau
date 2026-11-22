@@ -1,7 +1,7 @@
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { errorMessage, isMissingFile } from '../errors.ts';
+import { errorMessage, isMissingFile } from '../../errors.ts';
 import type { ShadowRecordGap } from './record.ts';
 
 interface RecordFileEntry<Value> {

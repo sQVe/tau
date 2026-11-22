@@ -1,5 +1,5 @@
-import { questionGateDecision } from './decision.ts';
-import type { QuestionGateDecision } from './decision.ts';
+import { questionGateDecision } from './decision/decision.ts';
+import type { QuestionGateDecision } from './decision/decision.ts';
 import type { JudgeVerdict } from './questionGate.ts';
 import { questionEligibility } from './shadowDecision.ts';
 import type { QuestionSkipReason, ShadowQuestionFacts } from './shadowDecision.ts';

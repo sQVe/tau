@@ -4,8 +4,8 @@ import { basename, join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
-import { readVersionedRecord, writeRecord } from '../record.ts';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.ts';
+import { readVersionedRecord, writeRecord } from '../../record.ts';
 import { readDecisionRecords, writeDecisionRecord } from './decisionRecord.ts';
 import type { DecisionRecord } from './decisionRecord.ts';
 

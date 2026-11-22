@@ -5,7 +5,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import type { DecisionRecord } from '../../questionGate/decisionRecord.js';
+import type { DecisionRecord } from '../../questionGate/decision/decisionRecord.js';
 import { createEvidenceRepository, readSavedFiles } from './fixtures/evidenceRepository.js';
 
 const question = {

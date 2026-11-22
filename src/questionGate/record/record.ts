@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { judgeQuestionSchema } from '../judgeSchema.ts';
-import { isRecord } from '../schema.ts';
+import { judgeQuestionSchema } from '../../judgeSchema.ts';
+import { isRecord } from '../../schema.ts';
 import { readRecordFiles } from './recordFiles.ts';
 
 export interface ShadowRecordGap {

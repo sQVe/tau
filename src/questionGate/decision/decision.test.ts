@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
+import type { JudgeVerdict } from '../questionGate.ts';
 import { questionGateDecision } from './decision.ts';
-import type { JudgeVerdict } from './questionGate.ts';
 
 const answered = (confidence: number): JudgeVerdict => ({ kind: 'answered', confidence });
 

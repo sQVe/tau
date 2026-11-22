@@ -1,4 +1,4 @@
-import type { JudgeVerdict } from './questionGate.ts';
+import type { JudgeVerdict } from '../questionGate.ts';
 
 export interface QuestionGateDecisionFacts {
   verdict: JudgeVerdict;

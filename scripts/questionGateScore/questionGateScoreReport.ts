@@ -1,5 +1,5 @@
 import type { QuestionGateModels } from '../../src/config/questionGateModels.ts';
-import { questionGateDecision } from '../../src/questionGate/decision.ts';
+import { questionGateDecision } from '../../src/questionGate/decision/decision.ts';
 import type { JudgeVerdict, PastOutcome } from '../../src/questionGate/questionGate.ts';
 import type { SkippedQuestions } from './questionGateScoreLog.ts';
 

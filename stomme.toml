@@ -540,7 +540,7 @@ imports = ["errors"]
 
 [modules.questionGate]
 entry = "src/questionGate/questionGate.ts"
-public = ["src/questionGate/decision.ts", "src/questionGate/examples.ts"]
+public = ["src/questionGate/decision/decision.ts", "src/questionGate/examples.ts"]
 imports = ["errors", "judgeSchema", "schema"]
 
 [modules.record]

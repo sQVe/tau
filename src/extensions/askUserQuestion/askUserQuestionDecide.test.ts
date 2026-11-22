@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
 import { decideDeadlineMilliseconds } from '../../questionGate/decideDecision.js';
-import type { DecisionRecordWriter } from '../../questionGate/decisionRecord.js';
+import type { DecisionRecordWriter } from '../../questionGate/decision/decisionRecord.js';
 import type { JudgeVerdict } from '../../questionGate/questionGate.js';
 import askUserQuestionExtension from './askUserQuestion.js';
 import type { DecidePorts } from './decide.js';

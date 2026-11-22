@@ -136,7 +136,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'questionGate',
     entry: 'questionGate/questionGate',
-    publicFiles: ['questionGate/decision', 'questionGate/examples'],
+    publicFiles: ['questionGate/decision/decision', 'questionGate/examples'],
   },
   { name: 'record', entry: 'record', publicFiles: [] },
   { name: 'reviewBots', entry: 'reviewBots/reviewBots', publicFiles: [] },
