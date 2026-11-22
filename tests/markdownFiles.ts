@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
+import { headingSlugs } from '../src/instructions/markdownLinks.js';
+
 export type DocumentProblemKind =
   | 'broken-link'
   | 'missing-heading'
@@ -54,8 +56,6 @@ const atxHeading = /^ {0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/;
 const setextUnderline = /^ {0,3}(?:=+|-+)[ \t]*$/;
 const paragraphLine = /^ {0,3}(?![#>|*+-]|\d+[.)][ \t])\S/;
 const frontmatter = /^---\n[\s\S]*?\n---\n/;
-const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
-const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 const notPathCharacter = /[\s<>*?$~{}[\]:@|"'=,()]/;
 
 // The changelog records history, so it may name paths that no longer exist.
@@ -101,39 +101,6 @@ const headingsOf = (markdown: string) => {
   });
 };
 
-// GitHub keeps the rendered text of a heading, so code and link markup do not reach the slug.
-const slugOf = (heading: string) =>
-  heading
-    .replaceAll(headingLink, '$1')
-    .replaceAll('`', '')
-    .trim()
-    .toLowerCase()
-    .replaceAll(notSlugCharacter, '')
-    .replaceAll(' ', '-');
-
-// GitHub numbers repeated slugs from the second one on and skips numbers another heading already
-// took: `Notes`, `Notes`, `Notes-1` give `notes`, `notes-1`, `notes-1-1`.
-const headingSlugs = (markdown: string): Set<string> => {
-  const counts = new Map<string, number>();
-  const slugs = new Set<string>();
-
-  for (const heading of headingsOf(markdown)) {
-    const base = slugOf(heading);
-    let slug = base;
-
-    while (slugs.has(slug)) {
-      const count = (counts.get(base) ?? 0) + 1;
-
-      counts.set(base, count);
-      slug = `${base}-${count}`;
-    }
-
-    slugs.add(slug);
-  }
-
-  return slugs;
-};
-
 const decoded = (text: string) => {
   try {
     return decodeURIComponent(text);
@@ -171,7 +138,7 @@ const targetProblem = (
   const fragment = decoded(target.slice(fragmentStart + 1));
   const targetMarkdown = path === '' ? markdown : files.readMarkdown(targetFile);
 
-  if (fragment !== undefined && headingSlugs(targetMarkdown).has(fragment)) {
+  if (fragment !== undefined && headingSlugs(headingsOf(targetMarkdown)).has(fragment)) {
     return undefined;
   }
 
