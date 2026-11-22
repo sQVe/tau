@@ -24,10 +24,11 @@ const stderrExcerptLength = 500;
 
 const prompt = `This is an automated smoke test. Make exactly these tool calls, in this order, with no other tool calls and no other changes.
 1. Call run_tests with behavior "answer", testFullName "answer returns 41", files ["src/answer.test.ts"], scope "focused".
-2. Call edit on src/answer.ts: replace the line "export const answer = () => 41;" with "export const answer = () => 41; // checked".
-3. Call commit with one group: files ["${smokeCommitFile}"], subject "${smokeCommitSubject}".
-4. Call codemode with this script: const result = await tools.bash({ command: "printf tau-smoke-%s $((7000+431))" }); return result.output;
-After step 4, reply with the word done.`;
+2. Call read on src/answer.ts. Wait for its result before step 3.
+3. Call edit on src/answer.ts: replace the line "export const answer = () => 41;" with "export const answer = () => 41; // checked".
+4. Call commit with one group: files ["${smokeCommitFile}"], subject "${smokeCommitSubject}".
+5. Call codemode with this script: const result = await tools.bash({ command: "printf tau-smoke-%s $((7000+431))" }); return result.output;
+After step 5, reply with the word done.`;
 
 const readGitFacts = (repository: string): GitFacts => {
   const log = git(repository, ['log', '--format=%x00%s', '--name-only']);

@@ -35,6 +35,19 @@ for (const { language, label, customType, path } of languageCases) {
     expect(fixture.api.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it(`allows the first ${label} edit in the request after a read delivered the rules`, async ({
+    onTestFinished,
+  }) => {
+    const fixture = await setupLanguageRules(onTestFinished);
+
+    await fixture.request();
+    await fixture.call('read', path);
+    await fixture.request([ruleMessage]);
+
+    expect(await fixture.call('edit', path)).toEqual([undefined]);
+    expect(fixture.api.sendMessage).toHaveBeenCalledOnce();
+  });
+
   it(`blocks a ${label} write until a model request sees the rules`, async ({ onTestFinished }) => {
     const fixture = await setupLanguageRules(onTestFinished);
 
