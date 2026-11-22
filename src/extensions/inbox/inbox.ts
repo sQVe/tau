@@ -15,7 +15,6 @@ import { readProcessGroup } from './processGroup.js';
 import { createStartupGate } from './startup.js';
 
 export interface InboxExtensionDependencies {
-  owner: symbol;
   hc: HcRuntime;
   socketDirectory: () => string;
   inboxDirectory: () => string;
@@ -25,12 +24,12 @@ export interface InboxExtensionDependencies {
 export const createInboxExtension =
   (dependencies: InboxExtensionDependencies) =>
   (pi: ExtensionAPI): void => {
-    pi.on('tool_call', (event) =>
-      holdsInbox(dependencies.owner) ? guardTerminalTyping(event) : undefined,
-    );
+    const owner = Symbol('tau inbox');
+
+    pi.on('tool_call', (event) => (holdsInbox(owner) ? guardTerminalTyping(event) : undefined));
 
     registerInboxLifecycle(pi, {
-      owner: dependencies.owner,
+      owner,
       hc: dependencies.hc,
       terminal: currentTerminalAddress,
       socketDirectory: dependencies.socketDirectory,
@@ -53,7 +52,6 @@ const currentSocketDirectory = (): string => {
 
 export default function inboxExtension(pi: ExtensionAPI): void {
   createInboxExtension({
-    owner: Symbol('tau inbox'),
     hc: { exec: piExec(pi), connect, cwd: process.cwd() },
     socketDirectory: currentSocketDirectory,
     inboxDirectory: () => join(getAgentDir(), 'tau', 'inbox'),

@@ -178,7 +178,6 @@ const workerInbox = async (hc: HcSession, worker: WorkerSession) => {
   }
 
   return createInboxExtension({
-    owner: Symbol('tau inbox'),
     hc: hc.runtime,
     socketDirectory: () => socketDirectoryFor(uid),
     inboxDirectory: () => recordDirectory(worker.agentDirectory),

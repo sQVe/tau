@@ -10,8 +10,11 @@ import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
-import { setAcceptCheck, releaseInbox } from '../../inbox/inbox.js';
-import { createInboxExtension } from './inbox.js';
+import { currentTerminalAddress } from '../../hc/hc.js';
+import { releaseInbox, setAcceptCheck } from '../../inbox/inbox.js';
+import { createWake } from '../../wake/wake.js';
+import { registerInboxLifecycle } from './lifecycle.js';
+import { createStartupGate } from './startup.js';
 
 interface HcState {
   labels: Map<string, string>;
@@ -27,7 +30,6 @@ interface HarnessOptions {
   state?: HcState;
   socketDirectory?: string;
   processGroup?: number;
-  owner?: symbol;
 }
 
 const raceWaitMilliseconds = 200;
@@ -131,7 +133,9 @@ const contextFor = (sessionId: string, notify: (message: string) => void): Exten
 const startHarness = (options: HarnessOptions = {}) => {
   const state = options.state ?? hcState();
   const socketDirectory = options.socketDirectory ?? join(root, 'sockets');
-  const owner = options.owner ?? Symbol('tau inbox');
+  // A second process has its own inbox slot. The cases below call `releaseInbox` to simulate that
+  // separate slot for a replacement attachment.
+  const owner = Symbol('tau inbox');
   const fake = fakeExtensionApi();
   const notices: string[] = [];
   const firstNotice = Promise.withResolvers<undefined>();
@@ -141,13 +145,16 @@ const startHarness = (options: HarnessOptions = {}) => {
     firstNotice.resolve(undefined);
   };
 
-  createInboxExtension({
+  registerInboxLifecycle(fake.pi, {
     owner,
     hc: { exec: hcExec(state), connect: () => Promise.reject(new Error('no connect')), cwd: root },
+    terminal: currentTerminalAddress,
     socketDirectory: () => socketDirectory,
     inboxDirectory: () => join(root, 'records'),
     processGroup: () => Promise.resolve(options.processGroup ?? foregroundProcessGroup),
-  })(fake.pi);
+    gate: createStartupGate(fake.pi),
+    wake: createWake(fake.pi),
+  });
 
   const emit = async (name: string, event: unknown, context: ExtensionContext) => {
     for (const handler of fake.handlers.get(name) ?? []) {
@@ -382,6 +389,31 @@ it('leaves a label that names another socket at shutdown', async () => {
   expect(Object.fromEntries(harness.state.labels)).toEqual({
     'tau.inbox': 'rpc1:/tmp/tau-1000/other.sock',
   });
+});
+
+it('releases the inbox claim when withdrawal fails at shutdown', async () => {
+  const state = hcState();
+  const first = startHarness({ state });
+  const firstSession = randomUUID();
+  const replacement = startHarness({ state });
+  const replacementSession = randomUUID();
+
+  await first.start(firstSession);
+  state.failLabel = true;
+
+  await expect(first.shutdown(firstSession)).rejects.toThrow('hc label t7 failed: label refused');
+
+  state.failLabel = false;
+  await replacement.start(replacementSession);
+  cleanups.push(() => replacement.shutdown(replacementSession));
+
+  expect(Object.fromEntries(state.labels)).toEqual({
+    'tau.inbox': `rpc1:${socketOf(replacementSession)}`,
+  });
+
+  await expect(
+    exchange(socketOf(replacementSession), handoverTo(replacementSession)),
+  ).resolves.toMatchObject({ sessionId: replacementSession });
 });
 
 it('refuses an answer request when a non-worker session has no answer-request check', async () => {
