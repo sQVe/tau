@@ -153,9 +153,11 @@ it('warns about an unknown shadow key and still scores', async ({ onTestFinished
   expect(result.status).toBe(0);
   expect(result.stdout).toContain('Agreement: n/a');
 
-  expect(result.stderr).toContain(
-    `Tau config ${join(agentDirectory, 'tau.json')}: questionGate.shadow.extra is not a known key and was ignored.`,
-  );
+  const userFile = join(agentDirectory, 'tau.json');
+  const warnings = result.stderr.match(/questionGate\.shadow\.extra/gu) ?? [];
+
+  expect(warnings).toHaveLength(1);
+  expect(result.stderr).toContain(userFile);
 });
 
 it('reports n/a when every shadow record is a gap', async ({ onTestFinished }) => {

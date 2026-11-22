@@ -40,6 +40,19 @@ const shadow: ShadowConfig = {
 
 const uiFixture = () => ({ notify: vi.fn<(message: string, level?: string) => void>() });
 
+type UiFixture = ReturnType<typeof uiFixture>;
+
+const expectWarning = (ui: UiFixture, userFile: string, keyPath: string): void => {
+  const calls = ui.notify.mock.calls.filter(([message]) => message.includes(keyPath));
+
+  expect(calls).toHaveLength(1);
+
+  const [message, level] = calls[0] ?? [];
+
+  expect(message).toContain(userFile);
+  expect(level).toBe('warning');
+};
+
 const shadowCohortOf = (value: ShadowConfig): string =>
   shadowCohort({ ...models, decide: false, shadow: value });
 
@@ -55,10 +68,7 @@ it('reads an extra key beside classifier and warns once with its path', ({ onTes
 
   expect(readQuestionGateConfig(location, ui)).toEqual({ ...models, decide: false });
 
-  expect(ui.notify).toHaveBeenCalledWith(
-    `Tau config ${userFile}: questionGate.extra is not a known key and was ignored.`,
-    'warning',
-  );
+  expectWarning(ui, userFile, 'questionGate.extra');
 
   expect(ui.notify).toHaveBeenCalledTimes(1);
 
@@ -143,15 +153,8 @@ it('reads extra keys inside shadow and examples, warns once per path, and keeps 
 
   expect(readCohort).toBe(cohort);
 
-  expect(ui.notify).toHaveBeenCalledWith(
-    `Tau config ${userFile}: questionGate.shadow.extra is not a known key and was ignored.`,
-    'warning',
-  );
-
-  expect(ui.notify).toHaveBeenCalledWith(
-    `Tau config ${userFile}: questionGate.shadow.examples[0].question.options[0].note is not a known key and was ignored.`,
-    'warning',
-  );
+  expectWarning(ui, userFile, 'questionGate.shadow.extra');
+  expectWarning(ui, userFile, 'questionGate.shadow.examples[0].question.options[0].note');
 
   expect(ui.notify).toHaveBeenCalledTimes(2);
 });

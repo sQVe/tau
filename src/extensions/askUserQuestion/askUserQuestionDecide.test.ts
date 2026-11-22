@@ -569,7 +569,6 @@ it('reads an attached, a detached, and an unborn HEAD through the default Git ad
       cwd: repository,
       projectTrusted: false,
       registry: {} as ModelRegistry,
-      notify: () => undefined,
       signal: undefined,
       ui: { notify: () => undefined },
     });

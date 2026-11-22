@@ -47,7 +47,6 @@ interface DecideRequest {
   cwd: string;
   projectTrusted: boolean;
   registry: ModelRegistry;
-  notify: (text: string) => void;
   signal: AbortSignal | undefined;
   ui: ConfigWarnings;
 }
@@ -235,7 +234,7 @@ const runDecision = async (
       return { kind: 'cancelled' };
     }
 
-    request.notify(notice);
+    request.ui.notify(notice, 'info');
 
     return await saveDecision(ports, request, sharedRoot, record, notice);
   } catch {

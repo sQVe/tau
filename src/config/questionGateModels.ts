@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { shadowVariantSchema } from '../judgeSchema.ts';
+import { openPastAnswerSchema, shadowVariantSchema } from '../judgeSchema.ts';
 import type { PastAnswer, ShadowVariant } from '../judgeSchema.ts';
+import { anyItem, isRecord } from '../schema.ts';
 import type { KnownKeys } from '../schema.ts';
 import { readUserOnlyKey, warnUnknownKeys } from './config.ts';
 import type { ConfigLocation, ConfigWarnings } from './config.ts';
@@ -33,58 +34,50 @@ const questionGateModelsSchema = Type.Object({
 
 // The config schemas accept unknown keys, which warnUnknownKeys reports. Saved records stay strict
 // in judgeSchema.ts.
-const configOptionSchema = Type.Object({
-  label: Type.String(),
-  description: Type.String(),
-  recommended: Type.Boolean(),
-});
-
-const configQuestionSchema = Type.Object({
-  question: Type.String(),
-  problem: Type.String(),
-  impact: Type.String(),
-  options: Type.Array(configOptionSchema),
-});
-
-const configOutcomeSchema = Type.Union([
-  Type.Object({ kind: Type.Literal('recommended') }),
-  Type.Object({ kind: Type.Literal('otherOption'), label: Type.String() }),
-  Type.Object({ kind: Type.Literal('typed'), text: Type.String() }),
-]);
-
-const configPastAnswerSchema = Type.Object({
-  time: Type.Number(),
-  question: configQuestionSchema,
-  outcome: configOutcomeSchema,
-});
-
 const shadowSchema = Type.Object({
   variant: shadowVariantSchema,
   cutoff: Type.Number({ minimum: 0, maximum: 1 }),
-  examples: Type.Optional(Type.Array(configPastAnswerSchema, { maxItems: 5 })),
+  examples: Type.Optional(Type.Array(openPastAnswerSchema, { maxItems: 5 })),
 });
 
-const knownOptionKeys: KnownKeys = { label: true, description: true, recommended: true };
+const knownKeysOf = (schema: unknown): KnownKeys => {
+  if (!isRecord(schema)) {
+    return {};
+  }
 
-const knownQuestionKeys: KnownKeys = {
-  question: true,
-  problem: true,
-  impact: true,
-  options: knownOptionKeys,
+  const variants = schema.anyOf;
+
+  if (Array.isArray(variants)) {
+    return Object.fromEntries(variants.flatMap((variant) => Object.entries(knownKeysOf(variant))));
+  }
+
+  const { properties } = schema;
+
+  if (!isRecord(properties)) {
+    return {};
+  }
+
+  const entries = Object.entries(properties).map(([key, child]) => {
+    if (isRecord(child) && child.type === 'array') {
+      return [key, { [anyItem]: knownKeysOf(child.items) }] as const;
+    }
+
+    const isObject = isRecord(child) && child.type === 'object';
+    const isUnion = isRecord(child) && Array.isArray(child.anyOf);
+    const nested = isObject || isUnion;
+
+    return [key, nested ? knownKeysOf(child) : true] as const;
+  });
+
+  return Object.fromEntries(entries);
 };
 
-const knownOutcomeKeys: KnownKeys = { kind: true, label: true, text: true };
-
-const knownExampleKeys: KnownKeys = {
-  time: true,
-  question: knownQuestionKeys,
-  outcome: knownOutcomeKeys,
-};
+const knownExampleKeys = knownKeysOf(openPastAnswerSchema);
 
 const knownShadowKeys: KnownKeys = {
   variant: true,
   cutoff: true,
-  examples: knownExampleKeys,
+  examples: { [anyItem]: knownExampleKeys },
 };
 
 const knownQuestionGateKeys: KnownKeys = {

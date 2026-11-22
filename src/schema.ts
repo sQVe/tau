@@ -3,7 +3,8 @@ import type { TSchema, TUnsafe } from 'typebox';
 import { Value } from 'typebox/value';
 
 // A key set to `true` is a known leaf. A nested object lists the known keys below it. The key `*`
-// describes every key not listed, for objects that map free names to entries.
+// describes every key not listed, for objects that map free names to entries. The key `[]`
+// describes each item of an array value at that node.
 export interface KnownKeys {
   readonly [key: string]: KnownKeys | true;
 }
@@ -25,9 +26,17 @@ export const stringEnum = <const Values extends readonly string[]>(
 
 export const anyKey = '*';
 
+export const anyItem = '[]';
+
 export const findUnknownKeys = (value: unknown, known: KnownKeys, path: string): string[] => {
   if (Array.isArray(value)) {
-    return value.flatMap((item, index) => findUnknownKeys(item, known, `${path}[${index}]`));
+    const itemKeys = known[anyItem];
+
+    if (itemKeys === undefined || itemKeys === true) {
+      return [];
+    }
+
+    return value.flatMap((item, index) => findUnknownKeys(item, itemKeys, `${path}[${index}]`));
   }
 
   if (!isRecord(value)) {
