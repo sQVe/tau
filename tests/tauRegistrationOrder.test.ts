@@ -143,7 +143,10 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   await inboxStart.handler({} as never, context);
   await architectStart.handler({} as never, context);
 
-  expect(existsSync(socketPath)).toBe(true);
+  await vi.waitFor(() => {
+    expect(existsSync(socketPath)).toBe(true);
+  });
+
   expect(await readLiveLockHolder(lockPath)).toBeDefined();
 
   onTestFinished(async () => {

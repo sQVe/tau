@@ -1,7 +1,9 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { currentTerminalAddress, get, label } from '../../hc/hc.js';
+import { currentTerminalAddress, label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { waitForOwnership } from '../../hc/ownership.js';
+import { readProcessGroup } from '../../hc/processGroup.js';
 import { shouldClearLabels, shouldLabelSession, shouldReadTerminal } from './sessionDecision.js';
 import type { ReadFacts, StartFacts } from './sessionDecision.js';
 
@@ -9,14 +11,6 @@ export interface SessionResume {
   sessionStarted: (context: ExtensionContext) => Promise<void>;
   sessionShutdown: () => Promise<void>;
 }
-
-const readTerminal = async (hc: HcRuntime, terminalId: string) => {
-  try {
-    return await get(hc, terminalId);
-  } catch {
-    return undefined;
-  }
-};
 
 const writeLabels = async (
   hc: HcRuntime,
@@ -33,6 +27,8 @@ const writeLabels = async (
 export const createSessionResume = (hc: HcRuntime): SessionResume => {
   let signalReceived = false;
   let ownsSession = false;
+  let controller: AbortController | undefined;
+  let pending: Promise<void> | undefined;
 
   const noteSignal = () => {
     signalReceived = true;
@@ -49,7 +45,10 @@ export const createSessionResume = (hc: HcRuntime): SessionResume => {
     process.off('SIGHUP', noteSignal);
   };
 
-  const labelOwnTerminal = async (context: ExtensionContext): Promise<void> => {
+  const labelOwnTerminal = async (
+    current: AbortController,
+    context: ExtensionContext,
+  ): Promise<void> => {
     const readFacts: ReadFacts = {
       interactive: context.mode === 'tui',
       terminalId: currentTerminalAddress(),
@@ -59,13 +58,20 @@ export const createSessionResume = (hc: HcRuntime): SessionResume => {
       return;
     }
 
-    const terminal = await readTerminal(hc, readFacts.terminalId);
+    const processGroup = await readProcessGroup(hc.exec, process.pid);
+
+    const ownership = await waitForOwnership(hc, {
+      terminal: readFacts.terminalId,
+      processGroup,
+      signal: current.signal,
+    });
+
+    current.signal.throwIfAborted();
 
     const facts: StartFacts = {
       interactive: readFacts.interactive,
       terminalId: readFacts.terminalId,
-      foregroundPid: terminal?.foreground?.pid,
-      processPid: process.pid,
+      owner: ownership === 'owner',
       sessionFile: context.sessionManager.getSessionFile(),
       signalReceived,
     };
@@ -94,15 +100,33 @@ export const createSessionResume = (hc: HcRuntime): SessionResume => {
     await writeLabels(hc, terminalId, { 'pi.session': '', 'pi.cwd': '' });
   };
 
+  const endCurrentStart = async (): Promise<void> => {
+    const ended = controller;
+    const endedPending = pending;
+
+    ended?.abort();
+    controller = undefined;
+    pending = undefined;
+
+    await endedPending?.catch(() => undefined);
+  };
+
   return {
     async sessionStarted(context) {
       stopListeningForSignals();
       listenForSignals();
       ownsSession = false;
 
-      await labelOwnTerminal(context);
+      await endCurrentStart();
+
+      const current = new AbortController();
+
+      controller = current;
+      pending = labelOwnTerminal(current, context).catch(() => undefined);
     },
     async sessionShutdown() {
+      await endCurrentStart();
+
       await new Promise((resolve) => {
         setImmediate(resolve);
       });
