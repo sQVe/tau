@@ -43,13 +43,24 @@ export { panelMember } from './panelMember.ts';
 export { judgeWithPanel, panelTimeoutMilliseconds } from './panelJudge.ts';
 export { readShadowRecords, writeShadowRecord } from './record.ts';
 
+export type { QuestionGateDecision } from './decision.ts';
+
+export { decideCall, decideDeadlineMilliseconds, decideEligibility } from './decideDecision.ts';
+export type { DecideCall, DecideCallFacts, DecideEligibility } from './decideDecision.ts';
+
 export {
+  questionEligibility,
   shadowBatchIntervalMilliseconds,
   shadowEligibility,
   shadowRateAllows,
 } from './shadowDecision.ts';
 
-export type { ShadowEligibility, ShadowQuestionFacts, ShadowSkipReason } from './shadowDecision.ts';
+export type {
+  QuestionSkipReason,
+  ShadowEligibility,
+  ShadowQuestionFacts,
+  ShadowSkipReason,
+} from './shadowDecision.ts';
 
 export type {
   ShadowRecord,

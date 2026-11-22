@@ -206,6 +206,7 @@ const pureModules = [
   'src/linear/descriptionMatch.ts',
   'src/linear/ownership.ts',
   'src/process/stateDecision.ts',
+  'src/questionGate/decideDecision.ts',
   'src/questionGate/decision.ts',
   'src/questionGate/examples.ts',
   'src/questionGate/panelVerdict.ts',
