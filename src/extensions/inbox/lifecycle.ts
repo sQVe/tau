@@ -82,7 +82,7 @@ export const registerInboxLifecycle = (
 ): void => {
   const { hc, gate } = dependencies;
   let generation: Generation | undefined;
-  let listener: InboxListener | undefined;
+  let listener: Promise<InboxListener> | undefined;
   let runActive = false;
 
   const deliverAll = async (current: Generation): Promise<void> => {
@@ -106,7 +106,10 @@ export const registerInboxLifecycle = (
     const current = listener;
 
     listener = undefined;
-    await current?.stop();
+
+    const started = await current?.catch(() => undefined);
+
+    await started?.stop();
   };
 
   const advertise = async (current: Generation, context: ExtensionContext): Promise<void> => {
@@ -160,7 +163,7 @@ export const registerInboxLifecycle = (
 
     current.receiver = receiver;
 
-    listener = await startInbox({
+    const started = startInbox({
       sessionId: current.sessionId,
       terminal,
       directory: dependencies.socketDirectory(),
@@ -173,6 +176,9 @@ export const registerInboxLifecycle = (
       },
       withdraw: (path) => removeOwnLabel(hc, terminal, path),
     });
+
+    listener = started;
+    await started;
   };
 
   const endGeneration = (): void => {

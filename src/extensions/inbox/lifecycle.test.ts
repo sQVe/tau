@@ -24,6 +24,7 @@ interface HcState {
   failGetAfterLabel?: boolean;
   foregroundPid?: number | null;
   afterRead?: (() => Promise<void>) | undefined;
+  afterLabel?: (() => Promise<void>) | undefined;
 }
 
 interface HarnessOptions {
@@ -109,6 +110,11 @@ const hcExec = (state: HcState): Exec => {
         state.labels.set(key, value);
       }
     }
+
+    const { afterLabel } = state;
+
+    state.afterLabel = undefined;
+    await afterLabel?.();
 
     if (state.malformedLabelReply === true) {
       return succeededResult('{');
@@ -814,6 +820,42 @@ it('starts no inbox when the session ends while the terminal is read', async () 
 
   expect(Object.fromEntries(state.labels)).toEqual({});
   expect(existsSync(socketOf(sessionId))).toBe(false);
+  expect(harness.notices).toEqual([]);
+});
+
+it('starts no inbox when the session ends while the label is written', async () => {
+  const state = hcState();
+  const harness = startHarness({ state });
+  const sessionId = randomUUID();
+  const labelWritten = Promise.withResolvers<undefined>();
+  const releaseLabel = Promise.withResolvers<undefined>();
+
+  state.afterLabel = () => {
+    labelWritten.resolve(undefined);
+
+    return releaseLabel.promise;
+  };
+
+  const starting = harness.start(sessionId);
+
+  cleanups.push(async () => {
+    releaseLabel.resolve(undefined);
+    await starting;
+    await harness.shutdown(sessionId);
+  });
+
+  await labelWritten.promise;
+
+  const shutdown = harness.shutdown(sessionId);
+
+  releaseLabel.resolve(undefined);
+  await shutdown;
+
+  expect(existsSync(socketOf(sessionId))).toBe(false);
+  expect(Object.fromEntries(state.labels)).toEqual({});
+
+  await starting;
+
   expect(harness.notices).toEqual([]);
 });
 
