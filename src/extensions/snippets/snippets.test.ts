@@ -120,7 +120,7 @@ const renderedLines = (content: WidgetContent) => {
 };
 
 // The text inside the box frame, without the frame and the padding after each line.
-const boxBody = (lines: string[] | undefined) =>
+const boxBody = (lines: readonly string[] | undefined) =>
   lines?.slice(1, -1).map((line) => line.slice(2, -2).trimEnd());
 
 // Builds the installed editor the way Pi does and renders a frame after each step.

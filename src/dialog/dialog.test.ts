@@ -101,7 +101,7 @@ const plainTheme = {
 
 it.each([12, 24])('keeps long confirmations within a %s-row terminal', async (rows) => {
   const message = Array.from({ length: 40 }, (_, index) => `Write ${index + 1}`).join('\n');
-  const pages: string[][] = [];
+  const pages: (readonly string[])[] = [];
 
   const context = customContext(
     (component) => {
@@ -181,7 +181,7 @@ it('scrolls wrapped message rows both ways without changing No selection', async
 it('refits the message after terminal height and width changes', async () => {
   const dimensions = { rows: 18, columns: 80 };
   const message = Array.from({ length: 30 }, (_, index) => `Write ${index + 1}`).join('\n');
-  const pages: string[][] = [];
+  const pages: (readonly string[])[] = [];
 
   const context = customContext(
     (component) => {
@@ -261,8 +261,8 @@ const observedDialog = async (
   options: { keybindings?: KeybindingsManager; rows?: number; message?: string } = {},
 ) => {
   const closed: boolean[] = [];
-  const pages: string[][] = [];
-  const screens: string[][] = [];
+  const pages: (readonly string[])[] = [];
+  const screens: (readonly string[])[] = [];
   let requests = 0;
 
   const ui = {
@@ -319,7 +319,7 @@ const observedDialog = async (
   return { answer, closed, pages, screens };
 };
 
-const markedRow = (page: string[]) =>
+const markedRow = (page: readonly string[]) =>
   page.filter((row) => row.includes('→')).map((row) => row.trim());
 
 it('closes with No once on Escape', async () => {
@@ -387,7 +387,7 @@ it('shows the new selection and scroll position after each key', async () => {
 });
 
 it('frames the full dialog with colored borders around the options', async () => {
-  let page: string[] = [];
+  let page: readonly string[] = [];
 
   const context = customContext((component) => {
     page = component.render(40);

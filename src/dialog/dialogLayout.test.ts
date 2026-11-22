@@ -132,7 +132,7 @@ it.each([
 ])(
   'keeps confirmation controls visible with $widgetRows widget rows in a $rows-row screen',
   async ({ rows, widgetRows }) => {
-    const pages: { visible: string[]; dialog: string[] }[] = [];
+    const pages: { visible: string[]; dialog: readonly string[] }[] = [];
     const terminal = terminalFor(rows);
 
     const context = layoutContext(terminal, widgetRows, (screen, sendInput, component) => {
