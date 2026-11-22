@@ -155,7 +155,7 @@ printf '%s\n' "$log_two" > "$evidence/session-log-two.txt"
   `preview`, no `multiSelect`, and `"confidence":0.99`.
 - `$evidence/result.json` holds `"kind":"decided"`, the selected label `Stacked`, and a `record`
   path. It does not hold a `notice` field.
-- `$evidence/result-text.txt` holds one `Decided: Stacked, because One column.` line.
+- `$evidence/result-text.txt` holds one `Decided: Stacked, because One column. Simple, but wide screens waste space.` line.
 - `$evidence/record.json` holds `"version":1`, `"kind":"decision"`, the scratch branch and head, the
   same question, the choice `Stacked`, and `"variant":"agent"` with `"cutoff":0.9`.
 - `$evidence/dialog-result.json` holds `"kind":"declined"`.
