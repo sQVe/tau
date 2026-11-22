@@ -323,7 +323,6 @@ it('loads Tau as a Pi package without extension warnings', async ({ onTestFinish
     noThemes: true,
   });
 
-  // Loading Tau starts no session, so nothing claims the process-wide inbox.
   await loader.reload();
 
   const { errors, warnings } = loader.getExtensions();

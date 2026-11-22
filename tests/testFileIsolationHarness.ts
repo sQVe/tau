@@ -69,8 +69,6 @@ if (testPath !== undefined && mocksModules(readFileSync(testPath, 'utf8'))) {
   });
 }
 
-// Every Tau load in this process shares one inbox slot, and only a session's shutdown releases it.
-// A file that starts a session without shutting it down would leave later files with no inbox.
 afterAll(() => {
   const slot = globalThis.tauInboxSlot;
 
