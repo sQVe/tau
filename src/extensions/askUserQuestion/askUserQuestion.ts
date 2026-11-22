@@ -129,8 +129,8 @@ export default function askUserQuestionExtension(
       'Ask the user up to 4 structured questions (2-4 options each) when requirements are ambiguous',
     parameters: questionParams,
 
-    async execute(_toolCallId, params, _signal, _onUpdate, context) {
-      return askQuestions(params.questions, context, shadow, decider);
+    async execute(_toolCallId, params, signal, _onUpdate, context) {
+      return askQuestions(params.questions, context, shadow, decider, signal);
     },
   });
 }

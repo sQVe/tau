@@ -1,7 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { customWithBlockedStatus } from '../../dialog/blockedStatus.js';
-import type { Decider } from './decide.js';
+import type { DecideOutcome, Decider } from './decide.js';
 import { questionDialog } from './dialog.js';
 import type { AskedQuestion, DialogResult } from './dialog.js';
 import type { Answer } from './questionnaire.js';
@@ -49,6 +49,21 @@ const responseText = (result: DialogResult) => {
 const decidedText = (notice: string) =>
   `The question gate answered this call instead of the user:\n${notice}\nThis is not the user's answer. It never approves publishing, pushing, or posting.`;
 
+const decisionResponse = (decision: DecideOutcome | undefined): QuestionResponse | undefined => {
+  if (decision?.kind === 'cancelled') {
+    throw new Error('The ask_user_question call was cancelled.');
+  }
+
+  if (decision?.kind !== 'decided') {
+    return undefined;
+  }
+
+  return {
+    content: [{ type: 'text', text: decidedText(decision.notice) }],
+    details: { kind: 'decided', answers: decision.answers, record: decision.record },
+  };
+};
+
 const sessionIdOf = (sessionManager: ExtensionContext['sessionManager']): string | undefined => {
   try {
     const sessionId = sessionManager.getSessionId();
@@ -72,6 +87,7 @@ export const askQuestions = async (
   context: ExtensionContext,
   shadow: ShadowRunner,
   decider: Decider,
+  signal: AbortSignal | undefined,
 ): Promise<QuestionResponse> => {
   if (context.mode !== 'tui') {
     throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
@@ -101,15 +117,14 @@ export const askQuestions = async (
           notify: (text) => {
             context.ui.notify(text, 'info');
           },
+          signal,
         });
 
   const decision = attempt === undefined ? undefined : await attempt;
+  const decided = decisionResponse(decision);
 
-  if (decision?.kind === 'decided') {
-    return {
-      content: [{ type: 'text', text: decidedText(decision.notice) }],
-      details: { kind: 'decided', answers: decision.answers, record: decision.record },
-    };
+  if (decided !== undefined) {
+    return decided;
   }
 
   const open = questionDialog(questions);

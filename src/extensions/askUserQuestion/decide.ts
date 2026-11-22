@@ -48,10 +48,12 @@ interface DecideRequest {
   projectTrusted: boolean;
   registry: ModelRegistry;
   notify: (text: string) => void;
+  signal: AbortSignal | undefined;
 }
 
-type DecideOutcome =
+export type DecideOutcome =
   | { kind: 'ask' }
+  | { kind: 'cancelled' }
   | { kind: 'decided'; answers: Answer[]; record: string; notice: string };
 
 export interface Decider {
@@ -81,20 +83,31 @@ const defaultDecidePorts: DecidePorts = {
   prepareJudges,
 };
 
+const isCancelled = (request: DecideRequest): boolean => request.signal?.aborted === true;
+
 const judgeAll = async (
   judges: PreparedJudges,
   variant: ShadowVariant,
   rows: readonly [EligibleAskedQuestion, ...EligibleAskedQuestion[]],
   controller: AbortController,
+  signal: AbortSignal | undefined,
 ): Promise<[JudgedAskedQuestion, ...JudgedAskedQuestion[]]> => {
   const deadline = Promise.withResolvers<JudgeVerdict>();
 
-  const timer = setTimeout(() => {
+  const cancel = () => {
     controller.abort();
     deadline.resolve({ kind: 'timeout' });
-  }, decideDeadlineMilliseconds);
+  };
+
+  const timer = setTimeout(cancel, decideDeadlineMilliseconds);
+
+  signal?.addEventListener('abort', cancel, { once: true });
 
   try {
+    if (signal?.aborted === true) {
+      cancel();
+    }
+
     return await Promise.all(
       mapNonEmpty(rows, async (row) => {
         const question = judgeQuestionOf(row.question);
@@ -109,6 +122,7 @@ const judgeAll = async (
     );
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
   }
 };
 
@@ -154,11 +168,33 @@ const runDecision = async (
   sessionId: string,
   rows: readonly [EligibleAskedQuestion, ...EligibleAskedQuestion[]],
 ): Promise<DecideOutcome> => {
+  const controller = new AbortController();
+
+  const cancel = () => {
+    controller.abort();
+  };
+
+  request.signal?.addEventListener('abort', cancel, { once: true });
+
   try {
-    const controller = new AbortController();
+    if (isCancelled(request)) {
+      return { kind: 'cancelled' };
+    }
+
     const sharedRoot = await ports.findSharedRoot(request.cwd, controller.signal);
     const judges = ports.prepareJudges(request.registry, config);
-    const judgedRows = await judgeAll(judges, config.shadow.variant, rows, controller);
+
+    const judgedRows = await judgeAll(
+      judges,
+      config.shadow.variant,
+      rows,
+      controller,
+      request.signal,
+    );
+
+    if (isCancelled(request)) {
+      return { kind: 'cancelled' };
+    }
 
     const call = decideCall<JudgedAskedQuestion>({
       rows: judgedRows,
@@ -169,18 +205,33 @@ const runDecision = async (
       return { kind: 'ask' };
     }
 
+    if (isCancelled(request)) {
+      return { kind: 'cancelled' };
+    }
+
     const { branch, head } = await ports.readBranch(request.cwd);
     const record = buildRecord(ports, config, sessionId, call.rows, branch, head);
     const notice = noticeLines(record).join('\n');
 
+    if (isCancelled(request)) {
+      return { kind: 'cancelled' };
+    }
+
     request.notify(notice);
 
     const directory = await ports.ensureDirectory(sharedRoot, 'questions');
+
+    if (isCancelled(request)) {
+      return { kind: 'cancelled' };
+    }
+
     const path = await writeDecisionRecord(directory, record, ports.writeRecord);
 
     return { kind: 'decided', answers: decidedAnswers(record), record: path, notice };
   } catch {
-    return { kind: 'ask' };
+    return isCancelled(request) ? { kind: 'cancelled' } : { kind: 'ask' };
+  } finally {
+    request.signal?.removeEventListener('abort', cancel);
   }
 };
 

@@ -1,17 +1,25 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { ToolCall } from '@earendil-works/pi-ai';
 import type { ModelRegistry, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { requireAllowedModel } from '../../config/models.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
 import { decideDeadlineMilliseconds } from '../../questionGate/decideDecision.js';
 import type { DecisionRecordWriter } from '../../questionGate/decision/decisionRecord.js';
-import type { JudgeVerdict } from '../../questionGate/questionGate.js';
+import type { DecisionRecord, JudgeVerdict } from '../../questionGate/questionGate.js';
 import askUserQuestionExtension from './askUserQuestion.js';
+import { createDecider } from './decide.js';
 import type { DecidePorts } from './decide.js';
 import type { DialogResult } from './dialog.js';
 import { prepareJudges } from './judges.js';
+import type { PreparedJudges } from './judges.js';
 
 interface HarnessOptions {
   config?: QuestionGateConfig | undefined;
@@ -23,6 +31,9 @@ interface HarnessOptions {
   dialogResult?: DialogResult;
   prepareJudges?: DecidePorts['prepareJudges'];
   registry?: ModelRegistry;
+  signal?: AbortSignal;
+  readBranch?: DecidePorts['readBranch'];
+  requireModel?: DecidePorts['requireModel'];
 }
 
 const eligibleQuestion = {
@@ -30,7 +41,7 @@ const eligibleQuestion = {
   problem: 'The dashboard ships next week.',
   impact: 'Changing the layout later moves every panel.',
   header: 'Layout',
-  kind: 'choice',
+  kind: 'choice' as const,
   confidence: 0.99,
   options: [
     {
@@ -84,8 +95,8 @@ const createHarness = (options: HarnessOptions = {}) => {
     now: () => 1_760_000_000_000,
     findSharedRoot: async () => '/shared-root',
     readConfig: () => options.config ?? decideConfig(),
-    requireModel: () => undefined,
-    readBranch: async () => ({ branch: 'me-1623-decide', head: 'abc1234' }),
+    requireModel: options.requireModel ?? (() => undefined),
+    readBranch: options.readBranch ?? (async () => ({ branch: 'me-1623-decide', head: 'abc1234' })),
     ensureDirectory: async () => '/shared-root/.tau/questions',
     writeRecord: async (path, record, mode) => {
       writes.push({ path, record, mode });
@@ -147,7 +158,7 @@ const createHarness = (options: HarnessOptions = {}) => {
       arguments: { questions } as unknown as ToolCall['arguments'],
     });
 
-    return tool.execute('call', params, undefined, undefined, context);
+    return tool.execute('call', params, options.signal, undefined, context);
   };
 
   return {
@@ -163,9 +174,32 @@ const createHarness = (options: HarnessOptions = {}) => {
 };
 
 it('answers an eligible call after showing the notice and saving the record', async () => {
-  const harness = createHarness();
+  const save = Promise.withResolvers<undefined>();
+  const harness = createHarness({ writeRecord: () => save.promise });
 
-  const result = await harness.run([eligibleQuestion]);
+  const pending = harness.run([eligibleQuestion]);
+
+  await vi.waitFor(() => {
+    expect(harness.events).toEqual(['notice', 'write']);
+  });
+
+  let settled = false;
+
+  const tracked = pending.then((result) => {
+    settled = true;
+
+    return result;
+  });
+
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+
+  expect(settled).toBe(false);
+
+  save.resolve(undefined);
+
+  const result = await tracked;
 
   harness.events.push('return');
 
@@ -190,6 +224,18 @@ it('answers an eligible call after showing the notice and saving the record', as
     record: written?.path,
   });
 
+  const text = (result.content as { type: string; text: string }[])
+    .map((item) => item.text)
+    .join('\n');
+
+  const lower = text.toLowerCase();
+
+  expect(lower).toContain('question gate answered');
+
+  expect(lower).toMatch(
+    /\b(?:not|never)\b[^.]*\b(?:approv|authoriz)\w*[^.]*\bpublishing\b[^.]*\bpushing\b[^.]*\bposting\b/,
+  );
+
   expect(harness.custom).not.toHaveBeenCalled();
   expect(harness.scheduled).toEqual([]);
 
@@ -203,6 +249,241 @@ it('answers an eligible call after showing the notice and saving the record', as
     variant: 'agent',
     cutoff: 0.9,
   });
+});
+
+it('cancels during judging without a notice, record, or dialog', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  const controller = new AbortController();
+  const judgeStarted = Promise.withResolvers<undefined>();
+
+  const harness = createHarness({
+    signal: controller.signal,
+    verdict: () => {
+      judgeStarted.resolve(undefined);
+
+      return new Promise<JudgeVerdict>(() => {
+        // The judge ignores the abort signal and never settles.
+      });
+    },
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+  const cancelled = pending.catch((error: unknown) => error);
+
+  await judgeStarted.promise;
+  controller.abort();
+  await vi.advanceTimersByTimeAsync(decideDeadlineMilliseconds);
+
+  const error = await cancelled;
+
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toMatch(/cancelled/i);
+
+  expect(harness.notices).toEqual([]);
+  expect(harness.writes).toEqual([]);
+  expect(harness.custom).not.toHaveBeenCalled();
+});
+
+it('cancels after judging before the notice or record', async () => {
+  const controller = new AbortController();
+  const branchStarted = Promise.withResolvers<undefined>();
+  const branchGate = Promise.withResolvers<{ branch: string | null; head: string | null }>();
+
+  const harness = createHarness({
+    signal: controller.signal,
+    readBranch: async () => {
+      branchStarted.resolve(undefined);
+
+      return branchGate.promise;
+    },
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+  const cancelled = pending.catch((error: unknown) => error);
+
+  await branchStarted.promise;
+  controller.abort();
+  branchGate.resolve({ branch: 'me-1623-decide', head: 'abc1234' });
+
+  const error = await cancelled;
+
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).toMatch(/cancelled/i);
+
+  expect(harness.notices).toEqual([]);
+  expect(harness.writes).toEqual([]);
+  expect(harness.custom).not.toHaveBeenCalled();
+});
+
+it('asks without calling a provider when the judge model is blocked', async ({
+  onTestFinished,
+}) => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-decide-agent-');
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  writeFileSync(
+    join(agentDirectory, 'tau.json'),
+    JSON.stringify({ allowedModels: ['tau-fixture/allowed'] }),
+  );
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+
+  const harness = createHarness({
+    config: decideConfig({
+      classifier: 'tau-fixture/blocked',
+      shadow: { ...shadow, variant: 'classifier' },
+    }),
+    requireModel: requireAllowedModel,
+  });
+
+  const result = await harness.run([eligibleQuestion]);
+
+  expect(result.details).toEqual(answeredDetails);
+  expect(harness.judge).not.toHaveBeenCalled();
+  expect(harness.custom).toHaveBeenCalledTimes(1);
+  expect(harness.notices).toEqual([]);
+  expect(harness.writes).toEqual([]);
+});
+
+const multiQuestion = (
+  question: string,
+  header: string,
+  confidence: number,
+  recommendedLabel: string,
+) => ({
+  question,
+  problem: 'The team must choose before the next release.',
+  impact: 'The choice changes the next release.',
+  header,
+  kind: 'choice' as const,
+  confidence,
+  options: [
+    { label: 'Stacked', description: 'One column. Simple, but wide screens waste space.' },
+    {
+      label: recommendedLabel,
+      description: 'Uses wide screens, but needs a fallback.',
+      recommended: true,
+    },
+  ],
+});
+
+it('keeps answers and saved rows in input order when judges finish out of order', async () => {
+  const questions = [
+    multiQuestion('Which layout should the dashboard use?', 'Layout', 0.8, 'Split'),
+    multiQuestion('Which font should the report use?', 'Font', 0.9, 'Serif'),
+    multiQuestion('Which theme should the preview use?', 'Theme', 0.95, 'Dark'),
+  ];
+
+  const verdicts = new Map<string, PromiseWithResolvers<JudgeVerdict>>();
+
+  const judge: PreparedJudges['judge'] = async (_variant, question) => {
+    const deferred = Promise.withResolvers<JudgeVerdict>();
+
+    verdicts.set(question.question, deferred);
+
+    return deferred.promise;
+  };
+
+  const harness = createHarness({ prepareJudges: () => ({ judge }) });
+
+  const pending = harness.run(questions);
+
+  await vi.waitFor(() => {
+    expect(verdicts.size).toBe(3);
+  });
+
+  const third = verdicts.get(questions[2]?.question ?? '');
+  const first = verdicts.get(questions[0]?.question ?? '');
+  const second = verdicts.get(questions[1]?.question ?? '');
+
+  third?.resolve({ kind: 'answered', confidence: 0.99 });
+  first?.resolve({ kind: 'answered', confidence: 0.95 });
+  second?.resolve({ kind: 'answered', confidence: 0.97 });
+
+  const result = await pending;
+
+  expect(result.details).toMatchObject({
+    kind: 'decided',
+    answers: questions.map((question) => ({
+      question: question.question,
+      selected: [question.options[1]?.label],
+      typed: false,
+    })),
+  });
+
+  const decisions = questions.map((question, index) => ({
+    question: { question: question.question },
+    choice: question.options[1]?.label,
+    confidence: [0.95, 0.97, 0.99][index],
+  }));
+
+  const notice = questions
+    .map(
+      (question) =>
+        `Decided: ${question.options[1]?.label}, because Uses wide screens, but needs a fallback.`,
+    )
+    .join('\n');
+
+  expect(harness.writes[0]?.record).toMatchObject({ decisions });
+  expect(harness.notices).toEqual([notice]);
+});
+
+it('reads an attached, a detached, and an unborn HEAD through the default Git adapter', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+  const records: DecisionRecord[] = [];
+
+  const decider = createDecider({
+    now: () => 1_760_000_000_000,
+    findSharedRoot: async () => '/shared-root',
+    readConfig: () => decideConfig(),
+    requireModel: () => undefined,
+    ensureDirectory: async () => '/shared-root/.tau/questions',
+    writeRecord: async (_path, record) => {
+      records.push(record);
+    },
+    prepareJudges: () => ({
+      judge: async () => ({ kind: 'answered', confidence: 0.99 }),
+    }),
+  });
+
+  const decide = async () => {
+    const outcome = await decider.tryDecide({
+      questions: [{ ...eligibleQuestion, multiSelect: false }],
+      sessionId: 'session-decide-1',
+      cwd: repository,
+      projectTrusted: false,
+      registry: {} as ModelRegistry,
+      notify: () => undefined,
+      signal: undefined,
+    });
+
+    expect(outcome?.kind).toBe('decided');
+
+    return records.at(-1);
+  };
+
+  const unborn = await decide();
+
+  expect(unborn).toMatchObject({ branch: 'main', head: null });
+
+  await git(repository, 'commit', '--allow-empty', '--quiet', '-m', 'initial');
+
+  const head = await git(repository, 'rev-parse', 'HEAD');
+  const attached = await decide();
+
+  expect(attached).toMatchObject({ branch: 'main', head });
+
+  await git(repository, 'checkout', '--quiet', '--detach');
+
+  const detached = await decide();
+
+  expect(detached).toMatchObject({ branch: null, head });
 });
 
 const answeredDetails = {

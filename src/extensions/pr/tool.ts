@@ -71,16 +71,16 @@ export const prToolParameters = Type.Object({
 
 export type PrInput = Static<typeof prToolParameters>;
 
-const description = `- prepare: start a run; returns {directory}.
-- target {remote?,base?}: resolve {host,repository,head:{remote,repository,owner,branch,sha},base:{remote,branch},mergeBase,pr,closedPrs}. sha: local HEAD; pr: open or null; closedPrs: closed/merged {number,url,state,title,body,author,baseRefName,isDraft,headRefOid}. Base: explicit, PR, then default.
-- evidence {remote?,base?,review?}: {target,ownership,branch,gateDecisions,subjects,chain,coverage,reuse,review,markers,checks,fullCheck,verification,gaps}. chain: root-first or null; ambiguousChain: directory-list candidates. reuse/review use root, else input review. ownership {status:own|other|unclear,reasons}: PR author/viewer or commit/Git emails; failed reads: unclear. review.reusable: matching bytes, fresh complete capture, reports; reusableReasons: refusal. subjects: since mergeBase; markers: skips/suppressions/deleted tests. Null objects/gaps: unavailable evidence. gateDecisions [{path,time,head,decisions:[{question,choice,reason,confidence}]}]: current branch's question gate decisions; null: unread.
-  checks: newest per name {path,matches,reasons,excerpt,truncated}; matches: HEAD/Status/Diff, not pass; unmatched excerpt: null. fullCheck: newest for tree {status,logPath,argv,excerpt,truncated}; passed|failed|missing|malformed; missing includes absent/different command.
-  verification [{target,item,run,fresh,reason?,result,counts}]: newest fresh, else stale, per target+item; fresh: stopped, tree same launch/stop/now, doctor ok; stale: fresh:false+reason; result passed|failed; malformed: verificationRecord gap.
-- checkHeader {mergeBase}: before non-full_check checks; {lines}: join with newlines, including final newline.
-- coverage {chain,mergeBase,head?}: mergeBase..head coverage. chain: [{directory,identity}], root-first; identity: capture.json Git blob hash. {status,link,reasons,links}: match|mismatch|unsupported|unknown; link: 1-based. Match closes no finding.
-- reuse: review versus mergeBase..HEAD; {status:match|mismatch,reasons,recordedBase,paths:{differing,missing,extra},reports}.
-- verify: published PR versus approval; directory holds body.md. {url,matches,differences:[{field,expected,actual}]} for title/body/base/draft/head.
-- reviewBots: configured {bots:[{login,comment,status}]}; reviewed: current head; requested: comment after head and first check suite; request: needs comment. Empty: no bots.`;
+const description = `- prepare: start a run; {directory}.
+- target {remote?,base?}: resolve {host,repository,head:{remote,repository,owner,branch,sha},base:{remote,branch},mergeBase,pr,closedPrs}. sha: local HEAD; pr: open or null; closedPrs: closed/merged {number,url,state,title,body,author,baseRefName,isDraft,headRefOid}. Base: explicit, PR, default.
+- evidence {remote?,base?,review?}: {target,ownership,branch,gateDecisions,subjects,chain,coverage,reuse,review,markers,checks,fullCheck,verification,gaps}. chain: root-first or null; ambiguousChain: directory-list. reuse/review: root, else input review. ownership {status,reasons}: PR author/viewer or commit/Git emails; failed reads: unclear. review.reusable: matching bytes, fresh complete capture, reports; reasons: refusal. subjects: since mergeBase; markers: skips/suppressions/deleted tests. Null objects/gaps: unavailable. gateDecisions [{path,time,head,decisions:[{question,choice,reason,confidence}]}]: this branch's question gate decisions; null: unread.
+  checks: newest each {path,matches,reasons,excerpt,truncated}; matches: HEAD/Status/Diff, not pass; unmatched: null. fullCheck: newest tree {status,logPath,argv,excerpt,truncated}; passed|failed|missing|malformed; missing: absent/different command.
+  verification [{target,item,run,fresh,reason?,result,counts}]: newest fresh else stale per target+item; fresh: stopped, tree same launch/stop/now, doctor ok; stale: fresh:false+reason; result passed|failed; malformed: gap.
+- checkHeader {mergeBase}: before non-full_check checks; {lines}: joined, including final newline.
+- coverage {chain,mergeBase,head?}: mergeBase..head. chain: [{directory,identity}] root-first; identity: capture.json blob hash. {status,link,reasons,links}: match|mismatch|unsupported|unknown; link: 1-based. Match closes no finding.
+- reuse: review vs mergeBase..HEAD; {status:match|mismatch,reasons,recordedBase,paths:{differing,missing,extra},reports}.
+- verify: published PR vs approval; directory holds body.md. {url,matches,differences:[{field,expected,actual}]} for title/body/base/draft/head.
+- reviewBots: {bots:[{login,comment,status}]}; reviewed: current head; requested: comment after head and first check suite; request: needs comment. Empty: no bots.`;
 
 const prepare = async (runtime: CommandRuntime) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr');

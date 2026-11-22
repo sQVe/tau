@@ -1263,33 +1263,35 @@ it('marks both classifier variants unavailable when the classifier model is miss
   });
 });
 
-it('skips both panel variants when one panel member is missing', async ({ onTestFinished }) => {
-  const registry = fakeRegistry({ missingPanel: 'panel-b' });
-  const harness = await createHarness(onTestFinished, { config: configWithShadow(), registry });
+for (const missingPanel of ['panel-a', 'panel-b', 'panel-c']) {
+  it(`skips both panel variants when ${missingPanel} is missing`, async ({ onTestFinished }) => {
+    const registry = fakeRegistry({ missingPanel });
+    const harness = await createHarness(onTestFinished, { config: configWithShadow(), registry });
 
-  const pending = harness.run([eligibleQuestion]);
-  const shadowDone = harness.start();
+    const pending = harness.run([eligibleQuestion]);
+    const shadowDone = harness.start();
 
-  await waitFor(() => {
-    expect(harness.registry.classify).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(harness.registry.classify).toHaveBeenCalledTimes(2);
+    });
+
+    expect(harness.registry.complete).not.toHaveBeenCalled();
+
+    harness.latest().handleInput('\r');
+    await pending;
+    harness.registry.judgeGate.resolve(undefined);
+    harness.saveGate.resolve(undefined);
+    await shadowDone;
+
+    expect(recordOf(harness)).toMatchObject({
+      judges: {
+        classifier: { verdict: { kind: 'answered', confidence: 0.9 } },
+        panel: { verdict: { kind: 'unavailable' } },
+        panelExamples: { verdict: { kind: 'unavailable' } },
+      },
+    });
   });
-
-  expect(harness.registry.complete).not.toHaveBeenCalled();
-
-  harness.latest().handleInput('\r');
-  await pending;
-  harness.registry.judgeGate.resolve(undefined);
-  harness.saveGate.resolve(undefined);
-  await shadowDone;
-
-  expect(recordOf(harness)).toMatchObject({
-    judges: {
-      classifier: { verdict: { kind: 'answered', confidence: 0.9 } },
-      panel: { verdict: { kind: 'unavailable' } },
-      panelExamples: { verdict: { kind: 'unavailable' } },
-    },
-  });
-});
+}
 
 it('marks both examples variants unavailable without examples', async ({ onTestFinished }) => {
   const harness = await createHarness(onTestFinished, {
