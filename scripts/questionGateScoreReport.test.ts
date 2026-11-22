@@ -5,6 +5,7 @@ import type { SkippedQuestions } from './questionGateScore/questionGateScoreLog.
 import {
   formatPanelMemberErrors,
   formatScoreReport,
+  lowerBoundPercent,
   panelMemberErrorCounts,
   scoreCutoffs,
   scoreReport,
@@ -114,20 +115,61 @@ it('gives no cutoff and no held-out line with fewer than 20 decided tuning items
   expect(formatScoreReport(report)).not.toContain('Held out');
 });
 
-it.for<[number, boolean]>([
-  [100, true],
-  [95, false],
-])('reports whether %i held-out hits meet the 95%% bar', ([hits, meetsBar]) => {
+it('one held-out session with many hits misses the bar', () => {
   const tuning = Array.from({ length: 20 }, () => item());
 
-  const heldOutHits = Array.from({ length: hits }, () =>
+  const heldOut = Array.from({ length: 73 }, () =>
     item({ session: '/logs/holdout.jsonl', split: 'holdout' }),
   );
 
-  const heldOutMisses = Array.from({ length: 100 - hits }, () => holdoutMiss());
-  const report = scoreReport(input([...tuning, ...heldOutHits, ...heldOutMisses]));
+  const askOnly = item({
+    session: '/logs/holdout-ask.jsonl',
+    split: 'holdout',
+    verdicts: answered(0.2),
+  });
 
-  expect(variant(report, 'classifier').heldOut?.meetsBar).toBe(meetsBar);
+  const report = scoreReport(input([...tuning, ...heldOut, askOnly]));
+  const heldOutScore = variant(report, 'classifier').heldOut;
+
+  expect(report.sessions.holdout).toBe(2);
+  expect(heldOutScore?.lowerBound).toBeGreaterThanOrEqual(0.95);
+  expect(heldOutScore?.sessions).toBe(1);
+  expect(heldOutScore?.sessionLowerBound).toBe(0);
+  expect(heldOutScore?.meetsBar).toBe(false);
+});
+
+it.for<[number, number]>([
+  [0.949993888, 94.9],
+  [0.950035577, 95],
+  [0.950006247, 95],
+  [0, 0],
+])('rounds a lower bound down for display: %d gives %d', ([value, expected]) => {
+  expect(lowerBoundPercent(value)).toBeCloseTo(expected, 6);
+});
+
+it.for<[string, number, number, number, boolean]>([
+  ['600 one-hit sessions', 600, 0, 600, true],
+  ['599 one-hit sessions', 599, 0, 599, false],
+  ['95 hits and 5 misses over 100 sessions', 95, 5, 100, false],
+])('reports whether held-out hits meet the 95% bar: %s', ([, hits, misses, sessions, meetsBar]) => {
+  const tuning = Array.from({ length: 20 }, () => item());
+
+  const heldOutHits = Array.from({ length: hits }, (_, index) =>
+    item({ session: `/logs/holdout-${index}.jsonl`, split: 'holdout' }),
+  );
+
+  const heldOutMisses = Array.from({ length: misses }, (_, index) =>
+    holdoutMiss(`/logs/holdout-miss-${index}.jsonl`),
+  );
+
+  const report = scoreReport(input([...tuning, ...heldOutHits, ...heldOutMisses]));
+  const heldOut = variant(report, 'classifier').heldOut;
+  const decided = hits + misses;
+
+  expect(heldOut?.sessions).toBe(sessions);
+  expect(heldOut?.agreement).toBeCloseTo(hits / decided, 6);
+  expect(heldOut?.lowerBound).toBeCloseTo(wilsonLowerBound(hits, decided), 6);
+  expect(heldOut?.meetsBar).toBe(meetsBar);
 });
 
 it('counts timeout and unavailable verdicts and does not decide them', () => {

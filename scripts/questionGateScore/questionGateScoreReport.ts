@@ -2,6 +2,7 @@ import type { QuestionGateModels } from '../../src/config/questionGateModels.ts'
 import { questionGateDecision } from '../../src/questionGate/decision/decision.ts';
 import type { JudgeVerdict, PastOutcome } from '../../src/questionGate/questionGate.ts';
 import type { SkippedQuestions } from './questionGateScoreLog.ts';
+import { sessionSummary } from './sessionLowerBound.ts';
 
 export type JudgeVariant = 'classifier' | 'classifierExamples' | 'panel' | 'panelExamples';
 
@@ -27,6 +28,8 @@ interface CutoffScore {
 }
 
 interface HeldOutScore extends CutoffScore {
+  sessions: number;
+  sessionLowerBound: number;
   meetsBar: boolean;
 }
 
@@ -75,6 +78,8 @@ const cutoffCount = 11;
 const firstCutoffPercent = 50;
 const cutoffStepPercent = 5;
 const percentScale = 100;
+const tenthsPerPercent = 10;
+const lowerBoundTenthsScale = percentScale * tenthsPerPercent;
 
 const zScore = 1.96;
 const varianceScale = 4;
@@ -108,21 +113,36 @@ const share = (part: number, total: number): number => (total === 0 ? 0 : part /
 const isDecided = (verdict: JudgeVerdict, cutoff: number): boolean =>
   questionGateDecision({ verdict, cutoff }).decision === 'decide';
 
+const isHit = (item: ScoreItem): boolean => item.outcome.kind === 'recommended';
+
+const decidedItems = (
+  items: readonly ScoreItem[],
+  variant: JudgeVariant,
+  cutoff: number,
+): ScoreItem[] => items.filter((item) => isDecided(item.verdicts[variant], cutoff));
+
+const scoreFromTotals = (
+  total: number,
+  cutoff: number,
+  decided: number,
+  hits: number,
+): CutoffScore => ({
+  cutoff,
+  decided,
+  decideShare: share(decided, total),
+  agreement: share(hits, decided),
+  lowerBound: wilsonLowerBound(hits, decided),
+});
+
 const cutoffScore = (
   items: readonly ScoreItem[],
   variant: JudgeVariant,
   cutoff: number,
 ): CutoffScore => {
-  const decided = items.filter((item) => isDecided(item.verdicts[variant], cutoff));
-  const hits = decided.filter((item) => item.outcome.kind === 'recommended').length;
+  const decided = decidedItems(items, variant, cutoff);
+  const hits = decided.filter(isHit).length;
 
-  return {
-    cutoff,
-    decided: decided.length,
-    decideShare: share(decided.length, items.length),
-    agreement: share(hits, decided.length),
-    lowerBound: wilsonLowerBound(hits, decided.length),
-  };
+  return scoreFromTotals(items.length, cutoff, decided.length, hits);
 };
 
 const meetsCutoffBar = (score: CutoffScore): boolean =>
@@ -133,9 +153,20 @@ const heldOutScore = (
   variant: JudgeVariant,
   cutoff: number,
 ): HeldOutScore => {
-  const score = cutoffScore(items, variant, cutoff);
+  const decided = decidedItems(items, variant, cutoff);
 
-  return { ...score, meetsBar: score.lowerBound >= bar };
+  const summary = sessionSummary(
+    decided.map((item) => ({ session: item.session, hit: isHit(item) })),
+  );
+
+  const score = scoreFromTotals(items.length, cutoff, summary.decided, summary.hits);
+
+  return {
+    ...score,
+    sessions: summary.sessions,
+    sessionLowerBound: summary.lowerBound,
+    meetsBar: score.lowerBound >= bar && summary.lowerBound >= bar,
+  };
 };
 
 const verdictCounts = (items: readonly ScoreItem[], variant: JudgeVariant): VerdictCounts => {
@@ -177,7 +208,12 @@ export const scoreReport = (input: ScoreInput): ScoreReport => {
   };
 };
 
+export const lowerBoundPercent = (value: number): number =>
+  Math.floor(value * lowerBoundTenthsScale) / tenthsPerPercent;
+
 const formatPercent = (value: number): string => `${(value * percentScale).toFixed(1)}%`;
+
+const formatLowerBound = (value: number): string => `${lowerBoundPercent(value).toFixed(1)}%`;
 
 const formatCutoff = (cutoff: number): string => cutoff.toFixed(2);
 
@@ -231,7 +267,10 @@ const heldOutLine = (score: VariantScore): string[] => {
     `Held out at ${formatCutoff(heldOut.cutoff)}: ${heldOut.decided} decided,`,
     `decide share ${formatPercent(heldOut.decideShare)},`,
     `agreement ${formatPercent(heldOut.agreement)},`,
-    `lower bound ${formatPercent(heldOut.lowerBound)}: ${barResult}`,
+    `question lower bound ${formatLowerBound(heldOut.lowerBound)},`,
+    `session lower bound ${formatLowerBound(heldOut.sessionLowerBound)},`,
+    `contributing sessions ${heldOut.sessions}:`,
+    barResult,
   ].join(' ');
 
   return [line];
