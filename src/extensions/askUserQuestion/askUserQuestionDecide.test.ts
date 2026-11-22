@@ -11,6 +11,7 @@ import type { JudgeVerdict } from '../../questionGate/questionGate.js';
 import askUserQuestionExtension from './askUserQuestion.js';
 import type { DecidePorts } from './decide.js';
 import type { DialogResult } from './dialog.js';
+import { prepareJudges } from './judges.js';
 
 interface HarnessOptions {
   config?: QuestionGateConfig | undefined;
@@ -20,6 +21,8 @@ interface HarnessOptions {
   writeRecord?: DecisionRecordWriter;
   notify?: (text: string) => void;
   dialogResult?: DialogResult;
+  prepareJudges?: DecidePorts['prepareJudges'];
+  registry?: ModelRegistry;
 }
 
 const eligibleQuestion = {
@@ -59,7 +62,7 @@ const createHarness = (options: HarnessOptions = {}) => {
   const writes: { path: string; record: unknown; mode: number | undefined }[] = [];
   const removals: string[] = [];
   const notices: string[] = [];
-  const judgeCalls: unknown[] = [];
+  const judgeCalls: unknown[][] = [];
   const scheduled: (() => Promise<void>)[] = [];
 
   const judge = vi.fn<(...args: unknown[]) => Promise<JudgeVerdict>>(async (...args) => {
@@ -94,7 +97,7 @@ const createHarness = (options: HarnessOptions = {}) => {
       removals.push(path);
       events.push('remove');
     },
-    prepareJudges: () => ({ judge }),
+    prepareJudges: options.prepareJudges ?? (() => ({ judge })),
   };
 
   const fake = fakeExtensionApi();
@@ -125,7 +128,7 @@ const createHarness = (options: HarnessOptions = {}) => {
     mode: 'tui',
     cwd: '/checkout',
     isProjectTrusted: () => false,
-    modelRegistry: {} as ModelRegistry,
+    modelRegistry: options.registry ?? ({} as ModelRegistry),
     ui: { custom, notify },
     sessionManager: {
       getSessionId: () =>
@@ -288,6 +291,67 @@ it('asks below the cutoff', async () => {
   expect(harness.custom).toHaveBeenCalledTimes(1);
   expect(harness.writes).toEqual([]);
   expect(harness.notices).toEqual([]);
+});
+
+it('passes the question confidence to the agent judge', async () => {
+  const harness = createHarness({
+    prepareJudges,
+    registry: { find: () => undefined } as unknown as ModelRegistry,
+  });
+
+  const result = await harness.run([eligibleQuestion]);
+
+  expect(result.details).toEqual({
+    kind: 'decided',
+    answers: [
+      {
+        question: eligibleQuestion.question,
+        selected: ['Stacked'],
+        typed: false,
+      },
+    ],
+    record: harness.writes[0]?.path,
+  });
+
+  expect(harness.writes[0]?.record).toMatchObject({
+    decisions: [{ confidence: 0.99 }],
+  });
+});
+
+it('aborts the judge signal when the deadline passes', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  const harness = createHarness({
+    verdict: () =>
+      new Promise<JudgeVerdict>(() => {
+        // The judge ignores the abort signal and never settles.
+      }),
+  });
+
+  const pending = harness.run([eligibleQuestion]);
+
+  await vi.advanceTimersByTimeAsync(decideDeadlineMilliseconds);
+
+  await pending;
+
+  const signal = harness.judgeCalls[0]?.[3];
+
+  if (!(signal instanceof AbortSignal)) {
+    throw new Error('The judge received no abort signal.');
+  }
+
+  expect(signal.aborted).toBe(true);
+});
+
+it('clears the deadline timer once the call settles', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  const harness = createHarness();
+
+  const result = await harness.run([eligibleQuestion]);
+
+  expect(result.details).toMatchObject({ kind: 'decided' });
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it('asks when the judge misses the deadline', async () => {

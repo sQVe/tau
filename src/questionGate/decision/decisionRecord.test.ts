@@ -113,6 +113,38 @@ it('reports a gap when the choice is not the recommended label', async ({ onTest
   expect(gaps[0]?.reason).toContain('not the recommended option label');
 });
 
+it('reports a gap when a decision question has two recommended options', async ({
+  onTestFinished,
+}) => {
+  const directory = decisionDirectory(onTestFinished);
+  const validPath = join(directory, decisionName('1'));
+  const twoRecommendedPath = join(directory, decisionName('2'));
+  const record = currentRecord();
+  const firstDecision = record.decisions[0];
+
+  if (firstDecision === undefined) {
+    throw new Error('The fixture has no decision.');
+  }
+
+  const twoRecommended = structuredClone(firstDecision);
+
+  twoRecommended.question.options = twoRecommended.question.options.map((option) => ({
+    ...option,
+    recommended: true,
+  }));
+
+  record.decisions = [firstDecision, twoRecommended];
+
+  await writeFile(validPath, fixture('current.json'));
+  await writeFile(twoRecommendedPath, JSON.stringify(record));
+
+  const { records, gaps } = await readDecisionRecords(directory, readVersionedRecord);
+
+  expect(records).toEqual([{ path: validPath, record: currentRecord() }]);
+  expect(gaps.map((gap) => gap.path)).toEqual([twoRecommendedPath]);
+  expect(gaps[0]?.reason).toContain('exactly one recommended option');
+});
+
 it('ignores files that are not decision records', async ({ onTestFinished }) => {
   const directory = decisionDirectory(onTestFinished);
   const path = join(directory, decisionName('1'));
