@@ -3,9 +3,10 @@
 Tau ships Pi extensions, skills, and hand-run scripts. A `qa` worker can test the scripts. It can
 test behavior inside a Pi session with `pnpm pi-session`, but not the terminal user interface.
 
-Two exceptions: the manager runs the [worker-launch feature](qa/features/pi-session-worker-launch.md)
-and the [question gate shadow feature](qa/features/question-gate-shadow.md) sessions; a `qa` worker
-only checks their saved output and records the result.
+Three exceptions: the manager runs the [worker-launch feature](qa/features/pi-session-worker-launch.md),
+the [question gate shadow feature](qa/features/question-gate-shadow.md) sessions, and the
+[question gate decide feature](qa/features/question-gate-decide.md) sessions; a `qa` worker only
+checks their saved output and records the result.
 
 ## Choose sections
 
@@ -24,6 +25,9 @@ Cross-effects:
 - A change to the question gate sampling rule, the shadow record, or `ask_user_question` needs
   "Pi sessions". The manager runs its
   [question gate shadow session](qa/features/question-gate-shadow.md) and a `qa` worker records it.
+- A change to decide mode, the decision record, or the `decided` result needs "Pi sessions". The
+  manager runs its
+  [question gate decide session](qa/features/question-gate-decide.md) and a `qa` worker records it.
 
 No launch, and unclear impact:
 
@@ -48,6 +52,7 @@ No launch, and unclear impact:
 | [Prompt in a Pi session](qa/features/pi-session-prompt.md) | Pi sessions | `pi-session` | Behavior inside a session that launches no worker |
 | [Worker launch in a Pi session](qa/features/pi-session-worker-launch.md) | Pi sessions | `pi-session` | Behavior that launches workers |
 | [Question gate shadow record](qa/features/question-gate-shadow.md) | Pi sessions | `pi-session` | `ask_user_question`, the question gate sampling rule, or shadow records |
+| [Question gate decide](qa/features/question-gate-decide.md) | Pi sessions | `pi-session` | decide mode, the decision record, or the `decided` result |
 | [Question gate shadow score](qa/features/question-gate-score-shadow.md) | Scripts | none | `pnpm question-gate-score --shadow` or its shadow report |
 
 ## Before a launch
@@ -156,6 +161,8 @@ and ask the parent.
   its session, for behavior that launches workers.
 - [Question gate shadow record](qa/features/question-gate-shadow.md): only the manager runs its
   session, for `ask_user_question`, the question gate sampling rule, or shadow records.
+- [Question gate decide](qa/features/question-gate-decide.md): only the manager runs its session,
+  for decide mode, the decision record, or the `decided` result.
 
 ## Not testable
 

@@ -2,11 +2,14 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { askQuestions } from './askQuestions.js';
+import { createDecider } from './decide.js';
+import type { DecidePorts } from './decide.js';
 import { createShadowRunner } from './shadow.js';
 import type { ShadowPorts } from './shadow.js';
 
 export interface AskUserQuestionOptions {
   shadow?: Partial<ShadowPorts>;
+  decide?: Partial<DecidePorts>;
 }
 
 const optionSchema = Type.Object({
@@ -98,22 +101,24 @@ const questionParams = Type.Object({
   }),
 });
 
-const toolDescription = `Ask the user structured questions when you cannot proceed without a decision. Ask one question by default. Group only independent questions.
+const toolDescription = `Ask structured questions only when a decision blocks you. Ask one by default. Group only independent questions.
 
-Write for a user who has not read your discussion. \`problem\`, \`impact\`, and each option \`description\` must stand alone. Never name who proposed an option. Use no option letters, codes, or unexplained ADR or ticket numbers. Keep options stable.
+Write for a user new to your discussion. \`problem\`, \`impact\`, and each option \`description\` must stand alone. Never name who proposed an option. Use no option letters, codes, or unexplained ADR or ticket numbers. Keep options stable.
 
 - Every question gets a "Type something." row. Do not author it or "Other".
 - Set \`recommended: true\` on at most one option per question.
-- Set \`kind\` to "choice" for a design or process choice, "approval" for authorization. Without \`kind\`, a question is valid and never sampled.
-- Set \`confidence\` 0 to 1 with a recommendation.
-- Set \`multiSelect: true\` when several answers can be valid. A typed answer returns with the checked options.
-- Add \`preview\` to an option to show what it produces, about 10 lines. Add it to the question for shared content, such as a draft to approve. An option preview replaces it.`;
+- Set \`kind\` to "choice" for a design or process choice, "approval" for authorization; without it, valid and never sampled.
+- Set \`confidence\` 0-1 with a recommendation.
+- Set \`multiSelect: true\` when several answers can be valid. A typed answer keeps checked options.
+- Add \`preview\` to an option to show its output, about 10 lines. Add it to the question for shared content, such as a draft to approve. An option preview replaces it.
+- In decide mode, Tau may answer an eligible \`choice\`; the result says so.`;
 
 export default function askUserQuestionExtension(
   pi: ExtensionAPI,
   options: AskUserQuestionOptions = {},
 ): void {
   const shadow = createShadowRunner(options.shadow);
+  const decider = createDecider(options.decide);
 
   pi.registerTool({
     name: 'ask_user_question',
@@ -125,7 +130,7 @@ export default function askUserQuestionExtension(
     parameters: questionParams,
 
     async execute(_toolCallId, params, _signal, _onUpdate, context) {
-      return askQuestions(params.questions, context, shadow);
+      return askQuestions(params.questions, context, shadow, decider);
     },
   });
 }

@@ -881,3 +881,20 @@ it('counts overlapping same-ID calls in one file as ambiguous', () => {
   expect(log.questions).toEqual([]);
   expect(log.skipped).toEqual({ ...noSkips, ambiguousEntries: 4 });
 });
+
+it('skips gate-decided results', () => {
+  const log = readLoggedQuestions([
+    inlineLog([
+      call('call-decided', at(1), [question()]),
+      result('call-decided', at(2), {
+        details: {
+          kind: 'decided',
+          answers: [{ question: 'Which database?', selected: ['Postgres'], typed: false }],
+          record: '/questions/decision-00000000-0000-4000-8000-000000000000.json',
+        },
+      }),
+    ]),
+  ]);
+
+  expect(log).toEqual({ questions: [], skipped: noSkips });
+});

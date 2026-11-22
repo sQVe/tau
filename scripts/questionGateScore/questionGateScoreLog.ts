@@ -379,8 +379,23 @@ const readQuestion = (raw: unknown, index: number, answers: readonly unknown[]):
   };
 };
 
+const readableAnswers = (call: CompletedCall): readonly unknown[] | undefined => {
+  if (call.result.error !== undefined) {
+    return undefined;
+  }
+
+  const details = call.result.details;
+  const answers = isRecord(details) && Array.isArray(details.answers) ? details.answers : undefined;
+
+  return answers !== undefined && answers.length > 0 ? answers : undefined;
+};
+
 const readCall = (state: LogState, call: CompletedCall) => {
   const details = call.result.details;
+
+  if (isRecord(details) && details.kind === 'decided') {
+    return;
+  }
 
   if (isDeclined(details)) {
     state.skipped.declinedCalls += 1;
@@ -388,9 +403,9 @@ const readCall = (state: LogState, call: CompletedCall) => {
     return;
   }
 
-  const answers = isRecord(details) && Array.isArray(details.answers) ? details.answers : undefined;
+  const answers = readableAnswers(call);
 
-  if (call.result.error !== undefined || answers === undefined || answers.length === 0) {
+  if (answers === undefined) {
     state.skipped.failedCalls += 1;
 
     return;

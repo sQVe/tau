@@ -1,6 +1,7 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { customWithBlockedStatus } from '../../dialog/blockedStatus.js';
+import type { DecideQuestion, Decider } from './decide.js';
 import { questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult } from './dialog.js';
 import type { Answer } from './questionnaire.js';
@@ -16,9 +17,11 @@ type QuestionInput = Omit<DialogQuestion, 'multiSelect'> & {
 
 type OpenQuestionDialog = ReturnType<typeof questionDialog>;
 
+type QuestionResult = DialogResult | { kind: 'decided'; answers: Answer[]; record: string };
+
 interface QuestionResponse {
   content: { type: 'text'; text: string }[];
-  details: DialogResult;
+  details: QuestionResult;
 }
 
 const answerSegment = (answer: Answer) => {
@@ -45,6 +48,9 @@ const responseText = (result: DialogResult) => {
   return `User has answered your questions: ${segments} ${ending}`;
 };
 
+const decidedText = (notice: string) =>
+  `The question gate answered this call instead of the user:\n${notice}\nThis is not the user's answer. It never approves publishing, pushing, or posting.`;
+
 const sessionIdOf = (sessionManager: ExtensionContext['sessionManager']): string | undefined => {
   try {
     const sessionId = sessionManager.getSessionId();
@@ -55,10 +61,19 @@ const sessionIdOf = (sessionManager: ExtensionContext['sessionManager']): string
   }
 };
 
+const nonEmptyQuestions = (
+  questions: readonly DecideQuestion[],
+): [DecideQuestion, ...DecideQuestion[]] | undefined => {
+  const [first, ...rest] = questions;
+
+  return first === undefined ? undefined : [first, ...rest];
+};
+
 export const askQuestions = async (
   input: QuestionInput[],
   context: ExtensionContext,
   shadow: ShadowRunner,
+  decider: Decider,
 ): Promise<QuestionResponse> => {
   if (context.mode !== 'tui') {
     throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
@@ -73,6 +88,32 @@ export const askQuestions = async (
     multiSelect: question.multiSelect === true,
   }));
 
+  const sessionId = sessionIdOf(context.sessionManager);
+  const decideQuestions = nonEmptyQuestions(questions);
+
+  const prepared =
+    decideQuestions === undefined
+      ? undefined
+      : decider.prepare({
+          questions: decideQuestions,
+          sessionId,
+          cwd: context.cwd,
+          projectTrusted: context.isProjectTrusted(),
+          registry: context.modelRegistry,
+          notify: (text) => {
+            context.ui.notify(text, 'info');
+          },
+        });
+
+  const decision = prepared === undefined ? undefined : await prepared.run();
+
+  if (decision?.kind === 'decided') {
+    return {
+      content: [{ type: 'text', text: decidedText(decision.notice) }],
+      details: { kind: 'decided', answers: decision.answers, record: decision.record },
+    };
+  }
+
   const open = questionDialog(questions);
 
   let job: ShadowJob | undefined;
@@ -84,7 +125,6 @@ export const askQuestions = async (
     };
 
     const dialog = open(terminal, theme, keybindings, settle);
-    const sessionId = sessionIdOf(context.sessionManager);
 
     if (sessionId !== undefined) {
       job = shadow.start({

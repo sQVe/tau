@@ -48,6 +48,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0144: Remember Git probe answers within one operation](./0144-remember-git-probe-answers-within-one-operation.md)
 - [0146: Load one generated Tau bundle that matches the package inputs](./0146-load-one-generated-tau-bundle-that-matches-the-package-inputs.md)
 - [0147: Measure the question gate in shadow mode](./0147-measure-the-question-gate-in-shadow-mode.md)
+- [0148: Answer eligible questions in decide mode](./0148-answer-eligible-questions-in-decide-mode.md)
 
 ### Documentation and writing
 
