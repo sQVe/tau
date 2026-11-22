@@ -9,14 +9,11 @@ export interface MarkdownLinks {
 const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
 const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 
-// Pi's TUI registers extensions on the shared `marked` default instance, so a private instance
-// keeps them out of this read.
 const tokenizer = new Marked();
 
 const withoutByteOrderMark = (markdown: string) =>
   markdown.startsWith('\uFEFF') ? markdown.slice(1) : markdown;
 
-// GitHub keeps the rendered text of a heading, so code and link markup do not reach the slug.
 const slugOf = (heading: string) =>
   heading
     .replaceAll(headingLink, '$1')
@@ -26,8 +23,6 @@ const slugOf = (heading: string) =>
     .replaceAll(notSlugCharacter, '')
     .replaceAll(' ', '-');
 
-// GitHub numbers repeated slugs from the second one on and skips numbers another heading already
-// took: `Notes`, `Notes`, `Notes-1` give `notes`, `notes-1`, `notes-1-1`.
 export const headingSlugs = (headings: readonly string[]): ReadonlySet<string> => {
   const counts = new Map<string, number>();
   const slugs = new Set<string>();
@@ -67,7 +62,6 @@ const childTokensOf = (value: unknown): unknown => {
   return 'tokens' in value ? value.tokens : undefined;
 };
 
-// An image renders no text. An HTML tag renders nothing, while the text between tags does.
 const renderedText = (tokens: unknown): string => {
   const list: readonly unknown[] = Array.isArray(tokens) ? tokens : [];
 
