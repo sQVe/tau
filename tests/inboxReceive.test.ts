@@ -113,6 +113,8 @@ const flush = () =>
     setTimeout(resolve, 20);
   });
 
+const socketOf = (sessionId: string) => join(root, 'sockets', `${sessionId}.sock`);
+
 const startReceiver = async (sessionId: string, mode = 'tui') => {
   const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
 
@@ -161,6 +163,11 @@ const startReceiver = async (sessionId: string, mode = 'tui') => {
   };
 
   await emit('session_start');
+
+  await vi.waitFor(() => {
+    expect(existsSync(socketOf(sessionId))).toBe(true);
+  });
+
   cleanups.push(() => emit('session_shutdown'));
 
   const saveReceipts = () => {
@@ -210,8 +217,6 @@ const handover = (sessionId: string, messageId: string, text = 'handover text') 
   family: 'handover',
   payload: { text },
 });
-
-const socketOf = (sessionId: string) => join(root, 'sockets', `${sessionId}.sock`);
 
 const recordOf = (sessionId: string, messageId: string) =>
   join(root, 'records', sessionId, `${messageId}.json`);
@@ -310,6 +315,11 @@ it('restores receipts after a reload and deletes a delivered record without anot
   await until(receiver.shown(1));
   receiver.saveReceipts();
   await receiver.emit('session_start');
+
+  await vi.waitFor(() => {
+    expect(existsSync(socketOf(sessionId))).toBe(true);
+  });
+
   await receiver.emit('resources_discover');
   await until(deleted(sessionId, messageId));
 
@@ -601,6 +611,11 @@ it('wakes a message once when a same-session replacement starts during a record 
   await exchange(socketOf(sessionId), handover(sessionId, messageId));
   await readHold.reached.promise;
   await receiver.emit('session_start');
+
+  await vi.waitFor(() => {
+    expect(existsSync(socketOf(sessionId))).toBe(true);
+  });
+
   await receiver.emit('resources_discover');
   release.resolve(undefined);
   await until(receiver.shown(1));

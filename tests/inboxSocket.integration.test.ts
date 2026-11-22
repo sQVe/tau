@@ -172,6 +172,11 @@ const startReceiverSession = async (
   await (hold === undefined ? bound : hold.reached);
 
   const sessionId = session.sessionManager.getSessionId();
+  const path = join(socketDirectory, `${sessionId}.sock`);
+
+  await vi.waitFor(async () => {
+    expect((await get(hc.runtime, terminal)).labels?.['tau.inbox']).toBe(`rpc1:${path}`);
+  });
 
   const savedRecords = (): string[] => {
     try {
@@ -193,7 +198,7 @@ const startReceiverSession = async (
     session,
     terminal,
     sessionId,
-    path: join(socketDirectory, `${sessionId}.sock`),
+    path,
     socketRoot,
     savedRecords,
     shownCount,
@@ -320,6 +325,10 @@ it.skipIf(!onLinux)(
     // cannot give the new socket the same number.
     linkSync(path, join(receiver.socketRoot, 'before-reload.sock'));
     await session.reload();
+
+    await vi.waitFor(async () => {
+      expect((await get(hc.runtime, terminal)).labels?.['tau.inbox']).toBe(`rpc1:${path}`);
+    });
 
     expect(statSync(path).ino).not.toBe(socketBeforeReload);
     await expect(exchange(path, answer)).resolves.toEqual(refused);

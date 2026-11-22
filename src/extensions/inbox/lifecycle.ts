@@ -5,6 +5,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { errorMessage } from '../../errors.js';
 import { get, label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { ownershipTiming, waitForOwnership } from '../../hc/ownership.js';
 import {
   acceptChecks,
   createReceiptStore,
@@ -18,7 +19,6 @@ import { isWorkerProcess } from '../../role/role.js';
 import type { Wake } from '../../wake/wake.js';
 import { holdsArrival } from './arrivalDecision.js';
 import type { ArrivalFacts } from './arrivalDecision.js';
-import { ownsTerminal } from './ownerDecision.js';
 import type { StartupGate } from './startup.js';
 
 export interface InboxLifecycleDependencies {
@@ -35,6 +35,7 @@ interface Generation {
   controller: AbortController;
   sessionId: string;
   drain: Promise<void>;
+  advertising: Promise<void>;
   receiver: Receiver | undefined;
 }
 
@@ -58,6 +59,8 @@ const familyChecks = () => {
     ...(architectAsk === undefined ? {} : { 'architect-ask': architectAsk }),
   };
 };
+
+const millisecondsPerSecond = 1_000;
 
 const notifyError = (context: ExtensionContext, message: string): void => {
   context.ui.notify(message, 'error');
@@ -113,18 +116,24 @@ export const registerInboxLifecycle = (
       return;
     }
 
-    const [snapshot, processGroup] = await Promise.all([
-      get(hc, terminal),
-      dependencies.processGroup(),
-    ]);
+    const processGroup = await dependencies.processGroup();
 
-    if (current.controller.signal.aborted) {
+    const ownership = await waitForOwnership(hc, {
+      terminal,
+      processGroup,
+      signal: current.controller.signal,
+    });
+
+    if (ownership === 'notOwner') {
       return;
     }
 
-    const foregroundPid = snapshot.foreground?.pid;
+    if (ownership === 'noForeground') {
+      context.ui.notify(
+        `Tau inbox did not start: hc reported no foreground process for terminal ${terminal} within ${String(ownershipTiming.deadlineMilliseconds / millisecondsPerSecond)} seconds.`,
+        'warning',
+      );
 
-    if (!ownsTerminal({ foregroundPid, processGroup })) {
       return;
     }
 
@@ -155,9 +164,7 @@ export const registerInboxLifecycle = (
       },
     });
 
-    current.receiver = receiver;
-
-    listener = await startInbox({
+    const started = await startInbox({
       sessionId: current.sessionId,
       terminal,
       directory: dependencies.socketDirectory(),
@@ -170,6 +177,15 @@ export const registerInboxLifecycle = (
       },
       withdraw: (path) => removeOwnLabel(hc, terminal, path),
     });
+
+    if (current.controller.signal.aborted) {
+      await started.stop();
+
+      return;
+    }
+
+    current.receiver = receiver;
+    listener = started;
   };
 
   const endGeneration = (): void => {
@@ -178,29 +194,40 @@ export const registerInboxLifecycle = (
   };
 
   pi.on('session_start', async (_event, context) => {
-    const endedDrain = generation?.drain ?? Promise.resolve();
+    const ended = generation;
+    const endedDrain = ended?.drain ?? Promise.resolve();
+    const endedAdvertising = ended?.advertising ?? Promise.resolve();
 
     endGeneration();
+    await endedAdvertising.catch(() => undefined);
     await withdraw().catch(() => undefined);
 
     const current: Generation = {
       controller: new AbortController(),
       sessionId: context.sessionManager.getSessionId(),
       drain: endedDrain,
+      advertising: Promise.resolve(),
       receiver: undefined,
     };
 
     generation = current;
 
-    try {
-      await advertise(current, context);
-    } catch (error) {
-      notifyError(context, `Tau inbox could not start: ${errorMessage(error)}`);
+    current.advertising = advertise(current, context).then(
+      () => {
+        if (!current.controller.signal.aborted) {
+          requestDrain(current, context);
+        }
 
-      return;
-    }
+        return undefined;
+      },
+      (error: unknown) => {
+        if (!current.controller.signal.aborted) {
+          notifyError(context, `Tau inbox could not start: ${errorMessage(error)}`);
+        }
 
-    requestDrain(current, context);
+        return undefined;
+      },
+    );
   });
 
   pi.on('agent_end', (_event, context) => {
@@ -223,7 +250,10 @@ export const registerInboxLifecycle = (
   });
 
   pi.on('session_shutdown', async () => {
+    const ended = generation;
+
     endGeneration();
+    await ended?.advertising.catch(() => undefined);
     await withdraw();
   });
 };

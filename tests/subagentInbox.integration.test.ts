@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +15,7 @@ import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import { workerContinuation, workerStartMessage } from '../src/extensions/subagents/workerStart.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { get } from '../src/hc/hc.js';
+import { socketPathFor } from '../src/inbox/endpoint.js';
 import { socketDirectoryFor } from '../src/inbox/inbox.js';
 import { skillTools } from '../src/skillTools.js';
 import { startHcSession } from './hcSessionHarness.js';
@@ -169,6 +170,20 @@ const foregroundPidOf = (hc: HcSession, address: string): Promise<number> =>
     return reply.foreground.pid;
   });
 
+const waitForInbox = async (sessionId: string): Promise<void> => {
+  const uid = process.getuid?.();
+
+  if (uid === undefined) {
+    throw new Error('The Tau inbox needs a POSIX user ID.');
+  }
+
+  const path = socketPathFor(socketDirectoryFor(uid), sessionId);
+
+  await vi.waitFor(() => {
+    expect(existsSync(path)).toBe(true);
+  });
+};
+
 const workerInbox = async (hc: HcSession, worker: WorkerSession) => {
   const workerGroup = await foregroundPidOf(hc, worker.workerAddress);
   const uid = process.getuid?.();
@@ -263,11 +278,13 @@ it('resumes a saved worker session without waiting once it holds the answer rece
 
   const { session } = await startSession();
 
+  await waitForInbox(session.sessionManager.getSessionId());
   await session.prompt(workerStartMessage);
 
   const asked = await waitForQuestion(worker);
 
   await session.reload();
+  await waitForInbox(session.sessionManager.getSessionId());
 
   vi.stubEnv('HC_TERMINAL_ID', worker.managerAddress);
 
@@ -286,6 +303,7 @@ it('resumes a saved worker session without waiting once it holds the answer rece
 
   const resumed = await startSession();
 
+  await waitForInbox(resumed.session.sessionManager.getSessionId());
   await resumed.session.prompt(workerStartMessage);
 
   const reported = await waitForReport(worker);

@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -422,6 +422,10 @@ it.for([
   } as unknown as ExtensionContext;
 
   await runHandlers(inbox, 'session_start', context);
+
+  await vi.waitFor(() => {
+    expect(existsSync(join(sockets, 'sockets', 'session-x.sock'))).toBe(true);
+  });
 
   onTestFinished(async () => {
     await runHandlers(inbox, 'session_shutdown', context);

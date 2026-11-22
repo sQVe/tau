@@ -1,4 +1,4 @@
-import type { Exec } from '../../command.js';
+import type { Exec } from '../command.js';
 
 const outputPreviewLength = 200;
 
