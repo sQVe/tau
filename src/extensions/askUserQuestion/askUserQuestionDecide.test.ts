@@ -60,7 +60,6 @@ const decideConfig = (
 const createHarness = (options: HarnessOptions = {}) => {
   const events: string[] = [];
   const writes: { path: string; record: unknown; mode: number | undefined }[] = [];
-  const removals: string[] = [];
   const notices: string[] = [];
   const judgeCalls: unknown[][] = [];
   const scheduled: (() => Promise<void>)[] = [];
@@ -92,10 +91,6 @@ const createHarness = (options: HarnessOptions = {}) => {
       writes.push({ path, record, mode });
       events.push('write');
       await options.writeRecord?.(path, record, mode);
-    },
-    removeRecord: async (path) => {
-      removals.push(path);
-      events.push('remove');
     },
     prepareJudges: options.prepareJudges ?? (() => ({ judge })),
   };
@@ -159,7 +154,6 @@ const createHarness = (options: HarnessOptions = {}) => {
     run,
     events,
     writes,
-    removals,
     notices,
     judge,
     judgeCalls,
@@ -168,7 +162,7 @@ const createHarness = (options: HarnessOptions = {}) => {
   };
 };
 
-it('answers an eligible call after saving the record and showing the notice', async () => {
+it('answers an eligible call after showing the notice and saving the record', async () => {
   const harness = createHarness();
 
   const result = await harness.run([eligibleQuestion]);
@@ -178,7 +172,7 @@ it('answers an eligible call after saving the record and showing the notice', as
   const written = harness.writes[0];
 
   expect(written).toBeDefined();
-  expect(harness.events).toEqual(['write', 'notice', 'return']);
+  expect(harness.events).toEqual(['notice', 'write', 'return']);
 
   expect(harness.notices).toEqual([
     'Decided: Stacked, because One column. Simple, but wide screens waste space.',
@@ -251,7 +245,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it('asks when the record save fails', async () => {
+it('asks when the record save fails after the notice', async () => {
   const harness = createHarness({
     writeRecord: async () => {
       throw new Error('The record could not be saved.');
@@ -262,11 +256,16 @@ it('asks when the record save fails', async () => {
 
   expect(result.details).toEqual(answeredDetails);
   expect(harness.custom).toHaveBeenCalledTimes(1);
-  expect(harness.notices).toEqual([]);
+
+  expect(harness.notices).toEqual([
+    'Decided: Stacked, because One column. Simple, but wide screens waste space.',
+  ]);
+
+  expect(harness.events).toEqual(['notice', 'write']);
   expect(harness.writes).toHaveLength(1);
 });
 
-it('asks and removes the record when the notice fails', async () => {
+it('asks without writing when the notice fails', async () => {
   const harness = createHarness({
     notify: () => {
       throw new Error('The notice could not be shown.');
@@ -277,8 +276,8 @@ it('asks and removes the record when the notice fails', async () => {
 
   expect(result.details).toEqual(answeredDetails);
   expect(harness.custom).toHaveBeenCalledTimes(1);
-  expect(harness.removals).toEqual([harness.writes[0]?.path]);
-  expect(harness.events).toEqual(['write', 'notice', 'remove']);
+  expect(harness.writes).toEqual([]);
+  expect(harness.events).toEqual(['notice']);
 });
 
 it('asks below the cutoff', async () => {

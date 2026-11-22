@@ -38,11 +38,12 @@ record are local steps and are not timed.
 A call is eligible only when every question is eligible under the shadow sample. If any question is
 ineligible, the whole call asks. The gate never answers part of a batch and asks the rest.
 
-### Save before showing, and ask on failure
+### Show the notice before saving, and ask on failure
 
-Tau writes the decision record before it shows the notice. If the record cannot be saved, Tau shows
-no notice and opens the dialog. If the notice cannot be shown, Tau removes the record and opens the
-dialog. A removed record is not evidence of an answer the user saw.
+Tau shows the notice before it writes the decision record. If the notice cannot be shown, Tau writes
+nothing and opens the dialog. If the record cannot be saved after the notice, Tau opens the dialog
+for the same question. A failed save can therefore show a notice for a question that is then asked,
+and the dialog corrects it. No record exists for a call that fell back to the dialog.
 
 ### Mark the result as the gate's
 
@@ -76,6 +77,8 @@ records, which the report shows with their time and head so a reader can tell th
 
 - The user cannot correct an answer that the gate gave.
 - A reused branch name can mix records from more than one attempt.
+- A failed save after the notice shows a notice for a question that is then asked, and the dialog
+  corrects it.
 - Five seconds is a fixed budget; a slower judge asks even when it would eventually agree.
 - The reason repeats the option description, which may be longer than a dedicated rationale.
 

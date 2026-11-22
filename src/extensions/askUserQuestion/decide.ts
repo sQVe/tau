@@ -1,5 +1,3 @@
-import { rm } from 'node:fs/promises';
-
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
@@ -12,12 +10,13 @@ import {
   decideCall,
   decideDeadlineMilliseconds,
   decideEligibility,
+  mapNonEmpty,
   writeDecisionRecord,
 } from '../../questionGate/questionGate.js';
 import type {
   DecisionRecord,
   DecisionRecordWriter,
-  JudgeQuestion,
+  EligibleQuestion,
   JudgeVerdict,
   ShadowVariant,
 } from '../../questionGate/questionGate.js';
@@ -36,7 +35,6 @@ export interface DecidePorts {
   readBranch: (cwd: string) => Promise<{ branch: string | null; head: string | null }>;
   ensureDirectory: (root: string, path: string) => Promise<string>;
   writeRecord: DecisionRecordWriter;
-  removeRecord: (path: string) => Promise<void>;
   prepareJudges: (
     registry: ModelRegistry,
     config: QuestionGateConfig & { shadow: ShadowConfig },
@@ -56,15 +54,14 @@ type DecideOutcome =
   | { kind: 'ask' }
   | { kind: 'decided'; answers: Answer[]; record: string; notice: string };
 
-interface PreparedDecision {
-  run: () => Promise<DecideOutcome>;
-}
-
 export interface Decider {
-  prepare: (request: DecideRequest) => PreparedDecision | undefined;
+  tryDecide: (request: DecideRequest) => Promise<DecideOutcome> | undefined;
 }
 
 type FrozenConfig = QuestionGateConfig & { shadow: ShadowConfig };
+type EligibleAskedQuestion = EligibleQuestion<AskedQuestion>;
+type JudgedAskedQuestion = EligibleAskedQuestion & { verdict: JudgeVerdict };
+type DecidedAskedQuestion = JudgedAskedQuestion & { confidence: number };
 
 const readBranch = async (cwd: string): Promise<{ branch: string | null; head: string | null }> => {
   const branch = await readGitUnlessMissing(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
@@ -81,27 +78,15 @@ const defaultDecidePorts: DecidePorts = {
   readBranch,
   ensureDirectory: ensureTauDirectory,
   writeRecord: writeRecordToFile,
-  removeRecord: (path) => rm(path),
   prepareJudges,
-};
-
-const recommendedOption = (question: AskedQuestion): { label: string; description: string } => {
-  const recommended = question.options.find((option) => option.recommended === true);
-
-  if (recommended === undefined) {
-    throw new Error('An eligible question has no recommended option.');
-  }
-
-  return recommended;
 };
 
 const judgeAll = async (
   judges: PreparedJudges,
   variant: ShadowVariant,
-  questions: readonly [JudgeQuestion, ...JudgeQuestion[]],
-  confidences: readonly (number | undefined)[],
+  rows: readonly [EligibleAskedQuestion, ...EligibleAskedQuestion[]],
   controller: AbortController,
-): Promise<[JudgeVerdict, ...JudgeVerdict[]]> => {
+): Promise<[JudgedAskedQuestion, ...JudgedAskedQuestion[]]> => {
   const deadline = Promise.withResolvers<JudgeVerdict>();
 
   const timer = setTimeout(() => {
@@ -110,21 +95,18 @@ const judgeAll = async (
   }, decideDeadlineMilliseconds);
 
   try {
-    const verdicts = await Promise.all(
-      questions.map(async (question, index) => {
-        const judged = judges.judge(variant, question, confidences[index], controller.signal);
+    return await Promise.all(
+      mapNonEmpty(rows, async (row) => {
+        const question = judgeQuestionOf(row.question);
 
-        return Promise.race([judged, deadline.promise]);
+        const verdict = await Promise.race([
+          judges.judge(variant, question, row.question.confidence, controller.signal),
+          deadline.promise,
+        ]);
+
+        return { ...row, verdict };
       }),
     );
-
-    const [firstVerdict, ...remainingVerdicts] = verdicts;
-
-    if (firstVerdict === undefined) {
-      throw new Error('Expected one verdict per question.');
-    }
-
-    return [firstVerdict, ...remainingVerdicts];
   } finally {
     clearTimeout(timer);
   }
@@ -132,45 +114,28 @@ const judgeAll = async (
 
 const buildRecord = (
   ports: DecidePorts,
-  request: DecideRequest,
   config: FrozenConfig,
   sessionId: string,
-  questions: readonly [JudgeQuestion, ...JudgeQuestion[]],
-  confidences: readonly number[],
+  rows: readonly [DecidedAskedQuestion, ...DecidedAskedQuestion[]],
   branch: string | null,
   head: string | null,
-): DecisionRecord => {
-  const decisions = request.questions.map((source, index) => {
-    const question = questions[index];
-    const confidence = confidences[index];
-
-    if (question === undefined || confidence === undefined) {
-      throw new Error('Expected one decision per question.');
-    }
-
-    const recommended = recommendedOption(source);
-
-    return {
-      question,
-      choice: recommended.label,
-      reason: recommended.description,
-      confidence,
-    };
-  });
-
-  return {
-    version: 1,
-    kind: 'decision',
-    time: ports.now(),
-    sessionId,
-    branch,
-    head,
-    cohort: shadowCohort(config),
-    variant: config.shadow.variant,
-    cutoff: config.shadow.cutoff,
-    decisions,
-  };
-};
+): DecisionRecord => ({
+  version: 1,
+  kind: 'decision',
+  time: ports.now(),
+  sessionId,
+  branch,
+  head,
+  cohort: shadowCohort(config),
+  variant: config.shadow.variant,
+  cutoff: config.shadow.cutoff,
+  decisions: rows.map(({ question, recommended, confidence }) => ({
+    question: judgeQuestionOf(question),
+    choice: recommended.label,
+    reason: recommended.description,
+    confidence,
+  })),
+});
 
 const noticeLines = (record: DecisionRecord): string[] =>
   record.decisions.map((decision) => `Decided: ${decision.choice}, because ${decision.reason}`);
@@ -187,58 +152,31 @@ const runDecision = async (
   request: DecideRequest,
   config: FrozenConfig,
   sessionId: string,
+  rows: readonly [EligibleAskedQuestion, ...EligibleAskedQuestion[]],
 ): Promise<DecideOutcome> => {
   try {
     const controller = new AbortController();
     const sharedRoot = await ports.findSharedRoot(request.cwd, controller.signal);
-    const [firstQuestion, ...remainingQuestions] = request.questions;
-
-    const questions: [JudgeQuestion, ...JudgeQuestion[]] = [
-      judgeQuestionOf(firstQuestion),
-      ...remainingQuestions.map(judgeQuestionOf),
-    ];
-
-    const confidences = request.questions.map((question) => question.confidence);
     const judges = ports.prepareJudges(request.registry, config);
+    const judgedRows = await judgeAll(judges, config.shadow.variant, rows, controller);
 
-    const verdicts = await judgeAll(
-      judges,
-      config.shadow.variant,
-      questions,
-      confidences,
-      controller,
-    );
-
-    const call = decideCall({ verdicts, cutoff: config.shadow.cutoff });
+    const call = decideCall<JudgedAskedQuestion>({
+      rows: judgedRows,
+      cutoff: config.shadow.cutoff,
+    });
 
     if (call.kind === 'ask') {
       return { kind: 'ask' };
     }
 
     const { branch, head } = await ports.readBranch(request.cwd);
-    const directory = await ports.ensureDirectory(sharedRoot, 'questions');
-
-    const record = buildRecord(
-      ports,
-      request,
-      config,
-      sessionId,
-      questions,
-      call.confidences,
-      branch,
-      head,
-    );
-
-    const path = await writeDecisionRecord(directory, record, ports.writeRecord);
+    const record = buildRecord(ports, config, sessionId, call.rows, branch, head);
     const notice = noticeLines(record).join('\n');
 
-    try {
-      request.notify(notice);
-    } catch {
-      await ports.removeRecord(path).catch(() => undefined);
+    request.notify(notice);
 
-      return { kind: 'ask' };
-    }
+    const directory = await ports.ensureDirectory(sharedRoot, 'questions');
+    const path = await writeDecisionRecord(directory, record, ports.writeRecord);
 
     return { kind: 'decided', answers: decidedAnswers(record), record: path, notice };
   } catch {
@@ -250,8 +188,10 @@ export const createDecider = (overrides: Partial<DecidePorts> = {}): Decider => 
   const ports: DecidePorts = { ...defaultDecidePorts, ...overrides };
 
   return {
-    prepare: (request) => {
-      if (decideEligibility(request.questions).kind !== 'eligible') {
+    tryDecide: (request) => {
+      const eligibility = decideEligibility(request.questions);
+
+      if (eligibility.kind !== 'eligible') {
         return undefined;
       }
 
@@ -278,7 +218,7 @@ export const createDecider = (overrides: Partial<DecidePorts> = {}): Decider => 
           ports.requireModel(reference, location);
         }
 
-        return { run: () => runDecision(ports, request, config, sessionId) };
+        return runDecision(ports, request, config, sessionId, eligibility.rows);
       } catch {
         return undefined;
       }

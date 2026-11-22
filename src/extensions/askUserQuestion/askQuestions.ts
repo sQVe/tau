@@ -89,10 +89,10 @@ export const askQuestions = async (
   const sessionId = sessionIdOf(context.sessionManager);
   const decideQuestions = nonEmptyQuestions(questions);
 
-  const prepared =
+  const attempt =
     decideQuestions === undefined
       ? undefined
-      : decider.prepare({
+      : decider.tryDecide({
           questions: decideQuestions,
           sessionId,
           cwd: context.cwd,
@@ -103,7 +103,7 @@ export const askQuestions = async (
           },
         });
 
-  const decision = prepared === undefined ? undefined : await prepared.run();
+  const decision = attempt === undefined ? undefined : await attempt;
 
   if (decision?.kind === 'decided') {
     return {
