@@ -12,7 +12,12 @@ const session = {
   exec: declinedExec,
 };
 
-it('runs the sweep with the default options', async () => {
+const turn = (): Promise<void> =>
+  new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+
+it('runs the sweep with the session inputs', async () => {
   const runSweep = vi.fn<SweepRunner>(async () => ({ outcome: 'caughtUp' }));
   const lifecycle = createSweepLifecycle(runSweep);
   const refreshed = Promise.withResolvers<undefined>();
@@ -30,8 +35,6 @@ it('runs the sweep with the default options', async () => {
       agentDirectory: '/agent',
       cwd: '/work/me-1',
       exec: declinedExec,
-      budgetMilliseconds: 20_000,
-      since: '2026-04-09',
     }),
   );
 });
@@ -52,10 +55,11 @@ it('records the outcome before it refreshes', async () => {
 });
 
 it('records a failed outcome when the runner throws', async () => {
-  const lifecycle = createSweepLifecycle(async () => {
+  const runSweep = vi.fn<SweepRunner>(async () => {
     throw new Error('gh failed');
   });
 
+  const lifecycle = createSweepLifecycle(runSweep);
   const refreshed = Promise.withResolvers<undefined>();
 
   lifecycle.start(session, async () => {
@@ -64,6 +68,7 @@ it('records a failed outcome when the runner throws', async () => {
 
   await refreshed.promise;
 
+  expect(runSweep).toHaveBeenCalledTimes(1);
   expect(lifecycle.latest()).toEqual({ outcome: 'failed', reason: 'gh failed' });
 });
 
@@ -79,6 +84,7 @@ it('starts the run without waiting for it', () => {
 
 it('keeps the previous result when a stopped run aborts', async () => {
   const first = Promise.withResolvers<SweepOutcome>();
+  const stoppedOutcome: SweepOutcome = { outcome: 'failed', reason: 'stopped' };
 
   const runSweep = vi
     .fn<SweepRunner>()
@@ -87,7 +93,7 @@ it('keeps the previous result when a stopped run aborts', async () => {
       (options) =>
         new Promise((resolve) => {
           options.signal.addEventListener('abort', () => {
-            resolve({ outcome: 'caughtUp' });
+            resolve(stoppedOutcome);
           });
         }),
     );
@@ -128,7 +134,7 @@ it('awaits a refresh the completion path already started', async () => {
     return undefined;
   });
 
-  await Promise.resolve();
+  await turn();
 
   expect(stopped).toBe(false);
 
