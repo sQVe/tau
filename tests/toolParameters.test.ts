@@ -1,6 +1,5 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it } from 'vitest';
 
-import { releaseRegistration } from '../src/inbox/inbox.js';
 import tauRegistration from '../src/tau/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
 
@@ -9,8 +8,6 @@ import { fakeExtensionApi } from './extensionApi.js';
 it('gives every registered tool an object schema at the top of its parameters', async () => {
   const fake = fakeExtensionApi();
 
-  // No session starts, so no session_shutdown releases the inbox that loading Tau claims.
-  onTestFinished(releaseRegistration);
   await tauRegistration(fake.pi);
 
   expect(fake.tools.size).toBeGreaterThan(0);

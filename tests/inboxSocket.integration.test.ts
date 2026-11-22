@@ -150,6 +150,7 @@ const startReceiverSession = async (
   });
 
   const inbox = createInboxExtension({
+    owner: Symbol('tau inbox'),
     hc: hc.runtime,
     socketDirectory: () => socketDirectory,
     inboxDirectory: () => recordDirectory,

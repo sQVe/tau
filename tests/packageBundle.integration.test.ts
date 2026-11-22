@@ -10,7 +10,6 @@ import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-codin
 import { expect, it } from 'vitest';
 
 import { buildTauExtension } from '../scripts/buildTauExtension.js';
-import { releaseRegistration } from '../src/inbox/inbox.js';
 import tauRegistration from '../src/tau/tau.js';
 import { readTauArtifactKey, tauArtifactPath } from '../src/tau/tauArtifact.js';
 import { isTauRegistrationModule } from '../src/tau/tauSelection.js';
@@ -287,17 +286,11 @@ it('loads the same registrations, handler order, and skill commands from source 
   const artifact = await buildTauExtension(packageRoot);
   const skillDirectories = await configuredSkillDirectories();
 
-  // Loading Tau claims the process-wide inbox, and no session runs to release it.
-  onTestFinished(releaseRegistration);
-
   const fromSource = await load(
     join(packageRoot, 'src', 'tau', 'tau.ts'),
     directory,
     skillDirectories,
   );
-
-  // Loading Tau claims the process-wide inbox slot, which the next load must be able to claim too.
-  releaseRegistration();
 
   const fromArtifact = await load(artifact, directory, skillDirectories);
 
@@ -319,8 +312,6 @@ it('loads the same registrations, handler order, and skill commands from source 
   // The first two session_start handlers must stay the lock and the warning reset, in that order.
   // Recording their identity shows the order without running either handler.
   const fromSourceHandlers = await registeredHandlers(directory, async () => tauRegistration);
-
-  releaseRegistration();
 
   const fromArtifactHandlers = await registeredHandlers(directory, artifactRegistration(artifact));
 
@@ -346,11 +337,7 @@ it('registers every hook, tool, and command in the same order from the bundle as
   const directory = temporaryDirectory(onTestFinished, 'tau-bundle-handlers-');
   const artifact = await buildTauExtension(packageRoot);
 
-  onTestFinished(releaseRegistration);
-
   const sourceCalls = await registeredHandlers(directory, async () => tauRegistration);
-
-  releaseRegistration();
 
   const artifactCalls = await registeredHandlers(directory, artifactRegistration(artifact));
 

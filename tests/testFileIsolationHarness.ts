@@ -69,13 +69,15 @@ if (testPath !== undefined && mocksModules(readFileSync(testPath, 'utf8'))) {
   });
 }
 
-// Every Tau load in this process shares one inbox slot, and only session_shutdown releases it. A
-// file that loads Tau without shutting its session down would leave later files with no inbox.
+// Every Tau load in this process shares one inbox slot, and only a session's shutdown releases it.
+// A file that starts a session without shutting it down would leave later files with no inbox.
 afterAll(() => {
   const slot = globalThis.tauInboxSlot;
 
-  if (slot?.registered === true) {
-    throw new Error('This file loaded Tau without session_shutdown, so the inbox stays claimed.');
+  if (slot?.owner !== undefined) {
+    throw new Error(
+      'This file started a session without session_shutdown, so the inbox stays claimed.',
+    );
   }
 
   if (slot?.endpoint !== undefined) {

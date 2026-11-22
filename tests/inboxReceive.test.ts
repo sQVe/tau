@@ -131,6 +131,7 @@ const startReceiver = async (sessionId: string, mode = 'tui') => {
   const piState = { idle: true, signal: undefined as AbortSignal | undefined };
 
   createInboxExtension({
+    owner: Symbol('tau inbox'),
     hc: { exec: hcExec, connect: () => Promise.reject(new Error('no connect')), cwd: root },
     socketDirectory: () => join(root, 'sockets'),
     inboxDirectory: () => join(root, 'records'),

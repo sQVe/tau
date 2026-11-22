@@ -7,7 +7,7 @@ import { piExec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { claimRegistration, releaseRegistration, socketDirectoryFor } from '../../inbox/inbox.js';
+import { holdsInbox, socketDirectoryFor } from '../../inbox/inbox.js';
 import { createWake } from '../../wake/wake.js';
 import { guardTerminalTyping } from './guard.js';
 import { registerInboxLifecycle } from './lifecycle.js';
@@ -15,6 +15,7 @@ import { readProcessGroup } from './processGroup.js';
 import { createStartupGate } from './startup.js';
 
 export interface InboxExtensionDependencies {
+  owner: symbol;
   hc: HcRuntime;
   socketDirectory: () => string;
   inboxDirectory: () => string;
@@ -24,9 +25,12 @@ export interface InboxExtensionDependencies {
 export const createInboxExtension =
   (dependencies: InboxExtensionDependencies) =>
   (pi: ExtensionAPI): void => {
-    pi.on('tool_call', guardTerminalTyping);
+    pi.on('tool_call', (event) =>
+      holdsInbox(dependencies.owner) ? guardTerminalTyping(event) : undefined,
+    );
 
     registerInboxLifecycle(pi, {
+      owner: dependencies.owner,
       hc: dependencies.hc,
       terminal: currentTerminalAddress,
       socketDirectory: dependencies.socketDirectory,
@@ -48,13 +52,8 @@ const currentSocketDirectory = (): string => {
 };
 
 export default function inboxExtension(pi: ExtensionAPI): void {
-  if (!claimRegistration()) {
-    return;
-  }
-
-  pi.on('session_shutdown', releaseRegistration);
-
   createInboxExtension({
+    owner: Symbol('tau inbox'),
     hc: { exec: piExec(pi), connect, cwd: process.cwd() },
     socketDirectory: currentSocketDirectory,
     inboxDirectory: () => join(getAgentDir(), 'tau', 'inbox'),

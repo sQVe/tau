@@ -10,7 +10,7 @@ import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
-import { setAcceptCheck } from '../../inbox/inbox.js';
+import { setAcceptCheck, releaseInbox } from '../../inbox/inbox.js';
 import { createInboxExtension } from './inbox.js';
 
 interface HcState {
@@ -27,6 +27,7 @@ interface HarnessOptions {
   state?: HcState;
   socketDirectory?: string;
   processGroup?: number;
+  owner?: symbol;
 }
 
 const raceWaitMilliseconds = 200;
@@ -130,6 +131,7 @@ const contextFor = (sessionId: string, notify: (message: string) => void): Exten
 const startHarness = (options: HarnessOptions = {}) => {
   const state = options.state ?? hcState();
   const socketDirectory = options.socketDirectory ?? join(root, 'sockets');
+  const owner = options.owner ?? Symbol('tau inbox');
   const fake = fakeExtensionApi();
   const notices: string[] = [];
   const firstNotice = Promise.withResolvers<undefined>();
@@ -140,6 +142,7 @@ const startHarness = (options: HarnessOptions = {}) => {
   };
 
   createInboxExtension({
+    owner,
     hc: { exec: hcExec(state), connect: () => Promise.reject(new Error('no connect')), cwd: root },
     socketDirectory: () => socketDirectory,
     inboxDirectory: () => join(root, 'records'),
@@ -168,6 +171,7 @@ const startHarness = (options: HarnessOptions = {}) => {
 
   return {
     state,
+    owner,
     notices,
     firstNotice: firstNotice.promise,
     sendMessage: fake.sendMessage,
@@ -609,6 +613,36 @@ it('refuses to start in a socket directory other users can read', async () => {
   ]);
 });
 
+it('serves one inbox when a process keeps two lifecycles', async () => {
+  const state = hcState();
+  const first = startHarness({ state });
+  const second = startHarness({ state });
+  const firstSession = randomUUID();
+  const secondSession = randomUUID();
+
+  await first.start(firstSession);
+  await second.start(secondSession);
+  cleanups.push(() => second.shutdown(secondSession));
+  cleanups.push(() => first.shutdown(firstSession));
+
+  expect(Object.fromEntries(state.labels)).toEqual({
+    'tau.inbox': `rpc1:${socketOf(firstSession)}`,
+  });
+
+  expect(existsSync(socketOf(firstSession))).toBe(true);
+  expect(existsSync(socketOf(secondSession))).toBe(false);
+
+  await second.shutdown(secondSession);
+
+  await expect(exchange(socketOf(firstSession), handoverTo(firstSession))).resolves.toMatchObject({
+    sessionId: firstSession,
+  });
+
+  expect(Object.fromEntries(state.labels)).toEqual({
+    'tau.inbox': `rpc1:${socketOf(firstSession)}`,
+  });
+});
+
 it('leaves a replacement listener and its label when a replaced lifecycle shuts down', async () => {
   const state = hcState();
   const replaced = startHarness({ state });
@@ -617,6 +651,7 @@ it('leaves a replacement listener and its label when a replaced lifecycle shuts 
   const second = randomUUID();
 
   await replaced.start(first);
+  releaseInbox(replaced.owner);
   await replacement.start(second);
   cleanups.push(() => replacement.shutdown(second));
   await replaced.shutdown(first);
@@ -635,6 +670,7 @@ it('leaves the label of a replacement with the same session when a replaced life
   const sessionId = randomUUID();
 
   await replaced.start(sessionId);
+  releaseInbox(replaced.owner);
   await replacement.start(sessionId);
   cleanups.push(() => replacement.shutdown(sessionId));
   await replaced.shutdown(sessionId);
@@ -674,6 +710,7 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
   const releaseRead = Promise.withResolvers<undefined>();
 
   await earlier.start(first);
+  releaseInbox(earlier.owner);
 
   state.afterRead = () => {
     readStarted.resolve(undefined);
@@ -724,6 +761,7 @@ it("keeps the foreground session's label when a second Pi on its terminal starts
 
   await parent.start(parentSession);
   cleanups.push(() => parent.shutdown(parentSession));
+  releaseInbox(parent.owner);
   await child.start(childSession);
   await expectParentInbox();
   await child.shutdown(childSession);

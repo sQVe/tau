@@ -18,7 +18,6 @@ import { expect, it, vi } from 'vitest';
 import manifest from '../package.json' with { type: 'json' };
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
 import { qaGuidePath } from '../src/extensions/subagents/qaBrief.js';
-import { releaseRegistration } from '../src/inbox/inbox.js';
 import { readInstructionSet } from '../src/instructions/instructions.js';
 import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { emptySessionRefusal, installHcCommand } from './hcCommandHarness.js';
@@ -324,10 +323,7 @@ it('loads Tau as a Pi package without extension warnings', async ({ onTestFinish
     noThemes: true,
   });
 
-  // Loading Tau claims the process-wide inbox, and this load never starts a session that would
-  // send session_shutdown to release it.
-  onTestFinished(releaseRegistration);
-
+  // Loading Tau starts no session, so nothing claims the process-wide inbox.
   await loader.reload();
 
   const { errors, warnings } = loader.getExtensions();

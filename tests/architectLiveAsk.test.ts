@@ -408,6 +408,7 @@ it.for([
   hc.reply('get', terminal);
 
   createInboxExtension({
+    owner: Symbol('tau inbox'),
     hc: { ...hc, cwd: sockets },
     socketDirectory: () => join(sockets, 'sockets'),
     inboxDirectory: () => join(sockets, 'records'),

@@ -18,7 +18,6 @@ import { qaGuidePath } from '../src/extensions/subagents/qaBrief.js';
 import type { Loadout } from '../src/extensions/subagents/types.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
-import { releaseRegistration } from '../src/inbox/inbox.js';
 import type { RoleKind } from '../src/role/role.js';
 import { managerGuidelines } from '../src/role/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
@@ -82,8 +81,6 @@ const loadTools = async (role: RoleKind, agentDirectory: string) => {
   const fake = fakeExtensionApi();
 
   await tauRegistration(fake.pi);
-  // No session starts, so no session_shutdown releases the inbox that loading Tau claimed.
-  releaseRegistration();
 
   if (role === 'worker') {
     workerExtension(fake.pi);
