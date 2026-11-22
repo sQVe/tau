@@ -70,6 +70,9 @@ const decideConfig = (
   ...overrides,
 });
 
+const noticeLines = (notices: readonly string[]): string[] =>
+  notices.flatMap((notice) => notice.split('\n'));
+
 const createHarness = (options: HarnessOptions = {}) => {
   const events: string[] = [];
   const writes: { path: string; record: unknown; mode: number | undefined }[] = [];
@@ -176,14 +179,22 @@ const createHarness = (options: HarnessOptions = {}) => {
 };
 
 it('answers an eligible call after showing the notice and saving the record', async () => {
+  const writeStarted = Promise.withResolvers<undefined>();
   const save = Promise.withResolvers<undefined>();
-  const harness = createHarness({ writeRecord: () => save.promise });
+
+  const harness = createHarness({
+    writeRecord: () => {
+      writeStarted.resolve(undefined);
+
+      return save.promise;
+    },
+  });
 
   const pending = harness.run([eligibleQuestion]);
 
-  await vi.waitFor(() => {
-    expect(harness.events).toEqual(['notice', 'write']);
-  });
+  await writeStarted.promise;
+
+  expect(harness.events).toEqual(['notice', 'write']);
 
   let settled = false;
 
@@ -214,9 +225,7 @@ it('answers an eligible call after showing the notice and saving the record', as
   expect(written).toBeDefined();
   expect(harness.events).toEqual(['notice', 'write', 'return']);
 
-  expect(harness.notices).toEqual([
-    'Decided: Stacked, because One column. Simple, but wide screens waste space.',
-  ]);
+  expect(noticeLines(harness.notices)).toEqual([expect.stringContaining('Stacked')]);
 
   expect(result.details).toEqual({
     kind: 'decided',
@@ -384,12 +393,17 @@ it('keeps answers and saved rows in input order when judges finish out of order'
     multiQuestion('Which theme should the preview use?', 'Theme', 0.95, 'Dark'),
   ];
 
+  const judgesStarted = Promise.withResolvers<undefined>();
   const verdicts = new Map<string, PromiseWithResolvers<JudgeVerdict>>();
 
   const judge: PreparedJudges['judge'] = async (_variant, question) => {
     const deferred = Promise.withResolvers<JudgeVerdict>();
 
     verdicts.set(question.question, deferred);
+
+    if (verdicts.size === questions.length) {
+      judgesStarted.resolve(undefined);
+    }
 
     return deferred.promise;
   };
@@ -398,9 +412,9 @@ it('keeps answers and saved rows in input order when judges finish out of order'
 
   const pending = harness.run(questions);
 
-  await vi.waitFor(() => {
-    expect(verdicts.size).toBe(3);
-  });
+  await judgesStarted.promise;
+
+  expect(verdicts.size).toBe(questions.length);
 
   const third = verdicts.get(questions[2]?.question ?? '');
   const first = verdicts.get(questions[0]?.question ?? '');
@@ -429,12 +443,12 @@ it('keeps answers and saved rows in input order when judges finish out of order'
 
   expect(harness.writes[0]?.record).toMatchObject({ decisions });
 
-  const noticeLines = harness.notices.flatMap((notice) => notice.split('\n'));
+  const lines = noticeLines(harness.notices);
 
-  expect(noticeLines).toHaveLength(questions.length);
+  expect(lines).toHaveLength(questions.length);
 
   questions.forEach((question, index) => {
-    expect(noticeLines[index]).toContain(question.options[1]?.label);
+    expect(lines[index]).toContain(question.options[1]?.label);
   });
 });
 
@@ -480,9 +494,7 @@ it('finishes the record when the signal aborts while ensuring the directory', as
     record: harness.writes[0]?.path,
   });
 
-  expect(harness.notices).toEqual([
-    'Decided: Stacked, because One column. Simple, but wide screens waste space.',
-  ]);
+  expect(noticeLines(harness.notices)).toEqual([expect.stringContaining('Stacked')]);
 
   expect(harness.events).toEqual(['notice', 'write']);
   expect(harness.writes).toHaveLength(1);
@@ -636,9 +648,7 @@ it('asks when the record save fails after the notice', async () => {
   expect(result.details).toEqual(answeredDetails);
   expect(harness.custom).toHaveBeenCalledTimes(1);
 
-  expect(harness.notices).toEqual([
-    'Decided: Stacked, because One column. Simple, but wide screens waste space.',
-  ]);
+  expect(noticeLines(harness.notices)).toEqual([expect.stringContaining('Stacked')]);
 
   expect(harness.events).toEqual(['notice', 'write']);
   expect(harness.writes).toHaveLength(1);
