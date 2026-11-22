@@ -16,8 +16,7 @@ import { runPass } from './recordPass.js';
 import type { PassResult } from './recordPass.js';
 import { parseRecordRequest, parameters } from './recordRequest.js';
 import { createStatusRefresh } from './statusAction.js';
-import { startSweep } from './sweepStart.js';
-import { createSweepState } from './sweepState.js';
+import { createSweepLifecycle } from './sweepStart.js';
 import { runTask } from './taskAction.js';
 
 const description = `- record: correction (summary) in session project; review (pullRequest, outcome), backlog (review, item, summary), decision (review, item, or class, plus choice), class (identity, level, summary, occurrences), each with projectRoot, in task project; pass in every project root that has an event. {id,path,outcome} or pass {id,paths,failed}; existing kept.
@@ -34,14 +33,15 @@ export default function improvementExtension(
     return;
   }
 
-  const sweepState = createSweepState();
+  const sweepRunner = options.runSweep ?? runSweep;
+  const lifecycle = createSweepLifecycle(sweepRunner);
 
   const readStatus = (cwd: string) =>
     readImprovementStatus({
       cwd,
       agentDirectory: getAgentDir(),
       now: new Date(),
-      sessionSweep: sweepState.latest(),
+      sessionSweep: lifecycle.latest(),
     });
 
   const refresh = createStatusRefresh(readStatus);
@@ -99,20 +99,16 @@ export default function improvementExtension(
     }),
   );
 
-  const sweepRunner = options.runSweep ?? runSweep;
-
   pi.on('session_start', (_event, context) => {
     // oxlint-disable-next-line typescript/no-floating-promises -- refresh turns every failure into undefined, so it cannot reject.
     void refresh(context);
 
-    // oxlint-disable-next-line typescript/no-floating-promises -- startSweep turns every failure into a failed outcome, so the sweep cannot reject.
-    void startSweep(
-      { cwd: context.cwd, agentDirectory: getAgentDir(), exec: piExec(pi) },
-      sweepRunner,
-    ).then((outcome) => {
-      sweepState.record(outcome);
+    lifecycle.start({ cwd: context.cwd, agentDirectory: getAgentDir(), exec: piExec(pi) }, () =>
+      refresh(context),
+    );
+  });
 
-      return refresh(context);
-    });
+  pi.on('session_shutdown', async () => {
+    await lifecycle.stop();
   });
 }

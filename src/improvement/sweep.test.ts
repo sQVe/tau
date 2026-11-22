@@ -14,6 +14,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.ts';
 import { createSweepFixture, eventHash } from '../../tests/sweepHarness.ts';
+import { sessionHeader } from '../../tests/transcriptHarness.ts';
 import { withFileLock } from '../fileLock/fileLock.ts';
 import { readEvents } from './event.ts';
 import { readSweepIndex, sweepIndexPath } from './sweepIndex.ts';
@@ -395,6 +396,30 @@ it('returns failed for a newer index without changing it', async () => {
 
   expect(readFileSync(path, 'utf8')).toBe(before);
   expect(fixture.eventFiles()).toEqual([]);
+});
+
+it('stops when the caller signal aborts and saves progress', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const controller = new AbortController();
+  const path = fixture.writeSession('manager.jsonl', `${sessionHeader(fixture.repository)}\n`);
+  const gate = fixture.gateMergedList();
+
+  const run = fixture.run({ signal: controller.signal });
+
+  await gate.reached;
+  controller.abort();
+
+  expect(await run).toEqual({ outcome: 'budget' });
+
+  const index = await fixture.readIndex();
+
+  expect(index.lastSweep).toMatchObject({ outcome: 'budget' });
+
+  expect(index.transcripts[path]).toMatchObject({
+    status: 'resolved',
+    cwd: fixture.repository,
+    projectRoot: fixture.repository,
+  });
 });
 
 it('rejects a budget that is not a positive integer', async () => {
