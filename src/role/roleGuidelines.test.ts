@@ -45,7 +45,7 @@ it('a lead guideline set names the lead rules and no architect rule', () => {
   const guidelines = managerGuidelines('lead', options);
 
   expect(guidelines).toContain(
-    'You are the lead. You own the user conversation, the worker briefs, integration, and commits.',
+    'You are the lead. You own the user conversation, launch briefs, integration, and commits.',
   );
 
   expect(guidelines).toContain(
@@ -65,7 +65,7 @@ it('an architect guideline set names the architect rules and no lead rule', () =
   const guidelines = managerGuidelines('architect', options);
 
   expect(guidelines).toContain(
-    'You are the architect. You own how work is done: the design, the plan, the acceptance criteria, and the worker briefs.',
+    'You are the architect. You own how work is done: the design, the plan, the acceptance criteria, and the ticket bodies workers start from.',
   );
 
   expect(guidelines).toContain(
