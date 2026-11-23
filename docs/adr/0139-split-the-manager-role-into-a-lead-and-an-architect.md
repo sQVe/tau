@@ -36,6 +36,9 @@ Every session the lead opens with `open` ends with one final handover whose text
 `Final:`. It states the outcome and the lead's next step, and the lead leaves that request alone
 until it arrives.
 
+While a session the lead opened runs, the lead starts no editing worker in this checkout, because
+the architect can switch the branch during `start-slice` step 9.
+
 A live architect in this checkout takes the question in its inbox, so no second Pi writes its
 session file. The architect records its route when it takes the checkout lock: the lock token, its
 mode, its terminal, and its Pi session ID. `ask` takes the live path only when that token matches

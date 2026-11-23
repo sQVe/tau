@@ -53,11 +53,11 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
      Take the PR URLs of its `open` blockers as `openBlockerPullRequests`. With none, the base is
      `origin/<defaultBranch>`.
    - Otherwise, if `chosen` is null, send the slice statuses and blockers with `handover` `send` and
-     `final: true`, then stop.
+     `final: true`, starting the text with `Final:`, then stop.
    - No `openBlockerPullRequests` means unstacked. Otherwise call the `stack` tool's `chain` with
      those URLs as `pullRequests`, and a URL from `chosen.pullRequests` as `slicePullRequest` when
-     it has one. On `stop`, send `reason` with `handover` `send` and `final: true`, then stop.
-     Otherwise the returned `parent` is the step 4 parent.
+     it has one. On `stop`, send `reason` with `handover` `send` and `final: true`, starting the
+     text with `Final:`, then stop. Otherwise the returned `parent` is the step 4 parent.
    - When `branchAbove` is true, ask with `ask_user_question`: wait until the parent merges
      (recommended), or stack on `topBranch`, which adds dependencies above the parent. Waiting makes
      the slice not ready. Stacking makes `topBranch` the parent.
@@ -162,9 +162,9 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     each agent ticket's `apply` status (`new`, `updated`, or `unchanged`), identifier, URL, title,
     and one `## Outcome` line; each scout's questions, whether you revised or proceeded, and each
     failed scout; each slice criterion with its ticket numbers. End with `handover` `send`, with
-    `final` set to true, to the terminal that opened the architect, carrying the step 4 base, the
-    step 7 check results, the step 9 ticket identifiers, and `$slicedir`. Never call `handover`
-    `start`.
+    `final` set to true and the text starting with `Final:`, to the terminal that opened the
+    architect, carrying the step 4 base, the step 7 check results, the step 9 ticket identifiers,
+    and `$slicedir`. Never call `handover` `start`.
 
     > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
 
