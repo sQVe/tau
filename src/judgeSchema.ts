@@ -1,45 +1,54 @@
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
+import type { Static, TObjectOptions } from 'typebox';
 
-const judgeOptionSchema = Type.Object(
-  {
-    label: Type.String(),
-    description: Type.String(),
-    recommended: Type.Boolean(),
-  },
-  { additionalProperties: false },
-);
+export type JudgeOption = JudgeQuestion['options'][number];
 
-export const judgeQuestionSchema = Type.Object(
-  {
-    question: Type.String(),
-    problem: Type.String(),
-    impact: Type.String(),
-    options: Type.Array(judgeOptionSchema),
-  },
-  { additionalProperties: false },
-);
+export type PastOutcome = PastAnswer['outcome'];
 
-const pastOutcomeSchema = Type.Union([
-  Type.Object({ kind: Type.Literal('recommended') }, { additionalProperties: false }),
-  Type.Object(
-    { kind: Type.Literal('otherOption'), label: Type.String() },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { kind: Type.Literal('typed'), text: Type.String() },
-    { additionalProperties: false },
-  ),
-]);
+const buildJudgeSchemas = (options: TObjectOptions) => {
+  const option = Type.Object(
+    {
+      label: Type.String(),
+      description: Type.String(),
+      recommended: Type.Boolean(),
+    },
+    options,
+  );
 
-export const pastAnswerSchema = Type.Object(
-  {
-    time: Type.Number(),
-    question: judgeQuestionSchema,
-    outcome: pastOutcomeSchema,
-  },
-  { additionalProperties: false },
-);
+  const question = Type.Object(
+    {
+      question: Type.String(),
+      problem: Type.String(),
+      impact: Type.String(),
+      options: Type.Array(option),
+    },
+    options,
+  );
+
+  const outcome = Type.Union([
+    Type.Object({ kind: Type.Literal('recommended') }, options),
+    Type.Object({ kind: Type.Literal('otherOption'), label: Type.String() }, options),
+    Type.Object({ kind: Type.Literal('typed'), text: Type.String() }, options),
+  ]);
+
+  const pastAnswer = Type.Object(
+    {
+      time: Type.Number(),
+      question,
+      outcome,
+    },
+    options,
+  );
+
+  return { question, pastAnswer };
+};
+
+const strictJudgeSchemas = buildJudgeSchemas({ additionalProperties: false });
+const openJudgeSchemas = buildJudgeSchemas({});
+
+export const judgeQuestionSchema = strictJudgeSchemas.question;
+export const pastAnswerSchema = strictJudgeSchemas.pastAnswer;
+export const openPastAnswerSchema = openJudgeSchemas.pastAnswer;
 
 export const shadowVariantSchema = Type.Union([
   Type.Literal('classifier'),
@@ -49,8 +58,6 @@ export const shadowVariantSchema = Type.Union([
   Type.Literal('agent'),
 ]);
 
-export type JudgeOption = Static<typeof judgeOptionSchema>;
 export type JudgeQuestion = Static<typeof judgeQuestionSchema>;
-export type PastOutcome = Static<typeof pastOutcomeSchema>;
 export type PastAnswer = Static<typeof pastAnswerSchema>;
 export type ShadowVariant = Static<typeof shadowVariantSchema>;

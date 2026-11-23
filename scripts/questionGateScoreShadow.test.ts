@@ -57,7 +57,7 @@ const writeConfig = async (agentDirectory: string, value: unknown): Promise<void
 
 const cohortOf = (repository: string, agentDirectory: string): string => {
   const location = { cwd: repository, agentDirectory, projectTrusted: false };
-  const config = readQuestionGateConfig(location);
+  const config = readQuestionGateConfig(location, { notify: () => undefined });
 
   if (config?.shadow === undefined) {
     throw new Error('The fixture config has no shadow setting.');
@@ -135,6 +135,31 @@ it('reports only the frozen shadow cohort', async ({ onTestFinished }) => {
   expect(result.stderr).toContain('Excluded 1 shadow records from other cohorts.');
   expect(result.stderr).toContain('Shadow record warning:');
   expect(after).toEqual(before);
+});
+
+it('warns about an unknown shadow key and still scores', async ({ onTestFinished }) => {
+  const repository = await createTemporaryRepository(onTestFinished, 'tau-shadow-unknown-');
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-shadow-agent-');
+
+  await writeConfig(agentDirectory, {
+    questionGate: {
+      ...gateConfig.questionGate,
+      shadow: { ...gateConfig.questionGate.shadow, extra: true },
+    },
+  });
+
+  const before = await snapshot(agentDirectory);
+  const result = runShadow(repository, agentDirectory);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('Agreement: n/a');
+
+  const userFile = join(agentDirectory, 'tau.json');
+  const warnings = result.stderr.match(/questionGate\.shadow\.extra/gu) ?? [];
+
+  expect(warnings).toHaveLength(1);
+  expect(result.stderr).toContain(userFile);
+  expect(await snapshot(agentDirectory)).toEqual(before);
 });
 
 it('reports n/a when every shadow record is a gap', async ({ onTestFinished }) => {

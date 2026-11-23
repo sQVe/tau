@@ -1,5 +1,7 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { expect } from 'vitest';
 
 import type { ConfigLocation } from '../src/config/config.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -10,6 +12,15 @@ interface TemporaryTauConfig {
   repositoryFile: string;
   writeUser: (value: unknown) => void;
   writeRepository: (value: unknown) => void;
+}
+
+interface ConfigBytes {
+  user: string;
+  repository: string | undefined;
+}
+
+export interface TauConfigSnapshot {
+  expectUnchanged: () => void;
 }
 
 export const temporaryTauConfig = (
@@ -35,6 +46,24 @@ export const temporaryTauConfig = (
     },
     writeRepository: (value: unknown) => {
       writeFileSync(repositoryFile, JSON.stringify(value));
+    },
+  };
+};
+
+const readConfigBytes = (userFile: string, repositoryFile: string): ConfigBytes => ({
+  user: readFileSync(userFile, 'utf8'),
+  repository: existsSync(repositoryFile) ? readFileSync(repositoryFile, 'utf8') : undefined,
+});
+
+export const tauConfigSnapshot = (userFile: string, repositoryFile: string): TauConfigSnapshot => {
+  const before = readConfigBytes(userFile, repositoryFile);
+
+  return {
+    expectUnchanged: () => {
+      const after = readConfigBytes(userFile, repositoryFile);
+
+      expect(after.user).toBe(before.user);
+      expect(after.repository).toBe(before.repository);
     },
   };
 };

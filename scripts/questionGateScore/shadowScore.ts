@@ -7,6 +7,7 @@ import { readQuestionGateConfig, shadowCohort } from '../../src/config/questionG
 import { readShadowRecords } from '../../src/questionGate/questionGate.ts';
 import { readVersionedRecord } from '../../src/record.ts';
 import { findSharedRepositoryRoot, rejectTauSymlinks } from '../../src/tauDirectory.ts';
+import { stderrConfigWarnings } from './configWarnings.ts';
 import { formatShadowReport, shadowReport } from './shadowReport.ts';
 
 const shadowSetting = 'questionGate.shadow';
@@ -15,7 +16,7 @@ export const runShadowReport = async (cwd: string): Promise<string> => {
   const agentDirectory = getAgentDir();
   const sharedRoot = await findSharedRepositoryRoot(cwd);
   const location = { cwd: sharedRoot, agentDirectory, projectTrusted: false };
-  const config = readQuestionGateConfig(location);
+  const config = readQuestionGateConfig(location, stderrConfigWarnings);
   const shadow = config?.shadow;
 
   if (config === undefined || shadow === undefined) {

@@ -1,7 +1,14 @@
 import { Value } from 'typebox/value';
 import { expect, it } from 'vitest';
 
-import { anyKey, findUnknownKeys, reportedId, stringEnum, unreportedKeys } from './schema.js';
+import {
+  anyItem,
+  anyKey,
+  findUnknownKeys,
+  reportedId,
+  stringEnum,
+  unreportedKeys,
+} from './schema.js';
 import type { KnownKeys } from './schema.js';
 
 const known: KnownKeys = {
@@ -9,24 +16,41 @@ const known: KnownKeys = {
   routes: { question: true, labels: { [anyKey]: { criterion: true, model: true } } },
 };
 
-it.for<[string, unknown, string[]]>([
-  ['known keys', { model: 'a/b', routes: { question: 'q' } }, []],
-  ['a top-level key', { model: 'a/b', futureKey: 1 }, ['profiles.worker.futureKey']],
+const items = { items: [{ name: 'a', extra: 1 }, 'text'] };
+
+it.for<[string, unknown, KnownKeys, string[]]>([
+  ['known keys', { model: 'a/b', routes: { question: 'q' } }, known, []],
+  ['a top-level key', { model: 'a/b', futureKey: 1 }, known, ['profiles.worker.futureKey']],
   [
     'nested keys under a wildcard',
     { routes: { extra: 1, labels: { wide: { criterion: 'c', speed: 2 } } } },
+    known,
     ['profiles.worker.routes.extra', 'profiles.worker.routes.labels.wide.speed'],
   ],
   [
     'names that Object.prototype also has',
     { model: 'a/b', constructor: 1, toString: 2 },
+    known,
     ['profiles.worker.constructor', 'profiles.worker.toString'],
   ],
-  ['a value that is not an object', 'text', []],
-  ['a known key with a wrong type', { routes: 5 }, []],
-  ['a known leaf key that holds an object', { model: { name: 'a/b' } }, []],
-])('finds unknown keys for %s', ([, value, expected]) => {
-  expect(findUnknownKeys(value, known, 'profiles.worker')).toEqual(expected);
+  [
+    'keys inside array items with an item node',
+    items,
+    { items: { [anyItem]: { name: true } } },
+    ['profiles.worker.items[0].extra'],
+  ],
+  ['keys inside array items without an item node', items, { items: { name: true } }, []],
+  [
+    'an item node declared as a leaf stops the walk',
+    { items: [{ name: 'a', extra: 1 }] },
+    { items: { [anyItem]: true } },
+    [],
+  ],
+  ['a value that is not an object', 'text', known, []],
+  ['a known key with a wrong type', { routes: 5 }, known, []],
+  ['a known leaf key that holds an object', { model: { name: 'a/b' } }, known, []],
+])('finds unknown keys for %s', ([, value, knownKeys, expected]) => {
+  expect(findUnknownKeys(value, knownKeys, 'profiles.worker')).toEqual(expected);
 });
 
 it('names a key at the root of the file without a leading dot', () => {

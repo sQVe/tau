@@ -1,7 +1,7 @@
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
-import type { ConfigLocation } from '../../config/config.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
 import { readQuestionGateConfig, shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
@@ -30,7 +30,7 @@ import type { Answer } from './questionnaire.js';
 export interface DecidePorts {
   now: () => number;
   findSharedRoot: (cwd: string, signal: AbortSignal) => Promise<string>;
-  readConfig: (location: ConfigLocation) => QuestionGateConfig | undefined;
+  readConfig: (location: ConfigLocation, ui: ConfigWarnings) => QuestionGateConfig | undefined;
   requireModel: (reference: string, location: ConfigLocation) => void;
   readBranch: (cwd: string) => Promise<{ branch: string | null; head: string | null }>;
   ensureDirectory: (root: string, path: string) => Promise<string>;
@@ -47,8 +47,8 @@ interface DecideRequest {
   cwd: string;
   projectTrusted: boolean;
   registry: ModelRegistry;
-  notify: (text: string) => void;
   signal: AbortSignal | undefined;
+  ui: ConfigWarnings;
 }
 
 export type DecideOutcome =
@@ -234,7 +234,7 @@ const runDecision = async (
       return { kind: 'cancelled' };
     }
 
-    request.notify(notice);
+    request.ui.notify(notice, 'info');
 
     return await saveDecision(ports, request, sharedRoot, record, notice);
   } catch {
@@ -268,7 +268,7 @@ export const createDecider = (overrides: Partial<DecidePorts> = {}): Decider => 
       };
 
       try {
-        const config = ports.readConfig(location);
+        const config = ports.readConfig(location, request.ui);
 
         if (config?.decide !== true) {
           return undefined;

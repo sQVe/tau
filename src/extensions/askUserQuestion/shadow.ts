@@ -1,7 +1,7 @@
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
-import type { ConfigLocation } from '../../config/config.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
 import { readQuestionGateConfig, shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
@@ -24,7 +24,7 @@ import { judgeQuestionOf, prepareJudges } from './judges.js';
 export interface ShadowPorts {
   now: () => number;
   findSharedRoot: (cwd: string, signal: AbortSignal) => Promise<string>;
-  readConfig: (location: ConfigLocation) => QuestionGateConfig | undefined;
+  readConfig: (location: ConfigLocation, ui: ConfigWarnings) => QuestionGateConfig | undefined;
   requireModel: (reference: string, location: ConfigLocation) => void;
   ensureDirectory: (root: string, path: string) => Promise<string>;
   writeRecord: ShadowRecordWriter;
@@ -37,6 +37,7 @@ interface ShadowStart {
   cwd: string;
   projectTrusted: boolean;
   registry: ModelRegistry;
+  ui: ConfigWarnings;
 }
 
 export interface ShadowJob {
@@ -143,7 +144,7 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
         projectTrusted: request.projectTrusted,
       };
 
-      const read = ports.readConfig(location);
+      const read = ports.readConfig(location, request.ui);
 
       if (read?.shadow === undefined) {
         return undefined;
