@@ -70,6 +70,12 @@ retry compares the payload without the version, and a retry whose sender differs
 message. A receiver on an older Tau refuses a frame that carries `sender`; that refusal is accepted
 and needs no fallback.
 
+### Ask with handover_question
+
+A lead session gets the `handover_question` tool only when it finds a sender. The tool saves an open
+question record in the asker's checkout, sends a saved `handover-question` frame to the sender's
+session, and ends the turn. A refused send deletes the record and tells the asker to ask its user.
+
 ### Ask the user when the sender is gone
 
 An ended sender makes the asker ask its user. A dead terminal cannot answer, and waiting on it would
