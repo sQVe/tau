@@ -57,55 +57,40 @@ export const inboxMessageType = 'tau-inbox-message';
 const isReceiptVersion = (value: unknown): value is InboxReceiptVersion =>
   value === previousInboxReceiptVersion || value === inboxReceiptVersion;
 
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === 'string' && value !== '';
+
 const questionDetails = (questionId: unknown): { questionId?: string } =>
   typeof questionId === 'string' ? { questionId } : {};
-
-const handoverQuestionDetails = (questionId: unknown): { questionId: string } | undefined =>
-  typeof questionId === 'string' && isUuid(questionId) ? { questionId } : undefined;
-
-const readIdentity = (details: Record<string, unknown>): ReceiptIdentity | undefined => {
-  const { version, messageId, sessionId } = details;
-  const hasMessageId = typeof messageId === 'string' && messageId !== '';
-  const hasSessionId = typeof sessionId === 'string' && sessionId !== '';
-
-  if (!hasMessageId || !hasSessionId || !isReceiptVersion(version)) {
-    return undefined;
-  }
-
-  return { version, messageId, sessionId };
-};
 
 const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined => {
   if (message.customType !== inboxMessageType || !isRecord(message.details)) {
     return undefined;
   }
 
-  const identity = readIdentity(message.details);
+  const { version, messageId, sessionId, family, questionId } = message.details;
+  const hasMessageId = isNonEmptyString(messageId);
+  const hasSessionId = isNonEmptyString(sessionId);
 
-  if (identity === undefined) {
+  if (!hasMessageId || !hasSessionId || !isReceiptVersion(version)) {
     return undefined;
   }
 
-  const { family, questionId } = message.details;
-
   switch (family) {
     case 'handover':
-      return { ...identity, family };
+      return { version, messageId, sessionId, family };
 
     case 'answer':
-      return { ...identity, family, ...questionDetails(questionId) };
+      return { version, messageId, sessionId, family, ...questionDetails(questionId) };
 
     case 'handover-question': {
-      if (identity.version !== inboxReceiptVersion) {
+      if (version !== inboxReceiptVersion) {
         return undefined;
       }
 
-      const { version, messageId, sessionId } = identity;
-      const details = handoverQuestionDetails(questionId);
+      const hasQuestionId = typeof questionId === 'string' && isUuid(questionId);
 
-      return details === undefined
-        ? undefined
-        : { version, messageId, sessionId, family, ...details };
+      return hasQuestionId ? { version, messageId, sessionId, family, questionId } : undefined;
     }
 
     default:
