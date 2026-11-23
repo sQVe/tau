@@ -37,6 +37,15 @@ const run = (input: RunTestsInput, overrides: Partial<NextestDeps> = {}) =>
 const testNamesOf = (result: RunnerResult): string[] =>
   'tests' in result ? result.tests.map((test) => test.fullname) : [];
 
+// A toMatchObject failure prints only the keys the expectation names, so the failing stage's own
+// output has to travel as the assertion message.
+const stageOutput = (result: RunnerResult): string =>
+  (result.diagnostics?.stages ?? [])
+    .map(
+      (stage) => `${stage.name}: exit ${stage.exitCode ?? 'unavailable'}\n${stage.excerpt ?? ''}`,
+    )
+    .join('\n\n');
+
 let basicCrate = '';
 const registerCleanup = suiteCleanup();
 
@@ -153,7 +162,7 @@ it('reports a test that nextest stops for running too long as a timeout', async 
 
   const result = await run(focusedInput(crate, ['tests::sleeps']));
 
-  expect(result).toMatchObject({ kind: 'timeout', stage: 'run' });
+  expect(result, stageOutput(result)).toMatchObject({ kind: 'timeout', stage: 'run' });
 });
 
 it('ignores a repository default filter, fail-fast, and a Tau-like profile', async ({
