@@ -37,7 +37,7 @@ const uncheckedNote = (askId: string): string =>
   `Ask ${askId}: the architect closed and could not check whether its answer reached you. If no "Answer to ask ${askId}" arrived, call architect ask again.`;
 
 const liveRecord = (): LiveAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'live',
   askId: randomUUID(),
   createdAt: '2026-11-18T10:00:00.000Z',
@@ -50,6 +50,7 @@ const liveRecord = (): LiveAskRecord => ({
   status: 'queued',
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const answerText = (askId: string): string => `Answer to ask ${askId}:\n\nUse --dry-run.\n`;

@@ -488,7 +488,7 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
   await writeFile(
     join(askRecordDirectory(root), '0190c1d2-0000-7000-8000-000000000110.json'),
     JSON.stringify({
-      version: 2,
+      version: 3,
       route: 'hidden',
       askId: '0190c1d2-0000-7000-8000-000000000110',
       createdAt: new Date().toISOString(),
@@ -500,6 +500,7 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
       status: 'running',
       detail: null,
       answer: null,
+      gateRecord: null,
     }),
   );
 

@@ -23,6 +23,7 @@ import type { ArchitectPublication } from './askDecision.js';
 export interface AskRequest {
   root: string;
   question: string;
+  gateRecord: string | null;
   leadTerminal: string;
   leadSessionId: string;
   listenerPath: string | undefined;
@@ -87,7 +88,7 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
   const recordPath = askRecordPath(request.root, askId);
 
   const initial: HiddenAskRecord = {
-    version: 2,
+    version: 3,
     route: 'hidden',
     askId,
     createdAt: new Date().toISOString(),
@@ -99,6 +100,7 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
     status: 'running',
     detail: null,
     answer: null,
+    gateRecord: request.gateRecord,
   };
 
   await writeAskRecord(request.root, initial);

@@ -11,7 +11,7 @@ import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
 import { askModePrompt, registerAskMode } from './askMode.js';
 
 const askRecord = (): HiddenAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'hidden',
   askId: '0190c1d2-0000-7000-8000-000000000105',
   createdAt: '2026-11-17T10:00:00.000Z',
@@ -23,10 +23,11 @@ const askRecord = (): HiddenAskRecord => ({
   status: 'running',
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const liveRecord = (): LiveAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'live',
   askId: '0190c1d2-0000-7000-8000-000000000106',
   createdAt: '2026-11-17T10:00:00.000Z',
@@ -39,6 +40,7 @@ const liveRecord = (): LiveAskRecord => ({
   status: 'queued',
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const askFile = async (

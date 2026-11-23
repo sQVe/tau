@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { constants } from 'node:fs';
+import { open, readdir, realpath } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { errorMessage, isMissingFile } from '../../errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from '../../errors.js';
 import { withFileLock } from '../../fileLock/fileLock.js';
 import { isUuid } from '../../inbox/inbox.js';
-import { readVersionedRecord, writeRecord } from '../../record.js';
+import { parseVersionedRecord, readVersionedRecord, writeRecord } from '../../record.js';
 import { isRecord } from '../../schema.js';
-import { ensureTauDirectory } from '../../tauDirectory.js';
+import { ensureTauDirectory, existingEntry } from '../../tauDirectory.js';
 
 export type AskRecord = HiddenAskRecord | LiveAskRecord;
 
@@ -35,6 +37,12 @@ export interface ChangeAskOptions {
   afterRead?: () => Promise<void>;
   onWaiting?: () => void;
 }
+
+export type GateRecordRead =
+  | { kind: 'outside'; directory: string }
+  | { kind: 'missing' }
+  | { kind: 'unreadable'; message: string }
+  | { kind: 'found'; path: string; record: GateRecord };
 
 const choiceOutcomeSchema = Type.Union([
   Type.Object({
@@ -128,11 +136,23 @@ const askRecordV1Schema = Type.Object({
   ...hiddenAskFields,
 });
 
-const hiddenAskRecordSchema = Type.Object(
+const hiddenAskRecordV2Schema = Type.Object(
   {
     version: Type.Literal(2),
     route: Type.Literal('hidden'),
     ...hiddenAskFields,
+  },
+  { additionalProperties: false },
+);
+
+const askRecordVersion = 3;
+
+const hiddenAskRecordSchema = Type.Object(
+  {
+    version: Type.Literal(askRecordVersion),
+    route: Type.Literal('hidden'),
+    ...hiddenAskFields,
+    gateRecord: Type.Union([Type.String(), Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -147,48 +167,76 @@ const liveAskStatusSchema = Type.Union([
 
 type LiveAskStatus = Static<typeof liveAskStatusSchema>;
 
-const liveAskRecordSchema = Type.Object(
+const liveAskFields = {
+  askId: Type.String(),
+  createdAt: Type.String(),
+  question: Type.String(),
+  leadTerminal: Type.String(),
+  leadSessionId: Type.String(),
+  architectTerminal: Type.String(),
+  architectSessionId: Type.String(),
+  architectLockToken: Type.String(),
+  status: liveAskStatusSchema,
+  detail: Type.Union([Type.String(), Type.Null()]),
+  answer: Type.Union([Type.String(), Type.Null()]),
+};
+
+const liveAskRecordV2Schema = Type.Object(
   {
     version: Type.Literal(2),
     route: Type.Literal('live'),
-    askId: Type.String(),
-    createdAt: Type.String(),
-    question: Type.String(),
-    leadTerminal: Type.String(),
-    leadSessionId: Type.String(),
-    architectTerminal: Type.String(),
-    architectSessionId: Type.String(),
-    architectLockToken: Type.String(),
-    status: liveAskStatusSchema,
-    detail: Type.Union([Type.String(), Type.Null()]),
-    answer: Type.Union([Type.String(), Type.Null()]),
+    ...liveAskFields,
   },
   { additionalProperties: false },
 );
 
-const askRecordSchema = Type.Union([askRecordV1Schema, hiddenAskRecordSchema, liveAskRecordSchema]);
+const liveAskRecordSchema = Type.Object(
+  {
+    version: Type.Literal(askRecordVersion),
+    route: Type.Literal('live'),
+    ...liveAskFields,
+    gateRecord: Type.Union([Type.String(), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+const askRecordSchema = Type.Union([
+  askRecordV1Schema,
+  hiddenAskRecordV2Schema,
+  liveAskRecordV2Schema,
+  hiddenAskRecordSchema,
+  liveAskRecordSchema,
+]);
 
 export type HiddenAskRecord = Static<typeof hiddenAskRecordSchema>;
 
 export type LiveAskRecord = Static<typeof liveAskRecordSchema>;
 
-const toAskRecord = (record: Static<typeof askRecordSchema>): AskRecord =>
-  record.version === 1
-    ? {
-        version: 2,
-        route: 'hidden',
-        askId: record.askId,
-        createdAt: record.createdAt,
-        question: record.question,
-        sessionFile: record.sessionFile,
-        terminal: record.terminal,
-        leadTerminal: record.leadTerminal,
-        deadline: record.deadline,
-        status: record.status,
-        detail: record.detail,
-        answer: record.answer,
-      }
-    : record;
+const toAskRecord = (record: Static<typeof askRecordSchema>): AskRecord => {
+  if (record.version === 1) {
+    return {
+      version: 3,
+      route: 'hidden',
+      askId: record.askId,
+      createdAt: record.createdAt,
+      question: record.question,
+      sessionFile: record.sessionFile,
+      terminal: record.terminal,
+      leadTerminal: record.leadTerminal,
+      deadline: record.deadline,
+      status: record.status,
+      detail: record.detail,
+      answer: record.answer,
+      gateRecord: null,
+    };
+  }
+
+  if (record.version === 2) {
+    return { ...record, version: 3, gateRecord: null };
+  }
+
+  return record;
+};
 
 export const architectRecordPath = (root: string): string =>
   join(root, '.tau', 'architect', 'record.json');
@@ -217,12 +265,96 @@ export const writeArchitectRecord = async (
   await writeRecord(architectRecordPath(root), record);
 };
 
-export const readGateRecord = (root: string, name: string): Promise<GateRecord | undefined> =>
-  readVersionedRecord(join(gateRecordDirectory(root), name), {
-    label: 'gate record',
-    version: 1,
-    schema: gateRecordSchema,
-  });
+const isInsideDirectory = (directory: string, path: string): boolean => {
+  const fromDirectory = relative(directory, path);
+
+  return fromDirectory !== '' && !fromDirectory.startsWith('..') && !isAbsolute(fromDirectory);
+};
+
+const gateRecordOptions = {
+  label: 'gate record',
+  version: 1,
+  schema: gateRecordSchema,
+} as const;
+
+const notRegularFileMessage = (path: string): string =>
+  `Gate record ${path} is not a regular file.`;
+
+// A pipe opens without a writer only in non-blocking mode, and the type check and the read use one
+// handle, so a replacement after the check cannot redirect or block the read.
+const readGateRecordFile = async (path: string): Promise<GateRecordRead> => {
+  const flags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
+
+  let handle: FileHandle;
+
+  try {
+    handle = await open(path, flags);
+  } catch (error) {
+    if (hasErrorCode(error, 'ELOOP')) {
+      return { kind: 'unreadable', message: notRegularFileMessage(path) };
+    }
+
+    throw error;
+  }
+
+  try {
+    const stats = await handle.stat();
+
+    if (!stats.isFile()) {
+      return { kind: 'unreadable', message: notRegularFileMessage(path) };
+    }
+
+    const text = await handle.readFile('utf8');
+
+    return { kind: 'found', path, record: parseVersionedRecord(path, text, gateRecordOptions) };
+  } finally {
+    await handle.close();
+  }
+};
+
+export const readGateRecord = async (root: string, reference: string): Promise<GateRecordRead> => {
+  const resolved = resolve(root, reference);
+  const directory = gateRecordDirectory(root);
+
+  if (!isInsideDirectory(directory, resolved)) {
+    return { kind: 'outside', directory };
+  }
+
+  try {
+    // Names a missing entry and every entry that is not a regular file before any resolution or
+    // open, so a link, a socket, a device node, a FIFO, or a directory never reaches the open.
+    const entry = await existingEntry(resolved);
+
+    if (entry === undefined) {
+      return { kind: 'missing' };
+    }
+
+    if (!entry.isFile()) {
+      return { kind: 'unreadable', message: notRegularFileMessage(resolved) };
+    }
+
+    const realRoot = await realpath(root);
+    const realDirectory = await realpath(directory);
+
+    if (!isInsideDirectory(realRoot, realDirectory)) {
+      return { kind: 'outside', directory };
+    }
+
+    const realRecord = await realpath(resolved);
+
+    if (!isInsideDirectory(realDirectory, realRecord)) {
+      return { kind: 'outside', directory };
+    }
+
+    return await readGateRecordFile(resolved);
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return { kind: 'missing' };
+    }
+
+    return { kind: 'unreadable', message: errorMessage(error) };
+  }
+};
 
 export const writeGateRecord = async (root: string, record: GateRecord): Promise<string> => {
   await ensureTauDirectory(root, 'lead/gate');
@@ -257,7 +389,7 @@ const askRecordProblem = (path: string, value: unknown): string | undefined => {
 export const readAskRecordAt = async (path: string): Promise<AskRecord | undefined> => {
   const record = await readVersionedRecord(path, {
     label: 'ask record',
-    version: 2,
+    version: askRecordVersion,
     schema: askRecordSchema,
     check: (value) => askRecordProblem(path, value),
   });

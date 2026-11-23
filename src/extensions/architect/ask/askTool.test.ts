@@ -23,7 +23,7 @@ const hiddenAsk = (
   createdAt: string,
   status: HiddenAskRecord['status'] = 'running',
 ): HiddenAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'hidden',
   askId,
   createdAt,
@@ -35,10 +35,11 @@ const hiddenAsk = (
   status,
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const liveAsk = (askId: string, createdAt: string): LiveAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'live',
   askId,
   createdAt,
@@ -51,6 +52,7 @@ const liveAsk = (askId: string, createdAt: string): LiveAskRecord => ({
   status: 'queued',
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 it('ask refuses without a recorded session file', async ({ onTestFinished: cleanup }) => {

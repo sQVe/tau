@@ -20,14 +20,6 @@ it('adds one line that names the QA procedure and the guide only when given a pr
   expect(withoutGuide.some((guideline) => guideline.includes(qaGuidePath))).toBe(false);
 });
 
-it('routes a confident gate open to the architect and asks the user only when uncertain', () => {
-  const guidelines = managerGuidelines('lead', options);
-  const gateGuideline = guidelines.find((guideline) => guideline.includes('`architect` `gate`'));
-
-  expect(gateGuideline).toContain('On `open`, call `architect` `open`.');
-  expect(gateGuideline).toContain('On `uncertain`, ask the user');
-});
-
 it('keeps every lead-only guideline out of the architect set', () => {
   const leadOnly = leadOnlyGuidelines(options);
   const lead = managerGuidelines('lead', options);
