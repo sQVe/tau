@@ -24,6 +24,18 @@ const previousRecord = {
   payload: { text: 'handover text' },
 };
 
+const previousAnswerRecord = {
+  version: 1 as const,
+  messageId,
+  family: 'answer' as const,
+  payload: {
+    assignmentId: '22222222-2222-4222-8222-222222222222',
+    questionId: '33333333-3333-4333-8333-333333333333',
+    parentSession: 'lead-session',
+    answer: 'Use 42.',
+  },
+};
+
 const directoryFixture = () => join(temporaryDirectory(onTestFinished, 'tau-store-'), 'session');
 
 const fixtureInto = (directory: string, name: string): string => {
@@ -43,6 +55,17 @@ it('reads the frozen previous record', async () => {
   await expect(readMessage(directory, messageId)).resolves.toEqual({
     kind: 'record',
     record: previousRecord,
+  });
+});
+
+it('reads the frozen previous answer record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'previousAnswer.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: previousAnswerRecord,
   });
 });
 
@@ -88,21 +111,23 @@ it('reports a saved answer-request record as malformed', async () => {
 
   mkdirSync(directory, { recursive: true });
 
-  writeFileSync(
-    path,
-    JSON.stringify({
-      version: 1,
-      messageId,
-      family: 'answer-request',
-      payload: {
-        assignmentId: '22222222-2222-4222-8222-222222222222',
-        questionId: '33333333-3333-4333-8333-333333333333',
-        answer: 'Use 42.',
-      },
-    }),
-  );
+  for (const version of [1, 2]) {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version,
+        messageId,
+        family: 'answer-request',
+        payload: {
+          assignmentId: '22222222-2222-4222-8222-222222222222',
+          questionId: '33333333-3333-4333-8333-333333333333',
+          answer: 'Use 42.',
+        },
+      }),
+    );
 
-  await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+    await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+  }
 });
 
 it('reports a missing record', async () => {
@@ -144,7 +169,7 @@ it('saves once and never replaces a saved record', async () => {
   await expect(saveMessage(directory, record)).resolves.toBe('existing');
 
   await expect(
-    saveMessage(directory, { ...record, payload: { text: 'other text' } }),
+    saveMessage(directory, { ...record, payload: { ...record.payload, text: 'other text' } }),
   ).resolves.toBe('changed');
 
   expect(readFileSync(path, 'utf8')).toBe(saved);

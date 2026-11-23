@@ -2,6 +2,8 @@ import { Type } from 'typebox';
 import type { Static, TObject, TProperties, TSchema, TUnion } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { senderTerminalPattern } from '../handoverSender.js';
+
 export type MessageRequest = Static<typeof requestSchema>;
 
 export type MessageBody = Static<typeof bodySchema>;
@@ -62,7 +64,7 @@ const protocolField = Type.Literal(protocolName);
 
 const handoverSenderSchema = Type.Object(
   {
-    terminal: Type.String({ minLength: 1 }),
+    terminal: Type.String({ pattern: senderTerminalPattern }),
     sessionId: sessionIdSchema,
   },
   strict,

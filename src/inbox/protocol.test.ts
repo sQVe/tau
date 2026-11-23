@@ -68,6 +68,27 @@ const requestCases: [string, Uint8Array, ReturnType<typeof decodeRequest>][] = [
     line({ ...handover, payload: { ...handover.payload, sender: { ...sender, extra: true } } }),
     { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
   ],
+  [
+    'a handover message with an empty sender terminal',
+    line({ ...handover, payload: { ...handover.payload, sender: { ...sender, terminal: '' } } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'a handover message with whitespace in the sender terminal',
+    line({
+      ...handover,
+      payload: { ...handover.payload, sender: { ...sender, terminal: 'lead terminal' } },
+    }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'a handover message with a sender session ID that Pi does not accept',
+    line({
+      ...handover,
+      payload: { ...handover.payload, sender: { ...sender, sessionId: '../escape' } },
+    }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
   ['an architect-ask message', line(architectAsk), { kind: 'frame', value: architectAsk }],
   [
     'an architect-ask without a lock token',

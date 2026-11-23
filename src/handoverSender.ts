@@ -22,6 +22,14 @@ export const senderEnvironmentNames = {
 // Pi's own rule for `--session-id`. It also keeps a session ID safe as a file name.
 const sessionIdExpression = new RegExp('^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$', 'u');
 
+// A terminal is one non-empty token with no whitespace, so a saved sender line parses back. The
+// lookahead rejects a trailing newline, which `$` alone allows.
+export const senderTerminalPattern = '^(?!.*\\s)\\S+$';
+
+const senderTerminalExpression = new RegExp(senderTerminalPattern, 'u');
+
+export const isSenderTerminal = (value: string): boolean => senderTerminalExpression.test(value);
+
 const senderLineExpression = /^Handover sender: terminal (\S+), session (.+)\.$/u;
 
 const senderFromEnvironment = (
@@ -30,7 +38,7 @@ const senderFromEnvironment = (
   const terminal = environment[senderEnvironmentNames.terminal] ?? '';
   const sessionId = environment[senderEnvironmentNames.session] ?? '';
 
-  if (terminal === '' || !sessionIdExpression.test(sessionId)) {
+  if (!isSenderTerminal(terminal) || !sessionIdExpression.test(sessionId)) {
     return undefined;
   }
 
@@ -45,7 +53,7 @@ export const senderOf = (facts: SenderFacts): HandoverSender | undefined => {
   const terminal = facts.terminal ?? '';
   const sessionId = facts.sessionId ?? '';
 
-  if (terminal === '' || sessionId === '') {
+  if (!isSenderTerminal(terminal) || sessionId === '') {
     return undefined;
   }
 
@@ -66,7 +74,7 @@ export const parseSenderLine = (text: string): HandoverSender | undefined => {
   const terminal = match[1] ?? '';
   const sessionId = match[2] ?? '';
 
-  if (terminal === '' || !sessionIdExpression.test(sessionId)) {
+  if (!isSenderTerminal(terminal) || !sessionIdExpression.test(sessionId)) {
     return undefined;
   }
 

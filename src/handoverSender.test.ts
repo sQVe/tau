@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import {
+  isSenderTerminal,
   lookupSender,
   parseSenderLine,
   senderEnvironment,
@@ -79,6 +80,15 @@ const lookupRows: {
     expected: undefined,
   },
   {
+    name: 'takes no sender from a terminal with whitespace in the environment',
+    environment: {
+      TAU_HANDOVER_SENDER_TERMINAL: 'lead terminal',
+      TAU_HANDOVER_SENDER_SESSION: 'lead-id',
+    },
+    messages: [],
+    expected: undefined,
+  },
+  {
     name: 'takes no sender from a malformed session ID in the environment',
     environment: {
       TAU_HANDOVER_SENDER_TERMINAL: 't7',
@@ -116,6 +126,11 @@ it.each(lookupRows.map((row) => [row.name, row] as const))('%s', (_name, row) =>
   );
 });
 
+it('accepts only one non-empty token without whitespace as a sender terminal', () => {
+  expect(['t7', 'lead', 't-child'].map(isSenderTerminal)).toEqual([true, true, true]);
+  expect(['', 'lead terminal', 'lead\n'].map(isSenderTerminal)).toEqual([false, false, false]);
+});
+
 const senderOfRows: {
   name: string;
   role: string;
@@ -148,6 +163,13 @@ const senderOfRows: {
     name: 'takes no missing terminal',
     role: 'lead',
     terminal: undefined,
+    sessionId: 'lead-id',
+    expected: undefined,
+  },
+  {
+    name: 'takes no terminal with whitespace',
+    role: 'lead',
+    terminal: 'lead terminal',
     sessionId: 'lead-id',
     expected: undefined,
   },
