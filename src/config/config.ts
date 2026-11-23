@@ -44,6 +44,14 @@ export const configFileName = 'tau.json';
 export const userConfigPath = (agentDirectory: string): string =>
   join(agentDirectory, configFileName);
 
+const jsonKind = (value: unknown): string => {
+  if (value === null) {
+    return 'null';
+  }
+
+  return Array.isArray(value) ? 'array' : typeof value;
+};
+
 const readConfigFile = (source: string): ConfigFile | undefined => {
   let text: string;
 
@@ -57,13 +65,21 @@ const readConfigFile = (source: string): ConfigFile | undefined => {
     throw new Error(`Could not read Tau config ${source}: ${String(error)}`, { cause: error });
   }
 
+  let value: unknown;
+
   try {
-    return { source, value: JSON.parse(text) };
+    value = JSON.parse(text);
   } catch (error) {
     throw new Error(`Invalid Tau config ${source}: not valid JSON (${String(error)})`, {
       cause: error,
     });
   }
+
+  if (!isRecord(value)) {
+    throw new Error(`Invalid Tau config ${source}: not a JSON object (found ${jsonKind(value)}).`);
+  }
+
+  return { source, value };
 };
 
 // Pi's project trust gates the repository file, as it gates `.pi/settings.json`.
