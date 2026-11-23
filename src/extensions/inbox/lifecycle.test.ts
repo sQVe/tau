@@ -11,7 +11,7 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
-import { releaseInbox, setAcceptCheck } from '../../inbox/inbox.js';
+import { releaseInbox, setAcceptCheck, advertiseLabel } from '../../inbox/inbox.js';
 import { createWake } from '../../wake/wake.js';
 import { registerInboxLifecycle } from './lifecycle.js';
 import { createStartupGate } from './startup.js';
@@ -775,6 +775,41 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
   await expect(exchange(socketOf(second), handoverTo(second))).resolves.toMatchObject({
     sessionId: second,
   });
+
+  expect(Object.fromEntries(state.labels)).toEqual({ 'tau.inbox': `rpc1:${socketOf(second)}` });
+});
+
+it('keeps a replacement label that another process writes between the shutdown read and its clear', async () => {
+  const state = hcState();
+  const earlier = startHarness({ state });
+  const first = randomUUID();
+  const second = randomUUID();
+  let replacementWrite: Promise<void> | undefined;
+
+  await earlier.start(first);
+  releaseInbox(earlier.owner);
+
+  state.afterRead = () => {
+    replacementWrite = advertiseLabel({
+      hc: {
+        exec: hcExec(state),
+        connect: () => Promise.reject(new Error('no connect')),
+        cwd: root,
+      },
+      terminal: 't7',
+      directory: join(root, 'sockets'),
+      path: socketOf(second),
+    });
+
+    const wait = new Promise<void>((resolve) => {
+      setTimeout(resolve, raceWaitMilliseconds);
+    });
+
+    return Promise.race([replacementWrite, wait]);
+  };
+
+  await earlier.shutdown(first);
+  await replacementWrite;
 
   expect(Object.fromEntries(state.labels)).toEqual({ 'tau.inbox': `rpc1:${socketOf(second)}` });
 });

@@ -6,15 +6,10 @@ import type { AcceptCheck } from './receive.js';
 
 export { socketDirectoryFor } from './endpoint.js';
 
-export {
-  encodeMessageFrame,
-  formatInboxLabel,
-  inboxLabelKey,
-  isUuid,
-  requestByteLimit,
-} from './protocol.js';
+export { encodeMessageFrame, inboxLabelKey, isUuid, requestByteLimit } from './protocol.js';
 
 export type { MessageRequest } from './protocol.js';
+export { advertiseLabel, withdrawLabel } from './label.js';
 export { createReceiver } from './receive.js';
 export type { AcceptCheck, Receiver, ReceiverOptions } from './receive.js';
 export { createReceiptStore } from './receipts.js';
@@ -121,11 +116,11 @@ const answerFrame = async (bytes: Buffer, options: InboxStartOptions) => {
   return reply;
 };
 
-const closeCurrent = async (): Promise<void> => {
+const closeCurrent = async (beforeUnlink?: () => Promise<void>): Promise<void> => {
   const current = slot.endpoint;
 
   slot.endpoint = undefined;
-  await current?.close();
+  await current?.close(beforeUnlink);
 };
 
 const open = async (options: InboxStartOptions): Promise<InboxListener> => {
@@ -145,9 +140,8 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
   try {
     await options.advertise(path);
   } catch (error) {
-    await closeCurrent();
     // The label may be set even when its reply failed. The advertise error explains the failure.
-    await options.withdraw(path).catch(() => undefined);
+    await closeCurrent(() => options.withdraw(path).catch(() => undefined));
 
     throw error;
   }
@@ -161,8 +155,7 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
           return;
         }
 
-        await closeCurrent();
-        await options.withdraw(path);
+        await closeCurrent(() => options.withdraw(path));
       }),
   };
 };

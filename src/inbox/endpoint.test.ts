@@ -138,6 +138,17 @@ it('removes its own socket file on close', async () => {
   expect(existsSync(path)).toBe(false);
 });
 
+it('unlinks the socket path and rejects with the hook error when the hook before the unlink fails', async () => {
+  const path = socketPathFor(root, randomUUID());
+  const endpoint = await openEndpoint({ path, respond: () => Promise.resolve('ok\n') });
+
+  await expect(endpoint.close(() => Promise.reject(new Error('clear failed')))).rejects.toThrow(
+    'clear failed',
+  );
+
+  expect(existsSync(path)).toBe(false);
+});
+
 it('passes a frame split across writes to the responder as one request', async () => {
   const path = socketPathFor(root, randomUUID());
   const received: string[] = [];

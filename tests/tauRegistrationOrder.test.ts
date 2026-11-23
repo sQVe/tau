@@ -161,11 +161,15 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   ]);
 
   expect(outcome).toBe('withdrawal');
-  expect(existsSync(socketPath)).toBe(false);
+  expect(existsSync(socketPath)).toBe(true);
   expect(await readLiveLockHolder(lockPath)).toBeDefined();
 
   releaseWithdrawal.resolve(undefined);
   await inboxDone;
+
+  expect(existsSync(socketPath)).toBe(false);
+  expect(await readLiveLockHolder(lockPath)).toBeDefined();
+
   await architectShutdown.handler({} as never, context);
 
   expect(existsSync(socketPath)).toBe(false);

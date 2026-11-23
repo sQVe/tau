@@ -27,8 +27,21 @@ folder, and replies before the sender reports success.
 
 - Every Tau session's inbox binds one pathname Unix socket in a folder only the user can read. It
   advertises the socket path in one `tau.inbox` label on its own terminal.
-- A reload keeps one listener. Shutdown closes the socket and removes the label. A stale socket is
-  replaced only when a connect to it is refused, so a live owner is never replaced.
+- A reload keeps one listener. A stale socket is replaced only when a connect to it is refused, so a
+  live owner is never replaced.
+- Shutdown clears the label and unlinks the socket path in one hold of the socket path lock, and
+  drains open requests after it lets the lock go. A reload or a resumed session binds the same path
+  and writes the same label value, so no comparison can tell the two sessions apart. Its bind takes
+  the same lock, so it finds either the old socket still listening or no path at all.
+- A start takes the socket path lock before it binds. When the bind finds another listener on the
+  path, the session starts no inbox and reports the error. It does not retry.
+- Every Tau process writes and clears the `tau.inbox` label under one file lock per terminal in the
+  socket folder. A clear reads the label and removes it only when it names the session's own socket.
+  `hc label` has no compare-and-set, and the in-process transition queue orders only one process.
+- Each `hc` call made while an inbox lock is held has a time limit. A call that reaches it ends, and
+  the caller sees a failure. The `hc` server can still commit the label mutation after the call
+  ends, so a timed-out call has an unknown outcome. A hung call can no longer keep the lock from the
+  next session.
 - A Pi advertises and serves its inbox only when it is in the foreground process group of its
   `HC_TERMINAL_ID` terminal: hc's `foreground.pid` equals the Pi's process group ID. A Pi started
   from a session's shell tool, which runs detached, starts none, while `pnpm exec pi` works.
@@ -125,6 +138,8 @@ from variables, source the shell parser rejects, and a direct `hc connect` call 
 - The startup gate is best effort, so a message can arrive before an early startup status.
 - A crash between display and the session save can show one message twice.
 - A lost event subscription delays a report until it reconnects or until session start.
+- A sender that read the label before shutdown cleared it can still reach the old socket until the
+  socket closes.
 
 ## Alternatives considered
 
