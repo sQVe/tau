@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
-import { join, posix } from 'node:path';
+import { join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
-import { readMarkdownLinks } from './markdownLinks.js';
-import type { MarkdownLinks } from './markdownLinks.js';
+import { checkGuideLinks } from './guideLinks.js';
 import { readRegularFile } from './regularFile.js';
 import { parseSyncRecord } from './syncRecord.js';
 import type { SyncRecord } from './syncRecord.js';
@@ -22,8 +21,6 @@ type TextRead = { text: string; bytes: Uint8Array } | { reason: string };
 
 const recordName = '.sync-record.toml';
 const fix = 'run stomme sync';
-
-const urlScheme = /^[a-z][a-z\d+.-]*:/i;
 
 const broken = (reason: string): SyncedGuides => ({ kind: 'broken', reason });
 
@@ -102,109 +99,21 @@ const readGuide = async (
   return read;
 };
 
-const targetParts = (target: string) => {
-  const fragmentStart = target.indexOf('#');
-  const reference = fragmentStart === -1 ? target : target.slice(0, fragmentStart);
-  const queryStart = reference.indexOf('?');
-
-  return {
-    encodedPath: queryStart === -1 ? reference : reference.slice(0, queryStart),
-    fragment: fragmentStart === -1 ? undefined : target.slice(fragmentStart + 1),
-  };
-};
-
-const decoded = (text: string): string | undefined => {
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return undefined;
-  }
-};
-
-const resolvedPath = (path: string, decodedPath: string) =>
-  decodedPath === '' ? path : posix.normalize(posix.join(posix.dirname(path), decodedPath));
-
-const leavesFolder = (decodedPath: string, resolved: string) =>
-  decodedPath.startsWith('/') || resolved === '..' || resolved.startsWith('../');
-
-const fragmentProblem = (
-  target: string,
-  fragment: string | undefined,
-  resolved: string,
-  links: ReadonlyMap<string, MarkdownLinks>,
-): string | undefined => {
-  if (fragment === undefined || fragment === '' || !resolved.endsWith('.md')) {
-    return undefined;
-  }
-
-  const slug = decoded(fragment);
-
-  if (slug !== undefined && links.get(resolved)?.slugs.has(slug) === true) {
-    return undefined;
-  }
-
-  return `links to ${target}, which names a missing heading`;
-};
-
-const linkProblem = (
-  path: string,
-  target: string,
-  links: ReadonlyMap<string, MarkdownLinks>,
-  recorded: ReadonlyMap<string, string>,
-): string | undefined => {
-  if (urlScheme.test(target)) {
-    return undefined;
-  }
-
-  const { encodedPath, fragment } = targetParts(target);
-  const decodedPath = decoded(encodedPath);
-
-  if (decodedPath === undefined) {
-    return `links to ${target}, which cannot be decoded`;
-  }
-
-  const resolved = resolvedPath(path, decodedPath);
-
-  if (leavesFolder(decodedPath, resolved)) {
-    return `links to ${target}, which leaves the synced folder`;
-  }
-
-  if (!recorded.has(resolved)) {
-    return `links to ${target}, which is not a synced file`;
-  }
-
-  return fragmentProblem(target, fragment, resolved, links);
-};
-
 const firstLinkProblem = (
   directory: string,
   files: ReadonlyMap<string, string>,
 ): string | undefined => {
-  const links = new Map<string, MarkdownLinks>();
+  const check = checkGuideLinks(files);
 
-  for (const [path, text] of files) {
-    if (!path.endsWith('.md')) {
-      continue;
-    }
-
-    try {
-      links.set(path, readMarkdownLinks(text));
-    } catch (error) {
-      return `${join(directory, path)} cannot be read as Markdown: ${errorMessage(error)}`;
-    }
+  if (check.kind === 'valid') {
+    return undefined;
   }
 
-  for (const path of files.keys()) {
-    const targets = links.get(path)?.targets ?? [];
-
-    const problem = targets.map((target) => linkProblem(path, target, links, files)).find(Boolean);
-
-    if (problem !== undefined) {
-      return `${join(directory, path)} ${problem}; ${fix}`;
-    }
+  if (check.kind === 'unreadable') {
+    return `${join(directory, check.path)} cannot be read as Markdown: ${errorMessage(check.error)}`;
   }
 
-  return undefined;
+  return `${join(directory, check.path)} ${check.problem}; ${fix}`;
 };
 
 const readRecordedGuides = async (

@@ -93,174 +93,6 @@ it('reads a folder that matches its record', async () => {
   });
 });
 
-it.for([
-  {
-    name: 'a link target in angle brackets with a space',
-    files: {
-      ...guides,
-      'shared/a b.md': '# A\n',
-      'shared/rules.md': '[space](<./a b.md>)\n',
-    },
-  },
-  {
-    name: 'a link after a fence inside an HTML comment',
-    files: {
-      ...guides,
-      'shared/rules.md': '<!--\n```markdown\n-->\n[the rules](./rules.md)\n',
-    },
-  },
-  {
-    name: 'a lone backtick before an HTML comment with a link',
-    files: {
-      ...guides,
-      'shared/rules.md': 'A literal `\n\n<!-- `\n[ignored](./gone.md)\n-->\n',
-    },
-  },
-  {
-    name: 'a reference definition with an angle-bracket target and a title',
-    files: {
-      ...guides,
-      'shared/a b.md': '# A\n',
-      'shared/rules.md': '[rules][adr]\n\n   [adr]: <./a b.md> "Title"\n',
-    },
-  },
-  {
-    name: 'a reference definition with a plain target and a title',
-    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]: ./coding.md "Title"\n' },
-  },
-  {
-    name: 'reference definitions with a URL, an anchor, and a footnote',
-    files: {
-      ...guides,
-      'shared/rules.md':
-        '# Rules\n[a]: https://example.com/gone.md\n[b]: #rules\n[c]: ./coding.md#coding\n[^1]: A note.\n',
-    },
-  },
-  {
-    name: 'reference definitions inside a fence, a code span, and an HTML comment',
-    files: {
-      ...guides,
-      'shared/rules.md': [
-        '```markdown',
-        '[a]: ./gone.md',
-        '```',
-        '`[b]: ./gone.md`',
-        '<!--',
-        '[c]: ./gone.md',
-        '-->',
-        '    [d]: ./gone.md',
-        '',
-      ].join('\n'),
-    },
-  },
-  {
-    name: 'lines that look like a label followed by text',
-    files: {
-      ...guides,
-      'shared/rules.md': '[Note]: this is important\n[x]: done and more words\n',
-    },
-  },
-  {
-    name: 'a label line whose first word is a missing file',
-    files: { ...guides, 'shared/rules.md': '[a]: ./missing.md trailing words\n' },
-  },
-  {
-    name: 'a label line whose first word is a present file',
-    files: {
-      ...guides,
-      'shared/present.md': '# Present\n',
-      'shared/rules.md': '[a]: ./present.md trailing words\n',
-    },
-  },
-  {
-    name: 'a link target with a query',
-    files: {
-      ...guides,
-      'shared/rules.md': '[a](./coding.md?plain=1) and [b](./coding.md?a=1#coding)\n',
-    },
-  },
-  {
-    name: 'a URL target with a query',
-    files: { ...guides, 'shared/rules.md': '[a](https://example.com/gone.md?x=1)\n' },
-  },
-  {
-    name: 'an encoded path to a present file',
-    files: {
-      ...guides,
-      'shared/release notes.md': '# Notes\n',
-      'shared/coding.md': '[n](./release%20notes.md)\n',
-    },
-  },
-  {
-    name: 'a link with an empty fragment',
-    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](./rules.md#)\n' },
-  },
-  {
-    name: 'a fragment on a non-Markdown recorded file',
-    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](./data.txt#anything)\n' },
-  },
-  {
-    name: 'a link target with balanced parentheses',
-    files: {
-      ...guides,
-      'shared/rules(v2).md': '# Rules\n',
-      'shared/coding.md': '[rules](./rules(v2).md)\n',
-    },
-  },
-  {
-    name: 'a reference definition with the target on the next line',
-    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]:\n  ./coding.md\n' },
-  },
-  {
-    name: 'a label followed by a blank line and prose',
-    files: { ...guides, 'shared/rules.md': '[adr]:\n\n./missing.md\n' },
-  },
-  {
-    name: 'CRLF lines with a present next-line reference target',
-    files: {
-      ...guides,
-      'shared/rules.md':
-        '[rules][adr]\r\n\r\n[adr]:\r\n  ./coding.md\r\n[Note]: this is important\r\n',
-    },
-  },
-  {
-    name: 'reference definitions with each title form',
-    files: {
-      ...guides,
-      'shared/present.md': '# Present\n',
-      'shared/rules.md': [
-        '[a]: ./present.md "Title"',
-        "[b]: ./present.md 'Title'",
-        '[c]: ./present.md (Title) ',
-        '',
-      ].join('\n'),
-    },
-  },
-  {
-    name: 'a fragment to a reference-link heading',
-    files: {
-      ...guides,
-      'shared/rules.md': '# [Rules][r]\n\n[r]: ./coding.md\n',
-      'shared/coding.md': `${coding}See [the rules](./rules.md#rules).\n`,
-    },
-  },
-  {
-    name: 'an indented code block and an unclosed link',
-    files: {
-      ...guides,
-      'shared/rules.md': '    [x](./gone.md)\n\n[x](./oops.md trailing prose\n',
-    },
-  },
-])('reads $name as valid', async ({ files }) => {
-  const result = await readSyncedGuides(writeGuides(files));
-
-  expect(result).toEqual({
-    kind: 'valid',
-    version: '0.2.0',
-    files: new Map(Object.entries(files)),
-  });
-});
-
 const brokenRows: BrokenRow[] = [
   {
     name: 'a missing record',
@@ -346,128 +178,14 @@ const brokenRows: BrokenRow[] = [
     reason: ['shared/rules.md', './gone.md'],
   },
   {
-    name: 'a link to a file outside the record',
-    files: { ...guides, 'shared/rules.md': '[notes](../notes.md#first)\n' },
-    change: (directory) => {
-      writeFile(directory, 'notes.md', '# First\n');
-    },
-    reason: ['shared/rules.md', '../notes.md#first'],
-  },
-  {
-    name: 'a link after a fence inside an HTML comment',
-    files: { ...guides, 'shared/rules.md': '<!--\n```markdown\n-->\n[gone](./gone.md)\n' },
-    reason: ['shared/rules.md', './gone.md'],
-  },
-  {
-    name: 'a link to the parent folder',
-    files: { ...guides, 'shared/rules.md': '[the parent](../..)\n' },
-    reason: ['shared/rules.md', 'links to ../..', 'leaves'],
-  },
-  {
-    name: 'a link that leaves the folder',
-    files: { ...guides, 'shared/rules.md': '[outside](../../outside.md)\n' },
-    reason: ['shared/rules.md', '../../outside.md', 'leaves'],
-  },
-  {
-    name: 'an absolute link',
-    files: { ...guides, 'shared/rules.md': '[outside](/shared/coding.md)\n' },
-    reason: ['shared/rules.md', '/shared/coding.md', 'leaves'],
-  },
-  {
-    name: 'a dangling reference definition',
-    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]: ./missing.md\n' },
-    reason: ['shared/rules.md', 'links to ./missing.md, which is not a synced file'],
-  },
-  {
-    name: 'a reference definition that leaves the folder',
-    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n  [adr]: ../../outside.md\n' },
-    reason: ['shared/rules.md', 'links to ../../outside.md, which leaves the synced folder'],
-  },
-  {
-    name: 'a missing link target with a query',
-    files: { ...guides, 'shared/rules.md': '[gone](./gone.md?plain=1)\n' },
-    reason: ['shared/rules.md', './gone.md?plain=1', 'not a synced file'],
-  },
-  {
-    name: 'a missing link target with balanced parentheses',
-    files: { ...guides, 'shared/rules.md': '[gone](./gone(v2).md)\n' },
-    reason: ['shared/rules.md', 'links to ./gone(v2).md, which is not a synced file'],
-  },
-  {
-    name: 'a reference definition with the target on the next line',
-    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]:\n  ../../outside.md\n' },
-    reason: ['shared/rules.md', 'links to ../../outside.md, which leaves the synced folder'],
-  },
-  {
-    name: 'CRLF lines with a next-line reference target that leaves the folder',
-    files: {
-      ...guides,
-      'shared/rules.md': '[rules][adr]\r\n\r\n[adr]:\r\n  ../../outside.md\r\n',
-    },
-    reason: ['shared/rules.md', 'links to ../../outside.md, which leaves the synced folder'],
-  },
-  {
-    name: 'CRLF lines with an inline link to a missing target',
-    files: { ...guides, 'shared/rules.md': '# Rules\r\n\r\n[gone](./gone.md)\r\n' },
-    reason: ['shared/rules.md', 'links to ./gone.md, which is not a synced file'],
-  },
-  {
-    name: 'a dangling reference definition after a fenced one',
-    files: {
-      ...guides,
-      'shared/rules.md': '```\n[a]: ./fenced.md\n```\n[b]: <./gone file.md>\n',
-    },
-    reason: ['shared/rules.md', 'links to ./gone file.md, which is not a synced file'],
-  },
-  {
-    name: 'a dangling reference definition with a title',
-    files: { ...guides, 'shared/rules.md': '[rules][adr]\n\n[adr]: ./missing.md "Title"\n' },
-    reason: ['shared/rules.md', 'links to ./missing.md, which is not a synced file'],
-  },
-  {
     name: 'a link to a missing heading in another file',
     files: { ...guides, 'shared/coding.md': '[a](./rules.md#missing)\n' },
     reason: ['links to ./rules.md#missing, which names a missing heading'],
   },
   {
-    name: 'a link to a missing heading in the same file',
-    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](#missing)\n' },
-    reason: ['links to #missing, which names a missing heading'],
-  },
-  {
-    name: 'an undecodable fragment',
-    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](./rules.md#bad%ZZ)\n' },
-    reason: ['links to ./rules.md#bad%ZZ, which names a missing heading'],
-  },
-  {
-    name: 'an encoded path that leaves the folder',
-    files: { ...guides, 'shared/rules.md': '[o](./%2E%2E/%2E%2E/outside.md)\n' },
-    reason: ['shared/rules.md', './%2E%2E/%2E%2E/outside.md', 'leaves'],
-  },
-  {
-    name: 'an undecodable path',
-    files: { ...guides, 'shared/rules.md': '[b](./bad%ZZ.md)\n' },
-    reason: ['links to ./bad%ZZ.md, which cannot be decoded'],
-  },
-  {
-    name: 'a reference definition in a blockquote',
-    files: { ...guides, 'shared/rules.md': '> [a]: ./gone.md\n' },
-    reason: ['links to ./gone.md, which is not a synced file'],
-  },
-  {
-    name: 'a reference definition in a list item',
+    name: 'a dangling reference definition in a list item',
     files: { ...guides, 'shared/rules.md': '- [a]: ./gone.md\n' },
     reason: ['links to ./gone.md, which is not a synced file'],
-  },
-  {
-    name: 'a missing image target',
-    files: { ...guides, 'shared/rules.md': '![alt](./gone.png)\n' },
-    reason: ['links to ./gone.png, which is not a synced file'],
-  },
-  {
-    name: 'the first problem in document order',
-    files: { ...guides, 'shared/rules.md': '# Rules\n\n[a](./rules.md#nope)\n\n[b]: ./gone.md\n' },
-    reason: ['./rules.md#nope'],
   },
 ];
 
@@ -488,13 +206,14 @@ it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) 
 
 // The depth that overflows the stack depends on the runner's stack size, so the test deepens the
 // quote until the read overflows.
-it('reports a guide the tokenizer cannot read as broken', async () => {
+it('reports a guide the tokenizer cannot read before an earlier broken link', async () => {
   let directory = '';
   let result: SyncedGuides | undefined;
 
   for (let depth = 1000; depth <= 16_000; depth *= 2) {
     directory = writeGuides({
       ...guides,
+      'shared/coding.md': `${coding}[gone](./gone.md)\n`,
       'shared/rules.md': `${'> '.repeat(depth)}[a](./a.md)\n`,
     });
 
