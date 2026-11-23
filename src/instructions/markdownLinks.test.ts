@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { readMarkdownLinks } from './markdownLinks.js';
+import type { Destination } from './markdownLinks.js';
+import { readDestination, readMarkdownLinks } from './markdownLinks.js';
 
 const targetTable: { name: string; markdown: string; expected: readonly string[] }[] = [
   {
@@ -22,6 +23,26 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
     name: 'reads a definition with a title',
     markdown: '[b]: ./titled.md "Title"',
     expected: ['./titled.md'],
+  },
+  {
+    name: 'reads a definition with a single-quote or parenthesis title',
+    markdown: "[a]: ./single.md 'Title'\n\n[b]: ./parenthesis.md (Title) ",
+    expected: ['./single.md', './parenthesis.md'],
+  },
+  {
+    name: 'reads a target with a query',
+    markdown: '[a](./query.md?plain=1) and [b](./anchor.md?a=1#top)',
+    expected: ['./query.md?plain=1', './anchor.md?a=1#top'],
+  },
+  {
+    name: 'reads a target with balanced parentheses',
+    markdown: '[rules](./rules(v2).md)',
+    expected: ['./rules(v2).md'],
+  },
+  {
+    name: 'reads no target from a label followed by a blank line and prose',
+    markdown: '[adr]:\n\n./missing.md\n',
+    expected: [],
   },
   {
     name: 'reads a definition whose target is on the next line',
@@ -97,6 +118,48 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
 
 it.for(targetTable)('$name', ({ markdown, expected }) => {
   expect(readMarkdownLinks(markdown).targets).toEqual(expected);
+});
+
+const destinationTable: { name: string; target: string; expected: Destination }[] = [
+  {
+    name: 'reads a scheme as external',
+    target: 'https://x.test/a.md',
+    expected: { kind: 'external' },
+  },
+  {
+    name: 'reads an undecodable path',
+    target: './a%ZZ.md',
+    expected: { kind: 'undecodable' },
+  },
+  {
+    name: 'decodes the path and cuts the query before the fragment',
+    target: './a%20b.md?x=1#Top',
+    expected: { kind: 'local', path: './a b.md', fragment: 'Top' },
+  },
+  {
+    name: 'reads a same-file link with an empty path',
+    target: '#top',
+    expected: { kind: 'local', path: '', fragment: 'top' },
+  },
+  {
+    name: 'keeps an empty fragment',
+    target: './a.md#',
+    expected: { kind: 'local', path: './a.md', fragment: '' },
+  },
+  {
+    name: 'reads no fragment without a hash',
+    target: './a.md',
+    expected: { kind: 'local', path: './a.md', fragment: undefined },
+  },
+  {
+    name: 'cuts the query before the fragment',
+    target: './a.md?q#f',
+    expected: { kind: 'local', path: './a.md', fragment: 'f' },
+  },
+];
+
+it.for(destinationTable)('$name', ({ target, expected }) => {
+  expect(readDestination(target)).toEqual(expected);
 });
 
 const slugTable: { name: string; markdown: string; expected: readonly string[] }[] = [

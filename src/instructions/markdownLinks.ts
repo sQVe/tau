@@ -6,6 +6,13 @@ export interface MarkdownLinks {
   slugs: ReadonlySet<string>;
 }
 
+export type Destination =
+  | { kind: 'external' }
+  | { kind: 'undecodable' }
+  | { kind: 'local'; path: string; fragment: string | undefined };
+
+const externalTarget = /^[a-z][a-z\d+.-]*:/i;
+
 const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
 const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 
@@ -44,6 +51,33 @@ export const headingSlugs = (headings: readonly string[]): ReadonlySet<string> =
   return slugs;
 };
 
+export const decodedComponent = (text: string): string | undefined => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return undefined;
+  }
+};
+
+export const readDestination = (target: string): Destination => {
+  if (externalTarget.test(target)) {
+    return { kind: 'external' };
+  }
+
+  const fragmentStart = target.indexOf('#');
+  const fragment = fragmentStart === -1 ? undefined : target.slice(fragmentStart + 1);
+  const reference = fragmentStart === -1 ? target : target.slice(0, fragmentStart);
+  const queryStart = reference.indexOf('?');
+  const encodedPath = queryStart === -1 ? reference : reference.slice(0, queryStart);
+  const path = decodedComponent(encodedPath);
+
+  if (path === undefined) {
+    return { kind: 'undecodable' };
+  }
+
+  return { kind: 'local', path, fragment };
+};
+
 const targetOf = (token: Token): string | undefined => {
   if (token.type !== 'link' && token.type !== 'image' && token.type !== 'def') {
     return undefined;
@@ -54,46 +88,31 @@ const targetOf = (token: Token): string | undefined => {
   return typeof value === 'string' ? value : undefined;
 };
 
-const childTokensOf = (value: unknown): unknown => {
-  if (typeof value !== 'object' || value === null) {
-    return undefined;
-  }
+const renderedText = (tokens: readonly Token[]): string =>
+  tokens
+    .map((token) => {
+      if (token.type === 'image' || token.type === 'html') {
+        return '';
+      }
 
-  return 'tokens' in value ? value.tokens : undefined;
-};
+      if (token.type === 'text' || token.type === 'codespan' || token.type === 'escape') {
+        const text: unknown = token.text;
 
-const renderedText = (tokens: unknown): string => {
-  const list: readonly unknown[] = Array.isArray(tokens) ? tokens : [];
+        return typeof text === 'string' ? text : '';
+      }
 
-  const rendered = list.map((token: unknown) => {
-    if (typeof token !== 'object' || token === null) {
-      return '';
-    }
+      const children: readonly Token[] | undefined = 'tokens' in token ? token.tokens : undefined;
 
-    const type: unknown = 'type' in token ? token.type : undefined;
-
-    if (type === 'image' || type === 'html') {
-      return '';
-    }
-
-    if (type === 'text' || type === 'codespan' || type === 'escape') {
-      const text: unknown = 'text' in token ? token.text : undefined;
-
-      return typeof text === 'string' ? text : '';
-    }
-
-    return renderedText(childTokensOf(token));
-  });
-
-  return rendered.join('');
-};
+      return children === undefined ? '' : renderedText(children);
+    })
+    .join('');
 
 const headingTextOf = (token: Token): string | undefined => {
   if (token.type !== 'heading') {
     return undefined;
   }
 
-  return renderedText(childTokensOf(token));
+  return renderedText(token.tokens ?? []);
 };
 
 export const readMarkdownLinks = (markdown: string): MarkdownLinks => {
