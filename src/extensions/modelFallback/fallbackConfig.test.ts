@@ -60,6 +60,21 @@ it('reports a malformed file', ({ onTestFinished }) => {
   expect(problems[0]?.startsWith(`Invalid Tau config ${userFile}: not valid JSON (`)).toBe(true);
 });
 
+it('reports a user file that is not an object', ({ onTestFinished }) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-fallback-models-',
+  );
+
+  writeUser([]);
+
+  expect(readUser(location)).toEqual({
+    models: [],
+    problems: [`Invalid Tau config ${userFile}: not a JSON object (found array).`],
+    warnings: [],
+  });
+});
+
 it('reports a non-object fallbackModels and returns no models', ({ onTestFinished }) => {
   const { location, userFile, writeUser } = temporaryTauConfig(
     onTestFinished,

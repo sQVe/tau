@@ -106,6 +106,8 @@ start with `vitest`.
 - Tau ignores an unknown key at any depth. It warns once per session with the file and the full key
   path: unknown top-level keys at session start, and unknown keys inside a block when that block's
   reader runs.
+- A file whose top level is not a JSON object fails every reader with the file path and the value's
+  kind, and no key is read from it.
 - A removed or renamed key fails the feature that owned it. The error names the replacement.
 - A wrong type or a missing required field fails only the entry being read. A bad `profiles.scout`
   blocks only `scout` launches.

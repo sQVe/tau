@@ -286,8 +286,8 @@ describe('TDD config', () => {
   });
 
   it.for<[string, string, string]>([
-    ['.pi/tau.json', '{', '.pi/tau.json'],
-    ['.pi/tau.json', '[]', '.pi/tau.json'],
+    ['.pi/tau.json', '{', 'not valid JSON'],
+    ['.pi/tau.json', '[]', 'not a JSON object'],
     ['.pi/tau.json', '{"tdd": {"productionGlobs": "src"}}', 'productionGlobs'],
     ['.pi/tau.json', '{"tdd": {"testGlobs": ["", "**/*.test.ts"]}}', 'testGlobs'],
     ['.pi/tau.json', '{"tdd": {"runner": "jest"}}', 'vitest'],
