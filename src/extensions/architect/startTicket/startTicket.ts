@@ -166,7 +166,16 @@ const entryOf = (directory: string, name: string): StartEntry | undefined => {
 
   const marker = parseMarkerName(directory, token, name);
 
-  return marker === undefined ? undefined : { kind: 'marker', token, ticket, marker };
+  if (marker === undefined) {
+    return {
+      kind: 'marker',
+      token,
+      ticket,
+      marker: { kind: 'malformed', path: join(directory, name) },
+    };
+  }
+
+  return { kind: 'marker', token, ticket, marker };
 };
 
 export const readStartEntries = async (root: string): Promise<StartEntry[]> => {

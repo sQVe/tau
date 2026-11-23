@@ -15,6 +15,11 @@ it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
     expected: { kind: 'refuseMalformed', path: '/start/token.started' },
   },
   {
+    name: 'a marker name with an unrecognised suffix',
+    facts: { kind: 'malformed', path: '/start/token.started-other' },
+    expected: { kind: 'refuseMalformed', path: '/start/token.started-other' },
+  },
+  {
     name: 'a started ticket whose process is gone',
     facts: { kind: 'started', path: '/start/token.started.1', processId: 1, child: 'gone' },
     expected: { kind: 'deleteMarker', path: '/start/token.started.1' },

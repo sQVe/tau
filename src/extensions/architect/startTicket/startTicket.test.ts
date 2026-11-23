@@ -250,3 +250,20 @@ it('ignores a cancelled ticket file when it sweeps', async ({ onTestFinished }) 
 
   expect(outcome).toEqual({ kind: 'clear' });
 });
+
+it('refuses an unrecognised started name and names the path', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const ticket = await createStartTicket(root, 'gone');
+  const marker = `${ticket}.started-other`;
+
+  await rename(ticket, marker);
+
+  const outcome = await sweepStartFolder({
+    root,
+    currentToken: 'current',
+    stateOf: () => 'gone',
+  });
+
+  expect(outcome).toEqual({ kind: 'refuseMalformed', path: marker });
+  expect(existsSync(marker)).toBe(true);
+});
