@@ -508,6 +508,28 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
   expect(argumentAfter(launch?.commandArguments ?? [], '--folder')).toBe(root);
 });
 
+it('starts an architect tab without a sender', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createHerdrAppFake();
+
+  vi.stubEnv('TAU_ROLE', 'architect');
+  vi.stubEnv('HC_TERMINAL_ID', 'architect-terminal');
+
+  await createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root, 'architect-session'),
+  );
+
+  const [launch] = app.calls;
+
+  expect(argumentAfter(launch?.commandArguments ?? [], '--argv')).toBe('["pi"]');
+  expect(argumentAfter(launch?.commandArguments ?? [], '--task')).toBe('Next steps\n');
+});
+
 it('starts a tab from a real bare repository root', async () => {
   const root = await createTemporaryBareRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');

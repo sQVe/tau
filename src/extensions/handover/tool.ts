@@ -8,6 +8,7 @@ import { Type } from 'typebox';
 import { resolveAllowedModel } from '../../config/models.js';
 import { isBareRootWithoutGitEntry } from '../../git.js';
 import { senderOf } from '../../handoverSender.js';
+import type { HandoverSender } from '../../handoverSender.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
@@ -87,6 +88,13 @@ const sessionIdOf = (
   }
 };
 
+const currentSender = (context: ExtensionToolContext): HandoverSender | undefined =>
+  senderOf({
+    role: currentRole(),
+    terminal: currentTerminalAddress(),
+    sessionId: sessionIdOf(context.sessionManager),
+  });
+
 const sendRequest = (context: ExtensionToolContext, input: HandoverInput): SendHandoverRequest => {
   if (input.terminal === undefined) {
     throw new Error('send needs a terminal.');
@@ -100,11 +108,7 @@ const sendRequest = (context: ExtensionToolContext, input: HandoverInput): SendH
     throw new Error('A send retry needs the sessionId of its unknown result.');
   }
 
-  const sender = senderOf({
-    role: currentRole(),
-    terminal: currentTerminalAddress(),
-    sessionId: sessionIdOf(context.sessionManager),
-  });
+  const sender = currentSender(context);
 
   return {
     cwd: context.cwd,
@@ -154,6 +158,7 @@ const startRequest = (
     folder: input.folder,
     target: startTarget(input),
     model: input.model,
+    sender: currentSender(context),
   };
 };
 
