@@ -33,8 +33,8 @@ folder, and replies before the sender reports success.
   drains open requests after it lets the lock go. A reload or a resumed session binds the same path
   and writes the same label value, so no comparison can tell the two sessions apart. Its bind takes
   the same lock, so it finds either the old socket still listening or no path at all.
-- A session that starts while another process's socket on the same path still listens starts no
-  inbox and reports the error. It does not retry.
+- A start takes the socket path lock before it binds. When the bind finds another listener on the
+  path, the session starts no inbox and reports the error. It does not retry.
 - Every Tau process writes and clears the `tau.inbox` label under one file lock per terminal in the
   socket folder. A clear reads the label and removes it only when it names the session's own socket.
   `hc label` has no compare-and-set, and the in-process transition queue orders only one process.
