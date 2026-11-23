@@ -1,14 +1,22 @@
 export type ClaimReleaseAction = 'release' | 'stop' | 'keep';
 
 export interface ClaimReleaseFacts {
-  launch: 'notRun' | 'refused' | 'started';
+  ticket: 'notCreated' | 'cancelled' | 'taken' | 'unread';
   adopted: boolean;
   terminal: 'unknown' | 'live' | 'ended' | 'absent';
   stopAttempted: boolean;
 }
 
 export const claimReleaseDecision = (facts: ClaimReleaseFacts): ClaimReleaseAction => {
-  if (facts.launch !== 'started' || facts.adopted) {
+  if (facts.ticket === 'notCreated' || facts.ticket === 'cancelled') {
+    return 'release';
+  }
+
+  if (facts.ticket === 'unread') {
+    return 'keep';
+  }
+
+  if (facts.adopted) {
     return 'release';
   }
 

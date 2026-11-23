@@ -1,6 +1,6 @@
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
+import { createExecFake, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
@@ -389,10 +389,16 @@ it('a right-of start with an aborted signal runs no command', async () => {
   expect(fake.calls).toEqual([]);
 });
 
-it('a launch reports that it never ran when the executable is missing', async () => {
+it('bounds the launch call with the launch timeout', async () => {
+  let launchTimeout: number | undefined;
+
   const fake = createExecFake<'start'>({
     keyOf: (command) => (command === 'herdr-app' ? 'start' : undefined),
-    handlerFor: () => () => failedResult('Executable not found in $PATH: "herdr-app"'),
+    handlerFor: () => (_commandArguments, options) => {
+      launchTimeout = options?.timeout;
+
+      return succeededResult('{"space":"sp-1","tab":"tb-1","terminal":"t-space"}');
+    },
   });
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -411,5 +417,6 @@ it('a launch reports that it never ran when the executable is missing', async ()
     },
   );
 
-  expect(result.ran).toBe(false);
+  expect(result.terminal).toBe('t-space');
+  expect(launchTimeout).toBe(30_000);
 });

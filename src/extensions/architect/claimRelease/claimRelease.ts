@@ -5,7 +5,7 @@ import type { ClaimReleaseFacts } from './claimReleaseDecision.js';
 
 export interface ClaimReleaseRequest {
   claim: { release: () => Promise<void> };
-  launch: ClaimReleaseFacts['launch'];
+  ticket: ClaimReleaseFacts['ticket'];
   adopted: boolean;
   terminal: string | undefined;
   terminalState: ClaimReleaseFacts['terminal'];
@@ -20,7 +20,7 @@ const withoutSignal = (hc: HcRuntime): HcRuntime => ({ ...hc, signal: undefined 
 // on first. An unknown or still-live terminal keeps the claim.
 export const releaseClaim = async (request: ClaimReleaseRequest): Promise<boolean> => {
   const first = claimReleaseDecision({
-    launch: request.launch,
+    ticket: request.ticket,
     adopted: request.adopted,
     terminal: request.terminalState,
     stopAttempted: false,
@@ -53,7 +53,7 @@ export const releaseClaim = async (request: ClaimReleaseRequest): Promise<boolea
   const terminal = ended ? 'ended' : 'live';
 
   const second = claimReleaseDecision({
-    launch: request.launch,
+    ticket: request.ticket,
     adopted: request.adopted,
     terminal,
     stopAttempted: true,

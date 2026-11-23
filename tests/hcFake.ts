@@ -3,6 +3,7 @@ import type { Connect } from '../src/hc/connect.js';
 import type { HcEvent, SubscribeEvents, SubscribeHandlers } from '../src/hc/events.js';
 import { createExecFake, failedResult, succeededResult } from './execFake.js';
 import type { ExecCall } from './execFake.js';
+import { takeStartTicket } from './startTicketFake.js';
 
 type HcCommand = 'run' | 'get' | 'ls' | 'wait' | 'kill' | 'rm' | 'label';
 
@@ -99,7 +100,7 @@ export const createHcFake = (): HcFake => {
 
       return isCommand(first) ? first : undefined;
     },
-    handlerFor: (key) => (commandArguments) => {
+    handlerFor: (key) => async (commandArguments) => {
       const failure = failures.get(key);
 
       if (failure !== undefined) {
@@ -115,7 +116,14 @@ export const createHcFake = (): HcFake => {
         return failedResult(terminalFailure);
       }
 
-      return reply === undefined ? failedResult(`unknown command: ${key}`) : succeededResult(reply);
+      const result =
+        reply === undefined ? failedResult(`unknown command: ${key}`) : succeededResult(reply);
+
+      if (key === 'run' && result.code === 0) {
+        await takeStartTicket(commandArguments);
+      }
+
+      return result;
     },
   });
 

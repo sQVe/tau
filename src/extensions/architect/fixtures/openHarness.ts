@@ -10,6 +10,7 @@ import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
 import { createHerdrAppFake } from '../../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
+import { takeStartTicket } from '../../../../tests/startTicketFake.js';
 import type { Exec } from '../../../command.js';
 import { holdFileLock } from '../../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../../hc/hc.js';
@@ -141,6 +142,21 @@ const takeOverClaim = async (
   return false;
 };
 
+const withStartTicket = (app: ExecFake<HerdrAppCommand>): ExecFake<HerdrAppCommand> => ({
+  ...app,
+  exec: async (command, commandArguments, options) => {
+    const result = await app.exec(command, commandArguments, options);
+
+    if (result.code === 0) {
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      await takeStartTicket(argv);
+    }
+
+    return result;
+  },
+});
+
 const withTakeover = (
   app: ExecFake<HerdrAppCommand>,
   root: string,
@@ -168,7 +184,7 @@ export const openTool = (
   options: OpenToolOptions = {},
 ): OpenTool => {
   const hc = createHcFake();
-  const fake = appFake();
+  const fake = withStartTicket(appFake());
 
   const app = options.takeover === false ? fake : withTakeover(fake, root, options.afterTakeover);
 

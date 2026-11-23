@@ -29,6 +29,7 @@ export interface RunRequest {
 export interface LsRequest {
   all?: boolean | undefined;
   labels?: Record<string, string> | undefined;
+  timeout?: number | undefined;
 }
 
 export interface WaitRequest {
@@ -117,8 +118,15 @@ export const get = (
 
 export const ls = (runtime: HcRuntime, request: LsRequest = {}): Promise<HcTerminalList> => {
   const flags = request.all === true ? ['--all'] : [];
+  const timeoutOptions = request.timeout === undefined ? {} : { timeout: request.timeout };
 
-  return runHc(runtime, 'ls', ['ls', '--json', ...flags, ...labelFlags(request.labels)], 'hc ls');
+  return runHc(
+    runtime,
+    'ls',
+    ['ls', '--json', ...flags, ...labelFlags(request.labels)],
+    'hc ls',
+    timeoutOptions,
+  );
 };
 
 export const wait = (

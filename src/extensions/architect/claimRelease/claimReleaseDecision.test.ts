@@ -4,7 +4,7 @@ import { claimReleaseDecision } from './claimReleaseDecision.js';
 import type { ClaimReleaseAction, ClaimReleaseFacts } from './claimReleaseDecision.js';
 
 const facts = (overrides: Partial<ClaimReleaseFacts>): ClaimReleaseFacts => ({
-  launch: 'started',
+  ticket: 'taken',
   adopted: false,
   terminal: 'live',
   stopAttempted: false,
@@ -13,43 +13,48 @@ const facts = (overrides: Partial<ClaimReleaseFacts>): ClaimReleaseFacts => ({
 
 it.each<{ name: string; facts: ClaimReleaseFacts; expected: ClaimReleaseAction }>([
   {
-    name: 'a launch that did not run',
-    facts: facts({ launch: 'notRun', terminal: 'unknown' }),
+    name: 'a launch that was not created',
+    facts: facts({ ticket: 'notCreated', terminal: 'unknown' }),
     expected: 'release',
   },
   {
-    name: 'a launch that was refused',
-    facts: facts({ launch: 'refused', terminal: 'unknown' }),
+    name: 'a ticket the caller cancelled',
+    facts: facts({ ticket: 'cancelled', terminal: 'unknown' }),
     expected: 'release',
   },
   {
-    name: 'a started launch whose lookup found no terminal',
+    name: 'a taken ticket whose lookup found no terminal',
     facts: facts({ terminal: 'absent' }),
     expected: 'release',
   },
   {
-    name: 'a started Pi that adopted the claim',
+    name: 'a taken ticket for a Pi that adopted the claim',
     facts: facts({ adopted: true, terminal: 'live' }),
     expected: 'release',
   },
   {
-    name: 'a started Pi with an ended terminal',
+    name: 'a taken ticket with an ended terminal',
     facts: facts({ terminal: 'ended' }),
     expected: 'release',
   },
   {
-    name: 'a started Pi with a live terminal before a stop',
+    name: 'a taken ticket with a live terminal before a stop',
     facts: facts({ terminal: 'live', stopAttempted: false }),
     expected: 'stop',
   },
   {
-    name: 'a started Pi with a live terminal after a stop',
+    name: 'a taken ticket with a live terminal after a stop',
     facts: facts({ terminal: 'live', stopAttempted: true }),
     expected: 'keep',
   },
   {
-    name: 'a started Pi with an unknown terminal',
+    name: 'a taken ticket with an unknown terminal',
     facts: facts({ terminal: 'unknown' }),
+    expected: 'keep',
+  },
+  {
+    name: 'a ticket the caller could not cancel or read',
+    facts: facts({ ticket: 'unread', terminal: 'live' }),
     expected: 'keep',
   },
 ])('decides to $expected for $name', ({ facts: releaseFacts, expected }) => {

@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
@@ -6,6 +6,29 @@ import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { openArchitect, openKeptClaimMessage } from './open.js';
 import type { OpenRequest } from './open.js';
+
+const sleepEntered = vi.hoisted(() => ({ current: Promise.withResolvers<undefined>() }));
+
+vi.mock(import('node:timers/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+  const { globalTimerDelay } = await import('../../../../tests/timerFake.js');
+
+  const delay = (<T>(milliseconds?: number, value?: T, options?: { signal?: AbortSignal }) => {
+    sleepEntered.current.resolve(undefined);
+
+    return globalTimerDelay(milliseconds, value, options);
+  }) as typeof original.setTimeout;
+
+  return { ...original, setTimeout: delay };
+});
+
+beforeEach(() => {
+  sleepEntered.current = Promise.withResolvers<undefined>();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const requestFor = (
   root: string,
@@ -144,4 +167,30 @@ it('an abort after preparation starts no launch and releases the claim', async (
   expect(appCommands(app)).toEqual(['ls']);
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('an abort while the takeover sleep waits rejects without the sleep timer', async ({
+  onTestFinished: cleanup,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  const { root, config } = await setup(cleanup);
+  const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled in the sleep');
+
+  await recordSession(root);
+  hc.reply('kill', JSON.stringify({ address: 't-architect', state: 'finished' }));
+  hc.reply('wait', endedWait('t-architect', true));
+
+  const opening = openArchitect(
+    requestFor(root, config.location, { ...runtime, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  await sleepEntered.current.promise;
+  controller.abort(cancellation);
+
+  await expect(opening).resolves.toBe(cancellation);
 });

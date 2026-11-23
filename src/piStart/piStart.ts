@@ -17,6 +17,7 @@ interface PiSessionRequest {
   model: string | undefined;
   session: string | undefined;
   environment: Record<string, string> | undefined;
+  argvWrapper?: ((argv: string[]) => string[]) | undefined;
 }
 
 export interface PiStartRequest extends PiSessionRequest {
@@ -38,7 +39,6 @@ interface LaunchPlacement {
 }
 
 export interface PiLaunchResult {
-  ran: boolean;
   exitCode: number | null;
   killed: boolean;
   timedOut: boolean;
@@ -50,19 +50,21 @@ export interface PiLaunchResult {
 
 export const launchTimeoutMilliseconds = 30_000;
 
-// Pi reports a missing executable as a failed result rather than a thrown spawn error.
-export const missingExecutable = (output: string): boolean =>
-  output.includes('Executable not found in $PATH:');
+const splitReplySchema = Type.Object({
+  pane: Type.String(),
+  terminal: Type.String({ minLength: 1 }),
+});
 
-const splitReplySchema = Type.Object({ pane: Type.String(), terminal: Type.String() });
-
-const argvOf = (request: PiSessionRequest, message: string | undefined): string[] =>
-  piArguments({
+const argvOf = (request: PiSessionRequest, message: string | undefined): string[] => {
+  const argv = piArguments({
     model: request.model,
     session: request.session,
     environment: request.environment,
     message,
   });
+
+  return request.argvWrapper === undefined ? argv : request.argvWrapper(argv);
+};
 
 const placementOf = (target: PiStartTarget): LaunchPlacement =>
   'space' in target
@@ -152,7 +154,6 @@ const launchResult = (
   terminal: string | undefined,
   error: unknown,
 ): PiLaunchResult => ({
-  ran: !missingExecutable(result.stderr),
   exitCode: result.code,
   killed: result.killed,
   timedOut: result.killed,
@@ -209,7 +210,6 @@ const launch = async (
     return launchResult(runtime, result, terminal, commandError(label, result) ?? error);
   } catch (error) {
     return {
-      ran: false,
       exitCode: null,
       killed: false,
       timedOut: false,

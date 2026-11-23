@@ -40,6 +40,17 @@ export interface StaleAskFacts {
   terminalState: 'live' | 'ended' | 'unread';
 }
 
+export type AskTransition = 'allowed' | 'refused';
+
+export interface AskTransitionFacts {
+  current: AskStatus;
+  next: AskStatus;
+}
+
+// A settled hidden ask is final, so only a running record may change.
+export const askTransition = (facts: AskTransitionFacts): AskTransition =>
+  facts.current === 'running' ? 'allowed' : 'refused';
+
 // A sent answer is the only answered outcome. A timeout, or an ended ask that never sent, tells
 // the lead to open the architect. A terminal that failed on its own is failed.
 export const askOutcome = (facts: AskOutcomeFacts): AskOutcome => {

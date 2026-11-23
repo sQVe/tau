@@ -1,7 +1,6 @@
-export type LaunchOutcome = 'created' | 'refused' | 'unknown';
+export type LaunchOutcome = 'created' | 'notCreated';
 
 export interface LaunchOutcomeFacts {
-  ran: boolean;
   exitCode: number | null;
   killed: boolean;
   aborted: boolean;
@@ -12,15 +11,8 @@ export interface LaunchOutcomeFacts {
 const completed = (facts: LaunchOutcomeFacts): boolean =>
   facts.exitCode === 0 && !facts.killed && !facts.timedOut;
 
-const validReply = (facts: LaunchOutcomeFacts): boolean =>
-  !facts.aborted && facts.replyTerminal === 'valid';
+const created = (facts: LaunchOutcomeFacts): boolean =>
+  completed(facts) && !facts.aborted && facts.replyTerminal === 'valid';
 
-const created = (facts: LaunchOutcomeFacts): boolean => completed(facts) && validReply(facts);
-
-export const launchOutcomeDecision = (facts: LaunchOutcomeFacts): LaunchOutcome => {
-  if (!facts.ran) {
-    return 'refused';
-  }
-
-  return created(facts) ? 'created' : 'unknown';
-};
+export const launchOutcomeDecision = (facts: LaunchOutcomeFacts): LaunchOutcome =>
+  created(facts) ? 'created' : 'notCreated';

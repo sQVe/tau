@@ -1,7 +1,13 @@
 import { expect, it } from 'vitest';
 
 import type { ArchitectOwner } from '../record.js';
-import { askDeadlineAction, askOutcome, askRoute, staleAskRepair } from './askDecision.js';
+import {
+  askDeadlineAction,
+  askOutcome,
+  askRoute,
+  askTransition,
+  staleAskRepair,
+} from './askDecision.js';
 import type { AskRouteFacts } from './askDecision.js';
 
 it.each([
@@ -304,4 +310,28 @@ it.each([
   },
 ] as const)('stale ask repair: $name', ({ facts, expected }) => {
   expect(staleAskRepair(facts)).toBe(expected);
+});
+
+it.each([
+  { name: 'running to sent', facts: { current: 'running', next: 'sent' }, expected: 'allowed' },
+  {
+    name: 'running to timeout',
+    facts: { current: 'running', next: 'timeout' },
+    expected: 'allowed',
+  },
+  { name: 'running to failed', facts: { current: 'running', next: 'failed' }, expected: 'allowed' },
+  {
+    name: 'running to running',
+    facts: { current: 'running', next: 'running' },
+    expected: 'allowed',
+  },
+  { name: 'sent to timeout', facts: { current: 'sent', next: 'timeout' }, expected: 'refused' },
+  { name: 'sent to failed', facts: { current: 'sent', next: 'failed' }, expected: 'refused' },
+  { name: 'sent to sent', facts: { current: 'sent', next: 'sent' }, expected: 'refused' },
+  { name: 'timeout to sent', facts: { current: 'timeout', next: 'sent' }, expected: 'refused' },
+  { name: 'timeout to failed', facts: { current: 'timeout', next: 'failed' }, expected: 'refused' },
+  { name: 'failed to sent', facts: { current: 'failed', next: 'sent' }, expected: 'refused' },
+  { name: 'failed to running', facts: { current: 'failed', next: 'running' }, expected: 'refused' },
+] as const)('ask transition: $name', ({ facts, expected }) => {
+  expect(askTransition(facts)).toBe(expected);
 });

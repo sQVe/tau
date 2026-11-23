@@ -115,19 +115,43 @@ before it starts Pi or writes an ask record. While a holder has not published it
 `open` report that the architect is starting.
 
 Pi opens its session file, and can migrate it, before session start. So the caller releases a claim
-only when no Pi can still take it over. A launch has three outcomes. It is `created` when the
-command exits 0 and its reply gives a valid terminal address, and `refused` when the command never
-ran, such as a spawn error for a missing binary. Every other result is `unknown`: a nonzero exit, a
-killed, timed-out, or aborted client, a reply that is not JSON or fails its schema, and a reply with
-a missing or empty terminal.
+only when no Pi can still take it over. A one-shot start ticket fences the launch before Pi opens
+the session file. Before it launches, the caller creates an empty file
+`.tau/architect/start/<claimToken>` through `ensureTauDirectory`. The child's argv is wrapped so a
+shell renames the ticket before it runs Pi:
+`sh -c 'mv -- "$1" "$2" 2>/dev/null || exit 75; shift 2; exec "$@"' tau-architect-start <ticket> <ticket>.started <the Pi argv>`.
+The wrapper applies to the `hc run` argv in `ask`, the `space.new` argv, and the argv inside
+`env -C` for `pane.split`. `exec` keeps the terminal's process as Pi, and the argv still contains
+`TAU_ARCHITECT_CLAIM=<token>`, so the `open` lookup still matches. A rename within one filesystem is
+atomic, so exactly one of two renames of the ticket succeeds.
 
-On `unknown`, the caller keeps the claim and looks for the child every 250 milliseconds for up to 10
-seconds. `ask` looks up the label `tau.architect.ask=<askId>`. `open` lists all terminals and reads
-each one, matching `TAU_ARCHITECT_CLAIM=<token>` in its argv without a `cwd` filter. A found
-terminal is handled as a created one. A terminal absent from every lookup releases the claim and
-reports the launch error. A failed lookup keeps the claim. The launch command runs without the
-caller's signal, and the caller checks that signal just before dispatch. A 30 second timeout bounds
-the launch reply, and a timeout is `unknown`.
+When the caller abandons a launch, it first renames the ticket to `<ticket>.cancelled`. Success
+means no Pi from this launch can run: a shell that starts later fails its `mv` and exits 75 before
+Pi, so the caller releases the claim at once, with no lookup and no kill. `ENOENT` means the child
+took the ticket, so Pi started, and its terminal existed before the caller's rename. The caller
+finds the terminal and follows the stop-then-release rule. Absence from a complete `hc ls --all`
+read now proves the terminal ended, because it existed before the read. Any other rename error keeps
+the claim. `launchOutcomeDecision` drops the refused outcome and the missing-executable text match:
+a launch is `created` or `notCreated`, and the ticket rename decides the rest. The launch command
+runs without the caller's signal, and the caller checks that signal just before dispatch. A 30
+second timeout bounds the launch reply, and a timeout is `notCreated`.
+
+Each caller sweeps the start folder right after its claim links. It holds the highest generation, so
+every other ticket belongs to a gone claim. It cancels each unused ticket. For each `.started`
+marker it looks up the terminal: a live terminal makes the caller release its own claim and report
+that the architect is starting; an ended terminal lets it delete the marker; an unread result
+releases the caller's claim and keeps the marker. A started marker whose terminal is absent keeps
+the marker, because the marker proves only that the child took the ticket. The architect deletes
+`<token>.started` after it takes the claim over. The caller deletes its own `.cancelled` file, and
+`.started` once the terminal has ended.
+
+The launch needs `sh` and `mv` on the machine that runs the terminal, and the ticket and Pi run in
+the same checkout.
+
+Each `hc ls` and `hc get` call gets an exec timeout equal to the remaining lookup time, and the
+per-terminal reads use `Promise.allSettled`. A fulfilled match is `found` even if other calls
+failed. No match with any failed call, a timeout, or a terminal without `argv` is `unread`. Only a
+complete read with no match is `absent`.
 
 `ask` holds the claim until its hidden terminal ends. `open` waits up to 60 seconds for the
 takeover. On that deadline, on a cancel before the takeover, or when the `ask` wait fails, the
@@ -138,12 +162,19 @@ user may be talking to it.
 
 In ask mode the architect also enforces its own deadline. Once it holds the lock, it arms a timer
 from its ask record's `deadline`. At that deadline, a record that still reads `running` becomes
-`timeout` with a detail, and the session shuts down. When the caller cannot confirm a stop, it
-writes the record as `running` with a detail that the stop was not confirmed and that the ask ends
-at its deadline. A reader repairs a stale record: the newest running hidden record whose terminal
-`hc get` reads as not live becomes `failed` with a detail that the terminal ended without settling
-it. A failed `hc get` changes nothing. A Pi that hangs before session start never arms its deadline,
-so the caller keeps the claim until the lead stops that terminal or ends its own session.
+`timeout` with a detail, and the session shuts down. Every write to a hidden ask record goes through
+the per-ask lock and changes the record only while it reads `running`; `sent`, `timeout`, and
+`failed` are final. The child's answer handler moves `running` to `sent`; the child's deadline timer
+or the lead after its own deadline and a confirmed stop moves `running` to `timeout`; the lead after
+a confirmed end without settlement, the stale repair, or the child's shutdown moves `running` to
+`failed`; the lead alone may add an unconfirmed-stop detail while the status is still `running`. The
+lead never writes a snapshot it read earlier. After its wait returns it reports from the current
+record: `timeout` gives the deadline result and `sent` gives the answer. Shutdown clears the timer
+and awaits an expiry already in progress before it settles the session's asks. The stale repair runs
+inside the same lock and checks that the status is still `running` and that the record's terminal is
+the address it read as ended. A failed `hc get` changes nothing. A Pi that hangs before session
+start never arms its deadline, so the caller keeps the claim until the lead stops that terminal or
+ends its own session.
 
 A Pi takes over its own claim while that claim is the highest generation and not released, even when
 the lead that took it has exited. The generation link still picks one winner when another caller
@@ -200,11 +231,14 @@ the work.
   lookup that has no time limit of its own. Close has no overall deadline.
 - A start that cannot be stopped keeps its claim. The checkout then refuses new architect starts
   until the lead session that holds the claim exits, or until the started Pi takes the claim over.
-- A launch whose reply is lost waits up to 10 seconds for the lookup before it reports the error. A
-  failed lookup keeps the claim until the lead ends its session or a started Pi takes it over.
-- A lead that dies while its architect starts leaves a claim that reads as gone. A second start can
-  then run before the first Pi reaches session start. The first Pi ends there, but it may already
-  have opened the session file.
+- A launch whose child took the ticket waits up to 10 seconds for the lookup before it reports the
+  error. A failed lookup keeps the claim until the lead ends its session or a started Pi takes it
+  over.
+- A hidden Pi that hangs after it takes its ticket but before session start never arms its deadline.
+  If `hc kill` cannot stop it, the caller keeps the claim until the lead stops that terminal or ends
+  its session.
+- A launch needs `sh` and `mv` on the machine that runs the terminal, and the ticket and Pi must run
+  in the same checkout.
 
 ## Alternatives considered
 
@@ -235,6 +269,18 @@ lock gives the same exclusion with one file.
 Release the claim on a deadline, and let a Pi that finds its claim gone end at session start.
 Rejected because Pi opens and can migrate its session file before session start, so a second Pi
 would already have touched the file.
+
+### Keep the claim on every ordinary launch failure
+
+Release a claim only when a launch reports a nonzero exit. Rejected because the client result does
+not prove the server will not create the terminal later, and the checkout would stay reserved after
+every ordinary launch failure.
+
+### Use a server-owned launch identifier
+
+Ask the terminal server for a launch identifier whose cancellation or final query proves whether the
+command ran. Rejected because it needs a herdr change, and the start ticket proves the same with a
+rename the caller controls.
 
 ### Wait for the takeover without a deadline
 

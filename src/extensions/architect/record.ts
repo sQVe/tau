@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readdir, realpath } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -408,27 +408,28 @@ export const writeAskRecord = async (root: string, record: AskRecord): Promise<v
   await writeAskRecordAt(askRecordPath(root, record.askId), record);
 };
 
-const askLockPath = (root: string, askId: string): string => `${askRecordPath(root, askId)}.lock`;
+const askLockPath = (path: string): string => `${path}.lock`;
+
+const askRootOfPath = (path: string): string => dirname(dirname(dirname(dirname(path))));
 
 // One ask changes under its own cross-process lock, so a writer never reopens a record that
 // another process answered or failed after this writer read it.
-export const changeAskRecord = async (
-  root: string,
-  askId: string,
+export const changeAskRecordAt = async (
+  path: string,
   change: (current: AskRecord) => AskRecord | undefined,
   options: ChangeAskOptions = {},
 ): Promise<AskRecordChange | undefined> =>
   withFileLock(
     {
-      lockPath: askLockPath(root, askId),
-      checkout: root,
+      lockPath: askLockPath(path),
+      checkout: askRootOfPath(path),
       pollMilliseconds: 10,
       signal: undefined,
-      cancelled: () => new Error(`The ask lock for ${askId} was cancelled.`),
+      cancelled: () => new Error(`The ask lock for ${path} was cancelled.`),
       onWaiting: options.onWaiting ?? (() => undefined),
     },
     async () => {
-      const current = await readAskRecord(root, askId);
+      const current = await readAskRecordAt(path);
 
       if (current === undefined) {
         return undefined;
@@ -442,11 +443,19 @@ export const changeAskRecord = async (
         return { record: current, changed: false };
       }
 
-      await writeAskRecord(root, next);
+      await writeAskRecordAt(path, next);
 
       return { record: next, changed: true };
     },
   );
+
+export const changeAskRecord = (
+  root: string,
+  askId: string,
+  change: (current: AskRecord) => AskRecord | undefined,
+  options: ChangeAskOptions = {},
+): Promise<AskRecordChange | undefined> =>
+  changeAskRecordAt(askRecordPath(root, askId), change, options);
 
 export const readAskRecords = async (root: string): Promise<AskRecordScan> => {
   const names = await readdir(askRecordDirectory(root)).catch((error: unknown) => {

@@ -13,10 +13,10 @@ import {
   startHandoverReceiver,
 } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
+import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
-import { readArchitectOwner } from './fixtures/toolHarness.js';
+import { holdAskLock, readArchitectOwner } from './fixtures/toolHarness.js';
 import {
   endOptions,
   hcRuntime,
@@ -469,44 +469,6 @@ it('ending a visible architect does not note an ask that is already closed', asy
   expect(await readAskRecord(root, liveIds.answered)).toMatchObject({ status: 'answered' });
 });
 
-const holdAskLock = async (
-  cleanup: (cleanup: () => Promise<void> | void) => void,
-  root: string,
-  askId: string,
-) => {
-  const held = Promise.withResolvers<undefined>();
-  const release = Promise.withResolvers<undefined>();
-
-  const holding = withFileLock(
-    {
-      lockPath: `${askRecordPath(root, askId)}.lock`,
-      checkout: root,
-      signal: undefined,
-      pollMilliseconds: 10,
-      cancelled: () => new Error('Waiting for the ask lock was cancelled.'),
-      onWaiting: () => undefined,
-    },
-    async () => {
-      held.resolve(undefined);
-      await release.promise;
-    },
-  );
-
-  await held.promise;
-
-  cleanup(async () => {
-    release.resolve(undefined);
-    await holding;
-  });
-
-  return {
-    release: () => {
-      release.resolve(undefined);
-    },
-    holding,
-  };
-};
-
 it('ending does not note an ask that closes after the scan', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const hc = createHcFake();
@@ -792,15 +754,17 @@ it('an ask session times out its running ask at the deadline and shuts down', as
   await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
   vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.running));
 
+  const expired = Promise.withResolvers<undefined>();
   const { context, shutdown } = sessionContext(root);
+
+  shutdown.mockImplementation(() => {
+    expired.resolve(undefined);
+  });
+
   const session = await startArchitectSession(context, createHeldLockToken());
 
   await vi.advanceTimersByTimeAsync(1);
-  vi.useRealTimers();
-
-  await new Promise((resolve) => {
-    setTimeout(resolve, 50);
-  });
+  await expired.promise;
 
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
   expect(shutdown).toHaveBeenCalledTimes(1);
@@ -810,6 +774,83 @@ it('an ask session times out its running ask at the deadline and shuts down', as
     hcRuntime(createHcFake()),
     endOptions(),
   );
+});
+
+it('an ask session shutdown before the deadline never writes the deadline', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const deadline = Date.now() + 1000;
+
+  await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.running));
+
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+
+  expect(vi.getTimerCount()).toBe(0);
+
+  await vi.advanceTimersByTimeAsync(5000);
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({
+    status: 'failed',
+    detail: 'The architect session ended before it sent the answer.',
+  });
+});
+
+it('an ask session waits for a stalled expiry and settles it as timeout', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const deadline = Date.now();
+
+  await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.running));
+
+  const held = await holdAskLock(onTestFinished, root, hiddenIds.running);
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  const ending = endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
+
+  held.release();
+  await ending;
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
 });
 
 it('an ask session writes nothing at the deadline for an already settled record', async ({

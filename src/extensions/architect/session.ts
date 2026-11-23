@@ -10,7 +10,7 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
-import { askDeadlineAction } from './ask/askDecision.js';
+import { askDeadlineAction, askTransition } from './ask/askDecision.js';
 import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
 import type { EndNoteRoute } from './endNoteDecision.js';
 import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
@@ -19,17 +19,23 @@ import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import type { FinalHandoverResult } from './queuedHandover.js';
 import {
+  changeAskRecord,
+  changeAskRecordAt,
   readAskRecordAt,
   readAskRecords,
   writeArchitectRecord,
-  writeAskRecord,
-  writeAskRecordAt,
 } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
+import { deleteStartMarker } from './startTicket/startTicket.js';
 
 export interface HeldLockToken {
   current: () => string | undefined;
   set: (token: string | undefined) => void;
+}
+
+interface AskDeadline {
+  timer: NodeJS.Timeout;
+  expiry: () => Promise<void> | undefined;
 }
 
 export interface ArchitectSession {
@@ -39,7 +45,7 @@ export interface ArchitectSession {
   owner: ArchitectOwner;
   held: HeldLockToken;
   endNote?: EndNoteRoute;
-  deadlineTimer?: NodeJS.Timeout;
+  deadline?: AskDeadline;
 }
 
 export interface EndArchitectOptions {
@@ -103,32 +109,38 @@ const askRecordPathFromEnvironment = (): string | undefined => {
 };
 
 const expireAskRecord = async (path: string, context: ExtensionContext): Promise<void> => {
-  const record = await readAskRecordAt(path);
+  const change = await changeAskRecordAt(path, (current) => {
+    if (current.route !== 'hidden') {
+      return undefined;
+    }
 
-  if (record?.route !== 'hidden') {
-    return;
-  }
+    const action = askDeadlineAction({
+      status: current.status,
+      now: Date.now(),
+      deadline: current.deadline,
+    });
 
-  const action = askDeadlineAction({
-    status: record.status,
-    now: Date.now(),
-    deadline: record.deadline,
+    if (action !== 'expire') {
+      return undefined;
+    }
+
+    const next = {
+      ...current,
+      status: 'timeout' as const,
+      detail: 'The ask reached its deadline before the architect answered.',
+    };
+
+    return askTransition({ current: current.status, next: next.status }) === 'allowed'
+      ? next
+      : undefined;
   });
 
-  if (action !== 'expire') {
-    return;
+  if (change?.changed === true) {
+    context.shutdown();
   }
-
-  await writeAskRecordAt(path, {
-    ...record,
-    status: 'timeout',
-    detail: 'The ask reached its deadline before the architect answered.',
-  });
-
-  context.shutdown();
 };
 
-const armAskDeadline = async (context: ExtensionContext): Promise<NodeJS.Timeout | undefined> => {
+const armAskDeadline = async (context: ExtensionContext): Promise<AskDeadline | undefined> => {
   const path = askRecordPathFromEnvironment();
 
   if (path === undefined) {
@@ -142,12 +154,15 @@ const armAskDeadline = async (context: ExtensionContext): Promise<NodeJS.Timeout
   }
 
   const delay = Math.max(0, record.deadline - Date.now());
+  let running: Promise<void> | undefined;
 
-  return setTimeout(() => {
-    void expireAskRecord(path, context).catch((error: unknown) => {
+  const timer = setTimeout(() => {
+    running = expireAskRecord(path, context).catch((error: unknown) => {
       notifyOnce(context.ui, path, 'ask-deadline', errorMessage(error), 'error');
     });
   }, delay);
+
+  return { timer, expiry: () => running };
 };
 
 const startArchitect = async (
@@ -159,10 +174,15 @@ const startArchitect = async (
   let release: (() => Promise<void>) | undefined;
 
   try {
-    const lock = await holdArchitectLock(root, architectClaim());
+    const claimToken = architectClaim();
+    const lock = await holdArchitectLock(root, claimToken);
 
     release = lock.release;
     held.set(lock.token);
+
+    if (claimToken !== undefined) {
+      await deleteStartMarker(root, claimToken).catch(() => undefined);
+    }
 
     // oxlint-disable-next-line node/no-process-env -- A reload must not try to adopt the old claim again.
     delete process.env['TAU_ARCHITECT_CLAIM'];
@@ -193,7 +213,7 @@ const startArchitect = async (
       architectTerminal: owner.terminal,
     });
 
-    const deadlineTimer = owner.mode === 'ask' ? await armAskDeadline(context) : undefined;
+    const deadline = owner.mode === 'ask' ? await armAskDeadline(context) : undefined;
 
     return {
       root,
@@ -202,7 +222,7 @@ const startArchitect = async (
       owner,
       held,
       ...(endNote === undefined ? {} : { endNote }),
-      ...(deadlineTimer === undefined ? {} : { deadlineTimer }),
+      ...(deadline === undefined ? {} : { deadline }),
     };
   } catch (error) {
     held.set(undefined);
@@ -243,10 +263,20 @@ const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> 
 
   await Promise.all(
     running.map((record) =>
-      writeAskRecord(root, {
-        ...record,
-        status: 'failed',
-        detail: 'The architect session ended before it sent the answer.',
+      changeAskRecord(root, record.askId, (current) => {
+        if (current.route !== 'hidden') {
+          return undefined;
+        }
+
+        const next = {
+          ...current,
+          status: 'failed' as const,
+          detail: 'The architect session ended before it sent the answer.',
+        };
+
+        return askTransition({ current: current.status, next: next.status }) === 'allowed'
+          ? next
+          : undefined;
       }),
     ),
   );
@@ -303,8 +333,9 @@ export const endArchitectSession = async (
   hc: HcRuntime,
   { answers, admissions, sendEndNote }: EndArchitectOptions,
 ): Promise<void> => {
-  if (session.deadlineTimer !== undefined) {
-    clearTimeout(session.deadlineTimer);
+  if (session.deadline !== undefined) {
+    clearTimeout(session.deadline.timer);
+    await session.deadline.expiry();
   }
 
   session.held.set(undefined);

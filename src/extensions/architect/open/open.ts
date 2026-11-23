@@ -16,12 +16,21 @@ import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStar
 import type { PiLaunchResult } from '../../../piStart/piStart.js';
 import { tabName } from '../../../tabName.js';
 import { releaseClaim } from '../claimRelease/claimRelease.js';
-import { launchLookup } from '../claimRelease/launchLookup.js';
+import type { ClaimReleaseFacts } from '../claimRelease/claimReleaseDecision.js';
+import { launchLookup, lookupLaunchTerminal } from '../claimRelease/launchLookup.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import { architectLockPath, claimArchitectLock } from '../lock.js';
 import type { ArchitectClaimOptions } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
+import {
+  cancelStartTicket,
+  createStartTicket,
+  deleteStartMarker,
+  sweepStartFolder,
+  wrapStartArgv,
+} from '../startTicket/startTicket.js';
+import type { StartTicketTerminal } from '../startTicket/startTicketDecision.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 import { openStartProgress } from './openStartClaimDecision.js';
@@ -52,9 +61,10 @@ interface PreparedArchitectStart {
 type ReplyTerminal = Parameters<typeof launchOutcomeDecision>[0]['replyTerminal'];
 
 interface LaunchState {
-  launch: 'notRun' | 'refused' | 'started';
+  ticket: ClaimReleaseFacts['ticket'];
+  ticketPath: string | undefined;
   terminal: string | undefined;
-  terminalState: 'unknown' | 'live' | 'ended' | 'absent';
+  terminalState: ClaimReleaseFacts['terminal'];
   adopted: boolean;
 }
 
@@ -219,6 +229,7 @@ const launchArchitect = (
   hc: HcRuntime,
   request: OpenRequest,
   prepared: PreparedArchitectStart,
+  ticket: string,
 ): Promise<PiLaunchResult> => {
   const start = {
     folder: request.root,
@@ -227,6 +238,7 @@ const launchArchitect = (
     session: prepared.session,
     bareRoot: prepared.bareRoot,
     environment: prepared.environment,
+    argvWrapper: (argv: string[]): string[] => wrapStartArgv(ticket, argv),
   };
 
   if (prepared.pane === undefined) {
@@ -243,7 +255,6 @@ const replyTerminalOf = (launch: PiLaunchResult): ReplyTerminal =>
   launch.terminal === undefined ? 'malformed' : 'valid';
 
 const launchFacts = (launch: PiLaunchResult): Parameters<typeof launchOutcomeDecision>[0] => ({
-  ran: launch.ran,
   exitCode: launch.exitCode,
   killed: launch.killed,
   aborted: launch.aborted,
@@ -267,15 +278,13 @@ const claimTakenOver = async (root: string, claimToken: string): Promise<boolean
   return holder !== undefined && holder.token !== claimToken;
 };
 
-const recoverUnknownLaunch = async (
+const recoverTakenTicket = async (
   request: OpenRequest,
   claimToken: string,
   launchHc: HcRuntime,
   started: PiLaunchResult,
   state: LaunchState,
 ): Promise<void> => {
-  state.launch = 'started';
-
   const lookup = await launchLookup({ kind: 'open', identifier: claimToken, hc: launchHc });
 
   if (lookup.kind === 'found') {
@@ -356,6 +365,14 @@ const waitForTakeover = async (
   }
 };
 
+const abandonTicket = async (state: LaunchState): Promise<void> => {
+  if (state.ticket !== 'notCreated' || state.ticketPath === undefined) {
+    return;
+  }
+
+  state.ticket = await cancelStartTicket(state.ticketPath);
+};
+
 const applyLaunchOutcome = async (
   request: OpenRequest,
   claimToken: string,
@@ -365,24 +382,28 @@ const applyLaunchOutcome = async (
 ): Promise<void> => {
   const outcome = launchOutcomeDecision(launchFacts(started));
 
-  if (outcome === 'refused') {
-    state.launch = 'refused';
+  if (outcome === 'notCreated') {
+    await abandonTicket(state);
+
+    if (state.ticket === 'taken') {
+      await recoverTakenTicket(request, claimToken, launchHc, started, state);
+
+      if (request.hc.signal?.aborted === true) {
+        request.hc.signal.throwIfAborted();
+      }
+
+      return;
+    }
 
     throw launchFailure(started);
   }
 
-  if (outcome === 'unknown') {
-    await recoverUnknownLaunch(request, claimToken, launchHc, started, state);
-
-    return;
-  }
-
-  state.launch = 'started';
   state.terminal = started.terminal;
   state.terminalState = 'live';
 
   await waitForTakeover(request.root, claimToken, request.hc.signal);
   state.adopted = true;
+  state.ticket = 'taken';
 
   if (request.hc.signal?.aborted === true) {
     request.hc.signal.throwIfAborted();
@@ -434,6 +455,73 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
+const terminalStateOf = async (
+  launchHc: HcRuntime,
+  token: string,
+): Promise<StartTicketTerminal> => {
+  const lookup = await lookupLaunchTerminal({ kind: 'open', identifier: token, hc: launchHc });
+
+  if (lookup.kind === 'found') {
+    return lookup.state === 'live' ? 'live' : 'ended';
+  }
+
+  return lookup.kind === 'absent' ? 'none' : 'unread';
+};
+
+const sweepOwnStart = async (
+  root: string,
+  claimToken: string,
+  launchHc: HcRuntime,
+): Promise<boolean> => {
+  const sweep = await sweepStartFolder({
+    root,
+    currentToken: claimToken,
+    terminalOf: (token) => terminalStateOf(launchHc, token),
+  });
+
+  return sweep === 'starting';
+};
+
+const finishLaunch = async (
+  request: OpenRequest,
+  claim: { release: () => Promise<void>; token: string },
+  state: LaunchState,
+  launchHc: HcRuntime,
+): Promise<boolean> => {
+  const kept = await releaseClaim({ claim, ...state, hc: launchHc });
+
+  if (!kept && state.ticket === 'taken') {
+    await deleteStartMarker(request.root, claim.token).catch(() => undefined);
+  }
+
+  return kept;
+};
+
+const recoverAbandonedTerminal = async (
+  claimToken: string,
+  launchHc: HcRuntime,
+  state: LaunchState,
+): Promise<void> => {
+  if (state.ticket !== 'taken' || state.terminal !== undefined) {
+    return;
+  }
+
+  if (state.terminalState !== 'unknown') {
+    return;
+  }
+
+  const lookup = await launchLookup({ kind: 'open', identifier: claimToken, hc: launchHc });
+
+  if (lookup.kind === 'found') {
+    state.terminal = lookup.terminal;
+    state.terminalState = 'live';
+
+    return;
+  }
+
+  state.terminalState = lookup.kind === 'absent' ? 'absent' : 'unknown';
+};
+
 export const openArchitect = async (
   request: OpenRequest,
   claimOptions: ArchitectClaimOptions = {},
@@ -454,13 +542,22 @@ export const openArchitect = async (
   const launchHc = { ...request.hc, signal: undefined };
 
   const state: LaunchState = {
-    launch: 'notRun',
+    ticket: 'notCreated',
+    ticketPath: undefined,
     terminal: undefined,
     terminalState: 'unknown',
     adopted: false,
   };
 
   try {
+    const starting = await sweepOwnStart(request.root, claim.token, launchHc);
+
+    if (starting) {
+      throw startingError(request.root);
+    }
+
+    state.ticketPath = await createStartTicket(request.root, claim.token);
+
     const prepared = await prepareArchitectStart(
       request,
       record?.sessionFile ?? undefined,
@@ -469,17 +566,20 @@ export const openArchitect = async (
 
     request.hc.signal?.throwIfAborted();
 
-    const started = await launchArchitect(launchHc, request, prepared);
+    const started = await launchArchitect(launchHc, request, prepared, state.ticketPath);
 
     await applyLaunchOutcome(request, claim.token, launchHc, started, state);
 
     const result = launchResult(prepared);
 
-    await releaseClaim({ claim, ...state, hc: launchHc });
+    await finishLaunch(request, claim, state, launchHc);
 
     return result;
   } catch (error) {
-    const kept = await releaseClaim({ claim, ...state, hc: launchHc });
+    await abandonTicket(state);
+    await recoverAbandonedTerminal(claim.token, launchHc, state);
+
+    const kept = await finishLaunch(request, claim, state, launchHc);
 
     if (kept) {
       throw openKeptClaimError(request.root);

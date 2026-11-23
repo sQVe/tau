@@ -97,7 +97,10 @@ it('stops the space terminal at the deadline, releases after it ends, and lets a
   await poll.started.promise;
   await vi.advanceTimersByTimeAsync(60_000);
 
-  expect(await opening).toBeInstanceOf(Error);
+  const failure = await opening;
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe(takeoverExpiryError().message);
   expect(killCalls(hc.calls)).toEqual([['kill', '--json', '--', 't-space']]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 
@@ -372,7 +375,7 @@ it.each([
   },
 );
 
-it('reports a launch failure after the lookup confirms no terminal', async ({
+it('reports a launch failure at once when the child never took the ticket', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
@@ -380,20 +383,14 @@ it('reports a launch failure after the lookup confirms no terminal', async ({
 
   app.failCommand('pane.split', 'pane p-lead is gone');
   await recordSession(root);
-  hc.reply('ls', JSON.stringify({ terminals: [] }));
-  startFakeTimers();
 
-  const opening = openArchitect(requestFor(root, config.location, runtime)).catch(
+  const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
     (error: unknown) => error,
   );
-
-  await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(10_000);
-
-  const failure = await opening;
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain('pane p-lead is gone');
   expect((failure as Error).message).not.toBe(takeoverExpiryError().message);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'ls')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
