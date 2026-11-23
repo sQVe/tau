@@ -205,7 +205,8 @@ it('open refuses when the record names a terminal from a previous lock generatio
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
-  const { app, terminals, tool } = openTool(root);
+  const afterTerminalLookup = vi.fn<() => Promise<void>>(() => Promise.resolve());
+  const { app, terminals, tool } = openTool(root, undefined, afterTerminalLookup);
 
   await holdLock(root, root);
   await recordTerminal(root, 't-architect', 'previous');
@@ -215,6 +216,7 @@ it('open refuses when the record names a terminal from a previous lock generatio
     `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
   );
 
+  expect(afterTerminalLookup).not.toHaveBeenCalled();
   expect(app.calls).toEqual([]);
 });
 
@@ -222,7 +224,8 @@ it('open refuses a previous lock generation while another checkout holds the loc
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
-  const { app, terminals, tool } = openTool(root);
+  const afterTerminalLookup = vi.fn<() => Promise<void>>(() => Promise.resolve());
+  const { app, terminals, tool } = openTool(root, undefined, afterTerminalLookup);
 
   await holdLock(root, '/other/checkout');
   await recordTerminal(root, 't-architect', 'previous');
@@ -232,7 +235,31 @@ it('open refuses a previous lock generation while another checkout holds the loc
     'The architect is already running in /other/checkout.',
   );
 
+  expect(afterTerminalLookup).not.toHaveBeenCalled();
   expect(app.calls).toEqual([]);
+});
+
+it('open refuses when a reload takes the lock during the terminal lookup', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+
+  const reload = async (): Promise<void> => {
+    await releaseLock(root);
+    await holdLock(root, root, 'reloaded');
+  };
+
+  const { app, terminals, tool } = openTool(root, undefined, reload);
+
+  await holdLock(root, root);
+  await recordTerminal(root, 't-architect');
+  terminals.set('t-architect', terminalState('live'));
+
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
+    `The architect is already running in ${root}.`,
+  );
+
+  expect(appCommands(app)).not.toContain('pane.split');
 });
 
 it('open reports the terminal a version 1 record names while a live holder keeps the lock', async ({

@@ -17,7 +17,7 @@ import { architectLockPath } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
 import { eligibleTerminal, openCandidate, openGeneration, openReuse } from './openReuseDecision.js';
-import type { OpenCandidate } from './openReuseDecision.js';
+import type { OpenCandidate, OpenRecordFacts } from './openReuseDecision.js';
 
 export interface OpenRequest {
   root: string;
@@ -194,11 +194,15 @@ const startArchitect = async (
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
 
-const recordedTerminal = (record: SavedArchitectRecord | undefined): string | null | undefined =>
-  record?.version === 2 ? record.owner?.terminal : record?.terminal;
+const unrecordedRefusal = (root: string): Error =>
+  new Error(
+    `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
+  );
 
-const recordedLockToken = (record: SavedArchitectRecord | undefined): string | undefined =>
-  record?.version === 2 ? record.owner?.lockToken : undefined;
+const projectRecord = (record: SavedArchitectRecord | undefined): OpenRecordFacts =>
+  record?.version === 2
+    ? { terminal: record.owner?.terminal, token: record.owner?.lockToken }
+    : { terminal: record?.terminal, token: undefined };
 
 const runningTerminal = async (
   request: OpenRequest,
@@ -214,7 +218,7 @@ const runningTerminal = async (
   const generation = openGeneration({
     root: request.root,
     holder,
-    recordToken: recordedLockToken(record),
+    record: projectRecord(record),
   });
 
   if (generation.kind === 'refuse') {
@@ -222,10 +226,10 @@ const runningTerminal = async (
   }
 
   if (generation.kind === 'unrecorded') {
-    throw new Error(generation.message);
+    throw unrecordedRefusal(request.root);
   }
 
-  const candidate = await candidateOf(request, recordedTerminal(record), holder);
+  const candidate = await candidateOf(request, generation.terminal, holder);
 
   if (candidate.kind === 'refuse') {
     throw refusal(candidate.checkout);

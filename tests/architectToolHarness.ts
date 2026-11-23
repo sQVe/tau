@@ -38,7 +38,7 @@ export const setup = async (cleanup: (cleanup: () => void) => void): Promise<{ r
 
 const heldLockPath = (root: string): string => `${architectLockPath(root)}.1`;
 
-export const holdLock = async (root: string, checkout: string): Promise<void> => {
+export const holdLock = async (root: string, checkout: string, token = 'live'): Promise<void> => {
   const path = heldLockPath(root);
 
   await mkdir(dirname(path), { recursive: true });
@@ -49,7 +49,7 @@ export const holdLock = async (root: string, checkout: string): Promise<void> =>
       pid: process.pid,
       checkout,
       startedAt: new Date().toISOString(),
-      token: 'live',
+      token,
     }),
   );
 };

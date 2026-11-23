@@ -1,6 +1,7 @@
 interface OpenLockHolder {
   pid: number;
   checkout: string;
+  token: string;
 }
 
 interface EligibilityFacts {
@@ -30,19 +31,24 @@ export type OpenReuse =
   | { kind: 'refuse'; checkout: string }
   | { kind: 'start' };
 
+export interface OpenRecordFacts {
+  terminal: string | null | undefined;
+  token: string | undefined;
+}
+
 export interface OpenGenerationFacts {
   root: string;
-  holder: { checkout: string; token: string };
-  recordToken: string | undefined;
+  holder: OpenLockHolder;
+  record: OpenRecordFacts;
 }
 
 export type OpenGeneration =
-  | { kind: 'current' }
+  | { kind: 'current'; terminal: string | null | undefined }
   | { kind: 'refuse'; checkout: string }
-  | { kind: 'unrecorded'; message: string };
+  | { kind: 'unrecorded' };
 
 const isSameHolder = (first: OpenLockHolder, second: OpenLockHolder): boolean =>
-  first.pid === second.pid && first.checkout === second.checkout;
+  first.pid === second.pid && first.checkout === second.checkout && first.token === second.token;
 
 export const eligibleTerminal = (facts: EligibilityFacts): string | undefined => {
   const isAskTerminal = facts.terminalRunsAsk || facts.terminalLabeledAsk;
@@ -84,18 +90,15 @@ export const openReuse = (facts: OpenReuseFacts): OpenReuse => {
 // A saved record ties its terminal to the lock generation that wrote it. A record from another
 // generation names a terminal that is not the live holder's terminal.
 export const openGeneration = (facts: OpenGenerationFacts): OpenGeneration => {
-  const { holder, recordToken, root } = facts;
+  const { holder, record, root } = facts;
 
-  if (recordToken === undefined || recordToken === holder.token) {
-    return { kind: 'current' };
+  if (record.token === undefined || record.token === holder.token) {
+    return { kind: 'current', terminal: record.terminal };
   }
 
   if (holder.checkout !== root) {
     return { kind: 'refuse', checkout: holder.checkout };
   }
 
-  return {
-    kind: 'unrecorded',
-    message: `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
-  };
+  return { kind: 'unrecorded' };
 };

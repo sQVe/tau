@@ -10,7 +10,7 @@ import type {
   OpenReuseFacts,
 } from './openReuseDecision.js';
 
-const holder = { pid: 10, checkout: '/checkout' };
+const holder = { pid: 10, checkout: '/checkout', token: 'live' };
 
 const candidateFacts: OpenCandidateFacts = {
   holder,
@@ -84,57 +84,61 @@ it.each<{ name: string; facts: OpenReuseFacts; expected: OpenReuse }>([
   },
   {
     name: 'a holder with a different process is refused with the new checkout',
-    facts: { ...reuseFacts, currentHolder: { pid: 11, checkout: '/checkout' } },
+    facts: { ...reuseFacts, currentHolder: { ...holder, pid: 11 } },
     expected: { kind: 'refuse', checkout: '/checkout' },
   },
   {
     name: 'a holder with a different checkout is refused with the new checkout',
-    facts: { ...reuseFacts, currentHolder: { pid: 10, checkout: '/other' } },
+    facts: { ...reuseFacts, currentHolder: { ...holder, checkout: '/other' } },
     expected: { kind: 'refuse', checkout: '/other' },
   },
   {
     name: 'a holder with a different process and checkout is refused with the new checkout',
-    facts: { ...reuseFacts, currentHolder: { pid: 11, checkout: '/other' } },
+    facts: { ...reuseFacts, currentHolder: { ...holder, pid: 11, checkout: '/other' } },
     expected: { kind: 'refuse', checkout: '/other' },
+  },
+  {
+    name: 'the same holder with a different token',
+    facts: { ...reuseFacts, currentHolder: { ...holder, token: 'reloaded' } },
+    expected: { kind: 'refuse', checkout: '/checkout' },
   },
 ])('reuse: $name', ({ facts, expected }) => {
   expect(openReuse(facts)).toEqual(expected);
 });
 
-const generationHolder = { checkout: '/checkout', token: 'live' };
-
 const generationFacts: OpenGenerationFacts = {
   root: '/checkout',
-  holder: generationHolder,
-  recordToken: 'live',
+  holder,
+  record: { terminal: 't-architect', token: 'live' },
 };
 
 it.each<{ name: string; facts: OpenGenerationFacts; expected: OpenGeneration }>([
   {
     name: 'the same token is current',
     facts: generationFacts,
-    expected: { kind: 'current' },
+    expected: { kind: 'current', terminal: 't-architect' },
   },
   {
     name: 'no record token is current',
-    facts: { ...generationFacts, recordToken: undefined },
-    expected: { kind: 'current' },
+    facts: { ...generationFacts, record: { terminal: 't-architect', token: undefined } },
+    expected: { kind: 'current', terminal: 't-architect' },
+  },
+  {
+    name: 'a current record with no terminal',
+    facts: { ...generationFacts, record: { terminal: null, token: 'live' } },
+    expected: { kind: 'current', terminal: null },
   },
   {
     name: 'a different token in this checkout',
-    facts: { ...generationFacts, recordToken: 'previous' },
-    expected: {
-      kind: 'unrecorded',
-      message:
-        'The architect in /checkout has not recorded its terminal yet. Call architect open again shortly.',
-    },
+    facts: { ...generationFacts, record: { terminal: 't-architect', token: 'previous' } },
+    expected: { kind: 'unrecorded' },
   },
   {
     name: 'a different token in another checkout',
     facts: {
       ...generationFacts,
-      holder: { ...generationHolder, checkout: '/other' },
-      recordToken: 'previous',
+      holder: { ...holder, checkout: '/other' },
+      record: { terminal: 't-architect', token: 'previous' },
     },
     expected: { kind: 'refuse', checkout: '/other' },
   },
