@@ -10,7 +10,7 @@ import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
 import { createHerdrAppFake } from '../../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
-import { takeStartTicket } from '../../../../tests/startTicketFake.js';
+import { takeStartTicket, takingStartTicket } from '../../../../tests/startTicketFake.js';
 import type { Exec } from '../../../command.js';
 import { holdFileLock } from '../../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../../hc/hc.js';
@@ -183,7 +183,7 @@ export const openTool = (
   afterTerminalLookup: () => Promise<void> = () => Promise.resolve(),
   options: OpenToolOptions = {},
 ): OpenTool => {
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
   const fake = withStartTicket(appFake());
 
   const app = options.takeover === false ? fake : withTakeover(fake, root, options.afterTakeover);

@@ -4,6 +4,8 @@ import { promisify } from 'node:util';
 
 import { vi } from 'vitest';
 
+import type { HcFake } from './hcFake.js';
+
 interface StartTicketPaths {
   ticket: string;
   started: string;
@@ -90,6 +92,20 @@ export const takeStartTicket = async (argv: readonly string[]): Promise<boolean>
     return false;
   }
 };
+
+// Wraps a fake hc so a successful run takes the ticket, as the real child does.
+export const takingStartTicket = (hc: HcFake): HcFake => ({
+  ...hc,
+  exec: async (command, commandArguments, options) => {
+    const result = await hc.exec(command, commandArguments, options);
+
+    if (command === 'hc' && commandArguments[0] === 'run' && result.code === 0) {
+      await takeStartTicket(commandArguments);
+    }
+
+    return result;
+  },
+});
 
 export const runLaunchArgv = async (argv: readonly string[], cwd: string): Promise<number> => {
   const [command, ...commandArguments] = argv;

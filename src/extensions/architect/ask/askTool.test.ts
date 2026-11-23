@@ -6,6 +6,7 @@ import type { Mock } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
+import { takingStartTicket } from '../../../../tests/startTicketFake.js';
 import { startLeadInbox } from '../fixtures/leadInbox.js';
 import { contextOf, holdLock, recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
@@ -193,7 +194,7 @@ it('an ask deadline returns needsOpen and kills the terminal', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
@@ -246,7 +247,7 @@ it('an ask deadline returns needsOpen and kills the terminal', async ({
 
 it('ask returns the answer the architect saved', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
   const answer = 'Use --quick.';
 
   await recordSession(root);
@@ -321,7 +322,7 @@ it('a newer live record does not hide a running ask', async ({ onTestFinished: c
 
 it('ask falls back when its record disappears', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
@@ -361,7 +362,7 @@ it('ask falls back when its record disappears', async ({ onTestFinished: cleanup
 
 it('ask ignores a present record on another route', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));

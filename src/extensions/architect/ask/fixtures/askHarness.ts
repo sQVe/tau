@@ -1,5 +1,6 @@
 import type { HcFake } from '../../../../../tests/hcFake.js';
 import { createHcFake } from '../../../../../tests/hcFake.js';
+import { takingStartTicket } from '../../../../../tests/startTicketFake.js';
 import { contextOf } from '../../fixtures/toolHarness.js';
 import { readAskRecord, readAskRecords, writeAskRecord } from '../../record.js';
 import type { HiddenAskRecord } from '../../record.js';
@@ -40,7 +41,7 @@ export const endedWait = (
 };
 
 export const startFake = (): HcFake => {
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
 
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
   hc.reply('kill', JSON.stringify({ address: 't-ask', state: 'finished' }));
