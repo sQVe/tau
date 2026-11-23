@@ -70,6 +70,11 @@ Version 3 added the `handover-question` family. Both older versions stay readabl
 without the version, and a retry whose sender differs is a changed message. A receiver on an older
 Tau refuses a frame that carries `sender`; that refusal is accepted and needs no fallback.
 
+The Pi session receipt moves to version 3 when it gains the `handover-question` family. It still
+reads version 2 for `handover` and `answer`, and it skips a version 2 `handover-question` receipt.
+An older Tau skips a version 3 receipt, and it also skips the version 3 inbox record that would be
+replayed, so no message is delivered twice.
+
 ### Ask with handover_question
 
 A lead session gets the `handover_question` tool only when it finds a sender. When the tool runs, it
