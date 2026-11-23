@@ -84,8 +84,6 @@ export const openReuse = (facts: OpenReuseFacts): OpenReuse => {
   return { kind: 'reuse', terminal };
 };
 
-// A saved record ties its terminal to the lock generation that wrote it. A record from another
-// generation names a terminal that is not the live holder's terminal.
 export const openTerminal = (facts: OpenTerminalFacts): OpenTerminal => {
   const { holder, record, root } = facts;
 
