@@ -274,3 +274,67 @@ it('an ask session rearms the deadline when the timer fires before the saved dea
     endOptions(),
   );
 });
+
+it('an ask session rearms the deadline when the clock rolls back before the locked expiry', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const now = Date.now();
+  const deadline = now + 1000;
+
+  await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.running));
+
+  const expired = Promise.withResolvers<undefined>();
+  const { context, shutdown } = sessionContext(root);
+
+  shutdown.mockImplementation(() => {
+    expired.resolve(undefined);
+  });
+
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  let clock = deadline;
+
+  const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => {
+    const value = clock;
+    clock = deadline - 6000;
+
+    return value;
+  });
+
+  await vi.advanceTimersByTimeAsync(1000);
+
+  for (let attempt = 0; attempt < 1000 && vi.getTimerCount() === 0; attempt += 1) {
+    await flushMacrotask();
+  }
+
+  expect(vi.getTimerCount()).toBeGreaterThan(0);
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
+  expect(shutdown).not.toHaveBeenCalled();
+
+  nowSpy.mockReturnValue(deadline);
+  await vi.advanceTimersByTimeAsync(6000);
+  await expired.promise;
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
+  expect(shutdown).toHaveBeenCalledTimes(1);
+
+  nowSpy.mockRestore();
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+});

@@ -9,7 +9,12 @@ export interface AskDeadline {
   stop: () => Promise<void>;
 }
 
-const expireAskRecord = async (path: string, context: ExtensionContext): Promise<void> => {
+// Returns the deadline to rearm when a clock rollback leaves the locked record running before
+// its deadline.
+const expireAskRecord = async (
+  path: string,
+  context: ExtensionContext,
+): Promise<number | undefined> => {
   const change = await updateHiddenAskRecordAt(path, (current) => {
     const action = askDeadlineAction({ now: Date.now(), deadline: current.deadline });
 
@@ -26,7 +31,15 @@ const expireAskRecord = async (path: string, context: ExtensionContext): Promise
 
   if (change?.changed === true) {
     context.shutdown();
+
+    return undefined;
   }
+
+  if (change === undefined || Date.now() >= change.record.deadline) {
+    return undefined;
+  }
+
+  return change.record.deadline;
 };
 
 export const startAskDeadline = async (
@@ -64,7 +77,11 @@ export const startAskDeadline = async (
           return;
         }
 
-        await expireAskRecord(path, context);
+        const rearmAt = await expireAskRecord(path, context);
+
+        if (rearmAt !== undefined) {
+          schedule(rearmAt);
+        }
       })().catch((error: unknown) => {
         notifyOnce(context.ui, path, 'ask-deadline', errorMessage(error), 'error');
       });
