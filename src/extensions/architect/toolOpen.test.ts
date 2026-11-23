@@ -201,6 +201,40 @@ it('open reports a live architect terminal while a live holder keeps the lock', 
   expect(appCommands(app)).toEqual(['ls']);
 });
 
+it('open refuses when the record names a terminal from a previous lock generation', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const { app, terminals, tool } = openTool(root);
+
+  await holdLock(root, root);
+  await recordTerminal(root, 't-architect', 'previous');
+  terminals.set('t-architect', terminalState('live'));
+
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
+    `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
+  );
+
+  expect(app.calls).toEqual([]);
+});
+
+it('open refuses a previous lock generation while another checkout holds the lock', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const { app, terminals, tool } = openTool(root);
+
+  await holdLock(root, '/other/checkout');
+  await recordTerminal(root, 't-architect', 'previous');
+  terminals.set('t-architect', terminalState('live'));
+
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
+    'The architect is already running in /other/checkout.',
+  );
+
+  expect(app.calls).toEqual([]);
+});
+
 it('open reports the terminal a version 1 record names while a live holder keeps the lock', async ({
   onTestFinished: cleanup,
 }) => {

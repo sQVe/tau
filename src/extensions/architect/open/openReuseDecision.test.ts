@@ -1,9 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { openCandidate, openReuse } from './openReuseDecision.js';
+import { openCandidate, openGeneration, openReuse } from './openReuseDecision.js';
 import type {
   OpenCandidate,
   OpenCandidateFacts,
+  OpenGeneration,
+  OpenGenerationFacts,
   OpenReuse,
   OpenReuseFacts,
 } from './openReuseDecision.js';
@@ -97,4 +99,45 @@ it.each<{ name: string; facts: OpenReuseFacts; expected: OpenReuse }>([
   },
 ])('reuse: $name', ({ facts, expected }) => {
   expect(openReuse(facts)).toEqual(expected);
+});
+
+const generationHolder = { checkout: '/checkout', token: 'live' };
+
+const generationFacts: OpenGenerationFacts = {
+  root: '/checkout',
+  holder: generationHolder,
+  recordToken: 'live',
+};
+
+it.each<{ name: string; facts: OpenGenerationFacts; expected: OpenGeneration }>([
+  {
+    name: 'the same token is current',
+    facts: generationFacts,
+    expected: { kind: 'current' },
+  },
+  {
+    name: 'no record token is current',
+    facts: { ...generationFacts, recordToken: undefined },
+    expected: { kind: 'current' },
+  },
+  {
+    name: 'a different token in this checkout',
+    facts: { ...generationFacts, recordToken: 'previous' },
+    expected: {
+      kind: 'unrecorded',
+      message:
+        'The architect in /checkout has not recorded its terminal yet. Call architect open again shortly.',
+    },
+  },
+  {
+    name: 'a different token in another checkout',
+    facts: {
+      ...generationFacts,
+      holder: { ...generationHolder, checkout: '/other' },
+      recordToken: 'previous',
+    },
+    expected: { kind: 'refuse', checkout: '/other' },
+  },
+])('generation: $name', ({ facts, expected }) => {
+  expect(openGeneration(facts)).toEqual(expected);
 });

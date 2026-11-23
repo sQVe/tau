@@ -30,6 +30,17 @@ export type OpenReuse =
   | { kind: 'refuse'; checkout: string }
   | { kind: 'start' };
 
+export interface OpenGenerationFacts {
+  root: string;
+  holder: { checkout: string; token: string };
+  recordToken: string | undefined;
+}
+
+export type OpenGeneration =
+  | { kind: 'current' }
+  | { kind: 'refuse'; checkout: string }
+  | { kind: 'unrecorded'; message: string };
+
 const isSameHolder = (first: OpenLockHolder, second: OpenLockHolder): boolean =>
   first.pid === second.pid && first.checkout === second.checkout;
 
@@ -68,4 +79,23 @@ export const openReuse = (facts: OpenReuseFacts): OpenReuse => {
   }
 
   return { kind: 'reuse', terminal };
+};
+
+// A saved record ties its terminal to the lock generation that wrote it. A record from another
+// generation names a terminal that is not the live holder's terminal.
+export const openGeneration = (facts: OpenGenerationFacts): OpenGeneration => {
+  const { holder, recordToken, root } = facts;
+
+  if (recordToken === undefined || recordToken === holder.token) {
+    return { kind: 'current' };
+  }
+
+  if (holder.checkout !== root) {
+    return { kind: 'refuse', checkout: holder.checkout };
+  }
+
+  return {
+    kind: 'unrecorded',
+    message: `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
+  };
 };

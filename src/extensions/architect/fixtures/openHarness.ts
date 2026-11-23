@@ -131,12 +131,12 @@ export const architectArgv = (app: ExecFake<HerdrAppCommand>): string[] => {
   return JSON.parse(argumentAfter(split?.commandArguments ?? [], '--argv') ?? '[]') as string[];
 };
 
-export const recordTerminal = (root: string, terminal: string): Promise<void> =>
+export const recordTerminal = (root: string, terminal: string, lockToken = 'live'): Promise<void> =>
   writeArchitectRecord(root, {
     version: 2,
     sessionFile: null,
     leadTerminal: 't-lead',
-    owner: { lockToken: 'live', mode: 'visible', terminal, sessionId: 'session-architect' },
+    owner: { lockToken, mode: 'visible', terminal, sessionId: 'session-architect' },
     updatedAt: new Date().toISOString(),
   });
 

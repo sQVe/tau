@@ -16,7 +16,7 @@ import { tabName } from '../../../tabName.js';
 import { architectLockPath } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
-import { eligibleTerminal, openCandidate, openReuse } from './openReuseDecision.js';
+import { eligibleTerminal, openCandidate, openGeneration, openReuse } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 
 export interface OpenRequest {
@@ -194,9 +194,15 @@ const startArchitect = async (
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
 
+const recordedTerminal = (record: SavedArchitectRecord | undefined): string | null | undefined =>
+  record?.version === 2 ? record.owner?.terminal : record?.terminal;
+
+const recordedLockToken = (record: SavedArchitectRecord | undefined): string | undefined =>
+  record?.version === 2 ? record.owner?.lockToken : undefined;
+
 const runningTerminal = async (
   request: OpenRequest,
-  recordedTerminal: string | null | undefined,
+  record: SavedArchitectRecord | undefined,
 ): Promise<string | undefined> => {
   const lockPath = architectLockPath(request.root);
   const holder = await readLiveLockHolder(lockPath);
@@ -205,7 +211,21 @@ const runningTerminal = async (
     return undefined;
   }
 
-  const candidate = await candidateOf(request, recordedTerminal, holder);
+  const generation = openGeneration({
+    root: request.root,
+    holder,
+    recordToken: recordedLockToken(record),
+  });
+
+  if (generation.kind === 'refuse') {
+    throw refusal(generation.checkout);
+  }
+
+  if (generation.kind === 'unrecorded') {
+    throw new Error(generation.message);
+  }
+
+  const candidate = await candidateOf(request, recordedTerminal(record), holder);
 
   if (candidate.kind === 'refuse') {
     throw refusal(candidate.checkout);
@@ -225,12 +245,9 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
-const recordedTerminal = (record: SavedArchitectRecord | undefined): string | null | undefined =>
-  record?.version === 2 ? record.owner?.terminal : record?.terminal;
-
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);
-  const running = await runningTerminal(request, recordedTerminal(record));
+  const running = await runningTerminal(request, record);
 
   if (running !== undefined) {
     return { status: 'running', terminal: running };
