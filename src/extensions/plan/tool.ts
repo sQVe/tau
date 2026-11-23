@@ -3,6 +3,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { checkSteps, planStepSchema, planEntryType, planRecord, planSummary } from './steps.js';
+import { drawPlan } from './widget.js';
 
 const parameters = Type.Object({ steps: Type.Array(planStepSchema) });
 
@@ -28,7 +29,7 @@ export const createPlanTool = (
     parameters,
     exposure: 'model-only',
     executionMode: 'sequential',
-    execute(_toolCallId, { steps }) {
+    execute(_toolCallId, { steps }, _signal, _onUpdate, context) {
       const checked = checkSteps(steps);
 
       if (checked.kind === 'refused') {
@@ -36,6 +37,7 @@ export const createPlanTool = (
       }
 
       pi.appendEntry(planEntryType, planRecord(steps));
+      drawPlan(context, steps);
 
       return Promise.resolve({
         content: [{ type: 'text' as const, text: planSummary(steps) }],

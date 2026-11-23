@@ -96,6 +96,9 @@ export const replayPlan = (
   return { steps, unreadable };
 };
 
+export const showsPlan = (steps: readonly PlanStep[]): boolean =>
+  steps.some((step) => step.status !== 'completed');
+
 export const planSummary = (steps: readonly PlanStep[]): string => {
   if (steps.length === 0) {
     return 'Plan cleared.';

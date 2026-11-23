@@ -11,6 +11,7 @@ import {
   planRecordSchema,
   planSummary,
   replayPlan,
+  showsPlan,
 } from './steps.js';
 import type { PlanStep } from './steps.js';
 
@@ -188,4 +189,21 @@ it.each([
   },
 ])('$name', ({ steps, expected }) => {
   expect(planSummary(steps)).toBe(expected);
+});
+
+it.each([
+  { name: 'hides an empty plan', steps: [], expected: false },
+  {
+    name: 'hides a plan whose steps are all completed',
+    steps: [step('One', 'completed'), step('Two', 'completed')],
+    expected: false,
+  },
+  {
+    name: 'shows a blocked step among completed ones',
+    steps: [step('One', 'completed'), step('Two', 'blocked')],
+    expected: true,
+  },
+  { name: 'shows a pending step', steps: [step('One')], expected: true },
+])('$name', ({ steps, expected }) => {
+  expect(showsPlan(steps)).toBe(expected);
 });

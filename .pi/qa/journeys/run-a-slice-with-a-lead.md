@@ -22,33 +22,42 @@ By hand, because it needs live Opus and DeepSeek sessions and Linear.
    The architect runs the start-slice design conversation with the user and writes the agent
    tickets in Linear. It sends the step 11 handover to the lead with `handover` `send` and ends its
    turn. Only the architect's pane closes, and the architect lock is released.
-2. Check the architect record and the lead's inbox.
+2. While the architect's pane is still open, let the original lead continue the started slice from
+   the handover. Do not ask it to start the slice again.
+   The lead calls `plan` with three or more steps, at most one `in_progress`. A list above the
+   lead's editor shows the steps with their status marks. The architect's pane shows no list.
+3. Let a worker report and the lead accept it.
+   The lead calls `plan` again. The finished step shows `[x]` and the next step `[>]`.
+4. Before the fresh lead session of the later step, let the original lead finish its plan.
+   The list disappears from the original lead. The chat shows the last `plan` result, such as
+   `Plan: 5 of 5 completed.`
+5. Check the architect record and the lead's inbox.
    `.tau/architect/record.json` names the architect session file, and `.tau/architect/lock` is gone.
    The lead's inbox holds the step 11 handover.
-3. Let the lead run the slice. Give it one user request that no skill covers.
+6. Let the lead run the slice. Give it one user request that no skill covers.
    The lead calls `architect` `gate`, gets `specified`, and briefs a worker itself. The gate record
    is under `.tau/lead/gate/`.
    When a worker needs a design decision, the lead calls `architect` `ask`. A background terminal
    resumes the architect, which answers, updates the ticket, and sends the answer to the lead. The
    lead continues on that answer. The ask record is under `.tau/lead/ask/`.
-4. In a test slice on the user's own branch, give the lead supported P1, P2, and P3 findings after
+7. In a test slice on the user's own branch, give the lead supported P1, P2, and P3 findings after
    the fix review. Check that it delegates the P1 fix and files one ticket for each P2 and P3
    without a disposition dialog. Check that `triage.md` names the written tickets and why each
    can wait.
-5. In a separate test case, leave a ship-blocking first-review finding outside the fix review's
+8. In a separate test case, leave a ship-blocking first-review finding outside the fix review's
    changed paths. Give the fix review no findings. The lead checks the earlier claim against
    current code and delegates its P1 fix. Repeat with a fix that cannot be checked. The preview
    shows a required action and suggests draft.
-6. Repeat the decision with a compatibility choice that needs approval. Decline the approval.
+9. Repeat the decision with a compatibility choice that needs approval. Decline the approval.
    Check that the lead makes no fix or ticket write for that finding and reports why it is blocked.
-7. In a test tracker, fail a selected follow-up write after another ticket was written. Check
-   that the lead keeps the written ticket and reports the failed write as Blocked. The lead does
-   not list the unfiled follow-up as accepted or retry past the tracker skill's stop rule.
-8. Start a fresh lead session on the successful test branch without resuming the conversation.
-   Ask for a PR preview. Use the saved review directories if the session needs paths, without
-   supplying findings or ticket IDs. Check that it reads `triage.md` and lists each saved ticket
-   once as `Related to`. The entries appear under Verification or in the template's follow-up slot.
-9. Approve publication for the successful test slice. The lead opens the pull request.
+10. In a test tracker, fail a selected follow-up write after another ticket was written. Check
+    that the lead keeps the written ticket and reports the failed write as Blocked. The lead does
+    not list the unfiled follow-up as accepted or retry past the tracker skill's stop rule.
+11. Start a fresh lead session on the successful test branch without resuming the conversation.
+    Ask for a PR preview. Use the saved review directories if the session needs paths, without
+    supplying findings or ticket IDs. Check that it reads `triage.md` and lists each saved ticket
+    once as `Related to`. The entries appear under Verification or in the template's follow-up slot.
+12. Approve publication for the successful test slice. The lead opens the pull request.
 
 ## End state
 
