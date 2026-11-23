@@ -420,7 +420,7 @@ const askRootOfPath = (path: string): string => dirname(dirname(dirname(dirname(
 
 // One ask changes under its own cross-process lock, so a writer never reopens a record that
 // another process answered or failed after this writer read it.
-export const changeAskRecordAt = async (
+const changeAskRecordAt = async (
   path: string,
   change: (current: AskRecord) => AskRecord | undefined,
   options: ChangeAskOptions = {},

@@ -1,4 +1,4 @@
-export type StartTicketChild = 'running' | 'gone' | 'unknown';
+type StartTicketChild = 'running' | 'gone' | 'unknown';
 
 export type SweepFacts =
   | { kind: 'unused' }
