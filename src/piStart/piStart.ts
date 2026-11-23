@@ -129,21 +129,38 @@ const requireCheckout = async (
   runtime.signal?.throwIfAborted();
 };
 
+const replyTerminal = (reply: string): string | undefined => {
+  try {
+    const value: unknown = JSON.parse(reply);
+
+    if (typeof value !== 'object' || value === null || !('terminal' in value)) {
+      return undefined;
+    }
+
+    const terminal = value.terminal;
+
+    return typeof terminal === 'string' && terminal !== '' ? terminal : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const startPiSession = async (
   runtime: CommandRuntime,
   request: PiStartRequest,
-): Promise<{ reply: string }> => {
+): Promise<{ reply: string; terminal?: string }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
   const reply = await runCommand(runtime, 'herdr-app', startArguments(request), 'herdr-app do');
+  const terminal = replyTerminal(reply);
 
-  return { reply };
+  return terminal === undefined ? { reply } : { reply, terminal };
 };
 
 export const startPiSessionRightOf = async (
   runtime: CommandRuntime,
   request: PiStartRightOfRequest,
-): Promise<{ reply: string }> => {
+): Promise<{ reply: string; terminal?: string }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
   const reply = await runCommand(
@@ -157,5 +174,5 @@ export const startPiSessionRightOf = async (
 
   checkOutput('herdr-app do pane.split', splitReplySchema, created);
 
-  return { reply };
+  return { reply, terminal: created.terminal };
 };

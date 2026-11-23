@@ -97,3 +97,65 @@ it('leaves the new holder live when the claim releases after the takeover', asyn
 
   expect(await readLiveLockHolder(lockPath)).toMatchObject({ token: 'pi' });
 });
+
+it('refuses an adopt token for a released claim', async ({ onTestFinished }) => {
+  const { lockPath } = fixture();
+  const held = await claim(lockPath);
+
+  onTestFinished(async () => {
+    await release(held);
+  });
+
+  await release(held);
+
+  const adopter = await holdFileLock({
+    lockPath,
+    checkout,
+    terminal: 't-pi',
+    token: 'pi',
+    adopt: 'claim',
+  });
+
+  expect(adopter.kind).toBe('refused');
+});
+
+it('refuses an adopt token when the lock is missing', async () => {
+  const { lockPath } = fixture();
+
+  const adopter = await holdFileLock({
+    lockPath,
+    checkout,
+    terminal: 't-pi',
+    token: 'pi',
+    adopt: 'claim',
+  });
+
+  expect(adopter.kind).toBe('refused');
+});
+
+it('refuses an adopt token for a replaced generation', async ({ onTestFinished }) => {
+  const { lockPath } = fixture();
+  const held = await claim(lockPath);
+
+  onTestFinished(async () => {
+    await release(held);
+  });
+
+  await release(held);
+
+  const replacement = await holdFileLock({ lockPath, checkout, terminal: 't-new', token: 'new' });
+
+  onTestFinished(async () => {
+    await release(replacement);
+  });
+
+  const adopter = await holdFileLock({
+    lockPath,
+    checkout,
+    terminal: 't-pi',
+    token: 'pi',
+    adopt: 'claim',
+  });
+
+  expect(adopter.kind).toBe('refused');
+});

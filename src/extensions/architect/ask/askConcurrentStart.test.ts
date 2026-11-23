@@ -1,22 +1,66 @@
-import { readdir } from 'node:fs/promises';
+import { expect, it, vi } from 'vitest';
 
-import { expect, it } from 'vitest';
+import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
+import { recordSession, setup } from '../fixtures/toolHarness.js';
+import { openArchitect, startingError } from '../open/open.js';
+import type { OpenRequest } from '../open/open.js';
+import { readAskRecords } from '../record.js';
+import { askArchitect, askStartingReason } from './ask.js';
+import type { AskRequest } from './ask.js';
 
-import { createHcFake } from '../../../../tests/hcFake.js';
-import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { contextOf, recordSession, setup } from '../fixtures/toolHarness.js';
-import { architectLockPath } from '../lock.js';
-import { askRecordDirectory } from '../record.js';
-import { createArchitectTool } from '../tool.js';
+const barrier = (): (() => Promise<void>) => {
+  let arrivals = 0;
+  const bothArrived = Promise.withResolvers<undefined>();
 
-const startingReason = 'The architect is starting. Ask again shortly.';
+  return async () => {
+    arrivals += 1;
+
+    if (arrivals === 2) {
+      bothArrived.resolve(undefined);
+    }
+
+    await bothArrived.promise;
+  };
+};
+
+const askRequest = (
+  root: string,
+  location: AskRequest['location'],
+  hc: AskRequest['hc'],
+): AskRequest => ({
+  root,
+  question: 'Which flag name?',
+  leadTerminal: 't-lead',
+  leadSessionId: 'session-lead',
+  listenerPath: undefined,
+  location,
+  ui: { notify: vi.fn<() => void>() },
+  hc,
+  liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+});
+
+const openRequestFor = (
+  root: string,
+  location: OpenRequest['location'],
+  hc: OpenRequest['hc'],
+): OpenRequest => ({
+  root,
+  leadTerminal: 't-lead',
+  request: openRequest,
+  location,
+  ui: { notify: vi.fn<() => void>() },
+  hc,
+});
+
+const launches = (calls: { commandArguments: string[] }[]): number =>
+  calls.filter((call) => ['run', 'pane.split'].includes(call.commandArguments[0] ?? '')).length;
+
+const runCalls = (calls: { commandArguments: string[] }[]): number =>
+  calls.filter((call) => call.commandArguments[0] === 'run').length;
 
 it('two asks started together start one hidden architect', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const waitEntered = Promise.withResolvers<undefined>();
-  const waitRelease = Promise.withResolvers<undefined>();
-  let waits = 0;
+  const { root, config } = await setup(cleanup);
+  const { hc, runtime } = openTool(root);
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
@@ -33,8 +77,10 @@ it('two asks started together start one hidden architect', async ({ onTestFinish
     }),
   );
 
-  // The first ask terminal is not visible yet, so the running-ask check cannot see it.
-  hc.failGet('t-ask', 'no such terminal');
+  const shared = barrier();
+  const waitEntered = Promise.withResolvers<undefined>();
+  const waitRelease = Promise.withResolvers<undefined>();
+  let waits = 0;
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'wait') {
@@ -49,50 +95,40 @@ it('two asks started together start one hidden architect', async ({ onTestFinish
     return hc.exec(command, commandArguments, options);
   };
 
-  const tool = createArchitectTool({ ...hc, exec, cwd: root });
-  const context = contextOf(root);
+  const request = askRequest(root, config.location, { ...runtime, exec });
+  const first = askArchitect(request, { beforeLink: shared });
+  const second = askArchitect(request, { beforeLink: shared });
 
-  const first = tool.execute(
-    'call',
-    { action: 'ask', question: 'First question?' },
-    undefined,
-    undefined,
-    context,
-  );
+  const loser = await Promise.race([
+    first.then((result) => result),
+    second.then((result) => result),
+  ]);
 
   await waitEntered.promise;
-
-  const second = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Second question?' },
-    undefined,
-    undefined,
-    context,
-  );
-
-  const runCalls = hc.calls.filter((call) => call.commandArguments[0] === 'run');
-
-  expect(runCalls).toHaveLength(1);
-
-  expect(second.details).toMatchObject({
-    action: 'ask',
-    status: 'needsOpen',
-    reason: startingReason,
-  });
-
-  const askFiles = await readdir(askRecordDirectory(root));
-
-  expect(askFiles).toHaveLength(1);
-
   waitRelease.resolve(undefined);
 
-  await expect(first).resolves.toMatchObject({ details: { action: 'ask', status: 'needsOpen' } });
+  const results = await Promise.all([first, second]);
+
+  expect(loser).toMatchObject({ status: 'needsOpen', reason: askStartingReason });
+
+  expect(runCalls(hc.calls)).toBe(1);
+  expect(launches(hc.calls)).toBe(1);
+  expect(results.filter((result) => result.status === 'needsOpen')).toHaveLength(2);
+
+  expect(
+    results.filter(
+      (result) => result.status === 'needsOpen' && result.reason === askStartingReason,
+    ),
+  ).toHaveLength(1);
+
+  expect((await readAskRecords(root)).records).toHaveLength(1);
 });
 
-it('the hidden ask passes its claim to the started Pi', async ({ onTestFinished: cleanup }) => {
-  const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const claimToken = Promise.withResolvers<string>();
+it('an ask and an open started together start one architect', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { app, hc, runtime } = openTool(root);
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
@@ -109,38 +145,59 @@ it('the hidden ask passes its claim to the started Pi', async ({ onTestFinished:
     }),
   );
 
-  const exec: typeof hc.exec = async (command, commandArguments, options) => {
-    if (command === 'hc' && commandArguments[0] === 'run') {
-      const holder = await readLiveLockHolder(architectLockPath(root));
+  const shared = barrier();
+  const askArrived = Promise.withResolvers<undefined>();
+  const askLaunched = Promise.withResolvers<undefined>();
+  const waitRelease = Promise.withResolvers<undefined>();
+  let waits = 0;
 
-      claimToken.resolve(holder?.token ?? '');
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      waits += 1;
+
+      if (waits === 1) {
+        await waitRelease.promise;
+      }
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      askLaunched.resolve(undefined);
     }
 
     return hc.exec(command, commandArguments, options);
   };
 
-  const tool = createArchitectTool({ ...hc, exec, cwd: root });
+  const ask = askRequest(root, config.location, { ...runtime, exec });
+  const open = openRequestFor(root, config.location, runtime);
 
-  await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
+  const askRun = askArchitect(ask, {
+    beforeLink: async () => {
+      askArrived.resolve(undefined);
+      await shared();
+    },
+  });
 
-  const token = await claimToken.promise;
-  const run = hc.calls.find((call) => call.commandArguments[0] === 'run');
-  const argv = run?.commandArguments ?? [];
+  await askArrived.promise;
 
-  expect(token).toMatch(/^[0-9a-f-]{36}$/u);
-  expect(argv).toContain('--bg');
-  expect(argv).toContain('--no-parent');
-  expect(argv).toContain('--no-notify');
-  expect(argv).toContain('TAU_ROLE=architect');
-  expect(argv).toContain('TAU_LEAD_TERMINAL=t-lead');
-  expect(argv).toContain(`TAU_ARCHITECT_CLAIM=${token}`);
-  expect(argv.some((entry) => entry.startsWith('TAU_ARCHITECT_ASK='))).toBe(true);
-  expect(argv.some((entry) => entry.startsWith('tau.architect.ask='))).toBe(true);
-  expect(argv).toContain('--session');
+  const openRun = openArchitect(open, {
+    beforeLink: async () => {
+      await shared();
+      await askLaunched.promise;
+    },
+  });
+
+  const openFailure = await openRun.catch((error: unknown) => error);
+
+  expect(openFailure).toBeInstanceOf(Error);
+  expect((openFailure as Error).message).toBe(startingError(root).message);
+
+  waitRelease.resolve(undefined);
+
+  await expect(askRun).resolves.toMatchObject({ status: 'needsOpen' });
+
+  const splits = appCommands(app).filter((name) => name === 'pane.split');
+
+  expect(runCalls(hc.calls)).toBe(1);
+  expect(splits).toHaveLength(0);
+  expect((await readAskRecords(root)).records).toHaveLength(1);
 });

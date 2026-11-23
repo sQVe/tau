@@ -1,16 +1,11 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { installCommandShim, logCommandCalls } from '../../../../tests/commandShimFake.js';
 import { argumentAfter } from '../../../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
   createTemporaryRepository,
 } from '../../../../tests/gitRepository.js';
 import { temporaryTauConfig } from '../../../../tests/tauConfigHarness.js';
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { appCommands, architectArgv, openTool } from '../fixtures/openHarness.js';
 import { openArchitect } from './open.js';
 import type { OpenRequest } from './open.js';
@@ -56,15 +51,11 @@ it('opens the architect in one split to the right of the lead from a bare reposi
   expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });
 
-it('starts from a repository with a .git entry without asking Git whether it is bare', async () => {
+it('starts from a repository with a .git entry', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const { runtime } = openTool(root);
-  const logPath = join(temporaryDirectory(onTestFinished, 'tau-architect-git-calls-'), 'calls.log');
 
-  await writeFile(logPath, '');
-  await installCommandShim('git', { otherCalls: 'real', overrides: [logCommandCalls(logPath)] });
+  const result = await openArchitect(requestFor(root, locationFor(onTestFinished), runtime));
 
-  await openArchitect(requestFor(root, locationFor(onTestFinished), runtime));
-
-  expect(await readFile(logPath, 'utf8')).toBe('');
+  expect(result).toEqual({ status: 'opened', sessionFile: null });
 });

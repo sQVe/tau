@@ -158,12 +158,26 @@ it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
   {
     name: 'an absent record',
     facts: absentRecordFacts,
-    expected: { kind: 'refuse', checkout: '/checkout' },
+    expected: { kind: 'starting' },
+  },
+  {
+    name: 'an absent record in another checkout',
+    facts: { ...absentRecordFacts, holder: { ...holder, checkout: '/other' } },
+    expected: { kind: 'refuse', checkout: '/other' },
   },
   {
     name: 'a version 2 record with a null owner',
     facts: { ...terminalFacts, record: savedOwner(null) },
-    expected: { kind: 'refuse', checkout: '/checkout' },
+    expected: { kind: 'starting' },
+  },
+  {
+    name: 'a version 2 record with a null owner in another checkout',
+    facts: {
+      ...terminalFacts,
+      holder: { ...holder, checkout: '/other' },
+      record: savedOwner(null),
+    },
+    expected: { kind: 'refuse', checkout: '/other' },
   },
   {
     name: 'a null terminal in a version 2 record',
@@ -178,7 +192,7 @@ it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
   {
     name: 'a different token in this checkout',
     facts: { ...terminalFacts, record: savedOwner({ ...owner, lockToken: 'previous' }) },
-    expected: { kind: 'unrecorded' },
+    expected: { kind: 'starting' },
   },
   {
     name: 'a different token with no terminal',
@@ -186,7 +200,7 @@ it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
       ...terminalFacts,
       record: savedOwner({ ...owner, lockToken: 'previous', terminal: null }),
     },
-    expected: { kind: 'unrecorded' },
+    expected: { kind: 'starting' },
   },
   {
     name: 'a different token in another checkout',

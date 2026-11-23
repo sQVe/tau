@@ -14,18 +14,32 @@ export type ArchitectClaim =
   | { kind: 'claimed'; release: () => Promise<void>; token: string }
   | { kind: 'refused' };
 
+export interface ArchitectClaimOptions {
+  beforeLink?: () => Promise<void>;
+}
+
 export const architectLockPath = (root: string): string => join(root, '.tau', 'architect', 'lock');
+
+const ensureArchitectLockPath = async (root: string): Promise<string> => {
+  const directory = await ensureTauDirectory(root, 'architect');
+
+  return join(directory, 'lock');
+};
 
 // Reserves the lock before the caller starts Pi. The started Pi adopts this token, so the claim
 // names no terminal of its own.
-export const claimArchitectLock = async (root: string): Promise<ArchitectClaim> => {
+export const claimArchitectLock = async (
+  root: string,
+  options: ArchitectClaimOptions = {},
+): Promise<ArchitectClaim> => {
   const token = randomUUID();
 
   const held = await holdFileLock({
-    lockPath: architectLockPath(root),
+    lockPath: await ensureArchitectLockPath(root),
     checkout: root,
     terminal: undefined,
     token,
+    ...(options.beforeLink === undefined ? {} : { beforeLink: options.beforeLink }),
   });
 
   if (held.kind === 'refused') {
@@ -39,11 +53,10 @@ export const holdArchitectLock = async (
   root: string,
   adoptToken?: string,
 ): Promise<ArchitectLock> => {
-  const directory = await ensureTauDirectory(root, 'architect');
   const token = randomUUID();
 
   const held = await holdFileLock({
-    lockPath: join(directory, 'lock'),
+    lockPath: await ensureArchitectLockPath(root),
     checkout: root,
     terminal: currentTerminalAddress(),
     token,

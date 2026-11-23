@@ -716,3 +716,59 @@ it('ending reports every failed ask settlement in one error', async ({ onTestFin
     /The record write \d failed\.\nThe record write \d failed\./u,
   );
 });
+
+it('shuts down without a record when its claim token names a released claim', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context, notify, shutdown } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  await claim.release();
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  expect(await startArchitectSession(context, createHeldLockToken())).toBeUndefined();
+
+  expect(notify).toHaveBeenCalled();
+  expect(shutdown).toHaveBeenCalledTimes(1);
+  await expect(readArchitectRecord(root)).resolves.toBeUndefined();
+});
+
+it('clears an adopted claim token so a later start takes the lock normally', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  onTestFinished(claim.release);
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  const first = await startArchitectSession(context, createHeldLockToken());
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions());
+
+  const second = await startArchitectSession(context, createHeldLockToken());
+
+  expect(second).toBeDefined();
+
+  expect((await readArchitectOwner(root))?.lockToken).toBe(
+    (await readLiveLockHolder(architectLockPath(root)))?.token,
+  );
+});

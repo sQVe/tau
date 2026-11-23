@@ -14,7 +14,9 @@ import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
 import { startPiSession, startPiSessionRightOf } from '../../../piStart/piStart.js';
 import { tabName } from '../../../tabName.js';
+import { releaseClaim } from '../claimRelease/claimRelease.js';
 import { architectLockPath, claimArchitectLock } from '../lock.js';
+import type { ArchitectClaimOptions } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
@@ -34,6 +36,15 @@ export type OpenResult =
   | { status: 'opened'; sessionFile: null }
   | { status: 'running'; terminal: string }
   | { status: 'resumed'; sessionFile: string };
+
+interface PreparedArchitectStart {
+  session: string | undefined;
+  task: string;
+  model: string;
+  pane: string | undefined;
+  bareRoot: boolean;
+  environment: Record<string, string>;
+}
 
 const askLabel = 'tau.architect.ask';
 
@@ -162,11 +173,11 @@ const findLeadPane = async (request: OpenRequest): Promise<string> => {
 const hasSpace = (leadSpace: string | undefined): boolean =>
   leadSpace !== undefined && leadSpace !== '';
 
-const startArchitect = async (
+const prepareArchitectStart = async (
   request: OpenRequest,
   recordedSession: string | undefined,
   claimToken: string,
-): Promise<string | undefined> => {
+): Promise<PreparedArchitectStart> => {
   const leadSpace = await readLeadSpace(request);
   const model = requireModel(request);
   const resume = recordedSession !== undefined && (await fileExists(recordedSession));
@@ -178,11 +189,11 @@ const startArchitect = async (
       ? await freshTask(request.root, request.leadTerminal, request.request)
       : resumeTask(request.root, request.leadTerminal, request.request);
 
-  const start = {
-    folder: request.root,
+  return {
+    session,
     task,
     model,
-    session,
+    pane,
     bareRoot: await isBareRootWithoutGitEntry(request.root),
     environment: {
       TAU_ROLE: 'architect',
@@ -190,30 +201,55 @@ const startArchitect = async (
       TAU_ARCHITECT_CLAIM: claimToken,
     },
   };
+};
 
-  if (pane === undefined) {
+const launchArchitect = async (
+  hc: HcRuntime,
+  request: OpenRequest,
+  prepared: PreparedArchitectStart,
+): Promise<string | undefined> => {
+  const start = {
+    folder: request.root,
+    task: prepared.task,
+    model: prepared.model,
+    session: prepared.session,
+    bareRoot: prepared.bareRoot,
+    environment: prepared.environment,
+  };
+
+  if (prepared.pane === undefined) {
     const target = { name: `architect-${basename(request.root)}` };
+    const started = await startPiSession(hc, { ...start, target, tabName: tabName('architect') });
 
-    await startPiSession(request.hc, { ...start, target, tabName: tabName('architect') });
-  } else {
-    await startPiSessionRightOf(request.hc, { ...start, pane });
+    return started.terminal;
   }
 
-  return session;
+  const started = await startPiSessionRightOf(hc, { ...start, pane: prepared.pane });
+
+  return started.terminal;
 };
 
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
 
-const startingRefusal = (root: string): Error =>
+export const startingError = (root: string): Error =>
   new Error(`The architect in ${root} is starting. Call architect open again shortly.`);
+
+export const openKeptClaimMessage = (root: string): string =>
+  `The architect in ${root} did not take the checkout lock, so the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect open again.`;
+
+const openKeptClaimError = (root: string): Error => new Error(openKeptClaimMessage(root));
 
 const takeoverExpiry = (): Error =>
   new Error(
     `The architect did not take the checkout lock within ${takeoverSeconds} seconds. Call architect open again.`,
   );
 
-const waitForTakeover = async (root: string, claimToken: string): Promise<void> => {
+const waitForTakeover = async (
+  root: string,
+  claimToken: string,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
   const lockPath = architectLockPath(root);
   const deadline = Date.now() + takeoverSeconds * millisecondsPerSecond;
 
@@ -226,25 +262,35 @@ const waitForTakeover = async (root: string, claimToken: string): Promise<void> 
       holderToken: holder?.token,
       now: Date.now(),
       deadline,
+      cancelled: signal?.aborted === true,
     });
 
     if (progress === 'taken') {
       return;
     }
 
+    if (progress === 'cancelled') {
+      signal?.throwIfAborted();
+
+      throw new Error('The open was cancelled.');
+    }
+
     if (progress === 'expired') {
       throw takeoverExpiry();
     }
 
-    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
-    await sleep(takeoverPollMilliseconds);
+    const sleepOptions = signal === undefined ? {} : { signal };
+
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
+      await sleep(takeoverPollMilliseconds, undefined, sleepOptions);
+    } catch {
+      signal?.throwIfAborted();
+
+      throw new Error('The open was cancelled.');
+    }
   }
 };
-
-const unrecordedRefusal = (root: string): Error =>
-  new Error(
-    `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
-  );
 
 const runningTerminal = async (
   request: OpenRequest,
@@ -267,8 +313,8 @@ const runningTerminal = async (
     throw refusal(selection.checkout);
   }
 
-  if (selection.kind === 'unrecorded') {
-    throw unrecordedRefusal(request.root);
+  if (selection.kind === 'starting') {
+    throw startingError(request.root);
   }
 
   const candidate = await candidateOf(request, selection.terminal, holder);
@@ -291,7 +337,10 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
-export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
+export const openArchitect = async (
+  request: OpenRequest,
+  claimOptions: ArchitectClaimOptions = {},
+): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);
   const running = await runningTerminal(request, record);
 
@@ -299,21 +348,64 @@ export const openArchitect = async (request: OpenRequest): Promise<OpenResult> =
     return { status: 'running', terminal: running };
   }
 
-  const claim = await claimArchitectLock(request.root);
+  const claim = await claimArchitectLock(request.root, claimOptions);
 
   if (claim.kind === 'refused') {
-    throw startingRefusal(request.root);
+    throw startingError(request.root);
   }
 
+  const launchHc = { ...request.hc, signal: undefined };
+  let launch: 'notRun' | 'failed' | 'started' = 'notRun';
+  let terminal: string | undefined;
+  let terminalState: 'unknown' | 'live' | 'ended' = 'unknown';
+  let adopted = false;
+
   try {
-    const session = await startArchitect(request, record?.sessionFile ?? undefined, claim.token);
+    const prepared = await prepareArchitectStart(
+      request,
+      record?.sessionFile ?? undefined,
+      claim.token,
+    );
 
-    await waitForTakeover(request.root, claim.token);
+    try {
+      terminal = await launchArchitect(launchHc, request, prepared);
+      launch = 'started';
+      terminalState = 'live';
+    } catch (error) {
+      launch = 'failed';
 
-    return session === undefined
-      ? { status: 'opened', sessionFile: null }
-      : { status: 'resumed', sessionFile: session };
-  } finally {
-    await claim.release();
+      throw error;
+    }
+
+    await waitForTakeover(request.root, claim.token, request.hc.signal);
+    adopted = true;
+
+    if (request.hc.signal?.aborted === true) {
+      request.hc.signal.throwIfAborted();
+    }
+
+    const result: OpenResult =
+      prepared.session === undefined
+        ? { status: 'opened', sessionFile: null }
+        : { status: 'resumed', sessionFile: prepared.session };
+
+    await releaseClaim({ claim, launch, adopted, terminal, terminalState, hc: launchHc });
+
+    return result;
+  } catch (error) {
+    const kept = await releaseClaim({
+      claim,
+      launch,
+      adopted,
+      terminal,
+      terminalState,
+      hc: launchHc,
+    });
+
+    if (kept) {
+      throw openKeptClaimError(request.root);
+    }
+
+    throw error;
   }
 };

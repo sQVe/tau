@@ -1,112 +1,63 @@
 import { expect, it, vi } from 'vitest';
 
-import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { appCommands, open, openRequest, openTool } from '../fixtures/openHarness.js';
-import { contextOf, recordSession, setup } from '../fixtures/toolHarness.js';
-import { architectLockPath } from '../lock.js';
-import { readAskRecords } from '../record.js';
-import { createArchitectTool } from '../tool.js';
+import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
+import { recordSession, setup } from '../fixtures/toolHarness.js';
+import { startingError, openArchitect } from './open.js';
+import type { OpenRequest } from './open.js';
 
-const startingReason = 'The architect is starting. Ask again shortly.';
+const barrier = (): (() => Promise<void>) => {
+  let arrivals = 0;
+  const bothArrived = Promise.withResolvers<undefined>();
 
-const runCalls = (calls: { commandArguments: string[] }[]): number =>
-  calls.filter((call) => call.commandArguments[0] === 'run').length;
+  return async () => {
+    arrivals += 1;
 
-it('an open and an ask started together start one architect', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const { app, hc, tool } = openTool(root);
-
-  await recordSession(root);
-  hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
-
-  const opening = open(tool, root, { request: openRequest });
-
-  await vi.waitFor(() => {
-    expect(appCommands(app)).toContain('pane.split');
-  });
-
-  const asked = await tool.execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
-
-  expect(asked.details).toMatchObject({
-    action: 'ask',
-    status: 'needsOpen',
-    reason: startingReason,
-  });
-
-  expect(await readAskRecords(root)).toEqual({ records: [], gaps: [] });
-  expect(runCalls(hc.calls)).toBe(0);
-
-  const starts = appCommands(app).filter((name) => name !== 'ls');
-
-  expect(starts).toEqual(['pane.split']);
-
-  await expect(opening).resolves.toMatchObject({ details: { status: 'resumed' } });
-});
-
-it('an ask and an open started together start one architect', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const { app, hc, tool } = openTool(root);
-  const waitEntered = Promise.withResolvers<undefined>();
-  const waitRelease = Promise.withResolvers<undefined>();
-
-  await recordSession(root);
-  hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
-
-  hc.reply(
-    'wait',
-    JSON.stringify({
-      terminal: 't-ask',
-      ended: true,
-      reason: 'ended',
-      turn: 1,
-      children: [],
-      exit_code: 0,
-    }),
-  );
-
-  const exec: typeof hc.exec = async (command, commandArguments, options) => {
-    if (command === 'hc' && commandArguments[0] === 'wait') {
-      waitEntered.resolve(undefined);
-      await waitRelease.promise;
+    if (arrivals === 2) {
+      bothArrived.resolve(undefined);
     }
 
-    return hc.exec(command, commandArguments, options);
+    await bothArrived.promise;
   };
+};
 
-  const asking = createArchitectTool({ ...hc, exec, cwd: root }).execute(
-    'call',
-    { action: 'ask', question: 'Which flag name?' },
-    undefined,
-    undefined,
-    contextOf(root),
-  );
+const requestFor = (
+  root: string,
+  location: OpenRequest['location'],
+  hc: OpenRequest['hc'],
+): OpenRequest => ({
+  root,
+  leadTerminal: 't-lead',
+  request: openRequest,
+  location,
+  ui: { notify: vi.fn<() => void>() },
+  hc,
+});
 
-  await waitEntered.promise;
+it('two opens started together start one architect', async ({ onTestFinished: cleanup }) => {
+  const { root, config } = await setup(cleanup);
+  const { app, runtime } = openTool(root);
 
-  const failure = await open(tool, root, { request: openRequest }).catch((error: unknown) => error);
+  await recordSession(root);
 
-  expect(failure).toBeInstanceOf(Error);
+  const shared = barrier();
+  const request = requestFor(root, config.location, runtime);
 
-  expect((failure as Error).message).toBe(
-    `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
-  );
+  const results = await Promise.allSettled([
+    openArchitect(request, { beforeLink: shared }),
+    openArchitect(request, { beforeLink: shared }),
+  ]);
 
-  expect(app.calls).toEqual([]);
-  expect(runCalls(hc.calls)).toBe(1);
-  expect((await readAskRecords(root)).records).toHaveLength(1);
+  const splits = appCommands(app).filter((name) => name === 'pane.split');
 
-  waitRelease.resolve(undefined);
+  expect(splits).toHaveLength(1);
 
-  await expect(asking).resolves.toMatchObject({ details: { action: 'ask', status: 'needsOpen' } });
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  const fulfilled = results.filter((result) => result.status === 'fulfilled');
+  const rejected = results.filter((result) => result.status === 'rejected');
+
+  expect(fulfilled).toHaveLength(1);
+  expect(rejected).toHaveLength(1);
+
+  expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+    message: startingError(root).message,
+  });
 });

@@ -108,11 +108,18 @@ of refusing. A question in the inbox of a live architect in this checkout needs 
 A check of the lock is not a reservation, so the caller that starts the architect takes the lock
 first. `open` and the hidden route of `ask` take a claim on the lock before they start Pi, and pass
 the claim token to the new Pi in its environment. The new Pi takes the lock over from that claim
-with the next lock generation. A second caller finds the claim held and is refused before it starts
-Pi or writes an ask record. While the claim is held, readers see a holder that has not published its
-record, so they report that the architect is starting. `ask` holds the claim until its hidden
-terminal ends. `open` waits up to 60 seconds for the takeover, then releases the claim. A Pi that
-finds another live generation instead of its claim ends at session start.
+with the next lock generation. A Pi started with a claim token takes only that claim. It ends at
+session start when the claim is released, gone, or replaced. Once it holds the lock it drops the
+token, so a reload takes the lock as usual. A second caller finds the claim held and is refused
+before it starts Pi or writes an ask record. While a holder has not published its record, `ask` and
+`open` report that the architect is starting.
+
+Pi opens its session file, and can migrate it, before session start. So the caller releases a claim
+only when no Pi can still take it over: the new Pi took the lock, its launch failed, or its terminal
+has ended. `ask` holds the claim until its hidden terminal ends. `open` waits up to 60 seconds for
+the takeover. On that deadline, on a cancel, or when the `ask` wait fails, the caller stops the new
+terminal with `hc kill` and releases the claim once the terminal has ended. When the caller does not
+know the terminal or the terminal does not end, it keeps the claim.
 
 ### The lead's tab
 
@@ -162,8 +169,11 @@ the work.
   for saves and answers in flight. It may then resend an answer with an unknown outcome and send a
   note when that resend fails. Each send waits up to 5 seconds for its reply, after an `hc` terminal
   lookup that has no time limit of its own. Close has no overall deadline.
-- An `open` start that takes over 60 seconds can overlap a second start. The two Pis race for the
-  lock, and the loser ends at session start without holding it.
+- A start that cannot be stopped keeps its claim. The checkout then refuses new architect starts
+  until the lead session that holds the claim exits, or until the started Pi takes the claim over.
+- A lead that dies while its architect starts leaves a claim that reads as gone. A second start can
+  then run before the first Pi reaches session start. The first Pi ends there, but it may already
+  have opened the session file.
 
 ## Alternatives considered
 
@@ -186,9 +196,19 @@ so the architect is live most of the time, and the user would switch panes for e
 ### Reserve with a separate start lock
 
 Hold a second lock while the architect starts, and release it once the new Pi holds the architect
-lock. Rejected because every reader would need to check both locks. `open` also gets no terminal
-address from `herdr-app` for a new space, so it could not stop a Pi that never takes the lock before
-it releases the start lock.
+lock. Rejected because every reader would need to check both locks, and a claim on the architect
+lock gives the same exclusion with one file.
+
+### Refuse a late Pi only at session start
+
+Release the claim on a deadline, and let a Pi that finds its claim gone end at session start.
+Rejected because Pi opens and can migrate its session file before session start, so a second Pi
+would already have touched the file.
+
+### Wait for the takeover without a deadline
+
+Hold the claim until the new Pi takes it over. Rejected because a Pi that never takes the lock would
+block the lead's call until a cancel, and the cancel would still need to stop the Pi.
 
 ### Route a live ask by terminal or by Pi session ID
 

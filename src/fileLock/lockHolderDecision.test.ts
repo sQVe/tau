@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { claimIsAdoptable, holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
+import {
+  claimIsAdoptable,
+  holderIsGone,
+  holderIsTakeable,
+  recordNeedsRereading,
+} from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
 const facts = (overrides: Partial<LockHolderFacts>): LockHolderFacts => ({
@@ -107,3 +112,74 @@ it.each([
 ])('decides whether $name is adoptable', ({ holderToken, released, adoptToken, expected }) => {
   expect(claimIsAdoptable({ holderToken, released, adoptToken })).toBe(expected);
 });
+
+it.each([
+  {
+    name: 'a missing holder without an adopt token',
+    facts: facts({ recorded: false, sessionAlive: false }),
+    holderToken: undefined,
+    adoptToken: undefined,
+    expected: true,
+  },
+  {
+    name: 'a live holder without an adopt token',
+    facts: facts({}),
+    holderToken: 'claim',
+    adoptToken: undefined,
+    expected: false,
+  },
+  {
+    name: 'a released holder without an adopt token',
+    facts: facts({ released: true }),
+    holderToken: 'claim',
+    adoptToken: undefined,
+    expected: true,
+  },
+  {
+    name: 'a live holder with the adopt token',
+    facts: facts({}),
+    holderToken: 'claim',
+    adoptToken: 'claim',
+    expected: true,
+  },
+  {
+    name: 'a released holder with the adopt token',
+    facts: facts({ released: true }),
+    holderToken: 'claim',
+    adoptToken: 'claim',
+    expected: false,
+  },
+  {
+    name: 'a replaced holder with the adopt token',
+    facts: facts({}),
+    holderToken: 'other',
+    adoptToken: 'claim',
+    expected: false,
+  },
+  {
+    name: 'a missing holder with the adopt token',
+    facts: facts({ recorded: false, sessionAlive: false }),
+    holderToken: undefined,
+    adoptToken: 'claim',
+    expected: false,
+  },
+  {
+    name: 'an empty adopt token on a live holder',
+    facts: facts({}),
+    holderToken: 'claim',
+    adoptToken: '',
+    expected: false,
+  },
+  {
+    name: 'an empty adopt token on a released holder',
+    facts: facts({ released: true }),
+    holderToken: 'claim',
+    adoptToken: '',
+    expected: true,
+  },
+])(
+  'decides whether the holder is takeable for $name',
+  ({ facts: holderFacts, holderToken, adoptToken, expected }) => {
+    expect(holderIsTakeable({ facts: holderFacts, holderToken, adoptToken })).toBe(expected);
+  },
+);

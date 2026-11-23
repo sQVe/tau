@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import type { Mock } from 'vitest';
 
+import { succeededResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import { startLeadInbox } from '../fixtures/leadInbox.js';
 import { contextOf, holdLock, recordSession, setup } from '../fixtures/toolHarness.js';
@@ -193,20 +194,39 @@ it('an ask deadline returns needsOpen and kills the terminal', async ({
 }) => {
   const { root } = await setup(cleanup);
   const hc = createHcFake();
-  const tool = createArchitectTool({ ...hc, cwd: root });
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
 
-  hc.reply(
-    'wait',
-    JSON.stringify({ terminal: 't-ask', ended: false, reason: 'timeout', turn: 0, children: [] }),
-  );
+  let waits = 0;
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      waits += 1;
+
+      const ended = waits > 1;
+      const reason = ended ? 'ended' : 'timeout';
+      const exitCode = ended ? 0 : null;
+
+      return succeededResult(
+        JSON.stringify({
+          terminal: 't-ask',
+          ended,
+          reason,
+          turn: 0,
+          children: [],
+          exit_code: exitCode,
+        }),
+      );
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
 
   hc.reply('kill', JSON.stringify({ address: 't-ask', state: 'finished' }));
   const startedAt = Date.now();
 
-  const result = await tool.execute(
+  const result = await createArchitectTool({ ...hc, exec, cwd: root }).execute(
     'call',
     { action: 'ask', question: 'Which flag name?' },
     undefined,

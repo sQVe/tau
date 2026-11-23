@@ -10,6 +10,7 @@ it.each([
     holderToken: undefined,
     now: 0,
     deadline: 60_000,
+    cancelled: false,
     expected: 'taken',
   },
   {
@@ -17,6 +18,15 @@ it.each([
     holderToken: 'pi',
     now: 0,
     deadline: 60_000,
+    cancelled: false,
+    expected: 'taken',
+  },
+  {
+    name: 'another holder token on a cancelled call',
+    holderToken: 'pi',
+    now: 0,
+    deadline: 60_000,
+    cancelled: true,
     expected: 'taken',
   },
   {
@@ -24,6 +34,7 @@ it.each([
     holderToken: claimToken,
     now: 59_999,
     deadline: 60_000,
+    cancelled: false,
     expected: 'waiting',
   },
   {
@@ -31,6 +42,7 @@ it.each([
     holderToken: claimToken,
     now: 60_000,
     deadline: 60_000,
+    cancelled: false,
     expected: 'expired',
   },
   {
@@ -38,8 +50,28 @@ it.each([
     holderToken: claimToken,
     now: 60_001,
     deadline: 60_000,
+    cancelled: false,
     expected: 'expired',
   },
-])('decides the start progress for $name', ({ holderToken, now, deadline, expected }) => {
-  expect(openStartProgress({ claimToken, holderToken, now, deadline })).toBe(expected);
-});
+  {
+    name: 'the claim before the deadline on a cancelled call',
+    holderToken: claimToken,
+    now: 59_999,
+    deadline: 60_000,
+    cancelled: true,
+    expected: 'cancelled',
+  },
+  {
+    name: 'the claim after the deadline on a cancelled call',
+    holderToken: claimToken,
+    now: 60_001,
+    deadline: 60_000,
+    cancelled: true,
+    expected: 'cancelled',
+  },
+])(
+  'decides the start progress for $name',
+  ({ holderToken, now, deadline, cancelled, expected }) => {
+    expect(openStartProgress({ claimToken, holderToken, now, deadline, cancelled })).toBe(expected);
+  },
+);

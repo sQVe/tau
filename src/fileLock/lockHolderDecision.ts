@@ -13,6 +13,12 @@ export interface LockAdoptionFacts {
   adoptToken: string | undefined;
 }
 
+export interface LockTakeoverFacts {
+  facts: LockHolderFacts;
+  holderToken: string | undefined;
+  adoptToken: string | undefined;
+}
+
 // A lock can be taken over when its holder released it, left no record, or lost both its session
 // and its command. A command outlives its session, so a live command keeps the lock.
 export const holderIsGone = (facts: LockHolderFacts): boolean => {
@@ -37,4 +43,18 @@ export const claimIsAdoptable = (facts: LockAdoptionFacts): boolean => {
   }
 
   return !released && holderToken === adoptToken;
+};
+
+// Without an adopt token, only a gone holder is takeable. With one, the holder must be the claim
+// that names it, so a missing, released, or replaced claim is refused.
+export const holderIsTakeable = ({
+  facts,
+  holderToken,
+  adoptToken,
+}: LockTakeoverFacts): boolean => {
+  if (adoptToken === undefined || adoptToken === '') {
+    return holderIsGone(facts);
+  }
+
+  return claimIsAdoptable({ holderToken, released: facts.released, adoptToken });
 };

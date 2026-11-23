@@ -29,6 +29,7 @@ interface OpenTool {
 interface OpenToolOptions {
   // A started Pi takes the lock over from the caller's claim. The takeover-expiry test turns it off.
   takeover?: boolean;
+  afterTakeover?: () => void;
 }
 
 const appLayout = JSON.stringify({
@@ -132,12 +133,17 @@ const takeOverClaim = async (root: string, commandArguments: readonly string[]):
   }
 };
 
-const withTakeover = (app: ExecFake<HerdrAppCommand>, root: string): ExecFake<HerdrAppCommand> => ({
+const withTakeover = (
+  app: ExecFake<HerdrAppCommand>,
+  root: string,
+  afterTakeover: (() => void) | undefined,
+): ExecFake<HerdrAppCommand> => ({
   ...app,
   exec: async (command, commandArguments, options) => {
     const result = await app.exec(command, commandArguments, options);
 
     await takeOverClaim(root, commandArguments);
+    afterTakeover?.();
 
     return result;
   },
@@ -153,7 +159,8 @@ export const openTool = (
 ): OpenTool => {
   const hc = createHcFake();
   const fake = appFake();
-  const app = options.takeover === false ? fake : withTakeover(fake, root);
+
+  const app = options.takeover === false ? fake : withTakeover(fake, root, options.afterTakeover);
 
   const terminals = new Map<string, ExecResult>();
 

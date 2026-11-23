@@ -5,7 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
-import { claimIsAdoptable, holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
+import { holderIsGone, holderIsTakeable, recordNeedsRereading } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
 export interface LiveLockHolder {
@@ -47,6 +47,8 @@ export interface HoldFileLockOptions {
   lockPath: string;
   checkout: string;
   terminal: string | undefined;
+  // Runs between reading the holder and linking the next generation. Tests use it to stall a session.
+  beforeLink?: () => Promise<void>;
   // Names the owner in the lock file. Without it, the lock makes a token.
   token?: string;
   // Takes over the claim that names this token instead of refusing it.
@@ -332,22 +334,17 @@ const claimGeneration = async (
   return owner;
 };
 
-// Whether this attempt may take the current holder's place: a gone holder, or the caller's own
-// claim, which it passes as the adopt token.
-const holderIsTakeable = (
+const canTakeOver = (
+  highest: number | undefined,
   facts: LockHolderFacts,
   holder: LockOwner | undefined,
   adopt: string | undefined,
 ): boolean => {
-  if (holderIsGone(facts)) {
-    return true;
+  if (highest === undefined) {
+    return adopt === undefined || adopt === '';
   }
 
-  return claimIsAdoptable({
-    holderToken: holder?.token,
-    released: facts.released,
-    adoptToken: adopt,
-  });
+  return holderIsTakeable({ facts, holderToken: holder?.token, adoptToken: adopt });
 };
 
 // Polls until this process owns the lock and returns the path and owner record of its file. Each
@@ -367,9 +364,7 @@ const acquireLock = async (
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
     const { highest, holder, facts } = await findCurrentHolder(lockPath);
 
-    const takeable = highest === undefined || holderIsTakeable(facts, holder, options.adopt);
-
-    if (takeable) {
+    if (canTakeOver(highest, facts, holder, options.adopt)) {
       const next = (highest ?? 0) + 1;
       const path = generationPath(lockPath, next);
 
@@ -440,7 +435,7 @@ export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFi
 
   const state: { refusal: { holder: LockOwner | undefined } | undefined } = { refusal: undefined };
 
-  const { lockPath, checkout, terminal, token, adopt } = options;
+  const { lockPath, checkout, terminal, token, adopt, beforeLink } = options;
 
   const holding = withFileLock(
     {
@@ -449,6 +444,7 @@ export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFi
       ...(terminal === undefined ? {} : { terminal }),
       ...(token === undefined ? {} : { token }),
       ...(adopt === undefined ? {} : { adopt }),
+      ...(beforeLink === undefined ? {} : { beforeLink }),
       pollMilliseconds: 250,
       signal: controller.signal,
       cancelled: () => new Error('The lock is held by another session.'),

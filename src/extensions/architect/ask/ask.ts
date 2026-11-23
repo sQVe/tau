@@ -3,12 +3,15 @@ import { randomUUID } from 'node:crypto';
 import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
 import { notifyOnce, userConfigPath } from '../../../config/config.js';
 import { readRoleModel } from '../../../config/roleModels.js';
+import { errorMessage } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { get, kill, run, wait } from '../../../hc/hc.js';
+import { get, run, wait } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { piArguments } from '../../../piStart/piArguments.js';
+import { releaseClaim } from '../claimRelease/claimRelease.js';
 import type { LiveAskResult, StartLiveAsk } from '../liveAsk.js';
 import { architectLockPath, claimArchitectLock } from '../lock.js';
+import type { ArchitectClaimOptions } from '../lock.js';
 import {
   askRecordPath,
   readArchitectRecord,
@@ -38,9 +41,23 @@ export type AskResult =
   | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
 
+interface HiddenAskClaim {
+  launch: 'notRun' | 'failed' | 'started';
+  terminal: string | undefined;
+  terminalState: 'unknown' | 'live' | 'ended';
+  settled: boolean;
+  kept: boolean;
+}
+
+type SettleHiddenAskClaim = () => Promise<boolean>;
+
 export const askDeadlineSeconds = 900;
 
-const startingReason = 'The architect is starting. Ask again shortly.';
+export const askStartingReason = 'The architect is starting. Ask again shortly.';
+
+export const askKeptClaimMessage = (root: string): string =>
+  `The architect in ${root} did not take the checkout lock, so the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect ask again.`;
+
 const millisecondsPerSecond = 1000;
 
 const reportAskGaps = (ui: ConfigWarnings, gaps: AskRecordGap[]): void => {
@@ -120,11 +137,67 @@ const startHiddenAsk = async (
   }
 };
 
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'AbortError';
+
+const waitFailureDetail = (error: unknown): string => {
+  const outcome = isAbortError(error) ? 'cancelled' : 'failed';
+
+  return `The ask wait was ${outcome}: ${errorMessage(error)}`;
+};
+
+const settleWaitFailure = async (
+  request: AskRequest,
+  started: HiddenAskRecord,
+  state: HiddenAskClaim,
+  settle: SettleHiddenAskClaim,
+  error: unknown,
+): Promise<never> => {
+  state.terminalState = 'live';
+
+  const kept = await settle();
+
+  if (kept) {
+    throw new Error(askKeptClaimMessage(request.root));
+  }
+
+  await writeAskRecord(request.root, {
+    ...started,
+    status: 'failed',
+    detail: waitFailureDetail(error),
+  });
+
+  throw error;
+};
+
+const settleTimeout = async (
+  request: AskRequest,
+  started: HiddenAskRecord,
+  state: HiddenAskClaim,
+  settle: SettleHiddenAskClaim,
+): Promise<AskResult> => {
+  state.terminalState = 'live';
+
+  const kept = await settle();
+  const status = kept ? 'running' : 'timeout';
+  const detail = kept ? null : 'The ask reached its deadline before the architect answered.';
+
+  const reason = kept
+    ? askKeptClaimMessage(request.root)
+    : 'The ask reached its deadline. Call architect open to talk to the architect.';
+
+  await writeAskRecord(request.root, { ...started, status, detail });
+
+  return needsOpen(reason);
+};
+
 const runHiddenAsk = async (
   request: AskRequest,
   sessionFile: string,
   model: string,
   claimToken: string,
+  state: HiddenAskClaim,
+  settle: SettleHiddenAskClaim,
 ): Promise<AskResult> => {
   const askId = randomUUID();
   const recordPath = askRecordPath(request.root, askId);
@@ -147,25 +220,36 @@ const runHiddenAsk = async (
 
   await writeAskRecord(request.root, initial);
 
-  const terminal = await startHiddenAsk(request, initial, recordPath, model, claimToken);
+  let terminal: HcTerminal;
+
+  try {
+    terminal = await startHiddenAsk(request, initial, recordPath, model, claimToken);
+    state.launch = 'started';
+    state.terminal = terminal.address;
+    state.terminalState = 'live';
+  } catch (error) {
+    state.launch = 'failed';
+
+    throw error;
+  }
 
   const started: HiddenAskRecord = { ...initial, terminal: terminal.address };
 
   await writeAskRecord(request.root, started);
 
-  const waited = await wait(request.hc, terminal.address, { timeout: askDeadlineSeconds });
+  let waited: Awaited<ReturnType<typeof wait>>;
+
+  try {
+    waited = await wait(request.hc, terminal.address, { timeout: askDeadlineSeconds });
+  } catch (error) {
+    return settleWaitFailure(request, started, state, settle, error);
+  }
 
   if (!waited.ended) {
-    await kill(request.hc, terminal.address);
-
-    await writeAskRecord(request.root, {
-      ...started,
-      status: 'timeout',
-      detail: 'The ask reached its deadline before the architect answered.',
-    });
-
-    return needsOpen('The ask reached its deadline. Call architect open to talk to the architect.');
+    return settleTimeout(request, started, state, settle);
   }
+
+  state.terminalState = 'ended';
 
   const recorded = await readAskRecord(request.root, askId);
   const latest: HiddenAskRecord = recorded?.route === 'hidden' ? recorded : started;
@@ -205,18 +289,49 @@ const runHiddenAsk = async (
   };
 };
 
-const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Promise<AskResult> => {
+const askHiddenArchitect = async (
+  request: AskRequest,
+  sessionFile: string,
+  claimOptions: ArchitectClaimOptions,
+): Promise<AskResult> => {
   const model = requireModel(request);
-  const claim = await claimArchitectLock(request.root);
+  const claim = await claimArchitectLock(request.root, claimOptions);
 
   if (claim.kind === 'refused') {
-    return needsOpen(startingReason);
+    return needsOpen(askStartingReason);
   }
 
+  const state: HiddenAskClaim = {
+    launch: 'notRun',
+    terminal: undefined,
+    terminalState: 'unknown',
+    settled: false,
+    kept: false,
+  };
+
+  const settle = async (): Promise<boolean> => {
+    if (state.settled) {
+      return state.kept;
+    }
+
+    state.settled = true;
+
+    state.kept = await releaseClaim({
+      claim,
+      launch: state.launch,
+      adopted: false,
+      terminal: state.terminal,
+      terminalState: state.terminalState,
+      hc: request.hc,
+    });
+
+    return state.kept;
+  };
+
   try {
-    return await runHiddenAsk(request, sessionFile, model, claim.token);
+    return await runHiddenAsk(request, sessionFile, model, claim.token, state, settle);
   } finally {
-    await claim.release();
+    await settle();
   }
 };
 
@@ -234,7 +349,10 @@ const architectPublication = (
   return architect.owner === null ? { kind: 'none' } : { kind: 'owner', owner: architect.owner };
 };
 
-export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
+export const askArchitect = async (
+  request: AskRequest,
+  claimOptions: ArchitectClaimOptions = {},
+): Promise<AskResult> => {
   const running = await liveRunningAsk(request.root, request.hc, request.ui);
 
   if (running !== undefined) {
@@ -264,5 +382,5 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     return request.liveAsk(request, route);
   }
 
-  return askHiddenArchitect(request, route.sessionFile);
+  return askHiddenArchitect(request, route.sessionFile, claimOptions);
 };

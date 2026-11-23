@@ -54,6 +54,54 @@ it('a space start opens one tab with the argv as JSON', async () => {
   ]);
 });
 
+it('a space start returns the terminal from its reply', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  fake.overrideOutput('space.new', '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}');
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { name: 'ticket-1' },
+      tabName: 'architect',
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      bareRoot: false,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({
+    reply: '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}',
+    terminal: 't-space',
+  });
+});
+
+it('a space start without a terminal in its reply returns no terminal', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { name: 'ticket-1' },
+      tabName: 'architect',
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      bareRoot: false,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(result.terminal).toBeUndefined();
+});
+
 it('a space start names its first tab', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
@@ -167,7 +215,10 @@ it('a pane start splits to the right of the requested pane once', async () => {
     },
   );
 
-  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+  expect(result).toEqual({
+    reply: '{"pane":"p-new","terminal":"t-new"}',
+    terminal: 't-new',
+  });
 
   expect(fake.calls).toHaveLength(1);
   expect(fake.calls[0]?.command).toBe('herdr-app');
@@ -301,7 +352,11 @@ it('a split Herdr reports successful stays successful when the signal aborts dur
     paneRequest(root),
   );
 
-  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+  expect(result).toEqual({
+    reply: '{"pane":"p-new","terminal":"t-new"}',
+    terminal: 't-new',
+  });
+
   expect(fake.calls).toHaveLength(1);
 });
 

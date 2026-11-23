@@ -101,6 +101,9 @@ const startArchitect = async (
     release = lock.release;
     held.set(lock.token);
 
+    // oxlint-disable-next-line node/no-process-env -- A reload must not try to adopt the old claim again.
+    delete process.env['TAU_ARCHITECT_CLAIM'];
+
     const owner: ArchitectOwner = {
       lockToken: lock.token,
       mode: architectMode(),

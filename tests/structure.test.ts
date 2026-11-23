@@ -78,6 +78,7 @@ const pureModules = [
   'src/extensions/architect/ask/askDecision.ts',
   'src/extensions/architect/ask/askIntakeDecision.ts',
   'src/extensions/architect/ask/gateQuestion.ts',
+  'src/extensions/architect/claimRelease/claimReleaseDecision.ts',
   'src/extensions/architect/endNoteDecision.ts',
   'src/extensions/architect/finalHandoverDecision.ts',
   'src/extensions/architect/gateDecision.ts',

@@ -3,14 +3,19 @@ export interface OpenStartFacts {
   holderToken: string | undefined;
   now: number;
   deadline: number;
+  cancelled: boolean;
 }
 
-export type OpenStartProgress = 'waiting' | 'expired' | 'taken';
+export type OpenStartProgress = 'waiting' | 'expired' | 'taken' | 'cancelled';
 
-// The claim is gone once another generation holds the lock, or once no holder is live.
+// A holder that is not this claim has taken over, even when the call was also cancelled.
 export const openStartProgress = (facts: OpenStartFacts): OpenStartProgress => {
   if (facts.holderToken !== facts.claimToken) {
     return 'taken';
+  }
+
+  if (facts.cancelled) {
+    return 'cancelled';
   }
 
   return facts.now < facts.deadline ? 'waiting' : 'expired';
