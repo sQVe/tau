@@ -45,6 +45,23 @@ it('ignores a malformed receipt entry', () => {
   expect(store.hasReceipt('m1')).toBe(false);
 });
 
+it('keeps a handover question pending without a valid question receipt', () => {
+  const store = createReceiptStore('s1');
+
+  store.markQueued('m1');
+
+  store.restore([
+    {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 3, messageId: 'm1', sessionId: 's1', family: 'handover-question' },
+    },
+  ]);
+
+  expect(store.hasReceipt('m1')).toBe(false);
+  expect(store.isQueued('m1')).toBe(true);
+});
+
 it('clears a queued id once its receipt is saved', () => {
   const store = createReceiptStore('s1');
 

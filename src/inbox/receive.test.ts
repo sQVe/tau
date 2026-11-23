@@ -212,7 +212,7 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
   await receiver.deliver(new AbortController().signal);
 
   expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
-    version: 2,
+    version: 3,
     messageId,
     family: 'handover',
     payload: { text: 'Ask text' },
@@ -364,9 +364,134 @@ it('saves an accepted answer and wakes with its answer text', async () => {
       customType: 'tau-inbox-message',
       content: 'Use option A.',
       display: true,
-      details: { version: 2, messageId, sessionId, family: 'answer', questionId },
+      details: { version: 3, messageId, sessionId, family: 'answer', questionId },
     },
   ]);
+});
+
+it('wakes with a handover receipt that holds no question', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {
+    handover: (_request, save) => save(),
+  });
+
+  await expect(receiver.accept(messageRequest(sessionId, messageId))).resolves.toEqual(
+    queued(sessionId, messageId),
+  );
+
+  await receiver.deliver(new AbortController().signal);
+
+  expect(woken).toStrictEqual([
+    {
+      customType: 'tau-inbox-message',
+      content: 'handover text',
+      display: true,
+      details: { version: 3, messageId, sessionId, family: 'handover' },
+    },
+  ]);
+});
+
+it('saves an accepted handover-question and wakes with its fixed text', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const questionId = randomUUID();
+  const askerSession = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {
+    'handover-question': (_request, save) => save(),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'handover-question',
+    payload: {
+      questionId,
+      text: 'Which option should I use?',
+      askerTerminal: 'worker',
+      askerSession,
+    },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+  await receiver.deliver(new AbortController().signal);
+
+  expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
+    version: 3,
+    messageId,
+    family: 'handover-question',
+    payload: request.payload,
+  });
+
+  expect(woken).toEqual([
+    {
+      customType: 'tau-inbox-message',
+      content: `Handover question ${questionId} from terminal worker, session ${askerSession}:\n\nWhich option should I use?`,
+      display: true,
+      details: { version: 3, messageId, sessionId, family: 'handover-question', questionId },
+    },
+  ]);
+});
+
+it('does not deliver again a version 2 handover or a version 3 handover-question receipt', async () => {
+  const sessionId = randomUUID();
+  const handoverId = randomUUID();
+  const questionMessageId = randomUUID();
+  const questionId = randomUUID();
+  const askerSession = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {}, 0, () => [
+    {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 2, messageId: handoverId, sessionId, family: 'handover' },
+    },
+    {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 3,
+        messageId: questionMessageId,
+        sessionId,
+        family: 'handover-question',
+        questionId,
+      },
+    },
+  ]);
+
+  mkdirSync(join(root, 'records', sessionId), { recursive: true });
+
+  writeFileSync(
+    recordOf(sessionId, handoverId),
+    JSON.stringify({
+      version: 3,
+      messageId: handoverId,
+      family: 'handover',
+      payload: { text: 'handover text' },
+    }),
+  );
+
+  writeFileSync(
+    recordOf(sessionId, questionMessageId),
+    JSON.stringify({
+      version: 3,
+      messageId: questionMessageId,
+      family: 'handover-question',
+      payload: {
+        questionId,
+        text: 'Which option should I use?',
+        askerTerminal: 'worker',
+        askerSession,
+      },
+    }),
+  );
+
+  await receiver.deliver(new AbortController().signal);
+
+  expect(woken).toEqual([]);
+  expect(existsSync(recordOf(sessionId, handoverId))).toBe(false);
+  expect(existsSync(recordOf(sessionId, questionMessageId))).toBe(false);
 });
 
 it('queues the first of two overlapping saves of one message ID and refuses the other', async () => {

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 
 import { parseSenderLine } from '../handoverSender.js';
+import type { SavableMessageBody } from './protocol.js';
 import {
   answeredQuestionId,
   decideCandidate,
@@ -13,7 +14,9 @@ import {
   piQueueEmptyAtSettle,
   readInboxReceipt,
 } from './receiptDecision.js';
-import type { ReceiptEntryFact } from './receiptDecision.js';
+import type { ReceiptedMessage, ReceiptEntryFact } from './receiptDecision.js';
+
+const validQuestionId = '11111111-1111-4111-8111-111111111111';
 
 const readTable = [
   {
@@ -66,6 +69,136 @@ const readTable = [
       },
     },
     receipt: { version: 2, messageId: 'm1', sessionId: 's1', family: 'handover' },
+  },
+  {
+    name: 'a version 2 handover-question receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 2,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: validQuestionId,
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 3 handover receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 3, messageId: 'm1', sessionId: 's1', family: 'handover' },
+    },
+    receipt: { version: 3, messageId: 'm1', sessionId: 's1', family: 'handover' },
+  },
+  {
+    name: 'a version 3 answer receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 3, messageId: 'm1', sessionId: 's1', family: 'answer' },
+    },
+    receipt: { version: 3, messageId: 'm1', sessionId: 's1', family: 'answer' },
+  },
+  {
+    name: 'a version 3 answer receipt with its question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 3, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 'q1' },
+    },
+    receipt: { version: 3, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 'q1' },
+  },
+  {
+    name: 'a version 3 handover-question receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 3,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: validQuestionId,
+      },
+    },
+    receipt: {
+      version: 3,
+      messageId: 'm1',
+      sessionId: 's1',
+      family: 'handover-question',
+      questionId: validQuestionId,
+    },
+  },
+  {
+    name: 'a version 3 handover-question receipt without a question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 3,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 3 handover-question receipt with a malformed question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 3,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: 'q1',
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 3 receipt of an answer-request family',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 3, messageId: 'm1', sessionId: 's1', family: 'answer-request' },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a handover-question receipt without a question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 2,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a handover-question receipt with a malformed question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 2,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: 'q1',
+      },
+    },
+    receipt: undefined,
   },
   {
     name: 'a version 1 receipt',
@@ -136,11 +269,11 @@ const readTable = [
     receipt: undefined,
   },
   {
-    name: 'a version 3 receipt',
+    name: 'a version 4 receipt',
     entry: {
       type: 'custom_message',
       customType: inboxMessageType,
-      details: { version: 3, messageId: 'm1', sessionId: 's1', family: 'handover' },
+      details: { version: 4, messageId: 'm1', sessionId: 's1', family: 'handover' },
     },
     receipt: undefined,
   },
@@ -182,10 +315,31 @@ const answeredTable = [
     questionId: undefined,
   },
   {
-    name: 'a newer answer message',
+    name: 'a version 3 answer message',
     message: {
       customType: inboxMessageType,
       details: { ...answerDetails, version: 3, questionId: 'q1' },
+    },
+    questionId: 'q1',
+  },
+  {
+    name: 'a version 4 answer message',
+    message: {
+      customType: inboxMessageType,
+      details: { ...answerDetails, version: 4, questionId: 'q1' },
+    },
+    questionId: undefined,
+  },
+  {
+    name: 'a version 3 handover-question message with a question',
+    message: {
+      customType: inboxMessageType,
+      details: {
+        ...answerDetails,
+        version: 3,
+        family: 'handover-question',
+        questionId: validQuestionId,
+      },
     },
     questionId: undefined,
   },
@@ -194,6 +348,14 @@ const answeredTable = [
     message: {
       customType: inboxMessageType,
       details: { ...answerDetails, family: 'handover', questionId: 'q1' },
+    },
+    questionId: undefined,
+  },
+  {
+    name: 'a handover-question message with a question',
+    message: {
+      customType: inboxMessageType,
+      details: { ...answerDetails, family: 'handover-question', questionId: 'q1' },
     },
     questionId: undefined,
   },
@@ -217,11 +379,22 @@ const receiptFixture = (name: string): ReceiptEntryFact =>
   ) as ReceiptEntryFact;
 
 const fixtureMessageId = '11111111-1111-4111-8111-111111111111';
+const fixtureQuestionId = '22222222-2222-4222-8222-222222222222';
 
 it.each([
   {
     fixture: 'v2.json',
     receipt: { version: 2, messageId: fixtureMessageId, sessionId: 'session-1', family: 'answer' },
+  },
+  {
+    fixture: 'v3.json',
+    receipt: {
+      version: 3,
+      messageId: fixtureMessageId,
+      sessionId: 'session-1',
+      family: 'handover-question',
+      questionId: fixtureQuestionId,
+    },
   },
   { fixture: 'newer.json', receipt: undefined },
   { fixture: 'malformed.json', receipt: undefined },
@@ -300,6 +473,23 @@ it('escapes sender-free text so it parses as no sender', () => {
 
 const answerReceipt = { ...handoverReceipt, family: 'answer', questionId: 'q1' } as const;
 
+const questionReceipt = {
+  ...handoverReceipt,
+  version: 3,
+  family: 'handover-question',
+  questionId: 'q1',
+} as const;
+
+const questionPayload = {
+  questionId: 'q1',
+  text: 'Which option should I use?',
+  askerTerminal: 'worker',
+  askerSession: 's1',
+};
+
+const shownQuestionText =
+  'Handover question q1 from terminal worker, session s1:\n\nWhich option should I use?';
+
 const answerPayload = {
   assignmentId: 'a1',
   questionId: 'q1',
@@ -307,10 +497,26 @@ const answerPayload = {
   answer: 'Use option A.',
 };
 
+const strayQuestionReceipt = {
+  receipt: { ...handoverReceipt, questionId: 'q1' },
+  content: 'handover text',
+} as unknown as ReceiptedMessage;
+
+const strayQuestionBody = {
+  family: 'handover',
+  payload: { text: 'handover text', questionId: 'q1' },
+} as unknown as SavableMessageBody;
+
 const retryTable = [
   {
     name: 'a handover retry with the shown text',
     receipted: { receipt: handoverReceipt, content: 'handover text' },
+    body: { family: 'handover', payload: { text: 'handover text' } },
+    matches: true,
+  },
+  {
+    name: 'a version 3 handover retry with the shown text',
+    receipted: { receipt: { ...handoverReceipt, version: 3 }, content: 'handover text' },
     body: { family: 'handover', payload: { text: 'handover text' } },
     matches: true,
   },
@@ -372,10 +578,40 @@ const retryTable = [
     matches: true,
   },
   {
+    name: 'a version 3 answer retry with the shown answer and question',
+    receipted: { receipt: { ...answerReceipt, version: 3 }, content: 'Use option A.' },
+    body: { family: 'answer', payload: answerPayload },
+    matches: true,
+  },
+  {
     name: 'an answer retry for another question',
     receipted: { receipt: answerReceipt, content: 'Use option A.' },
     body: { family: 'answer', payload: { ...answerPayload, questionId: 'q2' } },
     matches: false,
+  },
+  {
+    name: 'a handover-question retry with the shown text',
+    receipted: { receipt: questionReceipt, content: shownQuestionText },
+    body: { family: 'handover-question', payload: questionPayload },
+    matches: true,
+  },
+  {
+    name: 'a handover-question retry with another receipted question',
+    receipted: { receipt: { ...questionReceipt, questionId: 'q2' }, content: shownQuestionText },
+    body: { family: 'handover-question', payload: questionPayload },
+    matches: false,
+  },
+  {
+    name: 'a handover retry whose receipt holds a stray question',
+    receipted: strayQuestionReceipt,
+    body: { family: 'handover', payload: { text: 'handover text' } },
+    matches: true,
+  },
+  {
+    name: 'a handover retry whose body holds a stray question',
+    receipted: { receipt: handoverReceipt, content: 'handover text' },
+    body: strayQuestionBody,
+    matches: true,
   },
   {
     name: 'a retry of a receipt whose entry holds no text',

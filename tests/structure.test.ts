@@ -94,6 +94,7 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
+  'src/extensions/handoverQuestion/senderMessages.ts',
   'src/extensions/improvement/recordPassDecision.ts',
   'src/extensions/improvement/recordRequest.ts',
   'src/extensions/inbox/arrivalDecision.ts',
@@ -490,7 +491,7 @@ const versionedRecords = [
   {
     writer: 'src/inbox/store.ts',
     fixtures: 'src/inbox/fixtures/handover',
-    names: ['previous.json', 'current.json', 'newer.json', 'malformed.json'],
+    names: ['previous.json', 'version2.json', 'current.json', 'newer.json', 'malformed.json'],
   },
   {
     writer: 'src/improvement/event.ts',
@@ -505,6 +506,11 @@ const versionedRecords = [
   {
     writer: 'src/questionGate/decision/decisionRecord.ts',
     fixtures: 'src/questionGate/decision/fixtures/decisionRecord',
+    names: ['current.json', 'newer.json', 'malformed.json'],
+  },
+  {
+    writer: 'src/extensions/handoverQuestion/question/questionRecord.ts',
+    fixtures: 'src/extensions/handoverQuestion/question/fixtures/questionRecord',
     names: ['current.json', 'newer.json', 'malformed.json'],
   },
 ];

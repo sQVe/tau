@@ -45,10 +45,10 @@ sender in its saved transcript with no other record.
 ### Take the newest sender, then the environment
 
 A session reads its handover messages and its first task message, oldest first. The newest message
-whose first line is a sender line gives the sender. Without such a line, both environment variables
-give the sender when the terminal is one non-empty token without whitespace, the session ID is
-non-empty, and it matches Pi's session ID rule. Without either, the session has no sender and asks
-its user.
+whose first line is a sender line gives the sender. An inbox handover counts as the newest message
+even before Pi adds it to the branch. Without such a line, both environment variables give the
+sender when the terminal is one non-empty token without whitespace, the session ID is non-empty, and
+it matches Pi's session ID rule. Without either, the session has no sender and asks its user.
 
 The newest message wins because a session can receive several handovers, and the latest one names
 the session that currently sends it work.
@@ -64,11 +64,32 @@ sender, whatever Tau version sent the text.
 
 ### Keep the saved handover record compatible
 
-The sender is a new optional field in the saved handover record, so the record moves to version 2
-and still reads version 1, as [ADR 0053](./0053-version-each-saved-record-format.md) says. A pending
-retry compares the payload without the version, and a retry whose sender differs is a changed
-message. A receiver on an older Tau refuses a frame that carries `sender`; that refusal is accepted
-and needs no fallback.
+Version 2 of the saved inbox record added the optional `sender` field and still reads version 1.
+Version 3 added the `handover-question` family. Both older versions stay readable, as
+[ADR 0053](./0053-version-each-saved-record-format.md) says. A pending retry compares the payload
+without the version, and a retry whose sender differs is a changed message. A receiver on an older
+Tau refuses a frame that carries `sender`; that refusal is accepted and needs no fallback.
+
+The Pi session receipt moves to version 3 when it gains the `handover-question` family. Tau writes
+that one version for every family. It still reads version 2 for `handover` and `answer`, and it
+skips a version 2 `handover-question` receipt. An older Tau does not replay the original version 3
+inbox file. The downgrade limits under Consequences still apply.
+
+### Ask with handover_question
+
+A lead session gets the `handover_question` tool only when it finds a sender. When the tool runs, it
+resolves the sender again from the current branch and environment, so a branch without a sender
+refuses and saves nothing. The tool saves an open question record in the asker's checkout, sends a
+saved `handover-question` frame to the sender's session, and ends the turn. Before it saves, the
+tool checks that the asker's own inbox is listening, so the answer can reach it. Without that inbox,
+the tool saves nothing and tells the asker to ask its user. A refused send deletes the record and
+tells the asker to ask its user.
+
+An unknown delivery keeps the open question record. The transport cannot prove the frame did not
+reach the lead, and deleting the record would let a later delivery wake the lead with a question the
+asker no longer tracks. The tool ends the turn and does not retry under a fresh ID: the asker's turn
+has to end for the lead to answer it, and a second send could duplicate a question the lead already
+received.
 
 ### Ask the user when the sender is gone
 
@@ -94,6 +115,10 @@ stall the work.
 - A sender line already saved in a transcript before the upgrade, or in the task of a session that
   an older Tau's `handover start` opened, still reads as a sender. A fresh session without the old
   transcript drops it.
+- A downgrade is best effort. A version 2 inbox file that this Tau delivered but has not deleted can
+  be shown again when the same session resumes on an older Tau. A same-ID retry after cleanup can be
+  shown again on an older Tau. A worker that restarts on an older Tau can miss a version 3 answer
+  receipt and keep waiting.
 
 ## Alternatives considered
 
@@ -111,3 +136,17 @@ need its own version and lifetime, while the transcript already holds the handov
 
 Keep the first sender, or ask when senders disagree. Rejected because the newest handover is the
 work the session currently acts on, and asking would add a dialog the sender can answer.
+
+### Delete the question record and retry
+
+Delete the open question record after an unknown delivery and let the asker retry. The common
+transport retry rule allows a retry that reuses the message ID and text. Rejected because it loses
+the tie between the asker's turn and the question.
+
+### Keep the version 2 receipt for older families
+
+Write version 2 receipts for `handover` and `answer`, and version 3 only for `handover-question`.
+This keeps an older Tau deduping the two families it knows, but it makes the receipt version depend
+on the family or on the delivered record. Rejected because `version` stays one format marker for the
+record, and because a downgrade is best effort under
+[ADR 0053](./0053-version-each-saved-record-format.md).

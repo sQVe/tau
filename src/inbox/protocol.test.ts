@@ -292,6 +292,32 @@ it('refuses an answer-request payload with an extra field', () => {
   });
 });
 
+const handoverQuestionFixture = (name: string): unknown =>
+  JSON.parse(
+    readFileSync(join(import.meta.dirname, 'fixtures', 'handoverQuestion', name), 'utf8'),
+  ) as unknown;
+
+it('decodes a pinned handover-question frame', () => {
+  const request = handoverQuestionFixture('request.json');
+
+  expect(decodeRequest(line(request))).toEqual({ kind: 'frame', value: request });
+});
+
+it('refuses a handover-question payload with an extra field', () => {
+  const request = handoverQuestionFixture('request.json') as { payload: Record<string, unknown> };
+
+  const withExtraField = {
+    ...request,
+    payload: { ...request.payload, sender: 'lead' },
+  };
+
+  const decision = decodeRequest(line(withExtraField));
+  const reason = decision.kind === 'refused' ? decision.reason : '';
+
+  expect(decision.kind).toBe('refused');
+  expect(reason.length).toBeGreaterThan(0);
+});
+
 it('refuses an unknown reply without a reason', () => {
   const { reason: _reason, ...reply } = answerRequestFixture('unknown.json') as Record<
     string,

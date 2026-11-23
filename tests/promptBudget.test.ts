@@ -146,7 +146,13 @@ const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) =
   };
 
   for (const handler of fake.handlers.get('before_agent_start') ?? []) {
-    await handler(event as never, { cwd: agentDirectory } as ExtensionContext);
+    await handler(
+      event as never,
+      {
+        cwd: agentDirectory,
+        sessionManager: { getBranch: () => [], getSessionId: () => 'session-1' },
+      } as unknown as ExtensionContext,
+    );
   }
 
   const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt, agentDirectory);
@@ -268,7 +274,10 @@ const workerHookPrompt = async (
     } as unknown as Partial<ExtensionAPI>);
 
     const context = {
-      sessionManager: { getBranch: () => [] },
+      sessionManager: {
+        getBranch: () => [],
+        getSessionId: () => assignment.session.id,
+      },
       shutdown: () => undefined,
       cwd: directory,
       model: { provider: 'faux', id: 'test' },
@@ -355,6 +364,17 @@ const measureSessions = async (projectDirectory: string): Promise<Sessions> => {
 
   return measured;
 };
+
+const senderBranch = [
+  {
+    type: 'message',
+    message: {
+      role: 'user',
+      content:
+        'Handover sender: terminal lead-1, session 33333333-3333-4333-8333-333333333333.\n\nDo the work.',
+    },
+  },
+];
 
 const sessionsWithoutCoding = ['qa', 'browser', 'scout'];
 
@@ -473,6 +493,34 @@ describe('prompt budget', () => {
       ['shared: 1001 characters, budget 1000'],
       ['shared: 1001 characters, budget 1000'],
     ]);
+  });
+
+  it('keeps the question tool within its budget for a lead with a handover sender', async () => {
+    const fake = await loadTools('lead', directory);
+
+    const context = {
+      cwd: directory,
+      sessionManager: {
+        getBranch: () => senderBranch,
+        getSessionId: () => 'session-1',
+      },
+    } as unknown as ExtensionContext;
+
+    const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: [] } };
+
+    for (const handler of fake.handlers.get('before_agent_start') ?? []) {
+      await handler(event as never, context);
+    }
+
+    const questionTool = fake.tools.get('handover_question');
+
+    expect(questionTool).toBeDefined();
+
+    if (questionTool === undefined) {
+      return;
+    }
+
+    expect(questionTool.description.length).toBeLessThanOrEqual(oneActionBudget);
   });
 
   it('keeps each excepted tool within its recorded length', () => {

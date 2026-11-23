@@ -6,7 +6,14 @@ import type { AcceptCheck } from './receive.js';
 
 export { socketDirectoryFor } from './endpoint.js';
 
-export { encodeMessageFrame, inboxLabelKey, isUuid, requestByteLimit } from './protocol.js';
+export {
+  encodeMessageFrame,
+  inboxLabelKey,
+  isUuid,
+  requestByteLimit,
+  sessionIdSchema,
+  uuidSchema,
+} from './protocol.js';
 
 export type { MessageRequest } from './protocol.js';
 export { advertiseLabel, withdrawLabel } from './label.js';

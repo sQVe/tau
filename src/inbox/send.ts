@@ -29,6 +29,8 @@ export interface InboxSendResult {
   sessionId: string;
   messageId: string;
   note?: string;
+  // The transport reason when acceptance is unknown.
+  reason?: string;
 }
 
 interface Target {
@@ -127,6 +129,7 @@ const unknownResult = (target: Target, messageId: string, reason: string): Inbox
   sessionId: target.sessionId,
   messageId,
   note: `${reason} Acceptance unknown for message ${messageId} to terminal ${target.address}, session ${target.sessionId}; the receiver may have saved it. A retry must reuse this message ID and the same text.`,
+  reason,
 });
 
 const answersFor = (
