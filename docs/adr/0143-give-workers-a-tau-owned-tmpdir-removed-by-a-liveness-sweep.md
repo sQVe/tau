@@ -114,9 +114,9 @@ no timer is needed.
   `/tmp/ws/` and the 8-byte folder name leave 46 bytes for the agent directory.
 - Two assignments whose IDs start with the same 8 hex digits share one scratch folder. The sweep
   keeps it while either worker runs, and a failed launch removes it only when that launch created
-  it. If both launches start at the same moment and the one that created the folder fails, it
-  removes the folder. The other worker creates it again when it starts, but it loses files it wrote
-  before then.
+  it. If both launches start at the same moment and the one that created the folder fails before the
+  other worker's startup check, the other worker creates the folder again and loses only files it
+  wrote before then. If it fails after that check, the other worker loses the folder while it runs.
 - Tests cannot use the worker's `TMPDIR`, because it sits inside the real HOME and makes Unix socket
   paths too long. In a worker session the test run sets `TMPDIR` to `/tmp`, and each test removes
   its own folders as today.

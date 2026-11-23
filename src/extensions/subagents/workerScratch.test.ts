@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -107,6 +115,22 @@ it('creates a private scratch folder under a missing root', async () => {
   expect(created).toBe(true);
   expect(existsSync(scratchDirectoryFor(agentDirectory, 'one'))).toBe(true);
   expect(await createScratchDirectory(agentDirectory, 'one')).toBe(false);
+});
+
+it('refuses a regular file at the scratch folder path', async () => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-file-');
+  const leaf = scratchDirectoryFor(realpathSync(agentDirectory), 'one');
+
+  mkdirSync(scratchRootFor(realpathSync(agentDirectory)), { recursive: true });
+  writeFileSync(leaf, 'not a directory');
+
+  await expect(createScratchDirectory(agentDirectory, 'one')).rejects.toThrow(
+    `Scratch path ${leaf} is not a directory.`,
+  );
+
+  const entry = statSync(leaf);
+
+  expect(entry.isFile()).toBe(true);
 });
 
 it('treats a missing scratch folder as removed', async () => {

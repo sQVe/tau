@@ -1,4 +1,4 @@
-import { mkdir, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../../errors.js';
@@ -45,16 +45,24 @@ export const createScratchDirectory = async (
 
   await mkdir(root, { recursive: true, mode: 0o700 });
 
+  const leaf = join(root, assignmentShortId(assignmentId));
+
   try {
-    await mkdir(join(root, assignmentShortId(assignmentId)), { mode: 0o700 });
+    await mkdir(leaf, { mode: 0o700 });
 
     return true;
   } catch (error) {
-    if (hasErrorCode(error, 'EEXIST')) {
-      return false;
+    if (!hasErrorCode(error, 'EEXIST')) {
+      throw error;
     }
 
-    throw error;
+    const entry = await lstat(leaf);
+
+    if (!entry.isDirectory()) {
+      throw new Error(`Scratch path ${leaf} is not a directory.`, { cause: error });
+    }
+
+    return false;
   }
 };
 
