@@ -4,6 +4,7 @@
     "src/tau.ts",
     "src/extensions/verification/workerRecord.ts",
     "src/questionGate/questionGate.ts",
+    "src/extensions/handoverQuestion/handoverQuestion.ts",
     "scripts/*.ts",
     "scripts/fixtures/fakePi.ts",
     "stryker.vitest.config.ts"
