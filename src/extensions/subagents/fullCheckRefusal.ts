@@ -7,16 +7,16 @@ export const fullCheckRefusal = (
     return undefined;
   }
 
+  if (role === 'investigation') {
+    return 'fullCheck applies only to editing workers. An investigation worker does not run the full check.';
+  }
+
   if (fullCheck.owner.trim() === '') {
     return 'fullCheck.owner must not be blank.';
   }
 
   if (fullCheck.reason.trim() === '') {
     return 'fullCheck.reason must not be blank.';
-  }
-
-  if (role === 'investigation') {
-    return 'fullCheck applies only to editing workers. An investigation worker does not run the full check.';
   }
 
   if (!fullCheckConfigured) {

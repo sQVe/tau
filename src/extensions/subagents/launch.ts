@@ -3,7 +3,7 @@ import { basename, dirname, join } from 'node:path';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { readRepositoryArgv } from '../../config/repositoryCommand.js';
+import { readRepositoryArgv, withIgnoredNote } from '../../config/repositoryCommand.js';
 import { errorMessage } from '../../errors.js';
 import { runWithEnvironment } from '../../hc/connect.js';
 import { currentTerminalAddress, get, HcError, ls, readCurrentTerminal } from '../../hc/hc.js';
@@ -216,13 +216,15 @@ export const fullCheckLaunchRefusal = async (
 
   const root = await findTauRoot(cwd, 'full_check');
 
-  const { argv } = readRepositoryArgv(
+  const { argv, ignored } = readRepositoryArgv(
     { cwd: root, agentDirectory, projectTrusted: context.isProjectTrusted() },
     context.ui,
     'fullCheck',
   );
 
-  return fullCheckRefusal(role, declaration, argv !== undefined);
+  const refusal = fullCheckRefusal(role, declaration, argv !== undefined);
+
+  return refusal === undefined ? undefined : withIgnoredNote(refusal, ignored);
 };
 
 class UnclearLaunchError extends Error {

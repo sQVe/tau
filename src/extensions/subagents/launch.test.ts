@@ -434,6 +434,43 @@ it('refuses a full check declaration without a configured full check', async () 
   expect(vi.mocked(writeAssignment)).not.toHaveBeenCalled();
 });
 
+it('names the ignored project config when the project is untrusted', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+
+  initializeRepositorySync(directory);
+  vi.mocked(writeAssignment).mockClear();
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({ ...loadout, cwd: directory });
+
+  mkdirSync(join(directory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(directory, '.pi/tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
+  );
+
+  const untrustedContext = {
+    ...requestContext,
+    isProjectTrusted: () => false,
+  } as ExtensionContext;
+
+  const result = await launch(
+    runtime,
+    { fullCheck: { owner: 'AI-1688', reason: 'the module is not wired in yet' } },
+    undefined,
+    untrustedContext,
+  );
+
+  expect(result).toMatchObject({ isError: true });
+  expect(result.content[0]?.text).toContain('fullCheck requires a configured full check command');
+
+  expect(result.content[0]?.text).toContain(
+    `Tau ignored ${join(directory, '.pi/tau.json')} because the project is not trusted.`,
+  );
+
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(vi.mocked(writeAssignment)).not.toHaveBeenCalled();
+});
+
 it('saves a full check declaration on an editing launch', async () => {
   const { context: requestContext, directory, fake, runtime } = setup();
   const fullCheck = { owner: 'AI-1688', reason: 'the module is not wired in yet' };
