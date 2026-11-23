@@ -65,7 +65,7 @@ const freshTask = async (
       ? 'Read AGENTS.md before you design anything.'
       : `Read the slice design: ${design}.`;
 
-  return `You are the architect for ${root}. ${context} The lead terminal is ${leadTerminal}. Talk to the user about design, write the tickets the slice needs, then send the lead the step 11 values with handover send to ${leadTerminal} with final set to true, and end your turn.\n\nThe user's request:\n${userRequest}`;
+  return `You are the architect for ${root}. ${context} The lead terminal is ${leadTerminal}. Talk to the user about design, and end the session with one final handover to ${leadTerminal}, as your guidelines say.\n\nThe user's request:\n${userRequest}`;
 };
 
 const resumeTask = (root: string, leadTerminal: string, userRequest: string): string =>

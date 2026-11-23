@@ -18,11 +18,12 @@ two ways to separate the design work from the orchestration work.
 `TAU_ROLE` has `lead` and `architect` as manager kinds, and the lead delegates every code change to
 a worker.
 
-The lead owns the user conversation, worker briefs, integration, and commits. It makes no design
-choice. The architect owns design, plans, acceptance criteria, and worker briefs. It does not edit
-code and launches no editing worker; it may launch investigation workers, such as `scout`. Tau
-refuses a launch or follow-up of an editing profile from an architect session. A session without
-`TAU_ROLE` is a lead, so the user starts all work in the lead. Workers keep their `worker` kind.
+The lead owns the user conversation, launch briefs, integration, and commits. It makes no design
+choice. The architect owns design, plans, acceptance criteria, and the ticket bodies workers start
+from. It does not edit code and launches no editing worker; it may launch investigation workers,
+such as `scout`. Tau refuses a launch or follow-up of an editing profile from an architect session.
+A session without `TAU_ROLE` is a lead, so the user starts all work in the lead. Workers keep their
+`worker` kind.
 
 ### The architect session
 
@@ -30,6 +31,13 @@ The lead opens the architect with the `architect` tool. `open` starts or resumes
 architect to the right of the lead when the lead terminal has a `herdr.space` label, and in a new
 named space when it has none. `ask` does not follow that placement rule. It sends one question to
 the architect and has two paths. `gate` classifies a user request that no skill covers.
+
+Every session the lead opens with `open` ends with one final handover whose text starts with
+`Final:`. It states the outcome and the lead's next step, and the lead leaves that request alone
+until it arrives.
+
+While a session the lead opened runs, the lead starts no editing worker in this checkout, because
+the architect can switch the branch during `start-slice` step 9.
 
 A live architect in this checkout takes the question in its inbox, so no second Pi writes its
 session file. The architect records its route when it takes the checkout lock: the lock token, its
