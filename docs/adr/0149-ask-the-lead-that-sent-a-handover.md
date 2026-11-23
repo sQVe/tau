@@ -85,6 +85,14 @@ tool checks that the asker's own inbox is listening, so the answer can reach it.
 the tool saves nothing and tells the asker to ask its user. A refused send deletes the record and
 tells the asker to ask its user.
 
+An unknown delivery keeps the open question record. The transport cannot prove the frame did not
+reach the lead, and deleting the record would let a later delivery wake the lead with a question the
+asker no longer tracks. The tool ends the turn and does not retry under a fresh ID: the asker's turn
+has to end for the lead to answer it, and a second send could duplicate a question the lead already
+received. Deleting the record and letting the asker retry is rejected, although the common transport
+retry rule allows a retry that reuses the message ID and text; it loses the tie between the asker's
+turn and the question.
+
 ### Ask the user when the sender is gone
 
 An ended sender makes the asker ask its user. A dead terminal cannot answer, and waiting on it would
