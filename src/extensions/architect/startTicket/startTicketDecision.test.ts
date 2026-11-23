@@ -5,40 +5,30 @@ import type { SweepAction, SweepFacts } from './startTicketDecision.js';
 
 it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
   {
-    name: 'an unused ticket with a running child',
-    facts: { marker: 'unused', child: 'running' },
-    expected: 'cancel',
-  },
-  {
-    name: 'an unused ticket with a gone child',
-    facts: { marker: 'unused', child: 'gone' },
-    expected: 'cancel',
-  },
-  {
-    name: 'an unused ticket with an unknown child',
-    facts: { marker: 'unused', child: 'unknown' },
-    expected: 'cancel',
-  },
-  {
-    name: 'a started ticket whose process is gone',
-    facts: { marker: 'started', child: 'gone' },
-    expected: 'deleteMarker',
-  },
-  {
-    name: 'a started ticket whose process runs',
-    facts: { marker: 'started', child: 'running' },
-    expected: 'refuseRunning',
-  },
-  {
-    name: 'a started ticket whose process state is unknown',
-    facts: { marker: 'started', child: 'unknown' },
-    expected: 'refuseRunning',
+    name: 'an unused ticket',
+    facts: { kind: 'unused' },
+    expected: { kind: 'cancel' },
   },
   {
     name: 'a marker name without a process id',
-    facts: { marker: 'malformed', child: 'gone' },
-    expected: 'refuseMalformed',
+    facts: { kind: 'malformed', path: '/start/token.started' },
+    expected: { kind: 'refuseMalformed', path: '/start/token.started' },
   },
-])('decides to $expected for $name', ({ facts, expected }) => {
-  expect(sweepAction(facts)).toBe(expected);
+  {
+    name: 'a started ticket whose process is gone',
+    facts: { kind: 'started', path: '/start/token.started.1', processId: 1, child: 'gone' },
+    expected: { kind: 'deleteMarker', path: '/start/token.started.1' },
+  },
+  {
+    name: 'a started ticket whose process runs',
+    facts: { kind: 'started', path: '/start/token.started.1', processId: 1, child: 'running' },
+    expected: { kind: 'refuseRunning', processId: 1 },
+  },
+  {
+    name: 'a started ticket whose process state is unknown',
+    facts: { kind: 'started', path: '/start/token.started.1', processId: 1, child: 'unknown' },
+    expected: { kind: 'refuseRunning', processId: 1 },
+  },
+])('decides to $expected.kind for $name', ({ facts, expected }) => {
+  expect(sweepAction(facts)).toEqual(expected);
 });

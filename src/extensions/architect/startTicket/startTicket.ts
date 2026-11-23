@@ -6,7 +6,6 @@ import { processState } from '../../../process/process.js';
 import type { ProcessState } from '../../../process/process.js';
 import { ensureTauDirectory } from '../../../tauDirectory.js';
 import { sweepAction } from './startTicketDecision.js';
-import type { StartTicketMarker } from './startTicketDecision.js';
 
 export type StartTicketCancel = 'cancelled' | 'taken' | 'unread';
 
@@ -14,13 +13,9 @@ export type StartMarker =
   | { kind: 'process'; pid: number; path: string }
   | { kind: 'malformed'; path: string };
 
-export interface StartEntry {
-  token: string;
-  ticket: string;
-  marker: StartTicketMarker;
-  markerPath: string;
-  pid?: number;
-}
+export type StartEntry =
+  | { kind: 'unused'; token: string; ticket: string }
+  | { kind: 'marker'; token: string; ticket: string; marker: StartMarker };
 
 export interface StartSweepRequest {
   root: string;
@@ -34,10 +29,10 @@ export type StartSweepResult =
   | { kind: 'refuseRunning'; processId: number }
   | { kind: 'refuseMalformed'; path: string };
 
-type ResolvedStartEntry =
+type EntryResolution =
   | { kind: 'skip' }
-  | { kind: 'result'; result: StartSweepResult }
-  | { kind: 'entry'; marker: 'started' | 'malformed'; markerPath: string; processId?: number };
+  | { kind: 'starting' }
+  | { kind: 'marker'; marker: StartMarker };
 
 const startedSuffix = '.started';
 const cancelledSuffix = '.cancelled';
@@ -163,37 +158,15 @@ const entryOf = (directory: string, name: string): StartEntry | undefined => {
     return undefined;
   }
 
+  const ticket = join(directory, token);
+
   if (!started) {
-    return {
-      token,
-      ticket: join(directory, token),
-      marker: 'unused',
-      markerPath: join(directory, markerName(token)),
-    };
+    return { kind: 'unused', token, ticket };
   }
 
   const marker = parseMarkerName(directory, token, name);
 
-  if (marker === undefined) {
-    return undefined;
-  }
-
-  if (marker.kind === 'malformed') {
-    return {
-      token,
-      ticket: join(directory, token),
-      marker: 'malformed',
-      markerPath: marker.path,
-    };
-  }
-
-  return {
-    token,
-    ticket: join(directory, token),
-    marker: 'started',
-    markerPath: marker.path,
-    pid: marker.pid,
-  };
+  return marker === undefined ? undefined : { kind: 'marker', token, ticket, marker };
 };
 
 export const readStartEntries = async (root: string): Promise<StartEntry[]> => {
@@ -210,7 +183,7 @@ export const readStartEntries = async (root: string): Promise<StartEntry[]> => {
 
     const current = entries.get(entry.token);
 
-    if (current === undefined || current.marker === 'unused') {
+    if (current === undefined || current.kind === 'unused') {
       entries.set(entry.token, entry);
     }
   }
@@ -218,7 +191,11 @@ export const readStartEntries = async (root: string): Promise<StartEntry[]> => {
   return [...entries.values()];
 };
 
-const resolveUnused = async (root: string, entry: StartEntry): Promise<ResolvedStartEntry> => {
+const resolveEntry = async (root: string, entry: StartEntry): Promise<EntryResolution> => {
+  if (entry.kind === 'marker') {
+    return { kind: 'marker', marker: entry.marker };
+  }
+
   const cancelled = await cancelStartTicket(entry.ticket);
 
   if (cancelled === 'cancelled') {
@@ -226,20 +203,12 @@ const resolveUnused = async (root: string, entry: StartEntry): Promise<ResolvedS
   }
 
   if (cancelled === 'unread') {
-    return { kind: 'result', result: { kind: 'starting' } };
+    return { kind: 'starting' };
   }
 
-  const found = await readStartMarker(root, entry.token);
+  const marker = await readStartMarker(root, entry.token);
 
-  if (found === undefined) {
-    return { kind: 'result', result: { kind: 'starting' } };
-  }
-
-  if (found.kind === 'malformed') {
-    return { kind: 'entry', marker: 'malformed', markerPath: found.path };
-  }
-
-  return { kind: 'entry', marker: 'started', markerPath: found.path, processId: found.pid };
+  return marker === undefined ? { kind: 'starting' } : { kind: 'marker', marker };
 };
 
 // Every other ticket belongs to a claim that is gone. A started marker is cleared only when the
@@ -253,44 +222,42 @@ export const sweepStartFolder = async (request: StartSweepRequest): Promise<Star
       continue;
     }
 
-    let marker = entry.marker;
-    let markerPath = entry.markerPath;
-    let processId = entry.pid;
+    // oxlint-disable-next-line no-await-in-loop -- Each ticket changes the folder for the next.
+    const resolved = await resolveEntry(request.root, entry);
 
-    if (marker === 'unused') {
-      // oxlint-disable-next-line no-await-in-loop -- Each ticket changes the folder for the next.
-      const resolved = await resolveUnused(request.root, entry);
-
-      if (resolved.kind === 'skip') {
-        continue;
-      }
-
-      if (resolved.kind === 'result') {
-        return resolved.result;
-      }
-
-      marker = resolved.marker;
-      markerPath = resolved.markerPath;
-      processId = resolved.processId;
+    if (resolved.kind === 'skip') {
+      continue;
     }
 
-    if (marker === 'malformed') {
-      return { kind: 'refuseMalformed', path: markerPath };
-    }
-
-    if (processId === undefined) {
+    if (resolved.kind === 'starting') {
       return { kind: 'starting' };
     }
 
-    const action = sweepAction({ marker, child: stateOf(processId) });
+    const { marker } = resolved;
 
-    if (action === 'refuseRunning') {
-      return { kind: 'refuseRunning', processId };
+    const facts =
+      marker.kind === 'malformed'
+        ? { kind: 'malformed' as const, path: marker.path }
+        : {
+            kind: 'started' as const,
+            path: marker.path,
+            processId: marker.pid,
+            child: stateOf(marker.pid),
+          };
+
+    const action = sweepAction(facts);
+
+    if (action.kind === 'refuseRunning') {
+      return { kind: 'refuseRunning', processId: action.processId };
     }
 
-    if (action === 'deleteMarker') {
+    if (action.kind === 'refuseMalformed') {
+      return { kind: 'refuseMalformed', path: action.path };
+    }
+
+    if (action.kind === 'deleteMarker') {
       // oxlint-disable-next-line no-await-in-loop -- Each marker is deleted before the next check.
-      await rm(markerPath, { force: true });
+      await rm(action.path, { force: true });
     }
   }
 

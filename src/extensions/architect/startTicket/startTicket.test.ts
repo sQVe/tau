@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -105,9 +105,7 @@ it('sweeps an unused ticket from a gone claim by cancelling it', async ({ onTest
   const root = await createTemporaryRepository(onTestFinished);
   const ticket = await createStartTicket(root, 'gone');
 
-  expect(await readStartEntries(root)).toEqual([
-    { token: 'gone', ticket, marker: 'unused', markerPath: `${ticket}.started` },
-  ]);
+  expect(await readStartEntries(root)).toEqual([{ kind: 'unused', token: 'gone', ticket }]);
 
   const outcome = await sweepStartFolder({
     root,
@@ -117,6 +115,25 @@ it('sweeps an unused ticket from a gone claim by cancelling it', async ({ onTest
 
   expect(outcome).toEqual({ kind: 'clear' });
   expect(existsSync(ticket)).toBe(false);
+});
+
+it('refuses a ticket taken after its claim ended and names the process id', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const ticket = await createStartTicket(root, 'gone');
+  const marker = `${ticket}.started.4004`;
+
+  await rename(ticket, marker);
+
+  const outcome = await sweepStartFolder({
+    root,
+    currentToken: 'current',
+    stateOf: () => 'running',
+  });
+
+  expect(outcome).toEqual({ kind: 'refuseRunning', processId: 4004 });
+  expect(existsSync(marker)).toBe(true);
 });
 
 it('deletes a started marker whose process is gone and starts', async ({ onTestFinished }) => {
