@@ -9,6 +9,7 @@ import { createReceiptStore, createReceiver, startInbox } from '../src/inbox/inb
 import type { ReceiverOptions } from '../src/inbox/inbox.js';
 import { decodeRequest, encodeFrame, refusedReply } from '../src/inbox/protocol.js';
 import type { Family, MessageReply, MessageRequest } from '../src/inbox/protocol.js';
+import { pendingMessages, readMessage } from '../src/inbox/store.js';
 
 export interface HandoverReceiver {
   sessionId: string;
@@ -122,6 +123,28 @@ export const startHandoverReceiver = async (
   };
 
   return { sessionId, path: paths[0] ?? '', inbox, savedRecords };
+};
+
+const savedText = async (directory: string, messageId: string): Promise<string> => {
+  const read = await readMessage(directory, messageId);
+
+  if (read.kind !== 'record') {
+    throw new Error(`Inbox record ${messageId} is ${read.kind}.`);
+  }
+
+  if (read.record.family !== 'handover') {
+    throw new Error(
+      `Inbox record ${messageId} is a ${read.record.family} message, not a handover.`,
+    );
+  }
+
+  return read.record.payload.text;
+};
+
+export const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> => {
+  const messageIds = await pendingMessages(receiver.inbox);
+
+  return Promise.all(messageIds.map((messageId) => savedText(receiver.inbox, messageId)));
 };
 
 // Accept checks live in the process-wide inbox slot, so a test that registers one removes it after.

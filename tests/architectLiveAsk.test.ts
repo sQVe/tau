@@ -1,5 +1,5 @@
 import { chmodSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -32,7 +32,7 @@ import { fakeExtensionApi } from './extensionApi.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { createHcFake } from './hcFake.js';
 import type { HcFake } from './hcFake.js';
-import { forgetAcceptCheck, startHandoverReceiver } from './inboxReceiverHarness.js';
+import { forgetAcceptCheck, savedTexts, startHandoverReceiver } from './inboxReceiverHarness.js';
 import type { HandoverReceiver } from './inboxReceiverHarness.js';
 import { temporaryTauConfig } from './tauConfigHarness.js';
 
@@ -126,21 +126,6 @@ const replyTerminal = (hc: HcFake, address: string, path: string): void => {
   hc.replyGet(
     address,
     JSON.stringify({ address, name: null, state: 'live', labels: { 'tau.inbox': `rpc1:${path}` } }),
-  );
-};
-
-const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> => {
-  const directory = join(dirname(dirname(receiver.path)), 'records', receiver.sessionId);
-  const names = await readdir(directory).catch(() => []);
-
-  return Promise.all(
-    names.map(async (name) => {
-      const saved = JSON.parse(await readFile(join(directory, name), 'utf8')) as {
-        payload: { text: string };
-      };
-
-      return saved.payload.text;
-    }),
   );
 };
 

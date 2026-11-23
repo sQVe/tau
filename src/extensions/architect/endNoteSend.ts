@@ -1,14 +1,9 @@
 import { errorMessage } from '../../errors.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { sendInboxMessage } from '../../inbox/inbox.js';
-import { decideEndNote, selectEndNote } from './endNoteDecision.js';
-import type { ArchitectRecordFact, EndNoteRoute } from './endNoteDecision.js';
+import { decideEndNote } from './endNoteDecision.js';
+import type { ArchitectRecordFact, EndNote, EndNoteRoute } from './endNoteDecision.js';
 import { readArchitectRecord } from './record.js';
-
-export interface PreparedEndNote {
-  target: string;
-  text: string;
-}
 
 const readRecordFact = async (root: string): Promise<ArchitectRecordFact> => {
   try {
@@ -25,20 +20,16 @@ const readRecordFact = async (root: string): Promise<ArchitectRecordFact> => {
 export const prepareEndNote = async (
   route: EndNoteRoute | undefined,
   root: string,
-): Promise<PreparedEndNote | undefined> => {
-  const selection = selectEndNote(route);
-
-  if (selection.kind === 'none') {
+): Promise<EndNote | undefined> => {
+  if (route === undefined) {
     return undefined;
   }
 
-  const decision = decideEndNote(selection, await readRecordFact(root));
-
-  return decision.kind === 'send' ? { target: decision.target, text: decision.text } : undefined;
+  return decideEndNote(route, await readRecordFact(root));
 };
 
 export const deliverEndNote = async (
-  prepared: PreparedEndNote | undefined,
+  prepared: EndNote | undefined,
   hc: HcRuntime,
   report: (message: string) => void,
 ): Promise<void> => {

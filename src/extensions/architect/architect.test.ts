@@ -1,17 +1,18 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
-import type { Mock } from 'vitest';
+import type { Mock, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
-import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
+import { forgetAcceptCheck, savedTexts } from '../../../tests/inboxReceiverHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import architectExtension from './architect.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
+import { sessionContext } from './fixtures/visibleSession.js';
 import { architectLockPath } from './lock.js';
 import { writeAskRecord, readAskRecord } from './record.js';
 import type { LiveAskRecord } from './record.js';
@@ -51,24 +52,6 @@ const receiveHandover = (
   return shutdown;
 };
 
-const sessionContext = (cwd: string) => {
-  const notify = vi.fn<(message: string, level?: string) => void>();
-  const shutdown = vi.fn<() => void>();
-
-  const context = {
-    cwd,
-    ui: { notify },
-    shutdown,
-    isProjectTrusted: () => true,
-    sessionManager: {
-      getSessionFile: () => '/sessions/architect.jsonl',
-      getSessionId: () => 'session-architect',
-    },
-  } as unknown as ExtensionContext;
-
-  return { context, notify, shutdown };
-};
-
 const runHandlers = async (
   fake: ReturnType<typeof fakeExtensionApi>,
   name: string,
@@ -78,6 +61,21 @@ const runHandlers = async (
   for (const handler of fake.handlers.get(name) ?? []) {
     await handler({ type: name, ...event } as never, context);
   }
+};
+
+const startRegisteredArchitect = async (cleanup: typeof onTestFinished) => {
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(cleanup);
+  const hc = createHcFake();
+  const lead = await startLeadInbox(cleanup, hc);
+  const fake = registerSession(cleanup, 'architect', { exec: hc.exec });
+  const { context, shutdown } = sessionContext(root);
+
+  await runHandlers(fake, 'session_start', context);
+
+  return { root, hc, lead, fake, context, shutdown };
 };
 
 it('a visible architect stays open after a queued handover that is not final', ({
@@ -92,16 +90,7 @@ it('a visible architect stays open after a queued handover that is not final', (
 it('a visible architect shuts down and releases its lock after the final handover', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const root = await createTemporaryRepository(onTestFinished);
-  const hc = createHcFake();
-  const lead = await startLeadInbox(onTestFinished, hc);
-  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
-  const { context, shutdown } = sessionContext(root);
-
-  await runHandlers(fake, 'session_start', context);
+  const { root, lead, fake, context, shutdown } = await startRegisteredArchitect(onTestFinished);
 
   const handoverShutdown = receiveHandover(
     fake,
@@ -137,16 +126,7 @@ it('a lead session does not shut down after a queued handover', ({ onTestFinishe
 it('a visible architect shuts down but still notes its end after a final handover to another terminal', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const root = await createTemporaryRepository(onTestFinished);
-  const hc = createHcFake();
-  const lead = await startLeadInbox(onTestFinished, hc);
-  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
-  const { context } = sessionContext(root);
-
-  await runHandlers(fake, 'session_start', context);
+  const { root, lead, fake, context } = await startRegisteredArchitect(onTestFinished);
 
   const handoverShutdown = receiveHandover(
     fake,
@@ -167,16 +147,7 @@ it('a visible architect shuts down but still notes its end after a final handove
 it('a visible architect sends nothing for a handover result without a final status', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const root = await createTemporaryRepository(onTestFinished);
-  const hc = createHcFake();
-  const lead = await startLeadInbox(onTestFinished, hc);
-  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
-  const { context } = sessionContext(root);
-
-  await runHandlers(fake, 'session_start', context);
+  const { lead, fake, context } = await startRegisteredArchitect(onTestFinished);
 
   const handoverShutdown = receiveHandover(
     fake,
@@ -197,23 +168,18 @@ it('a visible architect sends nothing for a handover result without a final stat
 it('a visible architect sends no end note on reload but still releases its lock and fails open asks', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+  const { root, lead, fake, context } = await startRegisteredArchitect(onTestFinished);
 
-  const root = await createTemporaryRepository(onTestFinished);
-  const hc = createHcFake();
-  const lead = await startLeadInbox(onTestFinished, hc);
-  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
-  const { context } = sessionContext(root);
-
-  await runHandlers(fake, 'session_start', context);
   await writeAskRecord(root, openAsk);
 
   await runHandlers(fake, 'session_shutdown', context, { reason: 'reload' });
 
   const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+  const [text = ''] = await savedTexts(lead);
 
   expect(savedRecords).toHaveLength(1);
+  expect(text).toContain(`Ask ${openAsk.askId} got no answer`);
+  expect(text).toContain('Call architect ask again.');
   expect(await readAskRecord(root, openAsk.askId)).toMatchObject({ status: 'failed' });
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
@@ -221,16 +187,7 @@ it('a visible architect sends no end note on reload but still releases its lock 
 it('a visible architect that quit after an unknown final handover tells the lead it may not have arrived', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const root = await createTemporaryRepository(onTestFinished);
-  const hc = createHcFake();
-  const lead = await startLeadInbox(onTestFinished, hc);
-  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
-  const { context } = sessionContext(root);
-
-  await runHandlers(fake, 'session_start', context);
+  const { lead, fake, context } = await startRegisteredArchitect(onTestFinished);
 
   const handoverShutdown = receiveHandover(
     fake,
@@ -243,14 +200,11 @@ it('a visible architect that quit after an unknown final handover tells the lead
   await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
 
   const names = lead.savedRecords().filter((name) => name.endsWith('.json'));
+  const [text = ''] = await savedTexts(lead);
 
   expect(names).toHaveLength(1);
-
-  const text = await readFile(join(lead.inbox, basename(names[0] as string)), 'utf8');
-  const saved = JSON.parse(text) as { payload: { text: string } };
-
-  expect(saved.payload.text).toContain('returned unknown');
-  expect(saved.payload.text).toContain('may not have reached you');
+  expect(text).toContain('returned unknown');
+  expect(text).toContain('may not have reached you');
 });
 
 const roleCases: readonly {

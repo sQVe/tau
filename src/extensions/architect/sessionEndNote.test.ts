@@ -1,10 +1,10 @@
-import { readFile, rm, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { rm, writeFile } from 'node:fs/promises';
 
 import { expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createHcFake } from '../../../tests/hcFake.js';
+import { savedTexts } from '../../../tests/inboxReceiverHarness.js';
 import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
@@ -17,15 +17,13 @@ import { architectRecordPath, writeArchitectRecord } from './record.js';
 import { endArchitectSession, recordFinalHandover } from './session.js';
 
 const savedNoteText = async (lead: HandoverReceiver): Promise<string> => {
-  const name = lead.savedRecords().find((entry) => entry.endsWith('.json'));
+  const [text] = await savedTexts(lead);
 
-  if (name === undefined) {
+  if (text === undefined) {
     throw new Error('The lead saved no note.');
   }
 
-  const text = await readFile(join(lead.inbox, basename(name)), 'utf8');
-
-  return (JSON.parse(text) as { payload: { text: string } }).payload.text;
+  return text;
 };
 
 const endNoteWarnings = (notify: Mock): string[] =>

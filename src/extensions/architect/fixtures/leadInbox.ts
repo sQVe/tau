@@ -14,7 +14,7 @@ export const startLeadInbox = async (
   cleanup: typeof onTestFinished,
   hc: HcFake,
   sessionId = 'session-lead',
-  options: Pick<HandoverReceiverOptions, 'beforeCommit' | 'beforePublish'> = {},
+  options: Pick<HandoverReceiverOptions, 'beforeCommit'> = {},
 ): Promise<HandoverReceiver> => {
   const lead = await startHandoverReceiver(
     cleanup,
