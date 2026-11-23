@@ -10,8 +10,8 @@ import {
   resolve as resolvePath,
   sep,
 } from 'node:path';
-import { stripVTControlCharacters } from 'node:util';
 
+import { sanitizeSingleLine } from '../../../terminalText.js';
 import type { PackageResolutionDiagnostic, RunnerResolutionFailure } from './types.js';
 
 interface ResolvedVitest {
@@ -63,7 +63,7 @@ const cutMarker = ' [cut]';
 const maximumVersionLength = 128;
 
 const diagnosticPath = (path: string) => {
-  const printable = stripVTControlCharacters(path).replace(/\p{Cc}/gu, ' ');
+  const printable = sanitizeSingleLine(path);
   const kept = printable.slice(0, maximumPathLength - cutMarker.length);
 
   return printable.length > maximumPathLength ? `${kept}${cutMarker}` : printable;

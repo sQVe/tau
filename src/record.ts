@@ -16,7 +16,7 @@ import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from './errors.ts';
-import { describeSchemaProblem, isRecord } from './schema.ts';
+import { describeSchemaProblem, isRecord, newerRecordVersion } from './schema.ts';
 import { isSymlink } from './tauDirectory.ts';
 
 export interface VersionedRecordOptions<Schema extends TSchema> {
@@ -46,12 +46,11 @@ const describeNewerFormat = (
   value: unknown,
   options: FormatOptions,
 ): string | undefined => {
-  const claimed = isRecord(value) ? value['version'] : undefined;
-  const newer = typeof claimed === 'number' && claimed > options.version;
+  if (newerRecordVersion(value, options.version) === undefined) {
+    return undefined;
+  }
 
-  return newer
-    ? `${capitalize(options.label)} ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`
-    : undefined;
+  return `${capitalize(options.label)} ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`;
 };
 
 // Returns the notice for a record whose version is above `options.version`. Text that is not JSON

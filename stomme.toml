@@ -588,6 +588,11 @@ entry = "src/tauDirectory.ts"
 public = []
 imports = ["errors", "git"]
 
+[modules.terminalText]
+entry = "src/terminalText.ts"
+public = []
+imports = []
+
 [modules.verification]
 entry = "src/verification/verification.ts"
 public = [
