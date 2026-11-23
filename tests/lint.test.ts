@@ -3,6 +3,7 @@ import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
 
 import { expect, it, vi } from 'vitest';
 
@@ -320,4 +321,359 @@ it('ignores an unrelated src folder above the project root', async ({ onTestFini
 
   expect(result.error).toBeUndefined();
   expect(diagnostics).toEqual([]);
+}, 30_000);
+
+const styleRulePattern = /\b[a-z][a-z-]*\([a-z][a-z-]*\)/u;
+
+const unusedDirectivePrefixes = [
+  'Unused oxlint-disable directive',
+  'Unused eslint-disable directive',
+];
+
+// The style command prints one line per diagnostic when it has no terminal, and a multi-line block
+// with a separate location and help line when it has one. Group each diagnostic so a test can find
+// its location and rule id in either form.
+const readStyleDiagnostics = (stdout: string): string[] => {
+  const lines = stripVTControlCharacters(stdout).split('\n');
+  const diagnostics: string[] = [];
+  let current: string[] = [];
+
+  const flush = (): void => {
+    if (current.length === 0) {
+      return;
+    }
+
+    diagnostics.push(current.join('\n'));
+    current = [];
+  };
+
+  for (const line of lines) {
+    const startsDiagnostic =
+      styleRulePattern.test(line) ||
+      unusedDirectivePrefixes.some((prefix) => line.includes(prefix));
+
+    if (startsDiagnostic) {
+      flush();
+    }
+
+    if (current.length > 0 || startsDiagnostic) {
+      current.push(line);
+    }
+  }
+
+  flush();
+
+  return diagnostics;
+};
+
+const runStyleCheck = (directory: string) => {
+  const result = spawnSync(
+    join(root, 'node_modules', '.bin', 'vp'),
+    ['lint', '--deny-warnings', '--format', 'default', '--', directory],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 20_000,
+      env: { ...process.env, SEAM_STYLE: '1' },
+    },
+  );
+
+  if (result.error !== undefined) {
+    return { result, diagnostics: [] };
+  }
+
+  const diagnostics = readStyleDiagnostics(result.stdout);
+
+  return { result, diagnostics };
+};
+
+const diagnosticsAt = (diagnostics: string[], fixture: string, line: number): string[] =>
+  diagnostics.filter((diagnostic) => diagnostic.includes(`${fixture}:${line}:`));
+
+it('reads one-line and multi-line style diagnostics', () => {
+  const oneLine =
+    '/tmp/oneLine.ts:1:3: error typescript(ban-ts-comment): Use a description. help: Add a description.';
+
+  const multiLine = [
+    '  x typescript(ban-ts-comment): Use a description.',
+    '   ,-[/tmp/multiLine.ts:2:3]',
+    ' 1 | // @ts-expect-error',
+    '   :   ^^^^^^^^^^^^^^^^^',
+    ' 2 | export const value: number = "text";',
+    '   `----',
+    '  help: Add a description.',
+  ].join('\n');
+
+  const diagnostics = readStyleDiagnostics(`${oneLine}\n${multiLine}\n`);
+
+  expect(diagnostics).toHaveLength(2);
+  expect(diagnostics[0]).toContain('/tmp/oneLine.ts:1:');
+  expect(diagnostics[0]).toContain('typescript(ban-ts-comment)');
+  expect(diagnostics[0]).toContain('help:');
+  expect(diagnostics[1]).toContain('/tmp/multiLine.ts:2:');
+  expect(diagnostics[1]).toContain('typescript(ban-ts-comment)');
+  expect(diagnostics[1]).toContain('help:');
+});
+
+it('fails the real style step on banned markers', async ({ onTestFinished }) => {
+  const directory = createFixtureRoot(onTestFinished, 'tau-style-real-');
+  const fixture = join(directory, 'bannedMarkers.test.ts');
+
+  await writeFile(
+    fixture,
+    [
+      "import { describe, it } from 'vitest';",
+      '',
+      "describe.only('focused suite', () => {});",
+      '',
+      "it.skip('skipped test', () => {});",
+      '',
+      '// oxlint-disable-next-line eslint/no-console',
+      "console.log('one');",
+      '',
+      '// @ts-ignore',
+      "export const value: number = 'text';",
+      '',
+    ].join('\n'),
+  );
+
+  const result = spawnSync('pnpm', ['style:check', directory], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(result.stdout).toContain('vitest(no-focused-tests)');
+  expect(result.stdout).toContain('vitest(no-disabled-tests)');
+  expect(result.stdout).toContain('seam(require-disable-reason)');
+  expect(result.stdout).toContain('typescript(ban-ts-comment)');
+}, 30_000);
+
+it('fails focused tests on describe and it', async ({ onTestFinished }) => {
+  const directory = createFixtureRoot(onTestFinished, 'tau-style-focus-');
+  const fixture = join(directory, 'focused.test.ts');
+
+  await writeFile(
+    fixture,
+    [
+      "import { describe, it } from 'vitest';",
+      '',
+      "describe.only('focused suite', () => {});",
+      '',
+      "it.only('focused test', () => {});",
+      '',
+    ].join('\n'),
+  );
+
+  const { result, diagnostics } = runStyleCheck(directory);
+
+  const focused = diagnostics.filter((diagnostic) =>
+    diagnostic.includes('vitest(no-focused-tests)'),
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(focused).toHaveLength(2);
+
+  const atLineThree = diagnosticsAt(focused, fixture, 3);
+  const atLineFive = diagnosticsAt(focused, fixture, 5);
+
+  expect(atLineThree).toHaveLength(1);
+  expect(atLineThree[0]).toContain(`${fixture}:3:`);
+  expect(atLineFive).toHaveLength(1);
+  expect(atLineFive[0]).toContain(`${fixture}:5:`);
+
+  for (const diagnostic of focused) {
+    expect(diagnostic).toContain('help:');
+  }
+}, 30_000);
+
+it('fails skipped tests on describe and it', async ({ onTestFinished }) => {
+  const directory = createFixtureRoot(onTestFinished, 'tau-style-skip-');
+  const fixture = join(directory, 'disabled.test.ts');
+
+  await writeFile(
+    fixture,
+    [
+      "import { describe, it } from 'vitest';",
+      '',
+      "describe.skip('skipped suite', () => {});",
+      '',
+      "it.skip('skipped test', () => {});",
+      '',
+    ].join('\n'),
+  );
+
+  const { result, diagnostics } = runStyleCheck(directory);
+
+  const disabled = diagnostics.filter((diagnostic) =>
+    diagnostic.includes('vitest(no-disabled-tests)'),
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(disabled).toHaveLength(2);
+
+  const atLineThree = diagnosticsAt(disabled, fixture, 3);
+  const atLineFive = diagnosticsAt(disabled, fixture, 5);
+
+  expect(atLineThree).toHaveLength(1);
+  expect(atLineThree[0]).toContain(`${fixture}:3:`);
+  expect(atLineFive).toHaveLength(1);
+  expect(atLineFive[0]).toContain(`${fixture}:5:`);
+
+  for (const diagnostic of disabled) {
+    expect(diagnostic).toContain('help:');
+  }
+}, 30_000);
+
+it('fails disable comments without a reason', async ({ onTestFinished }) => {
+  const directory = createFixtureRoot(onTestFinished, 'tau-style-suppress-');
+  const fixture = join(directory, 'reasonlessDisable.ts');
+
+  await writeFile(
+    fixture,
+    [
+      '// oxlint-disable-next-line eslint/no-console',
+      "console.log('one');",
+      '',
+      '// eslint-disable-next-line eslint/no-console',
+      "console.log('two');",
+      '',
+    ].join('\n'),
+  );
+
+  const { result, diagnostics } = runStyleCheck(directory);
+
+  const reasonless = diagnostics.filter((diagnostic) =>
+    diagnostic.includes('seam(require-disable-reason)'),
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(reasonless).toHaveLength(2);
+
+  const atLineOne = diagnosticsAt(reasonless, fixture, 1);
+  const atLineFour = diagnosticsAt(reasonless, fixture, 4);
+
+  expect(atLineOne).toHaveLength(1);
+  expect(atLineOne[0]).toContain(`${fixture}:1:`);
+  expect(atLineFour).toHaveLength(1);
+  expect(atLineFour[0]).toContain(`${fixture}:4:`);
+
+  for (const diagnostic of reasonless) {
+    expect(diagnostic).toContain(' -- ');
+  }
+}, 30_000);
+
+it('fails unused disable directives at their line', async ({ onTestFinished }) => {
+  const directory = createFixtureRoot(onTestFinished, 'tau-style-unused-');
+  const fixture = join(directory, 'unusedDisable.ts');
+
+  await writeFile(
+    fixture,
+    [
+      '// oxlint-disable-next-line eslint/no-console -- The fixture has no console call.',
+      '// eslint-disable-next-line eslint/no-console -- The fixture has no console call.',
+      'export const value = 1;',
+      '',
+    ].join('\n'),
+  );
+
+  const { result, diagnostics } = runStyleCheck(directory);
+
+  const unusedOxlint = diagnostics.filter((diagnostic) =>
+    diagnostic.includes('Unused oxlint-disable directive'),
+  );
+
+  const unusedEslint = diagnostics.filter((diagnostic) =>
+    diagnostic.includes('Unused eslint-disable directive'),
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(unusedOxlint).toHaveLength(1);
+  expect(unusedOxlint[0]).toContain(`${fixture}:1:1`);
+  expect(unusedEslint).toHaveLength(1);
+  expect(unusedEslint[0]).toContain(`${fixture}:2:1`);
+}, 30_000);
+
+it('fails a reasoned @ts-ignore and a reasonless @ts-expect-error', async ({ onTestFinished }) => {
+  const directory = createFixtureRoot(onTestFinished, 'tau-style-ts-');
+  const fixture = join(directory, 'tsComments.ts');
+
+  await writeFile(
+    fixture,
+    [
+      '// @ts-ignore -- The fixture passes a string where a number is required.',
+      "export const ignored: number = 'text';",
+      '',
+      '// @ts-expect-error',
+      "export const expected: number = 'text';",
+      '',
+    ].join('\n'),
+  );
+
+  const { result, diagnostics } = runStyleCheck(directory);
+
+  const comments = diagnostics.filter((diagnostic) =>
+    diagnostic.includes('typescript(ban-ts-comment)'),
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(comments).toHaveLength(2);
+
+  const atLineOne = diagnosticsAt(comments, fixture, 1);
+  const atLineFour = diagnosticsAt(comments, fixture, 4);
+
+  expect(atLineOne).toHaveLength(1);
+  expect(atLineOne[0]).toContain(`${fixture}:1:`);
+  expect(atLineFour).toHaveLength(1);
+  expect(atLineFour[0]).toContain(`${fixture}:4:`);
+
+  for (const diagnostic of comments) {
+    expect(diagnostic).toContain('help:');
+  }
+}, 30_000);
+
+it('passes reasoned suppressions without markers', async ({ onTestFinished }) => {
+  const directory = createFixtureRoot(onTestFinished, 'tau-style-reasoned-');
+  const fixture = join(directory, 'reasoned.ts');
+
+  await writeFile(
+    fixture,
+    [
+      '// oxlint-disable-next-line eslint/no-console -- The fixture prints its own output.',
+      "console.log('one');",
+      '',
+      '// eslint-disable-next-line eslint/no-console -- The fixture prints its own output.',
+      "console.log('two');",
+      '',
+      '// @ts-expect-error -- The fixture passes a string where a number is required.',
+      "export const value: number = 'text';",
+      '',
+    ].join('\n'),
+  );
+
+  const { result, diagnostics } = runStyleCheck(directory);
+
+  const guardedMarkers = [
+    'vitest(no-focused-tests)',
+    'vitest(no-disabled-tests)',
+    'seam(require-disable-reason)',
+    'typescript(ban-ts-comment)',
+    'Unused oxlint-disable directive',
+    'Unused eslint-disable directive',
+  ];
+
+  const guarded = diagnostics.filter((diagnostic) =>
+    guardedMarkers.some((marker) => diagnostic.includes(marker)),
+  );
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(0);
+  expect(guarded).toEqual([]);
 }, 30_000);
