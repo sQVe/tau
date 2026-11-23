@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readdir, readFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it } from 'vitest';
+import { expect, it, onTestFinished as onFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import {
@@ -43,6 +43,18 @@ const startedMarker = async (root: string, token: string, processId: number): Pr
   await writeFile(marker, '');
 
   return marker;
+};
+
+const startFile = async (root: string, name: string): Promise<string> => {
+  const directory = join(root, '.tau', 'architect', 'start');
+
+  await mkdir(directory, { recursive: true });
+
+  const path = join(directory, name);
+
+  await writeFile(path, '');
+
+  return path;
 };
 
 it('names the marker with the process id of the exec command', async ({ onTestFinished }) => {
@@ -257,6 +269,23 @@ it('refuses an unrecognised started name and names the path', async ({ onTestFin
   const marker = `${ticket}.started-other`;
 
   await rename(ticket, marker);
+
+  const outcome = await sweepStartFolder({
+    root,
+    currentToken: 'current',
+    stateOf: () => 'gone',
+  });
+
+  expect(outcome).toEqual({ kind: 'refuseMalformed', path: marker });
+  expect(existsSync(marker)).toBe(true);
+});
+
+it.each([
+  { name: 'a cancelled marker with a started name', fileName: 'old-token.started.cancelled' },
+  { name: 'a lone started marker', fileName: '.started' },
+])('refuses $fileName as a malformed start marker', async ({ fileName }) => {
+  const root = await createTemporaryRepository(onFinished);
+  const marker = await startFile(root, fileName);
 
   const outcome = await sweepStartFolder({
     root,

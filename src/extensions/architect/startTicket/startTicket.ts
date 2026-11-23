@@ -147,33 +147,29 @@ export const deleteStartMarker = async (
 
 const entryOf = (directory: string, name: string): StartEntry | undefined => {
   if (name.endsWith(cancelledSuffix)) {
-    return undefined;
+    const cancelledToken = name.slice(0, -cancelledSuffix.length);
+
+    if (cancelledToken !== '' && !cancelledToken.includes(startedSuffix)) {
+      return undefined;
+    }
   }
 
   const startedAt = name.indexOf(startedSuffix);
   const started = startedAt !== -1;
   const token = started ? name.slice(0, startedAt) : name;
 
-  if (token === '') {
-    return undefined;
-  }
-
   const ticket = join(directory, token);
 
   if (!started) {
-    return { kind: 'unused', token, ticket };
+    return token === '' ? undefined : { kind: 'unused', token, ticket };
   }
 
-  const marker = parseMarkerName(directory, token, name);
+  const path = join(directory, name);
 
-  if (marker === undefined) {
-    return {
-      kind: 'marker',
-      token,
-      ticket,
-      marker: { kind: 'malformed', path: join(directory, name) },
-    };
-  }
+  const marker =
+    token === ''
+      ? { kind: 'malformed' as const, path }
+      : (parseMarkerName(directory, token, name) ?? { kind: 'malformed' as const, path });
 
   return { kind: 'marker', token, ticket, marker };
 };
