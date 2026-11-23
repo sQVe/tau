@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 
 import { parseSenderLine } from '../handoverSender.js';
+import type { SavableMessageBody } from './protocol.js';
 import {
   answeredQuestionId,
   decideCandidate,
@@ -13,7 +14,7 @@ import {
   piQueueEmptyAtSettle,
   readInboxReceipt,
 } from './receiptDecision.js';
-import type { ReceiptEntryFact } from './receiptDecision.js';
+import type { ReceiptedMessage, ReceiptEntryFact } from './receiptDecision.js';
 
 const readTable = [
   {
@@ -352,6 +353,17 @@ const answerPayload = {
   answer: 'Use option A.',
 };
 
+// A handover receipt and body never carry a question. These rows check that a stray one is ignored.
+const strayQuestionReceipt = {
+  receipt: { ...handoverReceipt, questionId: 'q1' },
+  content: 'handover text',
+} as unknown as ReceiptedMessage;
+
+const strayQuestionBody = {
+  family: 'handover',
+  payload: { text: 'handover text', questionId: 'q1' },
+} as unknown as SavableMessageBody;
+
 const retryTable = [
   {
     name: 'a handover retry with the shown text',
@@ -433,6 +445,18 @@ const retryTable = [
     receipted: { receipt: { ...questionReceipt, questionId: 'q2' }, content: shownQuestionText },
     body: { family: 'handover-question', payload: questionPayload },
     matches: false,
+  },
+  {
+    name: 'a handover retry whose receipt holds a stray question',
+    receipted: strayQuestionReceipt,
+    body: { family: 'handover', payload: { text: 'handover text' } },
+    matches: true,
+  },
+  {
+    name: 'a handover retry whose body holds a stray question',
+    receipted: { receipt: handoverReceipt, content: 'handover text' },
+    body: strayQuestionBody,
+    matches: true,
   },
   {
     name: 'a retry of a receipt whose entry holds no text',

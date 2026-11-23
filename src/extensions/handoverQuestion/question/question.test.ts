@@ -95,6 +95,56 @@ it('saves one open record, sends one frame, and ends the turn', async () => {
   expect(savedJson).toHaveLength(1);
 });
 
+it('reports an unknown send with the receiver note and keeps the record', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+  const reason = 'The receiver could not confirm the save.';
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
+    outsideSlot: true,
+    accepts: {
+      'handover-question': (request) =>
+        Promise.resolve({
+          protocol: 'rpc1',
+          kind: 'unknown',
+          messageId: request.messageId,
+          reason,
+        }),
+    },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, senderTerminal, receiver.path);
+
+  const target: QuestionTarget = {
+    hc: runtimeOf(fake),
+    cwd: root,
+    askerTerminal,
+    askerSession,
+    sender: { terminal: senderTerminal, sessionId: receiver.sessionId },
+  };
+
+  const result = await askSender(target, { question: questionText });
+  const details = result.details;
+
+  if (details.status !== 'unknown') {
+    throw new Error(`Expected an unknown outcome, got ${details.status}.`);
+  }
+
+  const text = result.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
+
+  expect(details.questionId).toMatch(/^[0-9a-f-]{36}$/u);
+  expect(details.note).toContain(reason);
+  expect(text).toBe(details.note);
+  expect(result.terminate).toBe(true);
+  expect(result.isError).toBeUndefined();
+
+  expect(await readQuestionRecord(root, details.questionId)).toMatchObject({ kind: 'record' });
+});
+
 it('refuses an ended sender', async () => {
   vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
 

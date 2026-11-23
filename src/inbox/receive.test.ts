@@ -369,6 +369,30 @@ it('saves an accepted answer and wakes with its answer text', async () => {
   ]);
 });
 
+it('wakes with a handover receipt that holds no question', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {
+    handover: (_request, save) => save(),
+  });
+
+  await expect(receiver.accept(messageRequest(sessionId, messageId))).resolves.toEqual(
+    queued(sessionId, messageId),
+  );
+
+  await receiver.deliver(new AbortController().signal);
+
+  expect(woken).toStrictEqual([
+    {
+      customType: 'tau-inbox-message',
+      content: 'handover text',
+      display: true,
+      details: { version: 2, messageId, sessionId, family: 'handover' },
+    },
+  ]);
+});
+
 it('saves an accepted handover-question and wakes with its fixed text', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
