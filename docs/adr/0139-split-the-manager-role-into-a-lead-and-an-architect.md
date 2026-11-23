@@ -125,6 +125,12 @@ The wrapper applies to the `hc run` argv in `ask`, the `space.new` argv, and the
 Pi. The marker is an empty file whose name carries the process ID, so the child and the caller
 cannot both take the ticket. The argv still contains `TAU_ARCHITECT_CLAIM=<token>`.
 
+The ticket and marker names are a synchronization protocol, not a saved record. The files are empty
+and only their names carry meaning, so ADR 0053 does not version them. A `.started` name without a
+valid process ID is refused with its path; any other name that is not a cancelled ticket is treated
+as an unused ticket and cancelled. A name a later release does not recognise therefore never lets a
+second Pi start.
+
 The proof that a taken child cannot run Pi is `processState(pid) === 'gone'`. A dead process cannot
 exec, and a child paused between its rename and its `exec` is alive, so the fence stays. `running`
 and `unknown` are never proof, and a reused process ID errs toward refusal. Absence from `hc` means
@@ -164,21 +170,24 @@ to it.
 
 In ask mode the architect also enforces its own deadline. Once it holds the lock, it arms a timer
 from its ask record's `deadline`. At that deadline, a record that still reads `running` becomes
-`timeout` with a detail, and the session shuts down. Every write to a hidden ask record goes through
-the per-ask lock and changes the record only while it reads `running`; `sent`, `timeout`, and
-`failed` are final. The child's answer handler moves `running` to `sent`; the child's deadline timer
-or the lead after its own deadline and a confirmed stop moves `running` to `timeout`; the lead after
-a confirmed end without settlement, the stale repair, or the child's shutdown moves `running` to
-`failed`; the lead alone may add an unconfirmed-stop detail while the status is still `running`. The
-lead never writes a snapshot it read earlier. After its wait returns it reads the record under the
-ask lock and reports from that read: `timeout` gives the deadline result and `sent` gives the
-answer. The generic ended result applies only when the lead itself moved `running` to `failed`.
-Shutdown clears the timer and awaits an expiry already in progress before it settles the session's
-asks. The deadline timer rearms when it fires before the saved deadline, as after a clock change.
-The stale repair runs inside the same lock, checks that the status is still `running`, and checks
-that the record's terminal is the address it read as ended. A failed `hc get` changes nothing. A Pi
-that hangs before session start never arms its deadline, so the caller keeps the claim until the
-lead stops that terminal or ends its own session.
+`timeout` with a detail, and the session shuts down. The lead publishes a fresh ask record under a
+new UUID before dispatch, when no record exists yet; that initial publication is not a locked
+update. Every later write to a hidden ask record goes through the per-ask lock and changes the
+record only while it reads `running`; `sent`, `timeout`, and `failed` are final. The child's answer
+handler moves `running` to `sent`; the child's deadline timer or the lead after its own deadline and
+a confirmed stop moves `running` to `timeout`; the lead after a confirmed end without settlement,
+the stale repair, or the child's shutdown moves `running` to `failed`; the lead alone may add an
+unconfirmed-stop detail while the status is still `running`. The lead never writes a snapshot it
+read earlier. After its wait returns it reads the record under the ask lock and reports from that
+read: `timeout` gives the deadline result and `sent` gives the answer. The generic ended result
+applies only when the lead itself moved `running` to `failed`. Shutdown clears the timer and awaits
+an expiry already in progress before it settles the session's asks. Once shutdown starts, no
+callback arms another timer. The deadline timer rearms when it fires before the saved deadline, as
+after a clock change. The stale repair runs inside the same lock, checks that the status is still
+`running`, and checks that the record's terminal is the address the `hc get` reply named as ended.
+That reply is read before the lock, but the comparison uses the record the lock returns. A failed
+`hc get` changes nothing. A Pi that hangs before session start never arms its deadline, so the
+caller keeps the claim until the lead stops that terminal or ends its own session.
 
 A Pi takes over its own claim while that claim is the highest generation and not released, even when
 the lead that took it has exited. The generation link still picks one winner when another caller
