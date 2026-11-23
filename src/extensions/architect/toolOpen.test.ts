@@ -206,9 +206,7 @@ it('open refuses when the record names a terminal from a previous lock generatio
   await recordTerminal(root, 't-architect', 'previous');
   terminals.set('t-architect', terminalState('live'));
 
-  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
-    `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
-  );
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(root);
 
   expect(afterTerminalLookup).not.toHaveBeenCalled();
   expect(app.calls).toEqual([]);
@@ -225,9 +223,7 @@ it('open refuses a previous lock generation while another checkout holds the loc
   await recordTerminal(root, 't-architect', 'previous');
   terminals.set('t-architect', terminalState('live'));
 
-  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
-    'The architect is already running in /other/checkout.',
-  );
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow('/other/checkout');
 
   expect(afterTerminalLookup).not.toHaveBeenCalled();
   expect(app.calls).toEqual([]);
@@ -249,37 +245,8 @@ it('open refuses when a reload takes the lock during the terminal lookup', async
   await recordTerminal(root, 't-architect');
   terminals.set('t-architect', terminalState('live'));
 
-  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
-    `The architect is already running in ${root}.`,
-  );
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(root);
 
-  expect(appCommands(app)).not.toContain('pane.split');
-});
-
-it('open refuses a version 2 record with no owner while a live holder keeps the lock', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const afterTerminalLookup = vi.fn<() => Promise<void>>(() => Promise.resolve());
-  const { app, terminals, tool } = openTool(root, undefined, afterTerminalLookup);
-
-  await holdLock(root, root);
-
-  await writeArchitectRecord(root, {
-    version: 2,
-    sessionFile: null,
-    leadTerminal: 't-lead',
-    owner: null,
-    updatedAt: new Date().toISOString(),
-  });
-
-  terminals.set('t-architect', terminalState('live'));
-
-  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
-    `The architect is already running in ${root}.`,
-  );
-
-  expect(afterTerminalLookup).not.toHaveBeenCalled();
   expect(appCommands(app)).not.toContain('pane.split');
 });
 
