@@ -16,23 +16,37 @@ export interface LabelOptions {
 const labelLockPath = (directory: string, terminal: string): string =>
   join(directory, `${encodeURIComponent(terminal)}.label.lock`);
 
+const hcCallTimeoutMilliseconds = 5000;
+
 const withLabelLock = (options: LabelOptions, write: () => Promise<void>): Promise<void> =>
   withFileLock(inboxLock(labelLockPath(options.directory, options.terminal)), write);
 
 export const advertiseLabel = (options: LabelOptions): Promise<void> =>
   withLabelLock(options, async () => {
-    await label(options.hc, options.terminal, {
-      [inboxLabelKey]: formatInboxLabel(options.path),
-    });
+    await label(
+      options.hc,
+      options.terminal,
+      {
+        [inboxLabelKey]: formatInboxLabel(options.path),
+      },
+      { timeout: hcCallTimeoutMilliseconds },
+    );
   });
 
 export const withdrawLabel = (options: LabelOptions): Promise<void> =>
   withLabelLock(options, async () => {
-    const terminal = await get(options.hc, options.terminal);
+    const terminal = await get(options.hc, options.terminal, {
+      timeout: hcCallTimeoutMilliseconds,
+    });
 
     if (terminal.labels?.[inboxLabelKey] !== formatInboxLabel(options.path)) {
       return;
     }
 
-    await label(options.hc, options.terminal, { [inboxLabelKey]: '' });
+    await label(
+      options.hc,
+      options.terminal,
+      { [inboxLabelKey]: '' },
+      { timeout: hcCallTimeoutMilliseconds },
+    );
   });

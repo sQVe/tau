@@ -150,6 +150,7 @@ export const label = (
   runtime: HcRuntime,
   terminal: string,
   labels: Record<string, string>,
+  options: { timeout?: number } = {},
 ): Promise<HcTerminal> => {
   const assignments = Object.entries(labels).map(([key, value]) => `${key}=${value}`);
 
@@ -158,6 +159,7 @@ export const label = (
     'label',
     ['label', '--json', '--', terminal, ...assignments],
     `hc label ${terminal}`,
+    options,
   );
 };
 

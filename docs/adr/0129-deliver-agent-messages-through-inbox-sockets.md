@@ -38,6 +38,8 @@ folder, and replies before the sender reports success.
 - Every Tau process writes and clears the `tau.inbox` label under one file lock per terminal in the
   socket folder. A clear reads the label and removes it only when it names the session's own socket.
   `hc label` has no compare-and-set, and the in-process transition queue orders only one process.
+- Each `hc` call made while an inbox lock is held has a time limit. A call that reaches it fails the
+  label write or clear, so a hung `hc` cannot keep a lock from the next session.
 - A Pi advertises and serves its inbox only when it is in the foreground process group of its
   `HC_TERMINAL_ID` terminal: hc's `foreground.pid` equals the Pi's process group ID. A Pi started
   from a session's shell tool, which runs detached, starts none, while `pnpm exec pi` works.
