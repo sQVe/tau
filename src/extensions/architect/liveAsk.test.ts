@@ -11,6 +11,7 @@ import type { HcFake } from '../../../tests/hcFake.js';
 import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { createAnswerTracker } from './answer.js';
 import { createAskAdmissions } from './ask/askAcceptance.js';
+import { createFinalHandoverTracker } from './endNoteSend.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
 import { startLiveArchitect } from './fixtures/liveArchitect.js';
@@ -595,6 +596,8 @@ it('a close that lands before the lead send returns keeps the ask failed', async
       sessionId: 'session-architect',
     },
     held: createHeldLockToken(),
+    leadTerminal: null,
+    finalHandover: createFinalHandoverTracker(),
   };
 
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');

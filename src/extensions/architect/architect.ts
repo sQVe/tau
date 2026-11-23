@@ -37,6 +37,8 @@ const registerVisibleArchitect = (
   });
 
   pi.on('tool_result', (event, context) => {
+    current()?.finalHandover.record(event);
+
     if (isFinalHandover(event)) {
       context.shutdown();
     }

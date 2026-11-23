@@ -10,6 +10,8 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
+import { createFinalHandoverTracker, noteArchitectEnd, readRecordFact } from './endNoteSend.js';
+import type { FinalHandoverTracker } from './endNoteSend.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
@@ -27,6 +29,8 @@ export interface ArchitectSession {
   ui: ConfigWarnings;
   owner: ArchitectOwner;
   held: HeldLockToken;
+  leadTerminal: string | null;
+  finalHandover: FinalHandoverTracker;
 }
 
 export const createHeldLockToken = (): HeldLockToken => {
@@ -90,18 +94,28 @@ const startArchitect = async (
       sessionId: context.sessionManager.getSessionId(),
     };
 
+    // oxlint-disable-next-line node/no-process-env -- The lead passes its address in the pane environment.
+    const leadTerminal = process.env.TAU_LEAD_TERMINAL ?? null;
+
     await writeArchitectRecord(root, {
       version: 2,
       sessionFile: context.sessionManager.getSessionFile() ?? null,
-      // oxlint-disable-next-line node/no-process-env -- The lead passes its address in the pane environment.
-      leadTerminal: process.env.TAU_LEAD_TERMINAL ?? null,
+      leadTerminal,
       owner,
       updatedAt: new Date().toISOString(),
     });
 
     await afterPublish?.();
 
-    return { root, release: lock.release, ui: context.ui, owner, held };
+    return {
+      root,
+      release: lock.release,
+      ui: context.ui,
+      owner,
+      held,
+      leadTerminal,
+      finalHandover: createFinalHandoverTracker(),
+    };
   } catch (error) {
     held.set(undefined);
     await release?.();
@@ -191,12 +205,22 @@ export const endArchitectSession = async (
 ): Promise<void> => {
   session.held.set(undefined);
 
+  // The read must finish before the lock is released, so a new owner cannot overwrite the record
+  // first. The close work starts alongside it so its deadline starts now.
+  const recordRead = readRecordFact(session.root);
+  const closing = closeAdmitted(answers, admissions);
+  const record = await recordRead;
+
   try {
-    const closed = await closeAdmitted(answers, admissions);
+    const closed = await closing;
 
     await closeLiveAsks(session, hc, closed);
     await session.release();
   } finally {
-    await failRunningAsks(session.root, session.ui);
+    try {
+      await failRunningAsks(session.root, session.ui);
+    } finally {
+      await noteArchitectEnd(session, hc, record);
+    }
   }
 };

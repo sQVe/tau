@@ -66,6 +66,9 @@ const sessionContext = (cwd: string) => {
   return { context, notify, shutdown };
 };
 
+const endNoteWarnings = (notify: Mock): unknown[][] =>
+  notify.mock.calls.filter(([message]) => String(message).includes('end note'));
+
 const runHandlers = async (
   fake: ReturnType<typeof fakeExtensionApi>,
   name: string,
@@ -122,6 +125,39 @@ it('a lead session does not shut down after a queued handover', ({ onTestFinishe
   const shutdown = receiveHandover(fake, { status: 'queued' }, { action: 'send', final: true });
 
   expect(shutdown).not.toHaveBeenCalled();
+});
+
+it('a visible architect that queued its final handover sends no end note at shutdown', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = registerSession(onTestFinished, 'architect');
+  const { context, notify } = sessionContext(root);
+
+  await runHandlers(fake, 'session_start', context);
+  receiveHandover(fake, { status: 'queued' }, { action: 'send', final: true });
+  await runHandlers(fake, 'session_shutdown', context);
+
+  expect(endNoteWarnings(notify)).toEqual([]);
+});
+
+it('a visible architect without a final handover warns once when the end note cannot be sent', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = registerSession(onTestFinished, 'architect');
+  const { context, notify } = sessionContext(root);
+
+  await runHandlers(fake, 'session_start', context);
+  await runHandlers(fake, 'session_shutdown', context);
+
+  expect(endNoteWarnings(notify)).toHaveLength(1);
 });
 
 const roleCases: readonly {
