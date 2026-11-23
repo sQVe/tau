@@ -27,11 +27,9 @@ export interface MessageFrameFields {
 
 const protocolName = 'rpc1';
 
-export const savableFamilies = ['handover', 'answer', 'handover-question'] as const;
+const savableFamilies = ['handover', 'answer', 'handover-question'] as const;
 
 const families = [...savableFamilies, 'answer-request', 'architect-ask'] as const;
-
-export type SavableFamily = (typeof savableFamilies)[number];
 
 export type Family = (typeof families)[number];
 
