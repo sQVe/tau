@@ -338,3 +338,64 @@ it('an ask session rearms the deadline when the clock rolls back before the lock
     endOptions(),
   );
 });
+
+it('an ask session rearms at zero delay when the clock recrosses the deadline after a declined update', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const now = Date.now();
+  const deadline = now + 1000;
+
+  await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.running));
+
+  const { context, shutdown } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  let nowCalls = 0;
+
+  const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => {
+    nowCalls += 1;
+
+    return nowCalls === 3 ? deadline - 6000 : deadline;
+  });
+
+  await vi.advanceTimersByTimeAsync(1000);
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    await vi.advanceTimersByTimeAsync(0);
+
+    const record = await readAskRecord(root, hiddenIds.running);
+
+    if (record?.route === 'hidden' && record.status === 'timeout') {
+      break;
+    }
+
+    await flushMacrotask();
+  }
+
+  for (let attempt = 0; attempt < 100 && shutdown.mock.calls.length === 0; attempt += 1) {
+    await flushMacrotask();
+  }
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
+  expect(shutdown).toHaveBeenCalledTimes(1);
+
+  nowSpy.mockRestore();
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+});

@@ -9,8 +9,7 @@ export interface AskDeadline {
   stop: () => Promise<void>;
 }
 
-// Returns the deadline to rearm when a clock rollback leaves the locked record running before
-// its deadline.
+// Returns the deadline to rearm for any unchanged running record, including one already due.
 const expireAskRecord = async (
   checkout: string,
   path: string,
@@ -36,7 +35,7 @@ const expireAskRecord = async (
     return undefined;
   }
 
-  if (change === undefined || Date.now() >= change.record.deadline) {
+  if (change?.record.status !== 'running') {
     return undefined;
   }
 
