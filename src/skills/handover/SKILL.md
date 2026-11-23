@@ -23,6 +23,13 @@ commit another worktree from your session, even over bash.
 - The message is one-way. Do not ask for a reply, poll, or wait for the receiver to finish.
 - When receiving a handover, report to your own user and send nothing back unless the message asks
   for a reply.
+- When a received handover leaves a question only its sender can answer, ask the sender with
+  `handover_question` before you ask your user. Reasons include a decision only the sender can make,
+  a missing input, a ticket that conflicts with the message, and "this spec or test looks wrong".
+  When the ticket conflicts with the message, stop before editing: ask the sender first and edit
+  after the answer. This question is the one exception to the one-way and send-nothing-back rules;
+  ordinary replies still follow them. Without that tool, or when it refuses, ask your user with
+  `ask_user_question`.
 - Send a requested reply only through the `handover` tool's `send` action, never with `hc send` in
   bash.
 - A handover links to records, such as tickets or `.tau/` working copies, and is not a record
@@ -55,7 +62,9 @@ commit another worktree from your session, even over bash.
    - Make the message self-contained: what to do, the state the receiver needs, and what it must not
      touch.
    - For implementation, give the plan status "agreed, nothing open" with the agreed scope.
-   - Tell the receiver to ask its user before editing if the ticket conflicts with the message.
+   - For a ticket that conflicts with the message, point to the sender-first rule in Hard rules: the
+     receiver asks you and edits after your answer, and asks its user only when that tool is
+     unavailable or refuses.
    - For planning only, list the open questions. Tell the receiver to plan with its user and get
      approval before any edit.
    - Never type the message on the bash line. The shell expands `$()` and backticks typed there. VCS
