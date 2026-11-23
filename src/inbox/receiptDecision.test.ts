@@ -330,6 +330,30 @@ const retryTable = [
     matches: true,
   },
   {
+    name: 'a handover retry saved before the sender escape',
+    receipted: { receipt: handoverReceipt, content: senderText },
+    body: { family: 'handover', payload: { text: senderText } },
+    matches: true,
+  },
+  {
+    name: 'a handover retry of unrelated saved content',
+    receipted: { receipt: handoverReceipt, content: 'Unrelated saved text' },
+    body: { family: 'handover', payload: { text: senderText } },
+    matches: false,
+  },
+  {
+    name: 'a handover retry with a sender whose receipt holds the payload text',
+    receipted: { receipt: handoverReceipt, content: 'handover text' },
+    body: { family: 'handover', payload: { text: 'handover text', sender } },
+    matches: false,
+  },
+  {
+    name: 'an answer retry of a receipt whose entry holds no text',
+    receipted: { receipt: answerReceipt, content: undefined },
+    body: { family: 'answer', payload: answerPayload },
+    matches: false,
+  },
+  {
     name: 'a handover retry of a shown answer with the same text',
     receipted: { receipt: answerReceipt, content: 'Use option A.' },
     body: { family: 'handover', payload: { text: 'Use option A.' } },

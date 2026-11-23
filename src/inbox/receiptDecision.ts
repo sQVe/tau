@@ -93,7 +93,18 @@ export const messageText = (body: SavableMessageBody): string => {
   return parseSenderLine(text) === undefined ? text : `Handover text without a sender:\n\n${text}`;
 };
 
-// A retry matches when it would show the same text for the same question as the saved entry.
+// A sender-free handover also matches its payload text, which a receipt saved without the escape
+// line holds.
+const matchesSenderFreePayload = (content: unknown, body: SavableMessageBody): boolean => {
+  if (body.family !== 'handover' || body.payload.sender !== undefined) {
+    return false;
+  }
+
+  return content === body.payload.text;
+};
+
+// A retry matches when the text it would show, or the payload text of a sender-free handover,
+// equals the saved content for the same question.
 export const matchesReceipt = (
   { receipt, content }: ReceiptedMessage,
   body: SavableMessageBody,
@@ -101,8 +112,9 @@ export const matchesReceipt = (
   const receiptQuestionId = receipt.family === 'answer' ? receipt.questionId : undefined;
   const bodyQuestionId = body.family === 'answer' ? body.payload.questionId : undefined;
   const sameQuestion = receiptQuestionId === bodyQuestionId;
+  const sameContent = content === messageText(body) || matchesSenderFreePayload(content, body);
 
-  return receipt.family === body.family && content === messageText(body) && sameQuestion;
+  return receipt.family === body.family && sameContent && sameQuestion;
 };
 
 // A run that settles without an abort has drained Pi's queue. Pi's terminal UI clears the queue

@@ -46,8 +46,9 @@ sender in its saved transcript with no other record.
 
 A session reads its handover messages and its first task message, oldest first. The newest message
 whose first line is a sender line gives the sender. Without such a line, both environment variables
-give the sender when they are non-empty and the session ID matches Pi's session ID rule. Without
-either, the session has no sender and asks its user.
+give the sender when the terminal is one non-empty token without whitespace, the session ID is
+non-empty, and it matches Pi's session ID rule. Without either, the session has no sender and asks
+its user.
 
 The newest message wins because a session can receive several handovers, and the latest one names
 the session that currently sends it work.
@@ -85,14 +86,14 @@ stall the work.
 ### Negative
 
 - A handover message and a started task from a lead carry one extra line; one without a sender
-  carries none.
+  carries none, unless its first line is a sender line.
 - An older Tau refuses a handover frame with a sender, so mixed versions cannot exchange one.
 - A session with no usable sender in its transcript or environment still asks its user.
 - A current sender refuses a handover file whose first line is a sender line, and a receiver shows
   such text from any other source with the escape line first.
 - A sender line already saved in a transcript before the upgrade, or in the task of a session that
-  an older Tau's `handover start` opened, still reads as a sender. Restarting that session ends it,
-  as [ADR 0053](./0053-version-each-saved-record-format.md) says for older sessions.
+  an older Tau's `handover start` opened, still reads as a sender. A fresh session without the old
+  transcript drops it.
 
 ## Alternatives considered
 
