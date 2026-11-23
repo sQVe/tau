@@ -367,11 +367,16 @@ const readStyleDiagnostics = (stdout: string): string[] => {
 };
 
 const runStyleCheck = (directory: string) => {
-  const result = spawnSync('pnpm', ['style:check', directory], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
+  const result = spawnSync(
+    join(root, 'node_modules', '.bin', 'vp'),
+    ['lint', '--deny-warnings', '--format', 'default', '--', directory],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 20_000,
+      env: { ...process.env, SEAM_STYLE: '1' },
+    },
+  );
 
   if (result.error !== undefined) {
     return { result, diagnostics: [] };
@@ -409,6 +414,38 @@ it('reads one-line and multi-line style diagnostics', () => {
   expect(diagnostics[1]).toContain('typescript(ban-ts-comment)');
   expect(diagnostics[1]).toContain('help:');
 });
+
+it('fails the real style step on banned markers', async ({ onTestFinished }) => {
+  const directory = createFixtureRoot(onTestFinished, 'tau-style-real-');
+  const fixture = join(directory, 'bannedMarkers.test.ts');
+
+  await writeFile(
+    fixture,
+    [
+      "import { describe, it } from 'vitest';",
+      '',
+      "describe.only('focused suite', () => {});",
+      '',
+      "it.skip('skipped test', () => {});",
+      '',
+      '// oxlint-disable-next-line eslint/no-console',
+      "console.log('one');",
+      '',
+      '// @ts-ignore',
+      "export const value: number = 'text';",
+      '',
+    ].join('\n'),
+  );
+
+  const result = spawnSync('pnpm', ['style:check', directory], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+}, 30_000);
 
 it('fails focused tests on describe and it', async ({ onTestFinished }) => {
   const directory = createFixtureRoot(onTestFinished, 'tau-style-focus-');
