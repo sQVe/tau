@@ -1,7 +1,9 @@
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
+import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { holdAskLock, recordSession, setup } from '../fixtures/toolHarness.js';
+import { architectLockPath } from '../lock.js';
 import { readAskRecord, readAskRecords, writeAskRecord } from '../record.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
@@ -23,6 +25,7 @@ it('returns the failed result when the child exits nonzero before settling', asy
   const { records } = await readAskRecords(root);
 
   expect(records[0]).toMatchObject({ status: 'failed' });
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('returns the deadline outcome and writes nothing after a child timeout ends the wait', async ({
