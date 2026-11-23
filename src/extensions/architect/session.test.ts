@@ -12,10 +12,10 @@ import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
-import { createAnswerTracker } from './answer.js';
-import { createAskAdmissions } from './ask/askAcceptance.js';
+import { startLeadInbox } from './fixtures/leadInbox.js';
 import { readArchitectOwner } from './fixtures/toolHarness.js';
 import {
+  endOptions,
   hcRuntime,
   sessionContext,
   stubArchitect,
@@ -33,12 +33,6 @@ import {
 import type { HiddenAskRecord, LiveAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
 import type { ArchitectSession } from './session.js';
-
-const endOptions = () => ({
-  answers: createAnswerTracker(),
-  admissions: createAskAdmissions(() => undefined),
-  sendEndNote: true,
-});
 
 const endWithoutNote = (session: ArchitectSession): Promise<void> =>
   endArchitectSession(session, hcRuntime(createHcFake()), {
@@ -148,13 +142,18 @@ it('an ask session with a lead terminal builds no end note route', async ({ onTe
   vi.stubEnv('TAU_ARCHITECT_ASK', '/sessions/ask.json');
   vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
 
+  const hc = createHcFake();
+  const lead = await startLeadInbox(onTestFinished, hc);
   const root = await createTemporaryRepository(onTestFinished);
   const { context } = sessionContext(root);
   const session = await startArchitectSession(context, createHeldLockToken());
 
   expect(session?.endNote).toBeUndefined();
 
-  await endWithoutNote(session as ArchitectSession);
+  await endArchitectSession(session as ArchitectSession, hcRuntime(hc), endOptions());
+
+  expect(lead.savedRecords()).toEqual([]);
+  expect(session?.endNote).toBeUndefined();
 });
 
 it('a visible architect with a lead terminal builds its end note route', async ({

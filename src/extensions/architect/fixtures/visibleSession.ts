@@ -5,8 +5,10 @@ import type { Mock } from 'vitest';
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
 import type { HcRuntime } from '../../../hc/hc.js';
+import { createAnswerTracker } from '../answer.js';
+import { createAskAdmissions } from '../ask/askAcceptance.js';
 import { createHeldLockToken, startArchitectSession } from '../session.js';
-import type { ArchitectSession } from '../session.js';
+import type { ArchitectSession, EndArchitectOptions } from '../session.js';
 
 interface SessionContext {
   context: ExtensionContext;
@@ -15,6 +17,12 @@ interface SessionContext {
 }
 
 export const hcRuntime = (hc: HcFake): HcRuntime => ({ ...hc, cwd: process.cwd() });
+
+export const endOptions = (): EndArchitectOptions => ({
+  answers: createAnswerTracker(),
+  admissions: createAskAdmissions(() => undefined),
+  sendEndNote: true,
+});
 
 export const sessionContext = (cwd: string): SessionContext => {
   const notify = vi.fn<(message: string, level?: string) => void>();

@@ -10,19 +10,11 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { openEndpoint, socketPathFor } from '../../inbox/endpoint.js';
 import { formatInboxLabel } from '../../inbox/protocol.js';
-import { createAnswerTracker } from './answer.js';
-import { createAskAdmissions } from './ask/askAcceptance.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
-import { hcRuntime, visibleArchitect } from './fixtures/visibleSession.js';
+import { endOptions, hcRuntime, visibleArchitect } from './fixtures/visibleSession.js';
 import { architectLockPath } from './lock.js';
 import { architectRecordPath, writeArchitectRecord } from './record.js';
 import { endArchitectSession, recordFinalHandover } from './session.js';
-
-const endOptions = () => ({
-  answers: createAnswerTracker(),
-  admissions: createAskAdmissions(() => undefined),
-  sendEndNote: true,
-});
 
 const savedNoteText = async (lead: HandoverReceiver): Promise<string> => {
   const name = lead.savedRecords().find((entry) => entry.endsWith('.json'));
