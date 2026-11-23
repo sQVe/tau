@@ -188,6 +188,7 @@ it('names the build error when earlier warnings fill the stage excerpt', async (
   const result = await run(focusedInput(crate, ['tests::adds']));
   const listStage = result.diagnostics?.stages.find((stage) => stage.name === 'list');
 
+  expect(listStage?.excerpt).toContain('probe noise line');
   expect(listStage?.excerpt).not.toContain('error[');
   expect(stageOutput(result)).toContain('error[E0308]');
 });
