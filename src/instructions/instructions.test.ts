@@ -61,6 +61,15 @@ it('puts the guides of the run into the coding section only', async () => {
   expect(texts).toEqual(['first set', codingSetText(brokenSnapshot), 'last set']);
 });
 
+it('tells the manager to read each item state from its own source', async () => {
+  const workflow = await readInstructionSet('workflow', bundledInstructionsDirectory);
+  const collapsed = workflow.replaceAll(/\s+/gu, ' ');
+
+  expect(collapsed).toContain(
+    "Before you act on or report a set of items, read each item's current state from the system that owns it: repository metadata for archived state, open PRs for finished work, and live terminals for running work.",
+  );
+});
+
 it('does not read the guides for sections without the coding set', async () => {
   const texts = await instructionTexts(
     [{ kind: 'file', text: 'only set' }],

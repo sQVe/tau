@@ -94,6 +94,12 @@ when you stop. Follow explicit user instructions and repository conventions over
 - Report `unknown` for a fact that only that source would settle, and name the source you could not
   read.
 
+## Read each item's state before acting
+
+- Before you act on or report a set of items, read each item's current state from the system that
+  owns it: repository metadata for archived state, open PRs for finished work, and live terminals
+  for running work.
+
 ## Report status in the user's terms
 
 - Answer the feature the workspace exists for.
