@@ -1,11 +1,17 @@
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import {
   architectRecordPath,
   askRecordDirectory,
@@ -241,6 +247,167 @@ it('returns an unreadable read for a malformed gate record at a path', async () 
     kind: 'unreadable',
     message: `Malformed gate record ${path}: not JSON.`,
   });
+});
+
+const notRegularFileMessage = (path: string): string =>
+  `Gate record ${path} is not a regular file.`;
+
+const createFifo = async (path: string): Promise<void> => {
+  await promisify(execFile)('mkfifo', [path]);
+};
+
+const recordHandleReads = async (directory: string): Promise<MockInstance> => {
+  const probePath = join(directory, 'probe.json');
+
+  await writeFile(probePath, '{}');
+
+  const probe = await open(probePath);
+  const prototype = Object.getPrototypeOf(probe) as FileHandle;
+
+  await probe.close();
+
+  const read = vi.spyOn(prototype, 'readFile');
+
+  onTestFinished(() => {
+    read.mockRestore();
+  });
+
+  return read;
+};
+
+it('refuses a gate record reached through a linked parent directory', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
+  const directory = gateRecordDirectory(root);
+  const outside = temporaryDirectory(onTestFinished, 'tau-gate-record-target-');
+  const path = join(directory, 'linked', 'record.json');
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(outside, 'record.json'), JSON.stringify(gateRecord));
+  await symlink(outside, join(directory, 'linked'));
+
+  const read = await recordHandleReads(root);
+
+  await expect(readGateRecord(root, path)).resolves.toEqual({ kind: 'outside', directory });
+
+  expect(read).not.toHaveBeenCalled();
+});
+
+it('refuses a gate record path that is a symbolic link', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
+  const directory = gateRecordDirectory(root);
+  const target = join(directory, 'target.json');
+  const path = join(directory, 'linked.json');
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(target, JSON.stringify(gateRecord));
+  await symlink(target, path);
+
+  const read = await recordHandleReads(root);
+
+  await expect(readGateRecord(root, path)).resolves.toEqual({
+    kind: 'unreadable',
+    message: notRegularFileMessage(path),
+  });
+
+  expect(read).not.toHaveBeenCalled();
+});
+
+it('refuses a gate record path that is a FIFO', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
+  const path = join(gateRecordDirectory(root), 'pipe.json');
+
+  await mkdir(dirname(path), { recursive: true });
+  await createFifo(path);
+
+  const read = await recordHandleReads(root);
+
+  await expect(readGateRecord(root, path)).resolves.toEqual({
+    kind: 'unreadable',
+    message: notRegularFileMessage(path),
+  });
+
+  expect(read).not.toHaveBeenCalled();
+});
+
+it('refuses a gate record path that is a Unix socket', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
+  const path = join(gateRecordDirectory(root), 'socket.json');
+  const server = createServer((socket) => socket.end());
+
+  await mkdir(dirname(path), { recursive: true });
+
+  await new Promise<void>((resolve) => {
+    server.listen(path, resolve);
+  });
+
+  onTestFinished(() => {
+    server.close();
+  });
+
+  await expect(readGateRecord(root, path)).resolves.toEqual({
+    kind: 'unreadable',
+    message: notRegularFileMessage(path),
+  });
+});
+
+it('refuses a gate record path that is a directory', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
+  const path = join(gateRecordDirectory(root), 'directory.json');
+
+  await mkdir(path, { recursive: true });
+
+  const read = await recordHandleReads(root);
+
+  await expect(readGateRecord(root, path)).resolves.toEqual({
+    kind: 'unreadable',
+    message: notRegularFileMessage(path),
+  });
+
+  expect(read).not.toHaveBeenCalled();
+});
+
+it('refuses a gate directory that is a link outside the checkout', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
+  const directory = gateRecordDirectory(root);
+  const outside = temporaryDirectory(onTestFinished, 'tau-gate-record-target-');
+  const path = join(directory, 'record.json');
+
+  await mkdir(dirname(directory), { recursive: true });
+  await writeFile(join(outside, 'record.json'), JSON.stringify(gateRecord));
+  await symlink(outside, directory);
+
+  const read = await recordHandleReads(root);
+
+  await expect(readGateRecord(root, path)).resolves.toEqual({ kind: 'outside', directory });
+
+  expect(read).not.toHaveBeenCalled();
+});
+
+it('refuses a dangling gate record link', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
+  const directory = gateRecordDirectory(root);
+  const path = join(directory, 'linked.json');
+
+  await mkdir(directory, { recursive: true });
+  await symlink(join(directory, 'absent.json'), path);
+
+  const read = await recordHandleReads(root);
+
+  await expect(readGateRecord(root, path)).resolves.toEqual({
+    kind: 'unreadable',
+    message: notRegularFileMessage(path),
+  });
+
+  expect(read).not.toHaveBeenCalled();
+});
+
+it('returns a missing read for a record absent from an existing gate directory', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
+  const path = join(gateRecordDirectory(root), 'missing.json');
+
+  await mkdir(gateRecordDirectory(root), { recursive: true });
+
+  await expect(readGateRecord(root, path)).resolves.toEqual({ kind: 'missing' });
 });
 
 it('leaves gate records unchanged after normal, missing, and malformed reads', async () => {

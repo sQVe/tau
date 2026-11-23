@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, readdir, realpath } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { errorMessage, isMissingFile } from '../../errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from '../../errors.js';
 import { withFileLock } from '../../fileLock/fileLock.js';
 import { isUuid } from '../../inbox/inbox.js';
-import { readVersionedRecord, writeRecord } from '../../record.js';
+import { parseVersionedRecord, readVersionedRecord, writeRecord } from '../../record.js';
 import { isRecord } from '../../schema.js';
-import { ensureTauDirectory } from '../../tauDirectory.js';
+import { ensureTauDirectory, existingEntry } from '../../tauDirectory.js';
 
 export type AskRecord = HiddenAskRecord | LiveAskRecord;
 
@@ -263,27 +265,93 @@ export const writeArchitectRecord = async (
   await writeRecord(architectRecordPath(root), record);
 };
 
+const isInsideDirectory = (directory: string, path: string): boolean => {
+  const fromDirectory = relative(directory, path);
+
+  return fromDirectory !== '' && !fromDirectory.startsWith('..') && !isAbsolute(fromDirectory);
+};
+
+const gateRecordOptions = {
+  label: 'gate record',
+  version: 1,
+  schema: gateRecordSchema,
+} as const;
+
+const notRegularFileMessage = (path: string): string =>
+  `Gate record ${path} is not a regular file.`;
+
+// A pipe opens without a writer only in non-blocking mode, and the type check and the read use one
+// handle, so a replacement after the check cannot redirect or block the read.
+const readGateRecordFile = async (path: string): Promise<GateRecordRead> => {
+  const flags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
+
+  let handle: FileHandle;
+
+  try {
+    handle = await open(path, flags);
+  } catch (error) {
+    if (hasErrorCode(error, 'ELOOP')) {
+      return { kind: 'unreadable', message: notRegularFileMessage(path) };
+    }
+
+    throw error;
+  }
+
+  try {
+    const stats = await handle.stat();
+
+    if (!stats.isFile()) {
+      return { kind: 'unreadable', message: notRegularFileMessage(path) };
+    }
+
+    const text = await handle.readFile('utf8');
+
+    return { kind: 'found', path, record: parseVersionedRecord(path, text, gateRecordOptions) };
+  } finally {
+    await handle.close();
+  }
+};
+
 export const readGateRecord = async (root: string, reference: string): Promise<GateRecordRead> => {
   const resolved = resolve(root, reference);
   const directory = gateRecordDirectory(root);
-  const fromDirectory = relative(directory, resolved);
 
-  const inside =
-    fromDirectory !== '' && !fromDirectory.startsWith('..') && !isAbsolute(fromDirectory);
-
-  if (!inside) {
+  if (!isInsideDirectory(directory, resolved)) {
     return { kind: 'outside', directory };
   }
 
   try {
-    const record = await readVersionedRecord(resolved, {
-      label: 'gate record',
-      version: 1,
-      schema: gateRecordSchema,
-    });
+    // Names a missing entry and every entry that is not a regular file before any resolution or
+    // open, so a link, a socket, a device node, a FIFO, or a directory never reaches the open.
+    const entry = await existingEntry(resolved);
 
-    return record === undefined ? { kind: 'missing' } : { kind: 'found', path: resolved, record };
+    if (entry === undefined) {
+      return { kind: 'missing' };
+    }
+
+    if (!entry.isFile()) {
+      return { kind: 'unreadable', message: notRegularFileMessage(resolved) };
+    }
+
+    const realRoot = await realpath(root);
+    const realDirectory = await realpath(directory);
+
+    if (!isInsideDirectory(realRoot, realDirectory)) {
+      return { kind: 'outside', directory };
+    }
+
+    const realRecord = await realpath(resolved);
+
+    if (!isInsideDirectory(realDirectory, realRecord)) {
+      return { kind: 'outside', directory };
+    }
+
+    return await readGateRecordFile(resolved);
   } catch (error) {
+    if (isMissingFile(error)) {
+      return { kind: 'missing' };
+    }
+
     return { kind: 'unreadable', message: errorMessage(error) };
   }
 };
