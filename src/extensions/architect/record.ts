@@ -473,6 +473,8 @@ export const updateHiddenAskRecordAt = async (
   update: (current: HiddenAskRecord) => HiddenAskRecord | undefined,
   options: ChangeAskOptions = {},
 ): Promise<HiddenAskRecordChange | undefined> => {
+  await ensureTauDirectory(checkout, 'lead/ask');
+
   const change = await changeAskRecordAt(
     checkout,
     path,

@@ -28,6 +28,8 @@ import {
   writeAskRecord,
   writeAskRecordAt,
   writeGateRecord,
+  updateHiddenAskRecord,
+  updateHiddenAskRecordAt,
 } from './record.js';
 import type { LiveAskRecord } from './record.js';
 
@@ -828,6 +830,41 @@ it('refuses a root-based ask update when Git tracks a file in the ask directory'
     changeAskRecord(root, askId, (current) =>
       current.route === 'live' ? { ...current, status: 'answered' } : undefined,
     ),
+  ).rejects.toThrow('Git tracks files in .tau/lead/ask');
+
+  expect(await snapshotDirectory(askRecordDirectory(root))).toEqual(before);
+});
+
+it('refuses a root-based hidden ask update when Git tracks a file in the ask directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const askId = '0190c1d2-0000-7000-8000-000000000708';
+
+  await writeAskRecord(root, { ...askRecordV2Hidden, askId });
+  await git(root, 'add', '--force', join('.tau', 'lead', 'ask', `${askId}.json`));
+
+  const before = await snapshotDirectory(askRecordDirectory(root));
+
+  await expect(
+    updateHiddenAskRecord(root, askId, (current) => ({ ...current, status: 'failed' })),
+  ).rejects.toThrow('Git tracks files in .tau/lead/ask');
+
+  expect(await snapshotDirectory(askRecordDirectory(root))).toEqual(before);
+});
+
+it('refuses a path-based hidden ask update when Git tracks a file in the ask directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const askId = '0190c1d2-0000-7000-8000-000000000709';
+
+  await writeAskRecord(root, { ...askRecordV2Hidden, askId });
+  await git(root, 'add', '--force', join('.tau', 'lead', 'ask', `${askId}.json`));
+
+  const before = await snapshotDirectory(askRecordDirectory(root));
+
+  await expect(
+    updateHiddenAskRecordAt(root, askRecordPath(root, askId), (current) => ({
+      ...current,
+      status: 'failed',
+    })),
   ).rejects.toThrow('Git tracks files in .tau/lead/ask');
 
   expect(await snapshotDirectory(askRecordDirectory(root))).toEqual(before);

@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../../tests/extensionApi.js';
+import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
-import { readAskRecordAt, writeAskRecordAt } from '../record.js';
+import { askRecordPath, readAskRecordAt, writeAskRecord, writeAskRecordAt } from '../record.js';
 import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
 import { askModePrompt, registerAskMode } from './askMode.js';
 
@@ -46,11 +47,11 @@ const liveRecord = (): LiveAskRecord => ({
 const askFile = async (
   cleanup: (cleanup: () => void) => void,
 ): Promise<{ directory: string; path: string; record: HiddenAskRecord }> => {
-  const directory = temporaryDirectory(cleanup, 'tau-ask-mode-');
-  const path = join(directory, `${askRecord().askId}.json`);
+  const directory = await createTemporaryRepository(cleanup);
   const record = askRecord();
+  const path = askRecordPath(directory, record.askId);
 
-  await writeAskRecordAt(path, record);
+  await writeAskRecord(directory, record);
 
   return { directory, path, record };
 };
