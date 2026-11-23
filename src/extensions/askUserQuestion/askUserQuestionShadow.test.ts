@@ -648,6 +648,33 @@ it('warns once about an ignored config key and still saves the shadow record', a
   expect(harness.saved).toHaveLength(1);
 });
 
+it('reports an invalid shadow config once and skips each dialog', async ({ onTestFinished }) => {
+  const harness = await createHarness(onTestFinished, { config: invalidConfig() });
+  const userFile = join(harness.agentDirectory, 'tau.json');
+  const error = 'questionGate shadow variant "classifierExamples" needs at least one example.';
+
+  const first = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await first;
+  await harness.flush();
+
+  expect(harness.notify).toHaveBeenCalledTimes(1);
+  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
+  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(error), 'error');
+
+  const second = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await second;
+  await harness.flush();
+
+  expect(harness.notify).toHaveBeenCalledTimes(1);
+  expect(harness.registry.classify).not.toHaveBeenCalled();
+  expect(harness.registry.complete).not.toHaveBeenCalled();
+  expect(harness.saved).toEqual([]);
+});
+
 it('saves a record when the answer settles before judges', async ({ onTestFinished }) => {
   const harness = await createHarness(onTestFinished, { config: configWithShadow() });
 

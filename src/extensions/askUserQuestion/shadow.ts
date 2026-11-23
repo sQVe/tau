@@ -2,9 +2,11 @@ import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
+import { notifyOnce, userConfigPath } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
 import { readQuestionGateShadow, shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateShadow } from '../../config/questionGateModels.js';
+import { errorMessage } from '../../errors.js';
 import {
   shadowEligibility,
   shadowRateAllows,
@@ -128,6 +130,26 @@ const judgeAll = async (
   };
 };
 
+const readConfigOrReport = (
+  ports: ShadowPorts,
+  request: ShadowStart,
+  location: ConfigLocation,
+): QuestionGateShadow | undefined => {
+  try {
+    return ports.readConfig(location, request.ui);
+  } catch (error) {
+    notifyOnce(
+      request.ui,
+      userConfigPath(location.agentDirectory),
+      'shadow-config',
+      errorMessage(error),
+      'error',
+    );
+
+    return undefined;
+  }
+};
+
 const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRate): ShadowJob => {
   const answer = Promise.withResolvers<DialogResult | undefined>();
   const controller = new AbortController();
@@ -144,7 +166,7 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
         projectTrusted: request.projectTrusted,
       };
 
-      const read = ports.readConfig(location, request.ui);
+      const read = readConfigOrReport(ports, request, location);
 
       if (read === undefined) {
         return undefined;
