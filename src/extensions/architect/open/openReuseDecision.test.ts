@@ -1,13 +1,14 @@
 import { expect, it } from 'vitest';
 
-import { openCandidate, openGeneration, openReuse } from './openReuseDecision.js';
+import type { ArchitectOwner, SavedArchitectRecord } from '../record.js';
+import { openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type {
   OpenCandidate,
   OpenCandidateFacts,
-  OpenGeneration,
-  OpenGenerationFacts,
   OpenReuse,
   OpenReuseFacts,
+  OpenTerminal,
+  OpenTerminalFacts,
 } from './openReuseDecision.js';
 
 const holder = { pid: 10, checkout: '/checkout', token: 'live' };
@@ -106,42 +107,96 @@ it.each<{ name: string; facts: OpenReuseFacts; expected: OpenReuse }>([
   expect(openReuse(facts)).toEqual(expected);
 });
 
-const generationFacts: OpenGenerationFacts = {
+const absentRecordFacts: OpenTerminalFacts = {
   root: '/checkout',
   holder,
-  record: { terminal: 't-architect', token: 'live' },
+  record: undefined,
 };
 
-it.each<{ name: string; facts: OpenGenerationFacts; expected: OpenGeneration }>([
+const updatedAt = '2026-01-01T00:00:00.000Z';
+
+const savedOwner = (owner: ArchitectOwner | null): SavedArchitectRecord => ({
+  version: 2,
+  sessionFile: null,
+  leadTerminal: 't-lead',
+  owner,
+  updatedAt,
+});
+
+const version1Record = (terminal: string | null): SavedArchitectRecord => ({
+  version: 1,
+  sessionFile: null,
+  terminal,
+  leadTerminal: 't-lead',
+  updatedAt,
+});
+
+const owner: ArchitectOwner = {
+  lockToken: 'live',
+  mode: 'visible',
+  terminal: 't-architect',
+  sessionId: 'session-architect',
+};
+
+const terminalFacts: OpenTerminalFacts = {
+  root: '/checkout',
+  holder,
+  record: savedOwner(owner),
+};
+
+it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
   {
-    name: 'the same token is current',
-    facts: generationFacts,
-    expected: { kind: 'current', terminal: 't-architect' },
+    name: 'a matching token with a terminal',
+    facts: terminalFacts,
+    expected: { kind: 'lookup', terminal: 't-architect' },
   },
   {
-    name: 'no record token is current',
-    facts: { ...generationFacts, record: { terminal: 't-architect', token: undefined } },
-    expected: { kind: 'current', terminal: 't-architect' },
+    name: 'a tokenless version 1 record',
+    facts: { ...terminalFacts, record: version1Record('t-architect') },
+    expected: { kind: 'lookup', terminal: 't-architect' },
   },
   {
-    name: 'a current record with no terminal',
-    facts: { ...generationFacts, record: { terminal: null, token: 'live' } },
-    expected: { kind: 'current', terminal: null },
+    name: 'an absent record',
+    facts: absentRecordFacts,
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'a version 2 record with a null owner',
+    facts: { ...terminalFacts, record: savedOwner(null) },
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'a null terminal in a version 2 record',
+    facts: { ...terminalFacts, record: savedOwner({ ...owner, terminal: null }) },
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'a null terminal in a version 1 record',
+    facts: { ...terminalFacts, record: version1Record(null) },
+    expected: { kind: 'refuse', checkout: '/checkout' },
   },
   {
     name: 'a different token in this checkout',
-    facts: { ...generationFacts, record: { terminal: 't-architect', token: 'previous' } },
+    facts: { ...terminalFacts, record: savedOwner({ ...owner, lockToken: 'previous' }) },
+    expected: { kind: 'unrecorded' },
+  },
+  {
+    name: 'a different token with no terminal',
+    facts: {
+      ...terminalFacts,
+      record: savedOwner({ ...owner, lockToken: 'previous', terminal: null }),
+    },
     expected: { kind: 'unrecorded' },
   },
   {
     name: 'a different token in another checkout',
     facts: {
-      ...generationFacts,
+      ...terminalFacts,
       holder: { ...holder, checkout: '/other' },
-      record: { terminal: 't-architect', token: 'previous' },
+      record: savedOwner({ ...owner, lockToken: 'previous' }),
     },
     expected: { kind: 'refuse', checkout: '/other' },
   },
-])('generation: $name', ({ facts, expected }) => {
-  expect(openGeneration(facts)).toEqual(expected);
+])('terminal: $name', ({ facts, expected }) => {
+  expect(openTerminal(facts)).toEqual(expected);
 });

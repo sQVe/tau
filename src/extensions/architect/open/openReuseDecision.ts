@@ -1,3 +1,5 @@
+import type { SavedArchitectRecord } from '../record.js';
+
 interface OpenLockHolder {
   pid: number;
   checkout: string;
@@ -31,19 +33,14 @@ export type OpenReuse =
   | { kind: 'refuse'; checkout: string }
   | { kind: 'start' };
 
-export interface OpenRecordFacts {
-  terminal: string | null | undefined;
-  token: string | undefined;
-}
-
-export interface OpenGenerationFacts {
+export interface OpenTerminalFacts {
   root: string;
   holder: OpenLockHolder;
-  record: OpenRecordFacts;
+  record: SavedArchitectRecord | undefined;
 }
 
-export type OpenGeneration =
-  | { kind: 'current'; terminal: string | null | undefined }
+export type OpenTerminal =
+  | { kind: 'lookup'; terminal: string }
   | { kind: 'refuse'; checkout: string }
   | { kind: 'unrecorded' };
 
@@ -89,16 +86,24 @@ export const openReuse = (facts: OpenReuseFacts): OpenReuse => {
 
 // A saved record ties its terminal to the lock generation that wrote it. A record from another
 // generation names a terminal that is not the live holder's terminal.
-export const openGeneration = (facts: OpenGenerationFacts): OpenGeneration => {
+export const openTerminal = (facts: OpenTerminalFacts): OpenTerminal => {
   const { holder, record, root } = facts;
 
-  if (record.token === undefined || record.token === holder.token) {
-    return { kind: 'current', terminal: record.terminal };
+  const owner = record?.version === 2 ? record.owner : undefined;
+  const token = owner?.lockToken;
+  const terminal = record?.version === 1 ? record.terminal : owner?.terminal;
+
+  if (token !== undefined && token !== holder.token) {
+    if (holder.checkout !== root) {
+      return { kind: 'refuse', checkout: holder.checkout };
+    }
+
+    return { kind: 'unrecorded' };
   }
 
-  if (holder.checkout !== root) {
+  if (terminal === null || terminal === undefined) {
     return { kind: 'refuse', checkout: holder.checkout };
   }
 
-  return { kind: 'unrecorded' };
+  return { kind: 'lookup', terminal };
 };

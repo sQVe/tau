@@ -16,8 +16,8 @@ import { tabName } from '../../../tabName.js';
 import { architectLockPath } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
-import { eligibleTerminal, openCandidate, openGeneration, openReuse } from './openReuseDecision.js';
-import type { OpenCandidate, OpenRecordFacts } from './openReuseDecision.js';
+import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
+import type { OpenCandidate } from './openReuseDecision.js';
 
 export interface OpenRequest {
   root: string;
@@ -121,11 +121,11 @@ const readPane = async (request: OpenRequest, terminal: string): Promise<string 
 
 const candidateOf = async (
   request: OpenRequest,
-  recordedTerminal: string | null | undefined,
+  recordedTerminal: string,
   holder: LiveLockHolder,
 ): Promise<OpenCandidate> => {
   const found = await readLiveTerminal(request.hc, recordedTerminal);
-  const liveTerminal = found === undefined ? undefined : (recordedTerminal ?? undefined);
+  const liveTerminal = found === undefined ? undefined : recordedTerminal;
 
   const runsAsk = await terminalRunsAsk(request.root, liveTerminal);
   const labeledAsk = found?.labels?.[askLabel] !== undefined;
@@ -199,11 +199,6 @@ const unrecordedRefusal = (root: string): Error =>
     `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
   );
 
-const projectRecord = (record: SavedArchitectRecord | undefined): OpenRecordFacts =>
-  record?.version === 2
-    ? { terminal: record.owner?.terminal, token: record.owner?.lockToken }
-    : { terminal: record?.terminal, token: undefined };
-
 const runningTerminal = async (
   request: OpenRequest,
   record: SavedArchitectRecord | undefined,
@@ -215,21 +210,21 @@ const runningTerminal = async (
     return undefined;
   }
 
-  const generation = openGeneration({
+  const selection = openTerminal({
     root: request.root,
     holder,
-    record: projectRecord(record),
+    record,
   });
 
-  if (generation.kind === 'refuse') {
-    throw refusal(generation.checkout);
+  if (selection.kind === 'refuse') {
+    throw refusal(selection.checkout);
   }
 
-  if (generation.kind === 'unrecorded') {
+  if (selection.kind === 'unrecorded') {
     throw unrecordedRefusal(request.root);
   }
 
-  const candidate = await candidateOf(request, generation.terminal, holder);
+  const candidate = await candidateOf(request, selection.terminal, holder);
 
   if (candidate.kind === 'refuse') {
     throw refusal(candidate.checkout);

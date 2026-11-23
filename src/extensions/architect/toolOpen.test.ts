@@ -3,13 +3,6 @@ import { basename, dirname, join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import {
-  contextOf,
-  holdLock,
-  recordSession,
-  releaseLock,
-  setup,
-} from '../../../tests/architectToolHarness.js';
 import { argumentAfter, failedResult, succeededResult } from '../../../tests/execFake.js';
 import {
   appCommands,
@@ -22,6 +15,7 @@ import {
   terminalState,
   writeAsk,
 } from './fixtures/openHarness.js';
+import { contextOf, holdLock, recordSession, releaseLock, setup } from './fixtures/toolHarness.js';
 import { architectLockPath } from './lock.js';
 import { writeArchitectRecord } from './record.js';
 
@@ -259,6 +253,33 @@ it('open refuses when a reload takes the lock during the terminal lookup', async
     `The architect is already running in ${root}.`,
   );
 
+  expect(appCommands(app)).not.toContain('pane.split');
+});
+
+it('open refuses a version 2 record with no owner while a live holder keeps the lock', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const afterTerminalLookup = vi.fn<() => Promise<void>>(() => Promise.resolve());
+  const { app, terminals, tool } = openTool(root, undefined, afterTerminalLookup);
+
+  await holdLock(root, root);
+
+  await writeArchitectRecord(root, {
+    version: 2,
+    sessionFile: null,
+    leadTerminal: 't-lead',
+    owner: null,
+    updatedAt: new Date().toISOString(),
+  });
+
+  terminals.set('t-architect', terminalState('live'));
+
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
+    `The architect is already running in ${root}.`,
+  );
+
+  expect(afterTerminalLookup).not.toHaveBeenCalled();
   expect(appCommands(app)).not.toContain('pane.split');
 });
 

@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { contextOf } from '../../../../tests/architectToolHarness.js';
 import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
 import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
@@ -12,6 +11,7 @@ import type { Exec } from '../../../command.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { architectRecordPath, writeArchitectRecord, writeAskRecord } from '../record.js';
 import { createArchitectTool } from '../tool.js';
+import { contextOf } from './toolHarness.js';
 
 interface OpenTool {
   hc: HcFake;
