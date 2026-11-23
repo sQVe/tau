@@ -3,6 +3,9 @@ import { expect, it } from 'vitest';
 import { checkGuideLinks } from './guideLinks.js';
 import type { GuideLinkCheck } from './guideLinks.js';
 
+// The Markdown lexer recurses once per blockquote level, so this depth overflows the stack.
+const unreadableMarkdown = `${'> '.repeat(16_000)}[a](./b.md)\n`;
+
 const table: {
   name: string;
   files: [string, string][];
@@ -171,7 +174,20 @@ const table: {
       kind: 'broken',
       path: 'shared/rules.md',
       target: './rules.md#bad%ZZ',
-      problem: 'missing-heading',
+      problem: 'undecodable',
+    },
+  },
+  {
+    name: 'an undecodable fragment before an unreadable later file',
+    files: [
+      ['a.md', '[b](./b.md#bad%ZZ)\n'],
+      ['b.md', unreadableMarkdown],
+    ],
+    expected: {
+      kind: 'broken',
+      path: 'a.md',
+      target: './b.md#bad%ZZ',
+      problem: 'undecodable',
     },
   },
   {

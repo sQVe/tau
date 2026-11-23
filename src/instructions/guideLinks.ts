@@ -58,16 +58,19 @@ const targetCheck = (
     return { kind: 'valid' };
   }
 
+  const slug = decodedComponent(fragment);
+
+  if (slug === undefined) {
+    return { kind: 'broken', path, target, problem: 'undecodable' };
+  }
+
   const parsed = parse(resolved);
 
   if (parsed.kind === 'unreadable') {
     return { kind: 'unreadable', path: resolved, error: parsed.error };
   }
 
-  const slug = decodedComponent(fragment);
-  const headingFound = slug !== undefined && parsed.links.slugs.has(slug);
-
-  return headingFound
+  return parsed.links.slugs.has(slug)
     ? { kind: 'valid' }
     : { kind: 'broken', path, target, problem: 'missing-heading' };
 };

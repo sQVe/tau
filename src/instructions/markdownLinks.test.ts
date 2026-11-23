@@ -125,6 +125,11 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
     expected: ['./coding.md'],
   },
   {
+    name: 'reads a next-line definition between CRLF lines with a trailing prose line',
+    markdown: '[rules][adr]\r\n\r\n[adr]:\r\n  ./coding.md\r\n[Note]: this is important\r\n',
+    expected: ['./coding.md'],
+  },
+  {
     name: 'reads a link after a fence inside an HTML comment',
     markdown: '<!--\n```markdown\n-->\n[gone](./gone.md)\n',
     expected: ['./gone.md'],
@@ -144,6 +149,11 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
     markdown:
       '```markdown\n[a]: ./fenced.md\n```\n`[b]: ./span.md`\n<!--\n[c]: ./comment.md\n-->\n    [d]: ./indented.md\n\n[e]: <./after.md>\n',
     expected: ['./after.md'],
+  },
+  {
+    name: 'reads an angle definition after a closing fence',
+    markdown: '```\n[a]: ./fenced.md\n```\n[b]: <./gone file.md>\n',
+    expected: ['./gone file.md'],
   },
   {
     name: 'reads a nested image before its link',
