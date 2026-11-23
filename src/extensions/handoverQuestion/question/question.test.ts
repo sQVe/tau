@@ -309,6 +309,9 @@ it('reports an unknown send with the receiver note and keeps the record', async 
 
   expect(details.questionId).toMatch(/^[0-9a-f-]{36}$/u);
   expect(details.note).toContain(reason);
+  expect(details.note).toMatch(/uncertain/iu);
+  expect(details.note).toMatch(/another question/iu);
+  expect(details.note).not.toContain('reuse this message ID');
   expect(textOf(result)).toBe(details.note);
   expect(result.terminate).toBe(true);
   expect(result.isError).toBeUndefined();

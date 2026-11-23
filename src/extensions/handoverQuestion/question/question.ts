@@ -146,7 +146,8 @@ export const askSender = async (
       );
     }
 
-    const note = sent.note ?? 'The lead may not have received the question.';
+    const reason = sent.reason ?? 'The lead may not have received the question.';
+    const note = `${reason} Delivery is uncertain. Calling this tool again would create another question.`;
 
     return result(note, { status: 'unknown', questionId, note }, { terminate: true });
   } catch (error) {
