@@ -47,6 +47,25 @@ const version3Record = {
   },
 };
 
+const version3HandoverRecord = {
+  version: 3 as const,
+  messageId,
+  family: 'handover' as const,
+  payload: { text: 'handover text', sender },
+};
+
+const version3AnswerRecord = {
+  version: 3 as const,
+  messageId,
+  family: 'answer' as const,
+  payload: {
+    assignmentId: '22222222-2222-4222-8222-222222222222',
+    questionId: '33333333-3333-4333-8333-333333333333',
+    parentSession: 'lead-session',
+    answer: 'Use 42.',
+  },
+};
+
 const previousRecord = {
   version: 1 as const,
   messageId,
@@ -118,6 +137,32 @@ it('reads the frozen version 3 record', async () => {
   await expect(readMessage(directory, messageId)).resolves.toEqual({
     kind: 'record',
     record: version3Record,
+  });
+});
+
+it('reads a version 3 handover record with a sender', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path, JSON.stringify(version3HandoverRecord));
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version3HandoverRecord,
+  });
+});
+
+it('reads a version 3 answer record', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path, JSON.stringify(version3AnswerRecord));
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version3AnswerRecord,
   });
 });
 
