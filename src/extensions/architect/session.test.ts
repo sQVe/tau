@@ -24,7 +24,7 @@ import {
   stubArchitect,
   visibleArchitect,
 } from './fixtures/visibleSession.js';
-import { architectLockPath } from './lock.js';
+import { architectLockPath, claimArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import {
   askRecordDirectory,
@@ -98,6 +98,81 @@ it('a released lock starts the architect and writes its record', async ({ onTest
   );
 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('an architect session adopts the claim its environment names', async ({ onTestFinished }) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context, notify, shutdown } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  onTestFinished(claim.release);
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session).toBeDefined();
+  expect(notify).not.toHaveBeenCalled();
+  expect(shutdown).not.toHaveBeenCalled();
+
+  const holder = await readLiveLockHolder(architectLockPath(root));
+  const owner = await readArchitectOwner(root);
+
+  expect(holder?.token).toBe(owner?.lockToken);
+  expect(holder?.token).not.toBe(claim.token);
+  expect(holder?.terminal).toBe('t-architect');
+
+  const lockFiles = (await readdir(dirname(architectLockPath(root)))).filter((name) =>
+    name.startsWith('lock.'),
+  );
+
+  expect(lockFiles).toEqual(['lock.2']);
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+});
+
+it('an architect session shuts down when its claim is no longer the live holder', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context, notify, shutdown } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  await claim.release();
+
+  const newer = await claimArchitectLock(root);
+
+  if (newer.kind !== 'claimed') {
+    throw new Error('The newer claim was refused.');
+  }
+
+  onTestFinished(newer.release);
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  expect(await startArchitectSession(context, createHeldLockToken())).toBeUndefined();
+
+  expect(notify).toHaveBeenCalledWith(
+    'The architect is already running in another session.',
+    'error',
+  );
+
+  expect(shutdown).toHaveBeenCalledTimes(1);
+  await expect(readArchitectRecord(root)).resolves.toBeUndefined();
 });
 
 it('an ask session records ask mode', async ({ onTestFinished }) => {

@@ -80,6 +80,13 @@ const architectMode = (): ArchitectOwner['mode'] => {
   return askRecordPath !== undefined && askRecordPath !== '' ? 'ask' : 'visible';
 };
 
+const architectClaim = (): string | undefined => {
+  // oxlint-disable-next-line node/no-process-env -- The lead passes the claim it took in the architect's environment.
+  const claim = process.env.TAU_ARCHITECT_CLAIM;
+
+  return claim === undefined || claim === '' ? undefined : claim;
+};
+
 const startArchitect = async (
   context: ExtensionContext,
   held: HeldLockToken,
@@ -89,7 +96,7 @@ const startArchitect = async (
   let release: (() => Promise<void>) | undefined;
 
   try {
-    const lock = await holdArchitectLock(root);
+    const lock = await holdArchitectLock(root, architectClaim());
 
     release = lock.release;
     held.set(lock.token);

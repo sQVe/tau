@@ -105,6 +105,15 @@ keeps its earlier design context and approvals. The checkout records the session
 stops two sessions from writing one session file. `open` reports the live visible architect instead
 of refusing. A question in the inbox of a live architect in this checkout needs no second writer.
 
+A check of the lock is not a reservation, so the caller that starts the architect takes the lock
+first. `open` and the hidden route of `ask` take a claim on the lock before they start Pi, and pass
+the claim token to the new Pi in its environment. The new Pi takes the lock over from that claim
+with the next lock generation. A second caller finds the claim held and is refused before it starts
+Pi or writes an ask record. While the claim is held, readers see a holder that has not published its
+record, so they report that the architect is starting. `ask` holds the claim until its hidden
+terminal ends. `open` waits up to 60 seconds for the takeover, then releases the claim. A Pi that
+finds another live generation instead of its claim ends at session start.
+
 ### The lead's tab
 
 The lead's tab holds only the lead on the left and the architect on the right. Workers open in
@@ -153,6 +162,8 @@ the work.
   for saves and answers in flight. It may then resend an answer with an unknown outcome and send a
   note when that resend fails. Each send waits up to 5 seconds for its reply, after an `hc` terminal
   lookup that has no time limit of its own. Close has no overall deadline.
+- An `open` start that takes over 60 seconds can overlap a second start. The two Pis race for the
+  lock, and the loser ends at session start without holding it.
 
 ## Alternatives considered
 
@@ -171,6 +182,13 @@ cannot resume the design session with its earlier context.
 
 Keep the lock as a refusal for every ask. Rejected because the lead and architect sit side by side,
 so the architect is live most of the time, and the user would switch panes for every question.
+
+### Reserve with a separate start lock
+
+Hold a second lock while the architect starts, and release it once the new Pi holds the architect
+lock. Rejected because every reader would need to check both locks. `open` also gets no terminal
+address from `herdr-app` for a new space, so it could not stop a Pi that never takes the lock before
+it releases the start lock.
 
 ### Route a live ask by terminal or by Pi session ID
 

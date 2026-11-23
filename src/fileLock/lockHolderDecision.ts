@@ -7,6 +7,12 @@ export interface LockHolderFacts {
   commandAlive: boolean;
 }
 
+export interface LockAdoptionFacts {
+  holderToken: string | undefined;
+  released: boolean;
+  adoptToken: string | undefined;
+}
+
 // A lock can be taken over when its holder released it, left no record, or lost both its session
 // and its command. A command outlives its session, so a live command keeps the lock.
 export const holderIsGone = (facts: LockHolderFacts): boolean => {
@@ -21,3 +27,14 @@ export const holderIsGone = (facts: LockHolderFacts): boolean => {
 // later. Only the session writes its record, so a record read after its death is final.
 export const recordNeedsRereading = (facts: LockHolderFacts): boolean =>
   facts.recorded && !facts.released && holderIsGone(facts);
+
+// A holder that left no token is never a claim to take over, even when the caller passes none.
+export const claimIsAdoptable = (facts: LockAdoptionFacts): boolean => {
+  const { holderToken, released, adoptToken } = facts;
+
+  if (adoptToken === undefined || adoptToken === '') {
+    return false;
+  }
+
+  return !released && holderToken === adoptToken;
+};

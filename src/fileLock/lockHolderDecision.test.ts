@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
+import { claimIsAdoptable, holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
 const facts = (overrides: Partial<LockHolderFacts>): LockHolderFacts => ({
@@ -59,4 +59,51 @@ it.each([
   },
 ])('decides whether to read the record again for $name', ({ facts: holderFacts, expected }) => {
   expect(recordNeedsRereading(holderFacts)).toBe(expected);
+});
+
+it.each([
+  {
+    name: 'no adopt token',
+    holderToken: 'claim',
+    released: false,
+    adoptToken: undefined,
+    expected: false,
+  },
+  {
+    name: 'the claim token',
+    holderToken: 'claim',
+    released: false,
+    adoptToken: 'claim',
+    expected: true,
+  },
+  {
+    name: 'another token',
+    holderToken: 'claim',
+    released: false,
+    adoptToken: 'other',
+    expected: false,
+  },
+  {
+    name: 'a released claim',
+    holderToken: 'claim',
+    released: true,
+    adoptToken: 'claim',
+    expected: false,
+  },
+  {
+    name: 'no holder token and no adopt token',
+    holderToken: '',
+    released: false,
+    adoptToken: '',
+    expected: false,
+  },
+  {
+    name: 'neither a holder token nor an adopt token',
+    holderToken: undefined,
+    released: false,
+    adoptToken: undefined,
+    expected: false,
+  },
+])('decides whether $name is adoptable', ({ holderToken, released, adoptToken, expected }) => {
+  expect(claimIsAdoptable({ holderToken, released, adoptToken })).toBe(expected);
 });

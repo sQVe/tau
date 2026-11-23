@@ -5,10 +5,10 @@ import { notifyOnce, userConfigPath } from '../../../config/config.js';
 import { readRoleModel } from '../../../config/roleModels.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { get, kill, run, wait } from '../../../hc/hc.js';
-import type { HcRuntime } from '../../../hc/hc.js';
+import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { piArguments } from '../../../piStart/piArguments.js';
 import type { LiveAskResult, StartLiveAsk } from '../liveAsk.js';
-import { architectLockPath } from '../lock.js';
+import { architectLockPath, claimArchitectLock } from '../lock.js';
 import {
   askRecordPath,
   readArchitectRecord,
@@ -40,6 +40,7 @@ export type AskResult =
 
 export const askDeadlineSeconds = 900;
 
+const startingReason = 'The architect is starting. Ask again shortly.';
 const millisecondsPerSecond = 1000;
 
 const reportAskGaps = (ui: ConfigWarnings, gaps: AskRecordGap[]): void => {
@@ -82,8 +83,49 @@ const requireModel = (request: AskRequest): string => {
 
 const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason });
 
-const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Promise<AskResult> => {
-  const model = requireModel(request);
+const startHiddenAsk = async (
+  request: AskRequest,
+  initial: HiddenAskRecord,
+  recordPath: string,
+  model: string,
+  claimToken: string,
+): Promise<HcTerminal> => {
+  try {
+    return await run(request.hc, {
+      argv: piArguments({
+        model,
+        session: initial.sessionFile,
+        environment: {
+          TAU_ROLE: 'architect',
+          TAU_ARCHITECT_ASK: recordPath,
+          TAU_LEAD_TERMINAL: request.leadTerminal,
+          TAU_ARCHITECT_CLAIM: claimToken,
+        },
+        message: request.question,
+      }),
+      cwd: request.root,
+      background: true,
+      noParent: true,
+      notify: false,
+      labels: { 'tau.architect.ask': initial.askId },
+    });
+  } catch (error) {
+    await writeAskRecord(request.root, {
+      ...initial,
+      status: 'failed',
+      detail: 'The ask terminal could not be started.',
+    });
+
+    throw error;
+  }
+};
+
+const runHiddenAsk = async (
+  request: AskRequest,
+  sessionFile: string,
+  model: string,
+  claimToken: string,
+): Promise<AskResult> => {
   const askId = randomUUID();
   const recordPath = askRecordPath(request.root, askId);
 
@@ -105,23 +147,7 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
 
   await writeAskRecord(request.root, initial);
 
-  const terminal = await run(request.hc, {
-    argv: piArguments({
-      model,
-      session: sessionFile,
-      environment: {
-        TAU_ROLE: 'architect',
-        TAU_ARCHITECT_ASK: recordPath,
-        TAU_LEAD_TERMINAL: request.leadTerminal,
-      },
-      message: request.question,
-    }),
-    cwd: request.root,
-    background: true,
-    noParent: true,
-    notify: false,
-    labels: { 'tau.architect.ask': askId },
-  });
+  const terminal = await startHiddenAsk(request, initial, recordPath, model, claimToken);
 
   const started: HiddenAskRecord = { ...initial, terminal: terminal.address };
 
@@ -177,6 +203,21 @@ const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Pro
     askId,
     reason: 'The ask terminal failed before the architect answered. Call architect open instead.',
   };
+};
+
+const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Promise<AskResult> => {
+  const model = requireModel(request);
+  const claim = await claimArchitectLock(request.root);
+
+  if (claim.kind === 'refused') {
+    return needsOpen(startingReason);
+  }
+
+  try {
+    return await runHiddenAsk(request, sessionFile, model, claim.token);
+  } finally {
+    await claim.release();
+  }
 };
 
 const architectPublication = (

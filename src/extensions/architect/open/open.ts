@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
 import { userConfigPath } from '../../../config/config.js';
@@ -13,11 +14,12 @@ import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
 import { startPiSession, startPiSessionRightOf } from '../../../piStart/piStart.js';
 import { tabName } from '../../../tabName.js';
-import { architectLockPath } from '../lock.js';
+import { architectLockPath, claimArchitectLock } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
+import { openStartProgress } from './openStartClaimDecision.js';
 
 export interface OpenRequest {
   root: string;
@@ -34,6 +36,10 @@ export type OpenResult =
   | { status: 'resumed'; sessionFile: string };
 
 const askLabel = 'tau.architect.ask';
+
+const takeoverSeconds = 60;
+const takeoverPollMilliseconds = 250;
+const millisecondsPerSecond = 1000;
 
 const fileExists = (path: string): Promise<boolean> =>
   stat(path).then(
@@ -159,6 +165,7 @@ const hasSpace = (leadSpace: string | undefined): boolean =>
 const startArchitect = async (
   request: OpenRequest,
   recordedSession: string | undefined,
+  claimToken: string,
 ): Promise<string | undefined> => {
   const leadSpace = await readLeadSpace(request);
   const model = requireModel(request);
@@ -177,7 +184,11 @@ const startArchitect = async (
     model,
     session,
     bareRoot: await isBareRootWithoutGitEntry(request.root),
-    environment: { TAU_ROLE: 'architect', TAU_LEAD_TERMINAL: request.leadTerminal },
+    environment: {
+      TAU_ROLE: 'architect',
+      TAU_LEAD_TERMINAL: request.leadTerminal,
+      TAU_ARCHITECT_CLAIM: claimToken,
+    },
   };
 
   if (pane === undefined) {
@@ -193,6 +204,42 @@ const startArchitect = async (
 
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
+
+const startingRefusal = (root: string): Error =>
+  new Error(`The architect in ${root} is starting. Call architect open again shortly.`);
+
+const takeoverExpiry = (): Error =>
+  new Error(
+    `The architect did not take the checkout lock within ${takeoverSeconds} seconds. Call architect open again.`,
+  );
+
+const waitForTakeover = async (root: string, claimToken: string): Promise<void> => {
+  const lockPath = architectLockPath(root);
+  const deadline = Date.now() + takeoverSeconds * millisecondsPerSecond;
+
+  for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
+    const holder = await readLiveLockHolder(lockPath);
+
+    const progress = openStartProgress({
+      claimToken,
+      holderToken: holder?.token,
+      now: Date.now(),
+      deadline,
+    });
+
+    if (progress === 'taken') {
+      return;
+    }
+
+    if (progress === 'expired') {
+      throw takeoverExpiry();
+    }
+
+    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
+    await sleep(takeoverPollMilliseconds);
+  }
+};
 
 const unrecordedRefusal = (root: string): Error =>
   new Error(
@@ -252,9 +299,21 @@ export const openArchitect = async (request: OpenRequest): Promise<OpenResult> =
     return { status: 'running', terminal: running };
   }
 
-  const session = await startArchitect(request, record?.sessionFile ?? undefined);
+  const claim = await claimArchitectLock(request.root);
 
-  return session === undefined
-    ? { status: 'opened', sessionFile: null }
-    : { status: 'resumed', sessionFile: session };
+  if (claim.kind === 'refused') {
+    throw startingRefusal(request.root);
+  }
+
+  try {
+    const session = await startArchitect(request, record?.sessionFile ?? undefined, claim.token);
+
+    await waitForTakeover(request.root, claim.token);
+
+    return session === undefined
+      ? { status: 'opened', sessionFile: null }
+      : { status: 'resumed', sessionFile: session };
+  } finally {
+    await claim.release();
+  }
 };

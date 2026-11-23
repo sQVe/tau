@@ -82,6 +82,7 @@ const pureModules = [
   'src/extensions/architect/finalHandoverDecision.ts',
   'src/extensions/architect/gateDecision.ts',
   'src/extensions/architect/open/openReuseDecision.ts',
+  'src/extensions/architect/open/openStartClaimDecision.ts',
   'src/extensions/architect/queuedHandover.ts',
   'src/extensions/architect/readFailureDecision.ts',
   'src/extensions/architect/shutdownDecision.ts',
