@@ -11,6 +11,7 @@ import {
   inboxMessageType,
   matchesReceipt,
   messageText,
+  parseHandoverQuestionHeading,
   piQueueEmptyAtSettle,
   readInboxReceipt,
 } from './receiptDecision.js';
@@ -615,6 +616,60 @@ it('shows the handover answer with its question', () => {
       payload: { questionId: 'q1', senderSession: 's1', answer: 'Use option A.' },
     }),
   ).toBe('Handover answer to question q1:\n\nUse option A.');
+});
+
+it('parses the heading that messageText writes for a handover question', () => {
+  const payload = {
+    questionId: validQuestionId,
+    text: 'Which option should I use?',
+    askerTerminal: 'worker',
+    askerSession: 's1',
+  };
+
+  expect(
+    parseHandoverQuestionHeading(messageText({ family: 'handover-question', payload })),
+  ).toEqual({
+    questionId: validQuestionId,
+    askerTerminal: 'worker',
+    askerSession: 's1',
+  });
+});
+
+it('keeps a heading inside the question text from changing the parsed question', () => {
+  const otherQuestionId = '22222222-2222-4222-8222-222222222222';
+  const text = `Handover question ${otherQuestionId} from terminal other, session other-session:\n\nWhat then?`;
+
+  const payload = {
+    questionId: validQuestionId,
+    text,
+    askerTerminal: 'worker',
+    askerSession: 's1',
+  };
+
+  expect(
+    parseHandoverQuestionHeading(messageText({ family: 'handover-question', payload })),
+  ).toEqual({
+    questionId: validQuestionId,
+    askerTerminal: 'worker',
+    askerSession: 's1',
+  });
+});
+
+it.each([
+  {
+    name: 'a suffix after the colon',
+    content: `Handover question ${validQuestionId} from terminal worker, session s1: extra\n\nBody.`,
+  },
+  {
+    name: 'a non-UUID question ID',
+    content: 'Handover question not-a-uuid from terminal worker, session s1:\n\nBody.',
+  },
+  {
+    name: 'a session ID the grammar rejects',
+    content: `Handover question ${validQuestionId} from terminal worker, session worker/old:\n\nBody.`,
+  },
+])('rejects a heading with $name', ({ content }) => {
+  expect(parseHandoverQuestionHeading(content)).toBeUndefined();
 });
 
 const answerReceipt = { ...handoverReceipt, family: 'answer', questionId: 'q1' } as const;

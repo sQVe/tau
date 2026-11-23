@@ -1,6 +1,6 @@
-import { parseSenderLine, senderLine } from '../handoverSender.js';
+import { isSenderTerminal, parseSenderLine, senderLine } from '../handoverSender.js';
 import { isRecord } from '../schema.js';
-import { isUuid } from './protocol.js';
+import { isSessionId, isUuid } from './protocol.js';
 import type { SavableMessageBody } from './protocol.js';
 
 interface ReceiptIdentity {
@@ -35,6 +35,12 @@ export interface ReceiptedMessage {
 export interface SettleFacts {
   aborted: boolean;
   mode: string;
+}
+
+interface HandoverQuestionHeading {
+  questionId: string;
+  askerTerminal: string;
+  askerSession: string;
 }
 
 export const inboxReceiptVersion = 4;
@@ -154,15 +160,44 @@ export const answeredQuestionId = (message: InboxMessageFact): string | undefine
   return receipt?.family === 'answer' ? receipt.questionId : undefined;
 };
 
+const handoverQuestionHeadingExpression =
+  /^Handover question (\S+) from terminal (\S+), session (\S+):$/u;
+
+const handoverQuestionHeading = (payload: HandoverQuestionHeading): string =>
+  `Handover question ${payload.questionId} from terminal ${payload.askerTerminal}, session ${payload.askerSession}:`;
+
+export const parseHandoverQuestionHeading = (
+  content: unknown,
+): HandoverQuestionHeading | undefined => {
+  if (typeof content !== 'string') {
+    return undefined;
+  }
+
+  const firstLine = content.split(/\r?\n/u)[0] ?? '';
+  const match = handoverQuestionHeadingExpression.exec(firstLine);
+
+  if (match === null) {
+    return undefined;
+  }
+
+  const questionId = match[1] ?? '';
+  const askerTerminal = match[2] ?? '';
+  const askerSession = match[3] ?? '';
+
+  if (!isUuid(questionId) || !isSenderTerminal(askerTerminal) || !isSessionId(askerSession)) {
+    return undefined;
+  }
+
+  return { questionId, askerTerminal, askerSession };
+};
+
 export const messageText = (body: SavableMessageBody): string => {
   if (body.family === 'answer') {
     return body.payload.answer;
   }
 
   if (body.family === 'handover-question') {
-    const { questionId, text, askerTerminal, askerSession } = body.payload;
-
-    return `Handover question ${questionId} from terminal ${askerTerminal}, session ${askerSession}:\n\n${text}`;
+    return `${handoverQuestionHeading(body.payload)}\n\n${body.payload.text}`;
   }
 
   if (body.family === 'handover-answer') {
