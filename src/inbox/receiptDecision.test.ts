@@ -16,6 +16,8 @@ import {
 } from './receiptDecision.js';
 import type { ReceiptedMessage, ReceiptEntryFact } from './receiptDecision.js';
 
+const validQuestionId = '11111111-1111-4111-8111-111111111111';
+
 const readTable = [
   {
     name: 'a version 2 handover receipt entry',
@@ -78,7 +80,7 @@ const readTable = [
         messageId: 'm1',
         sessionId: 's1',
         family: 'handover-question',
-        questionId: 'q1',
+        questionId: validQuestionId,
       },
     },
     receipt: {
@@ -86,8 +88,37 @@ const readTable = [
       messageId: 'm1',
       sessionId: 's1',
       family: 'handover-question',
-      questionId: 'q1',
+      questionId: validQuestionId,
     },
+  },
+  {
+    name: 'a handover-question receipt without a question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 2,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a handover-question receipt with a malformed question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 2,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: 'q1',
+      },
+    },
+    receipt: undefined,
   },
   {
     name: 'a version 1 receipt',

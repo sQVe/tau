@@ -1,6 +1,6 @@
 import { parseSenderLine, senderLine } from '../handoverSender.js';
 import { isRecord } from '../schema.js';
-import { savableFamilies } from './protocol.js';
+import { isUuid, savableFamilies } from './protocol.js';
 import type { SavableFamily, SavableMessageBody } from './protocol.js';
 
 interface ReceiptIdentity {
@@ -13,7 +13,7 @@ export type InboxReceipt = ReceiptIdentity &
   (
     | { family: 'handover' }
     | { family: 'answer'; questionId?: string }
-    | { family: 'handover-question'; questionId?: string }
+    | { family: 'handover-question'; questionId: string }
   );
 
 interface InboxMessageFact {
@@ -53,6 +53,9 @@ const isFamily = (value: unknown): value is SavableFamily =>
 const questionDetails = (questionId: unknown): { questionId?: string } =>
   typeof questionId === 'string' ? { questionId } : {};
 
+const handoverQuestionDetails = (questionId: unknown): { questionId: string } | undefined =>
+  typeof questionId === 'string' && isUuid(questionId) ? { questionId } : undefined;
+
 const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined => {
   if (message.customType !== inboxMessageType || !isRecord(message.details)) {
     return undefined;
@@ -69,9 +72,13 @@ const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined =
 
   const identity = { version: inboxReceiptVersion, messageId, sessionId } as const;
 
-  const keepsQuestion = family === 'answer' || family === 'handover-question';
+  if (family === 'handover-question') {
+    const details = handoverQuestionDetails(questionId);
 
-  return keepsQuestion
+    return details === undefined ? undefined : { ...identity, family, ...details };
+  }
+
+  return family === 'answer'
     ? { ...identity, family, ...questionDetails(questionId) }
     : { ...identity, family };
 };
