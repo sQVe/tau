@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -6,7 +5,11 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
-import { advertiseInbox, startHandoverReceiver } from '../../../../tests/inboxReceiverHarness.js';
+import {
+  advertiseInbox,
+  savedFiles,
+  startHandoverReceiver,
+} from '../../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import type { Exec } from '../../../command.js';
 import type { HcRuntime } from '../../../hc/hc.js';
@@ -71,10 +74,17 @@ it('saves one open record, sends one frame, and ends the turn', async () => {
 
   const root = await createTemporaryRepository(onTestFinished);
   const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+  let frames = 0;
 
   const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
     outsideSlot: true,
-    accepts: { 'handover-question': (_request, save) => save() },
+    accepts: {
+      'handover-question': (_request, save) => {
+        frames += 1;
+
+        return save();
+      },
+    },
   });
 
   const fake = createHcFake();
@@ -123,9 +133,9 @@ it('saves one open record, sends one frame, and ends the turn', async () => {
     },
   });
 
-  const savedJson = receiver.savedRecords().filter((name) => name.endsWith('.json'));
-
-  expect(savedJson).toHaveLength(1);
+  expect(frames).toBe(1);
+  expect(await askerRecords(root)).toEqual([`${questionId}.json`]);
+  expect(savedFiles(receiver)).toHaveLength(1);
 });
 
 it('refuses when the asker has no listening inbox', async () => {
@@ -133,10 +143,17 @@ it('refuses when the asker has no listening inbox', async () => {
 
   const root = await createTemporaryRepository(onTestFinished);
   const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+  let frames = 0;
 
   const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
     outsideSlot: true,
-    accepts: { 'handover-question': (_request, save) => save() },
+    accepts: {
+      'handover-question': (_request, save) => {
+        frames += 1;
+
+        return save();
+      },
+    },
   });
 
   const fake = createHcFake();
@@ -151,10 +168,8 @@ it('refuses when the asker has no listening inbox', async () => {
   expect(result.isError).toBe(true);
   expect(result.terminate).toBeUndefined();
   expect(textOf(result)).toContain('ask_user_question');
-  const savedJson = receiver.savedRecords().filter((name) => name.endsWith('.json'));
-
-  expect(existsSync(questionRecordDirectory(root))).toBe(false);
-  expect(savedJson).toHaveLength(0);
+  expect(frames).toBe(0);
+  expect(await askerRecords(root)).toEqual([]);
 });
 
 it('sends nothing and saves nothing when the call is already cancelled', async () => {
@@ -162,10 +177,17 @@ it('sends nothing and saves nothing when the call is already cancelled', async (
 
   const root = await createTemporaryRepository(onTestFinished);
   const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+  let frames = 0;
 
   const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
     outsideSlot: true,
-    accepts: { 'handover-question': (_request, save) => save() },
+    accepts: {
+      'handover-question': (_request, save) => {
+        frames += 1;
+
+        return save();
+      },
+    },
   });
 
   const fake = createHcFake();
@@ -186,10 +208,8 @@ it('sends nothing and saves nothing when the call is already cancelled', async (
     name: 'AbortError',
   });
 
-  const savedJson = receiver.savedRecords().filter((name) => name.endsWith('.json'));
-
   expect(await askerRecords(root)).toEqual([]);
-  expect(savedJson).toHaveLength(0);
+  expect(frames).toBe(0);
   expect(fake.calls).toHaveLength(0);
 });
 
@@ -198,10 +218,17 @@ it('deletes the record when cancellation stops the send before delivery', async 
 
   const root = await createTemporaryRepository(onTestFinished);
   const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+  let frames = 0;
 
   const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
     outsideSlot: true,
-    accepts: { 'handover-question': (_request, save) => save() },
+    accepts: {
+      'handover-question': (_request, save) => {
+        frames += 1;
+
+        return save();
+      },
+    },
   });
 
   const fake = createHcFake();
@@ -233,13 +260,12 @@ it('deletes the record when cancellation stops the send before delivery', async 
     name: 'AbortError',
   });
 
-  const savedJson = receiver.savedRecords().filter((name) => name.endsWith('.json'));
   const signals = fake.calls.map((call) => call.signal);
 
   expect(gets).toBe(2);
   expect(signals.every((signal) => signal === controller.signal)).toBe(true);
   expect(await askerRecords(root)).toEqual([]);
-  expect(savedJson).toHaveLength(0);
+  expect(frames).toBe(0);
 });
 
 it('reports an unknown send with the receiver note and keeps the record', async () => {
@@ -248,17 +274,21 @@ it('reports an unknown send with the receiver note and keeps the record', async 
   const root = await createTemporaryRepository(onTestFinished);
   const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
   const reason = 'The receiver could not confirm the save.';
+  let frames = 0;
 
   const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
     outsideSlot: true,
     accepts: {
-      'handover-question': (request) =>
-        Promise.resolve({
+      'handover-question': (request) => {
+        frames += 1;
+
+        return Promise.resolve({
           protocol: 'rpc1',
           kind: 'unknown',
           messageId: request.messageId,
           reason,
-        }),
+        });
+      },
     },
   });
 
@@ -283,17 +313,27 @@ it('reports an unknown send with the receiver note and keeps the record', async 
   expect(result.terminate).toBe(true);
   expect(result.isError).toBeUndefined();
 
+  expect(frames).toBe(1);
+  expect(await askerRecords(root)).toEqual([`${details.questionId}.json`]);
   expect(await readQuestionRecord(root, details.questionId)).toMatchObject({ kind: 'record' });
 });
 
-it('refuses an ended sender', async () => {
+it('refuses an ended sender even when the receiver accepts questions', async () => {
   vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
 
   const root = await createTemporaryRepository(onTestFinished);
   const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+  let frames = 0;
 
   const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
     outsideSlot: true,
+    accepts: {
+      'handover-question': (_request, save) => {
+        frames += 1;
+
+        return save();
+      },
+    },
   });
 
   const fake = createHcFake();
@@ -303,11 +343,47 @@ it('refuses an ended sender', async () => {
 
   const result = await askSender(targetOf(fake, root, otherSession), { question: questionText });
 
-  expect(textOf(result)).toContain('ask_user_question');
+  expect(result.details.status).toBe('refused');
   expect(result.isError).toBe(true);
   expect(result.terminate).toBeUndefined();
+  expect(textOf(result)).toContain('ask_user_question');
+  expect(frames).toBe(0);
+  expect(await askerRecords(root)).toEqual([]);
+  expect(savedFiles(receiver)).toHaveLength(0);
+});
 
-  expect(existsSync(join(questionRecordDirectory(root), `${result.details.questionId}.json`))).toBe(
-    false,
-  );
+it('refuses when the receiver declines questions', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+  let frames = 0;
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
+    outsideSlot: true,
+    accepts: {
+      'handover-question': () => {
+        frames += 1;
+
+        return Promise.resolve('This receiver declines questions.');
+      },
+    },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, senderTerminal, receiver.path);
+  await startAskerInbox(fake);
+
+  const result = await askSender(targetOf(fake, root, receiver.sessionId), {
+    question: questionText,
+  });
+
+  expect(result.details.status).toBe('refused');
+  expect(result.isError).toBe(true);
+  expect(result.terminate).toBeUndefined();
+  expect(textOf(result)).toContain('ask_user_question');
+  expect(frames).toBe(1);
+  expect(await askerRecords(root)).toEqual([]);
+  expect(savedFiles(receiver)).toHaveLength(0);
 });
