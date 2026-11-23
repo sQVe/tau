@@ -30,23 +30,17 @@ export type QuestionGateShadow = QuestionGateModels & {
   shadow: ShadowConfig;
 };
 
-interface QuestionGateValue {
-  source: string;
-  value: unknown;
-}
-
-interface QuestionGateSettings extends QuestionGateValue {
-  models: QuestionGateModels;
-  decide: boolean;
-  shadow: ShadowConfig | undefined;
-}
-
 const questionGateModelsSchema = Type.Object({
   classifier: Type.String(),
   panel: Type.Tuple([Type.String(), Type.String(), Type.String()]),
   decide: Type.Optional(Type.Unknown()),
   shadow: Type.Optional(Type.Unknown()),
 });
+
+interface QuestionGateValue {
+  source: string;
+  value: Static<typeof questionGateModelsSchema>;
+}
 
 // The config schemas accept unknown keys, which warnUnknownKeys reports. Saved records stay strict
 // in judgeSchema.ts.
@@ -214,46 +208,11 @@ const readQuestionGateValue = (
 
   warnUnknownKeys(ui, source, value, knownQuestionGateKeys, 'questionGate');
 
-  return { source, value };
-};
-
-const requireModelsValue = ({
-  source,
-  value,
-}: QuestionGateValue): Static<typeof questionGateModelsSchema> => {
   if (!Value.Check(questionGateModelsSchema, value)) {
     throw invalid(source, modelsMessage);
   }
 
-  return value;
-};
-
-const readQuestionGateSettings = (
-  location: ConfigLocation,
-  ui: ConfigWarnings,
-): QuestionGateSettings | undefined => {
-  const gate = readQuestionGateValue(location, ui);
-
-  if (gate === undefined) {
-    return undefined;
-  }
-
-  const value = requireModelsValue(gate);
-
-  return {
-    ...gate,
-    models: readModels(gate.source, value),
-    decide: readDecide(gate.source, value.decide),
-    shadow: readShadow(gate.source, value.shadow),
-  };
-};
-
-const requireShadow = (settings: QuestionGateSettings): ShadowConfig => {
-  if (settings.shadow === undefined) {
-    throw invalid(settings.source, decideNeedsShadowMessage);
-  }
-
-  return settings.shadow;
+  return { source, value };
 };
 
 export const readQuestionGateModels = (
@@ -266,9 +225,7 @@ export const readQuestionGateModels = (
     return undefined;
   }
 
-  const value = requireModelsValue(gate);
-
-  return readModels(gate.source, value);
+  return readModels(gate.source, gate.value);
 };
 
 export const readQuestionGateShadow = (
@@ -281,34 +238,41 @@ export const readQuestionGateShadow = (
     return undefined;
   }
 
-  const value = requireModelsValue(gate);
-  const shadow = readShadow(gate.source, value.shadow);
+  const shadow = readShadow(gate.source, gate.value.shadow);
 
   if (shadow === undefined) {
     return undefined;
   }
 
-  return { ...readModels(gate.source, value), shadow };
+  return { ...readModels(gate.source, gate.value), shadow };
 };
 
 export const readQuestionGateConfig = (
   location: ConfigLocation,
   ui: ConfigWarnings,
 ): QuestionGateConfig | undefined => {
-  const settings = readQuestionGateSettings(location, ui);
+  const gate = readQuestionGateValue(location, ui);
 
-  if (settings === undefined) {
+  if (gate === undefined) {
     return undefined;
   }
 
-  if (settings.decide) {
-    return { ...settings.models, decide: true, shadow: requireShadow(settings) };
+  const models = readModels(gate.source, gate.value);
+  const decide = readDecide(gate.source, gate.value.decide);
+  const shadow = readShadow(gate.source, gate.value.shadow);
+
+  if (decide) {
+    if (shadow === undefined) {
+      throw invalid(gate.source, decideNeedsShadowMessage);
+    }
+
+    return { ...models, decide: true, shadow };
   }
 
   return {
-    ...settings.models,
+    ...models,
     decide: false,
-    ...(settings.shadow === undefined ? {} : { shadow: settings.shadow }),
+    ...(shadow === undefined ? {} : { shadow }),
   };
 };
 

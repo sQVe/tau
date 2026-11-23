@@ -726,6 +726,34 @@ it('reports a different config error after an earlier one in the same session', 
   expect(harness.saved).toEqual([]);
 });
 
+it('reports A, B, A config errors as two notices', async ({ onTestFinished }) => {
+  const harness = await createHarness(onTestFinished, { config: invalidPanelConfig() });
+  const userFile = join(harness.agentDirectory, 'tau.json');
+
+  const runDialog = async () => {
+    const pending = harness.run([eligibleQuestion]);
+
+    harness.latest().handleInput('\r');
+    await pending;
+    await harness.flush();
+  };
+
+  await runDialog();
+
+  writeFileSync(join(harness.agentDirectory, 'tau.json'), JSON.stringify(invalidConfig()));
+  await runDialog();
+
+  writeFileSync(join(harness.agentDirectory, 'tau.json'), JSON.stringify(invalidPanelConfig()));
+  await runDialog();
+
+  expect(harness.notify).toHaveBeenCalledTimes(2);
+  expect(harness.notify).toHaveBeenNthCalledWith(1, expect.stringContaining(userFile), 'error');
+  expect(harness.notify).toHaveBeenNthCalledWith(2, expect.stringContaining(userFile), 'error');
+  expect(harness.registry.classify).not.toHaveBeenCalled();
+  expect(harness.registry.complete).not.toHaveBeenCalled();
+  expect(harness.saved).toEqual([]);
+});
+
 it('saves a record when decide is malformed and the shadow block is valid', async ({
   onTestFinished,
 }) => {
