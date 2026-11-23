@@ -105,14 +105,14 @@ const table: {
     expected: { kind: 'refusal', message: 'gate record gate.json does not exist.' },
   },
   {
-    name: 'refuses a gate with no read fact',
+    name: 'requests a gate read for a gate-only ask',
     facts: {
       askId: undefined,
       question: undefined,
       gate: 'gate.json',
       gateRead: undefined,
     },
-    expected: { kind: 'refusal', message: 'gate record gate.json does not exist.' },
+    expected: { kind: 'readGate', gate: 'gate.json' },
   },
   {
     name: 'refuses an unreadable gate record with the reader message',

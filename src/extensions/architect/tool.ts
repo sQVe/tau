@@ -12,7 +12,7 @@ import { answerLiveAsk } from './answer.js';
 import type { AnswerResult, AnswerTracker } from './answer.js';
 import { askArchitect } from './ask/ask.js';
 import type { AskResult } from './ask/ask.js';
-import { decideAskIntake } from './ask/askIntakeDecision.js';
+import { decideAskIntake, decideGateIntake } from './ask/askIntakeDecision.js';
 import { runGate } from './gate.js';
 import type { GateResult } from './gate.js';
 import { createLiveAskOperations } from './liveAsk.js';
@@ -94,36 +94,47 @@ const runAsk = async (
   liveAsk: LiveAskOperations,
 ): Promise<AskResult> => {
   const leadSessionId = context.sessionManager.getSessionId();
-  const gate = unsetWhenBlank(input.gate);
-  const gateRead = gate === undefined ? undefined : await readGateRecord(root, gate);
 
-  const decision = decideAskIntake({
+  const ask = (question: string, gateRecord: string | null): Promise<AskResult> =>
+    askArchitect({
+      root,
+      question,
+      gateRecord,
+      leadTerminal: leadTerminal(),
+      leadSessionId,
+      listenerPath: currentInboxPath(),
+      location: readConfigLocation(root, {}, context),
+      ui: context.ui,
+      hc,
+      liveAsk: liveAsk.ask,
+    });
+
+  const intake = decideAskIntake({
     askId: input.askId,
     question: input.question,
     gate: input.gate,
-    gateRead,
+    gateRead: undefined,
   });
 
-  if (decision.kind === 'refusal') {
-    throw new Error(decision.message);
+  if (intake.kind === 'refusal') {
+    throw new Error(intake.message);
   }
 
-  if (decision.kind === 'retry') {
-    return liveAsk.retry({ root, askId: requireAskId(decision.askId), leadSessionId, hc });
+  if (intake.kind === 'retry') {
+    return liveAsk.retry({ root, askId: requireAskId(intake.askId), leadSessionId, hc });
   }
 
-  return askArchitect({
-    root,
-    question: decision.question,
-    gateRecord: decision.gateRecord,
-    leadTerminal: leadTerminal(),
-    leadSessionId,
-    listenerPath: currentInboxPath(),
-    location: readConfigLocation(root, {}, context),
-    ui: context.ui,
-    hc,
-    liveAsk: liveAsk.ask,
-  });
+  if (intake.kind === 'ask') {
+    return ask(intake.question, intake.gateRecord);
+  }
+
+  const gate = decideGateIntake(intake.gate, await readGateRecord(root, intake.gate));
+
+  if (gate.kind === 'refusal') {
+    throw new Error(gate.message);
+  }
+
+  return ask(gate.question, gate.gateRecord);
 };
 
 const runAction = async (
@@ -181,7 +192,7 @@ export const createArchitectTool = (
   return defineTool({
     name: 'architect',
     label: 'Architect',
-    description: `- open: with request, starts or resumes it beside the lead. Returns {status, sessionFile} or {status: "running", terminal}; send a live one the request with handover. Refuses if locked.
+    description: `- open: with request, starts or resumes it beside the lead. Returns {status, sessionFile} or {status: "running", terminal}; send a live one the request with handover.
 - ask: with question or gate, a gate record path. Live: {queued|unknown, askId, note}; follow note, retry unknown by askId. Else hidden: {askId, answer} or needsOpen. Refuses if busy.
 - gate: classifies request and restatement. Returns {decision, label, confidence, recordPath}. Gate only a new request; an acceptance reply follows your offer. Follow specified; on open, open it; on uncertain, ask with gate = recordPath.`,
     promptSnippet: 'Open, ask, or gate the checkout architect.',

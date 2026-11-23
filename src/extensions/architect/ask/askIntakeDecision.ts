@@ -8,21 +8,25 @@ export interface AskIntakeFacts {
   gateRead: GateRecordRead | undefined;
 }
 
+interface AskRefusal {
+  kind: 'refusal';
+  message: string;
+}
+
+export type GateIntakeDecision = { kind: 'ask'; question: string; gateRecord: string } | AskRefusal;
+
 export type AskIntakeDecision =
   | { kind: 'retry'; askId: string }
   | { kind: 'ask'; question: string; gateRecord: string | null }
-  | { kind: 'refusal'; message: string };
+  | { kind: 'readGate'; gate: string }
+  | GateIntakeDecision;
 
-const refusal = (message: string): AskIntakeDecision => ({ kind: 'refusal', message });
+const refusal = (message: string): AskRefusal => ({ kind: 'refusal', message });
 
 const unsetWhenBlank = (value: string | undefined): string | undefined =>
   value === undefined || value.trim() === '' ? undefined : value;
 
-const gateIntake = (gate: string, read: GateRecordRead | undefined): AskIntakeDecision => {
-  if (read === undefined) {
-    return refusal(`gate record ${gate} does not exist.`);
-  }
-
+export const decideGateIntake = (gate: string, read: GateRecordRead): GateIntakeDecision => {
   if (read.kind === 'outside') {
     return refusal(`gate ${gate} is not a gate record in ${read.directory}.`);
   }
@@ -72,5 +76,9 @@ export const decideAskIntake = (facts: AskIntakeFacts): AskIntakeDecision => {
     return refusal('question or gate is required.');
   }
 
-  return gateIntake(gate, facts.gateRead);
+  if (facts.gateRead === undefined) {
+    return { kind: 'readGate', gate };
+  }
+
+  return decideGateIntake(gate, facts.gateRead);
 };
