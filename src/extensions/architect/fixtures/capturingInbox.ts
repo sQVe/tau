@@ -1,9 +1,10 @@
-import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
 import type { onTestFinished } from 'vitest';
 
+import { savedTextsIn } from '../../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { createReceiptStore, createReceiver } from '../../../inbox/inbox.js';
 import { decodeRequest, encodeFrame, refusedReply } from '../../../inbox/protocol.js';
@@ -14,7 +15,8 @@ export interface CapturingInbox {
   path: string;
   frames: string[];
   saved: () => string[];
-  savedTexts: () => string[];
+  savedRecords: () => string[];
+  savedTexts: () => Promise<string[]>;
   releaseFirst: () => void;
   // Sets the mode for every frame after the first.
   replyLater: (mode: ReplyMode) => void;
@@ -120,21 +122,16 @@ export const startCapturingInbox = async (
     server.close();
   });
 
-  const saved = (): string[] =>
-    readdirSyncSafe(join(records, sessionId)).filter((name) => name.endsWith('.json'));
+  const savedRecords = (): string[] => readdirSyncSafe(join(records, sessionId));
+
+  const saved = (): string[] => savedRecords().filter((name) => name.endsWith('.json'));
 
   return {
     path,
     frames,
     saved,
-    savedTexts: () =>
-      saved().map((name) => {
-        const record = JSON.parse(readFileSync(join(records, sessionId, name), 'utf8')) as {
-          payload: { text: string };
-        };
-
-        return record.payload.text;
-      }),
+    savedRecords,
+    savedTexts: () => savedTextsIn(join(records, sessionId)),
     releaseFirst: () => {
       release?.();
     },

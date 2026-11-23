@@ -7,8 +7,15 @@ import type { onTestFinished } from 'vitest';
 import { ensurePrivateDirectory, openEndpoint, socketPathFor } from '../src/inbox/endpoint.js';
 import { createReceiptStore, createReceiver, startInbox } from '../src/inbox/inbox.js';
 import type { ReceiverOptions } from '../src/inbox/inbox.js';
-import { decodeRequest, encodeFrame, refusedReply } from '../src/inbox/protocol.js';
+import {
+  decodeRequest,
+  encodeFrame,
+  formatInboxLabel,
+  refusedReply,
+} from '../src/inbox/protocol.js';
 import type { Family, MessageReply, MessageRequest } from '../src/inbox/protocol.js';
+import { pendingMessages, readMessage } from '../src/inbox/store.js';
+import type { HcFake } from './hcFake.js';
 
 export interface HandoverReceiver {
   sessionId: string;
@@ -28,6 +35,22 @@ export interface HandoverReceiverOptions {
 }
 
 type Accept = (request: MessageRequest) => Promise<MessageReply>;
+
+export const advertiseInbox = (
+  hc: Pick<HcFake, 'replyGet'>,
+  terminal: string,
+  path: string,
+): void => {
+  hc.replyGet(
+    terminal,
+    JSON.stringify({
+      address: terminal,
+      name: null,
+      state: 'live',
+      labels: { 'tau.inbox': formatInboxLabel(path) },
+    }),
+  );
+};
 
 const acceptHandovers: ReceiverOptions['accepts'] = { handover: (_request, save) => save() };
 
@@ -123,6 +146,34 @@ export const startHandoverReceiver = async (
 
   return { sessionId, path: paths[0] ?? '', inbox, savedRecords };
 };
+
+const savedText = async (directory: string, messageId: string): Promise<string> => {
+  const read = await readMessage(directory, messageId);
+
+  if (read.kind !== 'record') {
+    throw new Error(`Inbox record ${messageId} is ${read.kind}.`);
+  }
+
+  if (read.record.family !== 'handover') {
+    throw new Error(
+      `Inbox record ${messageId} is a ${read.record.family} message, not a handover.`,
+    );
+  }
+
+  return read.record.payload.text;
+};
+
+export const savedTextsIn = async (directory: string): Promise<string[]> => {
+  const messageIds = await pendingMessages(directory);
+
+  return Promise.all(messageIds.map((messageId) => savedText(directory, messageId)));
+};
+
+export const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> =>
+  savedTextsIn(receiver.inbox);
+
+export const savedFiles = (receiver: HandoverReceiver): string[] =>
+  receiver.savedRecords().filter((name) => name.startsWith(`${receiver.sessionId}/`));
 
 // Accept checks live in the process-wide inbox slot, so a test that registers one removes it after.
 export const forgetAcceptCheck = (family: Family): void => {

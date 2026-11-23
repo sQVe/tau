@@ -10,9 +10,13 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
+import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
+import type { EndNoteRoute } from './endNoteDecision.js';
+import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
+import type { FinalHandoverResult } from './queuedHandover.js';
 import { readAskRecords, writeArchitectRecord, writeAskRecord } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
 
@@ -27,6 +31,13 @@ export interface ArchitectSession {
   ui: ConfigWarnings;
   owner: ArchitectOwner;
   held: HeldLockToken;
+  endNote?: EndNoteRoute;
+}
+
+export interface EndArchitectOptions {
+  answers: AnswerTracker;
+  admissions: AskAdmissions;
+  sendEndNote: boolean;
 }
 
 export const createHeldLockToken = (): HeldLockToken => {
@@ -90,18 +101,33 @@ const startArchitect = async (
       sessionId: context.sessionManager.getSessionId(),
     };
 
+    // oxlint-disable-next-line node/no-process-env -- The lead passes its address in the pane environment.
+    const leadTerminal = process.env.TAU_LEAD_TERMINAL ?? null;
+
     await writeArchitectRecord(root, {
       version: 2,
       sessionFile: context.sessionManager.getSessionFile() ?? null,
-      // oxlint-disable-next-line node/no-process-env -- The lead passes its address in the pane environment.
-      leadTerminal: process.env.TAU_LEAD_TERMINAL ?? null,
+      leadTerminal,
       owner,
       updatedAt: new Date().toISOString(),
     });
 
     await afterPublish?.();
 
-    return { root, release: lock.release, ui: context.ui, owner, held };
+    const endNote = initialEndNoteRoute({
+      mode: owner.mode,
+      leadTerminal,
+      architectTerminal: owner.terminal,
+    });
+
+    return {
+      root,
+      release: lock.release,
+      ui: context.ui,
+      owner,
+      held,
+      ...(endNote === undefined ? {} : { endNote }),
+    };
   } catch (error) {
     held.set(undefined);
     await release?.();
@@ -181,22 +207,53 @@ const closeLiveAsks = async (
   });
 };
 
+export const recordFinalHandover = (
+  session: ArchitectSession,
+  result: FinalHandoverResult,
+): void => {
+  const route = nextEndNoteRoute(session.endNote, result);
+
+  if (route === undefined) {
+    delete session.endNote;
+  } else {
+    session.endNote = route;
+  }
+};
+
 // The token goes first so no new question is saved. The wait lets a save that already started
 // finish before the lock is released.
 export const endArchitectSession = async (
   session: ArchitectSession,
   hc: HcRuntime,
-  answers: AnswerTracker,
-  admissions: AskAdmissions,
+  { answers, admissions, sendEndNote }: EndArchitectOptions,
 ): Promise<void> => {
   session.held.set(undefined);
 
+  // The note read must finish before the lock is released, so a new owner cannot overwrite the
+  // record first. It starts with the close so its deadline starts now, but live ask settlement does
+  // not wait for it.
+  const note =
+    sendEndNote && session.endNote !== undefined
+      ? prepareEndNote(session.endNote, session.root)
+      : undefined;
+
+  const closing = closeAdmitted(answers, admissions);
+
   try {
-    const closed = await closeAdmitted(answers, admissions);
+    const closed = await closing;
 
     await closeLiveAsks(session, hc, closed);
+    await note;
     await session.release();
   } finally {
-    await failRunningAsks(session.root, session.ui);
+    try {
+      await failRunningAsks(session.root, session.ui);
+    } finally {
+      if (note !== undefined) {
+        await deliverEndNote(await note, hc, (message) => {
+          session.ui.notify(message, 'warning');
+        });
+      }
+    }
   }
 };

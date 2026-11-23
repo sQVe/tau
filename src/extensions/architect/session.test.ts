@@ -1,22 +1,29 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
-import type { HcFake } from '../../../tests/hcFake.js';
-import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
-import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
+import {
+  advertiseInbox,
+  savedFiles,
+  savedTexts,
+  startHandoverReceiver,
+} from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
-import type { HcRuntime } from '../../hc/hc.js';
-import { createAnswerTracker } from './answer.js';
-import { createAskAdmissions } from './ask/askAcceptance.js';
+import { startLeadInbox } from './fixtures/leadInbox.js';
 import { readArchitectOwner } from './fixtures/toolHarness.js';
+import {
+  endOptions,
+  hcRuntime,
+  sessionContext,
+  stubArchitect,
+  visibleArchitect,
+} from './fixtures/visibleSession.js';
 import { architectLockPath } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import {
@@ -30,40 +37,11 @@ import type { HiddenAskRecord, LiveAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
 import type { ArchitectSession } from './session.js';
 
-const hcRuntime = (hc: HcFake): HcRuntime => ({ ...hc, cwd: process.cwd() });
-
-const sessionContext = (cwd: string) => {
-  const notify = vi.fn<(message: string, level?: string) => void>();
-  const shutdown = vi.fn<() => void>();
-
-  const context = {
-    cwd,
-    ui: { notify },
-    shutdown,
-    isProjectTrusted: () => true,
-    sessionManager: {
-      getSessionFile: () => '/sessions/architect.jsonl',
-      getSessionId: () => 'session-architect',
-    },
-  } as unknown as ExtensionContext;
-
-  return { context, notify, shutdown };
-};
-
 const holdLock = async (root: string, released: boolean): Promise<void> => {
   const path = `${architectLockPath(root)}.1`;
 
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, ownerJson('holder', released));
-};
-
-const stubArchitect = (cleanup: (cleanup: () => void) => void): void => {
-  vi.stubEnv('TAU_ROLE', 'architect');
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-
-  cleanup(() => {
-    vi.unstubAllEnvs();
-  });
 };
 
 it('a held lock notifies and shuts the architect down', async ({ onTestFinished }) => {
@@ -116,8 +94,7 @@ it('a released lock starts the architect and writes its record', async ({ onTest
   await endArchitectSession(
     session as NonNullable<typeof session>,
     hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    endOptions(),
   );
 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
@@ -136,8 +113,7 @@ it('an ask session records ask mode', async ({ onTestFinished }) => {
   await endArchitectSession(
     session as NonNullable<typeof session>,
     hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    endOptions(),
   );
 });
 
@@ -154,9 +130,48 @@ it('an empty ask path records visible mode', async ({ onTestFinished }) => {
   await endArchitectSession(
     session as NonNullable<typeof session>,
     hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    endOptions(),
   );
+});
+
+it('a visible architect with an unset or empty lead terminal builds no end note route', async ({
+  onTestFinished,
+}) => {
+  for (const leadTerminal of [undefined, '']) {
+    stubArchitect(onTestFinished);
+    vi.stubEnv('TAU_LEAD_TERMINAL', leadTerminal);
+
+    const root = await createTemporaryRepository(onTestFinished);
+    const { context } = sessionContext(root);
+    const session = await startArchitectSession(context, createHeldLockToken());
+
+    if (session === undefined) {
+      throw new Error('The architect did not start.');
+    }
+
+    expect(session.endNote).toBeUndefined();
+
+    await endArchitectSession(session, hcRuntime(createHcFake()), endOptions());
+  }
+});
+
+it('an ask session with a lead terminal builds no end note route', async ({ onTestFinished }) => {
+  stubArchitect(onTestFinished);
+  vi.stubEnv('TAU_ARCHITECT_ASK', '/sessions/ask.json');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const hc = createHcFake();
+  const lead = await startLeadInbox(onTestFinished, hc);
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session?.endNote).toBeUndefined();
+
+  await endArchitectSession(session as ArchitectSession, hcRuntime(hc), endOptions());
+
+  expect(lead.savedRecords()).toEqual([]);
+  expect(session?.endNote).toBeUndefined();
 });
 
 const hiddenIds = {
@@ -224,12 +239,7 @@ it('ending fails only running hidden asks', async ({ onTestFinished }) => {
 
   const notify = vi.fn<(message: string, level?: string) => void>();
 
-  await endArchitectSession(
-    hiddenSession(root, notify),
-    hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(hiddenSession(root, notify), hcRuntime(createHcFake()), endOptions());
 
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
   expect(await readAskRecord(root, hiddenIds.sent)).toMatchObject({ status: 'sent' });
@@ -244,12 +254,7 @@ it('ending reports a bad ask file and still fails the running ask', async ({ onT
   await mkdir(askRecordDirectory(root), { recursive: true });
   await writeFile(join(askRecordDirectory(root), 'malformed.json'), '{"version":2');
 
-  await endArchitectSession(
-    hiddenSession(root, notify),
-    hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(hiddenSession(root, notify), hcRuntime(createHcFake()), endOptions());
 
   expect(notify).toHaveBeenCalledWith(expect.stringContaining('Malformed ask record'), 'warning');
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
@@ -269,66 +274,23 @@ it('a non-architect session takes no lock', async ({ onTestFinished }) => {
   expect(await readArchitectRecord(root)).toBeUndefined();
 });
 
-const visibleArchitect = async (cleanup: (cleanup: () => void) => void) => {
-  stubArchitect(cleanup);
-
-  const root = await createTemporaryRepository(cleanup);
-  const { context } = sessionContext(root);
-  const session = await startArchitectSession(context, createHeldLockToken());
-
-  if (session === undefined) {
-    throw new Error('The architect did not start.');
-  }
-
-  return { root, session };
-};
-
 it('ending a visible architect fails its open live ask and tells the lead to ask again', async ({
   onTestFinished,
 }) => {
   const { root, session } = await visibleArchitect(onTestFinished);
   const hc = createHcFake();
-  const sockets = temporaryDirectory(onTestFinished, 'tau-architect-close-');
-
-  const lead = await startHandoverReceiver(onTestFinished, sockets, 't-lead', {
-    sessionId: 'session-lead',
-  });
-
-  hc.replyGet(
-    't-lead',
-    JSON.stringify({
-      address: 't-lead',
-      state: 'live',
-      labels: { 'tau.inbox': `rpc1:${lead.path}` },
-    }),
-  );
+  const lead = await startLeadInbox(onTestFinished, hc);
 
   await writeAskRecord(root, liveAsk('open', 'queued'));
   await writeAskRecord(root, liveAsk('answered', 'answered'));
 
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(session, hcRuntime(hc), endOptions());
 
-  const directory = join(sockets, 'records', 'session-lead');
-  const names = await readdir(directory);
-
-  const texts = await Promise.all(
-    names.map(async (name) => {
-      const saved = JSON.parse(await readFile(join(directory, name), 'utf8')) as {
-        payload: { text: string };
-      };
-
-      return saved.payload.text;
-    }),
-  );
-
-  expect(texts).toEqual([
+  expect(await savedTexts(lead)).toEqual([
     `Ask ${liveIds.open} got no answer: the architect closed. Call architect ask again.`,
   ]);
+
+  expect(savedFiles(lead)).toHaveLength(1);
 
   expect(await readAskRecord(root, liveIds.open)).toMatchObject({
     status: 'failed',
@@ -349,12 +311,7 @@ it('ending a visible architect releases its lock when the close note cannot be s
   await writeAskRecord(root, liveAsk('open', 'unknown'));
   const notify = session.ui.notify as unknown as Mock;
 
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(session, hcRuntime(hc), endOptions());
 
   expect(notify).toHaveBeenCalledWith(
     expect.stringContaining(`The lead got no close note for ask ${liveIds.open}:`),
@@ -395,8 +352,7 @@ it('holds the lock token from the lock, before the record and startup return', a
   await endArchitectSession(
     session as NonNullable<typeof session>,
     hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    endOptions(),
   );
 
   expect(held.current()).toBeUndefined();
@@ -423,30 +379,12 @@ it('ending a visible architect does not note an ask that is already closed', asy
 }) => {
   const { root, session } = await visibleArchitect(onTestFinished);
   const hc = createHcFake();
-  const sockets = temporaryDirectory(onTestFinished, 'tau-architect-closed-');
-
-  const lead = await startHandoverReceiver(onTestFinished, sockets, 't-lead', {
-    sessionId: 'session-lead',
-  });
-
-  hc.replyGet(
-    't-lead',
-    JSON.stringify({
-      address: 't-lead',
-      state: 'live',
-      labels: { 'tau.inbox': `rpc1:${lead.path}` },
-    }),
-  );
+  const lead = await startLeadInbox(onTestFinished, hc);
 
   await writeAskRecord(root, liveAsk('answered', 'answered'));
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(session, hcRuntime(hc), endOptions());
 
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
@@ -492,17 +430,6 @@ const holdAskLock = async (
   };
 };
 
-const leadTerminal = (hc: HcFake, lead: HandoverReceiver): void => {
-  hc.replyGet(
-    't-lead',
-    JSON.stringify({
-      address: 't-lead',
-      state: 'live',
-      labels: { 'tau.inbox': `rpc1:${lead.path}` },
-    }),
-  );
-};
-
 it('ending does not note an ask that closes after the scan', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const hc = createHcFake();
@@ -514,7 +441,7 @@ it('ending does not note an ask that closes after the scan', async ({ onTestFini
     { sessionId: 'session-lead' },
   );
 
-  leadTerminal(hc, lead);
+  advertiseInbox(hc, 't-lead', lead.path);
   await writeAskRecord(root, liveAsk('open', 'unknown'));
 
   const lock = await holdAskLock(onTestFinished, root, liveIds.open);
@@ -558,7 +485,7 @@ it('ending does not note an ask that disappears after the scan', async ({ onTest
     { sessionId: 'session-lead' },
   );
 
-  leadTerminal(hc, lead);
+  advertiseInbox(hc, 't-lead', lead.path);
   await writeAskRecord(root, liveAsk('open', 'unknown'));
 
   const lock = await holdAskLock(onTestFinished, root, liveIds.open);
@@ -619,7 +546,7 @@ it('ending waits for a held close note after another ask settlement fails', asyn
     },
   });
 
-  leadTerminal(hc, lead);
+  advertiseInbox(hc, 't-lead', lead.path);
   await writeAskRecord(root, liveAsk('open', 'queued'));
   await writeAskRecord(root, { ...liveAsk('open', 'queued'), askId: secondLiveId });
 

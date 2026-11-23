@@ -140,7 +140,15 @@ const closingSetup = async (cleanup: Cleanup, stallPoint: StallPoint = 'commit')
     folderNames: () => readdirSync(receiver.inbox),
     savedMessages: () => receiver.savedRecords().filter((name) => name.endsWith('.json')),
     end: () =>
-      endArchitectSession(session, { ...hc, cwd: root }, createAnswerTracker(), admissions),
+      endArchitectSession(
+        session,
+        { ...hc, cwd: root },
+        {
+          answers: createAnswerTracker(),
+          admissions,
+          sendEndNote: true,
+        },
+      ),
   };
 };
 

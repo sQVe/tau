@@ -602,8 +602,11 @@ it('a close that lands before the lead send returns keeps the ask failed', async
   await endArchitectSession(
     session,
     { ...hc, cwd: root },
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    {
+      answers: createAnswerTracker(),
+      admissions: createAskAdmissions(() => undefined),
+      sendEndNote: true,
+    },
   );
 
   vi.stubEnv('HC_TERMINAL_ID', 't-lead');

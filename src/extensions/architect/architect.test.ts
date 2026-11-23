@@ -3,20 +3,24 @@ import { join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
-import type { Mock } from 'vitest';
+import type { Mock, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
+import { createHcFake } from '../../../tests/hcFake.js';
+import { forgetAcceptCheck, savedTexts } from '../../../tests/inboxReceiverHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import architectExtension from './architect.js';
+import { startLeadInbox } from './fixtures/leadInbox.js';
+import { sessionContext } from './fixtures/visibleSession.js';
 import { architectLockPath } from './lock.js';
-import { writeAskRecord } from './record.js';
+import { writeAskRecord, readAskRecord } from './record.js';
 import type { LiveAskRecord } from './record.js';
 
 const registerSession = (
   cleanup: (cleanup: () => void) => void,
   role: 'lead' | 'architect' | undefined,
+  overrides: Parameters<typeof fakeExtensionApi>[0] = {},
 ) => {
   vi.stubEnv('TAU_ARCHITECT_ASK', '');
   vi.stubEnv('TAU_ROLE', role);
@@ -26,7 +30,7 @@ const registerSession = (
     forgetAcceptCheck('architect-ask');
   });
 
-  const fake = fakeExtensionApi();
+  const fake = fakeExtensionApi(overrides);
 
   architectExtension(fake.pi);
 
@@ -48,32 +52,30 @@ const receiveHandover = (
   return shutdown;
 };
 
-const sessionContext = (cwd: string) => {
-  const notify = vi.fn<(message: string, level?: string) => void>();
-  const shutdown = vi.fn<() => void>();
-
-  const context = {
-    cwd,
-    ui: { notify },
-    shutdown,
-    isProjectTrusted: () => true,
-    sessionManager: {
-      getSessionFile: () => '/sessions/architect.jsonl',
-      getSessionId: () => 'session-architect',
-    },
-  } as unknown as ExtensionContext;
-
-  return { context, notify, shutdown };
-};
-
 const runHandlers = async (
   fake: ReturnType<typeof fakeExtensionApi>,
   name: string,
   context: ExtensionContext,
+  event: Record<string, unknown> = {},
 ): Promise<void> => {
   for (const handler of fake.handlers.get(name) ?? []) {
-    await handler({} as never, context);
+    await handler({ type: name, ...event } as never, context);
   }
+};
+
+const startRegisteredArchitect = async (cleanup: typeof onTestFinished) => {
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(cleanup);
+  const hc = createHcFake();
+  const lead = await startLeadInbox(cleanup, hc);
+  const fake = registerSession(cleanup, 'architect', { exec: hc.exec });
+  const { context, shutdown } = sessionContext(root);
+
+  await runHandlers(fake, 'session_start', context);
+
+  return { root, hc, lead, fake, context, shutdown };
 };
 
 it('a visible architect stays open after a queued handover that is not final', ({
@@ -88,25 +90,22 @@ it('a visible architect stays open after a queued handover that is not final', (
 it('a visible architect shuts down and releases its lock after the final handover', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-
-  const root = await createTemporaryRepository(onTestFinished);
-  const fake = registerSession(onTestFinished, 'architect');
-  const { context, shutdown } = sessionContext(root);
-
-  await runHandlers(fake, 'session_start', context);
+  const { root, lead, fake, context, shutdown } = await startRegisteredArchitect(onTestFinished);
 
   const handoverShutdown = receiveHandover(
     fake,
-    { status: 'queued' },
+    { status: 'queued', terminal: 't-lead' },
     { action: 'send', final: true },
   );
 
   expect(handoverShutdown).toHaveBeenCalledTimes(1);
 
-  await runHandlers(fake, 'session_shutdown', context);
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
+
+  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
 
   expect(shutdown).not.toHaveBeenCalled();
+  expect(savedRecords).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
@@ -122,6 +121,92 @@ it('a lead session does not shut down after a queued handover', ({ onTestFinishe
   const shutdown = receiveHandover(fake, { status: 'queued' }, { action: 'send', final: true });
 
   expect(shutdown).not.toHaveBeenCalled();
+});
+
+it('a visible architect shuts down but still notes its end after a final handover to another terminal', async ({
+  onTestFinished,
+}) => {
+  const { root, lead, fake, context } = await startRegisteredArchitect(onTestFinished);
+
+  const handoverShutdown = receiveHandover(
+    fake,
+    { status: 'queued', terminal: 't-other' },
+    { action: 'send', final: true },
+  );
+
+  expect(handoverShutdown).toHaveBeenCalledTimes(1);
+
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
+
+  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+  const [text = ''] = await savedTexts(lead);
+
+  expect(savedRecords).toHaveLength(1);
+  expect(text).toContain('ended without a final handover');
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('a visible architect sends nothing for a handover result without a final status', async ({
+  onTestFinished,
+}) => {
+  const { lead, fake, context } = await startRegisteredArchitect(onTestFinished);
+
+  const handoverShutdown = receiveHandover(
+    fake,
+    { status: 'queued', terminal: 't-lead' },
+    { action: 'send' },
+  );
+
+  expect(handoverShutdown).not.toHaveBeenCalled();
+  expect(lead.savedRecords()).toEqual([]);
+
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
+
+  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+
+  expect(savedRecords).toHaveLength(1);
+});
+
+it('a visible architect sends no end note on reload but still releases its lock and fails open asks', async ({
+  onTestFinished,
+}) => {
+  const { root, lead, fake, context } = await startRegisteredArchitect(onTestFinished);
+
+  await writeAskRecord(root, openAsk);
+
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'reload' });
+
+  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+  const [text = ''] = await savedTexts(lead);
+
+  expect(savedRecords).toHaveLength(1);
+  expect(text).toContain(`Ask ${openAsk.askId} got no answer`);
+  expect(text).toContain('Call architect ask again.');
+  expect(await readAskRecord(root, openAsk.askId)).toMatchObject({ status: 'failed' });
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('a visible architect that quit after an unknown final handover tells the lead it may not have arrived', async ({
+  onTestFinished,
+}) => {
+  const { lead, fake, context } = await startRegisteredArchitect(onTestFinished);
+
+  const handoverShutdown = receiveHandover(
+    fake,
+    { status: 'unknown', terminal: 't-lead' },
+    { action: 'send', final: true },
+  );
+
+  expect(handoverShutdown).not.toHaveBeenCalled();
+
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
+
+  const names = lead.savedRecords().filter((name) => name.endsWith('.json'));
+  const [text = ''] = await savedTexts(lead);
+
+  expect(names).toHaveLength(1);
+  expect(text).toContain('returned unknown');
+  expect(text).toContain('may not have reached you');
 });
 
 const roleCases: readonly {
@@ -186,7 +271,7 @@ it('a visible architect blocks a final handover while an ask to it is open', asy
   await writeAskRecord(root, openAsk);
 
   onTestFinished(async () => {
-    await runHandlers(fake, 'session_shutdown', context);
+    await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
   });
 
   const [blocked] = await callHandover(fake, { ...send, final: true }, context);
@@ -255,7 +340,7 @@ it('a non-final tool call is not blocked by a broken ask folder', async ({ onTes
   await runHandlers(fake, 'session_start', context);
 
   onTestFinished(async () => {
-    await runHandlers(fake, 'session_shutdown', context);
+    await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
   });
 
   await mkdir(join(root, '.tau', 'lead'), { recursive: true });

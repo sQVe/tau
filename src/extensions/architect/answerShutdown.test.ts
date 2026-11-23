@@ -8,6 +8,7 @@ import type { onTestFinished } from 'vitest';
 import { failedResult } from '../../../tests/execFake.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
+import { advertiseInbox } from '../../../tests/inboxReceiverHarness.js';
 import { createAnswerTracker } from './answer.js';
 import { createAskAdmissions } from './ask/askAcceptance.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
@@ -51,18 +52,6 @@ const liveRecord = (): LiveAskRecord => ({
   answer: null,
 });
 
-const replyLead = (hc: HcFake, path: string): void => {
-  hc.replyGet(
-    't-lead',
-    JSON.stringify({
-      address: 't-lead',
-      name: null,
-      state: 'live',
-      labels: { 'tau.inbox': `rpc1:${path}` },
-    }),
-  );
-};
-
 const answerText = (askId: string): string => `Answer to ask ${askId}:\n\nUse --dry-run.\n`;
 
 const breakAnswerRecordWrite = (getRoot: () => string): ((askId: string) => Promise<void>) => {
@@ -98,7 +87,7 @@ const closingArchitect = async (
   const answers = createAnswerTracker();
   const record = liveRecord();
 
-  replyLead(hc, lead.path);
+  advertiseInbox(hc, 't-lead', lead.path);
   await writeFile(join(root, 'answer.md'), 'Use --dry-run.\n');
   await writeAskRecord(root, record);
 
@@ -142,8 +131,11 @@ const closingArchitect = async (
       endArchitectSession(
         session,
         { ...hc, cwd: root },
-        answers,
-        createAskAdmissions(() => undefined),
+        {
+          answers,
+          admissions: createAskAdmissions(() => undefined),
+          sendEndNote: true,
+        },
       ),
   };
 };
@@ -180,7 +172,8 @@ it('shutdown waits for an answer in flight and sends the lead no close note', as
     askId: record.askId,
   });
 
-  expect(lead.savedTexts()).toEqual([`Answer to ask ${record.askId}:\n\nUse --dry-run.\n`]);
+  expect(await lead.savedTexts()).toEqual([`Answer to ask ${record.askId}:\n\nUse --dry-run.\n`]);
+  expect(lead.savedRecords()).toHaveLength(1);
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'answered' });
 });
 
@@ -212,7 +205,8 @@ it('shutdown settles a delivered answer whose record write failed as answered an
     answer: answerText(record.askId),
   });
 
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
   expect(notify).not.toHaveBeenCalled();
 });
 
@@ -242,7 +236,8 @@ it.skipIf(isRoot)(
     await end();
 
     expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'queued' });
-    expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+    expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+    expect(lead.savedRecords()).toHaveLength(1);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify.mock.calls[0]?.[0]).toContain(`Ask ${record.askId} was answered`);
   },
@@ -275,11 +270,12 @@ it('shutdown still fails an open ask that was never answered', async ({
 
   const expectedTexts = [answerText(record.askId), closeNote(unanswered.askId)].toSorted();
 
-  const savedTexts = lead.savedTexts().toSorted();
+  const savedTexts = (await lead.savedTexts()).toSorted();
 
   expect(savedTexts).toEqual(expectedTexts);
 
   expect(notify).not.toHaveBeenCalled();
+  expect(lead.savedRecords()).toHaveLength(2);
 });
 
 it('shutdown resends an answer whose send was dropped before the lead saved it', async ({
@@ -305,7 +301,8 @@ it('shutdown resends an answer whose send was dropped before the lead saved it',
   });
 
   expect(lead.saved()).toEqual([`${record.askId}.json`]);
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
 });
 
 it('an answer saved before its reply was lost is settled at close', async ({
@@ -319,6 +316,7 @@ it('an answer saved before its reply was lost is settled at close', async ({
   expect((await answer()).details).toMatchObject({ status: 'unknown', askId: record.askId });
   expect(lead.saved()).toEqual([`${record.askId}.json`]);
 
+  expect(lead.savedRecords()).toHaveLength(1);
   await end();
 
   expect(await readAskRecord(root, record.askId)).toMatchObject({
@@ -327,7 +325,8 @@ it('an answer saved before its reply was lost is settled at close', async ({
   });
 
   expect(lead.saved()).toEqual([`${record.askId}.json`]);
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
   expect(notify).not.toHaveBeenCalled();
 });
 
@@ -356,7 +355,8 @@ it('a refused answer resend after an unknown send is settled at close', async ({
   });
 
   expect(lead.saved()).toEqual([`${record.askId}.json`]);
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
 });
 
 it('a changed file after an unknown answer is refused before the send', async ({
@@ -370,6 +370,7 @@ it('a changed file after an unknown answer is refused before the send', async ({
   expect((await answer()).details).toMatchObject({ status: 'unknown', askId: record.askId });
   expect(lead.saved()).toEqual([]);
 
+  expect(lead.savedRecords()).toEqual([]);
   await writeFile(join(root, 'answer.md'), 'Use --force.\n');
 
   const before = await readFile(askRecordPath(root, record.askId), 'utf8');
@@ -392,12 +393,14 @@ it('a changed file after an unknown answer is refused before the send', async ({
     answer: answerText(record.askId),
   });
 
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
 
   await end();
 
   expect(lead.frames).toHaveLength(2);
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
   expect(notify).not.toHaveBeenCalled();
 });
 
@@ -424,7 +427,8 @@ it('the close resend sends the first uncertain answer when a different file is r
     answer: answerText(record.askId),
   });
 
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
 });
 
 it('an answer resend without a file keeps the close resend on the same bytes', async ({
@@ -453,9 +457,10 @@ it('an answer resend without a file keeps the close resend on the same bytes', a
   });
 
   expect(lead.saved()).toEqual([`${record.askId}.json`]);
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
 
-  const savedText = lead.savedTexts().join('\n');
+  const savedText = (await lead.savedTexts()).join('\n');
 
   expect(savedText).not.toContain('could not check');
   expect(savedText).not.toContain('got no answer');
@@ -487,9 +492,10 @@ it('an answer whose outcome stays unknown at close gets the could-not-check note
   });
 
   const expectedTexts = [answerText(record.askId), uncheckedNote(record.askId)].toSorted();
-  const savedTexts = lead.savedTexts().toSorted();
+  const savedTexts = (await lead.savedTexts()).toSorted();
 
   expect(savedTexts).toEqual(expectedTexts);
+  expect(lead.savedRecords()).toHaveLength(2);
 });
 
 it('an answer that cannot be sent again at close gets the could-not-check detail', async ({
@@ -514,7 +520,8 @@ it('an answer that cannot be sent again at close gets the could-not-check detail
     detail: uncheckedDetail,
   });
 
-  expect(lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([answerText(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
   expect(notify).toHaveBeenCalledTimes(1);
   expect(notify.mock.calls[0]?.[0]).toContain(`no close note for ask ${record.askId}`);
 });
@@ -589,7 +596,8 @@ it('an answer that never settles holds shutdown for 10 seconds, then the ask fai
   await ending;
 
   expect(await readAskRecord(root, record.askId)).toMatchObject({ status: 'failed' });
-  expect(lead.savedTexts()).toEqual([closeNote(record.askId)]);
+  expect(await lead.savedTexts()).toEqual([closeNote(record.askId)]);
+  expect(lead.savedRecords()).toHaveLength(1);
 });
 
 it('closing the tracker waits for a run that never settles for exactly 10 seconds', async ({
