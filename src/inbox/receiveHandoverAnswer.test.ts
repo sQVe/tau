@@ -141,5 +141,9 @@ it('queues a handover-answer retry after its receipt is saved without a second w
 
   await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
 
+  expect(existsSync(recordOf(directory, sessionId, messageId))).toBe(false);
+
+  await receiver.deliver(new AbortController().signal);
+
   expect(woken).toHaveLength(1);
 });

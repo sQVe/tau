@@ -778,6 +778,15 @@ const retryTable = [
     matches: false,
   },
   {
+    name: 'a handover-answer retry with another answer to the same question',
+    receipted: { receipt: answerToQuestionReceipt, content: shownHandoverAnswerText },
+    body: {
+      family: 'handover-answer',
+      payload: { ...handoverAnswerPayload, answer: 'Use option B.' },
+    },
+    matches: false,
+  },
+  {
     name: 'a handover retry whose receipt holds a stray question',
     receipted: strayQuestionReceipt,
     body: { family: 'handover', payload: { text: 'handover text' } },

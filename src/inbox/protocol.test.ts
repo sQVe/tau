@@ -336,6 +336,8 @@ it.each([
   ['an extra payload field', { extra: true }],
   ['an empty answer', { answer: '' }],
   ['a question ID that is not a UUID', { questionId: 'question-1' }],
+  ['a sender session that Pi does not accept', { senderSession: '../escape' }],
+  ['32001 answer characters', { answer: 'a'.repeat(32_001) }],
 ])('refuses a handover-answer frame with %s', (_name, override) => {
   const request = handoverAnswerFixture('request.json') as {
     payload: Record<string, unknown>;
@@ -347,6 +349,16 @@ it.each([
     kind: 'refused',
     reason: 'The frame is not an rpc1 request.',
   });
+});
+
+it('decodes a handover-answer frame with 32000 answer characters', () => {
+  const request = handoverAnswerFixture('request.json') as {
+    payload: Record<string, unknown>;
+  };
+
+  const frame = { ...request, payload: { ...request.payload, answer: 'a'.repeat(32_000) } };
+
+  expect(decodeRequest(line(frame))).toEqual({ kind: 'frame', value: frame });
 });
 
 it('refuses an unknown reply without a reason', () => {
