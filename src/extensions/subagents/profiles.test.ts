@@ -34,6 +34,7 @@ const assignment = (acceptance: string[] = []) =>
     task: 'Fix the parser.',
     deadline: 1_700_000_000_000,
     acceptance,
+    fullCheck: null,
   }) as Assignment;
 
 it('lists acceptance criteria in order under the task', () => {
@@ -46,6 +47,28 @@ it('lists acceptance criteria in order under the task', () => {
 
 it('adds no criteria section when the task has none', () => {
   expect(workerPrompt(assignment())).not.toContain('Acceptance criteria');
+});
+
+it('tells a declared assignment who owns the deferred full check and why', () => {
+  const prompt = workerPrompt({
+    ...assignment(),
+    fullCheck: {
+      owner: 'AI-1688',
+      reason: 'the module is not wired in yet',
+    },
+  });
+
+  expect(prompt).toContain(
+    'Full check: deferred to AI-1688 because the module is not wired in yet.',
+  );
+
+  expect(prompt).toContain('Run `full_check` on the final tree anyway.');
+  expect(prompt).toContain('cite its log path under Evidence');
+  expect(prompt).toContain('name each failure under Concerns');
+});
+
+it('adds no deferred full check block without a declaration', () => {
+  expect(workerPrompt(assignment())).not.toContain('Full check: deferred');
 });
 
 it('ends the worker system prompt with a safety directive after the contracts', () => {

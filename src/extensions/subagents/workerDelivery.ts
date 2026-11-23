@@ -57,8 +57,20 @@ const evidenceText = (report: Assignment['report']): string => {
     : `\n\nEvidence:\n${evidence.map((item) => `- ${item}`).join('\n')}`;
 };
 
+const fullCheckText = (report: Assignment['report']): string => {
+  const fullCheck = report?.fullCheck;
+
+  if (fullCheck === undefined) {
+    return '';
+  }
+
+  const outcome = fullCheck.passed ? 'passed' : 'failed';
+
+  return `\n\nFull check: deferred to ${fullCheck.owner}; the cited record ${outcome}.\nLog: ${fullCheck.logPath}`;
+};
+
 const reportText = (assignmentId: string, report: Assignment['report']): string =>
-  `Worker report ${assignmentId}: ${report?.outcome ?? 'unknown'}\n\n${report?.summary ?? ''}${evidenceText(report)}`;
+  `Worker report ${assignmentId}: ${report?.outcome ?? 'unknown'}\n\n${report?.summary ?? ''}${evidenceText(report)}${fullCheckText(report)}`;
 
 const endedText = (assignmentId: string, address: string): string =>
   `Worker ${assignmentId} at ${address} ended without a report. Read its screen with hc read ${address}.`;

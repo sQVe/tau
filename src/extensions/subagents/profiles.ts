@@ -293,11 +293,25 @@ const acceptanceList = (assignment: Assignment): string[] => {
   return ['', 'Acceptance criteria:', ...items];
 };
 
+const deferredFullCheck = (assignment: Assignment): string[] => {
+  const fullCheck = assignment.fullCheck;
+
+  if (fullCheck === null) {
+    return [];
+  }
+
+  return [
+    '',
+    `Full check: deferred to ${fullCheck.owner} because ${fullCheck.reason}. Run \`full_check\` on the final tree anyway. A failing result is accepted for this assignment: cite its log path under Evidence and name each failure under Concerns.`,
+  ];
+};
+
 export const workerPrompt = (assignment: Assignment): string =>
   [
     taskPromptHeader(assignment.assignmentId),
     assignment.task,
     ...acceptanceList(assignment),
+    ...deferredFullCheck(assignment),
     '',
     `Deadline: ${new Date(assignment.deadline).toISOString()}.`,
   ].join('\n');

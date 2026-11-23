@@ -166,7 +166,7 @@ export const savePassingFullCheck = async (directory: string): Promise<void> => 
 };
 
 export const assignmentFor = (directory: string): Assignment => ({
-  version: 3,
+  version: 4,
   assignmentId,
   task: 'Inspect the fixture.',
   acceptance: [],
@@ -188,6 +188,7 @@ export const assignmentFor = (directory: string): Assignment => ({
   extensionPackages: null,
   questions: [],
   report: null,
+  fullCheck: null,
 });
 
 export const sendStartMessage = (

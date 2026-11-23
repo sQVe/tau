@@ -44,8 +44,8 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
 // ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  lead: 64_171, // target 38,000
-  architect: 60_853,
+  lead: 65_081, // target 38,000
+  architect: 61_763,
   worker: 28_299, // target 14,000
   reviewer: 23_752, // target 11,000
   checker: 23_905,
@@ -200,7 +200,7 @@ const assignmentFor = (loadout: Loadout, directory: string): Assignment => {
   const sessionId = randomUUID();
 
   return {
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Measure the prompt.',
     acceptance: [],
@@ -222,6 +222,7 @@ const assignmentFor = (loadout: Loadout, directory: string): Assignment => {
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   };
 };
 

@@ -5,16 +5,16 @@ import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { errorMessage } from '../../errors.js';
-import { label } from '../../hc/hc.js';
-import type { HcRuntime } from '../../hc/hc.js';
-import { stringEnum } from '../../schema.js';
-import { saveReport } from './assignment.js';
-import type { Assignment, SavedReport } from './assignment.js';
-import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
-import { checkRefusal } from './reportChecks.js';
+import { errorMessage } from '../../../errors.js';
+import { label } from '../../../hc/hc.js';
+import type { HcRuntime } from '../../../hc/hc.js';
+import { stringEnum } from '../../../schema.js';
+import { saveReport } from '../assignment.js';
+import type { Assignment, SavedReport } from '../assignment.js';
+import { blockerKinds, decideIncompleteReport } from '../incompleteReport.js';
+import { shortenSummary, summaryLengthLimit } from '../summaryLength.js';
+import { checkReport } from './reportChecks.js';
 import type { ReportCheckFacts } from './reportChecks.js';
-import { shortenSummary, summaryLengthLimit } from './summaryLength.js';
 
 export interface ReportRefusalState {
   incompleteRefused: boolean;
@@ -187,6 +187,7 @@ export const reportToParent = async (
 
   const blockerDetail = handover.outcome === 'incomplete' ? blocker : undefined;
   const summary = withBlocker(handover.summary, blockerDetail);
+  let fullCheck: SavedReport['fullCheck'] = undefined;
 
   try {
     refuseMissingSections(summary);
@@ -196,15 +197,20 @@ export const reportToParent = async (
     }
 
     if (handover.outcome === 'success') {
-      const refusal = await checkRefusal({
+      const decision = await checkReport({
         role: assignment.loadout.role,
         root: check.root,
         argv: check.argv,
+        fullCheck: assignment.fullCheck,
+        summary,
+        evidence: handover.evidence,
       });
 
-      if (refusal !== undefined) {
-        throw new Error(refusal);
+      if (decision.status === 'refuse') {
+        throw new Error(decision.message);
       }
+
+      fullCheck = decision.fullCheck ?? undefined;
     }
   } catch (error) {
     target.refusal.remindAfterRefusal = true;
@@ -214,6 +220,7 @@ export const reportToParent = async (
   const report: SavedReport = {
     outcome: reportOutcome(handover.outcome),
     ...(await saveLongSummary(target.assignmentPath, summary, handover.evidence)),
+    ...(fullCheck === undefined ? {} : { fullCheck }),
   };
 
   await saveReport(target.assignmentPath, report);

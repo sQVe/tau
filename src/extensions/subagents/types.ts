@@ -81,6 +81,15 @@ export const routingSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const savedFullCheckSchema = Type.Object(
+  {
+    owner: Type.String({ minLength: 1, maxLength: 500 }),
+    logPath: text,
+    passed: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
 const reportFields = {
   outcome: Type.Union([
     Type.Literal('success'),
@@ -91,6 +100,13 @@ const reportFields = {
   evidence: Type.Array(text, { maxItems: 100 }),
 };
 
-export const savedReportSchema = Type.Object(reportFields, { additionalProperties: false });
+export const savedReportVersion3Schema = Type.Object(reportFields, {
+  additionalProperties: false,
+});
+
+export const savedReportSchema = Type.Object(
+  { ...reportFields, fullCheck: Type.Optional(savedFullCheckSchema) },
+  { additionalProperties: false },
+);
 
 export type Loadout = Static<typeof loadoutSchema>;

@@ -2,7 +2,8 @@
 
 **Date**: 2026-10-26\
 **Status**: Accepted\
-**Related**: [ADR 0105 (Queue full checks per checkout and reuse checks by identity)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
+**Related**: [ADR 0105 (Queue full checks per checkout and reuse checks by identity)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md),
+[ADR 0150 (Defer one assignment's passing full check to a named owner)](./0150-defer-one-assignments-full-check-to-a-named-owner.md)
 
 ## Context
 
@@ -16,7 +17,10 @@ content.
 
 The PR step runs the full check that gates publication. An editing worker may also run `full_check`,
 because its success report needs a passing record for the tree it reports when the repository
-configures a full check. A text rule alone did not stop a lead from accepting a failing tree.
+configures a full check. One assignment may defer that passing record to a named owner
+([ADR 0150](./0150-defer-one-assignments-full-check-to-a-named-owner.md)); the worker still runs the
+check and cites the record, which may fail. A text rule alone did not stop a lead from accepting a
+failing tree.
 
 No skill tells a worker to run the full check. Workers verify with focused tests and the check stage
 that failed. The `pr` skill keeps the `full_check` tool for the manager. An investigation worker's

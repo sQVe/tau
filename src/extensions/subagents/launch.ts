@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { readRepositoryArgv, withIgnoredNote } from '../../config/repositoryCommand.js';
 import { errorMessage } from '../../errors.js';
 import { runWithEnvironment } from '../../hc/connect.js';
 import { currentTerminalAddress, get, HcError, ls, readCurrentTerminal } from '../../hc/hc.js';
@@ -10,12 +11,14 @@ import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { currentRole } from '../../role/role.js';
 import type { SkillTools } from '../../skillTools.js';
 import { readSkillTools as readCurrentSkillTools } from '../../skillTools.js';
+import { findTauRoot } from '../../tauDirectory.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { assignmentDirectory, writeAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { WorkerCapacityFullError } from './capacityRefusal.js';
 import { launchErrorResult } from './errorResult.js';
 import type { ToolResult } from './errorResult.js';
+import { fullCheckRefusal } from './fullCheckRefusal.js';
 import { briefWithAppUrl } from './launchEnvironment.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { resolveLoadout } from './loadout.js';
@@ -196,6 +199,34 @@ export const capacityRefusal = (used: number, capacity: number): WorkerCapacityF
     `Worker capacity full (${used}/${capacity}). End your turn and retry after a worker stops.`,
   );
 
+export const fullCheckLaunchRefusal = async (
+  role: 'editing' | 'investigation',
+  declaration: LaunchParameters['fullCheck'],
+  cwd: string,
+  context: Pick<ExtensionContext, 'isProjectTrusted' | 'ui'>,
+  agentDirectory: string,
+): Promise<string | undefined> => {
+  if (declaration === undefined) {
+    return undefined;
+  }
+
+  if (role !== 'editing') {
+    return fullCheckRefusal(role, declaration, true);
+  }
+
+  const root = await findTauRoot(cwd, 'full_check');
+
+  const { argv, ignored } = readRepositoryArgv(
+    { cwd: root, agentDirectory, projectTrusted: context.isProjectTrusted() },
+    context.ui,
+    'fullCheck',
+  );
+
+  const refusal = fullCheckRefusal(role, declaration, argv !== undefined);
+
+  return refusal === undefined ? undefined : withIgnoredNote(refusal, ignored);
+};
+
 class UnclearLaunchError extends Error {
   override name = 'UnclearLaunchError';
 
@@ -255,7 +286,7 @@ const buildAssignment = (
   const sessionFile = join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`);
 
   return {
-    version: 3,
+    version: 4,
     assignmentId,
     task: briefWithAppUrl(parameters.task, parameters.url),
     acceptance: parameters.acceptance ?? [],
@@ -274,6 +305,7 @@ const buildAssignment = (
     extensionPackages: [...extensionPackages],
     questions: [],
     report: null,
+    fullCheck: parameters.fullCheck ?? null,
   };
 };
 
@@ -565,6 +597,18 @@ export const executeLaunch = async (
 
     if (refusal !== undefined) {
       throw new Error(refusal);
+    }
+
+    const fullCheckProblem = await fullCheckLaunchRefusal(
+      loadout.role,
+      request.parameters.fullCheck,
+      loadout.cwd,
+      context,
+      runtime.agentDirectory,
+    );
+
+    if (fullCheckProblem !== undefined) {
+      throw new Error(fullCheckProblem);
     }
 
     const timeout =

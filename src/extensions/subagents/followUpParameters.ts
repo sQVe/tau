@@ -10,6 +10,7 @@ export const followUpParameters = Type.Object(
     task: launchParameters.properties.task,
     acceptance: launchParameters.properties.acceptance,
     label: launchParameters.properties.label,
+    fullCheck: launchParameters.properties.fullCheck,
     timeoutSeconds: launchParameters.properties.timeoutSeconds,
   },
   { additionalProperties: false },

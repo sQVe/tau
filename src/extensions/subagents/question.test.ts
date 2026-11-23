@@ -28,7 +28,7 @@ const setup = () => {
   const assignmentId = '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f';
 
   const assignment: Assignment = {
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Do the thing.',
     acceptance: [],
@@ -50,6 +50,7 @@ const setup = () => {
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   };
 
   const fake = createHcFake();

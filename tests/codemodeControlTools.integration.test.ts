@@ -99,7 +99,7 @@ const runWorker = async (responses: FauxResponseStep[]) => {
   };
 
   await writeAssignment({
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Inspect source.txt.',
     acceptance: [],
@@ -118,6 +118,7 @@ const runWorker = async (responses: FauxResponseStep[]) => {
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   });
 
   const hc = createHcFake();

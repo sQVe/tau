@@ -14,7 +14,7 @@ import { WorkerCapacityFullError } from './capacityRefusal.js';
 import { launchErrorResult } from './errorResult.js';
 import type { ToolResult } from './errorResult.js';
 import type { FollowUpParameters } from './followUpParameters.js';
-import { capacityRefusal, startReservedWorker } from './launch.js';
+import { capacityRefusal, fullCheckLaunchRefusal, startReservedWorker } from './launch.js';
 import type { LaunchRuntime, LaunchStatus } from './launch.js';
 import { missingPackagePath, missingPackagePathError } from './packageSnapshot.js';
 import { roleLaunchRefusal } from './roleLaunchRefusal.js';
@@ -73,7 +73,7 @@ const followUpAssignment = (
   parentTerminal: string,
   deadline: number,
 ): Assignment => ({
-  version: 3,
+  version: 4,
   assignmentId: randomUUID(),
   task: parameters.task,
   acceptance: parameters.acceptance ?? [],
@@ -92,7 +92,31 @@ const followUpAssignment = (
   extensionPackages,
   questions: [],
   report: null,
+  fullCheck: parameters.fullCheck ?? null,
 });
+
+const followUpExtensionPackages = (source: Assignment): { source: string; path: string }[] => {
+  if (source.extensionPackages === null && source.loadout.packages.length > 0) {
+    throw new Error(
+      `Assignment ${source.assignmentId} lists profile packages but no extension package snapshot.`,
+    );
+  }
+
+  const extensionPackages = source.extensionPackages ?? [];
+  const missingPath = missingPackagePath(extensionPackages);
+
+  if (missingPath !== undefined) {
+    throw missingPackagePathError(missingPath);
+  }
+
+  if (packagesNeedSnapshot(extensionPackages) && source.packageSnapshot === null) {
+    throw new Error(
+      `Assignment ${source.assignmentId} has copied packages but no package snapshot; no follow-up can load them.`,
+    );
+  }
+
+  return extensionPackages;
+};
 
 const followUpSource = async (
   parameters: FollowUpParameters,
@@ -128,26 +152,7 @@ const followUpSource = async (
     );
   }
 
-  if (source.extensionPackages === null && source.loadout.packages.length > 0) {
-    throw new Error(
-      `Assignment ${source.assignmentId} lists profile packages but no extension package snapshot.`,
-    );
-  }
-
-  const extensionPackages = source.extensionPackages ?? [];
-  const missingPath = missingPackagePath(extensionPackages);
-
-  if (missingPath !== undefined) {
-    throw missingPackagePathError(missingPath);
-  }
-
-  if (packagesNeedSnapshot(extensionPackages) && source.packageSnapshot === null) {
-    throw new Error(
-      `Assignment ${source.assignmentId} has copied packages but no package snapshot; no follow-up can load them.`,
-    );
-  }
-
-  return { source, extensionPackages };
+  return { source, extensionPackages: followUpExtensionPackages(source) };
 };
 
 const followUpTimeout = (source: Assignment, parameters: FollowUpParameters): number =>
@@ -157,7 +162,7 @@ export const executeFollowUp = async (
   runtime: LaunchRuntime,
   request: FollowUpRequest,
   signal: AbortSignal | undefined,
-  _context: ExtensionContext,
+  context: ExtensionContext,
 ): Promise<ToolResult<LaunchStatus | undefined>> => {
   try {
     const launchingRole = currentRole();
@@ -168,6 +173,18 @@ export const executeFollowUp = async (
       request.parentSession,
       launchingRole,
     );
+
+    const fullCheckProblem = await fullCheckLaunchRefusal(
+      source.loadout.role,
+      parameters.fullCheck,
+      source.cwd,
+      context,
+      runtime.agentDirectory,
+    );
+
+    if (fullCheckProblem !== undefined) {
+      throw new Error(fullCheckProblem);
+    }
 
     const parentTerminal = currentTerminalAddress();
 

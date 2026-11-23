@@ -3,7 +3,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Wake } from '../../wake/wake.js';
 import { hasSavedReport } from './assignment.js';
 import { deadlineWarningDelay } from './deadlineDecision.js';
-import type { ReportTarget } from './report.js';
+import type { ReportTarget } from './report/report.js';
 
 type DeadlineWarningContext = Pick<ExtensionContext, 'isIdle' | 'signal'>;
 

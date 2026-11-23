@@ -21,7 +21,7 @@ const previousAssignmentId = '5e6f7a8b-1c2d-4e3f-8a9b-0c1d2e3f4a5b';
 const otherAssignmentId = '7d2e3f4a-5b6c-4d7e-9f8a-0b1c2d3e4f5a';
 
 const assignment = (id: string, previous: string | null): Assignment => ({
-  version: 3,
+  version: 4,
   assignmentId: id,
   task: 'Inspect the fixture.',
   acceptance: [],
@@ -40,6 +40,7 @@ const assignment = (id: string, previous: string | null): Assignment => ({
   extensionPackages: null,
   questions: [],
   report: null,
+  fullCheck: null,
 });
 
 const first = assignment(assignmentId, null);

@@ -27,6 +27,19 @@ export const launchParameters = Type.Object(
           'qa and browser only: the http or https URL of the app under test. Tau refuses the launch when it does not answer, and adds it to the task.',
       }),
     ),
+    fullCheck: Type.Optional(
+      Type.Object(
+        {
+          owner: Type.String({ minLength: 1, maxLength: 500 }),
+          reason: Type.String({ minLength: 1, maxLength: 500 }),
+        },
+        {
+          additionalProperties: false,
+          description:
+            'Editing only: for an intermediate tree that cannot pass the full check by design. The worker still runs full_check and the gate accepts a failing record it cites. Never for the last assignment of a slice or PR-bound work.',
+        },
+      ),
+    ),
     model: Type.Optional(Type.String()),
     timeoutSeconds: Type.Optional(
       Type.Integer({

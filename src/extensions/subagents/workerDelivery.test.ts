@@ -543,6 +543,24 @@ it('shows non-empty report evidence in the message content', async () => {
   expect(message.content).toContain('Evidence:\n- a reference\n- another reference');
 });
 
+it('names the deferred full check owner and the cited record result', async () => {
+  const logPath = '/repository/.tau/checks/run.log';
+
+  const { managerState, deliver } = await reportDelivery({
+    outcome: 'success',
+    summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
+    evidence: [logPath],
+    fullCheck: { owner: 'AI-1688', logPath, passed: false },
+  });
+
+  await deliver(managerState.context);
+
+  const message = managerState.messages[0] as { content: string };
+
+  expect(message.content).toContain('Full check: deferred to AI-1688; the cited record failed.');
+  expect(message.content).toContain(`Log: ${logPath}`);
+});
+
 it.each(['success', 'failure'] as const)(
   'shows the saved %s outcome in the report content and details',
   async (outcome) => {

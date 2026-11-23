@@ -3,14 +3,19 @@ import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { initializeRepository } from '../../../tests/gitRepository.js';
-import { createHcFake } from '../../../tests/hcFake.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { saveCheckRecord } from '../../checkRecord/checkRecord.js';
-import { readCheckIdentity } from '../../checkRecord/identity.js';
-import { assignmentDirectory, readAssignment, writeAssignment } from './assignment.js';
-import type { Assignment } from './assignment.js';
-import { fixtureLoadout } from './fixtures/loadout.js';
+import { initializeRepository } from '../../../../tests/gitRepository.js';
+import { createHcFake } from '../../../../tests/hcFake.js';
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { saveCheckRecord } from '../../../checkRecord/checkRecord.js';
+import { readCheckIdentity } from '../../../checkRecord/identity.js';
+import {
+  assignmentDirectory,
+  assignmentPath,
+  readAssignment,
+  writeAssignment,
+} from '../assignment.js';
+import type { Assignment } from '../assignment.js';
+import { fixtureLoadout } from '../fixtures/loadout.js';
 import { reportToParent } from './report.js';
 import type { ReportInput, ReportTarget } from './report.js';
 
@@ -35,7 +40,7 @@ const setup = async () => {
   const assignmentId = '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f';
 
   const assignment: Assignment = {
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Do the thing.',
     acceptance: [],
@@ -57,6 +62,7 @@ const setup = async () => {
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   };
 
   const fake = createHcFake();
@@ -88,19 +94,21 @@ const setup = async () => {
 
 const checkFacts = (target: ReportTarget) => ({ root: target.assignment.cwd, argv: checkArgv });
 
-const savePassingCheck = async (root: string): Promise<void> => {
+const saveCheck = async (root: string, passed: boolean): Promise<string> => {
   const identity = await readCheckIdentity(root, checkArgv);
   const directory = join(root, '.tau/checks');
   const logPath = join(directory, 'run.log');
 
   await mkdir(directory, { recursive: true });
   await writeFile(logPath, 'output');
-  await saveCheckRecord(logPath, identity, true);
+  await saveCheckRecord(logPath, identity, passed);
+
+  return logPath;
 };
 
 const writeCheckedAssignment = async (target: ReportTarget): Promise<void> => {
   await writeAssignment(target.assignment);
-  await savePassingCheck(target.assignment.cwd);
+  await saveCheck(target.assignment.cwd, true);
 };
 
 const reportCommandCalls = (fake: Awaited<ReturnType<typeof setup>>['fake']) =>
@@ -196,6 +204,60 @@ it('accepts an over-long summary and saves the full text to a file', async () =>
   expect(saved?.report?.evidence).toEqual([...report.evidence, summaryFile]);
   expect(saved?.report?.summary.length).toBeLessThanOrEqual(3000);
   expect(saved?.report?.summary).toContain(summaryFile);
+});
+
+it('a declared assignment reports success on a failed tree while an undeclared one is refused', async () => {
+  const { deadlineWarning, fake, report, target } = await setup();
+  const secondAssignmentId = '7d2e3f4a-5b6c-4d7e-9f8a-0b1c2d3e4f5a';
+  const secondSessionId = '22222222-2222-2222-2222-222222222222';
+
+  const undeclared: Assignment = {
+    ...target.assignment,
+    assignmentId: secondAssignmentId,
+    session: {
+      id: secondSessionId,
+      file: join(assignmentDirectory(secondAssignmentId), `${secondSessionId}.jsonl`),
+    },
+  };
+
+  target.assignment.fullCheck = {
+    owner: 'AI-1688',
+    reason: 'the module is not wired in yet',
+  };
+
+  await writeAssignment(target.assignment);
+  await writeAssignment(undeclared);
+
+  const logPath = await saveCheck(target.assignment.cwd, false);
+  const cited = { ...report, evidence: [logPath] };
+
+  await reportToParent(target, cited, deadlineWarning, checkFacts(target));
+
+  const declaredReport = (await readAssignment(target.assignmentPath))?.report;
+
+  expect(declaredReport?.outcome).toBe('success');
+
+  expect(declaredReport?.fullCheck).toEqual({
+    owner: 'AI-1688',
+    logPath,
+    passed: false,
+  });
+
+  const undeclaredTarget: ReportTarget = {
+    ...target,
+    assignmentPath: assignmentPath(secondAssignmentId),
+    assignment: undeclared,
+    refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },
+  };
+
+  await expect(
+    reportToParent(undeclaredTarget, cited, deadlineWarning, checkFacts(undeclaredTarget)),
+  ).rejects.toThrow(
+    'Report refused: no passing full check record for the current tree. Run full_check on the final tree, then report.',
+  );
+
+  expect((await readAssignment(undeclaredTarget.assignmentPath))?.report).toBeNull();
+  expect(reportCommandCalls(fake)).toEqual(['label']);
 });
 
 it('a success report without a passing record is refused', async () => {

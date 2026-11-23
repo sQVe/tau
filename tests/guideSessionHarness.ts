@@ -161,7 +161,7 @@ export const runWorker = async (
   const sessionFile = join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`);
 
   await writeAssignment({
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Inspect the project.',
     acceptance: [],
@@ -180,6 +180,7 @@ export const runWorker = async (
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   });
 
   const hc = createHcFake();

@@ -101,7 +101,7 @@ const seedAssignment = async (
   const sessionFile = join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`);
 
   await writeAssignment({
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Inspect source.txt.',
     acceptance: [],
@@ -120,6 +120,7 @@ const seedAssignment = async (
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   });
 
   return { path, sessionFile };

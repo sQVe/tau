@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { initializeRepositorySync } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
@@ -20,7 +21,7 @@ import type { Exec } from '../../command.js';
 import type { Connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
 import type { HcTerminal } from '../../hc/hc.js';
-import { assignmentDirectory, writeAssignment } from './assignment.js';
+import { assignmentDirectory, readAssignment, writeAssignment } from './assignment.js';
 import { savedAssignment } from './fixtures/deliveryManager.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
@@ -80,6 +81,8 @@ const succeeded = (value: unknown) => ({
 const setup = (
   options: { children?: HcTerminal[]; managerLabels?: Record<string, string> } = {},
 ): {
+  context: ExtensionContext;
+  directory: string;
   fake: HcFake;
   runtime: LaunchRuntime;
   refuseCapacity: ReturnType<typeof vi.fn>;
@@ -180,7 +183,21 @@ const setup = (
     refuseCapacity,
   };
 
-  return { fake, runtime, refuseCapacity, scratchExistedAtRun: () => scratchExistedAtRun };
+  const context = {
+    cwd: directory,
+    isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => 'parent-one' },
+    ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
+  } as unknown as ExtensionContext;
+
+  return {
+    context,
+    directory,
+    fake,
+    runtime,
+    refuseCapacity,
+    scratchExistedAtRun: () => scratchExistedAtRun,
+  };
 };
 
 const context = {
@@ -191,6 +208,7 @@ const launch = (
   runtime: LaunchRuntime,
   parameters: Partial<LaunchParameters> = {},
   signal?: AbortSignal,
+  requestContext: ExtensionContext = context,
 ) =>
   executeLaunch(
     runtime,
@@ -205,7 +223,7 @@ const launch = (
       parentSession: '/work/parent.jsonl',
     },
     signal,
-    context,
+    requestContext,
   );
 
 const uncertainSetup = (
@@ -373,6 +391,168 @@ it('refuses an editing launch without acceptance criteria', async () => {
 
   expect(result).toMatchObject({ isError: true });
   expect(result.content[0]?.text).toContain('acceptance criteria');
+});
+
+it('refuses a full check declaration on an investigation launch', async () => {
+  const { fake, runtime } = setup();
+
+  vi.mocked(writeAssignment).mockClear();
+
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({
+    ...loadout,
+    role: 'investigation',
+    profile: 'scout',
+  });
+
+  const result = await launch(runtime, {
+    fullCheck: { owner: 'AI-1688', reason: 'the module is not wired in yet' },
+  });
+
+  expect(result).toMatchObject({ isError: true });
+  expect(result.content[0]?.text).toContain('fullCheck applies only to editing workers');
+  expect(fake.connectCalls).toEqual([]);
+  expect(vi.mocked(writeAssignment)).not.toHaveBeenCalled();
+});
+
+it('refuses a full check declaration without a configured full check', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+
+  initializeRepositorySync(directory);
+  vi.mocked(writeAssignment).mockClear();
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({ ...loadout, cwd: directory });
+
+  const result = await launch(
+    runtime,
+    { fullCheck: { owner: 'AI-1688', reason: 'the module is not wired in yet' } },
+    undefined,
+    requestContext,
+  );
+
+  expect(result).toMatchObject({ isError: true });
+  expect(result.content[0]?.text).toContain('fullCheck requires a configured full check command');
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(vi.mocked(writeAssignment)).not.toHaveBeenCalled();
+});
+
+it('names the ignored project config when the project is untrusted', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+
+  initializeRepositorySync(directory);
+  vi.mocked(writeAssignment).mockClear();
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({ ...loadout, cwd: directory });
+
+  mkdirSync(join(directory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(directory, '.pi/tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
+  );
+
+  const untrustedContext = {
+    ...requestContext,
+    isProjectTrusted: () => false,
+  } as ExtensionContext;
+
+  const result = await launch(
+    runtime,
+    { fullCheck: { owner: 'AI-1688', reason: 'the module is not wired in yet' } },
+    undefined,
+    untrustedContext,
+  );
+
+  expect(result).toMatchObject({ isError: true });
+  expect(result.content[0]?.text).toContain('fullCheck requires a configured full check command');
+
+  expect(result.content[0]?.text).toContain(
+    `Tau ignored ${join(directory, '.pi/tau.json')} because the project is not trusted.`,
+  );
+
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(vi.mocked(writeAssignment)).not.toHaveBeenCalled();
+});
+
+it('saves a full check declaration on an editing launch', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+  const fullCheck = { owner: 'AI-1688', reason: 'the module is not wired in yet' };
+
+  initializeRepositorySync(directory);
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({ ...loadout, cwd: directory });
+
+  mkdirSync(join(directory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(directory, '.pi/tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
+  );
+
+  const result = await launch(runtime, { fullCheck }, undefined, requestContext);
+
+  expect(result.isError).not.toBe(true);
+
+  const path = terminalRun(fake)?.labels['tau.assignment'];
+
+  if (path === undefined) {
+    throw new Error('The launch returned no assignment label.');
+  }
+
+  expect((await readAssignment(path))?.fullCheck).toEqual(fullCheck);
+});
+
+it('accepts a declaration from a subdirectory with the command at the checkout root', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+  const subdirectory = join(directory, 'subdirectory');
+  const fullCheck = { owner: 'AI-1688', reason: 'the module is not wired in yet' };
+
+  initializeRepositorySync(directory);
+  mkdirSync(subdirectory);
+  mkdirSync(join(directory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(directory, '.pi/tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
+  );
+
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({ ...loadout, cwd: subdirectory });
+
+  const result = await launch(runtime, { fullCheck }, undefined, requestContext);
+
+  expect(result.isError).not.toBe(true);
+
+  const path = terminalRun(fake)?.labels['tau.assignment'];
+
+  if (path === undefined) {
+    throw new Error('The launch returned no assignment label.');
+  }
+
+  expect((await readAssignment(path))?.fullCheck).toEqual(fullCheck);
+});
+
+it('refuses a declaration when only a subdirectory configures the command', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+  const subdirectory = join(directory, 'subdirectory');
+
+  initializeRepositorySync(directory);
+  mkdirSync(join(subdirectory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(subdirectory, '.pi/tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
+  );
+
+  vi.mocked(writeAssignment).mockClear();
+  vi.mocked(loadouts.resolveLoadout).mockReturnValue({ ...loadout, cwd: subdirectory });
+
+  const result = await launch(
+    runtime,
+    { fullCheck: { owner: 'AI-1688', reason: 'the module is not wired in yet' } },
+    undefined,
+    requestContext,
+  );
+
+  expect(result).toMatchObject({ isError: true });
+  expect(result.content[0]?.text).toContain('fullCheck requires a configured full check command');
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(vi.mocked(writeAssignment)).not.toHaveBeenCalled();
 });
 
 it('launches the worker profile without model', async () => {
