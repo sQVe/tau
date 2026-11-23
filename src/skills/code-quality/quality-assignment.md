@@ -66,6 +66,19 @@ Each finding gives:
 Before you propose a deletion, read the history of that code with `git log -L` or
 `git log --follow`, and name why the code exists.
 
+When a finding removes or moves a test, map each claim that test asserts to a surviving assertion
+before the finding says coverage stays. A claim is an output, a state change, or a refusal that the
+test observes through the code it calls. A claim the caller owns is one the caller produces, such as
+the input it passes on, the result it returns, or a refusal that writes nothing. Map it to an
+assertion that observes it through that same caller. A test of a lower-level module that the caller
+uses does not count for it. For example, a renderer test cannot show that sync passes the renderer
+the right input, or that sync refuses without writing. A claim that only restates a shared module's
+own behavior, such as the parser's error text, maps to that module's test. If one assertion checks
+both kinds of claim, such as a caller's reason that contains the parser's phrase, map each claim
+separately. The caller still needs an assertion that it passes the diagnostic on, and only the exact
+wording maps to the parser's test. Name each caller-owned claim that has no such assertion, and keep
+its test in the sketch.
+
 Compare the target with the planned structure in `## Intent` of `input.md`. It lists the structure
 rules the slice follows and the files each agent ticket names. Use it as follows:
 
@@ -87,6 +100,9 @@ finding.
 ```markdown
 - Confirm that the code each finding would delete exists.
 - Check the contracts that the finding keeps against callers and tests.
+- For a finding that removes or moves a test, confirm each claim's mapped assertion at its
+  `file:line`. Report a caller-owned claim mapped only to a lower-level module's test as refuting
+  the finding's coverage claim.
 - For a pattern finding, confirm that the cited examples exist, share the pattern, and face the same
   constraints as the target.
 - Confirm each label against its definition in the quality lens. Report a wrong label as refuting
