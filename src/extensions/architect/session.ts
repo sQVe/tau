@@ -10,7 +10,8 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
-import { askDeadlineAction } from './ask/askDecision.js';
+import type { AskDeadline } from './ask/askDeadline.js';
+import { startAskDeadline } from './ask/askDeadline.js';
 import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
 import type { EndNoteRoute } from './endNoteDecision.js';
 import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
@@ -18,24 +19,13 @@ import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import type { FinalHandoverResult } from './queuedHandover.js';
-import {
-  readAskRecordAt,
-  readAskRecords,
-  updateHiddenAskRecord,
-  updateHiddenAskRecordAt,
-  writeArchitectRecord,
-} from './record.js';
+import { readAskRecords, updateHiddenAskRecord, writeArchitectRecord } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
 import { deleteStartMarker } from './startTicket/startTicket.js';
 
 export interface HeldLockToken {
   current: () => string | undefined;
   set: (token: string | undefined) => void;
-}
-
-interface AskDeadline {
-  timer: NodeJS.Timeout;
-  expiry: () => Promise<void> | undefined;
 }
 
 export interface ArchitectSession {
@@ -108,80 +98,6 @@ const askRecordPathFromEnvironment = (): string | undefined => {
   return path === undefined || path === '' ? undefined : path;
 };
 
-const expireAskRecord = async (path: string, context: ExtensionContext): Promise<void> => {
-  const change = await updateHiddenAskRecordAt(path, (current) => {
-    const action = askDeadlineAction({ now: Date.now(), deadline: current.deadline });
-
-    if (action !== 'expire') {
-      return undefined;
-    }
-
-    return {
-      ...current,
-      status: 'timeout',
-      detail: 'The ask reached its deadline before the architect answered.',
-    };
-  });
-
-  if (change?.changed === true) {
-    context.shutdown();
-  }
-};
-
-const armAskDeadline = async (context: ExtensionContext): Promise<AskDeadline | undefined> => {
-  const path = askRecordPathFromEnvironment();
-
-  if (path === undefined) {
-    return undefined;
-  }
-
-  const record = await readAskRecordAt(path);
-
-  if (record?.route !== 'hidden') {
-    return undefined;
-  }
-
-  let timer: NodeJS.Timeout | undefined;
-  let running: Promise<void> | undefined;
-
-  const schedule = (deadline: number): void => {
-    const delay = Math.max(0, deadline - Date.now());
-
-    timer = setTimeout(() => {
-      running = (async () => {
-        const current = await readAskRecordAt(path);
-
-        if (current?.route !== 'hidden') {
-          return;
-        }
-
-        if (current.status === 'running' && Date.now() < current.deadline) {
-          schedule(current.deadline);
-
-          return;
-        }
-
-        await expireAskRecord(path, context);
-      })().catch((error: unknown) => {
-        notifyOnce(context.ui, path, 'ask-deadline', errorMessage(error), 'error');
-      });
-    }, delay);
-  };
-
-  schedule(record.deadline);
-
-  return {
-    get timer(): NodeJS.Timeout {
-      if (timer === undefined) {
-        throw new Error('The ask deadline timer was not armed.');
-      }
-
-      return timer;
-    },
-    expiry: () => running,
-  };
-};
-
 const startArchitect = async (
   context: ExtensionContext,
   held: HeldLockToken,
@@ -230,7 +146,8 @@ const startArchitect = async (
       architectTerminal: owner.terminal,
     });
 
-    const deadline = owner.mode === 'ask' ? await armAskDeadline(context) : undefined;
+    const askPath = owner.mode === 'ask' ? askRecordPathFromEnvironment() : undefined;
+    const deadline = askPath === undefined ? undefined : await startAskDeadline(askPath, context);
 
     return {
       root,
@@ -338,10 +255,7 @@ export const endArchitectSession = async (
   hc: HcRuntime,
   { answers, admissions, sendEndNote }: EndArchitectOptions,
 ): Promise<void> => {
-  if (session.deadline !== undefined) {
-    clearTimeout(session.deadline.timer);
-    await session.deadline.expiry();
-  }
+  await session.deadline?.stop();
 
   session.held.set(undefined);
 
