@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import {
   architectRecordPath,
@@ -813,4 +813,22 @@ it('returns changed false and leaves the record when the change declines', async
 
   expect(result).toMatchObject({ changed: false, record });
   expect(await readAskRecord(root, askId)).toEqual(record);
+});
+
+it('refuses a root-based ask update when Git tracks a file in the ask directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const askId = '0190c1d2-0000-7000-8000-000000000707';
+
+  await writeAskRecord(root, { ...askRecordV2Live, askId });
+  await git(root, 'add', '--force', join('.tau', 'lead', 'ask', `${askId}.json`));
+
+  const before = await snapshotDirectory(askRecordDirectory(root));
+
+  await expect(
+    changeAskRecord(root, askId, (current) =>
+      current.route === 'live' ? { ...current, status: 'answered' } : undefined,
+    ),
+  ).rejects.toThrow('Git tracks files in .tau/lead/ask');
+
+  expect(await snapshotDirectory(askRecordDirectory(root))).toEqual(before);
 });

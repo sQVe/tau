@@ -455,13 +455,16 @@ const changeAskRecordAt = async (
     },
   );
 
-export const changeAskRecord = (
+export const changeAskRecord = async (
   root: string,
   askId: string,
   change: (current: AskRecord) => AskRecord | undefined,
   options: ChangeAskOptions = {},
-): Promise<AskRecordChange | undefined> =>
-  changeAskRecordAt(askRecordPath(root, askId), change, options);
+): Promise<AskRecordChange | undefined> => {
+  await ensureTauDirectory(root, 'lead/ask');
+
+  return changeAskRecordAt(askRecordPath(root, askId), change, options);
+};
 
 // A hidden ask is final once it leaves `running`, so every update applies that precondition
 // inside the lock instead of trusting each writer to repeat it.
