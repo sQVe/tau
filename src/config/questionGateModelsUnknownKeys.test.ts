@@ -1,18 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs';
-
 import { Value } from 'typebox/value';
 import { expect, it, vi } from 'vitest';
 
-import { temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
+import { tauConfigSnapshot, temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import { pastAnswerSchema } from '../judgeSchema.ts';
 import type { PastAnswer } from '../questionGate/questionGate.ts';
 import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
 import type { ShadowConfig } from './questionGateModels.ts';
-
-interface ConfigBytes {
-  user: string;
-  repository: string | undefined;
-}
 
 const models = {
   classifier: 'tau-fixture/judge-a',
@@ -47,26 +40,6 @@ const shadow: ShadowConfig = {
 
 const uiFixture = () => ({ notify: vi.fn<(message: string, level?: string) => void>() });
 
-const readBytes = (userFile: string, repositoryFile: string): ConfigBytes => ({
-  user: readFileSync(userFile, 'utf8'),
-  repository: existsSync(repositoryFile) ? readFileSync(repositoryFile, 'utf8') : undefined,
-});
-
-const expectBytesUnchanged = (
-  before: ConfigBytes,
-  userFile: string,
-  repositoryFile: string,
-): void => {
-  const userAfter = readFileSync(userFile, 'utf8');
-
-  const repositoryAfter = existsSync(repositoryFile)
-    ? readFileSync(repositoryFile, 'utf8')
-    : undefined;
-
-  expect(userAfter).toBe(before.user);
-  expect(repositoryAfter).toBe(before.repository);
-};
-
 type UiFixture = ReturnType<typeof uiFixture>;
 
 const expectWarning = (ui: UiFixture, userFile: string, keyPath: string): void => {
@@ -91,18 +64,18 @@ it('reads an extra key beside classifier and warns once with its path', ({ onTes
 
   writeUser({ questionGate: { ...models, extra: true } });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const ui = uiFixture();
 
   expect(readQuestionGateConfig(location, ui)).toEqual({ ...models, decide: false });
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 
   expectWarning(ui, userFile, 'questionGate.extra');
 
   expect(ui.notify).toHaveBeenCalledTimes(1);
 
   readQuestionGateConfig(location, ui);
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 
   expect(ui.notify).toHaveBeenCalledTimes(1);
 });
@@ -197,11 +170,11 @@ it('reads extra keys inside shadow and examples, warns once per path, and keeps 
   });
 
   const ui = uiFixture();
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const config = readQuestionGateConfig(location, ui);
 
   expect(config).toEqual({ ...models, decide: false, shadow });
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 
   const examples = config?.shadow?.examples ?? [];
 

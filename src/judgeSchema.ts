@@ -1,21 +1,15 @@
 import { Type } from 'typebox';
-import type { Static, TProperties, TSchema } from 'typebox';
+import type { Static, TObjectOptions, TSchema } from 'typebox';
 
-const objectSchema = <Properties extends TProperties>(properties: Properties, strict: boolean) => {
-  const options = strict ? { additionalProperties: false } : {};
+export type JudgeOption = JudgeQuestion['options'][number];
 
-  return Type.Object(properties, options);
-};
+export type PastOutcome = PastAnswer['outcome'];
 
 const optionProperties = {
   label: Type.String(),
   description: Type.String(),
   recommended: Type.Boolean(),
 };
-
-const judgeOptionSchema = objectSchema(optionProperties, true);
-
-export const openJudgeOptionSchema = objectSchema(optionProperties, false);
 
 const questionProperties = <Options extends TSchema>(options: Options) => ({
   question: Type.String(),
@@ -24,29 +18,11 @@ const questionProperties = <Options extends TSchema>(options: Options) => ({
   options: Type.Array(options),
 });
 
-export const openJudgeQuestionSchema = objectSchema(
-  questionProperties(openJudgeOptionSchema),
-  false,
-);
-
-export const judgeQuestionSchema = objectSchema(questionProperties(judgeOptionSchema), true);
-
 const outcomeVariantProperties = {
   recommended: { kind: Type.Literal('recommended') },
   otherOption: { kind: Type.Literal('otherOption'), label: Type.String() },
   typed: { kind: Type.Literal('typed'), text: Type.String() },
 };
-
-const outcomeSchemas = (strict: boolean) =>
-  [
-    objectSchema(outcomeVariantProperties.recommended, strict),
-    objectSchema(outcomeVariantProperties.otherOption, strict),
-    objectSchema(outcomeVariantProperties.typed, strict),
-  ] as const;
-
-export const openPastOutcomeSchema = Type.Union([...outcomeSchemas(false)]);
-
-const pastOutcomeSchema = Type.Union([...outcomeSchemas(true)]);
 
 const pastAnswerProperties = <Question extends TSchema, Outcome extends TSchema>(
   question: Question,
@@ -57,15 +33,28 @@ const pastAnswerProperties = <Question extends TSchema, Outcome extends TSchema>
   outcome,
 });
 
-export const openPastAnswerSchema = objectSchema(
-  pastAnswerProperties(openJudgeQuestionSchema, openPastOutcomeSchema),
-  false,
-);
+const buildJudgeSchemas = (options: TObjectOptions) => {
+  const option = Type.Object(optionProperties, options);
 
-export const pastAnswerSchema = objectSchema(
-  pastAnswerProperties(judgeQuestionSchema, pastOutcomeSchema),
-  true,
-);
+  const question = Type.Object(questionProperties(option), options);
+
+  const outcome = Type.Union([
+    Type.Object(outcomeVariantProperties.recommended, options),
+    Type.Object(outcomeVariantProperties.otherOption, options),
+    Type.Object(outcomeVariantProperties.typed, options),
+  ]);
+
+  const pastAnswer = Type.Object(pastAnswerProperties(question, outcome), options);
+
+  return { question, pastAnswer };
+};
+
+const strictJudgeSchemas = buildJudgeSchemas({ additionalProperties: false });
+const openJudgeSchemas = buildJudgeSchemas({});
+
+export const judgeQuestionSchema = strictJudgeSchemas.question;
+export const pastAnswerSchema = strictJudgeSchemas.pastAnswer;
+export const openPastAnswerSchema = openJudgeSchemas.pastAnswer;
 
 export const shadowVariantSchema = Type.Union([
   Type.Literal('classifier'),
@@ -75,8 +64,6 @@ export const shadowVariantSchema = Type.Union([
   Type.Literal('agent'),
 ]);
 
-export type JudgeOption = Static<typeof judgeOptionSchema>;
 export type JudgeQuestion = Static<typeof judgeQuestionSchema>;
-export type PastOutcome = Static<typeof pastOutcomeSchema>;
 export type PastAnswer = Static<typeof pastAnswerSchema>;
 export type ShadowVariant = Static<typeof shadowVariantSchema>;

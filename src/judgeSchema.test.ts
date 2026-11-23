@@ -1,14 +1,7 @@
-import type { TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { expect, it } from 'vitest';
 
-import {
-  openJudgeOptionSchema,
-  openJudgeQuestionSchema,
-  openPastAnswerSchema,
-  openPastOutcomeSchema,
-  pastAnswerSchema,
-} from './judgeSchema.js';
+import { openPastAnswerSchema, pastAnswerSchema } from './judgeSchema.js';
 
 const option = { label: 'Fast', description: 'Ship now.', recommended: true };
 
@@ -28,14 +21,6 @@ const pastAnswer = {
 it('accepts a past answer without extra keys in the strict and open schemas', () => {
   expect(Value.Check(pastAnswerSchema, pastAnswer)).toBe(true);
   expect(Value.Check(openPastAnswerSchema, pastAnswer)).toBe(true);
-});
-
-it.for<[string, TSchema, Record<string, unknown>]>([
-  ['option', openJudgeOptionSchema, option],
-  ['question', openJudgeQuestionSchema, question],
-  ['outcome', openPastOutcomeSchema, pastAnswer.outcome],
-])('accepts an extra key on the %s in its open schema', ([, schema, value]) => {
-  expect(Value.Check(schema, { ...value, extra: true })).toBe(true);
 });
 
 it.for<[string, unknown]>([

@@ -1,16 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs';
-
 import { expect, it, onTestFinished as registerTestCleanup } from 'vitest';
 
-import { temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
+import { tauConfigSnapshot, temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import type { PastAnswer } from '../questionGate/questionGate.ts';
 import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
 import type { QuestionGateConfig, ShadowConfig } from './questionGateModels.ts';
-
-interface ConfigBytes {
-  user: string;
-  repository: string | undefined;
-}
 
 type FrozenConfig = QuestionGateConfig & { shadow: ShadowConfig };
 
@@ -75,26 +68,6 @@ const withShadow = (config: FrozenConfig, shadow: Partial<ShadowConfig>): Frozen
   shadow: { ...config.shadow, ...shadow },
 });
 
-const readBytes = (userFile: string, repositoryFile: string): ConfigBytes => ({
-  user: readFileSync(userFile, 'utf8'),
-  repository: existsSync(repositoryFile) ? readFileSync(repositoryFile, 'utf8') : undefined,
-});
-
-const expectBytesUnchanged = (
-  before: ConfigBytes,
-  userFile: string,
-  repositoryFile: string,
-): void => {
-  const userAfter = readFileSync(userFile, 'utf8');
-
-  const repositoryAfter = existsSync(repositoryFile)
-    ? readFileSync(repositoryFile, 'utf8')
-    : undefined;
-
-  expect(userAfter).toBe(before.user);
-  expect(repositoryAfter).toBe(before.repository);
-};
-
 it('reads a model-only user key and leaves the file unchanged', ({ onTestFinished }) => {
   const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
     onTestFinished,
@@ -103,10 +76,10 @@ it('reads a model-only user key and leaves the file unchanged', ({ onTestFinishe
 
   writeUser({ questionGate: models });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
 
   expect(readQuestionGateConfig(location, ui())).toEqual({ ...models, decide: false });
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 });
 
 it('returns undefined when the key is missing', ({ onTestFinished }) => {
@@ -130,7 +103,7 @@ it('refuses a panel of two models with the schema error', ({ onTestFinished }) =
     },
   });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const read = () => readQuestionGateConfig(location, ui());
 
   expect(read).toThrow(userFile);
@@ -139,7 +112,7 @@ it('refuses a panel of two models with the schema error', ({ onTestFinished }) =
     'questionGate needs classifier, a provider/model-id string, and panel, an array of three provider/model-id strings.',
   );
 
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 });
 
 it('refuses a panel string that is not a model reference', ({ onTestFinished }) => {
@@ -150,12 +123,12 @@ it('refuses a panel string that is not a model reference', ({ onTestFinished }) 
 
   writeUser({ questionGate: { classifier: 'a/b', panel: ['a/b', 'c/d', 'nope'] } });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const read = () => readQuestionGateConfig(location, ui());
 
   expect(read).toThrow(userFile);
   expect(read).toThrow('questionGate model "nope" is not a provider/model-id reference.');
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 });
 
 it('refuses the key in a trusted repository file', ({ onTestFinished }) => {
@@ -167,12 +140,12 @@ it('refuses the key in a trusted repository file', ({ onTestFinished }) => {
   writeUser({});
   writeRepository({ questionGate: models });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const read = () => readQuestionGateConfig(location, ui());
 
   expect(read).toThrow(repositoryFile);
   expect(read).toThrow('questionGate may be set only in the user file');
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 });
 
 it('refuses decide without shadow', ({ onTestFinished }) => {
@@ -183,14 +156,14 @@ it('refuses decide without shadow', ({ onTestFinished }) => {
 
   writeUser({ questionGate: { ...models, decide: true } });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const read = () => readQuestionGateConfig(location, ui());
 
   expect(read).toThrow(userFile);
 
   expect(read).toThrow('questionGate decide needs shadow, the frozen judge and cutoff it uses.');
 
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 });
 
 it('reads decide with shadow', ({ onTestFinished }) => {
@@ -223,12 +196,12 @@ it('refuses a decide that is not a boolean', ({ onTestFinished }) => {
 
   writeUser({ questionGate: { ...models, decide: 'yes' } });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const read = () => readQuestionGateConfig(location, ui());
 
   expect(read).toThrow(userFile);
   expect(read).toThrow('questionGate decide must be true or false.');
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 });
 
 const decidedShadowOf = (config: QuestionGateConfig): ShadowConfig | null =>
@@ -280,10 +253,10 @@ it('reads a frozen shadow config and leaves the file unchanged', ({ onTestFinish
 
   writeUser({ questionGate: { ...models, shadow } });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
 
   expect(readQuestionGateConfig(location, ui())).toEqual({ ...models, decide: false, shadow });
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 });
 
 it('defaults omitted examples to an empty list', ({ onTestFinished }) => {
@@ -319,7 +292,7 @@ it.each<[string, unknown]>([
 
   writeUser({ questionGate: { ...models, shadow } });
 
-  const before = readBytes(userFile, repositoryFile);
+  const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const read = () => readQuestionGateConfig(location, ui());
 
   expect(read).toThrow(userFile);
@@ -328,7 +301,7 @@ it.each<[string, unknown]>([
     'questionGate shadow needs a variant, a cutoff from 0 to 1, and up to five past-answer examples.',
   );
 
-  expectBytesUnchanged(before, userFile, repositoryFile);
+  snapshot.expectUnchanged();
 });
 
 it.each(['classifierExamples', 'panelExamples'] as const)(
@@ -346,7 +319,7 @@ it.each(['classifierExamples', 'panelExamples'] as const)(
       },
     });
 
-    const before = readBytes(userFile, repositoryFile);
+    const snapshot = tauConfigSnapshot(userFile, repositoryFile);
     const read = () => readQuestionGateConfig(location, ui());
 
     expect(read).toThrow(userFile);
@@ -355,7 +328,7 @@ it.each(['classifierExamples', 'panelExamples'] as const)(
       `questionGate shadow variant ${JSON.stringify(variant)} needs at least one example.`,
     );
 
-    expectBytesUnchanged(before, userFile, repositoryFile);
+    snapshot.expectUnchanged();
   },
 );
 
