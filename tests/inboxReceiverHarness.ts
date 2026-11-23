@@ -141,11 +141,14 @@ const savedText = async (directory: string, messageId: string): Promise<string> 
   return read.record.payload.text;
 };
 
-export const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> => {
-  const messageIds = await pendingMessages(receiver.inbox);
+export const savedTextsIn = async (directory: string): Promise<string[]> => {
+  const messageIds = await pendingMessages(directory);
 
-  return Promise.all(messageIds.map((messageId) => savedText(receiver.inbox, messageId)));
+  return Promise.all(messageIds.map((messageId) => savedText(directory, messageId)));
 };
+
+export const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> =>
+  savedTextsIn(receiver.inbox);
 
 // Accept checks live in the process-wide inbox slot, so a test that registers one removes it after.
 export const forgetAcceptCheck = (family: Family): void => {

@@ -10,8 +10,8 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
-import { nextEndNoteRoute } from './endNoteDecision.js';
-import type { EndNoteRoute } from './endNoteDecision.js';
+import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
+import type { EndNote, EndNoteRoute } from './endNoteDecision.js';
 import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
@@ -114,10 +114,11 @@ const startArchitect = async (
 
     await afterPublish?.();
 
-    const endNote =
-      owner.mode === 'visible' && leadTerminal !== null && leadTerminal !== ''
-        ? { leadTerminal, architectTerminal: owner.terminal, finalHandover: 'none' as const }
-        : undefined;
+    const endNote = initialEndNoteRoute({
+      mode: owner.mode,
+      leadTerminal,
+      architectTerminal: owner.terminal,
+    });
 
     return {
       root,
@@ -229,21 +230,25 @@ export const endArchitectSession = async (
   session.held.set(undefined);
 
   // The note read must finish before the lock is released, so a new owner cannot overwrite the
-  // record first. The close work starts alongside it so its deadline starts now.
+  // record first. It starts with the close so its deadline starts now, but live ask settlement does
+  // not wait for it.
   const note = sendEndNote ? prepareEndNote(session.endNote, session.root) : undefined;
   const closing = closeAdmitted(answers, admissions);
-  const preparedNote = await note;
+  let preparedNote: EndNote | undefined;
 
   try {
     const closed = await closing;
 
     await closeLiveAsks(session, hc, closed);
+    preparedNote = await note;
     await session.release();
   } finally {
     try {
       await failRunningAsks(session.root, session.ui);
     } finally {
-      await deliverEndNote(preparedNote, hc, (message) => {
+      const deliveredNote = preparedNote ?? (await note);
+
+      await deliverEndNote(deliveredNote, hc, (message) => {
         session.ui.notify(message, 'warning');
       });
     }

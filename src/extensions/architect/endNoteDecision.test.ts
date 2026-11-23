@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { decideEndNote, nextEndNoteRoute } from './endNoteDecision.js';
-import type { ArchitectRecordFact, EndNoteRoute } from './endNoteDecision.js';
+import { decideEndNote, initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
+import type { ArchitectRecordFact, EndNoteRoute, EndNoteRouteFacts } from './endNoteDecision.js';
 import type { FinalHandoverResult } from './queuedHandover.js';
 
 const readUpdatedAt = '2026-11-23T08:00:00.000Z';
@@ -17,6 +17,36 @@ const route = (overrides: Partial<EndNoteRoute> = {}): EndNoteRoute => ({
   architectTerminal: 't-architect',
   finalHandover: 'none',
   ...overrides,
+});
+
+it.each<{ name: string; facts: EndNoteRouteFacts; expected: EndNoteRoute | undefined }>([
+  {
+    name: 'a visible architect with a lead terminal builds the route',
+    facts: { mode: 'visible', leadTerminal: 't-lead', architectTerminal: 't-architect' },
+    expected: route(),
+  },
+  {
+    name: 'a visible architect with a null terminal still builds the route',
+    facts: { mode: 'visible', leadTerminal: 't-lead', architectTerminal: null },
+    expected: route({ architectTerminal: null }),
+  },
+  {
+    name: 'a visible architect with no lead terminal builds no route',
+    facts: { mode: 'visible', leadTerminal: null, architectTerminal: 't-architect' },
+    expected: undefined,
+  },
+  {
+    name: 'a visible architect with an empty lead terminal builds no route',
+    facts: { mode: 'visible', leadTerminal: '', architectTerminal: 't-architect' },
+    expected: undefined,
+  },
+  {
+    name: 'an ask architect builds no route',
+    facts: { mode: 'ask', leadTerminal: 't-lead', architectTerminal: 't-architect' },
+    expected: undefined,
+  },
+])('$name', ({ facts, expected }) => {
+  expect(initialEndNoteRoute(facts)).toEqual(expected);
 });
 
 const cases: readonly {

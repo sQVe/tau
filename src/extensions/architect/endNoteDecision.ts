@@ -18,6 +18,28 @@ export interface EndNote {
   text: string;
 }
 
+export interface EndNoteRouteFacts {
+  mode: 'visible' | 'ask';
+  leadTerminal: string | null;
+  architectTerminal: string | null;
+}
+
+export const initialEndNoteRoute = (facts: EndNoteRouteFacts): EndNoteRoute | undefined => {
+  if (facts.mode !== 'visible') {
+    return undefined;
+  }
+
+  if (facts.leadTerminal === null || facts.leadTerminal === '') {
+    return undefined;
+  }
+
+  return {
+    leadTerminal: facts.leadTerminal,
+    architectTerminal: facts.architectTerminal,
+    finalHandover: 'none',
+  };
+};
+
 export const nextEndNoteRoute = (
   route: EndNoteRoute | undefined,
   result: FinalHandoverResult,

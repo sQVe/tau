@@ -139,8 +139,10 @@ it('a visible architect shuts down but still notes its end after a final handove
   await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
 
   const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+  const [text = ''] = await savedTexts(lead);
 
   expect(savedRecords).toHaveLength(1);
+  expect(text).toContain('ended without a final handover');
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 

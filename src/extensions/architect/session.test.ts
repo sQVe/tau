@@ -34,12 +34,6 @@ import type { HiddenAskRecord, LiveAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
 import type { ArchitectSession } from './session.js';
 
-const endWithoutNote = (session: ArchitectSession): Promise<void> =>
-  endArchitectSession(session, hcRuntime(createHcFake()), {
-    ...endOptions(),
-    sendEndNote: false,
-  });
-
 const holdLock = async (root: string, released: boolean): Promise<void> => {
   const path = `${architectLockPath(root)}.1`;
 
@@ -154,58 +148,6 @@ it('an ask session with a lead terminal builds no end note route', async ({ onTe
 
   expect(lead.savedRecords()).toEqual([]);
   expect(session?.endNote).toBeUndefined();
-});
-
-it('a visible architect with a lead terminal builds its end note route', async ({
-  onTestFinished,
-}) => {
-  stubArchitect(onTestFinished);
-  vi.stubEnv('TAU_ARCHITECT_ASK', '');
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const root = await createTemporaryRepository(onTestFinished);
-  const { context } = sessionContext(root);
-  const session = await startArchitectSession(context, createHeldLockToken());
-
-  expect(session?.endNote).toEqual({
-    leadTerminal: 't-lead',
-    architectTerminal: 't-architect',
-    finalHandover: 'none',
-  });
-
-  await endWithoutNote(session as ArchitectSession);
-});
-
-it('a visible architect with no lead terminal builds no end note route', async ({
-  onTestFinished,
-}) => {
-  stubArchitect(onTestFinished);
-  vi.stubEnv('TAU_ARCHITECT_ASK', '');
-  vi.stubEnv('TAU_LEAD_TERMINAL', undefined);
-
-  const root = await createTemporaryRepository(onTestFinished);
-  const { context } = sessionContext(root);
-  const session = await startArchitectSession(context, createHeldLockToken());
-
-  expect(session?.endNote).toBeUndefined();
-
-  await endWithoutNote(session as ArchitectSession);
-});
-
-it('a visible architect with an empty lead terminal builds no end note route', async ({
-  onTestFinished,
-}) => {
-  stubArchitect(onTestFinished);
-  vi.stubEnv('TAU_ARCHITECT_ASK', '');
-  vi.stubEnv('TAU_LEAD_TERMINAL', '');
-
-  const root = await createTemporaryRepository(onTestFinished);
-  const { context } = sessionContext(root);
-  const session = await startArchitectSession(context, createHeldLockToken());
-
-  expect(session?.endNote).toBeUndefined();
-
-  await endWithoutNote(session as ArchitectSession);
 });
 
 const hiddenIds = {
