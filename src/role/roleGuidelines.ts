@@ -18,6 +18,9 @@ const leadGuidelines = [
   'Write a launch brief only from a ticket body or settled requirements. When a brief needs a design choice, ask the architect first.',
   'Leave the request you opened the architect for until a handover starting with `Final:` arrives. Meanwhile, start no editing worker in this checkout.',
   'When an `architect` `ask` answer reads `Open the architect: <reason>`, call `architect` `open` with the request the ask served and that reason.',
+  "For a handover question about an approval-only action (cancel a ticket, publish a PR as ready, spend money, delete data), ask the user with `ask_user_question`, then pass the user's answer with `handover_answer`.",
+  "For a handover question about design, call `architect` `ask`. When the ask returns `failed` or its answer starts with `Open the architect:`, ask the user with `ask_user_question` and pass the user's answer with `handover_answer`. When the ask refuses or returns `unknown`, follow its note once, retrying by `askId` when the note says so. On a second refusal or `unknown`, or a `needsOpen` result, ask the user with `ask_user_question` and pass the user's answer with `handover_answer`. Otherwise pass the architect's answer with `handover_answer`, including an answer a live architect sends later through the inbox. A handover question does not open the architect, even when the ask note reads `Open the architect`.",
+  'Answer any other handover question directly with `handover_answer`.',
 ];
 
 const architectGuidelines = [
