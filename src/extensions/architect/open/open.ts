@@ -12,9 +12,12 @@ import { isBareRootWithoutGitEntry } from '../../../git.js';
 import { get } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
-import { startPiSession, startPiSessionRightOf } from '../../../piStart/piStart.js';
+import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
+import type { PiLaunchResult } from '../../../piStart/piStart.js';
 import { tabName } from '../../../tabName.js';
 import { releaseClaim } from '../claimRelease/claimRelease.js';
+import { launchLookup } from '../claimRelease/launchLookup.js';
+import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import { architectLockPath, claimArchitectLock } from '../lock.js';
 import type { ArchitectClaimOptions } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
@@ -44,6 +47,15 @@ interface PreparedArchitectStart {
   pane: string | undefined;
   bareRoot: boolean;
   environment: Record<string, string>;
+}
+
+type ReplyTerminal = Parameters<typeof launchOutcomeDecision>[0]['replyTerminal'];
+
+interface LaunchState {
+  launch: 'notRun' | 'refused' | 'started';
+  terminal: string | undefined;
+  terminalState: 'unknown' | 'live' | 'ended' | 'absent';
+  adopted: boolean;
 }
 
 const askLabel = 'tau.architect.ask';
@@ -203,11 +215,11 @@ const prepareArchitectStart = async (
   };
 };
 
-const launchArchitect = async (
+const launchArchitect = (
   hc: HcRuntime,
   request: OpenRequest,
   prepared: PreparedArchitectStart,
-): Promise<string | undefined> => {
+): Promise<PiLaunchResult> => {
   const start = {
     folder: request.root,
     task: prepared.task,
@@ -219,14 +231,66 @@ const launchArchitect = async (
 
   if (prepared.pane === undefined) {
     const target = { name: `architect-${basename(request.root)}` };
-    const started = await startPiSession(hc, { ...start, target, tabName: tabName('architect') });
+    const started = launchPiSession(hc, { ...start, target, tabName: tabName('architect') });
 
-    return started.terminal;
+    return started;
   }
 
-  const started = await startPiSessionRightOf(hc, { ...start, pane: prepared.pane });
+  return launchPiSessionRightOf(hc, { ...start, pane: prepared.pane });
+};
 
-  return started.terminal;
+const replyTerminalOf = (launch: PiLaunchResult): ReplyTerminal =>
+  launch.terminal === undefined ? 'malformed' : 'valid';
+
+const launchFacts = (launch: PiLaunchResult): Parameters<typeof launchOutcomeDecision>[0] => ({
+  ran: launch.ran,
+  exitCode: launch.exitCode,
+  killed: launch.killed,
+  aborted: launch.aborted,
+  timedOut: launch.timedOut,
+  replyTerminal: replyTerminalOf(launch),
+});
+
+const launchFailure = (launch: PiLaunchResult): Error =>
+  launch.error instanceof Error
+    ? launch.error
+    : new Error('The architect launch failed before it reported a terminal.');
+
+const launchResult = (prepared: PreparedArchitectStart): OpenResult =>
+  prepared.session === undefined
+    ? { status: 'opened', sessionFile: null }
+    : { status: 'resumed', sessionFile: prepared.session };
+
+const claimTakenOver = async (root: string, claimToken: string): Promise<boolean> => {
+  const holder = await readLiveLockHolder(architectLockPath(root));
+
+  return holder !== undefined && holder.token !== claimToken;
+};
+
+const recoverUnknownLaunch = async (
+  request: OpenRequest,
+  claimToken: string,
+  launchHc: HcRuntime,
+  started: PiLaunchResult,
+  state: LaunchState,
+): Promise<void> => {
+  state.launch = 'started';
+
+  const lookup = await launchLookup({ kind: 'open', identifier: claimToken, hc: launchHc });
+
+  if (lookup.kind === 'found') {
+    state.terminal = lookup.terminal;
+    state.terminalState = 'live';
+    state.adopted = await claimTakenOver(request.root, claimToken);
+
+    if (state.adopted) {
+      return;
+    }
+  } else {
+    state.terminalState = lookup.kind === 'absent' ? 'absent' : 'unknown';
+  }
+
+  throw launchFailure(started);
 };
 
 const refusal = (checkout: string): Error =>
@@ -240,7 +304,7 @@ export const openKeptClaimMessage = (root: string): string =>
 
 const openKeptClaimError = (root: string): Error => new Error(openKeptClaimMessage(root));
 
-const takeoverExpiry = (): Error =>
+export const takeoverExpiryError = (): Error =>
   new Error(
     `The architect did not take the checkout lock within ${takeoverSeconds} seconds. Call architect open again.`,
   );
@@ -276,7 +340,7 @@ const waitForTakeover = async (
     }
 
     if (progress === 'expired') {
-      throw takeoverExpiry();
+      throw takeoverExpiryError();
     }
 
     const sleepOptions = signal === undefined ? {} : { signal };
@@ -289,6 +353,39 @@ const waitForTakeover = async (
 
       throw new Error('The open was cancelled.');
     }
+  }
+};
+
+const applyLaunchOutcome = async (
+  request: OpenRequest,
+  claimToken: string,
+  launchHc: HcRuntime,
+  started: PiLaunchResult,
+  state: LaunchState,
+): Promise<void> => {
+  const outcome = launchOutcomeDecision(launchFacts(started));
+
+  if (outcome === 'refused') {
+    state.launch = 'refused';
+
+    throw launchFailure(started);
+  }
+
+  if (outcome === 'unknown') {
+    await recoverUnknownLaunch(request, claimToken, launchHc, started, state);
+
+    return;
+  }
+
+  state.launch = 'started';
+  state.terminal = started.terminal;
+  state.terminalState = 'live';
+
+  await waitForTakeover(request.root, claimToken, request.hc.signal);
+  state.adopted = true;
+
+  if (request.hc.signal?.aborted === true) {
+    request.hc.signal.throwIfAborted();
   }
 };
 
@@ -355,10 +452,13 @@ export const openArchitect = async (
   }
 
   const launchHc = { ...request.hc, signal: undefined };
-  let launch: 'notRun' | 'failed' | 'started' = 'notRun';
-  let terminal: string | undefined;
-  let terminalState: 'unknown' | 'live' | 'ended' = 'unknown';
-  let adopted = false;
+
+  const state: LaunchState = {
+    launch: 'notRun',
+    terminal: undefined,
+    terminalState: 'unknown',
+    adopted: false,
+  };
 
   try {
     const prepared = await prepareArchitectStart(
@@ -367,40 +467,19 @@ export const openArchitect = async (
       claim.token,
     );
 
-    try {
-      terminal = await launchArchitect(launchHc, request, prepared);
-      launch = 'started';
-      terminalState = 'live';
-    } catch (error) {
-      launch = 'failed';
+    request.hc.signal?.throwIfAborted();
 
-      throw error;
-    }
+    const started = await launchArchitect(launchHc, request, prepared);
 
-    await waitForTakeover(request.root, claim.token, request.hc.signal);
-    adopted = true;
+    await applyLaunchOutcome(request, claim.token, launchHc, started, state);
 
-    if (request.hc.signal?.aborted === true) {
-      request.hc.signal.throwIfAborted();
-    }
+    const result = launchResult(prepared);
 
-    const result: OpenResult =
-      prepared.session === undefined
-        ? { status: 'opened', sessionFile: null }
-        : { status: 'resumed', sessionFile: prepared.session };
-
-    await releaseClaim({ claim, launch, adopted, terminal, terminalState, hc: launchHc });
+    await releaseClaim({ claim, ...state, hc: launchHc });
 
     return result;
   } catch (error) {
-    const kept = await releaseClaim({
-      claim,
-      launch,
-      adopted,
-      terminal,
-      terminalState,
-      hc: launchHc,
-    });
+    const kept = await releaseClaim({ claim, ...state, hc: launchHc });
 
     if (kept) {
       throw openKeptClaimError(request.root);

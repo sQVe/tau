@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import type { ArchitectOwner } from '../record.js';
-import { askOutcome, askRoute } from './askDecision.js';
+import { askDeadlineAction, askOutcome, askRoute, staleAskRepair } from './askDecision.js';
 import type { AskRouteFacts } from './askDecision.js';
 
 it.each([
@@ -249,4 +249,59 @@ it.each<{ name: string; facts: AskRouteFacts; expected: Record<string, unknown> 
   },
 ])('$name', ({ facts, expected }) => {
   expect(askRoute(facts)).toMatchObject(expected);
+});
+
+it.each([
+  {
+    name: 'a running ask before its deadline waits',
+    facts: { status: 'running', now: 1000, deadline: 2000 },
+    expected: 'wait',
+  },
+  {
+    name: 'a running ask at its deadline expires',
+    facts: { status: 'running', now: 2000, deadline: 2000 },
+    expected: 'expire',
+  },
+  {
+    name: 'a running ask after its deadline expires',
+    facts: { status: 'running', now: 3000, deadline: 2000 },
+    expected: 'expire',
+  },
+  {
+    name: 'a sent ask at its deadline waits',
+    facts: { status: 'sent', now: 3000, deadline: 2000 },
+    expected: 'wait',
+  },
+  {
+    name: 'a timeout ask at its deadline waits',
+    facts: { status: 'timeout', now: 3000, deadline: 2000 },
+    expected: 'wait',
+  },
+] as const)('ask deadline: $name', ({ facts, expected }) => {
+  expect(askDeadlineAction(facts)).toBe(expected);
+});
+
+it.each([
+  {
+    name: 'a running ask whose terminal ended repairs',
+    facts: { status: 'running', terminalState: 'ended' },
+    expected: 'repair',
+  },
+  {
+    name: 'a running ask whose terminal is live leaves it',
+    facts: { status: 'running', terminalState: 'live' },
+    expected: 'leave',
+  },
+  {
+    name: 'a running ask whose terminal is unread leaves it',
+    facts: { status: 'running', terminalState: 'unread' },
+    expected: 'leave',
+  },
+  {
+    name: 'a sent ask whose terminal ended leaves it',
+    facts: { status: 'sent', terminalState: 'ended' },
+    expected: 'leave',
+  },
+] as const)('stale ask repair: $name', ({ facts, expected }) => {
+  expect(staleAskRepair(facts)).toBe(expected);
 });

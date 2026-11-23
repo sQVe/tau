@@ -1,6 +1,6 @@
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../tests/execFake.js';
+import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
@@ -8,7 +8,7 @@ import {
 } from '../../tests/gitRepository.js';
 import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { startPiSession, startPiSessionRightOf } from './piStart.js';
+import { launchPiSession, startPiSession, startPiSessionRightOf } from './piStart.js';
 
 it('a space start opens one tab with the argv as JSON', async () => {
   const fake = createHerdrAppFake();
@@ -387,4 +387,29 @@ it('a right-of start with an aborted signal runs no command', async () => {
   ).rejects.toThrow('cancelled before start');
 
   expect(fake.calls).toEqual([]);
+});
+
+it('a launch reports that it never ran when the executable is missing', async () => {
+  const fake = createExecFake<'start'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'start' : undefined),
+    handlerFor: () => () => failedResult('Executable not found in $PATH: "herdr-app"'),
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await launchPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { name: 'ticket-1' },
+      tabName: 'architect',
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      bareRoot: false,
+      environment: undefined,
+    },
+  );
+
+  expect(result.ran).toBe(false);
 });

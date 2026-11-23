@@ -23,6 +23,7 @@ export interface RunRequest {
   noParent?: boolean | undefined;
   background?: boolean | undefined;
   notify?: boolean | undefined;
+  timeout?: number | undefined;
 }
 
 export interface LsRequest {
@@ -96,11 +97,14 @@ export const run = (runtime: HcRuntime, request: RunRequest): Promise<HcTerminal
     flags.push('--no-notify');
   }
 
+  const timeoutOptions = request.timeout === undefined ? {} : { timeout: request.timeout };
+
   return runHc(
     runtime,
     'run',
     ['run', '--json', ...flags, ...labelFlags(request.labels), '--', ...request.argv],
     'hc run',
+    timeoutOptions,
   );
 };
 

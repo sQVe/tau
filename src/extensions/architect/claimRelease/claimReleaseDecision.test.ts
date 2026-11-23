@@ -18,8 +18,13 @@ it.each<{ name: string; facts: ClaimReleaseFacts; expected: ClaimReleaseAction }
     expected: 'release',
   },
   {
-    name: 'a launch that failed',
-    facts: facts({ launch: 'failed', terminal: 'unknown' }),
+    name: 'a launch that was refused',
+    facts: facts({ launch: 'refused', terminal: 'unknown' }),
+    expected: 'release',
+  },
+  {
+    name: 'a started launch whose lookup found no terminal',
+    facts: facts({ terminal: 'absent' }),
     expected: 'release',
   },
   {

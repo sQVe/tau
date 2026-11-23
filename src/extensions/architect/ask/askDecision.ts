@@ -25,6 +25,21 @@ export type AskRoute =
   | { kind: 'live'; terminal: string; sessionId: string; lockToken: string }
   | { kind: 'needsOpen'; reason: string };
 
+export type AskDeadlineAction = 'wait' | 'expire';
+
+export interface AskDeadlineFacts {
+  status: AskStatus;
+  now: number;
+  deadline: number;
+}
+
+export type StaleAskRepair = 'repair' | 'leave';
+
+export interface StaleAskFacts {
+  status: AskStatus;
+  terminalState: 'live' | 'ended' | 'unread';
+}
+
 // A sent answer is the only answered outcome. A timeout, or an ended ask that never sent, tells
 // the lead to open the architect. A terminal that failed on its own is failed.
 export const askOutcome = (facts: AskOutcomeFacts): AskOutcome => {
@@ -100,3 +115,9 @@ export const askRoute = (facts: AskRouteFacts): AskRoute => {
 
   return { kind: 'hidden', sessionFile: facts.sessionFile };
 };
+
+export const askDeadlineAction = (facts: AskDeadlineFacts): AskDeadlineAction =>
+  facts.status === 'running' && facts.now >= facts.deadline ? 'expire' : 'wait';
+
+export const staleAskRepair = (facts: StaleAskFacts): StaleAskRepair =>
+  facts.status === 'running' && facts.terminalState === 'ended' ? 'repair' : 'leave';

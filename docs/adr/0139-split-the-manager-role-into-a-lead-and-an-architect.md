@@ -115,11 +115,40 @@ before it starts Pi or writes an ask record. While a holder has not published it
 `open` report that the architect is starting.
 
 Pi opens its session file, and can migrate it, before session start. So the caller releases a claim
-only when no Pi can still take it over: the new Pi took the lock, its launch failed, or its terminal
-has ended. `ask` holds the claim until its hidden terminal ends. `open` waits up to 60 seconds for
-the takeover. On that deadline, on a cancel, or when the `ask` wait fails, the caller stops the new
-terminal with `hc kill` and releases the claim once the terminal has ended. When the caller does not
-know the terminal or the terminal does not end, it keeps the claim.
+only when no Pi can still take it over. A launch has three outcomes. It is `created` when the
+command exits 0 and its reply gives a valid terminal address, and `refused` when the command never
+ran, such as a spawn error for a missing binary. Every other result is `unknown`: a nonzero exit, a
+killed, timed-out, or aborted client, a reply that is not JSON or fails its schema, and a reply with
+a missing or empty terminal.
+
+On `unknown`, the caller keeps the claim and looks for the child every 250 milliseconds for up to 10
+seconds. `ask` looks up the label `tau.architect.ask=<askId>`. `open` lists all terminals and reads
+each one, matching `TAU_ARCHITECT_CLAIM=<token>` in its argv without a `cwd` filter. A found
+terminal is handled as a created one. A terminal absent from every lookup releases the claim and
+reports the launch error. A failed lookup keeps the claim. The launch command runs without the
+caller's signal, and the caller checks that signal just before dispatch. A 30 second timeout bounds
+the launch reply, and a timeout is `unknown`.
+
+`ask` holds the claim until its hidden terminal ends. `open` waits up to 60 seconds for the
+takeover. On that deadline, on a cancel before the takeover, or when the `ask` wait fails, the
+caller stops the new terminal with `hc kill` and releases the claim once the terminal has ended.
+When the caller does not know the terminal or the terminal does not end, it keeps the claim. A
+cancel after the takeover leaves the architect running, because it already holds the lock and the
+user may be talking to it.
+
+In ask mode the architect also enforces its own deadline. Once it holds the lock, it arms a timer
+from its ask record's `deadline`. At that deadline, a record that still reads `running` becomes
+`timeout` with a detail, and the session shuts down. When the caller cannot confirm a stop, it
+writes the record as `running` with a detail that the stop was not confirmed and that the ask ends
+at its deadline. A reader repairs a stale record: the newest running hidden record whose terminal
+`hc get` reads as not live becomes `failed` with a detail that the terminal ended without settling
+it. A failed `hc get` changes nothing. A Pi that hangs before session start never arms its deadline,
+so the caller keeps the claim until the lead stops that terminal or ends its own session.
+
+A Pi takes over its own claim while that claim is the highest generation and not released, even when
+the lead that took it has exited. The generation link still picks one winner when another caller
+claims at the same time. Refusing would end a valid architect whose only fault is that its lead
+exited.
 
 ### The lead's tab
 
@@ -171,6 +200,8 @@ the work.
   lookup that has no time limit of its own. Close has no overall deadline.
 - A start that cannot be stopped keeps its claim. The checkout then refuses new architect starts
   until the lead session that holds the claim exits, or until the started Pi takes the claim over.
+- A launch whose reply is lost waits up to 10 seconds for the lookup before it reports the error. A
+  failed lookup keeps the claim until the lead ends its session or a started Pi takes it over.
 - A lead that dies while its architect starts leaves a claim that reads as gone. A second start can
   then run before the first Pi reaches session start. The first Pi ends there, but it may already
   have opened the session file.

@@ -37,6 +37,23 @@ interface LaunchPlacement {
   tabNameFlag: string;
 }
 
+export interface PiLaunchResult {
+  ran: boolean;
+  exitCode: number | null;
+  killed: boolean;
+  timedOut: boolean;
+  aborted: boolean;
+  reply: string | undefined;
+  terminal: string | undefined;
+  error: unknown;
+}
+
+export const launchTimeoutMilliseconds = 30_000;
+
+// Pi reports a missing executable as a failed result rather than a thrown spawn error.
+export const missingExecutable = (output: string): boolean =>
+  output.includes('Executable not found in $PATH:');
+
 const splitReplySchema = Type.Object({ pane: Type.String(), terminal: Type.String() });
 
 const argvOf = (request: PiSessionRequest, message: string | undefined): string[] =>
@@ -129,6 +146,35 @@ const requireCheckout = async (
   runtime.signal?.throwIfAborted();
 };
 
+const launchResult = (
+  runtime: CommandRuntime,
+  result: Awaited<ReturnType<CommandRuntime['exec']>>,
+  terminal: string | undefined,
+  error: unknown,
+): PiLaunchResult => ({
+  ran: !missingExecutable(result.stderr),
+  exitCode: result.code,
+  killed: result.killed,
+  timedOut: result.killed,
+  aborted: runtime.signal?.aborted === true,
+  reply: result.stdout,
+  terminal,
+  error,
+});
+
+const commandError = (
+  label: string,
+  result: Awaited<ReturnType<CommandRuntime['exec']>>,
+): unknown => {
+  if (result.code === 0 && !result.killed) {
+    return undefined;
+  }
+
+  const output = (result.stderr || result.stdout).trim();
+
+  return new Error(`${label} failed: ${output}`);
+};
+
 const replyTerminal = (reply: string): string | undefined => {
   try {
     const value: unknown = JSON.parse(reply);
@@ -144,6 +190,82 @@ const replyTerminal = (reply: string): string | undefined => {
     return undefined;
   }
 };
+
+const launch = async (
+  runtime: CommandRuntime,
+  command: string,
+  commandArguments: string[],
+  label: string,
+  terminalOf: (reply: string) => { terminal: string | undefined; error: unknown },
+): Promise<PiLaunchResult> => {
+  try {
+    const result = await runtime.exec(command, commandArguments, {
+      cwd: runtime.cwd,
+      timeout: launchTimeoutMilliseconds,
+    });
+
+    const { terminal, error } = terminalOf(result.stdout);
+
+    return launchResult(runtime, result, terminal, commandError(label, result) ?? error);
+  } catch (error) {
+    return {
+      ran: false,
+      exitCode: null,
+      killed: false,
+      timedOut: false,
+      aborted: runtime.signal?.aborted === true,
+      reply: undefined,
+      terminal: undefined,
+      error,
+    };
+  }
+};
+
+const spaceTerminal = (
+  label: string,
+  reply: string,
+): { terminal: string | undefined; error: unknown } => {
+  const terminal = replyTerminal(reply);
+
+  return terminal === undefined
+    ? { terminal: undefined, error: new Error(`${label} printed no usable terminal address`) }
+    : { terminal, error: undefined };
+};
+
+const splitTerminal = (
+  label: string,
+  reply: string,
+): { terminal: string | undefined; error: unknown } => {
+  try {
+    const created = parseJson(label, reply);
+
+    checkOutput(label, splitReplySchema, created);
+
+    return { terminal: created.terminal, error: undefined };
+  } catch (error) {
+    return { terminal: undefined, error };
+  }
+};
+
+export const launchPiSession = (
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+): Promise<PiLaunchResult> =>
+  launch(runtime, 'herdr-app', startArguments(request), 'herdr-app do', (reply) =>
+    spaceTerminal('herdr-app do', reply),
+  );
+
+export const launchPiSessionRightOf = (
+  runtime: CommandRuntime,
+  request: PiStartRightOfRequest,
+): Promise<PiLaunchResult> =>
+  launch(
+    runtime,
+    'herdr-app',
+    splitArguments(request, request.pane),
+    'herdr-app do pane.split',
+    (reply) => splitTerminal('herdr-app do pane.split', reply),
+  );
 
 export const startPiSession = async (
   runtime: CommandRuntime,

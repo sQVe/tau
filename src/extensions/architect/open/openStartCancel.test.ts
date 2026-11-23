@@ -115,3 +115,33 @@ it('an abort after the takeover rejects and leaves the architect running', async
     terminal: 't-architect',
   });
 });
+
+it('an abort after preparation starts no launch and releases the claim', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { app, hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled before dispatch');
+
+  await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    const result = await runtime.exec(command, commandArguments, options);
+
+    if (command === 'herdr-app' && commandArguments[0] === 'ls') {
+      controller.abort(cancellation);
+    }
+
+    return result;
+  };
+
+  const failure = await openArchitect(
+    requestFor(root, config.location, { ...runtime, exec, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBe(cancellation);
+  expect(appCommands(app)).toEqual(['ls']);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});

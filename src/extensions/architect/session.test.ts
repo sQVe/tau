@@ -772,3 +772,76 @@ it('clears an adopted claim token so a later start takes the lock normally', asy
     (await readLiveLockHolder(architectLockPath(root)))?.token,
   );
 });
+
+it('an ask session times out its running ask at the deadline and shuts down', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const deadline = Date.now();
+
+  await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.running));
+
+  const { context, shutdown } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  await vi.advanceTimersByTimeAsync(1);
+  vi.useRealTimers();
+
+  await new Promise((resolve) => {
+    setTimeout(resolve, 50);
+  });
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
+  expect(shutdown).toHaveBeenCalledTimes(1);
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+});
+
+it('an ask session writes nothing at the deadline for an already settled record', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const deadline = Date.now();
+
+  await writeAskRecord(root, { ...hiddenAsk('sent', 'sent'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.sent));
+
+  const { context, shutdown } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  expect(await readAskRecord(root, hiddenIds.sent)).toMatchObject({ status: 'sent' });
+  expect(shutdown).not.toHaveBeenCalled();
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+});

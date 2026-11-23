@@ -10,6 +10,7 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
+import { askDeadlineAction } from './ask/askDecision.js';
 import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
 import type { EndNoteRoute } from './endNoteDecision.js';
 import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
@@ -17,7 +18,13 @@ import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import type { FinalHandoverResult } from './queuedHandover.js';
-import { readAskRecords, writeArchitectRecord, writeAskRecord } from './record.js';
+import {
+  readAskRecordAt,
+  readAskRecords,
+  writeArchitectRecord,
+  writeAskRecord,
+  writeAskRecordAt,
+} from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
 
 export interface HeldLockToken {
@@ -32,6 +39,7 @@ export interface ArchitectSession {
   owner: ArchitectOwner;
   held: HeldLockToken;
   endNote?: EndNoteRoute;
+  deadlineTimer?: NodeJS.Timeout;
 }
 
 export interface EndArchitectOptions {
@@ -87,6 +95,61 @@ const architectClaim = (): string | undefined => {
   return claim === undefined || claim === '' ? undefined : claim;
 };
 
+const askRecordPathFromEnvironment = (): string | undefined => {
+  // oxlint-disable-next-line node/no-process-env -- The ask terminal receives its record path in its environment.
+  const path = process.env.TAU_ARCHITECT_ASK;
+
+  return path === undefined || path === '' ? undefined : path;
+};
+
+const expireAskRecord = async (path: string, context: ExtensionContext): Promise<void> => {
+  const record = await readAskRecordAt(path);
+
+  if (record?.route !== 'hidden') {
+    return;
+  }
+
+  const action = askDeadlineAction({
+    status: record.status,
+    now: Date.now(),
+    deadline: record.deadline,
+  });
+
+  if (action !== 'expire') {
+    return;
+  }
+
+  await writeAskRecordAt(path, {
+    ...record,
+    status: 'timeout',
+    detail: 'The ask reached its deadline before the architect answered.',
+  });
+
+  context.shutdown();
+};
+
+const armAskDeadline = async (context: ExtensionContext): Promise<NodeJS.Timeout | undefined> => {
+  const path = askRecordPathFromEnvironment();
+
+  if (path === undefined) {
+    return undefined;
+  }
+
+  const record = await readAskRecordAt(path);
+
+  if (record?.route !== 'hidden') {
+    return undefined;
+  }
+
+  const delay = Math.max(0, record.deadline - Date.now());
+
+  return setTimeout(() => {
+    void expireAskRecord(path, context).catch((error: unknown) => {
+      notifyOnce(context.ui, path, 'ask-deadline', errorMessage(error), 'error');
+    });
+  }, delay);
+};
+
 const startArchitect = async (
   context: ExtensionContext,
   held: HeldLockToken,
@@ -130,6 +193,8 @@ const startArchitect = async (
       architectTerminal: owner.terminal,
     });
 
+    const deadlineTimer = owner.mode === 'ask' ? await armAskDeadline(context) : undefined;
+
     return {
       root,
       release: lock.release,
@@ -137,6 +202,7 @@ const startArchitect = async (
       owner,
       held,
       ...(endNote === undefined ? {} : { endNote }),
+      ...(deadlineTimer === undefined ? {} : { deadlineTimer }),
     };
   } catch (error) {
     held.set(undefined);
@@ -237,6 +303,10 @@ export const endArchitectSession = async (
   hc: HcRuntime,
   { answers, admissions, sendEndNote }: EndArchitectOptions,
 ): Promise<void> => {
+  if (session.deadlineTimer !== undefined) {
+    clearTimeout(session.deadlineTimer);
+  }
+
   session.held.set(undefined);
 
   // The note read must finish before the lock is released, so a new owner cannot overwrite the

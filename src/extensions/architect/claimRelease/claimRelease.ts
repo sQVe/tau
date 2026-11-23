@@ -40,10 +40,15 @@ export const releaseClaim = async (request: ClaimReleaseRequest): Promise<boolea
 
   await kill(hc, request.terminal).catch(() => undefined);
 
-  const ended = await wait(hc, request.terminal, { timeout: claimStopSeconds }).then(
-    (result) => result.ended,
-    () => false,
-  );
+  let ended: boolean;
+
+  try {
+    const waited = await wait(hc, request.terminal, { timeout: claimStopSeconds });
+
+    ended = waited.ended;
+  } catch {
+    return true;
+  }
 
   const terminal = ended ? 'ended' : 'live';
 

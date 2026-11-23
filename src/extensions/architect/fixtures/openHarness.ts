@@ -54,6 +54,7 @@ const appFake = (): ExecFake<HerdrAppCommand> => {
 
   app.overrideOutput('ls', appLayout);
   app.overrideOutput('pane.split', appSplit);
+  app.overrideOutput('space.new', '{"space":"sp-1","tab":"tb-1","terminal":"t-architect"}');
 
   return app;
 };
@@ -113,11 +114,14 @@ const claimTokenOf = (commandArguments: readonly string[]): string | undefined =
 
 // The real herdr-app start launches Pi, which adopts the caller's claim with its next lock
 // generation. The fake does the same, so open sees the takeover it waits for.
-const takeOverClaim = async (root: string, commandArguments: readonly string[]): Promise<void> => {
+const takeOverClaim = async (
+  root: string,
+  commandArguments: readonly string[],
+): Promise<boolean> => {
   const claimToken = claimTokenOf(commandArguments);
 
   if (claimToken === undefined || claimToken === '') {
-    return;
+    return false;
   }
 
   const held = await holdFileLock({
@@ -130,7 +134,11 @@ const takeOverClaim = async (root: string, commandArguments: readonly string[]):
 
   if (held.kind === 'held') {
     onTestFinished(held.release);
+
+    return true;
   }
+
+  return false;
 };
 
 const withTakeover = (
@@ -141,9 +149,11 @@ const withTakeover = (
   ...app,
   exec: async (command, commandArguments, options) => {
     const result = await app.exec(command, commandArguments, options);
+    const adopted = await takeOverClaim(root, commandArguments);
 
-    await takeOverClaim(root, commandArguments);
-    afterTakeover?.();
+    if (adopted) {
+      afterTakeover?.();
+    }
 
     return result;
   },

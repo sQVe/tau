@@ -1,7 +1,12 @@
+import { randomUUID } from 'node:crypto';
+
 import { expect, it, vi } from 'vitest';
 
+import { argumentAfter } from '../../../../tests/execFake.js';
+import { holdFileLock } from '../../../fileLock/fileLock.js';
 import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
+import { architectLockPath } from '../lock.js';
 import { openArchitect, startingError } from '../open/open.js';
 import type { OpenRequest } from '../open/open.js';
 import { readAskRecords } from '../record.js';
@@ -200,4 +205,149 @@ it('an ask and an open started together start one architect', async ({
   expect(runCalls(hc.calls)).toBe(1);
   expect(splits).toHaveLength(0);
   expect((await readAskRecords(root)).records).toHaveLength(1);
+});
+
+const claimArgument = 'TAU_ARCHITECT_CLAIM=';
+
+const argvOfRun = (commandArguments: readonly string[]): string[] => {
+  const separator = commandArguments.indexOf('--');
+
+  return separator === -1 ? [] : commandArguments.slice(separator + 1);
+};
+
+const claimTokenOf = (commandArguments: readonly string[]): string | undefined =>
+  argvOfRun(commandArguments)
+    .find((entry) => entry.startsWith(claimArgument))
+    ?.slice(claimArgument.length);
+
+it('the hidden ask passes the claim, ask record, session, and role to its child', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { hc, runtime } = openTool(root);
+  const sessionFile = await recordSession(root);
+  const claimToken = Promise.withResolvers<string>();
+  const askPath = Promise.withResolvers<string>();
+
+  hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
+
+  hc.reply(
+    'wait',
+    JSON.stringify({
+      terminal: 't-ask',
+      ended: true,
+      reason: 'ended',
+      turn: 1,
+      children: [],
+      exit_code: 0,
+    }),
+  );
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    const result = await hc.exec(command, commandArguments, options);
+
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      const token = claimTokenOf(commandArguments) ?? '';
+      const argv = argvOfRun(commandArguments);
+
+      claimToken.resolve(token);
+      askPath.resolve(argv.find((entry) => entry.startsWith('TAU_ARCHITECT_ASK=')) ?? '');
+
+      const held = await holdFileLock({
+        lockPath: architectLockPath(root),
+        checkout: root,
+        terminal: 't-ask',
+        token: randomUUID(),
+        adopt: token,
+      });
+
+      if (held.kind === 'held') {
+        cleanup(held.release);
+      }
+    }
+
+    return result;
+  };
+
+  const request = askRequest(root, config.location, { ...runtime, exec });
+
+  await askArchitect(request);
+
+  const token = await claimToken.promise;
+  const recordPath = (await askPath.promise).slice('TAU_ARCHITECT_ASK='.length);
+  const run = hc.calls.find((call) => call.commandArguments[0] === 'run');
+  const argv = run?.commandArguments ?? [];
+  const parsed = argvOfRun(argv);
+
+  expect(token).toMatch(/^[0-9a-f-]{36}$/u);
+  expect(parsed).toContain(`--session`);
+  expect(parsed[parsed.indexOf('--session') + 1]).toBe(sessionFile);
+  expect(parsed).toContain(`TAU_ARCHITECT_CLAIM=${token}`);
+  expect(parsed).toContain(`TAU_ARCHITECT_ASK=${recordPath}`);
+  expect(parsed).toContain('TAU_ROLE=architect');
+  expect(parsed).toContain('TAU_LEAD_TERMINAL=t-lead');
+  expect(argv).toContain('--bg');
+  expect(argv).toContain('--no-parent');
+  expect(argv).toContain('--no-notify');
+  expect(argv).toContain('tau.architect.ask=' + (await readAskRecords(root)).records[0]?.askId);
+  expect(argumentAfter(argv, '--cwd')).toBe(root);
+});
+
+it('an open and an ask started together let open win', async ({ onTestFinished: cleanup }) => {
+  const { root, config } = await setup(cleanup);
+  const { app, hc, runtime } = openTool(root);
+
+  await recordSession(root);
+  hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
+
+  hc.reply(
+    'wait',
+    JSON.stringify({
+      terminal: 't-ask',
+      ended: true,
+      reason: 'ended',
+      turn: 1,
+      children: [],
+      exit_code: 0,
+    }),
+  );
+
+  const shared = barrier();
+  const openLaunched = Promise.withResolvers<undefined>();
+
+  const openExec: typeof runtime.exec = async (command, commandArguments, options) => {
+    const result = await runtime.exec(command, commandArguments, options);
+
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      openLaunched.resolve(undefined);
+    }
+
+    return result;
+  };
+
+  const ask = askRequest(root, config.location, runtime);
+  const open = openRequestFor(root, config.location, { ...runtime, exec: openExec });
+
+  const openRun = openArchitect(open, { beforeLink: shared });
+
+  const askRun = askArchitect(ask, {
+    beforeLink: async () => {
+      await shared();
+      await openLaunched.promise;
+    },
+  });
+
+  await expect(openRun).resolves.toMatchObject({ status: 'resumed' });
+
+  await expect(askRun).resolves.toMatchObject({
+    status: 'needsOpen',
+    reason: askStartingReason,
+  });
+
+  const records = (await readAskRecords(root)).records;
+  const splits = appCommands(app).filter((name) => name === 'pane.split');
+
+  expect(runCalls(hc.calls)).toBe(0);
+  expect(records).toHaveLength(0);
+  expect(splits).toHaveLength(1);
 });
