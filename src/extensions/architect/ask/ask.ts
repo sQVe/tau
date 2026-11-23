@@ -166,28 +166,26 @@ const liveRunningAsk = async (
 
   const terminalState = terminal.state === 'live' ? 'live' : 'ended';
 
-  const repair = staleAskRepair({
-    status: newest.status,
-    terminalState,
-    recordTerminal: newest.terminal,
-    endedTerminal: terminal.address,
-  });
-
-  if (repair === 'repair') {
-    await changeHiddenAsk(root, newest.askId, (current) =>
-      current.status === 'running'
-        ? {
-            ...current,
-            status: 'failed',
-            detail: 'The ask terminal ended without settling the ask.',
-          }
-        : undefined,
-    );
-
-    return undefined;
+  if (terminalState === 'live') {
+    return newest;
   }
 
-  return terminal.state === 'live' ? newest : undefined;
+  await changeHiddenAsk(root, newest.askId, (current) =>
+    staleAskRepair({
+      status: current.status,
+      terminalState,
+      recordTerminal: current.terminal,
+      endedTerminal: terminal.address,
+    }) === 'repair'
+      ? {
+          ...current,
+          status: 'failed',
+          detail: 'The ask terminal ended without settling the ask.',
+        }
+      : undefined,
+  );
+
+  return undefined;
 };
 
 const requireModel = (request: AskRequest): string => {

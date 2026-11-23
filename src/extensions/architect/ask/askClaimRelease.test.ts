@@ -749,6 +749,7 @@ it('keeps an answer saved between the repair scan and its get reply', async ({
 
   await recordSession(root);
   await writeAskRecord(root, runningAsk);
+  hc.replyGet('t-ask', JSON.stringify({ address: 't-ask', state: 'exited' }));
   hc.fail('run', 'hc run failed', 1);
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
@@ -788,6 +789,55 @@ it('keeps an answer saved between the repair scan and its get reply', async ({
   expect(await readAskRecord(root, runningAsk.askId)).toMatchObject({
     status: 'sent',
     answer: 'Use --quick.',
+  });
+});
+
+it('keeps a running ask whose terminal changed between the repair scan and its lock', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+  const getEntered = Promise.withResolvers<undefined>();
+  const getRelease = Promise.withResolvers<undefined>();
+
+  await recordSession(root);
+  await writeAskRecord(root, runningAsk);
+  hc.replyGet('t-ask', JSON.stringify({ address: 't-ask', state: 'exited' }));
+  hc.fail('run', 'hc run failed', 1);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      getEntered.resolve(undefined);
+      await getRelease.promise;
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root, exec },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  const asking = askArchitect(request).catch(() => undefined);
+
+  await getEntered.promise;
+
+  await writeAskRecord(root, { ...runningAsk, terminal: 't-other' });
+
+  getRelease.resolve(undefined);
+  await asking;
+
+  expect(await readAskRecord(root, runningAsk.askId)).toMatchObject({
+    status: 'running',
+    terminal: 't-other',
   });
 });
 
