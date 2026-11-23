@@ -208,7 +208,7 @@ it.each([
     branch: [
       user(),
       question(),
-      inboxEntry({ version: 3, family: 'answer', questionId: firstQuestionId }),
+      inboxEntry({ version: 4, family: 'answer', questionId: firstQuestionId }),
     ],
     assignment: asked(firstQuestionId),
     sendTaskPrompt: false,

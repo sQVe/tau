@@ -54,7 +54,7 @@ it('keeps a handover question pending without a valid question receipt', () => {
     {
       type: 'custom_message',
       customType: inboxMessageType,
-      details: { version: 2, messageId: 'm1', sessionId: 's1', family: 'handover-question' },
+      details: { version: 3, messageId: 'm1', sessionId: 's1', family: 'handover-question' },
     },
   ]);
 

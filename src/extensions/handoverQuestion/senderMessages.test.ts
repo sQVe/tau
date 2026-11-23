@@ -6,14 +6,14 @@ import { senderMessages } from './senderMessages.js';
 const user = (content: unknown): SessionEntry =>
   ({ type: 'message', message: { role: 'user', content } }) as unknown as SessionEntry;
 
-const inbox = (family: string, content: string): SessionEntry =>
+const inbox = (family: string, content: string, version = 2): SessionEntry =>
   ({
     type: 'custom_message',
     customType: 'tau-inbox-message',
     content,
     display: true,
     details: {
-      version: 2,
+      version,
       messageId: '11111111-1111-4111-8111-111111111111',
       sessionId: '22222222-2222-4222-8222-222222222222',
       family,
@@ -51,7 +51,7 @@ it.each([
       user('first task'),
       inbox('handover', 'Handover sender: terminal lead-1, session s1.\n\nOne.'),
       inbox('answer', 'An answer.'),
-      inbox('handover-question', 'A question.'),
+      inbox('handover-question', 'A question.', 3),
       inbox('handover', 'Handover sender: terminal lead-2, session s2.\n\nTwo.'),
     ],
     expected: [
