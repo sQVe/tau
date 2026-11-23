@@ -1,6 +1,11 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type {
+  BeforeAgentStartEvent,
+  ExtensionAPI,
+  ExtensionContext,
+} from '@earendil-works/pi-coding-agent';
 
 import { piExec } from '../../command.js';
+import type { HandoverSender } from '../../handoverSender.js';
 import { lookupSender } from '../../handoverSender.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
@@ -9,16 +14,34 @@ import { setAcceptCheck } from '../../inbox/inbox.js';
 import { currentRole } from '../../role/role.js';
 import { handoverQuestionCheck } from './acceptCheck.js';
 import { askSender, questionParameters, questionToolDescription } from './question/question.js';
-import { senderMessages } from './senderMessages.js';
+import { handoverMessageText, senderMessages } from './senderMessages.js';
 
-const senderOf = (context: ExtensionContext) =>
+const senderFrom = (messages: string[]): HandoverSender | undefined =>
   lookupSender({
     // oxlint-disable-next-line node/no-process-env -- The sender environment is set for the active process.
     environment: process.env,
-    messages: senderMessages(context.sessionManager.getBranch()),
+    messages,
   });
 
-const registerQuestionTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
+const senderOf = (context: ExtensionContext): HandoverSender | undefined =>
+  senderFrom(senderMessages(context.sessionManager.getBranch()));
+
+const senderAtStart = (
+  context: ExtensionContext,
+  event: BeforeAgentStartEvent,
+): HandoverSender | undefined => {
+  const eventText = event.messageType === 'custom' ? handoverMessageText(event.message) : undefined;
+  const messages = senderMessages(context.sessionManager.getBranch());
+  const withEventText = eventText === undefined ? messages : [...messages, eventText];
+
+  return senderFrom(withEventText);
+};
+
+const registerQuestionTool = (
+  pi: ExtensionAPI,
+  hc: HcRuntime,
+  startSender: () => HandoverSender | undefined,
+): void => {
   pi.registerTool({
     name: 'handover_question',
     exposure: 'model-only',
@@ -26,8 +49,8 @@ const registerQuestionTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
     description: questionToolDescription,
     promptSnippet: 'Ask the lead that sent this handover; the answer arrives as a new message.',
     parameters: questionParameters,
-    async execute(_toolCallId, parameters, _signal, _onUpdate, context) {
-      const sender = senderOf(context);
+    async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+      const sender = senderOf(context) ?? startSender();
 
       if (sender === undefined) {
         throw new Error('This session has no handover sender to ask.');
@@ -45,7 +68,10 @@ const registerQuestionTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
         throw new Error('This session has no saved Pi session ID to ask from.');
       }
 
-      return askSender({ hc, cwd: context.cwd, askerTerminal, askerSession, sender }, parameters);
+      return askSender(
+        { hc: { ...hc, signal }, cwd: context.cwd, askerTerminal, askerSession, sender },
+        parameters,
+      );
     },
   });
 };
@@ -55,13 +81,20 @@ export default function handoverQuestionExtension(pi: ExtensionAPI): void {
 
   const hc: HcRuntime = { exec: piExec(pi), connect, cwd: process.cwd() };
   let registered = false;
+  let startSender: HandoverSender | undefined;
 
-  pi.on('before_agent_start', (_event, context) => {
-    if (registered || currentRole() !== 'lead' || senderOf(context) === undefined) {
+  pi.on('before_agent_start', (event, context) => {
+    const sender = senderAtStart(context, event);
+
+    if (sender !== undefined) {
+      startSender = sender;
+    }
+
+    if (registered || currentRole() !== 'lead' || sender === undefined) {
       return;
     }
 
     registered = true;
-    registerQuestionTool(pi, hc);
+    registerQuestionTool(pi, hc, () => startSender);
   });
 }

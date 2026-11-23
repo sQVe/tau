@@ -3,6 +3,12 @@ import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import { readInboxReceipt } from '../../inbox/receiptDecision.js';
 import { isRecord } from '../../schema.js';
 
+interface InboxMessage {
+  customType: string;
+  content: unknown;
+  details?: unknown;
+}
+
 const messageRecord = (entry: SessionEntry): Record<string, unknown> | undefined => {
   if (entry.type !== 'message') {
     return undefined;
@@ -39,12 +45,19 @@ const userMessageText = (entry: SessionEntry): string | undefined => {
   return message?.role === 'user' ? contentText(message['content']) : undefined;
 };
 
-const handoverReceiptText = (entry: SessionEntry): string | undefined => {
-  if (entry.type !== 'custom_message' || readInboxReceipt(entry)?.family !== 'handover') {
+export const handoverMessageText = (message: InboxMessage): string | undefined => {
+  const entry = {
+    type: 'custom_message',
+    customType: message.customType,
+    content: message.content,
+    details: message.details,
+  };
+
+  if (readInboxReceipt(entry)?.family !== 'handover') {
     return undefined;
   }
 
-  return contentText(entry.content);
+  return contentText(message.content);
 };
 
 export const senderMessages = (entries: readonly SessionEntry[]): string[] => {
@@ -59,7 +72,7 @@ export const senderMessages = (entries: readonly SessionEntry[]): string[] => {
       messages.push(userText);
     }
 
-    const receiptText = handoverReceiptText(entry);
+    const receiptText = entry.type === 'custom_message' ? handoverMessageText(entry) : undefined;
 
     if (receiptText !== undefined) {
       messages.push(receiptText);
