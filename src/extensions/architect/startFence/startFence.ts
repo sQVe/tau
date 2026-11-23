@@ -9,6 +9,7 @@ import {
   createStartTicket,
   deleteStartMarker,
   readStartMarker,
+  startMarkerProcessId,
   sweepStartFolder,
   wrapStartArgv,
 } from '../startTicket/startTicket.js';
@@ -115,7 +116,7 @@ const startFence = (
 
   const recordStarted = async (): Promise<void> => {
     const marker = await readStartMarker(root, claim.token);
-    const processId = marker?.kind === 'process' ? marker.pid : undefined;
+    const processId = startMarkerProcessId(marker);
 
     state.processId = processId;
     state.child = childOf(processId);

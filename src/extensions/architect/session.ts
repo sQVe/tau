@@ -21,7 +21,7 @@ import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import type { FinalHandoverResult } from './queuedHandover.js';
 import { readAskRecords, updateHiddenAskRecord, writeArchitectRecord } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
-import { deleteStartMarker } from './startTicket/startTicket.js';
+import { adoptStartMarker } from './startTicket/startTicket.js';
 
 export interface HeldLockToken {
   current: () => string | undefined;
@@ -114,7 +114,7 @@ const startArchitect = async (
     held.set(lock.token);
 
     if (claimToken !== undefined) {
-      await deleteStartMarker(root, claimToken, process.pid).catch(() => undefined);
+      await adoptStartMarker(root, claimToken, process.pid).catch(() => undefined);
     }
 
     // oxlint-disable-next-line node/no-process-env -- A reload must not try to adopt the old claim again.

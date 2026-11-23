@@ -34,6 +34,21 @@ it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
     facts: { kind: 'started', path: '/start/token.started.1', processId: 1, child: 'unknown' },
     expected: { kind: 'refuseRunning', processId: 1 },
   },
+  {
+    name: 'an adopted ticket whose process is gone',
+    facts: { kind: 'adopted', path: '/start/token.adopted.1', processId: 1, child: 'gone' },
+    expected: { kind: 'deleteMarker', path: '/start/token.adopted.1' },
+  },
+  {
+    name: 'an adopted ticket whose process runs',
+    facts: { kind: 'adopted', path: '/start/token.adopted.1', processId: 1, child: 'running' },
+    expected: { kind: 'leave' },
+  },
+  {
+    name: 'an adopted ticket whose process state is unknown',
+    facts: { kind: 'adopted', path: '/start/token.adopted.1', processId: 1, child: 'unknown' },
+    expected: { kind: 'leave' },
+  },
 ])('decides to $expected.kind for $name', ({ facts, expected }) => {
   expect(sweepAction(facts)).toEqual(expected);
 });

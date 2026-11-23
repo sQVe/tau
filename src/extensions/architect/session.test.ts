@@ -141,6 +141,42 @@ it('an architect session adopts the claim its environment names', async ({ onTes
   );
 });
 
+it('renames the started marker to an adopted one and keeps it at a clean shutdown', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  onTestFinished(claim.release);
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  const directory = join(root, '.tau', 'architect', 'start');
+  const adoptedName = `${claim.token}.adopted.${process.pid}`;
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${claim.token}.started.${process.pid}`), '');
+
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session).toBeDefined();
+  expect(await readdir(directory)).toEqual([adoptedName]);
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+
+  expect(await readdir(directory)).toEqual([adoptedName]);
+});
+
 it('an architect session shuts down when its claim is no longer the live holder', async ({
   onTestFinished,
 }) => {

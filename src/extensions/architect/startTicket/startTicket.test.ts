@@ -8,6 +8,7 @@ import { expect, it, onTestFinished as onFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import {
+  adoptStartMarker,
   cancelStartTicket,
   createStartTicket,
   readStartEntries,
@@ -45,6 +46,15 @@ const startedMarker = async (root: string, token: string, processId: number): Pr
   return marker;
 };
 
+const adoptedMarker = async (root: string, token: string, processId: number): Promise<string> => {
+  const ticket = await createStartTicket(root, token);
+  const marker = `${ticket}.adopted.${processId}`;
+
+  await writeFile(marker, '');
+
+  return marker;
+};
+
 const startFile = async (root: string, name: string): Promise<string> => {
   const directory = join(root, '.tau', 'architect', 'start');
 
@@ -68,10 +78,31 @@ it('names the marker with the process id of the exec command', async ({ onTestFi
   expect(result.code).toBe(0);
 
   expect(await readStartMarker(root, 'token')).toEqual({
-    kind: 'process',
+    kind: 'started',
     pid: Number(result.stdout),
     path: `${ticket}.started.${result.stdout}`,
   });
+});
+
+it('renames a started marker to adopted and tolerates a missing source', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const started = await startedMarker(root, 'token', 4100);
+  const adopted = started.replace('.started.', '.adopted.');
+
+  await adoptStartMarker(root, 'token', 4100);
+
+  expect(existsSync(started)).toBe(false);
+
+  expect(await readStartMarker(root, 'token')).toEqual({
+    kind: 'adopted',
+    pid: 4100,
+    path: adopted,
+  });
+
+  await expect(adoptStartMarker(root, 'token', 4100)).resolves.toBeUndefined();
+  expect(existsSync(adopted)).toBe(true);
 });
 
 it('runs no command on a second run and exits 75', async ({ onTestFinished }) => {
@@ -109,7 +140,7 @@ it('passes arguments with a space and a double quote through unchanged', async (
   expect(result.stdout).toBe('<a b>\n<c"d>\n<e f>\n');
   const marker = await readStartMarker(root, 'token');
 
-  expect(marker?.kind).toBe('process');
+  expect(marker?.kind).toBe('started');
   expect((await markerNames(root)).some((name) => name.startsWith('token.started.'))).toBe(true);
 });
 
@@ -160,6 +191,50 @@ it('deletes a started marker whose process is gone and starts', async ({ onTestF
 
   expect(outcome).toEqual({ kind: 'clear' });
   expect(existsSync(marker)).toBe(false);
+});
+
+it('deletes an adopted marker whose process is gone and starts', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const marker = await adoptedMarker(root, 'gone', 4005);
+
+  const outcome = await sweepStartFolder({
+    root,
+    currentToken: 'current',
+    stateOf: () => 'gone',
+  });
+
+  expect(outcome).toEqual({ kind: 'clear' });
+  expect(existsSync(marker)).toBe(false);
+});
+
+it('leaves an adopted marker whose process runs and starts', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const marker = await adoptedMarker(root, 'gone', 4006);
+
+  const outcome = await sweepStartFolder({
+    root,
+    currentToken: 'current',
+    stateOf: () => 'running',
+  });
+
+  expect(outcome).toEqual({ kind: 'clear' });
+  expect(existsSync(marker)).toBe(true);
+});
+
+it('leaves an adopted marker whose process state is unknown and starts', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const marker = await adoptedMarker(root, 'gone', 4007);
+
+  const outcome = await sweepStartFolder({
+    root,
+    currentToken: 'current',
+    stateOf: () => 'unknown',
+  });
+
+  expect(outcome).toEqual({ kind: 'clear' });
+  expect(existsSync(marker)).toBe(true);
 });
 
 it('refuses a started marker whose process runs and names the process id', async ({

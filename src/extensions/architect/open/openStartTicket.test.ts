@@ -39,6 +39,15 @@ const startedMarker = async (root: string, token: string, processId: number): Pr
   return marker;
 };
 
+const adoptedMarker = async (root: string, token: string, processId: number): Promise<string> => {
+  const ticket = await createStartTicket(root, token);
+  const marker = `${ticket}.adopted.${processId}`;
+
+  await writeFile(marker, '');
+
+  return marker;
+};
+
 it('never runs Pi when the server creates the terminal after the caller gave up', async ({
   onTestFinished: cleanup,
 }) => {
@@ -126,6 +135,38 @@ it('deletes a started marker whose process is gone and then starts', async ({
   useFakeStartProcess(cleanup, 'gone');
   await recordSession(root);
   const marker = await startedMarker(root, 'gone', fakeStartProcessId);
+
+  const result = await openArchitect(requestFor(root, config.location, runtime));
+
+  expect(result).toMatchObject({ status: 'resumed' });
+  expect(existsSync(marker)).toBe(false);
+});
+
+it('starts and leaves an adopted marker whose process runs', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root);
+
+  useFakeStartProcess(cleanup, 'running');
+  await recordSession(root);
+  const marker = await adoptedMarker(root, 'gone', fakeStartProcessId);
+
+  const result = await openArchitect(requestFor(root, config.location, runtime));
+
+  expect(result).toMatchObject({ status: 'resumed' });
+  expect(existsSync(marker)).toBe(true);
+});
+
+it('deletes an adopted marker whose process is gone and then starts', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root);
+
+  useFakeStartProcess(cleanup, 'gone');
+  await recordSession(root);
+  const marker = await adoptedMarker(root, 'gone', fakeStartProcessId);
 
   const result = await openArchitect(requestFor(root, config.location, runtime));
 

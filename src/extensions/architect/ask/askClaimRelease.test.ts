@@ -1,14 +1,18 @@
-import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
-import { takeStartTicket, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
+import {
+  fakeStartProcessId,
+  takeStartTicket,
+  useFakeStartProcess,
+} from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
-import { architectLockPath } from '../lock.js';
+import { architectLockPath, holdArchitectLock } from '../lock.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
 import {
@@ -25,6 +29,58 @@ import {
   startFake,
   statuses,
 } from './fixtures/askHarness.js';
+
+const claimArgument = 'TAU_ARCHITECT_CLAIM=';
+
+const startDirectory = (root: string): string => join(root, '.tau', 'architect', 'start');
+
+const childClaimToken = (commandArguments: readonly string[]): string | undefined =>
+  commandArguments
+    .find((argument) => argument.startsWith(claimArgument))
+    ?.slice(claimArgument.length);
+
+// The adopted lock belongs to the child process the marker names, not to this test process.
+const renameLockHolder = async (root: string, processId: number): Promise<void> => {
+  const directory = dirname(architectLockPath(root));
+
+  const generations = (await readdir(directory))
+    .map((name) => /^lock\.(\d+)$/u.exec(name))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => Number(match[1]));
+
+  const path = `${architectLockPath(root)}.${generations.toSorted((left, right) => left - right).at(-1)}`;
+  const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+
+  await writeFile(path, JSON.stringify({ ...owner, pid: processId }));
+};
+
+// The real child takes the ticket, adopts the claim, then renames its marker before it runs Pi.
+const adoptAsChild = async (
+  root: string,
+  commandArguments: readonly string[],
+): Promise<boolean> => {
+  const claimToken = childClaimToken(commandArguments);
+
+  if (claimToken === undefined) {
+    throw new Error('The launch names no claim.');
+  }
+
+  const taken = await takeStartTicket(commandArguments);
+
+  if (!taken) {
+    return false;
+  }
+
+  await holdArchitectLock(root, claimToken);
+  await renameLockHolder(root, fakeStartProcessId);
+
+  const started = `${claimToken}.started.${fakeStartProcessId}`;
+  const adopted = `${claimToken}.adopted.${fakeStartProcessId}`;
+
+  await rename(join(startDirectory(root), started), join(startDirectory(root), adopted));
+
+  return true;
+};
 
 it('releases its claim when the ask launch never ran', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
@@ -383,6 +439,67 @@ it('records a real cancellation from the call signal as cancelled', async ({
   expect((await details(root))[0]).toBe(askWaitFailureDetail(true, failure));
   expect((await details(root))[0]).not.toBe(askWaitFailureDetail(false, failure));
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('releases its claim and fails the record when an adopted child stopped hard', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const child = useFakeStartProcess(cleanup, 'gone');
+  let taken = false;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await adoptAsChild(root, commandArguments);
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
+
+  expect(taken).toBe(true);
+  expect(failure).toBeInstanceOf(Error);
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(child.signals).toEqual([]);
+  expect(await readdir(startDirectory(root))).toEqual([]);
+});
+
+it('keeps the claim and the unconfirmed-stop detail when an adopted child still runs', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const child = useFakeStartProcess(cleanup, 'running');
+  let taken = false;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await adoptAsChild(root, commandArguments);
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  await expect(ask({ ...hc, exec }, root)).rejects.toThrow(askKeptClaimMessage(root));
+
+  expect(taken).toBe(true);
+  expect(await statuses(root)).toEqual(['running']);
+  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+  expect(child.signals).toEqual([]);
+
+  expect((await readdir(startDirectory(root))).some((name) => name.includes('.adopted.'))).toBe(
+    true,
+  );
 });
 
 it('fails its own record and releases the claim after a real-shaped nonzero launch exit', async ({

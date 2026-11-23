@@ -137,9 +137,11 @@ and `unknown` are never proof, and a reused process ID errs toward refusal. Abse
 nothing anywhere, and no launch lookup exists. The caller stops a taken child by process ID:
 `SIGTERM`, then up to 5 seconds for `gone`, then `SIGKILL`, then up to 5 more seconds. The 10
 seconds share one absolute deadline. `gone` releases the claim and deletes the marker; anything else
-keeps both. A hidden `ask` whose launch reply gave no address abandons the launch, fails its own
-record with a launch detail, and releases once the child is gone. A valid reply keeps the `hc wait`
-path, and `processState(pid)` alone confirms a stop after `hc kill`.
+keeps both. The caller reads the process ID from a started or an adopted marker, so a Pi that
+adopted the claim and then stopped without its shutdown handler still reads as gone. A hidden `ask`
+whose launch reply gave no address abandons the launch, fails its own record with a launch detail,
+and releases once the child is gone. A valid reply keeps the `hc wait` path, and `processState(pid)`
+alone confirms a stop after `hc kill`.
 
 When the caller abandons a launch, it first renames the ticket to `<ticket>.cancelled`. Success
 means no Pi from this launch can run: a shell that starts later fails its `mv` and exits 75 before
@@ -155,8 +157,12 @@ every other ticket belongs to a gone claim. It cancels each unused ticket. For e
 it reads the process ID: `gone` deletes the marker and continues, even when the finished terminal
 was removed with `hc rm`; `running` or `unknown` releases the caller's claim and refuses with a
 message that names the process ID; a `.started` name without a valid process ID refuses with the
-marker path to remove. The architect deletes `<token>.started.<process.pid>` after it takes the
-claim over. The caller deletes its own marker once the child is gone.
+marker path to remove. After it takes the claim over, the architect renames its marker to
+`<token>.adopted.<process.pid>`. It never deletes the marker, so the caller keeps the child's
+process ID after adoption. An adopted marker never makes the sweep refuse, because its process
+already passed the fence and takes the lock at every later session start. The sweep deletes an
+adopted marker whose process is gone and leaves the rest. The caller deletes its own marker, started
+or adopted, once the child is gone.
 
 The launch needs `sh` and `mv` on the machine that runs the terminal, and the ticket and Pi run in
 the same checkout.
