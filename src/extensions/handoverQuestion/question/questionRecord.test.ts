@@ -197,6 +197,19 @@ it('refuses a record whose askedAt is not a UTC ISO timestamp and saves nothing'
   expect(existsSync(questionRecordDirectory(root))).toBe(false);
 });
 
+it.each(['2026-99-99T99:99:99Z', '2026-02-30T00:00:00Z'])(
+  'refuses a record whose askedAt is %s and saves nothing',
+  async (askedAt) => {
+    const root = await createProject();
+
+    await expect(writeQuestionRecord(root, { ...currentRecord(), askedAt })).rejects.toBeInstanceOf(
+      Error,
+    );
+
+    expect(existsSync(questionRecordDirectory(root))).toBe(false);
+  },
+);
+
 it('reads a record whose question ID differs from the requested ID as malformed', async () => {
   const root = await createProject();
   const directory = await ensureTauDirectory(root, 'handoverQuestions');
@@ -229,6 +242,25 @@ it('reads a record whose askedAt is not a UTC ISO timestamp as malformed', async
   expect(reason.length).toBeGreaterThan(0);
   expect(await readFile(path)).toEqual(before);
 });
+
+it.each(['2026-99-99T99:99:99Z', '2026-02-30T00:00:00Z'])(
+  'reads a record whose askedAt is %s as malformed',
+  async (askedAt) => {
+    const root = await createProject();
+    const directory = await ensureTauDirectory(root, 'handoverQuestions');
+    const path = join(directory, `${questionId}.json`);
+
+    await writeFile(path, JSON.stringify({ ...currentRecord(), askedAt }));
+    const before = await readFile(path);
+
+    const read = await readQuestionRecord(root, questionId);
+    const reason = read.kind === 'malformed' ? read.reason : '';
+
+    expect(read.kind).toBe('malformed');
+    expect(reason.length).toBeGreaterThan(0);
+    expect(await readFile(path)).toEqual(before);
+  },
+);
 
 it.each([
   ['empty asker terminal', { askerTerminal: '' }],

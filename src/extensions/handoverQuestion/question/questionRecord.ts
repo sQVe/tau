@@ -21,9 +21,19 @@ const questionRecordVersion = 1;
 
 const strict = { additionalProperties: false } as const;
 
-const isoTime = Type.String({
-  pattern: String.raw`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$`,
-});
+const isoTimePattern = String.raw`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$`;
+
+const withoutFraction = (value: string): string => value.replace(/\.\d+Z$/u, 'Z');
+
+const isRealUtcTime = (value: string): boolean => {
+  const time = Date.parse(value);
+
+  return (
+    !Number.isNaN(time) && withoutFraction(new Date(time).toISOString()) === withoutFraction(value)
+  );
+};
+
+const isoTime = Type.Refine(Type.String({ pattern: isoTimePattern }), isRealUtcTime);
 
 const questionFields = {
   version: Type.Literal(questionRecordVersion),
