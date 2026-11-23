@@ -6,15 +6,10 @@ import type { AcceptCheck } from './receive.js';
 
 export { socketDirectoryFor } from './endpoint.js';
 
-export {
-  encodeMessageFrame,
-  formatInboxLabel,
-  inboxLabelKey,
-  isUuid,
-  requestByteLimit,
-} from './protocol.js';
+export { encodeMessageFrame, inboxLabelKey, isUuid, requestByteLimit } from './protocol.js';
 
 export type { MessageRequest } from './protocol.js';
+export { advertiseLabel, withdrawLabel } from './label.js';
 export { createReceiver } from './receive.js';
 export type { AcceptCheck, Receiver, ReceiverOptions } from './receive.js';
 export { createReceiptStore } from './receipts.js';

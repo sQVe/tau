@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../errors.js';
 import { withFileLock } from '../fileLock/fileLock.js';
+import type { FileLockOptions } from '../fileLock/fileLock.js';
 import {
   encodeFrame,
   isSessionId,
@@ -105,13 +106,13 @@ export const ensurePrivateDirectory = (directory: string): void => {
   }
 };
 
-const lockFor = (path: string) => ({
-  lockPath: `${path}.lock`,
-  checkout: path,
+export const inboxLock = (lockPath: string): FileLockOptions => ({
+  lockPath,
+  checkout: lockPath,
   signal: undefined,
   pollMilliseconds: lockPollMilliseconds,
   onWaiting: () => undefined,
-  cancelled: () => new Error(`Waiting for the inbox lock of ${path} was cancelled.`),
+  cancelled: () => new Error(`Waiting for the inbox lock ${lockPath} was cancelled.`),
 });
 
 // A connect that succeeds proves an owner, even one whose handler hangs.
@@ -304,12 +305,14 @@ export const openEndpoint = async (options: EndpointOptions): Promise<Endpoint> 
     void request.then(forget, forget);
   });
 
-  await withFileLock(lockFor(path), () => bind(server, path));
+  await withFileLock(inboxLock(`${path}.lock`), () => bind(server, path));
 
   let closing: Promise<void> | undefined;
 
   const close = async (): Promise<void> => {
-    const { closed } = await withFileLock(lockFor(path), () => stopListening(server, path));
+    const { closed } = await withFileLock(inboxLock(`${path}.lock`), () =>
+      stopListening(server, path),
+    );
 
     await settleWithin(Promise.allSettled(pending), drainMilliseconds);
 

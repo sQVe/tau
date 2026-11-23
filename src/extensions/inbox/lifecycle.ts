@@ -3,17 +3,17 @@ import { join } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
-import { get, label } from '../../hc/hc.js';
+import { get } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import {
   acceptChecks,
+  advertiseLabel,
   claimInbox,
   createReceiptStore,
   createReceiver,
-  formatInboxLabel,
-  inboxLabelKey,
   releaseInbox,
   startInbox,
+  withdrawLabel,
 } from '../../inbox/inbox.js';
 import type { InboxListener, Receiver } from '../../inbox/inbox.js';
 import { isWorkerProcess } from '../../role/role.js';
@@ -64,16 +64,6 @@ const familyChecks = () => {
 
 const notifyError = (context: ExtensionContext, message: string): void => {
   context.ui.notify(message, 'error');
-};
-
-const removeOwnLabel = async (hc: HcRuntime, address: string, path: string): Promise<void> => {
-  const terminal = await get(hc, address);
-
-  if (terminal.labels?.[inboxLabelKey] !== formatInboxLabel(path)) {
-    return;
-  }
-
-  await label(hc, address, { [inboxLabelKey]: '' });
 };
 
 export const registerInboxLifecycle = (
@@ -163,18 +153,18 @@ export const registerInboxLifecycle = (
 
     current.receiver = receiver;
 
+    const directory = dependencies.socketDirectory();
+
     const started = startInbox({
       sessionId: current.sessionId,
       terminal,
-      directory: dependencies.socketDirectory(),
+      directory,
       accept: receiver.accept,
       onQueued: () => {
         requestDrain(current, context);
       },
-      advertise: async (path) => {
-        await label(hc, terminal, { [inboxLabelKey]: formatInboxLabel(path) });
-      },
-      withdraw: (path) => removeOwnLabel(hc, terminal, path),
+      advertise: (path) => advertiseLabel({ hc, terminal, directory, path }),
+      withdraw: (path) => withdrawLabel({ hc, terminal, directory, path }),
     });
 
     listener = started;
