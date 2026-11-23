@@ -83,7 +83,7 @@ stall the work.
 - A handover message and a started task from a lead carry one extra line; one without a sender
   carries none.
 - An older Tau refuses a handover frame with a sender, so mixed versions cannot exchange one.
-- A session that receives a handover from a non-lead still asks its user.
+- A session with no usable sender in its transcript or environment still asks its user.
 - A sender line in the first line of handover text is refused, which is a new restriction on text.
 
 ## Alternatives considered
