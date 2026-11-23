@@ -175,6 +175,15 @@ it('refuses to delete through a linked parent directory', async () => {
   expect(existsSync(outsidePath)).toBe(true);
 });
 
+it('refuses to delete a record path that is a directory', async () => {
+  const root = await createProject();
+  const directory = await ensureTauDirectory(root, 'handoverQuestions');
+
+  await mkdir(join(directory, `${questionId}.json`));
+
+  await expect(deleteQuestionRecord(root, questionId)).rejects.toBeInstanceOf(Error);
+});
+
 it('refuses a record that fails the schema and keeps the existing record', async () => {
   const root = await createProject();
   const path = await writeQuestionRecord(root, currentRecord());
@@ -207,6 +216,18 @@ it.each(['2026-99-99T99:99:99Z', '2026-02-30T00:00:00Z'])(
     );
 
     expect(existsSync(questionRecordDirectory(root))).toBe(false);
+  },
+);
+
+it.each(['2026-11-18T12:00:00Z', '2026-11-18T12:00:00.1Z'])(
+  'writes and reads a record whose askedAt is %s',
+  async (askedAt) => {
+    const root = await createProject();
+    const record = { ...currentRecord(), askedAt };
+
+    await writeQuestionRecord(root, record);
+
+    expect(await readQuestionRecord(root, questionId)).toEqual({ kind: 'record', record });
   },
 );
 
