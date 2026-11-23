@@ -108,20 +108,9 @@ to the table updates the list in the same commit until the mirror ends.
 - Register a module that makes pure decisions in `pureModules` in `tests/structure.test.ts`. The
   check fails the suite when a registered module does a runtime import of an unregistered module,
   imports dynamically, or reads the clock, randomness, or the environment. The caller reads those
-  values and passes them in as facts. The outside libraries a registered module may import are
-  `typebox` and `typebox/value` in `src/schema.ts` and `src/inbox/protocol.ts`, whose schema
-  builders and checks are pure, and in `src/improvement/transcript.ts`, whose transcript state is a
-  saved record checked by a schema, and `minimatch` in `src/extensions/tdd/inputGlob.ts`, which only
-  compiles and matches strings, and `@xmldom/xmldom` in `src/extensions/tdd/runner/junit.ts`, which
-  only parses a string into a document, and `node:path` in `src/extensions/tdd/runner/report.ts`,
-  `src/extensions/tdd/runner/cargoInputFiles.ts`, `src/extensions/tdd/projectPath.ts`,
-  `src/improvement/taskFacts.ts`, `src/improvement/taskMapping.ts`,
-  `src/improvement/writeDecision.ts`, `src/instructions/guideLinks.ts`, and
-  `src/instructions/stommeGuides/stommeGuidesDecision.ts`, which handle paths as strings without
-  touching the filesystem, and `smol-toml` in `src/instructions/syncRecord.ts` and
-  `src/instructions/stommeGuides/stommeGuidesDecision.ts`, which only parse a string, and `marked`
-  in `src/instructions/markdownLinks.ts`, which builds a private tokenizer instance and only turns a
-  string into tokens. The check follows imports, not names, so renaming a file does not escape it.
+  values and passes them in as facts. `pureLibraries` in the same file lists the outside libraries
+  each registered module may import. The check follows imports, not names, so renaming a file does
+  not escape it.
 - Keep `pureModules` in `tests/structure.test.ts` and the module list and each module's public files
   in `lint/rules/moduleBoundaries.ts` sorted and free of duplicates, as
   [ADR 0109](./0109-keep-action-behavior-out-of-extension-roots.md) says.
