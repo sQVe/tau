@@ -1,22 +1,13 @@
 import { parseSenderLine, senderLine } from '../handoverSender.js';
 import { isRecord } from '../schema.js';
-import { isUuid, savableFamilies } from './protocol.js';
-import type { SavableFamily, SavableMessageBody } from './protocol.js';
-
-type InboxReceiptVersion = 2 | 3;
+import { isUuid } from './protocol.js';
+import type { SavableMessageBody } from './protocol.js';
 
 interface ReceiptIdentity {
   version: InboxReceiptVersion;
   messageId: string;
   sessionId: string;
 }
-
-export type InboxReceipt = ReceiptIdentity &
-  (
-    | { family: 'handover' }
-    | { family: 'answer'; questionId?: string }
-    | { family: 'handover-question'; questionId: string }
-  );
 
 interface InboxMessageFact {
   customType?: string | undefined;
@@ -46,32 +37,25 @@ export interface SettleFacts {
   mode: string;
 }
 
-interface ReceiptFields {
-  version: InboxReceiptVersion;
-  messageId: string;
-  sessionId: string;
-  family: SavableFamily;
-}
-
-export const inboxMessageType = 'tau-inbox-message';
+export const inboxReceiptVersion = 3;
 
 const previousInboxReceiptVersion = 2;
 
-export const inboxReceiptVersion = 3;
+type InboxReceiptVersion = typeof previousInboxReceiptVersion | typeof inboxReceiptVersion;
 
-const receiptFamilies = {
-  [previousInboxReceiptVersion]: ['handover', 'answer'],
-  [inboxReceiptVersion]: ['handover', 'answer', 'handover-question'],
-} as const satisfies Record<InboxReceiptVersion, readonly SavableFamily[]>;
+export type InboxReceipt =
+  | (ReceiptIdentity & { family: 'handover' })
+  | (ReceiptIdentity & { family: 'answer'; questionId?: string })
+  | (ReceiptIdentity & {
+      version: typeof inboxReceiptVersion;
+      family: 'handover-question';
+      questionId: string;
+    });
+
+export const inboxMessageType = 'tau-inbox-message';
 
 const isReceiptVersion = (value: unknown): value is InboxReceiptVersion =>
   value === previousInboxReceiptVersion || value === inboxReceiptVersion;
-
-const readsFamily = (version: InboxReceiptVersion, family: SavableFamily): boolean =>
-  receiptFamilies[version].some((supported) => supported === family);
-
-const isFamily = (value: unknown): value is SavableFamily =>
-  savableFamilies.some((family) => family === value);
 
 const questionDetails = (questionId: unknown): { questionId?: string } =>
   typeof questionId === 'string' ? { questionId } : {};
@@ -79,21 +63,16 @@ const questionDetails = (questionId: unknown): { questionId?: string } =>
 const handoverQuestionDetails = (questionId: unknown): { questionId: string } | undefined =>
   typeof questionId === 'string' && isUuid(questionId) ? { questionId } : undefined;
 
-const readReceiptFields = (details: Record<string, unknown>): ReceiptFields | undefined => {
-  const { version, messageId, sessionId, family } = details;
+const readIdentity = (details: Record<string, unknown>): ReceiptIdentity | undefined => {
+  const { version, messageId, sessionId } = details;
   const hasMessageId = typeof messageId === 'string' && messageId !== '';
   const hasSessionId = typeof sessionId === 'string' && sessionId !== '';
-  const hasIdentity = hasMessageId && hasSessionId;
 
-  if (!hasIdentity || !isReceiptVersion(version) || !isFamily(family)) {
+  if (!hasMessageId || !hasSessionId || !isReceiptVersion(version)) {
     return undefined;
   }
 
-  if (!readsFamily(version, family)) {
-    return undefined;
-  }
-
-  return { version, messageId, sessionId, family };
+  return { version, messageId, sessionId };
 };
 
 const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined => {
@@ -101,25 +80,37 @@ const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined =
     return undefined;
   }
 
-  const fields = readReceiptFields(message.details);
+  const identity = readIdentity(message.details);
 
-  if (fields === undefined) {
+  if (identity === undefined) {
     return undefined;
   }
 
-  const { version, messageId, sessionId, family } = fields;
-  const { questionId } = message.details;
-  const identity = { version, messageId, sessionId } as const;
+  const { family, questionId } = message.details;
 
-  if (family === 'handover-question') {
-    const details = handoverQuestionDetails(questionId);
+  switch (family) {
+    case 'handover':
+      return { ...identity, family };
 
-    return details === undefined ? undefined : { ...identity, family, ...details };
+    case 'answer':
+      return { ...identity, family, ...questionDetails(questionId) };
+
+    case 'handover-question': {
+      if (identity.version !== inboxReceiptVersion) {
+        return undefined;
+      }
+
+      const { version, messageId, sessionId } = identity;
+      const details = handoverQuestionDetails(questionId);
+
+      return details === undefined
+        ? undefined
+        : { version, messageId, sessionId, family, ...details };
+    }
+
+    default:
+      return undefined;
   }
-
-  return family === 'answer'
-    ? { ...identity, family, ...questionDetails(questionId) }
-    : { ...identity, family };
 };
 
 export const readInboxReceipt = (entry: ReceiptEntryFact): InboxReceipt | undefined =>
