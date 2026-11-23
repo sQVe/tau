@@ -560,6 +560,45 @@ it('passes a registered handover-question check in a non-worker session', async 
   expect(existsSync(join(root, 'records', sessionId))).toBe(false);
 });
 
+it.each(['', 'worker'])(
+  'passes a registered handover-answer check in a session with role "%s"',
+  async (role) => {
+    vi.stubEnv('TAU_ROLE', role);
+
+    const harness = startHarness();
+    const sessionId = randomUUID();
+    const messageId = randomUUID();
+
+    setAcceptCheck('handover-answer', async () => 'The question is closed.');
+
+    cleanups.push(() => {
+      forgetAcceptCheck('handover-answer');
+    });
+
+    await harness.start(sessionId);
+    cleanups.push(() => harness.shutdown(sessionId));
+
+    await expect(
+      exchange(socketOf(sessionId), {
+        ...handoverTo(sessionId, messageId),
+        family: 'handover-answer',
+        payload: {
+          questionId: randomUUID(),
+          senderSession: randomUUID(),
+          answer: 'Use option A.',
+        },
+      }),
+    ).resolves.toEqual({
+      protocol: 'rpc1',
+      kind: 'refused',
+      reason: 'The question is closed.',
+      messageId,
+    });
+
+    expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+  },
+);
+
 it('refuses an architect-ask without a registered check and saves nothing', async () => {
   forgetAcceptCheck('architect-ask');
 

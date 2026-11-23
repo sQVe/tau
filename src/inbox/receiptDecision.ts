@@ -37,28 +37,79 @@ export interface SettleFacts {
   mode: string;
 }
 
-export const inboxReceiptVersion = 3;
+export const inboxReceiptVersion = 4;
 
 const previousInboxReceiptVersion = 2;
 
-type InboxReceiptVersion = typeof previousInboxReceiptVersion | typeof inboxReceiptVersion;
+const handoverQuestionReceiptVersion = 3;
+
+type InboxReceiptVersion =
+  | typeof previousInboxReceiptVersion
+  | typeof handoverQuestionReceiptVersion
+  | typeof inboxReceiptVersion;
+
+type QuestionReceiptVersion = typeof handoverQuestionReceiptVersion | typeof inboxReceiptVersion;
 
 export type InboxReceipt =
   | (ReceiptIdentity & { family: 'handover' })
   | (ReceiptIdentity & { family: 'answer'; questionId?: string })
   | (ReceiptIdentity & {
-      version: typeof inboxReceiptVersion;
+      version: QuestionReceiptVersion;
       family: 'handover-question';
+      questionId: string;
+    })
+  | (ReceiptIdentity & {
+      version: typeof inboxReceiptVersion;
+      family: 'handover-answer';
       questionId: string;
     });
 
 export const inboxMessageType = 'tau-inbox-message';
 
 const isReceiptVersion = (value: unknown): value is InboxReceiptVersion =>
-  value === previousInboxReceiptVersion || value === inboxReceiptVersion;
+  value === previousInboxReceiptVersion ||
+  value === handoverQuestionReceiptVersion ||
+  value === inboxReceiptVersion;
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value !== '';
+
+const isQuestionId = (value: unknown): value is string =>
+  typeof value === 'string' && isUuid(value);
+
+const handoverQuestionReceipt = (
+  identity: ReceiptIdentity,
+  questionId: unknown,
+): InboxReceipt | undefined => {
+  if (identity.version === previousInboxReceiptVersion) {
+    return undefined;
+  }
+
+  if (!isQuestionId(questionId)) {
+    return undefined;
+  }
+
+  const { version, messageId, sessionId } = identity;
+
+  return { version, messageId, sessionId, family: 'handover-question', questionId };
+};
+
+const handoverAnswerReceipt = (
+  identity: ReceiptIdentity,
+  questionId: unknown,
+): InboxReceipt | undefined => {
+  if (identity.version !== inboxReceiptVersion) {
+    return undefined;
+  }
+
+  if (!isQuestionId(questionId)) {
+    return undefined;
+  }
+
+  const { version, messageId, sessionId } = identity;
+
+  return { version, messageId, sessionId, family: 'handover-answer', questionId };
+};
 
 const questionDetails = (questionId: unknown): { questionId?: string } =>
   typeof questionId === 'string' ? { questionId } : {};
@@ -83,15 +134,11 @@ const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined =
     case 'answer':
       return { version, messageId, sessionId, family, ...questionDetails(questionId) };
 
-    case 'handover-question': {
-      if (version !== inboxReceiptVersion) {
-        return undefined;
-      }
+    case 'handover-question':
+      return handoverQuestionReceipt({ version, messageId, sessionId }, questionId);
 
-      const hasQuestionId = typeof questionId === 'string' && isUuid(questionId);
-
-      return hasQuestionId ? { version, messageId, sessionId, family, questionId } : undefined;
-    }
+    case 'handover-answer':
+      return handoverAnswerReceipt({ version, messageId, sessionId }, questionId);
 
     default:
       return undefined;
@@ -118,6 +165,12 @@ export const messageText = (body: SavableMessageBody): string => {
     return `Handover question ${questionId} from terminal ${askerTerminal}, session ${askerSession}:\n\n${text}`;
   }
 
+  if (body.family === 'handover-answer') {
+    const { questionId, answer } = body.payload;
+
+    return `Handover answer to question ${questionId}:\n\n${answer}`;
+  }
+
   const { text, sender } = body.payload;
 
   if (sender !== undefined) {
@@ -139,9 +192,18 @@ export const matchesReceipt = (
   { receipt, content }: ReceiptedMessage,
   body: SavableMessageBody,
 ): boolean => {
-  const keepsQuestion = receipt.family === 'answer' || receipt.family === 'handover-question';
+  const keepsQuestion =
+    receipt.family === 'answer' ||
+    receipt.family === 'handover-question' ||
+    receipt.family === 'handover-answer';
+
   const receiptQuestionId = keepsQuestion ? receipt.questionId : undefined;
-  const bodyKeepsQuestion = body.family === 'answer' || body.family === 'handover-question';
+
+  const bodyKeepsQuestion =
+    body.family === 'answer' ||
+    body.family === 'handover-question' ||
+    body.family === 'handover-answer';
+
   const bodyQuestionId = bodyKeepsQuestion ? body.payload.questionId : undefined;
   const sameQuestion = receiptQuestionId === bodyQuestionId;
   const sameContent = content === messageText(body) || matchesSenderFreePayload(content, body);

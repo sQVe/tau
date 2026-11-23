@@ -11,6 +11,7 @@ import { isRecord } from '../schema.js';
 import {
   answerBody,
   handoverBody,
+  handoverQuestionBody,
   isUuid,
   requestByteLimit,
   uuidSchema,
@@ -19,11 +20,17 @@ import {
 
 export type InboxRecord = Static<typeof recordSchema>;
 
+type Version3InboxRecord = Static<typeof version3RecordSchema>;
+
 type Version2InboxRecord = Static<typeof version2RecordSchema>;
 
 type PreviousInboxRecord = Static<typeof previousRecordSchema>;
 
-type SavedInboxRecord = InboxRecord | Version2InboxRecord | PreviousInboxRecord;
+type SavedInboxRecord =
+  | InboxRecord
+  | Version3InboxRecord
+  | Version2InboxRecord
+  | PreviousInboxRecord;
 
 export type InboxRead =
   | { kind: 'record'; record: SavedInboxRecord }
@@ -38,7 +45,9 @@ export interface SaveOptions {
   fence?: RecordFence | undefined;
 }
 
-export const inboxRecordVersion = 3;
+export const inboxRecordVersion = 4;
+
+const version3RecordVersion = 3;
 
 const strict = { additionalProperties: false } as const;
 
@@ -76,6 +85,25 @@ const version2RecordSchema = Type.Union([
   Type.Object({ version: Type.Literal(2), messageId: uuidSchema, ...answerBody }, strict),
 ]);
 
+const version3RecordSchema = Type.Union([
+  Type.Object(
+    { version: Type.Literal(version3RecordVersion), messageId: uuidSchema, ...handoverBody },
+    strict,
+  ),
+  Type.Object(
+    { version: Type.Literal(version3RecordVersion), messageId: uuidSchema, ...answerBody },
+    strict,
+  ),
+  Type.Object(
+    {
+      version: Type.Literal(version3RecordVersion),
+      messageId: uuidSchema,
+      ...handoverQuestionBody,
+    },
+    strict,
+  ),
+]);
+
 const recordSchema = withSavableBody({
   version: Type.Literal(inboxRecordVersion),
   messageId: uuidSchema,
@@ -89,6 +117,8 @@ const schemaFor = (value: unknown) => {
       return previousRecordSchema;
     case 2:
       return version2RecordSchema;
+    case version3RecordVersion:
+      return version3RecordSchema;
     default:
       return recordSchema;
   }

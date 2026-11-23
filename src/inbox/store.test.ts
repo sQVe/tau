@@ -11,7 +11,7 @@ const messageId = '11111111-1111-4111-8111-111111111111';
 const sender = { terminal: 'lead', sessionId: '22222222-2222-4222-8222-222222222222' };
 
 const record = {
-  version: 3 as const,
+  version: 4 as const,
   messageId,
   family: 'handover' as const,
   payload: { text: 'handover text', sender },
@@ -25,6 +25,17 @@ const version2Record = {
 };
 
 const currentRecord = {
+  version: 4 as const,
+  messageId,
+  family: 'handover-answer' as const,
+  payload: {
+    questionId: messageId,
+    senderSession: '44444444-4444-4444-8444-444444444444',
+    answer: 'Use option A.',
+  },
+};
+
+const version3Record = {
   version: 3 as const,
   messageId,
   family: 'handover-question' as const,
@@ -99,6 +110,17 @@ it('reads the frozen version 2 record', async () => {
   });
 });
 
+it('reads the frozen version 3 record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'version3.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version3Record,
+  });
+});
+
 it('reads the frozen current record', async () => {
   const directory = directoryFixture();
 
@@ -150,9 +172,20 @@ it('reports a version 2 record with the handover-question family as malformed', 
       version: 2,
       messageId,
       family: 'handover-question',
-      payload: currentRecord.payload,
+      payload: version3Record.payload,
     }),
   );
+
+  await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+});
+
+it('reports a version 3 record with the handover-answer family as malformed', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(path, JSON.stringify({ ...currentRecord, version: 3 }));
 
   await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
 });
@@ -163,7 +196,7 @@ it('reports a saved answer-request record as malformed', async () => {
 
   mkdirSync(directory, { recursive: true });
 
-  for (const version of [1, 2, 3]) {
+  for (const version of [1, 2, 3, 4]) {
     writeFileSync(
       path,
       JSON.stringify({

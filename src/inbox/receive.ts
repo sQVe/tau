@@ -76,6 +76,8 @@ const bodyOf = (request: MessageRequest): SavableMessageBody | undefined => {
       return { family: 'answer', payload: request.payload };
     case 'handover-question':
       return { family: 'handover-question', payload: request.payload };
+    case 'handover-answer':
+      return { family: 'handover-answer', payload: request.payload };
     case 'architect-ask':
       return { family: 'handover', payload: { text: request.payload.text } };
     case 'answer-request':
@@ -154,7 +156,10 @@ const receiptOf = (
     sessionId: options.sessionId,
   } as const;
 
-  const keepsQuestion = body.family === 'answer' || body.family === 'handover-question';
+  const keepsQuestion =
+    body.family === 'answer' ||
+    body.family === 'handover-question' ||
+    body.family === 'handover-answer';
 
   return keepsQuestion
     ? { ...identity, family: body.family, questionId: body.payload.questionId }

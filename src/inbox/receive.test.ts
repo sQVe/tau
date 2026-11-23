@@ -212,7 +212,7 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
   await receiver.deliver(new AbortController().signal);
 
   expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
-    version: 3,
+    version: 4,
     messageId,
     family: 'handover',
     payload: { text: 'Ask text' },
@@ -364,7 +364,7 @@ it('saves an accepted answer and wakes with its answer text', async () => {
       customType: 'tau-inbox-message',
       content: 'Use option A.',
       display: true,
-      details: { version: 3, messageId, sessionId, family: 'answer', questionId },
+      details: { version: 4, messageId, sessionId, family: 'answer', questionId },
     },
   ]);
 });
@@ -388,7 +388,7 @@ it('wakes with a handover receipt that holds no question', async () => {
       customType: 'tau-inbox-message',
       content: 'handover text',
       display: true,
-      details: { version: 3, messageId, sessionId, family: 'handover' },
+      details: { version: 4, messageId, sessionId, family: 'handover' },
     },
   ]);
 });
@@ -418,7 +418,7 @@ it('saves an accepted handover-question and wakes with its fixed text', async ()
   await receiver.deliver(new AbortController().signal);
 
   expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
-    version: 3,
+    version: 4,
     messageId,
     family: 'handover-question',
     payload: request.payload,
@@ -429,7 +429,7 @@ it('saves an accepted handover-question and wakes with its fixed text', async ()
       customType: 'tau-inbox-message',
       content: `Handover question ${questionId} from terminal worker, session ${askerSession}:\n\nWhich option should I use?`,
       display: true,
-      details: { version: 3, messageId, sessionId, family: 'handover-question', questionId },
+      details: { version: 4, messageId, sessionId, family: 'handover-question', questionId },
     },
   ]);
 });

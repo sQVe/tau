@@ -269,11 +269,130 @@ const readTable = [
     receipt: undefined,
   },
   {
-    name: 'a version 4 receipt',
+    name: 'a version 4 handover receipt',
     entry: {
       type: 'custom_message',
       customType: inboxMessageType,
       details: { version: 4, messageId: 'm1', sessionId: 's1', family: 'handover' },
+    },
+    receipt: { version: 4, messageId: 'm1', sessionId: 's1', family: 'handover' },
+  },
+  {
+    name: 'a version 4 answer receipt with its question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 4, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 'q1' },
+    },
+    receipt: { version: 4, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 'q1' },
+  },
+  {
+    name: 'a version 4 handover-question receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: validQuestionId,
+      },
+    },
+    receipt: {
+      version: 4,
+      messageId: 'm1',
+      sessionId: 's1',
+      family: 'handover-question',
+      questionId: validQuestionId,
+    },
+  },
+  {
+    name: 'a handover-question receipt whose question is an array',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: [validQuestionId],
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 4 handover-answer receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-answer',
+        questionId: validQuestionId,
+      },
+    },
+    receipt: {
+      version: 4,
+      messageId: 'm1',
+      sessionId: 's1',
+      family: 'handover-answer',
+      questionId: validQuestionId,
+    },
+  },
+  {
+    name: 'a version 3 handover-answer receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 3,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-answer',
+        questionId: validQuestionId,
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 4 handover-answer receipt without a question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-answer',
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 4 handover-answer receipt with a malformed question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-answer',
+        questionId: 'q1',
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 5 receipt',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 5, messageId: 'm1', sessionId: 's1', family: 'handover' },
     },
     receipt: undefined,
   },
@@ -327,6 +446,14 @@ const answeredTable = [
     message: {
       customType: inboxMessageType,
       details: { ...answerDetails, version: 4, questionId: 'q1' },
+    },
+    questionId: 'q1',
+  },
+  {
+    name: 'a version 5 answer message',
+    message: {
+      customType: inboxMessageType,
+      details: { ...answerDetails, version: 5, questionId: 'q1' },
     },
     questionId: undefined,
   },
@@ -394,6 +521,16 @@ it.each([
       sessionId: 'session-1',
       family: 'handover-question',
       questionId: fixtureQuestionId,
+    },
+  },
+  {
+    fixture: 'v4.json',
+    receipt: {
+      version: 4,
+      messageId: fixtureMessageId,
+      sessionId: 'session-1',
+      family: 'handover-answer',
+      questionId: fixtureMessageId,
     },
   },
   { fixture: 'newer.json', receipt: undefined },
@@ -471,6 +608,15 @@ it('escapes sender-free text so it parses as no sender', () => {
   expect(parseSenderLine(text)).toBeUndefined();
 });
 
+it('shows the handover answer with its question', () => {
+  expect(
+    messageText({
+      family: 'handover-answer',
+      payload: { questionId: 'q1', senderSession: 's1', answer: 'Use option A.' },
+    }),
+  ).toBe('Handover answer to question q1:\n\nUse option A.');
+});
+
 const answerReceipt = { ...handoverReceipt, family: 'answer', questionId: 'q1' } as const;
 
 const questionReceipt = {
@@ -489,6 +635,21 @@ const questionPayload = {
 
 const shownQuestionText =
   'Handover question q1 from terminal worker, session s1:\n\nWhich option should I use?';
+
+const answerToQuestionReceipt = {
+  ...handoverReceipt,
+  version: 4,
+  family: 'handover-answer',
+  questionId: 'q1',
+} as const;
+
+const handoverAnswerPayload = {
+  questionId: 'q1',
+  senderSession: 's1',
+  answer: 'Use option A.',
+};
+
+const shownHandoverAnswerText = 'Handover answer to question q1:\n\nUse option A.';
 
 const answerPayload = {
   assignmentId: 'a1',
@@ -599,6 +760,21 @@ const retryTable = [
     name: 'a handover-question retry with another receipted question',
     receipted: { receipt: { ...questionReceipt, questionId: 'q2' }, content: shownQuestionText },
     body: { family: 'handover-question', payload: questionPayload },
+    matches: false,
+  },
+  {
+    name: 'a handover-answer retry with the shown text',
+    receipted: { receipt: answerToQuestionReceipt, content: shownHandoverAnswerText },
+    body: { family: 'handover-answer', payload: handoverAnswerPayload },
+    matches: true,
+  },
+  {
+    name: 'a handover-answer retry for another question',
+    receipted: {
+      receipt: { ...answerToQuestionReceipt, questionId: 'q2' },
+      content: shownHandoverAnswerText,
+    },
+    body: { family: 'handover-answer', payload: handoverAnswerPayload },
     matches: false,
   },
   {
