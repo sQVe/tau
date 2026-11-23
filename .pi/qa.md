@@ -125,7 +125,8 @@ Run `pnpm pi-session` in this worktree, as the feature files below show. It prin
 `Event log: <path>`. Set `log` to that path, then run this proof after each session:
 
 ```sh
-jq -r 'select(.type == "message_start" and .message.role == "system")
+jq -r 'select(.type == "message_start" and .message.role == "system"
+    and .message.sections.skills != null)
   | .message.sections.skills | [scan("<location>([^<]*)/src/skills/")[]] | unique[]' "$log"
 ```
 
