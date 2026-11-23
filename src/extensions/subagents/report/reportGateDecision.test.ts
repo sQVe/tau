@@ -35,6 +35,9 @@ const citedInSummaryOnly = {
 const noRecordMessage =
   'Report refused: no full check record for the current tree and command. Run full_check on the final tree, then report.';
 
+const noLogMessage =
+  'Report refused: the newest full check record for the current tree and command has no log. Run full_check again on the final tree, then report.';
+
 it.each([
   {
     name: 'an undeclared passing record accepts',
@@ -72,6 +75,24 @@ it.each([
     name: 'an undeclared newer record of another command still refuses',
     declaration: null,
     savedRecords: [savedLog(true, ['pnpm', 'test']), savedLog(true)],
+    configuredArgv: argv,
+    citation: cited(false),
+    expected: {
+      status: 'refuse',
+      message:
+        'Report refused: no passing full check record for the current tree. Run full_check on the final tree, then report.',
+    },
+  },
+  {
+    name: 'undeclared skips another tree record',
+    declaration: null,
+    savedRecords: [
+      savedLog(true, argv, {
+        logPath: '/repository/.tau/checks/other.log',
+        read: { status: 'valid', record: { version: 3, tree: 'tree-two', argv, passed: true } },
+      }),
+      savedLog(false),
+    ],
     configuredArgv: argv,
     citation: cited(false),
     expected: {
@@ -124,6 +145,36 @@ it.each([
       message:
         'Report refused: the report does not cite the full check log for the current tree. Add its log path to evidence or summary, then report.',
     },
+  },
+  {
+    name: 'undeclared skips a log-less record',
+    declaration: null,
+    savedRecords: [
+      savedLog(true, argv, { logPath: '/repository/.tau/checks/newer.log', logExists: false }),
+      savedLog(true),
+    ],
+    configuredArgv: argv,
+    citation: cited(false),
+    expected: { status: 'accept', fullCheck: null },
+  },
+  {
+    name: 'declared log-less newest refuses',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true, argv, { logExists: false })],
+    configuredArgv: argv,
+    citation: cited(true),
+    expected: { status: 'refuse', message: noLogMessage },
+  },
+  {
+    name: 'older log does not rescue log-less',
+    declaration: declaredFullCheck,
+    savedRecords: [
+      savedLog(true, argv, { logPath: '/repository/.tau/checks/newer.log', logExists: false }),
+      savedLog(true),
+    ],
+    configuredArgv: argv,
+    citation: cited(true),
+    expected: { status: 'refuse', message: noLogMessage },
   },
   {
     name: 'a declared missing record refuses',

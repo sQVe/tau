@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -33,6 +33,8 @@ const facts = (root: string, overrides: Partial<ReportCheckFacts> = {}): ReportC
   ...overrides,
 });
 
+const declaredFullCheck = { owner: 'AI-1688', reason: 'the module is not wired in yet' };
+
 it('reads a passing record for the current tree and command', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
@@ -59,5 +61,55 @@ it('returns the cited declared record identity and result', async () => {
   ).toEqual({
     status: 'accept',
     fullCheck: { owner: 'AI-1688', logPath, passed: false },
+  });
+});
+
+it('refuses a declared report when no record exists', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeFile(join(root, '.gitignore'), '.tau/\n');
+
+  expect(await checkReport(facts(root, { fullCheck: declaredFullCheck }))).toEqual({
+    status: 'refuse',
+    message:
+      'Report refused: no full check record for the current tree and command. Run full_check on the final tree, then report.',
+  });
+});
+
+it('refuses a declared report when the record file is malformed', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeFile(join(root, '.gitignore'), '.tau/\n');
+
+  const directory = join(root, '.tau/checks');
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, 'run.json'), 'not a record');
+  await writeFile(join(directory, 'run.log'), 'output');
+
+  expect(await checkReport(facts(root, { fullCheck: declaredFullCheck }))).toEqual({
+    status: 'refuse',
+    message:
+      'Report refused: no full check record for the current tree and command. Run full_check on the final tree, then report.',
+  });
+});
+
+it('refuses a declared report when the newest record log file was deleted', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeFile(join(root, '.gitignore'), '.tau/\n');
+
+  const logPath = await saveCheck(root, true);
+
+  await unlink(logPath);
+
+  expect(
+    await checkReport(
+      facts(root, { fullCheck: declaredFullCheck, evidence: [`check log: ${logPath}`] }),
+    ),
+  ).toEqual({
+    status: 'refuse',
+    message:
+      'Report refused: the newest full check record for the current tree and command has no log. Run full_check again on the final tree, then report.',
   });
 });
