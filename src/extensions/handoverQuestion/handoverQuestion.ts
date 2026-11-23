@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, SessionEntry } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { piExec } from '../../command.js';
 import { lookupSender } from '../../handoverSender.js';
@@ -11,15 +11,11 @@ import { handoverQuestionCheck } from './acceptCheck.js';
 import { askSender, questionParameters, questionToolDescription } from './question/question.js';
 import { senderMessages } from './senderMessages.js';
 
-const branchOf = (
-  sessionManager: ExtensionContext['sessionManager'] | undefined,
-): readonly SessionEntry[] => (sessionManager === undefined ? [] : sessionManager.getBranch());
-
 const senderOf = (context: ExtensionContext) =>
   lookupSender({
     // oxlint-disable-next-line node/no-process-env -- The sender environment is set for the active process.
     environment: process.env,
-    messages: senderMessages(branchOf(context.sessionManager)),
+    messages: senderMessages(context.sessionManager.getBranch()),
   });
 
 const registerQuestionTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
