@@ -65,15 +65,17 @@ sender, whatever Tau version sent the text.
 ### Keep the saved handover record compatible
 
 Version 2 of the saved inbox record added the optional `sender` field and still reads version 1.
-Version 3 added the `handover-question` family. Both older versions stay readable, as
-[ADR 0053](./0053-version-each-saved-record-format.md) says. A pending retry compares the payload
-without the version, and a retry whose sender differs is a changed message. A receiver on an older
-Tau refuses a frame that carries `sender`; that refusal is accepted and needs no fallback.
+Version 3 added the `handover-question` family. Version 4 added the `handover-answer` family, and
+versions 1 to 3 stay readable, as [ADR 0053](./0053-version-each-saved-record-format.md) says. A
+pending retry compares the payload without the version, and a retry whose sender differs is a
+changed message. A receiver on an older Tau refuses a frame that carries `sender`; that refusal is
+accepted and needs no fallback.
 
-The Pi session receipt moves to version 3 when it gains the `handover-question` family. Tau writes
-that one version for every family. It still reads version 2 for `handover` and `answer`, and it
-skips a version 2 `handover-question` receipt. An older Tau does not replay the original version 3
-inbox file. The downgrade limits under Consequences still apply.
+The Pi session receipt moves to version 4 when it gains the `handover-answer` family. Tau writes
+that one version for every family. It still reads versions 2 and 3 for `handover` and `answer`, and
+versions 3 and 4 for `handover-question`. It skips a version 2 `handover-question` receipt and a
+version 3 `handover-answer` receipt. An older Tau does not replay the original version 4 inbox file.
+The downgrade limits under Consequences still apply.
 
 ### Ask with handover_question
 
@@ -117,7 +119,7 @@ stall the work.
   transcript drops it.
 - A downgrade is best effort. A version 2 inbox file that this Tau delivered but has not deleted can
   be shown again when the same session resumes on an older Tau. A same-ID retry after cleanup can be
-  shown again on an older Tau. A worker that restarts on an older Tau can miss a version 3 answer
+  shown again on an older Tau. A worker that restarts on an older Tau can miss a version 4 answer
   receipt and keep waiting.
 
 ## Alternatives considered
