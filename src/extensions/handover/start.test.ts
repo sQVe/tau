@@ -10,6 +10,7 @@ import { createHerdrAppFake } from '../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
+import { tabName } from '../../tabName.js';
 import { startHandover } from './start.js';
 import type { StartHandoverRequest } from './start.js';
 
@@ -28,11 +29,17 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const requestFor = (root: string, file: string, target: PiStartTarget): StartHandoverRequest => ({
+const requestFor = (
+  root: string,
+  file: string,
+  target: PiStartTarget,
+  title: string,
+): StartHandoverRequest => ({
   cwd: root,
   file,
   folder: root,
   target,
+  title,
   model: undefined,
   bareRoot: false,
   sender: undefined,
@@ -41,7 +48,7 @@ const requestFor = (root: string, file: string, target: PiStartTarget): StartHan
 const commandsOf = (fake: ExecFake<HerdrAppCommand>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
 
-const tabCommand = (root: string, argv: string, task: string) => ({
+const tabCommand = (root: string, argv: string, task: string, title: string) => ({
   command: 'herdr-app',
   commandArguments: [
     'do',
@@ -51,7 +58,7 @@ const tabCommand = (root: string, argv: string, task: string) => ({
     '--folder',
     root,
     '--name',
-    'lead',
+    tabName('lead', title),
     '--argv',
     argv,
     '--task',
@@ -61,6 +68,23 @@ const tabCommand = (root: string, argv: string, task: string) => ({
   ],
 });
 
+it('names the tab after the handover title in an existing space', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await startHandover(
+    runtimeOf(fake, root),
+    requestFor(root, file, { space: 'space-1' }, 'Engine moves to src/core'),
+  );
+
+  const [launch] = fake.calls;
+
+  expect(argumentAfter(launch?.commandArguments ?? [], '--name')).toBe(
+    tabName('lead', 'Engine moves to src/core'),
+  );
+});
+
 it('opens a tab in the space with the file text as its task', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
@@ -68,12 +92,12 @@ it('opens a tab in the space with the file text as its task', async () => {
 
   const result = await startHandover(
     runtimeOf(fake, root),
-    requestFor(root, file, { space: 'space-1' }),
+    requestFor(root, file, { space: 'space-1' }, 'Next steps'),
   );
 
   expect(result).toEqual({ reply: '{"ok":true}' });
 
-  expect(commandsOf(fake)).toEqual([tabCommand(root, '["pi"]', 'Next steps\n')]);
+  expect(commandsOf(fake)).toEqual([tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps')]);
 });
 
 it('passes the lead as sender to the new tab', async () => {
@@ -82,7 +106,7 @@ it('passes the lead as sender to the new tab', async () => {
   const file = await writeHandover(root, 'Next steps\n');
 
   await startHandover(runtimeOf(fake, root), {
-    ...requestFor(root, file, { space: 'space-1' }),
+    ...requestFor(root, file, { space: 'space-1' }, 'Next steps'),
     sender: { terminal: 't7', sessionId: 'lead-id' },
   });
 
@@ -91,6 +115,7 @@ it('passes the lead as sender to the new tab', async () => {
       root,
       '["env","TAU_HANDOVER_SENDER_TERMINAL=t7","TAU_HANDOVER_SENDER_SESSION=lead-id","pi"]',
       'Handover sender: terminal t7, session lead-id.\n\nNext steps\n',
+      'Next steps',
     ),
   ]);
 });
@@ -101,11 +126,11 @@ it('starts without a sender as today', async () => {
   const file = await writeHandover(root, 'Next steps\n');
 
   await startHandover(runtimeOf(fake, root), {
-    ...requestFor(root, file, { space: 'space-1' }),
+    ...requestFor(root, file, { space: 'space-1' }, 'Next steps'),
     sender: undefined,
   });
 
-  expect(commandsOf(fake)).toEqual([tabCommand(root, '["pi"]', 'Next steps\n')]);
+  expect(commandsOf(fake)).toEqual([tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps')]);
 });
 
 it('opens a new space with Pi in its only tab', async () => {
@@ -113,7 +138,10 @@ it('opens a new space with Pi in its only tab', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
-  await startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' }));
+  await startHandover(
+    runtimeOf(fake, root),
+    requestFor(root, file, { name: 'ticket-1' }, 'ticket-1'),
+  );
 
   expect(commandsOf(fake)).toEqual([
     {
@@ -126,7 +154,7 @@ it('opens a new space with Pi in its only tab', async () => {
         '--folder',
         root,
         '--tab',
-        'lead',
+        tabName('lead', 'ticket-1'),
         '--argv',
         '["pi"]',
         '--task',
@@ -148,7 +176,10 @@ it.each([
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, task);
 
-  await startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' }));
+  await startHandover(
+    runtimeOf(fake, root),
+    requestFor(root, file, { name: 'ticket-1' }, 'ticket-1'),
+  );
 
   const [launch] = fake.calls;
 
@@ -164,7 +195,7 @@ it('refuses a file outside .tau/handovers before any herdr-app call', async () =
   await writeFile(file, 'Next steps\n');
 
   await expect(
-    startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' })),
+    startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' }, 'ticket-1')),
   ).rejects.toThrow(/outside the \.tau\/handovers directory/);
 
   expect(fake.calls).toEqual([]);
@@ -176,7 +207,7 @@ it('refuses an empty file before any herdr-app call', async () => {
   const file = await writeHandover(root, '');
 
   await expect(
-    startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' })),
+    startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' }, 'ticket-1')),
   ).rejects.toThrow(/handover file is empty/);
 
   expect(fake.calls).toEqual([]);
@@ -188,7 +219,7 @@ it('refuses a handover too large for one command argument before any herdr-app c
   const file = await writeHandover(root, 'x'.repeat(102_401));
 
   await expect(
-    startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' })),
+    startHandover(runtimeOf(fake, root), requestFor(root, file, { name: 'ticket-1' }, 'ticket-1')),
   ).rejects.toThrow(/handover file is larger than/);
 
   expect(fake.calls).toEqual([]);
@@ -202,7 +233,7 @@ it('refuses a folder that is not a Git checkout before any herdr-app call', asyn
 
   await expect(
     startHandover(runtimeOf(fake, root), {
-      ...requestFor(root, file, { name: 'ticket-1' }),
+      ...requestFor(root, file, { name: 'ticket-1' }, 'ticket-1'),
       folder,
     }),
   ).rejects.toThrow(/start folder is not a Git checkout/);
@@ -221,7 +252,7 @@ it('runs nothing when the signal is already aborted', async () => {
   await expect(
     startHandover(
       { ...runtimeOf(fake, root), signal: controller.signal },
-      requestFor(root, file, { space: 'space-1' }),
+      requestFor(root, file, { space: 'space-1' }, 'Next steps'),
     ),
   ).rejects.toMatchObject({ name: 'AbortError' });
 

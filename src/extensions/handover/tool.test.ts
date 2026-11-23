@@ -22,6 +22,7 @@ import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
+import { tabName } from '../../tabName.js';
 import { readHandoverText } from './handoverFile.js';
 import { createHandoverTool } from './tool.js';
 
@@ -542,7 +543,7 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
 
   const result = await createStartTool(app).execute(
     'call',
-    { action: 'start', file, folder: root, space: 'space-1' },
+    { action: 'start', file, folder: root, space: 'space-1', name: 'Next steps' },
     undefined,
     undefined,
     noUiContext(root),
@@ -555,6 +556,33 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
 
   expect(argumentAfter(launch?.commandArguments ?? [], '--space')).toBe('space-1');
   expect(argumentAfter(launch?.commandArguments ?? [], '--folder')).toBe(root);
+
+  expect(argumentAfter(launch?.commandArguments ?? [], '--name')).toBe(
+    tabName('lead', 'Next steps'),
+  );
+});
+
+it('starts a new space named after the handover title', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createHerdrAppFake();
+
+  const result = await createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, name: 'ticket-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({ reply: '{"ok":true}' });
+
+  const [launch] = app.calls;
+
+  expect(launch?.commandArguments[1]).toBe('space.new');
+  expect(argumentAfter(launch?.commandArguments ?? [], '--name')).toBe('ticket-1');
+
+  expect(argumentAfter(launch?.commandArguments ?? [], '--tab')).toBe(tabName('lead', 'ticket-1'));
 });
 
 it('starts an architect tab without a sender', async () => {
@@ -567,7 +595,7 @@ it('starts an architect tab without a sender', async () => {
 
   await createStartTool(app).execute(
     'call',
-    { action: 'start', file, folder: root, space: 'space-1' },
+    { action: 'start', file, folder: root, space: 'space-1', name: 'Next steps' },
     undefined,
     undefined,
     noUiContext(root, 'architect-session'),
@@ -586,7 +614,7 @@ it('starts a tab from a real bare repository root', async () => {
 
   const result = await createStartTool(app).execute(
     'call',
-    { action: 'start', file, folder: root, space: 'space-1' },
+    { action: 'start', file, folder: root, space: 'space-1', name: 'Next steps' },
     undefined,
     undefined,
     noUiContext(root),
@@ -615,7 +643,7 @@ it('starts from a repository with a .git entry without asking Git whether it is 
 
   await createStartTool(app).execute(
     'call',
-    { action: 'start', file, folder: root, space: 'space-1' },
+    { action: 'start', file, folder: root, space: 'space-1', name: 'Next steps' },
     undefined,
     undefined,
     noUiContext(root),
@@ -636,6 +664,7 @@ it('passes the model to the new Pi through herdr-app', async () => {
       file,
       folder: root,
       space: 'space-1',
+      name: 'Next steps',
       model: 'morph/morph-dsv41flash-1017',
     },
     undefined,
@@ -662,7 +691,7 @@ it('refuses a regular file as the start folder before any herdr-app call', async
 
   const execution = createStartTool(app).execute(
     'call',
-    { action: 'start', file, folder, space: 'space-1' },
+    { action: 'start', file, folder, space: 'space-1', name: 'Next steps' },
     undefined,
     undefined,
     noUiContext(root),
@@ -673,20 +702,39 @@ it('refuses a regular file as the start folder before any herdr-app call', async
   expect(app.calls).toEqual([]);
 });
 
-it('refuses a start without a space or name before any herdr-app call', async () => {
+it('refuses a start without a name before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
   const app = createHerdrAppFake();
+  const tool = createStartTool(app);
+  const context = noUiContext(root);
 
-  const execution = createStartTool(app).execute(
-    'call',
-    { action: 'start', file, folder: root },
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
+  const missingName = await tool
+    .execute(
+      'call',
+      { action: 'start', file, folder: root, space: 'space-1' },
+      undefined,
+      undefined,
+      context,
+    )
+    .catch((error: unknown) => error);
 
-  await expect(execution).rejects.toThrow(/start needs a name when it has no space/);
+  expect(missingName).toBeInstanceOf(Error);
+  expect(missingName).not.toBeInstanceOf(TypeError);
+
+  await expect(
+    tool.execute(
+      'call',
+      { action: 'start', file, folder: root, space: 'space-1', name: '   ' },
+      undefined,
+      undefined,
+      context,
+    ),
+  ).rejects.toBeInstanceOf(Error);
+
+  await expect(
+    tool.execute('call', { action: 'start', file, folder: root }, undefined, undefined, context),
+  ).rejects.toBeInstanceOf(Error);
 
   expect(app.calls).toEqual([]);
 });
@@ -719,7 +767,14 @@ it('refuses a malformed start model before any herdr-app call', async () => {
 
   const execution = createStartTool(app).execute(
     'call',
-    { action: 'start', file, folder: root, space: 'space-1', model: 'no-slash' },
+    {
+      action: 'start',
+      file,
+      folder: root,
+      space: 'space-1',
+      name: 'Next steps',
+      model: 'no-slash',
+    },
     undefined,
     undefined,
     modelContext(root, onTestFinished),
@@ -749,6 +804,7 @@ it('refuses a start model outside allowedModels before any herdr-app call', asyn
       file,
       folder: root,
       space: 'space-1',
+      name: 'Next steps',
       model: 'morph/morph-dsv41flash-1017',
     },
     undefined,
@@ -817,7 +873,7 @@ it('refuses an already-aborted start before any herdr-app call', async () => {
 
   const execution = createStartTool(app).execute(
     'call',
-    { action: 'start', file, folder: root, space: 'space-1' },
+    { action: 'start', file, folder: root, space: 'space-1', name: 'Next steps' },
     abortedSignal(),
     undefined,
     noUiContext(root),

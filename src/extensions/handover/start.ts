@@ -11,6 +11,7 @@ export interface StartHandoverRequest {
   file: string;
   folder: string;
   target: PiStartTarget;
+  title: string;
   model: string | undefined;
   bareRoot: boolean;
   sender: HandoverSender | undefined;
@@ -32,7 +33,7 @@ export const startHandover = async (
   return startPiSession(runtime, {
     folder: request.folder,
     target: request.target,
-    tabName: tabName('lead'),
+    tabName: tabName('lead', request.title),
     task,
     model: request.model,
     session: undefined,

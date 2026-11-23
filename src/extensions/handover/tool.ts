@@ -48,7 +48,12 @@ const parameters = Type.Object({
       description: 'start: herdr-app space ID where the new Pi runs. Omit it to use name.',
     }),
   ),
-  name: Type.Optional(Type.String({ description: 'start without space: name of the new space.' })),
+  name: Type.Optional(
+    Type.String({
+      description:
+        'start: short title of the work, about 40 characters. Names the tab as lead: <name>, and names a new space when space is omitted.',
+    }),
+  ),
   model: Type.Optional(
     Type.String({
       description: "start: the new Pi's model as provider/model-id. Omit it for the default model.",
@@ -120,16 +125,12 @@ const sendRequest = (context: ExtensionToolContext, input: HandoverInput): SendH
   };
 };
 
-const startTarget = (input: HandoverInput): PiStartTarget => {
+const startTarget = (input: HandoverInput, name: string): PiStartTarget => {
   if (input.space !== undefined) {
     return { space: input.space };
   }
 
-  if (input.name === undefined) {
-    throw new Error('start needs a name when it has no space.');
-  }
-
-  return { name: input.name };
+  return { name };
 };
 
 const startRequest = (
@@ -152,11 +153,18 @@ const startRequest = (
     throw new Error(`start needs an absolute folder: ${JSON.stringify(input.folder)}.`);
   }
 
+  const name = input.name;
+
+  if (name === undefined || name.trim() === '') {
+    throw new Error('start needs a name: a short title of the work.');
+  }
+
   return {
     cwd: context.cwd,
     file: input.file,
     folder: input.folder,
-    target: startTarget(input),
+    target: startTarget(input, name),
+    title: name,
     model: input.model,
     sender: currentSender(context),
   };
@@ -203,7 +211,7 @@ export const createHandoverTool = (
   - queued: saved and shown once. Never resend it.
   - unknown: it may be saved; see note. Retry with the same file, messageId, and sessionId.
   - An error ending "Nothing was queued." is a refusal.
-- action start: starts Pi with the file's text as its task. Needs file and folder, plus space or name. Pass model as provider/model-id to run the new Pi on another model. Returns {reply}, herdr-app's output.`,
+- action start: starts Pi with the file's text as its task. Needs file, folder, and name (a short title of the work, used in the tab name); space reuses a space, else name names a new one. Pass model as provider/model-id to run the new Pi on another model. Returns {reply}, herdr-app's output.`,
     promptSnippet: 'Prepare, send, and start handover messages.',
     parameters,
     executionMode: 'sequential',
