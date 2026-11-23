@@ -4,7 +4,11 @@ import { expect, it, vi } from 'vitest';
 import { tauConfigSnapshot, temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import { pastAnswerSchema } from '../judgeSchema.ts';
 import { models, pastAnswer, question } from './fixtures/questionGateModelsFixture.ts';
-import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
+import {
+  readQuestionGateConfig,
+  readQuestionGateModels,
+  shadowCohort,
+} from './questionGateModels.ts';
 import type { ShadowConfig } from './questionGateModels.ts';
 
 const shadow: ShadowConfig = {
@@ -28,8 +32,7 @@ const expectWarning = (ui: UiFixture, userFile: string, keyPath: string): void =
   expect(level).toBe('warning');
 };
 
-const shadowCohortOf = (value: ShadowConfig): string =>
-  shadowCohort({ ...models, decide: false, shadow: value });
+const shadowCohortOf = (value: ShadowConfig): string => shadowCohort({ ...models, shadow: value });
 
 it('reads an extra key beside classifier and warns once with its path', ({ onTestFinished }) => {
   const { location, userFile, repositoryFile, writeUser } = temporaryTauConfig(
@@ -42,14 +45,14 @@ it('reads an extra key beside classifier and warns once with its path', ({ onTes
   const snapshot = tauConfigSnapshot(userFile, repositoryFile);
   const ui = uiFixture();
 
-  expect(readQuestionGateConfig(location, ui)).toEqual({ ...models, decide: false });
+  expect(readQuestionGateModels(location, ui)).toEqual(models);
   snapshot.expectUnchanged();
 
   expectWarning(ui, userFile, 'questionGate.extra');
 
   expect(ui.notify).toHaveBeenCalledTimes(1);
 
-  readQuestionGateConfig(location, ui);
+  readQuestionGateModels(location, ui);
   snapshot.expectUnchanged();
 
   expect(ui.notify).toHaveBeenCalledTimes(1);

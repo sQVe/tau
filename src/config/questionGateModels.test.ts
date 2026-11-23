@@ -3,7 +3,12 @@ import { expect, it, onTestFinished as registerTestCleanup } from 'vitest';
 import { tauConfigSnapshot, temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import type { PastAnswer } from '../questionGate/questionGate.ts';
 import { models, pastAnswer, question } from './fixtures/questionGateModelsFixture.ts';
-import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
+import {
+  readQuestionGateConfig,
+  readQuestionGateModels,
+  readQuestionGateShadow,
+  shadowCohort,
+} from './questionGateModels.ts';
 import type { QuestionGateConfig, ShadowConfig } from './questionGateModels.ts';
 
 type FrozenConfig = QuestionGateConfig & { shadow: ShadowConfig };
@@ -64,6 +69,19 @@ it('returns undefined when the key is missing', ({ onTestFinished }) => {
   writeUser({});
 
   expect(readQuestionGateConfig(location, ui())).toBeUndefined();
+});
+
+it('reads models without validating the shadow block', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+
+  writeUser({
+    questionGate: {
+      ...models,
+      shadow: { variant: 'classifierExamples', cutoff: 0.8, examples: [] },
+    },
+  });
+
+  expect(readQuestionGateModels(location, ui())).toEqual(models);
 });
 
 it('refuses a panel of two models with the schema error', ({ onTestFinished }) => {
@@ -152,6 +170,39 @@ it('reads decide with shadow', ({ onTestFinished }) => {
   expect(readQuestionGateConfig(location, ui())).toEqual({
     ...models,
     decide: true,
+    shadow: { ...shadow, examples: [] },
+  });
+});
+
+it('refuses an invalid shadow in a decide config', ({ onTestFinished }) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-question-gate-',
+  );
+
+  writeUser({
+    questionGate: {
+      ...models,
+      decide: true,
+      shadow: { variant: 'classifierExamples', cutoff: 0.8, examples: [] },
+    },
+  });
+
+  const read = () => readQuestionGateConfig(location, ui());
+
+  expect(read).toThrow(userFile);
+  expect(read).toThrow('classifierExamples');
+  expect(read).toThrow('needs at least one example');
+});
+
+it('reads the shadow without validating decide', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+  const shadow = { variant: 'panel', cutoff: 0.5 } as const;
+
+  writeUser({ questionGate: { ...models, decide: 'yes', shadow } });
+
+  expect(readQuestionGateShadow(location, ui())).toEqual({
+    ...models,
     shadow: { ...shadow, examples: [] },
   });
 });

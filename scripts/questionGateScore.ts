@@ -13,7 +13,7 @@ import {
 import { classifyChoice } from '../src/classifier/classifier.ts';
 import { userConfigPath } from '../src/config/config.ts';
 import { parseModelReference, requireAllowedModel } from '../src/config/models.ts';
-import { readQuestionGateConfig } from '../src/config/questionGateModels.ts';
+import { readQuestionGateModels } from '../src/config/questionGateModels.ts';
 import type { QuestionGateModels } from '../src/config/questionGateModels.ts';
 import { findSessionFiles } from '../src/improvement/improvement.ts';
 import {
@@ -262,7 +262,7 @@ const main = async () => {
 
   const agentDirectory = getAgentDir();
   const location = { cwd: process.cwd(), agentDirectory, projectTrusted: false };
-  const models = readQuestionGateConfig(location, stderrConfigWarnings);
+  const models = readQuestionGateModels(location, stderrConfigWarnings);
 
   if (models === undefined) {
     throw new Error(

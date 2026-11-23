@@ -2,9 +2,11 @@ import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
+import { notifyOnce, userConfigPath } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
-import { readQuestionGateConfig, shadowCohort } from '../../config/questionGateModels.js';
-import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
+import { readQuestionGateShadow, shadowCohort } from '../../config/questionGateModels.js';
+import type { QuestionGateShadow } from '../../config/questionGateModels.js';
+import { errorMessage } from '../../errors.js';
 import {
   shadowEligibility,
   shadowRateAllows,
@@ -24,7 +26,7 @@ import { judgeQuestionOf, prepareJudges } from './judges.js';
 export interface ShadowPorts {
   now: () => number;
   findSharedRoot: (cwd: string, signal: AbortSignal) => Promise<string>;
-  readConfig: (location: ConfigLocation, ui: ConfigWarnings) => QuestionGateConfig | undefined;
+  readConfig: (location: ConfigLocation, ui: ConfigWarnings) => QuestionGateShadow | undefined;
   requireModel: (reference: string, location: ConfigLocation) => void;
   ensureDirectory: (root: string, path: string) => Promise<string>;
   writeRecord: ShadowRecordWriter;
@@ -49,7 +51,7 @@ export interface ShadowRunner {
   start: (request: ShadowStart) => ShadowJob;
 }
 
-type FrozenConfig = QuestionGateConfig & { shadow: ShadowConfig };
+type FrozenConfig = QuestionGateShadow;
 
 interface ShadowRate {
   lastBatchStartedAt: number | undefined;
@@ -63,7 +65,7 @@ interface TimedVerdict {
 const defaultShadowPorts: ShadowPorts = {
   now: () => performance.now(),
   findSharedRoot: (cwd, signal) => findSharedRepositoryRoot(cwd, { signal }),
-  readConfig: readQuestionGateConfig,
+  readConfig: readQuestionGateShadow,
   requireModel: requireAllowedModel,
   ensureDirectory: ensureTauDirectory,
   writeRecord,
@@ -128,6 +130,22 @@ const judgeAll = async (
   };
 };
 
+const readConfigOrReport = (
+  ports: ShadowPorts,
+  request: ShadowStart,
+  location: ConfigLocation,
+): QuestionGateShadow | undefined => {
+  try {
+    return ports.readConfig(location, request.ui);
+  } catch (error) {
+    const message = errorMessage(error);
+
+    notifyOnce(request.ui, userConfigPath(location.agentDirectory), message, message, 'error');
+
+    return undefined;
+  }
+};
+
 const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRate): ShadowJob => {
   const answer = Promise.withResolvers<DialogResult | undefined>();
   const controller = new AbortController();
@@ -144,9 +162,9 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
         projectTrusted: request.projectTrusted,
       };
 
-      const read = ports.readConfig(location, request.ui);
+      const read = readConfigOrReport(ports, request, location);
 
-      if (read?.shadow === undefined) {
+      if (read === undefined) {
         return undefined;
       }
 
@@ -154,7 +172,7 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
         ports.requireModel(reference, location);
       }
 
-      return { sharedRoot, config: { ...read, shadow: read.shadow } };
+      return { sharedRoot, config: read };
     } catch {
       return undefined;
     }

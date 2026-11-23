@@ -3,11 +3,7 @@ import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 
 import { classifyChoice } from '../../classifier/classifier.js';
 import { parseModelReference } from '../../config/models.js';
-import type {
-  QuestionGateConfig,
-  QuestionGateModels,
-  ShadowConfig,
-} from '../../config/questionGateModels.js';
+import type { QuestionGateModels, ShadowConfig } from '../../config/questionGateModels.js';
 import {
   judgeWithClassifier,
   judgeWithPanel,
@@ -87,7 +83,7 @@ export const variantModels = (variant: ShadowVariant, config: QuestionGateModels
 
 export const prepareJudges = (
   registry: ModelRegistry,
-  config: QuestionGateConfig & { shadow: ShadowConfig },
+  config: QuestionGateModels & { shadow: ShadowConfig },
 ): PreparedJudges => {
   const examples = config.shadow.examples;
   const hasExamples = examples.length > 0;
