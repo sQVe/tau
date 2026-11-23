@@ -77,6 +77,7 @@ const createHarness = (options: HarnessOptions = {}) => {
   const events: string[] = [];
   const writes: { path: string; record: unknown; mode: number | undefined }[] = [];
   const notices: string[] = [];
+  const noticeLevels: (string | undefined)[] = [];
   const judgeCalls: unknown[][] = [];
   const scheduled: (() => Promise<void>)[] = [];
 
@@ -90,8 +91,9 @@ const createHarness = (options: HarnessOptions = {}) => {
     return options.verdict ?? { kind: 'answered', confidence: 0.99 };
   });
 
-  const notify = (text: string) => {
+  const notify = (text: string, level?: string) => {
     notices.push(text);
+    noticeLevels.push(level);
     events.push('notice');
     options.notify?.(text);
   };
@@ -171,6 +173,7 @@ const createHarness = (options: HarnessOptions = {}) => {
     events,
     writes,
     notices,
+    noticeLevels,
     judge,
     judgeCalls,
     custom,
@@ -226,6 +229,7 @@ it('answers an eligible call after showing the notice and saving the record', as
   expect(harness.events).toEqual(['notice', 'write', 'return']);
 
   expect(noticeLines(harness.notices)).toEqual([expect.stringContaining('Stacked')]);
+  expect(harness.noticeLevels).toEqual(['info']);
 
   expect(result.details).toEqual({
     kind: 'decided',

@@ -40,6 +40,12 @@ it.for<[string, unknown, KnownKeys, string[]]>([
     ['profiles.worker.items[0].extra'],
   ],
   ['keys inside array items without an item node', items, { items: { name: true } }, []],
+  [
+    'an item node declared as a leaf stops the walk',
+    { items: [{ name: 'a', extra: 1 }] },
+    { items: { [anyItem]: true } },
+    [],
+  ],
   ['a value that is not an object', 'text', known, []],
   ['a known key with a wrong type', { routes: 5 }, known, []],
   ['a known leaf key that holds an object', { model: { name: 'a/b' } }, known, []],
