@@ -1,8 +1,8 @@
 import { expect, it, onTestFinished as registerTestCleanup } from 'vitest';
 
-import { models, pastAnswer, question } from '../../tests/questionGateModelsFixture.ts';
 import { tauConfigSnapshot, temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import type { PastAnswer } from '../questionGate/questionGate.ts';
+import { models, pastAnswer, question } from './fixtures/questionGateModelsFixture.ts';
 import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
 import type { QuestionGateConfig, ShadowConfig } from './questionGateModels.ts';
 

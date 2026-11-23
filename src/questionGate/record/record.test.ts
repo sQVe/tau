@@ -184,6 +184,42 @@ it('names schema-valid records with an invalid recommendation count and hard lin
   expectNoWorkerAction();
 });
 
+it('reports an extra question or option key as a gap and accepts the plain record', async ({
+  onTestFinished,
+}) => {
+  const directory = shadowDirectory(onTestFinished);
+  const validPath = join(directory, shadowName('1'));
+  const questionKeyPath = join(directory, shadowName('2'));
+  const optionKeyPath = join(directory, shadowName('3'));
+  const record = currentRecord();
+
+  const withQuestionKey = JSON.stringify({
+    ...record,
+    question: { ...record.question, futureKey: 'ignored' },
+  });
+
+  const withOptionKey = JSON.stringify({
+    ...record,
+    question: {
+      ...record.question,
+      options: record.question.options.map((option, index) =>
+        index === 0 ? Object.assign({}, option, { futureKey: 'ignored' }) : option,
+      ),
+    },
+  });
+
+  await writeFile(validPath, fixture('current.json'));
+  await writeFile(questionKeyPath, withQuestionKey);
+  await writeFile(optionKeyPath, withOptionKey);
+
+  const { records, gaps } = await readShadowRecords(directory, readVersionedRecord);
+
+  expect(records).toEqual([currentRecord()]);
+  expect(gaps.map((gap) => gap.path)).toEqual([questionKeyPath, optionKeyPath]);
+  expect(gaps[0]?.reason).toContain('Malformed shadow record');
+  expect(gaps[1]?.reason).toContain('Malformed shadow record');
+});
+
 it('names records with confidence outside the unit range as gaps', async ({ onTestFinished }) => {
   const directory = shadowDirectory(onTestFinished);
   const validPath = join(directory, shadowName('1'));

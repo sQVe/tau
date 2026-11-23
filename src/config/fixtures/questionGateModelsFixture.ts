@@ -1,4 +1,4 @@
-import type { PastAnswer } from '../src/questionGate/questionGate.js';
+import type { PastAnswer } from '../../questionGate/questionGate.ts';
 
 export const models = {
   classifier: 'tau-fixture/judge-a',

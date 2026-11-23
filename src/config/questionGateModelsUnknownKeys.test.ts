@@ -1,9 +1,9 @@
 import { Value } from 'typebox/value';
 import { expect, it, vi } from 'vitest';
 
-import { models, pastAnswer, question } from '../../tests/questionGateModelsFixture.ts';
 import { tauConfigSnapshot, temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import { pastAnswerSchema } from '../judgeSchema.ts';
+import { models, pastAnswer, question } from './fixtures/questionGateModelsFixture.ts';
 import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
 import type { ShadowConfig } from './questionGateModels.ts';
 
