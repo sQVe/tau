@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { fauxAssistantMessage } from '@earendil-works/pi-ai';
@@ -257,4 +258,29 @@ it('exits 1 naming questionGate when the user config lacks it', ({ onTestFinishe
 
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('questionGate');
+});
+
+it('scores history when only the shadow block is invalid', ({ onTestFinished }) => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-question-gate-');
+
+  writeFileSync(
+    join(agentDirectory, 'tau.json'),
+    JSON.stringify({
+      questionGate: {
+        classifier: 'fixture/classifier',
+        panel: ['fixture/panel-a', 'fixture/panel-b', 'fixture/panel-c'],
+        shadow: { variant: 'classifierExamples', cutoff: 0.8, examples: [] },
+      },
+    }),
+  );
+
+  const result = spawnSync(process.execPath, [script, '--limit', '1'], {
+    encoding: 'utf8',
+    env: { ...process.env, PI_CODING_AGENT_DIR: agentDirectory },
+  });
+
+  expect(result.status).toBe(0);
+  expect(result.stderr).not.toContain('Invalid Tau config');
+  expect(result.stderr).not.toContain('Judged');
+  expect(result.stdout).toContain('Questions: 0 tuning, 0 held out');
 });

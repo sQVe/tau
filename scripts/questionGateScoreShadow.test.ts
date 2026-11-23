@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { readQuestionGateConfig, shadowCohort } from '../src/config/questionGateModels.ts';
+import { readQuestionGateShadow, shadowCohort } from '../src/config/questionGateModels.ts';
 import type { ShadowRecord } from '../src/questionGate/questionGate.ts';
 import { createTemporaryRepository } from '../tests/gitRepository.ts';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.ts';
@@ -57,13 +57,13 @@ const writeConfig = async (agentDirectory: string, value: unknown): Promise<void
 
 const cohortOf = (repository: string, agentDirectory: string): string => {
   const location = { cwd: repository, agentDirectory, projectTrusted: false };
-  const config = readQuestionGateConfig(location, { notify: () => undefined });
+  const config = readQuestionGateShadow(location, { notify: () => undefined });
 
-  if (config?.shadow === undefined) {
+  if (config === undefined) {
     throw new Error('The fixture config has no shadow setting.');
   }
 
-  return shadowCohort({ ...config, shadow: config.shadow });
+  return shadowCohort(config);
 };
 
 const writeRecord = async (
@@ -231,6 +231,30 @@ it('rejects a historical flag with --shadow', async ({ onTestFinished }) => {
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('--shadow');
   expect(result.stderr).toContain('--limit');
+});
+
+it('exits 1 naming an invalid shadow block and the user config file', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished, 'tau-shadow-invalid-');
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-shadow-agent-');
+  const userFile = join(agentDirectory, 'tau.json');
+
+  await writeConfig(agentDirectory, {
+    questionGate: {
+      ...gateConfig.questionGate,
+      shadow: { variant: 'classifierExamples', cutoff: 0.8, examples: [] },
+    },
+  });
+
+  const result = runShadow(repository, agentDirectory);
+
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain(userFile);
+
+  expect(result.stderr).toContain(
+    'questionGate shadow variant "classifierExamples" needs at least one example.',
+  );
 });
 
 it('exits 1 naming the missing shadow setting and user config path', async ({ onTestFinished }) => {
