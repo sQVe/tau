@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 
 import type { GateRecord, GateRecordRead } from '../record.js';
-import { decideAskIntake } from './askIntakeDecision.js';
-import type { AskIntakeDecision, AskIntakeFacts } from './askIntakeDecision.js';
+import { decideAskIntake, decideGateIntake } from './askIntakeDecision.js';
+import type { AskIntakeDecision, AskIntakeFacts, GateIntakeDecision } from './askIntakeDecision.js';
 import { gateRoutingQuestion } from './gateQuestion.js';
 
 const gateRecord = (decision: GateRecord['decision']): GateRecord => ({
@@ -22,24 +22,24 @@ const found = (path: string, decision: GateRecord['decision']): GateRecordRead =
   record: gateRecord(decision),
 });
 
-const table: {
+const shapeTable: {
   name: string;
   facts: AskIntakeFacts;
   expected: AskIntakeDecision;
 }[] = [
   {
     name: 'retries an askId alone',
-    facts: { askId: 'ask-id', question: undefined, gate: undefined, gateRead: undefined },
+    facts: { askId: 'ask-id', question: undefined, gate: undefined },
     expected: { kind: 'retry', askId: 'ask-id' },
   },
   {
     name: 'retries an askId with blank text',
-    facts: { askId: 'ask-id', question: '  ', gate: '  ', gateRead: undefined },
+    facts: { askId: 'ask-id', question: '  ', gate: '  ' },
     expected: { kind: 'retry', askId: 'ask-id' },
   },
   {
     name: 'refuses a question beside an askId',
-    facts: { askId: 'ask-id', question: 'Which flag?', gate: undefined, gateRead: undefined },
+    facts: { askId: 'ask-id', question: 'Which flag?', gate: undefined },
     expected: {
       kind: 'refusal',
       message: 'action ask with askId does not take question.',
@@ -47,7 +47,7 @@ const table: {
   },
   {
     name: 'refuses a gate beside an askId',
-    facts: { askId: 'ask-id', question: undefined, gate: 'gate.json', gateRead: undefined },
+    facts: { askId: 'ask-id', question: undefined, gate: 'gate.json' },
     expected: {
       kind: 'refusal',
       message: 'action ask with askId does not take gate.',
@@ -55,12 +55,7 @@ const table: {
   },
   {
     name: 'refuses a question and a gate',
-    facts: {
-      askId: undefined,
-      question: 'Which flag?',
-      gate: 'gate.json',
-      gateRead: { kind: 'outside', directory: '/checkout/.tau/lead/gate' },
-    },
+    facts: { askId: undefined, question: 'Which flag?', gate: 'gate.json' },
     expected: {
       kind: 'refusal',
       message: 'action ask takes question or gate, not both.',
@@ -68,27 +63,40 @@ const table: {
   },
   {
     name: 'refuses neither a question nor a gate',
-    facts: { askId: undefined, question: undefined, gate: undefined, gateRead: undefined },
+    facts: { askId: undefined, question: undefined, gate: undefined },
     expected: { kind: 'refusal', message: 'question or gate is required.' },
   },
   {
     name: 'refuses a blank question and gate',
-    facts: { askId: undefined, question: ' ', gate: ' ', gateRead: undefined },
+    facts: { askId: undefined, question: ' ', gate: ' ' },
     expected: { kind: 'refusal', message: 'question or gate is required.' },
   },
   {
     name: 'asks the supplied question',
-    facts: { askId: undefined, question: 'Which flag?', gate: undefined, gateRead: undefined },
+    facts: { askId: undefined, question: 'Which flag?', gate: undefined },
     expected: { kind: 'ask', question: 'Which flag?', gateRecord: null },
   },
   {
+    name: 'requests a gate read for a gate-only ask',
+    facts: { askId: undefined, question: undefined, gate: 'gate.json' },
+    expected: { kind: 'readGate', gate: 'gate.json' },
+  },
+];
+
+it.each(shapeTable.map((row) => [row.name, row] as const))('%s', (_name, { facts, expected }) => {
+  expect(decideAskIntake(facts)).toStrictEqual(expected);
+});
+
+const readTable: {
+  name: string;
+  gate: string;
+  read: GateRecordRead;
+  expected: GateIntakeDecision;
+}[] = [
+  {
     name: 'refuses a gate outside the gate directory',
-    facts: {
-      askId: undefined,
-      question: undefined,
-      gate: '../gate.json',
-      gateRead: { kind: 'outside', directory: '/checkout/.tau/lead/gate' },
-    },
+    gate: '../gate.json',
+    read: { kind: 'outside', directory: '/checkout/.tau/lead/gate' },
     expected: {
       kind: 'refusal',
       message: 'gate ../gate.json is not a gate record in /checkout/.tau/lead/gate.',
@@ -96,34 +104,16 @@ const table: {
   },
   {
     name: 'refuses a missing gate record',
-    facts: {
-      askId: undefined,
-      question: undefined,
-      gate: 'gate.json',
-      gateRead: { kind: 'missing' },
-    },
+    gate: 'gate.json',
+    read: { kind: 'missing' },
     expected: { kind: 'refusal', message: 'gate record gate.json does not exist.' },
   },
   {
-    name: 'requests a gate read for a gate-only ask',
-    facts: {
-      askId: undefined,
-      question: undefined,
-      gate: 'gate.json',
-      gateRead: undefined,
-    },
-    expected: { kind: 'readGate', gate: 'gate.json' },
-  },
-  {
     name: 'refuses an unreadable gate record with the reader message',
-    facts: {
-      askId: undefined,
-      question: undefined,
-      gate: 'gate.json',
-      gateRead: {
-        kind: 'unreadable',
-        message: 'Malformed gate record /checkout/.tau/lead/gate/gate.json: not JSON.',
-      },
+    gate: 'gate.json',
+    read: {
+      kind: 'unreadable',
+      message: 'Malformed gate record /checkout/.tau/lead/gate/gate.json: not JSON.',
     },
     expected: {
       kind: 'refusal',
@@ -132,12 +122,8 @@ const table: {
   },
   {
     name: 'refuses a specified gate',
-    facts: {
-      askId: undefined,
-      question: undefined,
-      gate: 'gate.json',
-      gateRead: found('/checkout/.tau/lead/gate/gate.json', 'specified'),
-    },
+    gate: 'gate.json',
+    read: found('/checkout/.tau/lead/gate/gate.json', 'specified'),
     expected: {
       kind: 'refusal',
       message: 'gate record gate.json is specified, not uncertain. Follow it instead of asking.',
@@ -145,12 +131,8 @@ const table: {
   },
   {
     name: 'refuses an open gate',
-    facts: {
-      askId: undefined,
-      question: undefined,
-      gate: 'gate.json',
-      gateRead: found('/checkout/.tau/lead/gate/gate.json', 'open'),
-    },
+    gate: 'gate.json',
+    read: found('/checkout/.tau/lead/gate/gate.json', 'open'),
     expected: {
       kind: 'refusal',
       message: 'gate record gate.json is open, not uncertain. Follow it instead of asking.',
@@ -158,59 +140,19 @@ const table: {
   },
   {
     name: 'asks the routing question for an uncertain gate',
-    facts: {
-      askId: undefined,
-      question: undefined,
-      gate: 'gate.json',
-      gateRead: found('/checkout/.tau/lead/gate/gate.json', 'uncertain'),
-    },
+    gate: 'gate.json',
+    read: found('/checkout/.tau/lead/gate/gate.json', 'uncertain'),
     expected: {
       kind: 'ask',
       question: gateRoutingQuestion(gateRecord('uncertain')),
       gateRecord: '/checkout/.tau/lead/gate/gate.json',
     },
   },
-  {
-    name: 'refuses a question beside an askId before a gate outside',
-    facts: {
-      askId: 'ask-id',
-      question: 'Which flag?',
-      gate: '../gate.json',
-      gateRead: { kind: 'outside', directory: '/checkout/.tau/lead/gate' },
-    },
-    expected: {
-      kind: 'refusal',
-      message: 'action ask with askId does not take question.',
-    },
-  },
-  {
-    name: 'refuses a gate beside an askId before a missing record',
-    facts: {
-      askId: 'ask-id',
-      question: undefined,
-      gate: 'gate.json',
-      gateRead: { kind: 'missing' },
-    },
-    expected: {
-      kind: 'refusal',
-      message: 'action ask with askId does not take gate.',
-    },
-  },
-  {
-    name: 'refuses both a question and a gate before a missing record',
-    facts: {
-      askId: undefined,
-      question: 'Which flag?',
-      gate: 'gate.json',
-      gateRead: { kind: 'missing' },
-    },
-    expected: {
-      kind: 'refusal',
-      message: 'action ask takes question or gate, not both.',
-    },
-  },
 ];
 
-it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { facts, expected }) => {
-  expect(decideAskIntake(facts)).toStrictEqual(expected);
-});
+it.each(readTable.map((row) => [row.name, row] as const))(
+  '%s',
+  (_name, { gate, read, expected }) => {
+    expect(decideGateIntake(gate, read)).toStrictEqual(expected);
+  },
+);

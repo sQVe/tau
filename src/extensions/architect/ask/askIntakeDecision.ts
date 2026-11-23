@@ -5,7 +5,6 @@ export interface AskIntakeFacts {
   askId: string | undefined;
   question: string | undefined;
   gate: string | undefined;
-  gateRead: GateRecordRead | undefined;
 }
 
 interface AskRefusal {
@@ -76,9 +75,5 @@ export const decideAskIntake = (facts: AskIntakeFacts): AskIntakeDecision => {
     return refusal('question or gate is required.');
   }
 
-  if (facts.gateRead === undefined) {
-    return { kind: 'readGate', gate };
-  }
-
-  return decideGateIntake(gate, facts.gateRead);
+  return { kind: 'readGate', gate };
 };

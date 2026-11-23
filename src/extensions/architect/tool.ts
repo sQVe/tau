@@ -113,7 +113,6 @@ const runAsk = async (
     askId: input.askId,
     question: input.question,
     gate: input.gate,
-    gateRead: undefined,
   });
 
   if (intake.kind === 'refusal') {
