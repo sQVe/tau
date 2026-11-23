@@ -93,6 +93,29 @@ asker no longer tracks. The tool ends the turn and does not retry under a fresh 
 has to end for the lead to answer it, and a second send could duplicate a question the lead already
 received.
 
+### Answer with handover_answer
+
+Every lead session has `handover_answer`. The lead finds the asker in the saved question message in
+its own transcript, and it refuses a question it never received. That transcript is the only record
+the lead shares with the asker, and it survives a resume.
+
+An answer frame uses the `questionId` as its message ID. A retry of the same answer then reaches the
+inbox dedupe, so it starts no second turn in the asker. A second turn would repeat work the asker
+already did on the first answer.
+
+The asker's accept check owns the authority checks, because its record names the session that asked
+and the lead it asked. It refuses an unknown question, a message ID other than the question ID, a
+question asked from another session, a question sent to another lead session, and an answer that
+differs from a saved one. It marks the record answered before it saves the message, so the turn the
+answer starts sees an answered record. The reverse order would let that turn ask again about a
+question that already has an answer.
+
+The lead asks its user first for an approval-only action, because only the user can approve
+canceling a ticket, publishing a pull request as ready, spending money, or deleting data. A design
+question goes to `architect` `ask`, not `open`: an ask reaches a running architect through its
+inbox, while an open would start a second architect for a question the lead can pass on. When the
+ask refuses twice or cannot answer, the lead asks its user, so the asker is not left waiting.
+
 ### Ask the user when the sender is gone
 
 An ended sender makes the asker ask its user. A dead terminal cannot answer, and waiting on it would
