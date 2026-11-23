@@ -15,7 +15,7 @@ import {
 } from './steps.js';
 import type { PlanStep } from './steps.js';
 
-type ExpectedCheck = { kind: 'accepted' } | { kind: 'refused'; reason: RegExp };
+type ExpectedCheck = { kind: 'accepted' } | { kind: 'refused'; reason: RegExp | string };
 
 type Unreadable = { kind: 'newer'; version: number } | { kind: 'malformed' };
 
@@ -38,6 +38,11 @@ const checkCases: { name: string; steps: readonly PlanStep[]; expected: Expected
     name: 'refuses 13 steps',
     steps: stepsOf(maxPlanSteps + 1),
     expected: { kind: 'refused', reason: /12/ },
+  },
+  {
+    name: 'names the cap and the step count in the refusal',
+    steps: stepsOf(maxPlanSteps + 2),
+    expected: { kind: 'refused', reason: 'A plan holds at most 12 steps; got 14.' },
   },
   {
     name: 'accepts three steps with one in_progress',
@@ -68,6 +73,11 @@ const checkCases: { name: string; steps: readonly PlanStep[]; expected: Expected
     name: 'refuses an empty text at step 2',
     steps: [step('Brief worker'), step('  '), step('Open the PR')],
     expected: { kind: 'refused', reason: /Step 2/ },
+  },
+  {
+    name: 'names the 1-based step number of the empty text',
+    steps: [step('Brief'), step('Review'), step('Commit'), step(' ')],
+    expected: { kind: 'refused', reason: 'Step 4 has no text.' },
   },
   {
     name: 'reports the step cap before an empty text',
@@ -147,6 +157,11 @@ const replayCases: {
   {
     name: 'treats an extra key as malformed',
     entries: [entry(planEntryType, { version: 1, steps: [step('One')], extra: true })],
+    expected: { steps: [], unreadable: [{ kind: 'malformed' }] },
+  },
+  {
+    name: 'treats a non-numeric version as malformed',
+    entries: [entry(planEntryType, { version: '2', steps: [step('Newer')] })],
     expected: { steps: [], unreadable: [{ kind: 'malformed' }] },
   },
   {

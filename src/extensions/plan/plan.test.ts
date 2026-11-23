@@ -100,6 +100,12 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+it('registers the plan tool for the model only', () => {
+  const tool = planTool(lead());
+
+  expect(tool.exposure).toBe('model-only');
+});
+
 it('a refused call rejects and appends nothing', async () => {
   const appendEntry = vi.fn<ExtensionAPI['appendEntry']>();
   const tool = planTool(lead({ appendEntry }));
