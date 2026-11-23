@@ -20,6 +20,8 @@ import { initializeRepository } from './gitRepository.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
+type Removal = () => Promise<void> | void;
+
 export interface WorkerSessionOptions {
   hc: HcSession;
   model: { provider: string; id: string };
@@ -36,6 +38,7 @@ export interface WorkerSessionOptions {
 
 export interface WorkerSession {
   agentDirectory: string;
+  workerDirectory: string;
   managerAddress: string;
   managerPath: string;
   assignmentFilePath: string;
@@ -244,8 +247,35 @@ const workerCommandArgv = (
 export const launchWorkerSession = async (
   options: WorkerSessionOptions,
 ): Promise<WorkerSession> => {
-  const agentDirectory = realpathSync(temporaryDirectory(onTestFinished, 'tau-worker-agent-'));
-  const workerDirectory = realpathSync(temporaryDirectory(onTestFinished, 'tau-worker-'));
+  const removals: Removal[] = [];
+
+  const collectRemoval = (removal: Removal): void => {
+    removals.push(removal);
+  };
+
+  // Registered before the allocations, so a failed second allocation still stops the session and
+  // removes the first directory. The worker keeps writing inside both, so it stops before either
+  // is removed.
+  onTestFinished(async () => {
+    await options.hc.stop();
+
+    const failures: unknown[] = [];
+
+    for (const remove of removals) {
+      try {
+        await remove();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+
+    if (failures.length > 0) {
+      throw failures[0];
+    }
+  });
+
+  const agentDirectory = realpathSync(temporaryDirectory(collectRemoval, 'tau-worker-agent-'));
+  const workerDirectory = realpathSync(temporaryDirectory(collectRemoval, 'tau-worker-'));
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
@@ -322,6 +352,7 @@ export const launchWorkerSession = async (
 
   return {
     agentDirectory,
+    workerDirectory,
     managerAddress: manager.address,
     managerPath,
     assignmentFilePath,
