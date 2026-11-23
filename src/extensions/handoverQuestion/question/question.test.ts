@@ -171,6 +171,7 @@ it('refuses when the asker has no listening inbox', async () => {
   expect(textOf(result)).toContain('ask_user_question');
   expect(frames).toBe(0);
   expect(await askerRecords(root)).toEqual([]);
+  expect(fake.calls).toHaveLength(0);
 });
 
 it('sends nothing and saves nothing when the call is already cancelled', async () => {
@@ -441,4 +442,32 @@ it('refuses when the receiver declines questions', async () => {
   expect(frames).toBe(1);
   expect(await askerRecords(root)).toEqual([]);
   expect(savedFiles(receiver)).toHaveLength(0);
+});
+
+it('does not repeat the ask_user_question note in a refusal', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
+    outsideSlot: true,
+    accepts: {
+      'handover-question': () => Promise.resolve('This receiver declines questions.'),
+    },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, senderTerminal, receiver.path);
+  await startAskerInbox(fake);
+
+  const result = await askSender(targetOf(fake, root, receiver.sessionId), {
+    question: questionText,
+  });
+
+  const mentions = textOf(result).match(/ask_user_question/gu) ?? [];
+
+  expect(result.details.status).toBe('refused');
+  expect(mentions).toHaveLength(1);
 });
