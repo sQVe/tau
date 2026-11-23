@@ -187,7 +187,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
     'schema',
     'tauDirectory',
   ],
-  inbox: ['errors', 'fileLock', 'hc', 'record', 'schema', 'wake'],
+  inbox: ['errors', 'fileLock', 'handoverSender', 'hc', 'record', 'schema', 'wake'],
   instructions: ['errors'],
   judgeSchema: [],
   linear: ['command', 'errors'],

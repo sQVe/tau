@@ -197,7 +197,7 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
   await receiver.deliver(new AbortController().signal);
 
   expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
-    version: 1,
+    version: 2,
     messageId,
     family: 'handover',
     payload: { text: 'Ask text' },

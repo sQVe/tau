@@ -31,6 +31,13 @@ const handover = {
   payload: { text: 'handover text' },
 } as const;
 
+const sender = { terminal: 'lead', sessionId };
+
+const handoverWithSender = {
+  ...handover,
+  payload: { ...handover.payload, sender },
+} as const;
+
 const answer = {
   ...handover,
   family: 'answer',
@@ -51,6 +58,16 @@ const architectAsk = {
 
 const requestCases: [string, Uint8Array, ReturnType<typeof decodeRequest>][] = [
   ['a handover message', line(handover), { kind: 'frame', value: handover }],
+  [
+    'a handover message with a sender',
+    line(handoverWithSender),
+    { kind: 'frame', value: handoverWithSender },
+  ],
+  [
+    'a handover message with an extra field inside sender',
+    line({ ...handover, payload: { ...handover.payload, sender: { ...sender, extra: true } } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
   ['an architect-ask message', line(architectAsk), { kind: 'frame', value: architectAsk }],
   [
     'an architect-ask without a lock token',

@@ -60,9 +60,20 @@ const strict = { additionalProperties: false } as const;
 
 const protocolField = Type.Literal(protocolName);
 
+const handoverSenderSchema = Type.Object(
+  {
+    terminal: Type.String({ minLength: 1 }),
+    sessionId: sessionIdSchema,
+  },
+  strict,
+);
+
 const handoverBody = {
   family: Type.Literal('handover'),
-  payload: Type.Object({ text: Type.String({ minLength: 1 }) }, strict),
+  payload: Type.Object(
+    { text: Type.String({ minLength: 1 }), sender: Type.Optional(handoverSenderSchema) },
+    strict,
+  ),
 };
 
 const answerBody = {

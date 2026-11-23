@@ -7,8 +7,11 @@ import { Type } from 'typebox';
 
 import { resolveAllowedModel } from '../../config/models.js';
 import { isBareRootWithoutGitEntry } from '../../git.js';
+import { senderOf } from '../../handoverSender.js';
+import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
+import { currentRole } from '../../role/role.js';
 import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 import { sendHandover } from './send.js';
 import type { SendHandoverRequest, SendHandoverResult } from './send.js';
@@ -72,7 +75,19 @@ const prepare = async (cwd: string): Promise<PrepareDetails> => {
   return { directory: await ensureTauDirectory(root, 'handovers') };
 };
 
-const sendRequest = (cwd: string, input: HandoverInput): SendHandoverRequest => {
+const sessionIdOf = (
+  sessionManager: ExtensionToolContext['sessionManager'],
+): string | undefined => {
+  try {
+    const sessionId = sessionManager.getSessionId();
+
+    return sessionId === '' ? undefined : sessionId;
+  } catch {
+    return undefined;
+  }
+};
+
+const sendRequest = (context: ExtensionToolContext, input: HandoverInput): SendHandoverRequest => {
   if (input.terminal === undefined) {
     throw new Error('send needs a terminal.');
   }
@@ -85,10 +100,17 @@ const sendRequest = (cwd: string, input: HandoverInput): SendHandoverRequest => 
     throw new Error('A send retry needs the sessionId of its unknown result.');
   }
 
+  const sender = senderOf({
+    role: currentRole(),
+    terminal: currentTerminalAddress(),
+    sessionId: sessionIdOf(context.sessionManager),
+  });
+
   return {
-    cwd,
+    cwd: context.cwd,
     terminal: input.terminal,
     file: input.file,
+    sender,
     messageId: input.messageId,
     sessionId: input.sessionId,
   };
@@ -161,7 +183,7 @@ const runAction = async (
     });
   }
 
-  return sendHandover(hc, sendRequest(context.cwd, input));
+  return sendHandover(hc, sendRequest(context, input));
 };
 
 export const createHandoverTool = (

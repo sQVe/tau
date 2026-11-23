@@ -8,7 +8,16 @@ import { deleteMessage, pendingMessages, readMessage, saveMessage } from './stor
 
 const messageId = '11111111-1111-4111-8111-111111111111';
 
+const sender = { terminal: 'lead', sessionId: '22222222-2222-4222-8222-222222222222' };
+
 const record = {
+  version: 2 as const,
+  messageId,
+  family: 'handover' as const,
+  payload: { text: 'handover text', sender },
+};
+
+const previousRecord = {
   version: 1 as const,
   messageId,
   family: 'handover' as const,
@@ -25,6 +34,17 @@ const fixtureInto = (directory: string, name: string): string => {
 
   return path;
 };
+
+it('reads the frozen previous record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'previous.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: previousRecord,
+  });
+});
 
 it('reads the frozen current record', async () => {
   const directory = directoryFixture();
@@ -46,6 +66,20 @@ it.each([
     kind: 'malformed',
     reason: expect.stringContaining(reason) as string,
   });
+});
+
+it('reports a version 1 record with a sender as malformed', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(
+    path,
+    JSON.stringify({ ...previousRecord, payload: { text: 'handover text', sender } }),
+  );
+
+  await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
 });
 
 it('reports a saved answer-request record as malformed', async () => {
@@ -114,6 +148,26 @@ it('saves once and never replaces a saved record', async () => {
   ).resolves.toBe('changed');
 
   expect(readFileSync(path, 'utf8')).toBe(saved);
+});
+
+it('keeps a pending version 1 record when the same message is saved again', async () => {
+  const directory = directoryFixture();
+  const path = fixtureInto(directory, 'previous.json');
+  const saved = readFileSync(path, 'utf8');
+
+  await expect(
+    saveMessage(directory, { ...record, payload: previousRecord.payload }),
+  ).resolves.toBe('existing');
+
+  expect(readFileSync(path, 'utf8')).toBe(saved);
+});
+
+it('reports a retry whose sender differs from a pending version 1 record as changed', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'previous.json');
+
+  await expect(saveMessage(directory, record)).resolves.toBe('changed');
 });
 
 it('writes nothing when the fence gives a reason', async () => {

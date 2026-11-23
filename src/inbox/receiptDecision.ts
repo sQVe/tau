@@ -1,3 +1,4 @@
+import { senderLine } from '../handoverSender.js';
 import { isRecord } from '../schema.js';
 import { savableFamilies } from './protocol.js';
 import type { SavableFamily, SavableMessageBody } from './protocol.js';
@@ -78,8 +79,15 @@ export const answeredQuestionId = (message: InboxMessageFact): string | undefine
   return receipt?.family === 'answer' ? receipt.questionId : undefined;
 };
 
-export const messageText = (body: SavableMessageBody): string =>
-  body.family === 'handover' ? body.payload.text : body.payload.answer;
+export const messageText = (body: SavableMessageBody): string => {
+  if (body.family === 'answer') {
+    return body.payload.answer;
+  }
+
+  const { text, sender } = body.payload;
+
+  return sender === undefined ? text : `${senderLine(sender)}\n\n${text}`;
+};
 
 // A retry matches when it would show the same text for the same question as the saved entry.
 export const matchesReceipt = (

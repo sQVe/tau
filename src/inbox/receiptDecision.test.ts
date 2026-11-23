@@ -8,6 +8,7 @@ import {
   decideCandidate,
   inboxMessageType,
   matchesReceipt,
+  messageText,
   piQueueEmptyAtSettle,
   readInboxReceipt,
 } from './receiptDecision.js';
@@ -260,6 +261,23 @@ const handoverReceipt = {
   sessionId: 's1',
   family: 'handover',
 } as const;
+
+const sender = { terminal: 'lead', sessionId: 's1' };
+
+it.each([
+  {
+    name: 'with a sender',
+    body: { family: 'handover', payload: { text: 'handover text', sender } } as const,
+    text: 'Handover sender: terminal lead, session s1.\n\nhandover text',
+  },
+  {
+    name: 'without a sender',
+    body: { family: 'handover', payload: { text: 'handover text' } } as const,
+    text: 'handover text',
+  },
+])('shows the handover text $name', ({ body, text }) => {
+  expect(messageText(body)).toBe(text);
+});
 
 const answerReceipt = { ...handoverReceipt, family: 'answer', questionId: 'q1' } as const;
 
