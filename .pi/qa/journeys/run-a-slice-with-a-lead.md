@@ -20,12 +20,13 @@ By hand, because it needs live Opus and DeepSeek sessions and Linear.
    The lead calls `architect` `open`, and the architect opens in a pane to the right of the lead in
    the lead's tab on `roles.architect.model`.
    The architect runs the start-slice design conversation with the user and writes the agent
-   tickets in Linear. It sends the step 11 handover to the lead with `handover` `send` and ends its
-   turn. Only the architect's pane closes, and the architect lock is released.
-2. While the architect's pane is still open, let the original lead continue the started slice from
-   the handover. Do not ask it to start the slice again.
+   tickets in Linear. While it runs, its pane shows no plan list. It sends the step 11 handover to
+   the lead with `handover` `send` and ends its turn. Only the architect's pane closes, and the
+   architect lock is released.
+2. Let the original lead continue the started slice from the handover. Do not ask it to start the
+   slice again.
    The lead calls `plan` with three or more steps, at most one `in_progress`. A list above the
-   lead's editor shows the steps with their status marks. The architect's pane shows no list.
+   lead's editor shows the steps with their status marks.
 3. Let a worker report and the lead accept it.
    The lead calls `plan` again. The finished step shows `[x]` and the next step `[>]`.
 4. Before the fresh lead session of the later step, let the original lead finish its plan.
