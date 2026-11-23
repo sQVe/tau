@@ -2,6 +2,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { currentTerminalAddress, get, label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import type { RoleKind } from '../../role/role.js';
 import { shouldClearLabels, shouldLabelSession, shouldReadTerminal } from './sessionDecision.js';
 import type { ReadFacts, StartFacts } from './sessionDecision.js';
 
@@ -30,7 +31,7 @@ const writeLabels = async (
   }
 };
 
-export const createSessionResume = (hc: HcRuntime): SessionResume => {
+export const createSessionResume = (hc: HcRuntime, role: RoleKind): SessionResume => {
   let signalReceived = false;
   let ownsSession = false;
 
@@ -79,6 +80,7 @@ export const createSessionResume = (hc: HcRuntime): SessionResume => {
     await writeLabels(hc, facts.terminalId, {
       'pi.session': facts.sessionFile,
       'pi.cwd': context.cwd,
+      'tau.role': role,
     });
   };
 
@@ -91,7 +93,7 @@ export const createSessionResume = (hc: HcRuntime): SessionResume => {
 
     ownsSession = false;
 
-    await writeLabels(hc, terminalId, { 'pi.session': '', 'pi.cwd': '' });
+    await writeLabels(hc, terminalId, { 'pi.session': '', 'pi.cwd': '', 'tau.role': '' });
   };
 
   return {

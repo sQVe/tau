@@ -108,8 +108,9 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-it('labels the owning TUI Pi session on start', async () => {
+it('labels an architect session with its role on start', async () => {
   vi.stubEnv('HC_TERMINAL_ID', 't7');
+  vi.stubEnv('TAU_ROLE', 'architect');
   const fake = createHcFake();
   fake.reply('get', terminal(process.pid));
   fake.reply('label', terminal(process.pid));
@@ -117,7 +118,26 @@ it('labels the owning TUI Pi session on start', async () => {
 
   await resume.start();
 
-  expect(labelCalls(fake)).toEqual([['t7', 'pi.session=/sessions/a.jsonl', 'pi.cwd=/repository']]);
+  expect(labelCalls(fake)).toEqual([
+    ['t7', 'pi.session=/sessions/a.jsonl', 'pi.cwd=/repository', 'tau.role=architect'],
+  ]);
+
+  await resume.shutdown();
+});
+
+it('labels the owning TUI Pi session on start', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', 't7');
+  vi.stubEnv('TAU_ROLE', undefined);
+  const fake = createHcFake();
+  fake.reply('get', terminal(process.pid));
+  fake.reply('label', terminal(process.pid));
+  const resume = mount(fake);
+
+  await resume.start();
+
+  expect(labelCalls(fake)).toEqual([
+    ['t7', 'pi.session=/sessions/a.jsonl', 'pi.cwd=/repository', 'tau.role=lead'],
+  ]);
 
   await resume.shutdown();
 });
@@ -209,7 +229,7 @@ it('clears both labels on a quit without a signal', async () => {
   await resume.shutdown();
 
   const lastLabels = labelCalls(fake).at(-1);
-  expect(lastLabels).toEqual(['t7', 'pi.session=', 'pi.cwd=']);
+  expect(lastLabels).toEqual(['t7', 'pi.session=', 'pi.cwd=', 'tau.role=']);
 });
 
 it.each(['SIGTERM', 'SIGHUP'] as const)('makes no hc call after %s', async (signal) => {
@@ -232,6 +252,7 @@ it.each(['SIGTERM', 'SIGHUP'] as const)('makes no hc call after %s', async (sign
 
 it('overwrites the labels when a new session starts', async () => {
   vi.stubEnv('HC_TERMINAL_ID', 't7');
+  vi.stubEnv('TAU_ROLE', undefined);
   const fake = createHcFake();
   fake.reply('get', terminal(process.pid));
   fake.reply('label', terminal(process.pid));
@@ -241,7 +262,13 @@ it('overwrites the labels when a new session starts', async () => {
   await resume.start(buildContext({ sessionFile: '/sessions/b.jsonl' }));
 
   const lastLabels = labelCalls(fake).at(-1);
-  expect(lastLabels).toEqual(['t7', 'pi.session=/sessions/b.jsonl', 'pi.cwd=/repository']);
+
+  expect(lastLabels).toEqual([
+    't7',
+    'pi.session=/sessions/b.jsonl',
+    'pi.cwd=/repository',
+    'tau.role=lead',
+  ]);
 
   await resume.shutdown();
 });
