@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Type } from 'typebox';
-import type { TSchema } from 'typebox';
+import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { openPastAnswerSchema, shadowVariantSchema } from '../judgeSchema.ts';
@@ -25,6 +25,22 @@ export interface ShadowConfig {
 
 export type QuestionGateConfig = QuestionGateModels &
   ({ decide: false; shadow?: ShadowConfig } | { decide: true; shadow: ShadowConfig });
+
+export type QuestionGateShadow = QuestionGateModels & {
+  decide: boolean;
+  shadow: ShadowConfig;
+};
+
+interface QuestionGateValue {
+  source: string;
+  value: unknown;
+}
+
+interface QuestionGateSettings extends QuestionGateValue {
+  models: QuestionGateModels;
+  decide: boolean;
+  shadow: ShadowConfig | undefined;
+}
 
 const questionGateModelsSchema = Type.Object({
   classifier: Type.String(),
@@ -185,10 +201,10 @@ const readModels = (
   return { classifier, panel };
 };
 
-export const readQuestionGateConfig = (
+const readQuestionGateValue = (
   location: ConfigLocation,
   ui: ConfigWarnings,
-): QuestionGateConfig | undefined => {
+): QuestionGateValue | undefined => {
   const user = readUserOnlyKey(location, 'questionGate');
 
   if (user === undefined) {
@@ -199,29 +215,106 @@ export const readQuestionGateConfig = (
 
   warnUnknownKeys(ui, source, value, knownQuestionGateKeys, 'questionGate');
 
+  return { source, value };
+};
+
+const requireModelsValue = ({
+  source,
+  value,
+}: QuestionGateValue): Static<typeof questionGateModelsSchema> => {
   if (!Value.Check(questionGateModelsSchema, value)) {
     throw invalid(source, modelsMessage);
   }
 
-  const decide = readDecide(source, value.decide);
-  const shadow = readShadow(source, value.shadow);
+  return value;
+};
 
-  if (decide) {
-    if (shadow === undefined) {
-      throw invalid(source, decideNeedsShadowMessage);
-    }
+const readQuestionGateSettings = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+): QuestionGateSettings | undefined => {
+  const gate = readQuestionGateValue(location, ui);
 
-    return { ...readModels(source, value), decide: true, shadow };
+  if (gate === undefined) {
+    return undefined;
   }
 
+  const value = requireModelsValue(gate);
+
   return {
-    ...readModels(source, value),
-    decide: false,
-    ...(shadow === undefined ? {} : { shadow }),
+    ...gate,
+    models: readModels(gate.source, value),
+    decide: readDecide(gate.source, value.decide),
+    shadow: readShadow(gate.source, value.shadow),
   };
 };
 
-export const shadowCohort = (config: QuestionGateConfig & { shadow: ShadowConfig }): string => {
+const requireShadow = (settings: QuestionGateSettings): ShadowConfig => {
+  if (settings.shadow === undefined) {
+    throw invalid(settings.source, decideNeedsShadowMessage);
+  }
+
+  return settings.shadow;
+};
+
+export const readQuestionGateModels = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+): QuestionGateModels | undefined => {
+  const gate = readQuestionGateValue(location, ui);
+
+  if (gate === undefined) {
+    return undefined;
+  }
+
+  const value = requireModelsValue(gate);
+
+  return readModels(gate.source, value);
+};
+
+export const readQuestionGateShadow = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+): QuestionGateShadow | undefined => {
+  const settings = readQuestionGateSettings(location, ui);
+
+  if (settings === undefined) {
+    return undefined;
+  }
+
+  if (settings.shadow === undefined) {
+    if (settings.decide) {
+      throw invalid(settings.source, decideNeedsShadowMessage);
+    }
+
+    return undefined;
+  }
+
+  return { ...settings.models, decide: settings.decide, shadow: settings.shadow };
+};
+
+export const readQuestionGateConfig = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+): QuestionGateConfig | undefined => {
+  const settings = readQuestionGateSettings(location, ui);
+
+  if (settings === undefined) {
+    return undefined;
+  }
+
+  if (settings.decide) {
+    return { ...settings.models, decide: true, shadow: requireShadow(settings) };
+  }
+
+  return {
+    ...settings.models,
+    decide: false,
+    ...(settings.shadow === undefined ? {} : { shadow: settings.shadow }),
+  };
+};
+
+export const shadowCohort = (config: QuestionGateModels & { shadow: ShadowConfig }): string => {
   const canonical = JSON.stringify({
     classifier: config.classifier,
     panel: [...config.panel],

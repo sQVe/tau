@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 import { userConfigPath } from '../../src/config/config.ts';
-import { readQuestionGateConfig, shadowCohort } from '../../src/config/questionGateModels.ts';
+import { readQuestionGateShadow, shadowCohort } from '../../src/config/questionGateModels.ts';
 import { readShadowRecords } from '../../src/questionGate/questionGate.ts';
 import { readVersionedRecord } from '../../src/record.ts';
 import { findSharedRepositoryRoot, rejectTauSymlinks } from '../../src/tauDirectory.ts';
@@ -16,21 +16,22 @@ export const runShadowReport = async (cwd: string): Promise<string> => {
   const agentDirectory = getAgentDir();
   const sharedRoot = await findSharedRepositoryRoot(cwd);
   const location = { cwd: sharedRoot, agentDirectory, projectTrusted: false };
-  const config = readQuestionGateConfig(location, stderrConfigWarnings);
-  const shadow = config?.shadow;
+  const config = readQuestionGateShadow(location, stderrConfigWarnings);
 
-  if (config === undefined || shadow === undefined) {
+  if (config === undefined) {
     throw new Error(
       `Set ${shadowSetting} in ${userConfigPath(agentDirectory)} to score the frozen shadow candidate.`,
     );
   }
+
+  const { shadow } = config;
 
   const directory = join(sharedRoot, '.tau', 'questions');
 
   await rejectTauSymlinks(sharedRoot, 'questions');
 
   const { records, gaps } = await readShadowRecords(directory, readVersionedRecord);
-  const cohort = shadowCohort({ ...config, shadow });
+  const cohort = shadowCohort(config);
 
   const report = shadowReport({
     records,

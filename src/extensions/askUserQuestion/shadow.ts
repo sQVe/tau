@@ -3,8 +3,8 @@ import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
-import { readQuestionGateConfig, shadowCohort } from '../../config/questionGateModels.js';
-import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
+import { readQuestionGateShadow, shadowCohort } from '../../config/questionGateModels.js';
+import type { QuestionGateShadow } from '../../config/questionGateModels.js';
 import {
   shadowEligibility,
   shadowRateAllows,
@@ -24,7 +24,7 @@ import { judgeQuestionOf, prepareJudges } from './judges.js';
 export interface ShadowPorts {
   now: () => number;
   findSharedRoot: (cwd: string, signal: AbortSignal) => Promise<string>;
-  readConfig: (location: ConfigLocation, ui: ConfigWarnings) => QuestionGateConfig | undefined;
+  readConfig: (location: ConfigLocation, ui: ConfigWarnings) => QuestionGateShadow | undefined;
   requireModel: (reference: string, location: ConfigLocation) => void;
   ensureDirectory: (root: string, path: string) => Promise<string>;
   writeRecord: ShadowRecordWriter;
@@ -49,7 +49,7 @@ export interface ShadowRunner {
   start: (request: ShadowStart) => ShadowJob;
 }
 
-type FrozenConfig = QuestionGateConfig & { shadow: ShadowConfig };
+type FrozenConfig = QuestionGateShadow;
 
 interface ShadowRate {
   lastBatchStartedAt: number | undefined;
@@ -63,7 +63,7 @@ interface TimedVerdict {
 const defaultShadowPorts: ShadowPorts = {
   now: () => performance.now(),
   findSharedRoot: (cwd, signal) => findSharedRepositoryRoot(cwd, { signal }),
-  readConfig: readQuestionGateConfig,
+  readConfig: readQuestionGateShadow,
   requireModel: requireAllowedModel,
   ensureDirectory: ensureTauDirectory,
   writeRecord,
@@ -146,7 +146,7 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
 
       const read = ports.readConfig(location, request.ui);
 
-      if (read?.shadow === undefined) {
+      if (read === undefined) {
         return undefined;
       }
 
@@ -154,7 +154,7 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
         ports.requireModel(reference, location);
       }
 
-      return { sharedRoot, config: { ...read, shadow: read.shadow } };
+      return { sharedRoot, config: read };
     } catch {
       return undefined;
     }
