@@ -1,17 +1,20 @@
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { mkdir, open, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { createHcFake } from '../../../../tests/hcFake.js';
 import { savedTexts } from '../../../../tests/inboxReceiverHarness.js';
 import { startLiveArchitect } from '../fixtures/liveArchitect.js';
 import { contextOf, recordSession, setup } from '../fixtures/toolHarness.js';
-import { gateRecordDirectory, readAskRecord, readAskRecords, writeGateRecord } from '../record.js';
+import {
+  gateRecordDirectory,
+  readAskRecord,
+  readAskRecords,
+  readGateRecord,
+  writeGateRecord,
+} from '../record.js';
 import type { GateRecord } from '../record.js';
 import { createArchitectTool } from '../tool.js';
 
@@ -22,7 +25,7 @@ interface RefusalCase {
   prepare: (root: string) => Promise<{ input: AskInput; error: string }>;
 }
 
-const mkfifo = promisify(execFile);
+vi.mock(import('../record.js'), { spy: true });
 
 const uncertainGate: GateRecord = {
   version: 1,
@@ -275,39 +278,21 @@ const gateReadRefusalCases: {
 ];
 
 it.for(gateReadRefusalCases.map((row) => [row.name, row] as const))(
-  'ask refuses %s before it reads the gate',
+  'ask refuses %s without reading the gate',
   async ([, { input, error: expected }], { onTestFinished: cleanup }) => {
     const { root } = await setup(cleanup);
     const hc = createHcFake();
     const tool = createArchitectTool({ ...hc, cwd: root });
-    const gate = join(gateRecordDirectory(root), 'pipe.json');
+    const gate = join(gateRecordDirectory(root), 'gate.json');
 
-    await mkdir(dirname(gate), { recursive: true });
-    await mkfifo('mkfifo', [gate]);
+    vi.mocked(readGateRecord).mockClear();
 
-    const asking = tool.execute('call', input(gate), undefined, undefined, contextOf(root)).then(
-      () => 'resolved',
-      (error: unknown) => (error instanceof Error ? error.message : 'error'),
-    );
+    await expect(
+      tool.execute('call', input(gate), undefined, undefined, contextOf(root)),
+    ).rejects.toThrow(expected);
 
-    const outcome = await Promise.race([
-      asking,
-      new Promise<string>((resolve) => {
-        setTimeout(() => {
-          resolve('timeout');
-        }, 1000);
-      }),
-    ]);
-
-    if (outcome === 'timeout') {
-      // A blocking read waits for a writer. Opening one releases it, so the test run still ends.
-      const writer = await open(gate, constants.O_WRONLY);
-
-      await writer.close();
-      await asking;
-    }
-
-    expect(outcome).toBe(expected);
+    expect(readGateRecord).not.toHaveBeenCalled();
+    await expect(readAskRecords(root)).resolves.toEqual({ records: [], gaps: [] });
     expect(hc.calls).toEqual([]);
   },
 );
