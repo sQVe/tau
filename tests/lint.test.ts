@@ -373,6 +373,10 @@ const runStyleCheck = (directory: string) => {
     timeout: 20_000,
   });
 
+  if (result.error !== undefined) {
+    return { result, diagnostics: [] };
+  }
+
   const diagnostics = readStyleDiagnostics(result.stdout);
 
   return { result, diagnostics };
@@ -380,6 +384,31 @@ const runStyleCheck = (directory: string) => {
 
 const diagnosticsAt = (diagnostics: string[], fixture: string, line: number): string[] =>
   diagnostics.filter((diagnostic) => diagnostic.includes(`${fixture}:${line}:`));
+
+it('reads one-line and multi-line style diagnostics', () => {
+  const oneLine =
+    '/tmp/oneLine.ts:1:3: error typescript(ban-ts-comment): Use a description. help: Add a description.';
+
+  const multiLine = [
+    '  x typescript(ban-ts-comment): Use a description.',
+    '   ,-[/tmp/multiLine.ts:2:3]',
+    ' 1 | // @ts-expect-error',
+    '   :   ^^^^^^^^^^^^^^^^^',
+    ' 2 | export const value: number = "text";',
+    '   `----',
+    '  help: Add a description.',
+  ].join('\n');
+
+  const diagnostics = readStyleDiagnostics(`${oneLine}\n${multiLine}\n`);
+
+  expect(diagnostics).toHaveLength(2);
+  expect(diagnostics[0]).toContain('/tmp/oneLine.ts:1:');
+  expect(diagnostics[0]).toContain('typescript(ban-ts-comment)');
+  expect(diagnostics[0]).toContain('help:');
+  expect(diagnostics[1]).toContain('/tmp/multiLine.ts:2:');
+  expect(diagnostics[1]).toContain('typescript(ban-ts-comment)');
+  expect(diagnostics[1]).toContain('help:');
+});
 
 it('fails focused tests on describe and it', async ({ onTestFinished }) => {
   const directory = createFixtureRoot(onTestFinished, 'tau-style-focus-');
@@ -406,8 +435,14 @@ it('fails focused tests on describe and it', async ({ onTestFinished }) => {
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(focused).toHaveLength(2);
-  expect(diagnosticsAt(focused, fixture, 3)).toHaveLength(1);
-  expect(diagnosticsAt(focused, fixture, 5)).toHaveLength(1);
+
+  const atLineThree = diagnosticsAt(focused, fixture, 3);
+  const atLineFive = diagnosticsAt(focused, fixture, 5);
+
+  expect(atLineThree).toHaveLength(1);
+  expect(atLineThree[0]).toContain(`${fixture}:3:`);
+  expect(atLineFive).toHaveLength(1);
+  expect(atLineFive[0]).toContain(`${fixture}:5:`);
 
   for (const diagnostic of focused) {
     expect(diagnostic).toContain('help:');
@@ -439,8 +474,14 @@ it('fails skipped tests on describe and it', async ({ onTestFinished }) => {
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(disabled).toHaveLength(2);
-  expect(diagnosticsAt(disabled, fixture, 3)).toHaveLength(1);
-  expect(diagnosticsAt(disabled, fixture, 5)).toHaveLength(1);
+
+  const atLineThree = diagnosticsAt(disabled, fixture, 3);
+  const atLineFive = diagnosticsAt(disabled, fixture, 5);
+
+  expect(atLineThree).toHaveLength(1);
+  expect(atLineThree[0]).toContain(`${fixture}:3:`);
+  expect(atLineFive).toHaveLength(1);
+  expect(atLineFive[0]).toContain(`${fixture}:5:`);
 
   for (const diagnostic of disabled) {
     expect(diagnostic).toContain('help:');
@@ -472,11 +513,17 @@ it('fails disable comments without a reason', async ({ onTestFinished }) => {
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(reasonless).toHaveLength(2);
-  expect(diagnosticsAt(reasonless, fixture, 1)).toHaveLength(1);
-  expect(diagnosticsAt(reasonless, fixture, 4)).toHaveLength(1);
+
+  const atLineOne = diagnosticsAt(reasonless, fixture, 1);
+  const atLineFour = diagnosticsAt(reasonless, fixture, 4);
+
+  expect(atLineOne).toHaveLength(1);
+  expect(atLineOne[0]).toContain(`${fixture}:1:`);
+  expect(atLineFour).toHaveLength(1);
+  expect(atLineFour[0]).toContain(`${fixture}:4:`);
 
   for (const diagnostic of reasonless) {
-    expect(diagnostic).toContain('reason');
+    expect(diagnostic).toContain('Add a reason after');
     expect(diagnostic).toContain(' -- ');
   }
 }, 30_000);
@@ -513,14 +560,14 @@ it('fails unused disable directives at their line', async ({ onTestFinished }) =
   expect(unusedEslint[0]).toContain(`${fixture}:2:1`);
 }, 30_000);
 
-it('fails @ts-ignore and @ts-expect-error without a reason', async ({ onTestFinished }) => {
+it('fails a reasoned @ts-ignore and a reasonless @ts-expect-error', async ({ onTestFinished }) => {
   const directory = createFixtureRoot(onTestFinished, 'tau-style-ts-');
   const fixture = join(directory, 'tsComments.ts');
 
   await writeFile(
     fixture,
     [
-      '// @ts-ignore',
+      '// @ts-ignore -- The fixture passes a string where a number is required.',
       "export const ignored: number = 'text';",
       '',
       '// @ts-expect-error',
@@ -538,8 +585,14 @@ it('fails @ts-ignore and @ts-expect-error without a reason', async ({ onTestFini
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(comments).toHaveLength(2);
-  expect(diagnosticsAt(comments, fixture, 1)).toHaveLength(1);
-  expect(diagnosticsAt(comments, fixture, 4)).toHaveLength(1);
+
+  const atLineOne = diagnosticsAt(comments, fixture, 1);
+  const atLineFour = diagnosticsAt(comments, fixture, 4);
+
+  expect(atLineOne).toHaveLength(1);
+  expect(atLineOne[0]).toContain(`${fixture}:1:`);
+  expect(atLineFour).toHaveLength(1);
+  expect(atLineFour[0]).toContain(`${fixture}:4:`);
 
   for (const diagnostic of comments) {
     expect(diagnostic).toContain('help:');
