@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -211,6 +212,57 @@ it('sends nothing and saves nothing when the call is already cancelled', async (
   expect(await askerRecords(root)).toEqual([]);
   expect(frames).toBe(0);
   expect(fake.calls).toHaveLength(0);
+});
+
+it('saves nothing and sends nothing when cancellation arrives during the readiness lookup', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+  let frames = 0;
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
+    outsideSlot: true,
+    accepts: {
+      'handover-question': (_request, save) => {
+        frames += 1;
+
+        return save();
+      },
+    },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, senderTerminal, receiver.path);
+  await startAskerInbox(fake);
+
+  const controller = new AbortController();
+  let gets = 0;
+
+  const exec: Exec = (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      gets += 1;
+      controller.abort();
+    }
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  const target: QuestionTarget = {
+    ...targetOf(fake, root, receiver.sessionId),
+    hc: { exec, connect: fake.connect, cwd: '/repository', signal: controller.signal },
+  };
+
+  await expect(askSender(target, { question: questionText })).rejects.toMatchObject({
+    name: 'AbortError',
+  });
+
+  expect(gets).toBe(1);
+  expect(fake.calls).toHaveLength(1);
+  expect(existsSync(questionRecordDirectory(root))).toBe(false);
+  expect(await askerRecords(root)).toEqual([]);
+  expect(frames).toBe(0);
 });
 
 it('deletes the record when cancellation stops the send before delivery', async () => {

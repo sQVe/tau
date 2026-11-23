@@ -129,7 +129,11 @@ export const askSender = async (
   const root = await findTauRoot(target.cwd, 'handover_question');
   const questionId = randomUUID();
 
-  if (!(await askerInboxReady(target))) {
+  const ready = await askerInboxReady(target);
+
+  target.hc.signal?.throwIfAborted();
+
+  if (!ready) {
     return result(inboxRefusal, { status: 'refused', questionId }, { isError: true });
   }
 
