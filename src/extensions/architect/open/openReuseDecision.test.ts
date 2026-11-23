@@ -1,14 +1,17 @@
 import { expect, it } from 'vitest';
 
-import { openCandidate, openReuse } from './openReuseDecision.js';
+import type { ArchitectOwner, SavedArchitectRecord } from '../record.js';
+import { openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type {
   OpenCandidate,
   OpenCandidateFacts,
   OpenReuse,
   OpenReuseFacts,
+  OpenTerminal,
+  OpenTerminalFacts,
 } from './openReuseDecision.js';
 
-const holder = { pid: 10, checkout: '/checkout' };
+const holder = { pid: 10, checkout: '/checkout', token: 'live' };
 
 const candidateFacts: OpenCandidateFacts = {
   holder,
@@ -82,19 +85,118 @@ it.each<{ name: string; facts: OpenReuseFacts; expected: OpenReuse }>([
   },
   {
     name: 'a holder with a different process is refused with the new checkout',
-    facts: { ...reuseFacts, currentHolder: { pid: 11, checkout: '/checkout' } },
+    facts: { ...reuseFacts, currentHolder: { ...holder, pid: 11 } },
     expected: { kind: 'refuse', checkout: '/checkout' },
   },
   {
     name: 'a holder with a different checkout is refused with the new checkout',
-    facts: { ...reuseFacts, currentHolder: { pid: 10, checkout: '/other' } },
+    facts: { ...reuseFacts, currentHolder: { ...holder, checkout: '/other' } },
     expected: { kind: 'refuse', checkout: '/other' },
   },
   {
     name: 'a holder with a different process and checkout is refused with the new checkout',
-    facts: { ...reuseFacts, currentHolder: { pid: 11, checkout: '/other' } },
+    facts: { ...reuseFacts, currentHolder: { ...holder, pid: 11, checkout: '/other' } },
     expected: { kind: 'refuse', checkout: '/other' },
+  },
+  {
+    name: 'the same holder with a different token',
+    facts: { ...reuseFacts, currentHolder: { ...holder, token: 'reloaded' } },
+    expected: { kind: 'refuse', checkout: '/checkout' },
   },
 ])('reuse: $name', ({ facts, expected }) => {
   expect(openReuse(facts)).toEqual(expected);
+});
+
+const absentRecordFacts: OpenTerminalFacts = {
+  root: '/checkout',
+  holder,
+  record: undefined,
+};
+
+const updatedAt = '2026-01-01T00:00:00.000Z';
+
+const savedOwner = (owner: ArchitectOwner | null): SavedArchitectRecord => ({
+  version: 2,
+  sessionFile: null,
+  leadTerminal: 't-lead',
+  owner,
+  updatedAt,
+});
+
+const version1Record = (terminal: string | null): SavedArchitectRecord => ({
+  version: 1,
+  sessionFile: null,
+  terminal,
+  leadTerminal: 't-lead',
+  updatedAt,
+});
+
+const owner: ArchitectOwner = {
+  lockToken: 'live',
+  mode: 'visible',
+  terminal: 't-architect',
+  sessionId: 'session-architect',
+};
+
+const terminalFacts: OpenTerminalFacts = {
+  root: '/checkout',
+  holder,
+  record: savedOwner(owner),
+};
+
+it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
+  {
+    name: 'a matching token with a terminal',
+    facts: terminalFacts,
+    expected: { kind: 'lookup', terminal: 't-architect' },
+  },
+  {
+    name: 'a tokenless version 1 record',
+    facts: { ...terminalFacts, record: version1Record('t-architect') },
+    expected: { kind: 'lookup', terminal: 't-architect' },
+  },
+  {
+    name: 'an absent record',
+    facts: absentRecordFacts,
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'a version 2 record with a null owner',
+    facts: { ...terminalFacts, record: savedOwner(null) },
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'a null terminal in a version 2 record',
+    facts: { ...terminalFacts, record: savedOwner({ ...owner, terminal: null }) },
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'a null terminal in a version 1 record',
+    facts: { ...terminalFacts, record: version1Record(null) },
+    expected: { kind: 'refuse', checkout: '/checkout' },
+  },
+  {
+    name: 'a different token in this checkout',
+    facts: { ...terminalFacts, record: savedOwner({ ...owner, lockToken: 'previous' }) },
+    expected: { kind: 'unrecorded' },
+  },
+  {
+    name: 'a different token with no terminal',
+    facts: {
+      ...terminalFacts,
+      record: savedOwner({ ...owner, lockToken: 'previous', terminal: null }),
+    },
+    expected: { kind: 'unrecorded' },
+  },
+  {
+    name: 'a different token in another checkout',
+    facts: {
+      ...terminalFacts,
+      holder: { ...holder, checkout: '/other' },
+      record: savedOwner({ ...owner, lockToken: 'previous' }),
+    },
+    expected: { kind: 'refuse', checkout: '/other' },
+  },
+])('terminal: $name', ({ facts, expected }) => {
+  expect(openTerminal(facts)).toEqual(expected);
 });

@@ -3,13 +3,6 @@ import { basename, dirname, join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import {
-  contextOf,
-  holdLock,
-  recordSession,
-  releaseLock,
-  setup,
-} from '../../../tests/architectToolHarness.js';
 import { argumentAfter, failedResult, succeededResult } from '../../../tests/execFake.js';
 import {
   appCommands,
@@ -22,6 +15,7 @@ import {
   terminalState,
   writeAsk,
 } from './fixtures/openHarness.js';
+import { contextOf, holdLock, recordSession, releaseLock, setup } from './fixtures/toolHarness.js';
 import { architectLockPath } from './lock.js';
 import { writeArchitectRecord } from './record.js';
 
@@ -199,6 +193,23 @@ it('open reports a live architect terminal while a live holder keeps the lock', 
 
   expect(result.details).toEqual({ action: 'open', status: 'running', terminal: 't-architect' });
   expect(appCommands(app)).toEqual(['ls']);
+});
+
+it('open refuses when the record names a terminal from a previous lock generation', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const afterTerminalLookup = vi.fn<() => Promise<void>>(() => Promise.resolve());
+  const { app, terminals, tool } = openTool(root, undefined, afterTerminalLookup);
+
+  await holdLock(root, root);
+  await recordTerminal(root, 't-architect', 'previous');
+  terminals.set('t-architect', terminalState('live'));
+
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow('architect open again');
+
+  expect(afterTerminalLookup).not.toHaveBeenCalled();
+  expect(app.calls).toEqual([]);
 });
 
 it('open reports the terminal a version 1 record names while a live holder keeps the lock', async ({

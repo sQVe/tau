@@ -16,7 +16,7 @@ import { tabName } from '../../../tabName.js';
 import { architectLockPath } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
-import { eligibleTerminal, openCandidate, openReuse } from './openReuseDecision.js';
+import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 
 export interface OpenRequest {
@@ -121,11 +121,11 @@ const readPane = async (request: OpenRequest, terminal: string): Promise<string 
 
 const candidateOf = async (
   request: OpenRequest,
-  recordedTerminal: string | null | undefined,
+  recordedTerminal: string,
   holder: LiveLockHolder,
 ): Promise<OpenCandidate> => {
   const found = await readLiveTerminal(request.hc, recordedTerminal);
-  const liveTerminal = found === undefined ? undefined : (recordedTerminal ?? undefined);
+  const liveTerminal = found === undefined ? undefined : recordedTerminal;
 
   const runsAsk = await terminalRunsAsk(request.root, liveTerminal);
   const labeledAsk = found?.labels?.[askLabel] !== undefined;
@@ -194,9 +194,14 @@ const startArchitect = async (
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
 
+const unrecordedRefusal = (root: string): Error =>
+  new Error(
+    `The architect in ${root} has not recorded its terminal yet. Call architect open again shortly.`,
+  );
+
 const runningTerminal = async (
   request: OpenRequest,
-  recordedTerminal: string | null | undefined,
+  record: SavedArchitectRecord | undefined,
 ): Promise<string | undefined> => {
   const lockPath = architectLockPath(request.root);
   const holder = await readLiveLockHolder(lockPath);
@@ -205,7 +210,21 @@ const runningTerminal = async (
     return undefined;
   }
 
-  const candidate = await candidateOf(request, recordedTerminal, holder);
+  const selection = openTerminal({
+    root: request.root,
+    holder,
+    record,
+  });
+
+  if (selection.kind === 'refuse') {
+    throw refusal(selection.checkout);
+  }
+
+  if (selection.kind === 'unrecorded') {
+    throw unrecordedRefusal(request.root);
+  }
+
+  const candidate = await candidateOf(request, selection.terminal, holder);
 
   if (candidate.kind === 'refuse') {
     throw refusal(candidate.checkout);
@@ -225,12 +244,9 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
-const recordedTerminal = (record: SavedArchitectRecord | undefined): string | null | undefined =>
-  record?.version === 2 ? record.owner?.terminal : record?.terminal;
-
 export const openArchitect = async (request: OpenRequest): Promise<OpenResult> => {
   const record = await readArchitectRecord(request.root);
-  const running = await runningTerminal(request, recordedTerminal(record));
+  const running = await runningTerminal(request, record);
 
   if (running !== undefined) {
     return { status: 'running', terminal: running };

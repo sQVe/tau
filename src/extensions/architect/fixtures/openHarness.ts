@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { contextOf } from '../../../../tests/architectToolHarness.js';
 import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
 import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
@@ -12,6 +11,7 @@ import type { Exec } from '../../../command.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { architectRecordPath, writeArchitectRecord, writeAskRecord } from '../record.js';
 import { createArchitectTool } from '../tool.js';
+import { contextOf } from './toolHarness.js';
 
 interface OpenTool {
   hc: HcFake;
@@ -131,12 +131,12 @@ export const architectArgv = (app: ExecFake<HerdrAppCommand>): string[] => {
   return JSON.parse(argumentAfter(split?.commandArguments ?? [], '--argv') ?? '[]') as string[];
 };
 
-export const recordTerminal = (root: string, terminal: string): Promise<void> =>
+export const recordTerminal = (root: string, terminal: string, lockToken = 'live'): Promise<void> =>
   writeArchitectRecord(root, {
     version: 2,
     sessionFile: null,
     leadTerminal: 't-lead',
-    owner: { lockToken: 'live', mode: 'visible', terminal, sessionId: 'session-architect' },
+    owner: { lockToken, mode: 'visible', terminal, sessionId: 'session-architect' },
     updatedAt: new Date().toISOString(),
   });
 
