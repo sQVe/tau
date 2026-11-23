@@ -206,7 +206,7 @@ it('open refuses when the record names a terminal from a previous lock generatio
   await recordTerminal(root, 't-architect', 'previous');
   terminals.set('t-architect', terminalState('live'));
 
-  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(root);
+  await expect(open(tool, root, { request: openRequest })).rejects.toThrow('architect open again');
 
   expect(afterTerminalLookup).not.toHaveBeenCalled();
   expect(app.calls).toEqual([]);
