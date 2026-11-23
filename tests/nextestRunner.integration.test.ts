@@ -37,6 +37,19 @@ const run = (input: RunTestsInput, overrides: Partial<NextestDeps> = {}) =>
 const testNamesOf = (result: RunnerResult): string[] =>
   'tests' in result ? result.tests.map((test) => test.fullname) : [];
 
+// A toMatchObject failure prints only the keys the expectation names, so the reason has to travel as
+// the assertion message. The runner's message starts at the first error line, and a run stage carries
+// no output in its message, so the stage excerpts follow.
+const stageOutput = (result: RunnerResult): string => {
+  const message = 'message' in result ? result.message : '';
+
+  const stages = (result.diagnostics?.stages ?? []).map(
+    (stage) => `${stage.name}: exit ${stage.exitCode ?? 'unavailable'}\n${stage.excerpt ?? ''}`,
+  );
+
+  return [message, ...stages].filter((part) => part !== '').join('\n\n');
+};
+
 let basicCrate = '';
 const registerCleanup = suiteCleanup();
 
@@ -153,7 +166,31 @@ it('reports a test that nextest stops for running too long as a timeout', async 
 
   const result = await run(focusedInput(crate, ['tests::sleeps']));
 
-  expect(result).toMatchObject({ kind: 'timeout', stage: 'run' });
+  expect(result, stageOutput(result)).toMatchObject({ kind: 'timeout', stage: 'run' });
+});
+
+it('names the build error when earlier warnings fill the stage excerpt', async ({
+  onTestFinished,
+}) => {
+  const crate = await createCrate(onTestFinished, 'warned', {
+    'Cargo.toml': cargoPackage('probe_warned'),
+    'build.rs': [
+      'fn main() {',
+      '    for index in 0..20 {',
+      '        println!("cargo:warning=probe noise line {index} padding padding padding padding");',
+      '    }',
+      '}',
+      '',
+    ].join('\n'),
+    'src/lib.rs': 'pub fn broken() -> i32 { "not an int" }\n',
+  });
+
+  const result = await run(focusedInput(crate, ['tests::adds']));
+  const listStage = result.diagnostics?.stages.find((stage) => stage.name === 'list');
+
+  expect(listStage?.excerpt).toContain('probe noise line');
+  expect(listStage?.excerpt).not.toContain('error[');
+  expect(stageOutput(result)).toContain('error[E0308]');
 });
 
 it('ignores a repository default filter, fail-fast, and a Tau-like profile', async ({
