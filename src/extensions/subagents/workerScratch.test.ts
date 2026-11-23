@@ -102,9 +102,11 @@ it.each(['root', 'tmp'] as const)(
 it('creates a private scratch folder under a missing root', async () => {
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-new-');
 
-  await createScratchDirectory(agentDirectory, 'one');
+  const created = await createScratchDirectory(agentDirectory, 'one');
 
+  expect(created).toBe(true);
   expect(existsSync(scratchDirectoryFor(agentDirectory, 'one'))).toBe(true);
+  expect(await createScratchDirectory(agentDirectory, 'one')).toBe(false);
 });
 
 it('treats a missing scratch folder as removed', async () => {
@@ -121,12 +123,27 @@ it('keeps the launch error and adds the scratch cleanup error', async () => {
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-error-');
   const original = new Error('launch failure');
 
-  const clean = await errorAfterScratchCleanup(agentDirectory, 'one', original);
-  const refused = await errorAfterScratchCleanup(agentDirectory, '..', original);
+  const clean = await errorAfterScratchCleanup(agentDirectory, 'one', true, original);
+  const refused = await errorAfterScratchCleanup(agentDirectory, '..', true, original);
 
   expect(clean).toBe(original);
   expect(refused).toBeInstanceOf(Error);
   expect((refused as Error).message).toContain('launch failure');
   expect((refused as Error).message).toContain('Also failed to remove the worker scratch folder');
   expect((refused as Error).cause).toBe(original);
+});
+
+it('keeps an existing folder when the launch did not create it', async () => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-existing-');
+  const folder = scratchDirectoryFor(agentDirectory, 'one');
+  const marker = join(folder, 'keep.txt');
+  const original = new Error('launch failure');
+
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(marker, 'keep');
+
+  const error = await errorAfterScratchCleanup(agentDirectory, 'one', false, original);
+
+  expect(error).toBe(original);
+  expect(existsSync(marker)).toBe(true);
 });

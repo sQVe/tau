@@ -144,7 +144,7 @@ it.each([
   { temporaryDirectory: '/tmp/x', realHome: '/real/home', expected: '/tmp/x' },
   { temporaryDirectory: '/real/home', realHome: '/real/home', expected: '/tmp' },
   {
-    temporaryDirectory: '/real/home/.pi/agent/tmp/tau-worker-scratch/abc',
+    temporaryDirectory: '/real/home/.pi/agent/tmp/ws/0123abcd',
     realHome: '/real/home',
     expected: '/tmp',
   },

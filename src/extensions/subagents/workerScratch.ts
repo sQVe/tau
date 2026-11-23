@@ -1,7 +1,7 @@
 import { mkdir, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { errorMessage, isMissingFile } from '../../errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from '../../errors.js';
 import { assignmentShortId } from './workerName.js';
 
 const scratchRootName = 'ws';
@@ -30,21 +30,32 @@ const refuseRedirected = async (folder: string, rootName: string): Promise<void>
   }
 };
 
-// A redirected root would put the folder where cleanup refuses to remove it.
+// A redirected root would put the folder where cleanup refuses to remove it. Returns true when this
+// call created the leaf, so the caller removes only its own folder.
 export const createScratchDirectory = async (
   agentDirectory: string,
   assignmentId: string,
-): Promise<void> => {
+): Promise<boolean> => {
   const canonicalAgent = await realpath(agentDirectory);
   const temporaryFolder = join(canonicalAgent, 'tmp');
+  const root = join(temporaryFolder, scratchRootName);
 
   await refuseRedirected(temporaryFolder, 'tmp');
-  await refuseRedirected(join(temporaryFolder, scratchRootName), scratchRootName);
+  await refuseRedirected(root, scratchRootName);
 
-  await mkdir(join(temporaryFolder, scratchRootName, assignmentShortId(assignmentId)), {
-    recursive: true,
-    mode: 0o700,
-  });
+  await mkdir(root, { recursive: true, mode: 0o700 });
+
+  try {
+    await mkdir(join(root, assignmentShortId(assignmentId)), { mode: 0o700 });
+
+    return true;
+  } catch (error) {
+    if (hasErrorCode(error, 'EEXIST')) {
+      return false;
+    }
+
+    throw error;
+  }
 };
 
 const isDotName = (name: string): boolean => name === '' || name === '.' || name === '..';
@@ -113,8 +124,13 @@ export const removeScratchDirectory = (
 export const errorAfterScratchCleanup = async (
   agentDirectory: string,
   assignmentId: string,
+  createdScratch: boolean,
   error: unknown,
 ): Promise<unknown> => {
+  if (!createdScratch) {
+    return error;
+  }
+
   const cleanupError = await removeScratchDirectory(agentDirectory, assignmentId);
 
   if (cleanupError === undefined) {

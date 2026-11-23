@@ -104,6 +104,7 @@ export interface WorkerStart {
 interface StartedFollowUp {
   terminal: HcTerminal;
   warning?: string;
+  createdScratch: boolean;
 }
 
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
@@ -420,6 +421,7 @@ const startPackageBackedFollowUp = async (
   runtime: LaunchRuntime,
   facts: WorkerStart,
   placement: Record<string, string>,
+  createdScratch: { value: boolean },
 ): Promise<StartedFollowUp> => {
   const { assignment } = facts;
   const snapshot = assignment.packageSnapshot;
@@ -457,7 +459,11 @@ const startPackageBackedFollowUp = async (
       }
 
       try {
-        await createScratchDirectory(runtime.agentDirectory, assignment.assignmentId);
+        createdScratch.value = await createScratchDirectory(
+          runtime.agentDirectory,
+          assignment.assignmentId,
+        );
+
         started = await startWithReconciliation(runtime, facts, placement);
       } catch (error) {
         const mayHaveStarted = isUnclearLaunch(error) || error instanceof UnclearLaunchError;
@@ -483,7 +489,7 @@ const startPackageBackedFollowUp = async (
       return started;
     });
 
-    return { terminal };
+    return { terminal, createdScratch: createdScratch.value };
   } catch (error) {
     if (started === undefined) {
       throw error;
@@ -492,6 +498,7 @@ const startPackageBackedFollowUp = async (
     return {
       terminal: started,
       warning: `The folder sweep lock was not released after the follow-up started: ${errorMessage(error)}`,
+      createdScratch: createdScratch.value,
     };
   }
 };
@@ -503,6 +510,7 @@ export const startReservedWorker = async (
 ): Promise<ToolResult<LaunchStatus>> => {
   const { assignment } = facts;
   const assignmentId = assignment.assignmentId;
+  const createdScratch = { value: false };
 
   runtime.admission.add(assignmentId, assignment.session.file);
 
@@ -519,14 +527,14 @@ export const startReservedWorker = async (
     let warning: string | undefined;
 
     if (waitsForSweepLock) {
-      const started = await startPackageBackedFollowUp(runtime, facts, placement);
+      const started = await startPackageBackedFollowUp(runtime, facts, placement, createdScratch);
 
       terminal = started.terminal;
       warning = started.warning;
     } else {
       // A sweep removes a scratch folder 60 s after creation, so no slow read may sit between the
       // creation and the request.
-      await createScratchDirectory(runtime.agentDirectory, assignmentId);
+      createdScratch.value = await createScratchDirectory(runtime.agentDirectory, assignmentId);
       terminal = await startWithReconciliation(runtime, facts, placement);
     }
 
@@ -551,7 +559,13 @@ export const startReservedWorker = async (
 
     runtime.admission.remove(assignmentId);
 
-    const failure = await errorAfterScratchCleanup(runtime.agentDirectory, assignmentId, error);
+    const failure = await errorAfterScratchCleanup(
+      runtime.agentDirectory,
+      assignmentId,
+      createdScratch.value,
+      error,
+    );
+
     const onDefiniteFailure = hooks.onDefiniteFailure;
 
     if (onDefiniteFailure === undefined) {

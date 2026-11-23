@@ -31,7 +31,7 @@ import type { LaunchParameters } from './launchParameters.js';
 import * as loadouts from './loadout.js';
 import * as packageSnapshot from './packageSnapshot.js';
 import { assignmentShortId } from './workerName.js';
-import { scratchRootFor } from './workerScratch.js';
+import { scratchDirectoryFor, scratchRootFor } from './workerScratch.js';
 
 vi.mock(import('./assignment.js'), { spy: true });
 vi.mock(import('./loadout.js'), { spy: true });
@@ -1088,6 +1088,53 @@ it('removes the scratch folder after a definite launch failure', async () => {
 
   expect(result.isError).toBe(true);
   expect(scratchNames(state.directory)).toEqual([]);
+});
+
+const collidingAssignmentId = '3f9a2c1d-1111-4000-8000-000000000001';
+const otherCollidingAssignmentId = '3f9a2c1d-2222-4000-8000-000000000002';
+
+const startFailingWorker = async (directory: string, runtime: LaunchRuntime) => {
+  const assignment = { ...savedAssignment(directory, null), assignmentId: collidingAssignmentId };
+
+  runtime.hc.connect = () => Promise.reject(new HcError('spawn_failed', 'launch failure'));
+
+  const failure = await startReservedWorker(runtime, {
+    assignment,
+    task: 'Follow up.',
+    label: undefined,
+    extensionPackages: [],
+    skillTools: {},
+    modelReason: 'Reused.',
+    signal: undefined,
+  }).catch((error: unknown) => error);
+
+  return { assignment, failure };
+};
+
+it('keeps an existing scratch folder when a launch that did not create it fails', async () => {
+  const { directory, runtime } = setup();
+  const existing = scratchDirectoryFor(directory, otherCollidingAssignmentId);
+  const marker = join(existing, 'keep.txt');
+
+  mkdirSync(existing, { recursive: true });
+  writeFileSync(marker, 'keep');
+
+  const { failure } = await startFailingWorker(directory, runtime);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe('launch failure');
+  expect(existsSync(marker)).toBe(true);
+  expect(existsSync(existing)).toBe(true);
+});
+
+it('removes the scratch folder when the launch created it and then failed', async () => {
+  const { directory, runtime } = setup();
+  const { assignment, failure } = await startFailingWorker(directory, runtime);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe('launch failure');
+  expect(existsSync(scratchDirectoryFor(directory, assignment.assignmentId))).toBe(false);
+  expect(scratchNames(directory)).toEqual([]);
 });
 
 it('keeps the scratch cleanup error in the launch error', async () => {

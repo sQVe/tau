@@ -21,7 +21,9 @@ Tau gives each worker its own scratch folder at
 worker's `TMPDIR`. The short path keeps Chrome's `SingletonSocket` under the 103-byte Unix socket
 limit. A liveness sweep removes the folder after the worker ended. The worker never removes it. The
 launch creates the folder right before `hc run`, after its slower reads, and the worker creates it
-again at start, in case a sweep removed it while `hc run` was slow.
+again at start, in case a sweep removed it while `hc run` was slow. A launch that fails definitely
+removes the scratch folder only when that launch created it. A folder that already existed belongs
+to another assignment with the same short ID, and only the sweep removes it.
 
 The sweep runs after each worker scan and after each launch starts its worker, in any manager. The
 launch does not wait for it. A manager that exited is covered by the next launch or scan from any
@@ -106,11 +108,15 @@ no timer is needed.
   slow terminal delays the sweep by up to 10 seconds plus the kill grace.
 - A sweep waits for another sweep of the same agent directory, so its own reads and effects can be
   delayed by that sweep's terminal reads.
-- A folder named by a finished worker, and younger than a minute, stays until the next sweep.
+- The launch grace applies only when no terminal names the folder, including when a finish appears
+  only in the list.
 - An agent directory longer than 46 bytes still makes Chrome's socket path too long, because
-  `/tmp/ws/` and the 8-byte folder name leave 47 bytes for the agent directory.
-- Two assignments with the same first 8 hex digits share one scratch folder, so the sweep keeps it
-  while either one runs.
+  `/tmp/ws/` and the 8-byte folder name leave 46 bytes for the agent directory.
+- Two assignments whose IDs start with the same 8 hex digits share one scratch folder. The sweep
+  keeps it while either worker runs, and a failed launch removes it only when that launch created
+  it. If both launches start at the same moment and the one that created the folder fails, it
+  removes the folder. The other worker creates it again when it starts, but it loses files it wrote
+  before then.
 - Tests cannot use the worker's `TMPDIR`, because it sits inside the real HOME and makes Unix socket
   paths too long. In a worker session the test run sets `TMPDIR` to `/tmp`, and each test removes
   its own folders as today.
