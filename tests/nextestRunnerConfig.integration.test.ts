@@ -63,12 +63,9 @@ it('accepts src/lib.rs for the nextest runner and fires the production checkpoin
   // already has untouched, so only the edit to src/lib.rs makes the results stale.
   const result = await application.run(cwd);
 
-  const runFailure =
-    result.details.report.kind === 'compile-error'
-      ? result.details.report.message
-      : result.details.kind;
+  const toolText = result.content.map((item) => item.text).join('\n');
 
-  expect(result.details, runFailure).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+  expect(result.details, toolText).toMatchObject({ kind: 'pass', freshness: 'fresh' });
 
   const patch = await application.edit(
     cwd,
