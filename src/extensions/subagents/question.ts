@@ -8,7 +8,7 @@ import { label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { saveQuestion } from './assignment.js';
 import type { Assignment, SavedQuestion } from './assignment.js';
-import { stepFailure } from './report.js';
+import { stepFailure } from './report/report.js';
 
 export interface QuestionTarget {
   hc: HcRuntime;

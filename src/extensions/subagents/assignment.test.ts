@@ -43,12 +43,12 @@ const assignmentWithSessionInFolder = (): Assignment => {
   return { ...fixture, session };
 };
 
-it('reads version 3 assignment unchanged', async () => {
+it('reads version 4 assignment unchanged', async () => {
   const path = fixturePath('valid.json');
   const before = readFileSync(path);
 
   expect(await readAssignment(path)).toMatchObject({
-    version: 3,
+    version: 4,
     assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
     profile: 'scout',
     previousAssignmentId: null,
@@ -60,22 +60,72 @@ it('reads version 3 assignment unchanged', async () => {
     ],
     questions: [],
     report: null,
+    fullCheck: null,
   });
 
   expect(readFileSync(path)).toEqual(before);
 });
 
-it('reads version 2 as version 3', async () => {
+it('reads version 3 as version 4 with no full check declaration', async () => {
+  const path = fixturePath('version3.json');
+  const before = readFileSync(path);
+
+  expect(await readAssignment(path)).toMatchObject({
+    version: 4,
+    assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
+    profile: 'scout',
+    previousAssignmentId: null,
+    extensionPackages: [
+      {
+        source: 'npm:review-package',
+        path: '/agent/tmp/tau-worker-packages/3f9a2c1d/review-package',
+      },
+    ],
+    questions: [],
+    report: null,
+    fullCheck: null,
+  });
+
+  expect(readFileSync(path)).toEqual(before);
+});
+
+it('refuses a version 3 report with the newer full check field', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-assignment-');
+  const path = join(directory, 'assignment.json');
+
+  const saved = JSON.parse(readFileSync(fixturePath('version3.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >;
+
+  writeFileSync(
+    path,
+    JSON.stringify({
+      ...saved,
+      report: {
+        outcome: 'success',
+        summary: 'Found it.',
+        evidence: [],
+        fullCheck: { owner: 'AI-1688', logPath: '/repository/run.log', passed: false },
+      },
+    }),
+  );
+
+  await expect(readAssignment(path)).rejects.toThrow('Malformed assignment');
+});
+
+it('reads version 2 as version 4', async () => {
   const path = fixturePath('version2.json');
   const before = readFileSync(path);
 
   expect(await readAssignment(path)).toMatchObject({
-    version: 3,
+    version: 4,
     assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
     previousAssignmentId: null,
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   });
 
   expect(readFileSync(path)).toEqual(before);
@@ -101,17 +151,18 @@ it('keeps the saved questions of a version 2 assignment', async () => {
   expect((await readAssignment(path))?.questions).toEqual([question]);
 });
 
-it('reads version 1 as version 3', async () => {
+it('reads version 1 as version 4', async () => {
   const path = fixturePath('previous.json');
   const before = readFileSync(path);
 
   expect(await readAssignment(path)).toMatchObject({
-    version: 3,
+    version: 4,
     assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
     previousAssignmentId: null,
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   });
 
   expect(readFileSync(path)).toEqual(before);
@@ -168,6 +219,33 @@ it('writes the assignment in a private folder and reads it back', async () => {
 
   expect(statSync(assignmentDirectory(assignment.assignmentId)).mode & 0o777).toBe(0o700);
   expect(await readAssignment(assignmentPath(assignment.assignmentId))).toEqual(assignment);
+});
+
+it('saves a full check declaration and reads it back', async () => {
+  useAgentDirectory();
+
+  const assignment = {
+    ...assignmentWithSessionInFolder(),
+    fullCheck: { owner: 'AI-1688', reason: 'dead_code warnings until the module is wired in' },
+  };
+
+  await writeAssignment(assignment);
+
+  expect(await readAssignment(assignmentPath(assignment.assignmentId))).toEqual(assignment);
+});
+
+it('refuses a malformed full check declaration before it writes any file', async () => {
+  useAgentDirectory();
+
+  const assignment = {
+    ...assignmentWithSessionInFolder(),
+    fullCheck: { owner: '', reason: 'the tree cannot pass yet' },
+  };
+
+  await expect(writeAssignment(assignment)).rejects.toThrow('Malformed assignment');
+
+  expect(existsSync(assignment.session.file)).toBe(false);
+  expect(await readAssignment(assignmentPath(assignment.assignmentId))).toBeUndefined();
 });
 
 it('refuses a malformed assignment before it writes any file', async () => {

@@ -175,16 +175,6 @@ rule = "typescript-owner-folder"
 key = "launchParameters.ts"
 
 [[violations]]
-path = "src/extensions/subagents/report.ts"
-rule = "typescript-owner-folder"
-key = "reportChecks.ts"
-
-[[violations]]
-path = "src/extensions/subagents/report.ts"
-rule = "typescript-owner-folder"
-key = "reportReminder.ts"
-
-[[violations]]
 path = "src/extensions/subagents/types.ts"
 rule = "typescript-catch-all-name"
 key = "types.ts"

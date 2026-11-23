@@ -1,7 +1,7 @@
 import type { AgentBeforeSettleEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import type { Assignment } from './assignment.js';
+import type { Assignment } from '../assignment.js';
 import type { ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { ReminderState } from './reportReminder.js';

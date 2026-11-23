@@ -76,7 +76,7 @@ const savedAssignment = async (
   const sessionId = randomUUID();
 
   const assignment: Assignment = {
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -101,6 +101,7 @@ const savedAssignment = async (
           evidence: [],
         }
       : null,
+    fullCheck: null,
   };
 
   await writeAssignment(assignment);

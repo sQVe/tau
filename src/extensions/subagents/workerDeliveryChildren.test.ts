@@ -33,7 +33,7 @@ const savedAssignment = (directory: string): Assignment => {
   const sessionId = randomUUID();
 
   return {
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -52,6 +52,7 @@ const savedAssignment = (directory: string): Assignment => {
     extensionPackages: null,
     questions: [],
     report: null,
+    fullCheck: null,
   };
 };
 

@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { initializeRepositorySync } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
@@ -71,7 +72,7 @@ const sourceAssignment = (directory: string, overrides: Partial<Assignment> = {}
   const sessionId = randomUUID();
 
   return {
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: ['The counters are inspected.'],
@@ -90,11 +91,17 @@ const sourceAssignment = (directory: string, overrides: Partial<Assignment> = {}
     extensionPackages: [],
     questions: [],
     report: null,
+    fullCheck: null,
     ...overrides,
   };
 };
 
-const setup = (): { directory: string; fake: HcFake; runtime: LaunchRuntime } => {
+const setup = (): {
+  context: ExtensionContext;
+  directory: string;
+  fake: HcFake;
+  runtime: LaunchRuntime;
+} => {
   const directory = temporaryDirectory(onTestFinished, 'tau-followup-');
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -124,13 +131,21 @@ const setup = (): { directory: string; fake: HcFake; runtime: LaunchRuntime } =>
     buildCommand: () => ['sleep', '60'],
   };
 
-  return { directory, fake, runtime };
+  const requestContext = {
+    cwd: directory,
+    isProjectTrusted: () => true,
+    sessionManager: { getSessionId: () => 'manager-one' },
+    ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
+  } as unknown as ExtensionContext;
+
+  return { context: requestContext, directory, fake, runtime };
 };
 
 const followUp = (
   runtime: LaunchRuntime,
   sourceAssignmentId: string,
   overrides: Record<string, unknown> = {},
+  requestContext: ExtensionContext = context,
 ) =>
   executeFollowUp(
     runtime,
@@ -145,7 +160,7 @@ const followUp = (
       parentSession: '/work/parent.jsonl',
     },
     undefined,
-    context,
+    requestContext,
   );
 
 const refusalCases: {
@@ -433,6 +448,163 @@ it('places a follow-up of an investigation worker in the workers tab of the mana
   expect(result.isError).not.toBe(true);
   expect(terminalRun(fake)?.labels['herdr.space']).toBe('space-1');
   expect(terminalRun(fake)?.labels['herdr.tab']).toBe('tab-2-workers');
+});
+
+it('refuses a full check declaration on an investigation follow-up', async () => {
+  const { directory, fake, runtime } = setup();
+
+  const source = sourceAssignment(directory, {
+    loadout: { ...fixtureLoadout(directory), role: 'investigation' },
+  });
+
+  await writeAssignment(source);
+
+  const before = assignmentFolders(directory);
+
+  const result = await followUp(runtime, source.assignmentId, {
+    fullCheck: { owner: 'AI-1688', reason: 'the module is not wired in yet' },
+  });
+
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('fullCheck applies only to editing workers');
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(assignmentFolders(directory)).toEqual(before);
+});
+
+it('refuses a full check declaration without a configured full check', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+  const source = sourceAssignment(directory);
+
+  initializeRepositorySync(directory);
+  await writeAssignment(source);
+
+  const before = assignmentFolders(directory);
+
+  const result = await followUp(
+    runtime,
+    source.assignmentId,
+    { fullCheck: { owner: 'AI-1688', reason: 'the module is not wired in yet' } },
+    requestContext,
+  );
+
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('fullCheck requires a configured full check command');
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(assignmentFolders(directory)).toEqual(before);
+});
+
+it('saves a full check declaration on an editing follow-up', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+  const source = sourceAssignment(directory);
+  const fullCheck = { owner: 'AI-1688', reason: 'the module is not wired in yet' };
+
+  initializeRepositorySync(directory);
+  mkdirSync(join(directory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(directory, '.pi/tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
+  );
+
+  await writeAssignment(source);
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-new', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId, { fullCheck }, requestContext);
+
+  expect(result.isError).not.toBe(true);
+
+  const path = terminalRun(fake)?.labels['tau.assignment'];
+
+  if (path === undefined) {
+    throw new Error('The follow-up returned no assignment label.');
+  }
+
+  expect((await readAssignment(path))?.fullCheck).toEqual(fullCheck);
+});
+
+it('resolves the full check command at the checkout root for a subdirectory follow-up', async () => {
+  const { context: requestContext, directory, fake, runtime } = setup();
+  const subdirectory = join(directory, 'subdirectory');
+  const fullCheck = { owner: 'AI-1688', reason: 'the module is not wired in yet' };
+
+  initializeRepositorySync(directory);
+  mkdirSync(subdirectory);
+  mkdirSync(join(directory, '.pi'), { recursive: true });
+
+  writeFileSync(
+    join(directory, '.pi/tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
+  );
+
+  const source = sourceAssignment(directory, { cwd: subdirectory });
+
+  await writeAssignment(source);
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-new', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId, { fullCheck }, requestContext);
+
+  expect(result.isError).not.toBe(true);
+
+  const path = terminalRun(fake)?.labels['tau.assignment'];
+
+  if (path === undefined) {
+    throw new Error('The follow-up returned no assignment label.');
+  }
+
+  expect((await readAssignment(path))?.fullCheck).toEqual(fullCheck);
+});
+
+it('does not inherit the source full check declaration', async () => {
+  const { directory, fake, runtime } = setup();
+
+  const source = sourceAssignment(directory, {
+    fullCheck: { owner: 'AI-1688', reason: 'the module is not wired in yet' },
+  });
+
+  await writeAssignment(source);
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-new', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).not.toBe(true);
+
+  const path = terminalRun(fake)?.labels['tau.assignment'];
+
+  if (path === undefined) {
+    throw new Error('The follow-up returned no assignment label.');
+  }
+
+  expect((await readAssignment(path))?.fullCheck).toBeNull();
 });
 
 it('starts a new child that resumes the source session', async () => {

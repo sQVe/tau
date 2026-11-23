@@ -117,7 +117,7 @@ export const savedAssignment = (
   const sessionId = randomUUID();
 
   return {
-    version: 3,
+    version: 4,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -136,6 +136,7 @@ export const savedAssignment = (
     extensionPackages: null,
     questions,
     report,
+    fullCheck: null,
   };
 };
 

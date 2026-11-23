@@ -19,7 +19,13 @@ import { Value } from 'typebox/value';
 import { isMissingFile } from '../../errors.js';
 import { readVersionedRecord, writeRecord } from '../../record.js';
 import { describeSchemaProblem, isRecord } from '../../schema.js';
-import { loadoutSchema, routingSchema, savedReportSchema, text } from './types.js';
+import {
+  loadoutSchema,
+  routingSchema,
+  savedReportSchema,
+  savedReportVersion3Schema,
+  text,
+} from './types.js';
 
 export type SavedReport = Static<typeof savedReportSchema>;
 
@@ -43,7 +49,8 @@ const checkoutRoot = realpathSync(fileURLToPath(new URL('../../../', import.meta
 
 export const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, checkoutHashLength)}`;
 
-const assignmentVersion = 3;
+const assignmentVersion = 4;
+const assignmentVersion3 = 3;
 
 const assignmentFileName = 'assignment.json';
 
@@ -76,8 +83,9 @@ const assignmentFields = {
   parentTerminal: text,
   deadline: Type.Integer({ minimum: 1 }),
   createdAt: Type.Integer({ minimum: 1 }),
-  report: Type.Union([savedReportSchema, Type.Null()]),
 };
+
+const oldReportField = Type.Union([savedReportVersion3Schema, Type.Null()]);
 
 const extensionPackageSchema = Type.Object(
   { source: text, path: text },
@@ -85,7 +93,7 @@ const extensionPackageSchema = Type.Object(
 );
 
 const assignmentVersion1Schema = Type.Object(
-  { version: Type.Literal(1), ...assignmentFields },
+  { version: Type.Literal(1), ...assignmentFields, report: oldReportField },
   { additionalProperties: false },
 );
 
@@ -93,7 +101,28 @@ const assignmentVersion2Schema = Type.Object(
   {
     version: Type.Literal(2),
     ...assignmentFields,
+    report: oldReportField,
     questions: Type.Array(savedQuestionSchema),
+  },
+  { additionalProperties: false },
+);
+
+const assignmentVersion3Schema = Type.Object(
+  {
+    version: Type.Literal(assignmentVersion3),
+    ...assignmentFields,
+    previousAssignmentId: Type.Union([Type.String({ pattern: uuidPattern }), Type.Null()]),
+    extensionPackages: Type.Union([Type.Array(extensionPackageSchema), Type.Null()]),
+    questions: Type.Array(savedQuestionSchema),
+    report: oldReportField,
+  },
+  { additionalProperties: false },
+);
+
+const fullCheckSchema = Type.Object(
+  {
+    owner: Type.String({ minLength: 1, maxLength: 500 }),
+    reason: Type.String({ minLength: 1, maxLength: 500 }),
   },
   { additionalProperties: false },
 );
@@ -105,6 +134,8 @@ const assignmentSchema = Type.Object(
     previousAssignmentId: Type.Union([Type.String({ pattern: uuidPattern }), Type.Null()]),
     extensionPackages: Type.Union([Type.Array(extensionPackageSchema), Type.Null()]),
     questions: Type.Array(savedQuestionSchema),
+    fullCheck: Type.Union([fullCheckSchema, Type.Null()]),
+    report: Type.Union([savedReportSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -115,9 +146,14 @@ type AssignmentVersion1 = Static<typeof assignmentVersion1Schema>;
 
 type AssignmentVersion2 = Static<typeof assignmentVersion2Schema>;
 
+type AssignmentVersion3 = Static<typeof assignmentVersion3Schema>;
+
 const isAssignmentVersion1 = (value: unknown): boolean => isRecord(value) && value['version'] === 1;
 
 const isAssignmentVersion2 = (value: unknown): boolean => isRecord(value) && value['version'] === 2;
+
+const isAssignmentVersion3 = (value: unknown): boolean =>
+  isRecord(value) && value['version'] === assignmentVersion3;
 
 const fromVersion1 = (assignment: AssignmentVersion1): Assignment => ({
   ...assignment,
@@ -125,6 +161,7 @@ const fromVersion1 = (assignment: AssignmentVersion1): Assignment => ({
   previousAssignmentId: null,
   extensionPackages: null,
   questions: [],
+  fullCheck: null,
 });
 
 const fromVersion2 = (assignment: AssignmentVersion2): Assignment => ({
@@ -132,6 +169,13 @@ const fromVersion2 = (assignment: AssignmentVersion2): Assignment => ({
   version: assignmentVersion,
   previousAssignmentId: null,
   extensionPackages: null,
+  fullCheck: null,
+});
+
+const fromVersion3 = (assignment: AssignmentVersion3): Assignment => ({
+  ...assignment,
+  version: assignmentVersion,
+  fullCheck: null,
 });
 
 export const seedSession = (seed: PiSessionSeed): void => {
@@ -165,7 +209,11 @@ export const readAssignment = async (path: string): Promise<Assignment | undefin
         return assignmentVersion1Schema;
       }
 
-      return isAssignmentVersion2(value) ? assignmentVersion2Schema : assignmentSchema;
+      if (isAssignmentVersion2(value)) {
+        return assignmentVersion2Schema;
+      }
+
+      return isAssignmentVersion3(value) ? assignmentVersion3Schema : assignmentSchema;
     },
   });
 
@@ -177,7 +225,11 @@ export const readAssignment = async (path: string): Promise<Assignment | undefin
     return fromVersion1(record);
   }
 
-  return record.version === 2 ? fromVersion2(record) : record;
+  if (record.version === 2) {
+    return fromVersion2(record);
+  }
+
+  return record.version === assignmentVersion3 ? fromVersion3(record) : record;
 };
 
 export const hasSavedReport = async (path: string): Promise<boolean> => {
