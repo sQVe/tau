@@ -40,6 +40,11 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
     expected: ['./query.md?plain=1', './anchor.md?a=1#top'],
   },
   {
+    name: 'reads a definition indented by two spaces',
+    markdown: '[rules][adr]\n\n  [adr]: ../../outside.md\n',
+    expected: ['../../outside.md'],
+  },
+  {
     name: 'reads a target with balanced parentheses',
     markdown: '[rules](./rules(v2).md)',
     expected: ['./rules(v2).md'],

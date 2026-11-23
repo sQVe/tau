@@ -3,10 +3,12 @@ import { posix } from 'node:path';
 import { decodedComponent, readDestination, readMarkdownLinks } from './markdownLinks.js';
 import type { MarkdownLinks } from './markdownLinks.js';
 
+export type LinkProblem = 'undecodable' | 'leaves-folder' | 'not-synced' | 'missing-heading';
+
 export type GuideLinkCheck =
   | { kind: 'valid' }
   | { kind: 'unreadable'; path: string; error: unknown }
-  | { kind: 'broken'; path: string; problem: string };
+  | { kind: 'broken'; path: string; target: string; problem: LinkProblem };
 
 type IndexedFile = { kind: 'other' } | { kind: 'markdown'; links: MarkdownLinks };
 type GuideIndex = ReadonlyMap<string, IndexedFile>;
@@ -18,10 +20,9 @@ const leavesFolder = (decodedPath: string, resolved: string) =>
   decodedPath.startsWith('/') || resolved === '..' || resolved.startsWith('../');
 
 const fragmentProblem = (
-  target: string,
   fragment: string | undefined,
   entry: IndexedFile,
-): string | undefined => {
+): LinkProblem | undefined => {
   if (fragment === undefined || fragment === '' || entry.kind === 'other') {
     return undefined;
   }
@@ -32,10 +33,14 @@ const fragmentProblem = (
     return undefined;
   }
 
-  return `links to ${target}, which names a missing heading`;
+  return 'missing-heading';
 };
 
-const targetProblem = (path: string, target: string, index: GuideIndex): string | undefined => {
+const targetProblem = (
+  path: string,
+  target: string,
+  index: GuideIndex,
+): LinkProblem | undefined => {
   const destination = readDestination(target);
 
   if (destination.kind === 'external') {
@@ -43,22 +48,22 @@ const targetProblem = (path: string, target: string, index: GuideIndex): string 
   }
 
   if (destination.kind === 'undecodable') {
-    return `links to ${target}, which cannot be decoded`;
+    return 'undecodable';
   }
 
   const resolved = resolvedPath(path, destination.path);
 
   if (leavesFolder(destination.path, resolved)) {
-    return `links to ${target}, which leaves the synced folder`;
+    return 'leaves-folder';
   }
 
   const entry = index.get(resolved);
 
   if (entry === undefined) {
-    return `links to ${target}, which is not a synced file`;
+    return 'not-synced';
   }
 
-  return fragmentProblem(target, destination.fragment, entry);
+  return fragmentProblem(destination.fragment, entry);
 };
 
 const indexFile = (path: string, text: string): IndexedFile =>
@@ -84,7 +89,7 @@ export const checkGuideLinks = (files: ReadonlyMap<string, string>): GuideLinkCh
       const problem = targetProblem(path, target, index);
 
       if (problem !== undefined) {
-        return { kind: 'broken', path, problem };
+        return { kind: 'broken', path, target, problem };
       }
     }
   }

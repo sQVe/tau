@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { checkGuideLinks } from './guideLinks.js';
+import type { LinkProblem } from './guideLinks.js';
 import { readRegularFile } from './regularFile.js';
 import { parseSyncRecord } from './syncRecord.js';
 import type { SyncRecord } from './syncRecord.js';
@@ -21,6 +22,13 @@ type TextRead = { text: string; bytes: Uint8Array } | { reason: string };
 
 const recordName = '.sync-record.toml';
 const fix = 'run stomme sync';
+
+const linkProblemText: Readonly<Record<LinkProblem, string>> = {
+  undecodable: 'cannot be decoded',
+  'leaves-folder': 'leaves the synced folder',
+  'not-synced': 'is not a synced file',
+  'missing-heading': 'names a missing heading',
+};
 
 const broken = (reason: string): SyncedGuides => ({ kind: 'broken', reason });
 
@@ -113,7 +121,7 @@ const firstLinkProblem = (
     return `${join(directory, check.path)} cannot be read as Markdown: ${errorMessage(check.error)}`;
   }
 
-  return `${join(directory, check.path)} ${check.problem}; ${fix}`;
+  return `${join(directory, check.path)} links to ${check.target}, which ${linkProblemText[check.problem]}; ${fix}`;
 };
 
 const readRecordedGuides = async (

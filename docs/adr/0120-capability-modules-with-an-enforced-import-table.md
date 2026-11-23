@@ -116,12 +116,12 @@ to the table updates the list in the same commit until the mirror ends.
   only parses a string into a document, and `node:path` in `src/extensions/tdd/runner/report.ts`,
   `src/extensions/tdd/runner/cargoInputFiles.ts`, `src/extensions/tdd/projectPath.ts`,
   `src/improvement/taskFacts.ts`, `src/improvement/taskMapping.ts`,
-  `src/improvement/writeDecision.ts`, and `src/instructions/stommeGuides/stommeGuidesDecision.ts`,
-  which handle paths as strings without touching the filesystem, and `smol-toml` in
-  `src/instructions/syncRecord.ts` and `src/instructions/stommeGuides/stommeGuidesDecision.ts`,
-  which only parse a string, and `marked` in `src/instructions/markdownLinks.ts`, which builds a
-  private tokenizer instance and only turns a string into tokens. The check follows imports, not
-  names, so renaming a file does not escape it.
+  `src/improvement/writeDecision.ts`, `src/instructions/guideLinks.ts`, and
+  `src/instructions/stommeGuides/stommeGuidesDecision.ts`, which handle paths as strings without
+  touching the filesystem, and `smol-toml` in `src/instructions/syncRecord.ts` and
+  `src/instructions/stommeGuides/stommeGuidesDecision.ts`, which only parse a string, and `marked`
+  in `src/instructions/markdownLinks.ts`, which builds a private tokenizer instance and only turns a
+  string into tokens. The check follows imports, not names, so renaming a file does not escape it.
 - Keep `pureModules` in `tests/structure.test.ts` and the module list and each module's public files
   in `lint/rules/moduleBoundaries.ts` sorted and free of duplicates, as
   [ADR 0109](./0109-keep-action-behavior-out-of-extension-roots.md) says.

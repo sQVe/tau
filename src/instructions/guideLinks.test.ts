@@ -72,28 +72,13 @@ const table: {
     expected: { kind: 'valid' },
   },
   {
-    name: 'a link target with balanced parentheses',
-    files: [
-      ['shared/rules(v2).md', '# Rules\n'],
-      ['shared/coding.md', '[rules](./rules(v2).md)\n'],
-    ],
-    expected: { kind: 'valid' },
-  },
-  {
-    name: 'a link target in angle brackets with a space',
-    files: [
-      ['shared/a b.md', '# A\n'],
-      ['shared/rules.md', '[space](<./a b.md>)\n'],
-    ],
-    expected: { kind: 'valid' },
-  },
-  {
     name: 'a dangling link',
     files: [['shared/rules.md', '[gone](./gone.md)\n']],
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ./gone.md, which is not a synced file',
+      target: './gone.md',
+      problem: 'not-synced',
     },
   },
   {
@@ -102,7 +87,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ../notes.md#first, which is not a synced file',
+      target: '../notes.md#first',
+      problem: 'not-synced',
     },
   },
   {
@@ -111,7 +97,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ../.., which leaves the synced folder',
+      target: '../..',
+      problem: 'leaves-folder',
     },
   },
   {
@@ -120,7 +107,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ../../outside.md, which leaves the synced folder',
+      target: '../../outside.md',
+      problem: 'leaves-folder',
     },
   },
   {
@@ -129,7 +117,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to /shared/coding.md, which leaves the synced folder',
+      target: '/shared/coding.md',
+      problem: 'leaves-folder',
     },
   },
   {
@@ -138,7 +127,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ./%2E%2E/%2E%2E/outside.md, which leaves the synced folder',
+      target: './%2E%2E/%2E%2E/outside.md',
+      problem: 'leaves-folder',
     },
   },
   {
@@ -147,7 +137,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ./bad%ZZ.md, which cannot be decoded',
+      target: './bad%ZZ.md',
+      problem: 'undecodable',
     },
   },
   {
@@ -159,7 +150,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/coding.md',
-      problem: 'links to ./rules.md#missing, which names a missing heading',
+      target: './rules.md#missing',
+      problem: 'missing-heading',
     },
   },
   {
@@ -168,7 +160,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to #missing, which names a missing heading',
+      target: '#missing',
+      problem: 'missing-heading',
     },
   },
   {
@@ -177,16 +170,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ./rules.md#bad%ZZ, which names a missing heading',
-    },
-  },
-  {
-    name: 'a missing image target',
-    files: [['shared/rules.md', '![alt](./gone.png)\n']],
-    expected: {
-      kind: 'broken',
-      path: 'shared/rules.md',
-      problem: 'links to ./gone.png, which is not a synced file',
+      target: './rules.md#bad%ZZ',
+      problem: 'missing-heading',
     },
   },
   {
@@ -195,34 +180,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ./gone.md?plain=1, which is not a synced file',
-    },
-  },
-  {
-    name: 'a missing link target with balanced parentheses',
-    files: [['shared/rules.md', '[gone](./gone(v2).md)\n']],
-    expected: {
-      kind: 'broken',
-      path: 'shared/rules.md',
-      problem: 'links to ./gone(v2).md, which is not a synced file',
-    },
-  },
-  {
-    name: 'a dangling reference definition',
-    files: [['shared/rules.md', '[rules][adr]\n\n[adr]: ./missing.md\n']],
-    expected: {
-      kind: 'broken',
-      path: 'shared/rules.md',
-      problem: 'links to ./missing.md, which is not a synced file',
-    },
-  },
-  {
-    name: 'a reference definition that leaves the folder',
-    files: [['shared/rules.md', '[rules][adr]\n\n  [adr]: ../../outside.md\n']],
-    expected: {
-      kind: 'broken',
-      path: 'shared/rules.md',
-      problem: 'links to ../../outside.md, which leaves the synced folder',
+      target: './gone.md?plain=1',
+      problem: 'not-synced',
     },
   },
   {
@@ -231,7 +190,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'shared/rules.md',
-      problem: 'links to ./rules.md#nope, which names a missing heading',
+      target: './rules.md#nope',
+      problem: 'missing-heading',
     },
   },
   {
@@ -243,7 +203,8 @@ const table: {
     expected: {
       kind: 'broken',
       path: 'z.md',
-      problem: 'links to ./gone-z.md, which is not a synced file',
+      target: './gone-z.md',
+      problem: 'not-synced',
     },
   },
   {
@@ -261,6 +222,16 @@ const table: {
       ['b.md', '# Later\n'],
     ],
     expected: { kind: 'valid' },
+  },
+  {
+    name: 'checks a reference use at its definition',
+    files: [['a.md', '[r][a] [i](./inline.md)\n\n[a]: ./definition.md\n']],
+    expected: {
+      kind: 'broken',
+      path: 'a.md',
+      target: './inline.md',
+      problem: 'not-synced',
+    },
   },
 ];
 

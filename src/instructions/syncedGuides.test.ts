@@ -172,21 +172,6 @@ const brokenRows: BrokenRow[] = [
     },
     reason: ['shared/rules.md', 'not a file'],
   },
-  {
-    name: 'a dangling link',
-    files: { ...guides, 'shared/rules.md': '[gone](./gone.md)\n' },
-    reason: ['shared/rules.md', './gone.md'],
-  },
-  {
-    name: 'a link to a missing heading in another file',
-    files: { ...guides, 'shared/coding.md': '[a](./rules.md#missing)\n' },
-    reason: ['links to ./rules.md#missing, which names a missing heading'],
-  },
-  {
-    name: 'a dangling reference definition in a list item',
-    files: { ...guides, 'shared/rules.md': '- [a]: ./gone.md\n' },
-    reason: ['links to ./gone.md, which is not a synced file'],
-  },
 ];
 
 it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) => {
@@ -202,6 +187,17 @@ it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) 
   for (const part of reason) {
     expect(found).toContain(part);
   }
+});
+
+it('reports a dangling link as broken with the whole reason', async () => {
+  const directory = writeGuides({ ...guides, 'shared/rules.md': '[gone](./gone.md)\n' });
+
+  const result = await readSyncedGuides(directory);
+
+  expect(result).toEqual({
+    kind: 'broken',
+    reason: `${join(directory, 'shared/rules.md')} links to ./gone.md, which is not a synced file; run stomme sync`,
+  });
 });
 
 // The depth that overflows the stack depends on the runner's stack size, so the test deepens the
