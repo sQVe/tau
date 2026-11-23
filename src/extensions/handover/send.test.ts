@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -9,8 +9,10 @@ import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
+import type { HandoverSender } from '../../handoverSender.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { sendHandover } from './send.js';
+import type { SendHandoverRequest, SendHandoverResult } from './send.js';
 
 const callerAddress = 'caller';
 
@@ -27,6 +29,11 @@ const runtimeOf = (fake: HcFake): HcRuntime => ({
   connect: fake.connect,
   cwd: '/repository',
 });
+
+const send = (
+  fake: HcFake,
+  request: Omit<SendHandoverRequest, 'sender'> & { sender?: HandoverSender },
+): Promise<SendHandoverResult> => sendHandover(runtimeOf(fake), { sender: undefined, ...request });
 
 const terminalReply = (
   address: string,
@@ -62,6 +69,71 @@ const expectNoSend = (fake: HcFake) => {
   expect(fake.calls.map((call) => call.commandArguments[0])).not.toContain('send');
 };
 
+it('sends the lead as sender', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), 't7');
+  const sender = { terminal: 'lead-terminal', sessionId: '33333333-3333-4333-8333-333333333333' };
+
+  fake.reply('get', terminalReply('t7', null, receiver.path));
+
+  const result = await send(fake, { cwd: root, terminal: 't7', file, sender });
+
+  const saved = JSON.parse(
+    readFileSync(join(receiver.inbox, `${result.messageId}.json`), 'utf8'),
+  ) as unknown;
+
+  expect(saved).toEqual({
+    version: 2,
+    messageId: result.messageId,
+    family: 'handover',
+    payload: { text: 'Next steps\n', sender },
+  });
+});
+
+it('sends no sender without one', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), 't7');
+
+  fake.reply('get', terminalReply('t7', null, receiver.path));
+
+  const result = await send(fake, { cwd: root, terminal: 't7', file });
+
+  const saved = JSON.parse(
+    readFileSync(join(receiver.inbox, `${result.messageId}.json`), 'utf8'),
+  ) as unknown;
+
+  expect(saved).toEqual({
+    version: 2,
+    messageId: result.messageId,
+    family: 'handover',
+    payload: { text: 'Next steps\n' },
+  });
+});
+
+it('refuses a handover file that starts with a sender line', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const file = await writeHandover(
+    root,
+    'Handover sender: terminal t9, session 44444444-4444-4444-8444-444444444444.\nNext steps\n',
+  );
+
+  const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), 't7');
+
+  fake.reply('get', terminalReply('t7', null, receiver.path));
+
+  await expect(send(fake, { cwd: root, terminal: 't7', file })).rejects.toThrow(
+    'The handover text must not start with a sender line.',
+  );
+
+  expect(receiver.savedRecords()).toEqual([]);
+});
+
 it('sends the file text to the receiver inbox and returns queued with its message ID', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
@@ -70,7 +142,7 @@ it('sends the file text to the receiver inbox and returns queued with its messag
 
   fake.reply('get', terminalReply('t7', null, receiver.path));
 
-  const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
+  const result = await send(fake, { cwd: root, terminal: 't7', file });
 
   expect(result).toMatchObject({ status: 'queued', terminal: 't7', sessionId: receiver.sessionId });
   expect(receiver.savedRecords()).toContain(join(receiver.sessionId, `${result.messageId}.json`));
@@ -87,9 +159,9 @@ it('keeps the message ID of a retry, so the receiver saves the message once', as
 
   fake.reply('get', terminalReply('t7', null, receiver.path));
 
-  await expect(sendHandover(runtimeOf(fake), request)).resolves.toMatchObject({ messageId });
+  await expect(send(fake, request)).resolves.toMatchObject({ messageId });
 
-  await expect(sendHandover(runtimeOf(fake), request)).resolves.toMatchObject({
+  await expect(send(fake, request)).resolves.toMatchObject({
     status: 'queued',
     messageId,
   });
@@ -110,7 +182,7 @@ it('returns unknown when the receiver closes without a reply, and a retry with t
   writeFileSync(join(sockets, 'records'), '');
   fake.reply('get', terminalReply('t7', null, receiver.path));
 
-  const lost = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
+  const lost = await send(fake, { cwd: root, terminal: 't7', file });
 
   expect(lost).toMatchObject({ status: 'unknown', terminal: 't7', sessionId: receiver.sessionId });
   expect(lost.note).toContain(`A retry must reuse this message ID and the same text.`);
@@ -125,7 +197,7 @@ it('returns unknown when the receiver closes without a reply, and a retry with t
     sessionId: lost.sessionId,
   };
 
-  await expect(sendHandover(runtimeOf(fake), retry)).resolves.toMatchObject({
+  await expect(send(fake, retry)).resolves.toMatchObject({
     status: 'queued',
     messageId: lost.messageId,
   });
@@ -147,7 +219,7 @@ it('refuses a retry after the receiver changed session and saves nothing', async
   fake.reply('get', terminalReply('t7', null, receiver.path));
 
   await expect(
-    sendHandover(runtimeOf(fake), {
+    send(fake, {
       cwd: root,
       terminal: 't7',
       file,
@@ -166,9 +238,9 @@ it('refuses a retry ID that is not a UUID before any hc call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
-  await expect(
-    sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file, messageId: 'retry' }),
-  ).rejects.toThrow(`The message ID is not a UUID: retry ${refusal}`);
+  await expect(send(fake, { cwd: root, terminal: 't7', file, messageId: 'retry' })).rejects.toThrow(
+    `The message ID is not a UUID: retry ${refusal}`,
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -178,7 +250,7 @@ it('refuses a file larger than the handover limit without sending', async () => 
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'x'.repeat(102_401));
 
-  await expect(sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file })).rejects.toThrow(
+  await expect(send(fake, { cwd: root, terminal: 't7', file })).rejects.toThrow(
     /handover file is larger than 102400 bytes/,
   );
 
@@ -193,7 +265,7 @@ it('refuses a file outside the handovers directory without sending', async () =>
   await writeFile(file, 'Next steps\n');
   fake.reply('get', terminalReply('t7'));
 
-  await expect(sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file })).rejects.toThrow(
+  await expect(send(fake, { cwd: root, terminal: 't7', file })).rejects.toThrow(
     /outside the .tau\/handovers directory/,
   );
 
@@ -211,9 +283,9 @@ it('refuses a symlink that leaves the handovers directory without sending', asyn
   await symlink(outside, link, 'file');
   fake.reply('get', terminalReply('t7'));
 
-  await expect(
-    sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file: link }),
-  ).rejects.toThrow(/outside the .tau\/handovers directory/);
+  await expect(send(fake, { cwd: root, terminal: 't7', file: link })).rejects.toThrow(
+    /outside the .tau\/handovers directory/,
+  );
 
   expectNoSend(fake);
 });
@@ -225,9 +297,7 @@ it('refuses an empty file without sending', async () => {
 
   fake.reply('get', terminalReply('t7'));
 
-  await expect(sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file })).rejects.toThrow(
-    /is empty/,
-  );
+  await expect(send(fake, { cwd: root, terminal: 't7', file })).rejects.toThrow(/is empty/);
 
   expectNoSend(fake);
 });
@@ -240,9 +310,7 @@ it('refuses a missing file without sending', async () => {
   await mkdir(join(root, '.tau', 'handovers'), { recursive: true });
   fake.reply('get', terminalReply('t7'));
 
-  await expect(sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file })).rejects.toThrow(
-    /does not exist/,
-  );
+  await expect(send(fake, { cwd: root, terminal: 't7', file })).rejects.toThrow(/does not exist/);
 
   expectNoSend(fake);
 });
@@ -254,9 +322,9 @@ it("refuses the caller's own terminal by address without sending", async () => {
 
   fake.reply('get', terminalReply(callerAddress, 'worker'));
 
-  await expect(
-    sendHandover(runtimeOf(fake), { cwd: root, terminal: callerAddress, file }),
-  ).rejects.toThrow(`own terminal. ${refusal}`);
+  await expect(send(fake, { cwd: root, terminal: callerAddress, file })).rejects.toThrow(
+    `own terminal. ${refusal}`,
+  );
 
   expectNoSend(fake);
 });
@@ -268,9 +336,9 @@ it("refuses the caller's own terminal by name without sending", async () => {
 
   fake.reply('get', terminalReply(callerAddress, 'worker'));
 
-  await expect(
-    sendHandover(runtimeOf(fake), { cwd: root, terminal: 'worker', file }),
-  ).rejects.toThrow(`own terminal. ${refusal}`);
+  await expect(send(fake, { cwd: root, terminal: 'worker', file })).rejects.toThrow(
+    `own terminal. ${refusal}`,
+  );
 
   expectNoSend(fake);
 });
@@ -294,7 +362,9 @@ it('sends nothing when the caller aborts while the terminal lookup is pending', 
   fake.reply('get', terminalReply('t7'));
   const runtime = { exec, connect: fake.connect, cwd: '/repository', signal: controller.signal };
 
-  await expect(sendHandover(runtime, { cwd: root, terminal: 't7', file })).rejects.toMatchObject({
+  await expect(
+    sendHandover(runtime, { cwd: root, terminal: 't7', file, sender: undefined }),
+  ).rejects.toMatchObject({
     name: 'AbortError',
   });
 

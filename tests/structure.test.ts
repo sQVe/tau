@@ -189,6 +189,7 @@ const pureModules = [
   'src/fileLock/lockHolderDecision.ts',
   'src/github/pullRequestDecisions.ts',
   'src/github/repositoryTargetDecisions.ts',
+  'src/handoverSender.ts',
   'src/improvement/classIdentity.ts',
   'src/improvement/correctDecision.ts',
   'src/improvement/historyRead.ts',
@@ -487,7 +488,7 @@ const versionedRecords = [
   {
     writer: 'src/inbox/store.ts',
     fixtures: 'src/inbox/fixtures/handover',
-    names: ['current.json', 'newer.json', 'malformed.json'],
+    names: ['previous.json', 'current.json', 'newer.json', 'malformed.json'],
   },
   {
     writer: 'src/improvement/event.ts',

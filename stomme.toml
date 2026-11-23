@@ -476,6 +476,11 @@ public = [
 ]
 imports = ["command", "errors", "git", "schema"]
 
+[modules.handoverSender]
+entry = "src/handoverSender.ts"
+public = []
+imports = []
+
 [modules.hc]
 entry = "src/hc/hc.ts"
 public = ["src/hc/connect.ts", "src/hc/events.ts"]
@@ -506,7 +511,7 @@ imports = ["command", "errors", "fileLock", "git", "github", "record", "schema",
 [modules.inbox]
 entry = "src/inbox/inbox.ts"
 public = ["src/inbox/receiptDecision.ts"]
-imports = ["errors", "fileLock", "hc", "record", "schema", "wake"]
+imports = ["errors", "fileLock", "handoverSender", "hc", "record", "schema", "wake"]
 
 [modules.instructions]
 entry = "src/instructions/instructions.ts"

@@ -35,10 +35,31 @@ const requestFor = (root: string, file: string, target: PiStartTarget): StartHan
   target,
   model: undefined,
   bareRoot: false,
+  sender: undefined,
 });
 
 const commandsOf = (fake: ExecFake<HerdrAppCommand>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
+
+const tabCommand = (root: string, argv: string, task: string) => ({
+  command: 'herdr-app',
+  commandArguments: [
+    'do',
+    'tab.new',
+    '--space',
+    'space-1',
+    '--folder',
+    root,
+    '--name',
+    'lead',
+    '--argv',
+    argv,
+    '--task',
+    task,
+    '--focus',
+    'false',
+  ],
+});
 
 it('opens a tab in the space with the file text as its task', async () => {
   const fake = createHerdrAppFake();
@@ -52,27 +73,39 @@ it('opens a tab in the space with the file text as its task', async () => {
 
   expect(result).toEqual({ reply: '{"ok":true}' });
 
+  expect(commandsOf(fake)).toEqual([tabCommand(root, '["pi"]', 'Next steps\n')]);
+});
+
+it('passes the lead as sender to the new tab', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await startHandover(runtimeOf(fake, root), {
+    ...requestFor(root, file, { space: 'space-1' }),
+    sender: { terminal: 't7', sessionId: 'lead-id' },
+  });
+
   expect(commandsOf(fake)).toEqual([
-    {
-      command: 'herdr-app',
-      commandArguments: [
-        'do',
-        'tab.new',
-        '--space',
-        'space-1',
-        '--folder',
-        root,
-        '--name',
-        'lead',
-        '--argv',
-        '["pi"]',
-        '--task',
-        'Next steps\n',
-        '--focus',
-        'false',
-      ],
-    },
+    tabCommand(
+      root,
+      '["env","TAU_HANDOVER_SENDER_TERMINAL=t7","TAU_HANDOVER_SENDER_SESSION=lead-id","pi"]',
+      'Handover sender: terminal t7, session lead-id.\n\nNext steps\n',
+    ),
   ]);
+});
+
+it('starts without a sender as today', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await startHandover(runtimeOf(fake, root), {
+    ...requestFor(root, file, { space: 'space-1' }),
+    sender: undefined,
+  });
+
+  expect(commandsOf(fake)).toEqual([tabCommand(root, '["pi"]', 'Next steps\n')]);
 });
 
 it('opens a new space with Pi in its only tab', async () => {

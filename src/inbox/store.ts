@@ -7,12 +7,17 @@ import type { Static } from 'typebox';
 import { errorMessage, isMissingFile } from '../errors.js';
 import { parseVersionedRecord, writeFencedRecord, writeRecord } from '../record.js';
 import type { RecordFence } from '../record.js';
+import { isRecord } from '../schema.js';
 import { isUuid, requestByteLimit, uuidSchema, withSavableBody } from './protocol.js';
 
 export type InboxRecord = Static<typeof recordSchema>;
 
+type PreviousInboxRecord = Static<typeof previousRecordSchema>;
+
+type SavedInboxRecord = InboxRecord | PreviousInboxRecord;
+
 export type InboxRead =
-  | { kind: 'record'; record: InboxRecord }
+  | { kind: 'record'; record: SavedInboxRecord }
   | { kind: 'missing' }
   | { kind: 'malformed'; reason: string };
 
@@ -24,21 +29,58 @@ export interface SaveOptions {
   fence?: RecordFence | undefined;
 }
 
-const recordVersion = 1;
+export const inboxRecordVersion = 2;
+
+const strict = { additionalProperties: false } as const;
+
+const previousRecordSchema = Type.Union([
+  Type.Object(
+    {
+      version: Type.Literal(1),
+      messageId: uuidSchema,
+      family: Type.Literal('handover'),
+      payload: Type.Object({ text: Type.String({ minLength: 1 }) }, strict),
+    },
+    strict,
+  ),
+  Type.Object(
+    {
+      version: Type.Literal(1),
+      messageId: uuidSchema,
+      family: Type.Literal('answer'),
+      payload: Type.Object(
+        {
+          assignmentId: uuidSchema,
+          questionId: uuidSchema,
+          parentSession: Type.String({ minLength: 1 }),
+          answer: Type.String({ minLength: 1 }),
+        },
+        strict,
+      ),
+    },
+    strict,
+  ),
+]);
 
 const recordSchema = withSavableBody({
-  version: Type.Literal(recordVersion),
+  version: Type.Literal(inboxRecordVersion),
   messageId: uuidSchema,
 });
 
-const recordOptions = { label: 'inbox record', version: recordVersion, schema: recordSchema };
+const isPreviousRecord = (value: unknown): boolean => isRecord(value) && value['version'] === 1;
+
+const recordOptions = {
+  label: 'inbox record',
+  version: inboxRecordVersion,
+  schema: (value: unknown) => (isPreviousRecord(value) ? previousRecordSchema : recordSchema),
+};
 
 const recordByteLimit = 2 * requestByteLimit;
 
 const recordPath = (directory: string, messageId: string): string =>
   join(directory, `${messageId}.json`);
 
-const readRecord = async (path: string): Promise<InboxRecord> => {
+const readRecord = async (path: string): Promise<SavedInboxRecord> => {
   const text = await readFile(path, 'utf8');
 
   if (Buffer.byteLength(text) > recordByteLimit) {
@@ -60,8 +102,13 @@ export const readMessage = async (directory: string, messageId: string): Promise
   }
 };
 
+const sameRecord = (saved: SavedInboxRecord, record: InboxRecord): boolean =>
+  saved.messageId === record.messageId &&
+  saved.family === record.family &&
+  JSON.stringify(saved.payload) === JSON.stringify(record.payload);
+
 const sameMessage = (saved: InboxRead, record: InboxRecord): boolean =>
-  saved.kind === 'record' && JSON.stringify(saved.record) === JSON.stringify(record);
+  saved.kind === 'record' && sameRecord(saved.record, record);
 
 export const saveMessage = async (
   directory: string,

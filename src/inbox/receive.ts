@@ -10,7 +10,13 @@ import {
 } from './receiptDecision.js';
 import type { InboxReceipt, ReceiptEntryFact, SettleFacts } from './receiptDecision.js';
 import type { ReceiptStore } from './receipts.js';
-import { deleteMessage, pendingMessages, readMessage, saveMessage } from './store.js';
+import {
+  deleteMessage,
+  inboxRecordVersion,
+  pendingMessages,
+  readMessage,
+  saveMessage,
+} from './store.js';
 
 interface InboxMessage {
   customType: string;
@@ -111,7 +117,7 @@ const save = async (
 
   const outcome = await saveMessage(
     options.directory,
-    { version: 1, messageId, ...body },
+    { version: inboxRecordVersion, messageId, ...body },
     { fence },
   );
 

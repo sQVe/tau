@@ -8,11 +8,32 @@ import { deleteMessage, pendingMessages, readMessage, saveMessage } from './stor
 
 const messageId = '11111111-1111-4111-8111-111111111111';
 
+const sender = { terminal: 'lead', sessionId: '22222222-2222-4222-8222-222222222222' };
+
 const record = {
+  version: 2 as const,
+  messageId,
+  family: 'handover' as const,
+  payload: { text: 'handover text', sender },
+};
+
+const previousRecord = {
   version: 1 as const,
   messageId,
   family: 'handover' as const,
   payload: { text: 'handover text' },
+};
+
+const previousAnswerRecord = {
+  version: 1 as const,
+  messageId,
+  family: 'answer' as const,
+  payload: {
+    assignmentId: '22222222-2222-4222-8222-222222222222',
+    questionId: '33333333-3333-4333-8333-333333333333',
+    parentSession: 'lead-session',
+    answer: 'Use 42.',
+  },
 };
 
 const directoryFixture = () => join(temporaryDirectory(onTestFinished, 'tau-store-'), 'session');
@@ -25,6 +46,28 @@ const fixtureInto = (directory: string, name: string): string => {
 
   return path;
 };
+
+it('reads the frozen previous record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'previous.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: previousRecord,
+  });
+});
+
+it('reads the frozen previous answer record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'previousAnswer.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: previousAnswerRecord,
+  });
+});
 
 it('reads the frozen current record', async () => {
   const directory = directoryFixture();
@@ -48,7 +91,7 @@ it.each([
   });
 });
 
-it('reports a saved answer-request record as malformed', async () => {
+it('reports a version 1 record with a sender as malformed', async () => {
   const directory = directoryFixture();
   const path = join(directory, `${messageId}.json`);
 
@@ -56,19 +99,35 @@ it('reports a saved answer-request record as malformed', async () => {
 
   writeFileSync(
     path,
-    JSON.stringify({
-      version: 1,
-      messageId,
-      family: 'answer-request',
-      payload: {
-        assignmentId: '22222222-2222-4222-8222-222222222222',
-        questionId: '33333333-3333-4333-8333-333333333333',
-        answer: 'Use 42.',
-      },
-    }),
+    JSON.stringify({ ...previousRecord, payload: { text: 'handover text', sender } }),
   );
 
   await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+});
+
+it('reports a saved answer-request record as malformed', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+
+  for (const version of [1, 2]) {
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version,
+        messageId,
+        family: 'answer-request',
+        payload: {
+          assignmentId: '22222222-2222-4222-8222-222222222222',
+          questionId: '33333333-3333-4333-8333-333333333333',
+          answer: 'Use 42.',
+        },
+      }),
+    );
+
+    await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+  }
 });
 
 it('reports a missing record', async () => {
@@ -110,10 +169,76 @@ it('saves once and never replaces a saved record', async () => {
   await expect(saveMessage(directory, record)).resolves.toBe('existing');
 
   await expect(
-    saveMessage(directory, { ...record, payload: { text: 'other text' } }),
+    saveMessage(directory, { ...record, payload: { ...record.payload, text: 'other text' } }),
   ).resolves.toBe('changed');
 
   expect(readFileSync(path, 'utf8')).toBe(saved);
+});
+
+it('keeps a pending version 1 record when the same message is saved again', async () => {
+  const directory = directoryFixture();
+  const path = fixtureInto(directory, 'previous.json');
+  const saved = readFileSync(path, 'utf8');
+
+  await expect(
+    saveMessage(directory, { ...record, payload: previousRecord.payload }),
+  ).resolves.toBe('existing');
+
+  expect(readFileSync(path, 'utf8')).toBe(saved);
+});
+
+it('reports a retry whose sender differs from a pending version 1 record as changed', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'previous.json');
+
+  await expect(saveMessage(directory, record)).resolves.toBe('changed');
+});
+
+it('reports a pending record with a different message ID as changed', async () => {
+  const directory = directoryFixture();
+  const otherMessageId = '33333333-3333-4333-8333-333333333333';
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(
+    join(directory, `${messageId}.json`),
+    JSON.stringify({ ...record, messageId: otherMessageId }),
+  );
+
+  await expect(saveMessage(directory, record)).resolves.toBe('changed');
+});
+
+it('reports a pending record with a different family as changed', async () => {
+  const directory = directoryFixture();
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(
+    join(directory, `${messageId}.json`),
+    JSON.stringify({
+      version: 2,
+      messageId,
+      family: 'answer',
+      payload: {
+        assignmentId: '33333333-3333-4333-8333-333333333333',
+        questionId: '44444444-4444-4444-8444-444444444444',
+        parentSession: 'lead-session',
+        answer: 'Use 42.',
+      },
+    }),
+  );
+
+  await expect(saveMessage(directory, record)).resolves.toBe('changed');
+});
+
+it('reports a retry over a saved entry that is not a record as changed', async () => {
+  const directory = directoryFixture();
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, `${messageId}.json`), 'not JSON\n');
+
+  await expect(saveMessage(directory, record)).resolves.toBe('changed');
 });
 
 it('writes nothing when the fence gives a reason', async () => {

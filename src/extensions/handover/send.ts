@@ -1,3 +1,4 @@
+import type { HandoverSender } from '../../handoverSender.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { sendInboxMessage } from '../../inbox/inbox.js';
 import type { InboxSendResult } from '../../inbox/inbox.js';
@@ -7,6 +8,7 @@ export interface SendHandoverRequest {
   cwd: string;
   terminal: string;
   file: string;
+  sender: HandoverSender | undefined;
   messageId?: string | undefined;
   sessionId?: string | undefined;
 }
@@ -22,7 +24,10 @@ export const sendHandover = async (
   return sendInboxMessage({
     hc,
     target: request.terminal,
-    body: { family: 'handover', payload: { text } },
+    body: {
+      family: 'handover',
+      payload: { text, ...(request.sender === undefined ? {} : { sender: request.sender }) },
+    },
     messageId: request.messageId,
     sessionId: request.sessionId,
     refusal: 'Nothing was queued. Use handover start to open a receiver instead.',

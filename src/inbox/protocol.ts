@@ -2,6 +2,8 @@ import { Type } from 'typebox';
 import type { Static, TObject, TProperties, TSchema, TUnion } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { senderTerminalPattern } from '../handoverSender.js';
+
 export type MessageRequest = Static<typeof requestSchema>;
 
 export type MessageBody = Static<typeof bodySchema>;
@@ -60,9 +62,20 @@ const strict = { additionalProperties: false } as const;
 
 const protocolField = Type.Literal(protocolName);
 
+const handoverSenderSchema = Type.Object(
+  {
+    terminal: Type.String({ pattern: senderTerminalPattern }),
+    sessionId: sessionIdSchema,
+  },
+  strict,
+);
+
 const handoverBody = {
   family: Type.Literal('handover'),
-  payload: Type.Object({ text: Type.String({ minLength: 1 }) }, strict),
+  payload: Type.Object(
+    { text: Type.String({ minLength: 1 }), sender: Type.Optional(handoverSenderSchema) },
+    strict,
+  ),
 };
 
 const answerBody = {

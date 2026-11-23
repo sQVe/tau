@@ -81,9 +81,10 @@ export const confirmContext = (
   return { ...context, cwd };
 };
 
-export const noUiContext = (cwd: string): ExtensionToolContext =>
+export const noUiContext = (cwd: string, sessionId = 'session-one'): ExtensionToolContext =>
   ({
     cwd,
     hasUI: false,
     ui: {},
+    sessionManager: { getSessionId: () => sessionId },
   }) as unknown as ExtensionToolContext;

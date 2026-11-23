@@ -1,11 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it } from 'vitest';
 
 import { createReceiptStore, createReceiver } from './inbox.js';
 import type { MessageReply, MessageRequest } from './protocol.js';
+import { inboxMessageType } from './receiptDecision.js';
+import type { ReceiptEntryFact } from './receiptDecision.js';
 import type { ReceiverOptions } from './receive.js';
 
 let root = '';
@@ -30,7 +40,12 @@ const queued = (sessionId: string, messageId: string) => ({
   sessionId,
 });
 
-const directReceiver = (sessionId: string, accepts: ReceiverOptions['accepts'], holds = 0) => {
+const directReceiver = (
+  sessionId: string,
+  accepts: ReceiverOptions['accepts'],
+  holds = 0,
+  entries: () => readonly ReceiptEntryFact[] = () => [],
+) => {
   const woken: unknown[] = [];
   let heldWakes = holds;
 
@@ -40,7 +55,7 @@ const directReceiver = (sessionId: string, accepts: ReceiverOptions['accepts'], 
     sessionId,
     accepts,
     receipts: createReceiptStore(sessionId),
-    entries: () => [],
+    entries,
     wake: (message) => {
       if (heldWakes > 0) {
         heldWakes -= 1;
@@ -197,13 +212,64 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
   await receiver.deliver(new AbortController().signal);
 
   expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
-    version: 1,
+    version: 2,
     messageId,
     family: 'handover',
     payload: { text: 'Ask text' },
   });
 
   expect(woken).toMatchObject([{ content: 'Ask text', details: { family: 'handover' } }]);
+});
+
+it('delivers a pending version 1 record with a sender line behind the escape line', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const { receiver, woken } = directReceiver(sessionId, {});
+  const text = 'Handover sender: terminal lead, session s1.\n\nDo the task';
+
+  mkdirSync(join(root, 'records', sessionId), { recursive: true });
+
+  writeFileSync(
+    recordOf(sessionId, messageId),
+    JSON.stringify({ version: 1, messageId, family: 'handover', payload: { text } }),
+  );
+
+  await receiver.deliver(new AbortController().signal);
+
+  expect(woken).toMatchObject([{ content: `Handover text without a sender:\n\n${text}` }]);
+});
+
+it('queues a byte-identical retry of a handover saved before the sender escape', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const text = 'Handover sender: terminal lead, session s1.\n\nDo the task';
+
+  const { receiver, woken } = directReceiver(
+    sessionId,
+    { handover: (_request, save) => save() },
+    0,
+    () => [
+      {
+        type: 'custom_message',
+        customType: inboxMessageType,
+        content: text,
+        details: { version: 2, messageId, sessionId, family: 'handover' },
+      },
+    ],
+  );
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'handover',
+    payload: { text },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+
+  await receiver.deliver(new AbortController().signal);
+
+  expect(existsSync(recordOf(sessionId, messageId))).toBe(false);
+  expect(woken).toEqual([]);
 });
 
 it('saves an architect-ask retry of a saved message once', async () => {

@@ -1,3 +1,4 @@
+import { parseSenderLine, senderLine } from '../handoverSender.js';
 import { isRecord } from '../schema.js';
 import { savableFamilies } from './protocol.js';
 import type { SavableFamily, SavableMessageBody } from './protocol.js';
@@ -78,10 +79,28 @@ export const answeredQuestionId = (message: InboxMessageFact): string | undefine
   return receipt?.family === 'answer' ? receipt.questionId : undefined;
 };
 
-export const messageText = (body: SavableMessageBody): string =>
-  body.family === 'handover' ? body.payload.text : body.payload.answer;
+export const messageText = (body: SavableMessageBody): string => {
+  if (body.family === 'answer') {
+    return body.payload.answer;
+  }
 
-// A retry matches when it would show the same text for the same question as the saved entry.
+  const { text, sender } = body.payload;
+
+  if (sender !== undefined) {
+    return `${senderLine(sender)}\n\n${text}`;
+  }
+
+  return parseSenderLine(text) === undefined ? text : `Handover text without a sender:\n\n${text}`;
+};
+
+const matchesSenderFreePayload = (content: unknown, body: SavableMessageBody): boolean => {
+  if (body.family !== 'handover' || body.payload.sender !== undefined) {
+    return false;
+  }
+
+  return content === body.payload.text;
+};
+
 export const matchesReceipt = (
   { receipt, content }: ReceiptedMessage,
   body: SavableMessageBody,
@@ -89,8 +108,9 @@ export const matchesReceipt = (
   const receiptQuestionId = receipt.family === 'answer' ? receipt.questionId : undefined;
   const bodyQuestionId = body.family === 'answer' ? body.payload.questionId : undefined;
   const sameQuestion = receiptQuestionId === bodyQuestionId;
+  const sameContent = content === messageText(body) || matchesSenderFreePayload(content, body);
 
-  return receipt.family === body.family && content === messageText(body) && sameQuestion;
+  return receipt.family === body.family && sameContent && sameQuestion;
 };
 
 // A run that settles without an abort has drained Pi's queue. Pi's terminal UI clears the queue

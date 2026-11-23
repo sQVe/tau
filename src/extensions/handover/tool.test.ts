@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { link, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -337,6 +337,111 @@ it('sends a handover with final true and returns queued', async () => {
   expect(result.details).toEqual(queued);
 });
 
+it.each([
+  ['an architect session sends no sender', 'architect', undefined],
+  [
+    'a lead session sends its terminal and session',
+    undefined,
+    { terminal: 'lead-terminal', sessionId: 'lead-session' },
+  ],
+] as const)('%s', async (_name, role, sender) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const file = join(root, '.tau', 'handovers', 'message.md');
+  const sockets = mkdtempSync('/tmp/tau-tool-');
+  const messageId = '11111111-1111-4111-8111-111111111111';
+
+  chmodSync(sockets, 0o700);
+
+  onTestFinished(() => {
+    rmSync(sockets, { recursive: true, force: true });
+  });
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, 't7');
+
+  vi.stubEnv('HC_TERMINAL_ID', 'lead-terminal');
+  vi.stubEnv('TAU_ROLE', role);
+  await mkdir(join(root, '.tau', 'handovers'), { recursive: true });
+  await writeFile(file, 'Next steps\n');
+
+  fake.reply(
+    'get',
+    JSON.stringify({
+      address: 't7',
+      state: 'live',
+      labels: { 'tau.inbox': `rpc1:${receiver.path}` },
+    }),
+  );
+
+  await createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', file, messageId, sessionId: receiver.sessionId },
+    undefined,
+    undefined,
+    noUiContext(root, 'lead-session'),
+  );
+
+  const saved = JSON.parse(
+    readFileSync(join(receiver.inbox, `${messageId}.json`), 'utf8'),
+  ) as unknown;
+
+  expect(saved).toEqual({
+    version: 2,
+    messageId,
+    family: 'handover',
+    payload: { text: 'Next steps\n', ...(sender === undefined ? {} : { sender }) },
+  });
+});
+
+it('sends no sender when the session ID is empty', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const file = join(root, '.tau', 'handovers', 'message.md');
+  const sockets = mkdtempSync('/tmp/tau-tool-');
+  const messageId = '11111111-1111-4111-8111-111111111111';
+
+  chmodSync(sockets, 0o700);
+
+  onTestFinished(() => {
+    rmSync(sockets, { recursive: true, force: true });
+  });
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, 't7');
+
+  vi.stubEnv('HC_TERMINAL_ID', 'lead-terminal');
+  vi.stubEnv('TAU_ROLE', 'lead');
+  await mkdir(join(root, '.tau', 'handovers'), { recursive: true });
+  await writeFile(file, 'Next steps\n');
+
+  fake.reply(
+    'get',
+    JSON.stringify({
+      address: 't7',
+      state: 'live',
+      labels: { 'tau.inbox': `rpc1:${receiver.path}` },
+    }),
+  );
+
+  await createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', file, messageId, sessionId: receiver.sessionId },
+    undefined,
+    undefined,
+    noUiContext(root, ''),
+  );
+
+  const saved = JSON.parse(
+    readFileSync(join(receiver.inbox, `${messageId}.json`), 'utf8'),
+  ) as unknown;
+
+  expect(saved).toEqual({
+    version: 2,
+    messageId,
+    family: 'handover',
+    payload: { text: 'Next steps\n' },
+  });
+});
+
 it('refuses a send without a terminal before any hc call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();
@@ -450,6 +555,28 @@ it('starts a tab in a space and returns the herdr-app reply', async () => {
 
   expect(argumentAfter(launch?.commandArguments ?? [], '--space')).toBe('space-1');
   expect(argumentAfter(launch?.commandArguments ?? [], '--folder')).toBe(root);
+});
+
+it('starts an architect tab without a sender', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createHerdrAppFake();
+
+  vi.stubEnv('TAU_ROLE', 'architect');
+  vi.stubEnv('HC_TERMINAL_ID', 'architect-terminal');
+
+  await createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root, 'architect-session'),
+  );
+
+  const [launch] = app.calls;
+
+  expect(argumentAfter(launch?.commandArguments ?? [], '--argv')).toBe('["pi"]');
+  expect(argumentAfter(launch?.commandArguments ?? [], '--task')).toBe('Next steps\n');
 });
 
 it('starts a tab from a real bare repository root', async () => {

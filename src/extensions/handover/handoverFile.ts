@@ -2,6 +2,7 @@ import { realpath } from 'node:fs/promises';
 import { relative } from 'node:path';
 
 import { readCheckedText, resolveTextFile } from '../../fileText.js';
+import { parseSenderLine } from '../../handoverSender.js';
 import { climbsOut, ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 
 // hc send and herdr-app pass the text as one argument, and Linux refuses one above 128 KiB.
@@ -17,8 +18,14 @@ export const readHandoverText = async (cwd: string, file: string): Promise<strin
     throw new Error(`handover file is outside the .tau/handovers directory: ${file}`);
   }
 
-  return readCheckedText(realFile, file, {
+  const text = await readCheckedText(realFile, file, {
     label: 'handover file',
     byteLimit: handoverByteLimit,
   });
+
+  if (parseSenderLine(text) !== undefined) {
+    throw new Error('The handover text must not start with a sender line.');
+  }
+
+  return text;
 };

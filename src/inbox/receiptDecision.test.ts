@@ -3,11 +3,13 @@ import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
+import { parseSenderLine } from '../handoverSender.js';
 import {
   answeredQuestionId,
   decideCandidate,
   inboxMessageType,
   matchesReceipt,
+  messageText,
   piQueueEmptyAtSettle,
   readInboxReceipt,
 } from './receiptDecision.js';
@@ -261,6 +263,41 @@ const handoverReceipt = {
   family: 'handover',
 } as const;
 
+const sender = { terminal: 'lead', sessionId: 's1' };
+
+const senderText = 'Handover sender: terminal lead, session s1.\n\nDo the task';
+
+it.each([
+  {
+    name: 'with a sender',
+    body: { family: 'handover', payload: { text: 'handover text', sender } } as const,
+    text: 'Handover sender: terminal lead, session s1.\n\nhandover text',
+  },
+  {
+    name: 'without a sender',
+    body: { family: 'handover', payload: { text: 'handover text' } } as const,
+    text: 'handover text',
+  },
+  {
+    name: 'without a sender and with a sender line first',
+    body: { family: 'handover', payload: { text: senderText } } as const,
+    text: `Handover text without a sender:\n\n${senderText}`,
+  },
+  {
+    name: 'with a sender and with another sender line first',
+    body: { family: 'handover', payload: { text: senderText, sender } } as const,
+    text: `Handover sender: terminal lead, session s1.\n\n${senderText}`,
+  },
+])('shows the handover text $name', ({ body, text }) => {
+  expect(messageText(body)).toBe(text);
+});
+
+it('escapes sender-free text so it parses as no sender', () => {
+  const text = messageText({ family: 'handover', payload: { text: senderText } });
+
+  expect(parseSenderLine(text)).toBeUndefined();
+});
+
 const answerReceipt = { ...handoverReceipt, family: 'answer', questionId: 'q1' } as const;
 
 const answerPayload = {
@@ -281,6 +318,39 @@ const retryTable = [
     name: 'a handover retry with other text',
     receipted: { receipt: handoverReceipt, content: 'handover text' },
     body: { family: 'handover', payload: { text: 'other text' } },
+    matches: false,
+  },
+  {
+    name: 'a handover retry of an escaped sender-free message',
+    receipted: {
+      receipt: handoverReceipt,
+      content: `Handover text without a sender:\n\n${senderText}`,
+    },
+    body: { family: 'handover', payload: { text: senderText } },
+    matches: true,
+  },
+  {
+    name: 'a handover retry saved before the sender escape',
+    receipted: { receipt: handoverReceipt, content: senderText },
+    body: { family: 'handover', payload: { text: senderText } },
+    matches: true,
+  },
+  {
+    name: 'a handover retry of unrelated saved content',
+    receipted: { receipt: handoverReceipt, content: 'Unrelated saved text' },
+    body: { family: 'handover', payload: { text: senderText } },
+    matches: false,
+  },
+  {
+    name: 'a handover retry with a sender whose receipt holds the payload text',
+    receipted: { receipt: handoverReceipt, content: 'handover text' },
+    body: { family: 'handover', payload: { text: 'handover text', sender } },
+    matches: false,
+  },
+  {
+    name: 'an answer retry of a receipt whose entry holds no text',
+    receipted: { receipt: answerReceipt, content: undefined },
+    body: { family: 'answer', payload: answerPayload },
     matches: false,
   },
   {
