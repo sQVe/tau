@@ -140,9 +140,9 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
   try {
     await options.advertise(path);
   } catch (error) {
-    await closeCurrent();
     // The label may be set even when its reply failed. The advertise error explains the failure.
     await options.withdraw(path).catch(() => undefined);
+    await closeCurrent();
 
     throw error;
   }
@@ -156,8 +156,11 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
           return;
         }
 
-        await closeCurrent();
-        await options.withdraw(path);
+        try {
+          await options.withdraw(path);
+        } finally {
+          await closeCurrent();
+        }
       }),
   };
 };
