@@ -207,13 +207,18 @@ it('delivers one worker report through the real hc event watch', async () => {
 
   const readiness = Promise.withResolvers<undefined>();
   let completedScans = 0;
+  let scanning: Promise<void> = Promise.resolve();
 
   const trackedScan: WorkerScan = {
-    scan: async (scanContext) => {
-      await scan.scan(scanContext);
+    scan: (scanContext) => {
+      scanning = (async () => {
+        await scan.scan(scanContext);
 
-      completedScans += 1;
-      readiness.resolve(undefined);
+        completedScans += 1;
+        readiness.resolve(undefined);
+      })();
+
+      return scanning;
     },
     clear: () => {
       scan.clear();
@@ -221,11 +226,6 @@ it('delivers one worker report through the real hc event watch', async () => {
   };
 
   const watch = createEventWatch(subscribeEvents, trackedScan);
-
-  onTestFinished(() => {
-    watch.stop();
-    scan.clear();
-  });
 
   const worker = await launchWorkerSession({
     hc,
@@ -238,6 +238,16 @@ it('delivers one worker report through the real hc event watch', async () => {
       writeFileSync(join(workerDirectory, 'source.txt'), 'before\n');
     },
     beforeLaunch: async () => {
+      // Registered after the worker directories, because removing them stops the session.
+      onTestFinished(async () => {
+        watch.stop();
+
+        // A scan that already started still runs hc commands, and a retry it schedules would too.
+        scan.clear();
+
+        await scanning;
+      });
+
       watch.start(context);
       await readiness.promise;
 
