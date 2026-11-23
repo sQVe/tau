@@ -1,12 +1,9 @@
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
-import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { notifyOnce, userConfigPath } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
 import { readQuestionGateShadow, shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateShadow } from '../../config/questionGateModels.js';
-import { errorMessage } from '../../errors.js';
 import {
   shadowEligibility,
   shadowRateAllows,
@@ -22,6 +19,7 @@ import { writeRecord } from '../../record.js';
 import { ensureTauDirectory, findSharedRepositoryRoot } from '../../tauDirectory.js';
 import type { AskedQuestion, DialogResult } from './dialog.js';
 import { judgeQuestionOf, prepareJudges } from './judges.js';
+import { readAllowedGateConfig } from './readAllowedGateConfig.js';
 
 export interface ShadowPorts {
   now: () => number;
@@ -130,22 +128,6 @@ const judgeAll = async (
   };
 };
 
-const readConfigOrReport = (
-  ports: ShadowPorts,
-  request: ShadowStart,
-  location: ConfigLocation,
-): QuestionGateShadow | undefined => {
-  try {
-    return ports.readConfig(location, request.ui);
-  } catch (error) {
-    const message = errorMessage(error);
-
-    notifyOnce(request.ui, userConfigPath(location.agentDirectory), message, message, 'error');
-
-    return undefined;
-  }
-};
-
 const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRate): ShadowJob => {
   const answer = Promise.withResolvers<DialogResult | undefined>();
   const controller = new AbortController();
@@ -153,29 +135,33 @@ const startShadowJob = (request: ShadowStart, ports: ShadowPorts, rate: ShadowRa
   let settled = false;
 
   const preflight = async (): Promise<{ sharedRoot: string; config: FrozenConfig } | undefined> => {
+    let sharedRoot: string;
+
     try {
-      const sharedRoot = await ports.findSharedRoot(request.cwd, controller.signal);
-
-      const location: ConfigLocation = {
-        cwd: request.cwd,
-        agentDirectory: getAgentDir(),
-        projectTrusted: request.projectTrusted,
-      };
-
-      const read = readConfigOrReport(ports, request, location);
-
-      if (read === undefined) {
-        return undefined;
-      }
-
-      for (const reference of [read.classifier, ...read.panel]) {
-        ports.requireModel(reference, location);
-      }
-
-      return { sharedRoot, config: read };
+      sharedRoot = await ports.findSharedRoot(request.cwd, controller.signal);
     } catch {
       return undefined;
     }
+
+    const config = readAllowedGateConfig(
+      request,
+      (location) => {
+        const read = ports.readConfig(location, request.ui);
+
+        if (read === undefined) {
+          return undefined;
+        }
+
+        return { config: read, models: [read.classifier, ...read.panel] };
+      },
+      ports.requireModel,
+    );
+
+    if (config === undefined) {
+      return undefined;
+    }
+
+    return { sharedRoot, config };
   };
 
   const save = async (
