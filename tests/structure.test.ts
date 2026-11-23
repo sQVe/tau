@@ -105,6 +105,7 @@ const pureModules = [
   'src/extensions/handBack/handBackDecision.ts',
   'src/extensions/handover/placement.ts',
   'src/extensions/handoverQuestion/answer/answerDecision.ts',
+  'src/extensions/handoverQuestion/answer/receivedQuestion.ts',
   'src/extensions/handoverQuestion/senderMessages.ts',
   'src/extensions/improvement/recordPassDecision.ts',
   'src/extensions/improvement/recordRequest.ts',

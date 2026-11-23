@@ -5,6 +5,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ExtensionToolContext,
+  SessionEntry,
 } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -31,6 +32,7 @@ import {
 
 interface ContextOptions {
   branch?: unknown;
+  entries?: readonly SessionEntry[];
   sessionId?: string;
   cwd?: string;
 }
@@ -56,6 +58,7 @@ const contextFields = (options: ContextOptions) => ({
   cwd: options.cwd ?? '/repository',
   sessionManager: {
     getBranch: () => options.branch ?? branch,
+    getEntries: () => options.entries ?? [],
     getSessionId: () => options.sessionId ?? 'session-1',
   },
 });
@@ -168,18 +171,160 @@ it('registers the tool once a handover brings a sender', async () => {
 
   const handler = fake.handler('before_agent_start');
 
+  const questionCalls = () =>
+    registerTool.mock.calls.filter(([tool]) => tool.name === 'handover_question');
+
   await handler({}, context());
 
-  expect(registerTool).toHaveBeenCalledTimes(1);
+  expect(questionCalls()).toHaveLength(1);
 
-  expect(registerTool.mock.calls[0]?.[0]).toMatchObject({
+  expect(questionCalls()[0]?.[0]).toMatchObject({
     name: 'handover_question',
     exposure: 'model-only',
   });
 
   await handler({}, context());
 
-  expect(registerTool).toHaveBeenCalledTimes(1);
+  expect(questionCalls()).toHaveLength(1);
+});
+
+it('registers no question tool outside the lead role', async () => {
+  vi.stubEnv('TAU_ROLE', 'worker');
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+  await fake.handler('before_agent_start')({}, context());
+
+  expect(fake.tools.has('handover_question')).toBe(false);
+});
+
+it('refuses to answer without a saved session ID', async () => {
+  vi.stubEnv('TAU_ROLE', '');
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+
+  const tool = fake.tools.get('handover_answer');
+
+  if (tool === undefined) {
+    throw new Error('Expected the handover_answer tool to be registered.');
+  }
+
+  await expect(
+    tool.execute(
+      'call-1',
+      { questionId: '11111111-1111-4111-8111-111111111111', answer: 'Use option A.' },
+      undefined,
+      undefined,
+      toolContext({ sessionId: '' }),
+    ),
+  ).rejects.toThrow('no saved Pi session ID');
+});
+
+it('looks up the question with a saved session ID', async () => {
+  vi.stubEnv('TAU_ROLE', '');
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+
+  const tool = fake.tools.get('handover_answer');
+
+  if (tool === undefined) {
+    throw new Error('Expected the handover_answer tool to be registered.');
+  }
+
+  const questionId = '11111111-1111-4111-8111-111111111111';
+
+  const result = await tool.execute(
+    'call-1',
+    { questionId, answer: 'Use option A.' },
+    undefined,
+    undefined,
+    toolContext({ sessionId: 'session-1' }),
+  );
+
+  expect(result.details).toMatchObject({ status: 'refused', questionId });
+});
+
+it('answers through the registered tool with the send runtime', async () => {
+  vi.stubEnv('TAU_ROLE', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+
+  const root = temporaryDirectory(onTestFinished, 'tau-handover-answer-');
+
+  const asker = await startHandoverReceiver(onTestFinished, root, 'worker-1', {
+    sessionId: answerAskerSession,
+    accepts: { 'handover-answer': (_request, save) => save() },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, 'worker-1', asker.path);
+
+  const extension = fakeExtensionApi({ exec: fake.exec });
+
+  handoverQuestionExtension(extension.pi);
+
+  const tool = extension.tools.get('handover_answer');
+
+  if (tool === undefined) {
+    throw new Error('Expected the handover_answer tool to be registered.');
+  }
+
+  const received: SessionEntry = {
+    type: 'custom_message',
+    customType: 'tau-inbox-message',
+    content: `Handover question ${answerQuestionId} from terminal worker-1, session ${answerAskerSession}:\n\nWhich option should I use?`,
+    display: true,
+    details: {
+      version: 4,
+      messageId: answerQuestionId,
+      sessionId: answerSenderSession,
+      family: 'handover-question',
+      questionId: answerQuestionId,
+    },
+  } as unknown as SessionEntry;
+
+  const result = await tool.execute(
+    'call-1',
+    { questionId: answerQuestionId, answer: 'Use option A.' },
+    undefined,
+    undefined,
+    toolContext({ entries: [received], sessionId: answerSenderSession }),
+  );
+
+  expect(result.details).toEqual({ status: 'queued', questionId: answerQuestionId });
+  expect(savedFiles(asker)).toHaveLength(1);
+});
+
+it('registers no answer tool outside the lead role', () => {
+  vi.stubEnv('TAU_ROLE', 'worker');
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+
+  expect(fake.tools.has('handover_answer')).toBe(false);
+});
+
+it('registers the handover-question accept check', () => {
+  vi.stubEnv('TAU_ROLE', '');
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+
+  onTestFinished(() => {
+    forgetAcceptCheck('handover-question');
+  });
+
+  expect(acceptChecks()['handover-question']).toBeTypeOf('function');
 });
 
 it('registers no tool when no handover sender starts the turn', async () => {

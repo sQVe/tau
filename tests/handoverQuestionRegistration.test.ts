@@ -11,6 +11,16 @@ const context = (): ExtensionContext =>
     sessionManager: { getBranch: () => [], getSessionId: () => 'session-1' },
   }) as unknown as ExtensionContext;
 
+const registersAnswerTool = (role: string): boolean => {
+  vi.stubEnv('TAU_ROLE', role);
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+
+  return fake.tools.has('handover_answer');
+};
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -29,4 +39,12 @@ it('registers no tool without a sender', async () => {
 
   expect(fake.tools.has('handover_question')).toBe(false);
   expect(fake.tools.has('ask_user_question')).toBe(true);
+});
+
+it('registers handover_answer for a lead only', () => {
+  expect({
+    lead: registersAnswerTool(''),
+    architect: registersAnswerTool('architect'),
+    worker: registersAnswerTool('worker'),
+  }).toEqual({ lead: true, architect: false, worker: false });
 });

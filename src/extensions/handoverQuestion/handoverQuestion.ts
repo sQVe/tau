@@ -12,7 +12,9 @@ import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { setAcceptCheck } from '../../inbox/inbox.js';
 import { currentRole } from '../../role/role.js';
+import { roleRegistersTool } from '../../role/roleTools.js';
 import { handoverQuestionCheck } from './acceptCheck.js';
+import { answerParameters, answerQuestion, answerToolDescription } from './answer/answer.js';
 import { handoverAnswerCheck } from './answer/answerCheck.js';
 import { askSender, questionParameters, questionToolDescription } from './question/question.js';
 import { handoverMessageText, senderMessages } from './senderMessages.js';
@@ -73,6 +75,28 @@ const registerQuestionTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
   });
 };
 
+const registerAnswerTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
+  pi.registerTool({
+    name: 'handover_answer',
+    exposure: 'model-only',
+    label: 'Answer handover question',
+    description: answerToolDescription,
+    parameters: answerParameters,
+    async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+      const leadSession = context.sessionManager.getSessionId();
+
+      if (leadSession === '') {
+        throw new Error('This session has no saved Pi session ID to answer from.');
+      }
+
+      return answerQuestion(
+        { hc: { ...hc, signal }, entries: context.sessionManager.getEntries(), leadSession },
+        parameters,
+      );
+    },
+  });
+};
+
 export default function handoverQuestionExtension(pi: ExtensionAPI): void {
   let sessionDirectory: string | undefined;
 
@@ -88,6 +112,11 @@ export default function handoverQuestionExtension(pi: ExtensionAPI): void {
   });
 
   const hc: HcRuntime = { exec: piExec(pi), connect, cwd: process.cwd() };
+
+  if (roleRegistersTool(currentRole(), 'handover_answer')) {
+    registerAnswerTool(pi, hc);
+  }
+
   let registered = false;
 
   pi.on('before_agent_start', (event, context) => {
