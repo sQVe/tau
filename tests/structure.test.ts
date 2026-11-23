@@ -490,7 +490,7 @@ const versionedRecords = [
   {
     writer: 'src/inbox/store.ts',
     fixtures: 'src/inbox/fixtures/handover',
-    names: ['previous.json', 'current.json', 'newer.json', 'malformed.json'],
+    names: ['previous.json', 'version2.json', 'current.json', 'newer.json', 'malformed.json'],
   },
   {
     writer: 'src/improvement/event.ts',

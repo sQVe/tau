@@ -10,7 +10,11 @@ interface ReceiptIdentity {
 }
 
 export type InboxReceipt = ReceiptIdentity &
-  ({ family: 'handover' } | { family: 'answer'; questionId?: string });
+  (
+    | { family: 'handover' }
+    | { family: 'answer'; questionId?: string }
+    | { family: 'handover-question'; questionId?: string }
+  );
 
 interface InboxMessageFact {
   customType?: string | undefined;
@@ -65,7 +69,9 @@ const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined =
 
   const identity = { version: inboxReceiptVersion, messageId, sessionId } as const;
 
-  return family === 'answer'
+  const keepsQuestion = family === 'answer' || family === 'handover-question';
+
+  return keepsQuestion
     ? { ...identity, family, ...questionDetails(questionId) }
     : { ...identity, family };
 };
@@ -82,6 +88,12 @@ export const answeredQuestionId = (message: InboxMessageFact): string | undefine
 export const messageText = (body: SavableMessageBody): string => {
   if (body.family === 'answer') {
     return body.payload.answer;
+  }
+
+  if (body.family === 'handover-question') {
+    const { questionId, text, askerTerminal, askerSession } = body.payload;
+
+    return `Handover question ${questionId} from terminal ${askerTerminal}, session ${askerSession}:\n\n${text}`;
   }
 
   const { text, sender } = body.payload;
@@ -105,8 +117,10 @@ export const matchesReceipt = (
   { receipt, content }: ReceiptedMessage,
   body: SavableMessageBody,
 ): boolean => {
-  const receiptQuestionId = receipt.family === 'answer' ? receipt.questionId : undefined;
-  const bodyQuestionId = body.family === 'answer' ? body.payload.questionId : undefined;
+  const keepsQuestion = receipt.family === 'answer' || receipt.family === 'handover-question';
+  const receiptQuestionId = keepsQuestion ? receipt.questionId : undefined;
+  const bodyKeepsQuestion = body.family === 'answer' || body.family === 'handover-question';
+  const bodyQuestionId = bodyKeepsQuestion ? body.payload.questionId : undefined;
   const sameQuestion = receiptQuestionId === bodyQuestionId;
   const sameContent = content === messageText(body) || matchesSenderFreePayload(content, body);
 

@@ -68,6 +68,27 @@ const readTable = [
     receipt: { version: 2, messageId: 'm1', sessionId: 's1', family: 'handover' },
   },
   {
+    name: 'a version 2 handover-question receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 2,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: 'q1',
+      },
+    },
+    receipt: {
+      version: 2,
+      messageId: 'm1',
+      sessionId: 's1',
+      family: 'handover-question',
+      questionId: 'q1',
+    },
+  },
+  {
     name: 'a version 1 receipt',
     entry: {
       type: 'custom_message',
@@ -198,6 +219,14 @@ const answeredTable = [
     questionId: undefined,
   },
   {
+    name: 'a handover-question message with a question',
+    message: {
+      customType: inboxMessageType,
+      details: { ...answerDetails, family: 'handover-question', questionId: 'q1' },
+    },
+    questionId: undefined,
+  },
+  {
     name: 'a message of another custom type',
     message: { customType: 'other', details: { ...answerDetails, questionId: 'q1' } },
     questionId: undefined,
@@ -300,6 +329,22 @@ it('escapes sender-free text so it parses as no sender', () => {
 
 const answerReceipt = { ...handoverReceipt, family: 'answer', questionId: 'q1' } as const;
 
+const questionReceipt = {
+  ...handoverReceipt,
+  family: 'handover-question',
+  questionId: 'q1',
+} as const;
+
+const questionPayload = {
+  questionId: 'q1',
+  text: 'Which option should I use?',
+  askerTerminal: 'worker',
+  askerSession: 's1',
+};
+
+const shownQuestionText =
+  'Handover question q1 from terminal worker, session s1:\n\nWhich option should I use?';
+
 const answerPayload = {
   assignmentId: 'a1',
   questionId: 'q1',
@@ -375,6 +420,18 @@ const retryTable = [
     name: 'an answer retry for another question',
     receipted: { receipt: answerReceipt, content: 'Use option A.' },
     body: { family: 'answer', payload: { ...answerPayload, questionId: 'q2' } },
+    matches: false,
+  },
+  {
+    name: 'a handover-question retry with the shown text',
+    receipted: { receipt: questionReceipt, content: shownQuestionText },
+    body: { family: 'handover-question', payload: questionPayload },
+    matches: true,
+  },
+  {
+    name: 'a handover-question retry with another receipted question',
+    receipted: { receipt: { ...questionReceipt, questionId: 'q2' }, content: shownQuestionText },
+    body: { family: 'handover-question', payload: questionPayload },
     matches: false,
   },
   {

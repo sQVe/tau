@@ -386,7 +386,7 @@ it.each([
   ) as unknown;
 
   expect(saved).toEqual({
-    version: 2,
+    version: 3,
     messageId,
     family: 'handover',
     payload: { text: 'Next steps\n', ...(sender === undefined ? {} : { sender }) },
@@ -435,7 +435,7 @@ it('sends no sender when the session ID is empty', async () => {
   ) as unknown;
 
   expect(saved).toEqual({
-    version: 2,
+    version: 3,
     messageId,
     family: 'handover',
     payload: { text: 'Next steps\n' },

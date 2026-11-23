@@ -499,6 +499,41 @@ it.each(['', 'architect', 'worker'])(
   },
 );
 
+it('passes a registered handover-question check in a non-worker session', async () => {
+  vi.stubEnv('TAU_ROLE', '');
+
+  const harness = startHarness();
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  setAcceptCheck('handover-question', async () => 'The question is closed.');
+
+  cleanups.push(() => {
+    forgetAcceptCheck('handover-question');
+  });
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  await expect(
+    exchange(socketOf(sessionId), {
+      ...handoverTo(sessionId, messageId),
+      family: 'handover-question',
+      payload: {
+        questionId: randomUUID(),
+        text: 'Which option should I use?',
+        askerTerminal: 'worker',
+        askerSession: randomUUID(),
+      },
+    }),
+  ).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'The question is closed.',
+    messageId,
+  });
+});
+
 it('refuses an architect-ask without a registered check and saves nothing', async () => {
   forgetAcceptCheck('architect-ask');
 

@@ -212,7 +212,7 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
   await receiver.deliver(new AbortController().signal);
 
   expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
-    version: 2,
+    version: 3,
     messageId,
     family: 'handover',
     payload: { text: 'Ask text' },
@@ -365,6 +365,47 @@ it('saves an accepted answer and wakes with its answer text', async () => {
       content: 'Use option A.',
       display: true,
       details: { version: 2, messageId, sessionId, family: 'answer', questionId },
+    },
+  ]);
+});
+
+it('saves an accepted handover-question and wakes with its fixed text', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const questionId = randomUUID();
+  const askerSession = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {
+    'handover-question': (_request, save) => save(),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'handover-question',
+    payload: {
+      questionId,
+      text: 'Which option should I use?',
+      askerTerminal: 'worker',
+      askerSession,
+    },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+  await receiver.deliver(new AbortController().signal);
+
+  expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
+    version: 3,
+    messageId,
+    family: 'handover-question',
+    payload: request.payload,
+  });
+
+  expect(woken).toEqual([
+    {
+      customType: 'tau-inbox-message',
+      content: `Handover question ${questionId} from terminal worker, session ${askerSession}:\n\nWhich option should I use?`,
+      display: true,
+      details: { version: 2, messageId, sessionId, family: 'handover-question', questionId },
     },
   ]);
 });

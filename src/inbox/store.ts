@@ -8,13 +8,22 @@ import { errorMessage, isMissingFile } from '../errors.js';
 import { parseVersionedRecord, writeFencedRecord, writeRecord } from '../record.js';
 import type { RecordFence } from '../record.js';
 import { isRecord } from '../schema.js';
-import { isUuid, requestByteLimit, uuidSchema, withSavableBody } from './protocol.js';
+import {
+  answerBody,
+  handoverBody,
+  isUuid,
+  requestByteLimit,
+  uuidSchema,
+  withSavableBody,
+} from './protocol.js';
 
 export type InboxRecord = Static<typeof recordSchema>;
 
+type Version2InboxRecord = Static<typeof version2RecordSchema>;
+
 type PreviousInboxRecord = Static<typeof previousRecordSchema>;
 
-type SavedInboxRecord = InboxRecord | PreviousInboxRecord;
+type SavedInboxRecord = InboxRecord | Version2InboxRecord | PreviousInboxRecord;
 
 export type InboxRead =
   | { kind: 'record'; record: SavedInboxRecord }
@@ -29,7 +38,7 @@ export interface SaveOptions {
   fence?: RecordFence | undefined;
 }
 
-export const inboxRecordVersion = 2;
+export const inboxRecordVersion = 3;
 
 const strict = { additionalProperties: false } as const;
 
@@ -62,17 +71,33 @@ const previousRecordSchema = Type.Union([
   ),
 ]);
 
+const version2RecordSchema = Type.Union([
+  Type.Object({ version: Type.Literal(2), messageId: uuidSchema, ...handoverBody }, strict),
+  Type.Object({ version: Type.Literal(2), messageId: uuidSchema, ...answerBody }, strict),
+]);
+
 const recordSchema = withSavableBody({
   version: Type.Literal(inboxRecordVersion),
   messageId: uuidSchema,
 });
 
-const isPreviousRecord = (value: unknown): boolean => isRecord(value) && value['version'] === 1;
+const savedVersion = (value: unknown): unknown => (isRecord(value) ? value['version'] : undefined);
+
+const schemaFor = (value: unknown) => {
+  switch (savedVersion(value)) {
+    case 1:
+      return previousRecordSchema;
+    case 2:
+      return version2RecordSchema;
+    default:
+      return recordSchema;
+  }
+};
 
 const recordOptions = {
   label: 'inbox record',
   version: inboxRecordVersion,
-  schema: (value: unknown) => (isPreviousRecord(value) ? previousRecordSchema : recordSchema),
+  schema: schemaFor,
 };
 
 const recordByteLimit = 2 * requestByteLimit;

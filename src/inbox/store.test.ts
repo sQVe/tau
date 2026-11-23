@@ -11,10 +11,29 @@ const messageId = '11111111-1111-4111-8111-111111111111';
 const sender = { terminal: 'lead', sessionId: '22222222-2222-4222-8222-222222222222' };
 
 const record = {
+  version: 3 as const,
+  messageId,
+  family: 'handover' as const,
+  payload: { text: 'handover text', sender },
+};
+
+const version2Record = {
   version: 2 as const,
   messageId,
   family: 'handover' as const,
   payload: { text: 'handover text', sender },
+};
+
+const currentRecord = {
+  version: 3 as const,
+  messageId,
+  family: 'handover-question' as const,
+  payload: {
+    questionId: '33333333-3333-4333-8333-333333333333',
+    text: 'Which option should I use?',
+    askerTerminal: 'worker',
+    askerSession: '44444444-4444-4444-8444-444444444444',
+  },
 };
 
 const previousRecord = {
@@ -69,12 +88,26 @@ it('reads the frozen previous answer record', async () => {
   });
 });
 
+it('reads the frozen version 2 record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'version2.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version2Record,
+  });
+});
+
 it('reads the frozen current record', async () => {
   const directory = directoryFixture();
 
   fixtureInto(directory, 'current.json');
 
-  await expect(readMessage(directory, messageId)).resolves.toEqual({ kind: 'record', record });
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: currentRecord,
+  });
 });
 
 it.each([
@@ -105,13 +138,32 @@ it('reports a version 1 record with a sender as malformed', async () => {
   await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
 });
 
+it('reports a version 2 record with the handover-question family as malformed', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(
+    path,
+    JSON.stringify({
+      version: 2,
+      messageId,
+      family: 'handover-question',
+      payload: currentRecord.payload,
+    }),
+  );
+
+  await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+});
+
 it('reports a saved answer-request record as malformed', async () => {
   const directory = directoryFixture();
   const path = join(directory, `${messageId}.json`);
 
   mkdirSync(directory, { recursive: true });
 
-  for (const version of [1, 2]) {
+  for (const version of [1, 2, 3]) {
     writeFileSync(
       path,
       JSON.stringify({

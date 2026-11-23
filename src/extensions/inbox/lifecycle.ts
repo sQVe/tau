@@ -54,11 +54,16 @@ const familyChecks = () => {
     return acceptChecks();
   }
 
-  const { 'answer-request': answerRequest, 'architect-ask': architectAsk } = acceptChecks();
+  const {
+    'answer-request': answerRequest,
+    'architect-ask': architectAsk,
+    'handover-question': handoverQuestion,
+  } = acceptChecks();
 
   return {
     ...(answerRequest === undefined ? {} : { 'answer-request': answerRequest }),
     ...(architectAsk === undefined ? {} : { 'architect-ask': architectAsk }),
+    ...(handoverQuestion === undefined ? {} : { 'handover-question': handoverQuestion }),
   };
 };
 

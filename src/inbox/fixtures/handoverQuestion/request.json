@@ -1,0 +1,14 @@
+{
+  "protocol": "rpc1",
+  "kind": "message",
+  "messageId": "0190c1d2-0000-7000-8000-000000000001",
+  "targetTerminal": "t-manager",
+  "targetSessionId": "0190c1d2-0000-7000-8000-000000000002",
+  "family": "handover-question",
+  "payload": {
+    "questionId": "0190c1d2-0000-7000-8000-000000000004",
+    "text": "Which option should I use?",
+    "askerTerminal": "t-worker",
+    "askerSession": "0190c1d2-0000-7000-8000-000000000005"
+  }
+}
