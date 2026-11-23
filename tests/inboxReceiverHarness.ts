@@ -77,7 +77,7 @@ const listenOutsideSlot = async (
 
   paths.push(endpoint.path);
 
-  return endpoint.close;
+  return () => endpoint.close();
 };
 
 export const startHandoverReceiver = async (

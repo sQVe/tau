@@ -29,10 +29,12 @@ folder, and replies before the sender reports success.
   advertises the socket path in one `tau.inbox` label on its own terminal.
 - A reload keeps one listener. A stale socket is replaced only when a connect to it is refused, so a
   live owner is never replaced.
-- Shutdown removes the label first, then closes the socket. A reload or a resumed session binds the
-  same socket path and writes the same label value, so no comparison can tell the two sessions
-  apart. Only the old socket keeps the replacement from binding, so the old session clears its label
-  while that socket still listens.
+- Shutdown clears the label and unlinks the socket path in one hold of the socket path lock, and
+  drains open requests after it lets the lock go. A reload or a resumed session binds the same path
+  and writes the same label value, so no comparison can tell the two sessions apart. Its bind takes
+  the same lock, so it finds either the old socket still listening or no path at all.
+- A session that starts while another process's socket on the same path still listens starts no
+  inbox and reports the error. It does not retry.
 - Every Tau process writes and clears the `tau.inbox` label under one file lock per terminal in the
   socket folder. A clear reads the label and removes it only when it names the session's own socket.
   `hc label` has no compare-and-set, and the in-process transition queue orders only one process.

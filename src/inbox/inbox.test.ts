@@ -1,32 +1,56 @@
 import { existsSync } from 'node:fs';
-import { createConnection } from 'node:net';
 import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { LiveOwnerError, openEndpoint } from './endpoint.js';
-import type { Endpoint } from './endpoint.js';
+import { withFileLock } from '../fileLock/fileLock.js';
+import { inboxLock } from './endpoint.js';
 import { currentInboxPath, startInbox } from './inbox.js';
-import { encodeFrame, formatInboxLabel, refusedReply } from './protocol.js';
+import { formatInboxLabel, refusedReply } from './protocol.js';
 
-const respondRefused = (): Promise<string> =>
-  Promise.resolve(encodeFrame(refusedReply('Not used.')));
+const pathContender = (path: string, labelValue: () => string | undefined) => {
+  const waited = Promise.withResolvers<undefined>();
+  const acquired = Promise.withResolvers<undefined>();
+  let waitedForLock = false;
+  let sawPath: boolean | undefined;
+  let seenLabel: string | undefined;
+  let run: Promise<void> | undefined;
 
-const connects = (path: string): Promise<boolean> =>
-  new Promise((resolve) => {
-    const socket = createConnection(path);
+  const start = (): void => {
+    run = withFileLock(
+      {
+        ...inboxLock(`${path}.lock`),
+        onWaiting: () => {
+          waitedForLock = true;
+          waited.resolve(undefined);
+        },
+      },
+      () => {
+        sawPath = existsSync(path);
+        seenLabel = labelValue();
+        acquired.resolve(undefined);
 
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
+        return Promise.resolve();
+      },
+    );
+  };
 
-    socket.once('error', () => {
-      socket.destroy();
-      resolve(false);
-    });
-  });
+  const settle = async (): Promise<void> => {
+    if (run === undefined) {
+      throw new Error('The socket path contender never started.');
+    }
+
+    await run;
+  };
+
+  return {
+    start,
+    whenContended: () => Promise.race([waited.promise, acquired.promise]),
+    settle,
+    outcome: () => ({ waitedForLock, sawPath, seenLabel }),
+  };
+};
 
 it('a stopped inbox reports no current path', async ({ onTestFinished: cleanup }) => {
   const directory = temporaryDirectory(cleanup, 'tau-current-inbox-');
@@ -50,66 +74,78 @@ it('a stopped inbox reports no current path', async ({ onTestFinished: cleanup }
   expect(currentInboxPath()).toBeUndefined();
 });
 
-it('keeps the label of a same-path replacement that binds after the stopped inbox closes', async ({
+it('lets a socket path contender in only after the label clear and the unlink', async ({
   onTestFinished: cleanup,
 }) => {
-  const directory = temporaryDirectory(cleanup, 'tau-same-path-');
-  const sessionId = 'session-same-path';
-  const path = join(directory, `${sessionId}.sock`);
-  const labelOfPath = formatInboxLabel(path);
-  const attempts: ('bound' | 'refused')[] = [];
+  const directory = temporaryDirectory(cleanup, 'tau-path-contender-');
+  const sessionId = 'session-path-contender';
   let labelValue: string | undefined;
-  let replacement: Endpoint | undefined;
-
-  const replace = async (): Promise<void> => {
-    try {
-      replacement = await openEndpoint({ path, respond: respondRefused });
-
-      attempts.push('bound');
-      labelValue = labelOfPath;
-    } catch (error) {
-      if (!(error instanceof LiveOwnerError)) {
-        throw error;
-      }
-
-      attempts.push('refused');
-    }
-  };
+  const contender = pathContender(join(directory, `${sessionId}.sock`), () => labelValue);
 
   const listener = await startInbox({
     sessionId,
-    terminal: 't-same-path',
+    terminal: 't-path-contender',
     directory,
     accept: () => Promise.resolve(refusedReply('Not used.')),
     onQueued: () => undefined,
-    advertise: () => {
-      labelValue = labelOfPath;
+    advertise: (advertised) => {
+      labelValue = formatInboxLabel(advertised);
 
       return Promise.resolve();
     },
     withdraw: async () => {
-      await replace();
-
-      if (labelValue === labelOfPath) {
-        labelValue = undefined;
-      }
+      labelValue = undefined;
+      contender.start();
+      await contender.whenContended();
     },
   });
 
-  cleanup(async () => {
-    await listener.stop();
-    await replacement?.close();
-  });
+  cleanup(() => listener.stop().catch(() => undefined));
 
   await listener.stop();
+  await contender.settle();
 
-  if (replacement === undefined) {
-    await replace();
-  }
+  expect(contender.outcome()).toEqual({
+    waitedForLock: true,
+    sawPath: false,
+    seenLabel: undefined,
+  });
+});
 
-  expect(labelValue).toBe(labelOfPath);
-  await expect(connects(path)).resolves.toBe(true);
-  expect(attempts).toEqual(['refused', 'bound']);
+it('rolls back a failed advertise with the clear and the unlink in one path lock hold', async ({
+  onTestFinished: cleanup,
+}) => {
+  const directory = temporaryDirectory(cleanup, 'tau-rollback-contender-');
+  const sessionId = 'session-rollback-contender';
+  let labelValue: string | undefined;
+  const contender = pathContender(join(directory, `${sessionId}.sock`), () => labelValue);
+
+  const started = startInbox({
+    sessionId,
+    terminal: 't-rollback-contender',
+    directory,
+    accept: () => Promise.resolve(refusedReply('Not used.')),
+    onQueued: () => undefined,
+    advertise: (advertised) => {
+      labelValue = formatInboxLabel(advertised);
+
+      return Promise.reject(new Error('label reply malformed'));
+    },
+    withdraw: async () => {
+      labelValue = undefined;
+      contender.start();
+      await contender.whenContended();
+    },
+  });
+
+  await expect(started).rejects.toThrow('label reply malformed');
+  await contender.settle();
+
+  expect(contender.outcome()).toEqual({
+    waitedForLock: true,
+    sawPath: false,
+    seenLabel: undefined,
+  });
 });
 
 it('closes the socket when the label clear fails at stop', async ({ onTestFinished: cleanup }) => {

@@ -5,12 +5,12 @@ import { expect, it } from 'vitest';
 import { createHcFake } from '../../tests/hcFake.js';
 import type { HcFake } from '../../tests/hcFake.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { holdFileLock } from '../fileLock/fileLock.js';
+import type { Exec } from '../command.js';
+import { withFileLock } from '../fileLock/fileLock.js';
+import { inboxLock } from './endpoint.js';
 import { advertiseLabel, withdrawLabel } from './label.js';
 import type { LabelOptions } from './label.js';
 import { formatInboxLabel } from './protocol.js';
-
-const lockWaitMilliseconds = 50;
 
 const labelCalls = (hc: HcFake): number =>
   hc.calls.filter((call) => call.commandArguments[0] === 'label').length;
@@ -22,17 +22,30 @@ const labelOptions = (hc: HcFake, directory: string, terminal: string, path: str
   path,
 });
 
-const table: { name: string; write: (options: LabelOptions) => Promise<void> }[] = [
-  { name: 'advertiseLabel', write: (options) => advertiseLabel(options) },
-  { name: 'withdrawLabel', write: (options) => withdrawLabel(options) },
+const table: {
+  name: string;
+  gateOn: string;
+  write: (options: LabelOptions) => Promise<void>;
+  expectedCalls: string[];
+}[] = [
+  {
+    name: 'advertiseLabel',
+    gateOn: 'label',
+    write: (options) => advertiseLabel(options),
+    expectedCalls: ['label'],
+  },
+  {
+    name: 'withdrawLabel',
+    gateOn: 'get',
+    write: (options) => withdrawLabel(options),
+    expectedCalls: ['get', 'label'],
+  },
 ];
 
-it('waits for another holder of the terminal label lock before it writes', async ({
-  onTestFinished: cleanup,
-}) => {
-  const directory = temporaryDirectory(cleanup, 'tau-label-lock-');
-  const terminal = 't-label-lock';
-  const path = join(directory, 'session-label-lock.sock');
+it('holds the terminal label lock across its hc calls', async ({ onTestFinished: cleanup }) => {
+  const directory = temporaryDirectory(cleanup, 'tau-label-hold-');
+  const terminal = 't-label-hold';
+  const path = join(directory, 'session-label-hold.sock');
   const lockPath = join(directory, `${encodeURIComponent(terminal)}.label.lock`);
 
   const snapshot = JSON.stringify({
@@ -47,27 +60,53 @@ it('waits for another holder of the terminal label lock before it writes', async
     hc.replyGet(terminal, snapshot);
     hc.reply('label', JSON.stringify({ address: terminal, state: 'live' }));
 
-    const held = await holdFileLock({ lockPath, checkout: lockPath, terminal });
+    const entered = Promise.withResolvers<undefined>();
+    const gate = Promise.withResolvers<undefined>();
+    const waited = Promise.withResolvers<undefined>();
+    const seen: string[] = [];
+    let waitedForLock = false;
+    let contenderSaw: string[] | undefined;
 
-    if (held.kind !== 'held') {
-      throw new Error('The test did not hold the terminal label lock.');
-    }
+    const exec: Exec = async (command, commandArguments, options) => {
+      const subcommand = commandArguments[0];
 
-    const call = row.write(labelOptions(hc, directory, terminal, path));
+      if (subcommand !== undefined) {
+        seen.push(subcommand);
+      }
 
-    try {
-      await new Promise((resolve) => {
-        setTimeout(resolve, lockWaitMilliseconds);
-      });
+      if (subcommand === row.gateOn) {
+        entered.resolve(undefined);
+        await gate.promise;
+      }
 
-      expect(labelCalls(hc), row.name).toBe(0);
-    } finally {
-      await held.release();
-    }
+      return hc.exec(command, commandArguments, options);
+    };
 
-    await call;
+    const write = row.write(labelOptions({ ...hc, exec }, directory, terminal, path));
 
-    expect(labelCalls(hc), row.name).toBe(1);
+    await entered.promise;
+
+    const contender = withFileLock(
+      {
+        ...inboxLock(lockPath),
+        onWaiting: () => {
+          waitedForLock = true;
+          waited.resolve(undefined);
+        },
+      },
+      () => {
+        contenderSaw = [...seen];
+
+        return Promise.resolve();
+      },
+    );
+
+    await waited.promise;
+    gate.resolve(undefined);
+    await Promise.all([write, contender]);
+
+    expect(waitedForLock, row.name).toBe(true);
+    expect(contenderSaw, row.name).toEqual(row.expectedCalls);
   }
 });
 

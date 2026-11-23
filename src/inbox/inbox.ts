@@ -116,11 +116,11 @@ const answerFrame = async (bytes: Buffer, options: InboxStartOptions) => {
   return reply;
 };
 
-const closeCurrent = async (): Promise<void> => {
+const closeCurrent = async (beforeUnlink?: () => Promise<void>): Promise<void> => {
   const current = slot.endpoint;
 
   slot.endpoint = undefined;
-  await current?.close();
+  await current?.close(beforeUnlink);
 };
 
 const open = async (options: InboxStartOptions): Promise<InboxListener> => {
@@ -141,8 +141,7 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
     await options.advertise(path);
   } catch (error) {
     // The label may be set even when its reply failed. The advertise error explains the failure.
-    await options.withdraw(path).catch(() => undefined);
-    await closeCurrent();
+    await closeCurrent(() => options.withdraw(path).catch(() => undefined));
 
     throw error;
   }
@@ -156,11 +155,7 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
           return;
         }
 
-        try {
-          await options.withdraw(path);
-        } finally {
-          await closeCurrent();
-        }
+        await closeCurrent(() => options.withdraw(path));
       }),
   };
 };
