@@ -29,6 +29,32 @@ const runtimeOf = (fake: ReturnType<typeof createHcFake>): HcRuntime => ({
   cwd: '/repository',
 });
 
+const startAskerInbox = async (
+  fake: ReturnType<typeof createHcFake>,
+  sessionId = askerSession,
+): Promise<void> => {
+  const root = temporaryDirectory(onTestFinished, 'tau-asker-inbox-');
+
+  const inbox = await startHandoverReceiver(onTestFinished, root, askerTerminal, { sessionId });
+
+  advertiseInbox(fake, askerTerminal, inbox.path);
+};
+
+const targetOf = (
+  fake: ReturnType<typeof createHcFake>,
+  root: string,
+  senderSession: string,
+): QuestionTarget => ({
+  hc: runtimeOf(fake),
+  cwd: root,
+  askerTerminal,
+  askerSession,
+  sender: { terminal: senderTerminal, sessionId: senderSession },
+});
+
+const textOf = (result: { content: { type: string; text?: string }[] }): string =>
+  result.content.map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('');
+
 it('saves one open record, sends one frame, and ends the turn', async () => {
   vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
 
@@ -43,16 +69,12 @@ it('saves one open record, sends one frame, and ends the turn', async () => {
   const fake = createHcFake();
 
   advertiseInbox(fake, senderTerminal, receiver.path);
+  await startAskerInbox(fake);
 
-  const target: QuestionTarget = {
-    hc: runtimeOf(fake),
-    cwd: root,
-    askerTerminal,
-    askerSession,
-    sender: { terminal: senderTerminal, sessionId: receiver.sessionId },
-  };
+  const result = await askSender(targetOf(fake, root, receiver.sessionId), {
+    question: questionText,
+  });
 
-  const result = await askSender(target, { question: questionText });
   const questionId = result.details.questionId;
 
   expect(result.terminate).toBe(true);
@@ -95,6 +117,35 @@ it('saves one open record, sends one frame, and ends the turn', async () => {
   expect(savedJson).toHaveLength(1);
 });
 
+it('refuses when the asker has no listening inbox', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
+    outsideSlot: true,
+    accepts: { 'handover-question': (_request, save) => save() },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, senderTerminal, receiver.path);
+
+  const result = await askSender(targetOf(fake, root, receiver.sessionId), {
+    question: questionText,
+  });
+
+  expect(result.details.status).toBe('refused');
+  expect(result.isError).toBe(true);
+  expect(result.terminate).toBeUndefined();
+  expect(textOf(result)).toContain('ask_user_question');
+  const savedJson = receiver.savedRecords().filter((name) => name.endsWith('.json'));
+
+  expect(existsSync(questionRecordDirectory(root))).toBe(false);
+  expect(savedJson).toHaveLength(0);
+});
+
 it('reports an unknown send with the receiver note and keeps the record', async () => {
   vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
 
@@ -118,27 +169,21 @@ it('reports an unknown send with the receiver note and keeps the record', async 
   const fake = createHcFake();
 
   advertiseInbox(fake, senderTerminal, receiver.path);
+  await startAskerInbox(fake);
 
-  const target: QuestionTarget = {
-    hc: runtimeOf(fake),
-    cwd: root,
-    askerTerminal,
-    askerSession,
-    sender: { terminal: senderTerminal, sessionId: receiver.sessionId },
-  };
+  const result = await askSender(targetOf(fake, root, receiver.sessionId), {
+    question: questionText,
+  });
 
-  const result = await askSender(target, { question: questionText });
   const details = result.details;
 
   if (details.status !== 'unknown') {
     throw new Error(`Expected an unknown outcome, got ${details.status}.`);
   }
 
-  const text = result.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
-
   expect(details.questionId).toMatch(/^[0-9a-f-]{36}$/u);
   expect(details.note).toContain(reason);
-  expect(text).toBe(details.note);
+  expect(textOf(result)).toBe(details.note);
   expect(result.terminate).toBe(true);
   expect(result.isError).toBeUndefined();
 
@@ -158,19 +203,11 @@ it('refuses an ended sender', async () => {
   const fake = createHcFake();
 
   advertiseInbox(fake, senderTerminal, receiver.path);
+  await startAskerInbox(fake);
 
-  const target: QuestionTarget = {
-    hc: runtimeOf(fake),
-    cwd: root,
-    askerTerminal,
-    askerSession,
-    sender: { terminal: senderTerminal, sessionId: otherSession },
-  };
+  const result = await askSender(targetOf(fake, root, otherSession), { question: questionText });
 
-  const result = await askSender(target, { question: questionText });
-  const text = result.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
-
-  expect(text).toContain('ask_user_question');
+  expect(textOf(result)).toContain('ask_user_question');
   expect(result.isError).toBe(true);
   expect(result.terminate).toBeUndefined();
 

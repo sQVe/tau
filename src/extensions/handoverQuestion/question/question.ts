@@ -6,8 +6,9 @@ import type { Static } from 'typebox';
 
 import { errorMessage } from '../../../errors.js';
 import type { HandoverSender } from '../../../handoverSender.js';
+import { get } from '../../../hc/hc.js';
 import type { HcRuntime } from '../../../hc/hc.js';
-import { sendInboxMessage } from '../../../inbox/inbox.js';
+import { currentInboxPath, ownInboxReady, sendInboxMessage } from '../../../inbox/inbox.js';
 import { findTauRoot } from '../../../tauDirectory.js';
 import { deleteQuestionRecord, writeQuestionRecord } from './questionRecord.js';
 import type { QuestionRecord } from './questionRecord.js';
@@ -45,6 +46,9 @@ export const questionToolDescription = [
 
 const refusalNote = 'Ask the user with ask_user_question.';
 const unreachablePrefix = 'The lead that sent this handover cannot be reached:';
+
+const inboxRefusal =
+  'This session has no listening inbox, so the answer cannot reach it. Ask the user with ask_user_question.';
 
 const refusalText = (error: unknown): string => {
   const reason = errorMessage(error);
@@ -94,12 +98,38 @@ const result = (
   ...options,
 });
 
+const askerInboxReady = async (target: QuestionTarget): Promise<boolean> => {
+  const listenerPath = currentInboxPath();
+
+  if (listenerPath === undefined) {
+    return false;
+  }
+
+  try {
+    const terminal = await get(target.hc, target.askerTerminal);
+
+    return ownInboxReady({
+      listenerPath,
+      labels: terminal.labels ?? {},
+      sessionId: target.askerSession,
+    });
+  } catch {
+    target.hc.signal?.throwIfAborted();
+
+    return false;
+  }
+};
+
 export const askSender = async (
   target: QuestionTarget,
   input: QuestionInput,
 ): Promise<AgentToolResult<QuestionOutcome>> => {
   const root = await findTauRoot(target.cwd, 'handover_question');
   const questionId = randomUUID();
+
+  if (!(await askerInboxReady(target))) {
+    return result(inboxRefusal, { status: 'refused', questionId }, { isError: true });
+  }
 
   await writeQuestionRecord(root, recordOf(target, questionId, input.question));
 
