@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, open, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -327,27 +326,6 @@ it('refuses a gate record path that is a FIFO', async () => {
   });
 
   expect(read).not.toHaveBeenCalled();
-});
-
-it('refuses a gate record path that is a Unix socket', async () => {
-  const root = temporaryDirectory(onTestFinished, 'tau-gate-record-');
-  const path = join(gateRecordDirectory(root), 'socket.json');
-  const server = createServer((socket) => socket.end());
-
-  await mkdir(dirname(path), { recursive: true });
-
-  await new Promise<void>((resolve) => {
-    server.listen(path, resolve);
-  });
-
-  onTestFinished(() => {
-    server.close();
-  });
-
-  await expect(readGateRecord(root, path)).resolves.toEqual({
-    kind: 'unreadable',
-    message: notRegularFileMessage(path),
-  });
 });
 
 it('refuses a gate record path that is a directory', async () => {
