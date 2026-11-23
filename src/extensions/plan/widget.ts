@@ -1,9 +1,8 @@
-import { stripVTControlCharacters } from 'node:util';
-
 import type { ExtensionContext, Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth } from '@earendil-works/pi-tui';
 import type { Component } from '@earendil-works/pi-tui';
 
+import { sanitizeSingleLine } from '../../terminalText.js';
 import type { PlanStep } from './steps.js';
 import { showsPlan } from './steps.js';
 
@@ -16,12 +15,9 @@ const statusMarks = {
   blocked: { mark: '[!]', color: 'warning' },
 } satisfies Record<PlanStep['status'], { mark: string; color: ThemeColor }>;
 
-const sanitizeText = (text: string): string =>
-  stripVTControlCharacters(text).replace(/\p{Cc}/gu, ' ');
-
 const planLine = (step: PlanStep, width: number, theme: Theme): string => {
   const { mark, color } = statusMarks[step.status];
-  const text = sanitizeText(step.text);
+  const text = sanitizeSingleLine(step.text);
 
   return truncateToWidth(`${theme.fg(color, mark)} ${text}`, width);
 };

@@ -1,14 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { Value } from 'typebox/value';
 import { expect, it } from 'vitest';
 
 import {
   checkSteps,
   maxPlanSteps,
   planEntryType,
-  planRecordSchema,
   planSummary,
   replayPlan,
   showsPlan,
@@ -95,14 +93,6 @@ it.each(checkCases.map((row) => [row.name, row] as const))('%s', (_name, { steps
       : { kind: result.kind };
 
   expect(outcome).toMatchObject(expected);
-});
-
-it.each([
-  ['current.json', true],
-  ['newer.json', false],
-  ['malformed.json', false],
-] as const)('checks the saved %s fixture against the record schema', (name, expected) => {
-  expect(Value.Check(planRecordSchema, saved(name))).toBe(expected);
 });
 
 const replayCases: {

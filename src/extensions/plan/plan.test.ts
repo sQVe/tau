@@ -41,9 +41,6 @@ const planTool = (fake: ReturnType<typeof fakeExtensionApi>): ToolDefinition => 
   return tool;
 };
 
-const run = (tool: ToolDefinition, steps: PlanStep[]) =>
-  tool.execute('call', { steps }, undefined, undefined, {} as Parameters<Execute>[4]);
-
 const planContext = (options: { mode?: ExtensionContext['mode']; branch?: unknown[] } = {}) => {
   const widgets: { key: string; content: WidgetContent }[] = [];
   const notify = vi.fn<ExtensionContext['ui']['notify']>();
@@ -105,41 +102,18 @@ it('registers the plan tool for the model only', () => {
   expect(tool.exposure).toBe('model-only');
 });
 
-it('a refused call rejects and appends nothing', async () => {
+it('a refused call rejects, appends nothing, and leaves the widget unchanged', async () => {
   const appendEntry = vi.fn<ExtensionAPI['appendEntry']>();
   const tool = planTool(lead({ appendEntry }));
-  const steps = [step('Brief worker', 'in_progress'), step('Review change', 'in_progress')];
-
-  await expect(run(tool, steps)).rejects.toThrow(/in_progress/);
-  expect(appendEntry).not.toHaveBeenCalled();
-});
-
-it('leaves the widget unchanged when a plan is refused', async () => {
-  const tool = planTool(lead());
   const { context, widgets } = planContext();
   const steps = [step('Brief worker', 'in_progress'), step('Review change', 'in_progress')];
 
   await expect(runIn(tool, steps, context)).rejects.toThrow(/in_progress/);
+  expect(appendEntry).not.toHaveBeenCalled();
   expect(widgets).toEqual([]);
 });
 
-it('an accepted call appends one record and returns the summary', async () => {
-  const appendEntry = vi.fn<ExtensionAPI['appendEntry']>();
-  const tool = planTool(lead({ appendEntry }));
-
-  const steps = [
-    step('Brief worker for ME-123', 'completed'),
-    step('Review worker change for ME-123', 'in_progress'),
-    step('Open the PR'),
-  ];
-
-  const result = await run(tool, steps);
-
-  expect(appendEntry).toHaveBeenCalledExactlyOnceWith('tau-plan', { version: 1, steps });
-  expect(result.content).toEqual([{ type: 'text', text: 'Plan: 1 of 3 completed.' }]);
-});
-
-it('sets a widget that shows the steps of an accepted plan', async () => {
+it('an accepted call appends one record, returns the summary, and shows the steps', async () => {
   const appendEntry = vi.fn<ExtensionAPI['appendEntry']>();
   const tool = planTool(lead({ appendEntry }));
   const { context, widgets } = planContext();
@@ -150,8 +124,10 @@ it('sets a widget that shows the steps of an accepted plan', async () => {
     step('Open the PR', 'completed'),
   ];
 
-  await runIn(tool, steps, context);
+  const result = await runIn(tool, steps, context);
 
+  expect(appendEntry).toHaveBeenCalledExactlyOnceWith('tau-plan', { version: 1, steps });
+  expect(result.content).toEqual([{ type: 'text', text: 'Plan: 1 of 3 completed.' }]);
   expect(widgets.map(({ key }) => key)).toEqual([planWidgetKey]);
 
   expect(renderedLines(widgets.at(-1)?.content)).toEqual([
@@ -159,6 +135,21 @@ it('sets a widget that shows the steps of an accepted plan', async () => {
     '[ ] Review worker change for ME-123',
     '[x] Open the PR',
   ]);
+});
+
+it('fails the call and leaves the widget unchanged when saving throws', () => {
+  const appendEntry = vi.fn<ExtensionAPI['appendEntry']>(() => {
+    throw new Error('The plan could not be saved.');
+  });
+
+  const tool = planTool(lead({ appendEntry }));
+  const { context, widgets } = planContext();
+
+  expect(() => runIn(tool, [step('Brief worker')], context)).toThrow(
+    'The plan could not be saved.',
+  );
+
+  expect(widgets).toEqual([]);
 });
 
 const hiddenCases: { name: string; steps: PlanStep[] }[] = [

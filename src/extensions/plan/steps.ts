@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isRecord, stringEnum } from '../../schema.js';
+import { isRecord, newerRecordVersion, stringEnum } from '../../schema.js';
 
 type CheckedSteps = { kind: 'accepted' } | { kind: 'refused'; reason: string };
 
@@ -23,15 +23,17 @@ export type PlanStep = Static<typeof planStepSchema>;
 export const planEntryType = 'tau-plan';
 export const maxPlanSteps = 12;
 
-export const planRecordSchema = Type.Object(
-  { version: Type.Literal(1), steps: Type.Array(planStepSchema) },
+const planRecordVersion = 1;
+
+const planRecordSchema = Type.Object(
+  { version: Type.Literal(planRecordVersion), steps: Type.Array(planStepSchema) },
   { additionalProperties: false },
 );
 
 export type PlanRecord = Static<typeof planRecordSchema>;
 
 export const planRecord = (steps: readonly PlanStep[]): PlanRecord => ({
-  version: 1,
+  version: planRecordVersion,
   steps: [...steps],
 });
 
@@ -62,8 +64,10 @@ export const checkSteps = (steps: readonly PlanStep[]): CheckedSteps => {
 };
 
 const planEntryData = (data: unknown): PlanEntryData => {
-  if (isRecord(data) && typeof data.version === 'number' && data.version > 1) {
-    return { kind: 'newer', version: data.version };
+  const claimedVersion = newerRecordVersion(data, planRecordVersion);
+
+  if (claimedVersion !== undefined) {
+    return { kind: 'newer', version: claimedVersion };
   }
 
   if (!Value.Check(planRecordSchema, data) || checkSteps(data.steps).kind === 'refused') {
