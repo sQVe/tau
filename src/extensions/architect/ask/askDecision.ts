@@ -27,7 +27,6 @@ export type AskRoute =
 export type AskDeadlineAction = 'wait' | 'expire';
 
 export interface AskDeadlineFacts {
-  status: AskStatus;
   now: number;
   deadline: number;
 }
@@ -43,14 +42,9 @@ export interface StaleAskFacts {
 
 export type AskTransition = 'allowed' | 'refused';
 
-export interface AskTransitionFacts {
-  current: AskStatus;
-  next: AskStatus;
-}
-
 // A settled hidden ask is final, so only a running record may change.
-export const askTransition = (facts: AskTransitionFacts): AskTransition =>
-  facts.current === 'running' ? 'allowed' : 'refused';
+export const askTransition = (current: AskStatus): AskTransition =>
+  current === 'running' ? 'allowed' : 'refused';
 
 // The locked record decides the result after the wait. A sent answer wins, a deadline is the
 // deadline outcome, and a running record means the claim was kept.
@@ -125,7 +119,7 @@ export const askRoute = (facts: AskRouteFacts): AskRoute => {
 };
 
 export const askDeadlineAction = (facts: AskDeadlineFacts): AskDeadlineAction =>
-  facts.status === 'running' && facts.now >= facts.deadline ? 'expire' : 'wait';
+  facts.now >= facts.deadline ? 'expire' : 'wait';
 
 export const staleAskRepair = (facts: StaleAskFacts): StaleAskRepair =>
   facts.status === 'running' &&

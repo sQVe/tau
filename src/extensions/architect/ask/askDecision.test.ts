@@ -254,29 +254,19 @@ it.each<{ name: string; facts: AskRouteFacts; expected: Record<string, unknown> 
 
 it.each([
   {
-    name: 'a running ask before its deadline waits',
-    facts: { status: 'running', now: 1000, deadline: 2000 },
+    name: 'an ask before its deadline waits',
+    facts: { now: 1000, deadline: 2000 },
     expected: 'wait',
   },
   {
-    name: 'a running ask at its deadline expires',
-    facts: { status: 'running', now: 2000, deadline: 2000 },
+    name: 'an ask at its deadline expires',
+    facts: { now: 2000, deadline: 2000 },
     expected: 'expire',
   },
   {
-    name: 'a running ask after its deadline expires',
-    facts: { status: 'running', now: 3000, deadline: 2000 },
+    name: 'an ask after its deadline expires',
+    facts: { now: 3000, deadline: 2000 },
     expected: 'expire',
-  },
-  {
-    name: 'a sent ask at its deadline waits',
-    facts: { status: 'sent', now: 3000, deadline: 2000 },
-    expected: 'wait',
-  },
-  {
-    name: 'a timeout ask at its deadline waits',
-    facts: { status: 'timeout', now: 3000, deadline: 2000 },
-    expected: 'wait',
   },
 ] as const)('ask deadline: $name', ({ facts, expected }) => {
   expect(askDeadlineAction(facts)).toBe(expected);
@@ -338,25 +328,10 @@ it.each([
 });
 
 it.each([
-  { name: 'running to sent', facts: { current: 'running', next: 'sent' }, expected: 'allowed' },
-  {
-    name: 'running to timeout',
-    facts: { current: 'running', next: 'timeout' },
-    expected: 'allowed',
-  },
-  { name: 'running to failed', facts: { current: 'running', next: 'failed' }, expected: 'allowed' },
-  {
-    name: 'running to running',
-    facts: { current: 'running', next: 'running' },
-    expected: 'allowed',
-  },
-  { name: 'sent to timeout', facts: { current: 'sent', next: 'timeout' }, expected: 'refused' },
-  { name: 'sent to failed', facts: { current: 'sent', next: 'failed' }, expected: 'refused' },
-  { name: 'sent to sent', facts: { current: 'sent', next: 'sent' }, expected: 'refused' },
-  { name: 'timeout to sent', facts: { current: 'timeout', next: 'sent' }, expected: 'refused' },
-  { name: 'timeout to failed', facts: { current: 'timeout', next: 'failed' }, expected: 'refused' },
-  { name: 'failed to sent', facts: { current: 'failed', next: 'sent' }, expected: 'refused' },
-  { name: 'failed to running', facts: { current: 'failed', next: 'running' }, expected: 'refused' },
-] as const)('ask transition: $name', ({ facts, expected }) => {
-  expect(askTransition(facts)).toBe(expected);
+  { name: 'a running ask changes', current: 'running', expected: 'allowed' },
+  { name: 'a sent ask is final', current: 'sent', expected: 'refused' },
+  { name: 'a timeout ask is final', current: 'timeout', expected: 'refused' },
+  { name: 'a failed ask is final', current: 'failed', expected: 'refused' },
+] as const)('ask transition: $name', ({ current, expected }) => {
+  expect(askTransition(current)).toBe(expected);
 });

@@ -19,17 +19,12 @@ import { architectLockPath, claimArchitectLock } from '../lock.js';
 import type { ArchitectClaimOptions } from '../lock.js';
 import {
   askRecordPath,
-  changeAskRecord,
   readArchitectRecord,
   readAskRecords,
+  updateHiddenAskRecord,
   writeAskRecord,
 } from '../record.js';
-import type {
-  AskRecordGap,
-  ChangeAskOptions,
-  HiddenAskRecord,
-  SavedArchitectRecord,
-} from '../record.js';
+import type { AskRecordGap, HiddenAskRecord, SavedArchitectRecord } from '../record.js';
 import {
   cancelStartTicket,
   createStartTicket,
@@ -41,7 +36,7 @@ import {
   wrapStartArgv,
 } from '../startTicket/startTicket.js';
 import type { StartSweepResult } from '../startTicket/startTicket.js';
-import { askRecordOutcome, askRoute, askTransition, staleAskRepair } from './askDecision.js';
+import { askRecordOutcome, askRoute, staleAskRepair } from './askDecision.js';
 import type { ArchitectPublication } from './askDecision.js';
 
 export interface AskRequest {
@@ -116,33 +111,6 @@ const reportAskGaps = (ui: ConfigWarnings, gaps: AskRecordGap[]): void => {
   }
 };
 
-const changeHiddenAsk = (
-  root: string,
-  askId: string,
-  change: (current: HiddenAskRecord) => HiddenAskRecord | undefined,
-  options: ChangeAskOptions = {},
-) =>
-  changeAskRecord(
-    root,
-    askId,
-    (current) => {
-      if (current.route !== 'hidden') {
-        return undefined;
-      }
-
-      const next = change(current);
-
-      if (next === undefined) {
-        return undefined;
-      }
-
-      return askTransition({ current: current.status, next: next.status }) === 'allowed'
-        ? next
-        : undefined;
-    },
-    options,
-  );
-
 const liveRunningAsk = async (
   root: string,
   hc: HcRuntime,
@@ -170,7 +138,7 @@ const liveRunningAsk = async (
     return newest;
   }
 
-  await changeHiddenAsk(root, newest.askId, (current) =>
+  await updateHiddenAskRecord(root, newest.askId, (current) =>
     staleAskRepair({
       status: current.status,
       terminalState,
@@ -337,7 +305,7 @@ const settleWaitFailure = async (
   const kept = await settle();
 
   if (kept) {
-    await changeHiddenAsk(request.root, started.askId, (current) => ({
+    await updateHiddenAskRecord(request.root, started.askId, (current) => ({
       ...current,
       status: 'running',
       detail: askUnconfirmedStopDetail,
@@ -346,7 +314,7 @@ const settleWaitFailure = async (
     throw new Error(askKeptClaimMessage(request.root));
   }
 
-  await changeHiddenAsk(request.root, started.askId, (current) => ({
+  await updateHiddenAskRecord(request.root, started.askId, (current) => ({
     ...current,
     status: 'failed',
     detail: askWaitFailureDetail(cancelled, error),
@@ -370,14 +338,13 @@ const settleTimeout = async (
     ? askUnconfirmedStopDetail
     : 'The ask reached its deadline before the architect answered.';
 
-  const changed = await changeHiddenAsk(request.root, started.askId, (current) => ({
+  const changed = await updateHiddenAskRecord(request.root, started.askId, (current) => ({
     ...current,
     status,
     detail,
   }));
 
-  const current = changed?.record;
-  const record = current?.route === 'hidden' ? current : undefined;
+  const record = changed?.record;
 
   if (record?.status === 'running') {
     return needsOpen(askKeptClaimMessage(request.root));
@@ -437,7 +404,7 @@ const launchHiddenRecord = async (
 
     const started: HiddenAskRecord = { ...initial, terminal: launched.terminal };
 
-    await changeHiddenAsk(request.root, initial.askId, (current) => ({
+    await updateHiddenAskRecord(request.root, initial.askId, (current) => ({
       ...current,
       terminal: launched.terminal ?? null,
     }));
@@ -447,7 +414,7 @@ const launchHiddenRecord = async (
 
   await abandonAskTicket(request, claimToken, state, ticketPath);
 
-  await changeHiddenAsk(request.root, initial.askId, (current) => ({
+  await updateHiddenAskRecord(request.root, initial.askId, (current) => ({
     ...current,
     status: 'failed',
     detail: askLaunchFailureDetail,
@@ -464,15 +431,11 @@ const settleEnded = async (
   const failed = exitCode !== 0;
   const detail = failed ? askEndedFailureDetail : askEndedDetail;
 
-  const changed = await changeHiddenAsk(request.root, askId, (current) =>
-    current.status === 'running'
-      ? {
-          ...current,
-          status: 'failed',
-          detail,
-        }
-      : undefined,
-  );
+  const changed = await updateHiddenAskRecord(request.root, askId, (current) => ({
+    ...current,
+    status: 'failed',
+    detail,
+  }));
 
   if (changed?.changed === true) {
     return failed
@@ -480,10 +443,7 @@ const settleEnded = async (
       : needsOpen(askEndedReason);
   }
 
-  const current = changed?.record;
-  const record = current?.route === 'hidden' ? current : undefined;
-
-  return resultFromRecord(request.root, askId, record);
+  return resultFromRecord(request.root, askId, changed?.record);
 };
 
 const runHiddenAsk = async (
@@ -517,7 +477,7 @@ const runHiddenAsk = async (
   await writeAskRecord(request.root, initial);
 
   if (request.hc.signal?.aborted === true) {
-    await changeHiddenAsk(request.root, askId, (current) => ({
+    await updateHiddenAskRecord(request.root, askId, (current) => ({
       ...current,
       status: 'failed',
       detail: 'The ask was cancelled before its terminal started.',

@@ -6,9 +6,8 @@ import type { ExtensionAPI, ToolCallEvent, ToolResultEvent } from '@earendil-wor
 import { appendSystemPrompt } from '../../../instructions/systemPrompt.js';
 import { isRecord } from '../../../schema.js';
 import { isQueuedHandover } from '../queuedHandover.js';
-import { changeAskRecordAt, readAskRecordAt } from '../record.js';
+import { readAskRecordAt, updateHiddenAskRecordAt } from '../record.js';
 import type { AskRecord } from '../record.js';
-import { askTransition } from './askDecision.js';
 
 export const askModePrompt = (record: AskRecord, recordPath: string): string =>
   `You answer one ask from the lead: "${record.question}". The lead terminal is ${record.leadTerminal}. The ask record is ${recordPath}. Answer only this ask, and ignore other ask messages in the inbox. Answer the question, update the ticket if the answer changes it, then send the answer to the lead with handover send. End your turn after the send. If you need the user, send "Open the architect: <reason>" instead.`;
@@ -79,17 +78,11 @@ export const registerAskMode = (pi: ExtensionAPI, recordPath: string): void => {
 
     const answer = await readFile(resolve(context.cwd, file), 'utf8');
 
-    const change = await changeAskRecordAt(recordPath, (current) => {
-      if (current.route !== 'hidden') {
-        return undefined;
-      }
-
-      const next = { ...current, status: 'sent' as const, answer };
-
-      return askTransition({ current: current.status, next: next.status }) === 'allowed'
-        ? next
-        : undefined;
-    });
+    const change = await updateHiddenAskRecordAt(recordPath, (current) => ({
+      ...current,
+      status: 'sent',
+      answer,
+    }));
 
     if (change?.changed === true) {
       context.shutdown();

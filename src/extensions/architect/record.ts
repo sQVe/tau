@@ -13,6 +13,7 @@ import { isUuid } from '../../inbox/inbox.js';
 import { parseVersionedRecord, readVersionedRecord, writeRecord } from '../../record.js';
 import { isRecord } from '../../schema.js';
 import { ensureTauDirectory, existingEntry } from '../../tauDirectory.js';
+import { askTransition } from './ask/askDecision.js';
 
 export type AskRecord = HiddenAskRecord | LiveAskRecord;
 
@@ -30,6 +31,11 @@ type AskEntry = { record: AskRecord } | { gap: AskRecordGap } | undefined;
 
 export interface AskRecordChange {
   record: AskRecord;
+  changed: boolean;
+}
+
+export interface HiddenAskRecordChange {
+  record: HiddenAskRecord;
   changed: boolean;
 }
 
@@ -456,6 +462,37 @@ export const changeAskRecord = (
   options: ChangeAskOptions = {},
 ): Promise<AskRecordChange | undefined> =>
   changeAskRecordAt(askRecordPath(root, askId), change, options);
+
+// A hidden ask is final once it leaves `running`, so every update applies that precondition
+// inside the lock instead of trusting each writer to repeat it.
+export const updateHiddenAskRecordAt = async (
+  path: string,
+  update: (current: HiddenAskRecord) => HiddenAskRecord | undefined,
+  options: ChangeAskOptions = {},
+): Promise<HiddenAskRecordChange | undefined> => {
+  const change = await changeAskRecordAt(
+    path,
+    (current) =>
+      current.route === 'hidden' && askTransition(current.status) === 'allowed'
+        ? update(current)
+        : undefined,
+    options,
+  );
+
+  if (change?.record.route !== 'hidden') {
+    return undefined;
+  }
+
+  return { record: change.record, changed: change.changed };
+};
+
+export const updateHiddenAskRecord = (
+  root: string,
+  askId: string,
+  update: (current: HiddenAskRecord) => HiddenAskRecord | undefined,
+  options: ChangeAskOptions = {},
+): Promise<HiddenAskRecordChange | undefined> =>
+  updateHiddenAskRecordAt(askRecordPath(root, askId), update, options);
 
 export const readAskRecords = async (root: string): Promise<AskRecordScan> => {
   const names = await readdir(askRecordDirectory(root)).catch((error: unknown) => {

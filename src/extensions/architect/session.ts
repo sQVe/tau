@@ -10,7 +10,7 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
-import { askDeadlineAction, askTransition } from './ask/askDecision.js';
+import { askDeadlineAction } from './ask/askDecision.js';
 import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
 import type { EndNoteRoute } from './endNoteDecision.js';
 import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
@@ -19,10 +19,10 @@ import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import type { FinalHandoverResult } from './queuedHandover.js';
 import {
-  changeAskRecord,
-  changeAskRecordAt,
   readAskRecordAt,
   readAskRecords,
+  updateHiddenAskRecord,
+  updateHiddenAskRecordAt,
   writeArchitectRecord,
 } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
@@ -109,16 +109,8 @@ const askRecordPathFromEnvironment = (): string | undefined => {
 };
 
 const expireAskRecord = async (path: string, context: ExtensionContext): Promise<void> => {
-  const change = await changeAskRecordAt(path, (current) => {
-    if (current.route !== 'hidden') {
-      return undefined;
-    }
-
-    const action = askDeadlineAction({
-      status: current.status,
-      now: Date.now(),
-      deadline: current.deadline,
-    });
+  const change = await updateHiddenAskRecordAt(path, (current) => {
+    const action = askDeadlineAction({ now: Date.now(), deadline: current.deadline });
 
     if (action !== 'expire') {
       return undefined;
@@ -126,7 +118,7 @@ const expireAskRecord = async (path: string, context: ExtensionContext): Promise
 
     return {
       ...current,
-      status: 'timeout' as const,
+      status: 'timeout',
       detail: 'The ask reached its deadline before the architect answered.',
     };
   });
@@ -282,27 +274,15 @@ const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> 
     notifyOnce(ui, gap.path, 'ask-record', gap.reason, 'warning');
   }
 
-  const running = records.filter(
-    (record): record is HiddenAskRecord => record.route === 'hidden' && record.status === 'running',
-  );
+  const hidden = records.filter((record): record is HiddenAskRecord => record.route === 'hidden');
 
   await Promise.all(
-    running.map((record) =>
-      changeAskRecord(root, record.askId, (current) => {
-        if (current.route !== 'hidden') {
-          return undefined;
-        }
-
-        const next = {
-          ...current,
-          status: 'failed' as const,
-          detail: 'The architect session ended before it sent the answer.',
-        };
-
-        return askTransition({ current: current.status, next: next.status }) === 'allowed'
-          ? next
-          : undefined;
-      }),
+    hidden.map((record) =>
+      updateHiddenAskRecord(root, record.askId, (current) => ({
+        ...current,
+        status: 'failed',
+        detail: 'The architect session ended before it sent the answer.',
+      })),
     ),
   );
 };
