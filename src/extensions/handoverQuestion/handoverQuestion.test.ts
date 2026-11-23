@@ -1,3 +1,5 @@
+import { readdir } from 'node:fs/promises';
+
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -16,7 +18,7 @@ import {
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import handoverQuestionExtension from './handoverQuestion.js';
 import type { QuestionOutcome } from './question/question.js';
-import { readQuestionRecord } from './question/questionRecord.js';
+import { questionRecordDirectory, readQuestionRecord } from './question/questionRecord.js';
 
 interface ContextOptions {
   branch?: unknown;
@@ -89,6 +91,16 @@ const handoverBranch = (terminal: string, sessionId: string) => [
     details: handoverReceipt(sessionId),
   },
 ];
+
+const askerRecords = async (root: string): Promise<string[]> => {
+  try {
+    const names = await readdir(questionRecordDirectory(root));
+
+    return names.filter((name) => name.endsWith('.json')).toSorted();
+  } catch {
+    return [];
+  }
+};
 
 const startReceiver = async (terminal: string) => {
   const root = temporaryDirectory(onTestFinished, 'tau-handover-question-');
@@ -166,27 +178,47 @@ it('registers no tool when no handover sender starts the turn', async () => {
   vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
 
-  const fake = fakeExtensionApi();
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const extension = fakeExtensionApi({ exec: fake.exec });
 
-  handoverQuestionExtension(fake.pi);
+  handoverQuestionExtension(extension.pi);
 
-  await fake.handler('before_agent_start')({}, context({ branch: branchWithoutSender }));
+  await extension.handler('before_agent_start')(
+    {},
+    context({ branch: branchWithoutSender, cwd: root }),
+  );
 
-  expect(fake.tools.has('handover_question')).toBe(false);
+  expect(extension.tools.has('handover_question')).toBe(false);
+  expect(await askerRecords(root)).toEqual([]);
+  expect(fake.calls).toHaveLength(0);
 });
 
 it('refuses to ask without a terminal address', async () => {
-  const tool = await registeredTool();
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const tool = await registeredTool({ exec: fake.exec });
 
   vi.stubEnv('HC_TERMINAL_ID', '');
 
-  const execution = tool.execute('call', { question }, undefined, undefined, toolContext());
+  const execution = tool.execute(
+    'call',
+    { question },
+    undefined,
+    undefined,
+    toolContext({ cwd: root }),
+  );
 
-  await expect(execution).rejects.toThrow('This session has no terminal address to ask from.');
+  await expect(execution).rejects.toBeInstanceOf(Error);
+
+  expect(await askerRecords(root)).toEqual([]);
+  expect(fake.calls).toHaveLength(0);
 });
 
 it('refuses to ask without a saved session ID', async () => {
-  const tool = await registeredTool();
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const tool = await registeredTool({ exec: fake.exec });
 
   vi.stubEnv('HC_TERMINAL_ID', 'worker-1');
 
@@ -195,10 +227,13 @@ it('refuses to ask without a saved session ID', async () => {
     { question },
     undefined,
     undefined,
-    toolContext({ sessionId: '' }),
+    toolContext({ cwd: root, sessionId: '' }),
   );
 
-  await expect(execution).rejects.toThrow('This session has no saved Pi session ID to ask from.');
+  await expect(execution).rejects.toBeInstanceOf(Error);
+
+  expect(await askerRecords(root)).toEqual([]);
+  expect(fake.calls).toHaveLength(0);
 });
 
 it('passes the call signal to the inbox send', async () => {
