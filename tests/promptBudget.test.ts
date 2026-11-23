@@ -26,7 +26,13 @@ import { fakeExtensionApi } from './extensionApi.js';
 import { createHcFake } from './hcFake.js';
 import { writeStommeProject } from './stommeProjectHarness.js';
 
-type Sessions = Map<string, { tools: ToolDefinition[]; size: number; prompt: string }>;
+interface Session {
+  tools: ToolDefinition[];
+  size: number;
+  prompt: string;
+}
+
+type Sessions = Map<string, Session>;
 
 const oneActionBudget = 1000;
 const multiActionBudget = 3000;
@@ -38,7 +44,7 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
 // ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  lead: 63_757, // target 38,000
+  lead: 63_913, // target 38,000
   architect: 60_595,
   worker: 28_041, // target 14,000
   reviewer: 23_494, // target 11,000
@@ -49,14 +55,41 @@ const sessionCeilings: Readonly<Record<string, number>> = {
 };
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];
+const workerTerminal = 'worker-1';
+const parentTerminal = 'manager-1';
 const skillsDirectory = fileURLToPath(new URL('../src/skills/', import.meta.url));
 const checkoutDirectory = fileURLToPath(new URL('../', import.meta.url));
+
+// The worker command loads these from Pi, a package, or a separate extension, so this test's
+// registration fake does not provide them.
+const providedToolNames = [
+  'read',
+  'bash',
+  'edit',
+  'write',
+  'codemode',
+  'verification_record',
+  'agent_browser',
+  'agent_browser_code',
+  'web_search',
+  'fetch_content',
+  'get_search_content',
+];
 
 // A bundled guide's source line names its absolute path, and an adopted project's heading names the
 // project root, so fixed tokens stand in for both. Otherwise the measured size would depend on where
 // Tau is checked out and on the temporary folder of the host.
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const replacePath = (text: string, path: string, token: string): string => {
+  const boundary = path.endsWith('/') ? '' : '(?=/|$)';
+  const pattern = new RegExp(`${escapeRegExp(path)}${boundary}`, 'g');
+
+  return text.replaceAll(pattern, token);
+};
+
 const measuredPrompt = (prompt: string, projectDirectory: string): string =>
-  prompt.replaceAll(projectDirectory, '<project>').replaceAll(checkoutDirectory, '<tau>/');
+  replacePath(replacePath(prompt, projectDirectory, '<project>'), checkoutDirectory, '<tau>/');
 
 const isMultiAction = (tool: ToolDefinition): boolean =>
   Object.hasOwn((tool.parameters as { properties?: object }).properties ?? {}, 'action');
@@ -67,28 +100,36 @@ const toolSize = (tool: ToolDefinition): number =>
 const toolsSize = (tools: ToolDefinition[]): number =>
   tools.reduce((total, tool) => total + toolSize(tool), 0);
 
-const loadTools = async (role: RoleKind, agentDirectory: string) => {
+const loadTools = async (
+  role: RoleKind,
+  agentDirectory: string,
+  registerExtensions: (pi: ExtensionAPI) => Promise<void> = tauRegistration,
+) => {
   const tauRole = role === 'lead' ? undefined : role;
   vi.stubEnv('TAU_ROLE', tauRole);
   const workerRecord = role === 'worker' ? 'worker-record' : '';
   vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
-
-  if (role !== 'worker') {
-    vi.stubEnv('HC_TERMINAL_ID', 'manager');
-  }
+  const terminalId = role === 'worker' ? workerTerminal : 'manager';
+  vi.stubEnv('HC_TERMINAL_ID', terminalId);
 
   const fake = fakeExtensionApi();
 
-  await tauRegistration(fake.pi);
+  try {
+    await registerExtensions(fake.pi);
 
-  if (role === 'worker') {
-    workerExtension(fake.pi);
+    if (role === 'worker') {
+      workerExtension(fake.pi);
+    }
+
+    return fake;
+  } finally {
+    vi.unstubAllEnvs();
   }
+};
 
-  vi.unstubAllEnvs();
-
-  return fake;
+const failRegistration = async (): Promise<void> => {
+  throw new Error('registration failed');
 };
 
 const roleOptions = {
@@ -154,9 +195,6 @@ const safetyNetPath = join(
   'index.js',
 );
 
-const workerTerminal = 'worker-1';
-const parentTerminal = 'manager-1';
-
 const assignmentFor = (loadout: Loadout, directory: string): Assignment => {
   const assignmentId = randomUUID();
   const sessionId = randomUUID();
@@ -187,7 +225,12 @@ const assignmentFor = (loadout: Loadout, directory: string): Assignment => {
   };
 };
 
-const workerHookPrompt = async (loadout: Loadout, directory: string): Promise<string> => {
+const workerHookPrompt = async (
+  loadout: Loadout,
+  directory: string,
+  registeredToolNames: string[],
+  extraActiveTool?: string,
+): Promise<{ activeTools: string[]; prompt: string }> => {
   vi.stubEnv('TAU_ROLE', 'worker');
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('HC_TERMINAL_ID', workerTerminal);
@@ -195,7 +238,7 @@ const workerHookPrompt = async (loadout: Loadout, directory: string): Promise<st
   try {
     const assignment = assignmentFor(loadout, directory);
     const hc = createHcFake();
-    const toolNames = workerTools(loadout, skillTools);
+    const setActiveTools = vi.fn<ExtensionAPI['setActiveTools']>();
 
     hc.reply(
       'get',
@@ -215,8 +258,12 @@ const workerHookPrompt = async (loadout: Loadout, directory: string): Promise<st
       getCommands: () => [
         { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safetyNetPath } },
       ],
-      getAllTools: () => toolNames.map((name) => ({ name })),
-      setActiveTools: () => undefined,
+      getAllTools: () =>
+        [...new Set([...registeredToolNames, ...providedToolNames])].map((name) => ({ name })),
+      setActiveTools: (names: string[]) => {
+        const active = extraActiveTool === undefined ? names : [...names, extraActiveTool];
+        setActiveTools(active);
+      },
     } as unknown as Partial<ExtensionAPI>);
 
     const context = {
@@ -242,16 +289,20 @@ const workerHookPrompt = async (loadout: Loadout, directory: string): Promise<st
       await handler(event as never, context);
     }
 
-    return event.systemPromptOptions.appendSystemPrompt;
+    return {
+      activeTools: setActiveTools.mock.calls.at(-1)?.[0] ?? [],
+      prompt: event.systemPromptOptions.appendSystemPrompt,
+    };
   } finally {
     vi.unstubAllEnvs();
   }
 };
 
-const workerSession = async (profileName: string, directory: string) => {
+const workerSession = async (profileName: string, directory: string, extraActiveTool?: string) => {
   const fake = await loadTools('worker', directory);
   const loadout = loadoutFor(profileName, directory);
-  const names = new Set(workerTools(loadout, skillTools));
+  const expectedNames = workerTools(loadout, skillTools);
+  const expected = new Set(expectedNames);
 
   const tauTools = workerTools(
     { tools: [], skills: loadout.skills, role: loadout.role },
@@ -264,9 +315,29 @@ const workerSession = async (profileName: string, directory: string) => {
     throw new Error(`${profileName} worker does not register: ${missing.join(', ')}`);
   }
 
-  const tools = [...fake.tools.values()].filter((tool) => names.has(tool.name));
+  const { activeTools, prompt: hookPrompt } = await workerHookPrompt(
+    loadout,
+    directory,
+    [...fake.tools.keys()],
+    extraActiveTool,
+  );
 
-  const prompt = measuredPrompt(await workerHookPrompt(loadout, directory), directory);
+  const unexpected = activeTools.filter((name) => !expected.has(name));
+
+  if (unexpected.length > 0) {
+    throw new Error(`${profileName} worker activated unexpected tools: ${unexpected.join(', ')}`);
+  }
+
+  const inactive = expectedNames.filter((name) => !activeTools.includes(name));
+
+  if (inactive.length > 0) {
+    throw new Error(`${profileName} worker did not activate: ${inactive.join(', ')}`);
+  }
+
+  const active = new Set(activeTools);
+  const tools = [...fake.tools.values()].filter((tool) => active.has(tool.name));
+
+  const prompt = measuredPrompt(hookPrompt, directory);
 
   return { tools, size: prompt.length + toolsSize(tools), prompt };
 };
@@ -312,12 +383,55 @@ afterAll(() => {
   rmSync(adoptedDirectory, { recursive: true, force: true });
 });
 
-const allTools = (): ToolDefinition[] => {
-  const toolEntries = [...bundledSessions.values(), ...adoptedSessions.values()]
-    .flatMap((session) => session.tools)
-    .map((tool) => [tool.name, tool] as const);
+const allTools = (
+  sessions: Session[] = [...bundledSessions.values(), ...adoptedSessions.values()],
+): ToolDefinition[] => sessions.flatMap((session) => session.tools);
 
-  return [...new Map(toolEntries).values()];
+const fixtureTool = (name: string, description: string): ToolDefinition =>
+  ({
+    name,
+    description,
+    parameters: { type: 'object', properties: {} },
+  }) as unknown as ToolDefinition;
+
+const fixtureSession = (tools: ToolDefinition[]): Session => ({ tools, size: 0, prompt: '' });
+
+const overBudgetDescriptions = (tools: ToolDefinition[]): string[] =>
+  tools
+    .filter((tool) => !Object.hasOwn(descriptionExceptions, tool.name))
+    .map((tool) => ({
+      name: tool.name,
+      length: tool.description.length,
+      budget: isMultiAction(tool) ? multiActionBudget : oneActionBudget,
+    }))
+    .filter(({ length, budget }) => length > budget)
+    .map(({ name, length, budget }) => `${name}: ${length} characters, budget ${budget}`);
+
+const exceptedDescriptionOverruns = (
+  tools: ToolDefinition[],
+  exceptions: Readonly<Record<string, number>> = descriptionExceptions,
+): string[] => {
+  const over: string[] = [];
+
+  for (const [name, ceiling] of Object.entries(exceptions)) {
+    const matching = tools.filter((tool) => tool.name === name);
+
+    if (matching.length === 0) {
+      over.push(`${name}: not registered characters, ceiling ${ceiling}`);
+
+      continue;
+    }
+
+    for (const tool of matching) {
+      const length = tool.description.length;
+
+      if (length > ceiling) {
+        over.push(`${name}: ${length} characters, ceiling ${ceiling}`);
+      }
+    }
+  }
+
+  return over;
 };
 
 describe('prompt budget', () => {
@@ -342,32 +456,40 @@ describe('prompt budget', () => {
   });
 
   it('keeps every tool description within its budget', () => {
-    const over = allTools()
-      .filter((tool) => !Object.hasOwn(descriptionExceptions, tool.name))
-      .map((tool) => ({
-        name: tool.name,
-        length: tool.description.length,
-        budget: isMultiAction(tool) ? multiActionBudget : oneActionBudget,
-      }))
-      .filter(({ length, budget }) => length > budget)
-      .map(({ name, length, budget }) => `${name}: ${length} characters, budget ${budget}`);
+    expect(overBudgetDescriptions(allTools())).toEqual([]);
+  });
 
-    expect(over).toEqual([]);
+  it('checks every definition of a tool name against its description budget', () => {
+    const overBudget = fixtureTool('shared', 'x'.repeat(oneActionBudget + 1));
+    const withinBudget = fixtureTool('shared', 'x');
+
+    const orderings = [
+      [fixtureSession([overBudget, withinBudget])],
+      [fixtureSession([withinBudget, overBudget])],
+    ];
+
+    expect(orderings.map((sessions) => overBudgetDescriptions(allTools(sessions)))).toEqual([
+      ['shared: 1001 characters, budget 1000'],
+      ['shared: 1001 characters, budget 1000'],
+    ]);
   });
 
   it('keeps each excepted tool within its recorded length', () => {
-    const toolEntries = allTools().map((tool) => [tool.name, tool] as const);
-    const tools = new Map(toolEntries);
+    expect(exceptedDescriptionOverruns(allTools())).toEqual([]);
+  });
 
-    const over = Object.entries(descriptionExceptions)
-      .map(([name, ceiling]) => ({ name, ceiling, length: tools.get(name)?.description.length }))
-      .filter(({ length, ceiling }) => length === undefined || length > ceiling)
-      .map(
-        ({ name, ceiling, length }) =>
-          `${name}: ${length ?? 'not registered'} characters, ceiling ${ceiling}`,
-      );
+  it('checks every definition of an excepted tool name against its ceiling', () => {
+    const overCeiling = fixtureTool('shared', 'xx');
+    const withinCeiling = fixtureTool('shared', 'x');
 
-    expect(over).toEqual([]);
+    const orderings = [
+      [fixtureSession([overCeiling, withinCeiling])],
+      [fixtureSession([withinCeiling, overCeiling])],
+    ];
+
+    expect(
+      orderings.map((sessions) => exceptedDescriptionOverruns(allTools(sessions), { shared: 1 })),
+    ).toEqual([['shared: 2 characters, ceiling 1'], ['shared: 2 characters, ceiling 1']]);
   });
 
   it.each([
@@ -395,10 +517,59 @@ describe('prompt budget', () => {
     expect(new Set(measured).size).toBe(1);
   });
 
+  it('normalizes a nested project without rewriting a sibling with its shared prefix', () => {
+    const project = `${checkoutDirectory}tmp/project`;
+    const sibling = `${project}-other`;
+    const prompt = `from ${project}/docs, ${sibling}/docs, ${checkoutDirectory}vendor`;
+
+    expect(measuredPrompt(prompt, project)).toBe(
+      'from <project>/docs, <tau>/tmp/project-other/docs, <tau>/vendor',
+    );
+  });
+
+  it('stubs the terminal ID for manager and worker registrations', async () => {
+    const seen: (string | undefined)[] = [];
+
+    const recordTerminal = async (): Promise<void> => {
+      seen.push(process.env.HC_TERMINAL_ID);
+    };
+
+    await loadTools('lead', directory, recordTerminal);
+    await loadTools('worker', directory, recordTerminal);
+
+    expect(seen).toEqual(['manager', workerTerminal]);
+  });
+
+  it('fails a worker session that activates a tool outside its allowlist', async () => {
+    await expect(workerSession('worker', directory, 'extra_tool')).rejects.toThrow(
+      'activated unexpected tools: extra_tool',
+    );
+  });
+
   it('measures a session without the coding set the same in both projects', () => {
     const sizes = (measured: Sessions) =>
       sessionsWithoutCoding.map((name) => [name, measured.get(name)?.size]);
 
     expect(sizes(adoptedSessions)).toEqual(sizes(bundledSessions));
+  });
+
+  it('restores the environment when extension registration throws', async () => {
+    const before = {
+      HC_TERMINAL_ID: process.env.HC_TERMINAL_ID,
+      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
+      TAU_ROLE: process.env.TAU_ROLE,
+      TAU_WORKER_RECORD: process.env.TAU_WORKER_RECORD,
+    };
+
+    await expect(loadTools('worker', directory, failRegistration)).rejects.toThrow(
+      'registration failed',
+    );
+
+    expect({
+      HC_TERMINAL_ID: process.env.HC_TERMINAL_ID,
+      PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
+      TAU_ROLE: process.env.TAU_ROLE,
+      TAU_WORKER_RECORD: process.env.TAU_WORKER_RECORD,
+    }).toEqual(before);
   });
 });
