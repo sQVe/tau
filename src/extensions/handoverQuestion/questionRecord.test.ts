@@ -116,3 +116,17 @@ it('reads a question ID that is not a UUID as malformed without touching the dis
   expect(await readQuestionRecord(root, 'not-a-uuid')).toMatchObject({ kind: 'malformed' });
   expect(existsSync(questionRecordDirectory(root))).toBe(false);
 });
+
+it('refuses to write or delete a record with a question ID that is not a UUID', async () => {
+  const root = await createProject();
+  const escapingId = '../../outside';
+
+  await expect(
+    writeQuestionRecord(root, { ...currentRecord(), questionId: escapingId }),
+  ).rejects.toThrow('not a UUID');
+
+  await expect(deleteQuestionRecord(root, escapingId)).rejects.toThrow('not a UUID');
+
+  expect(existsSync(questionRecordDirectory(root))).toBe(false);
+  expect(existsSync(join(root, 'outside.json'))).toBe(false);
+});

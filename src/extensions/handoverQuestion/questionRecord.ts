@@ -42,18 +42,23 @@ export type QuestionRecord = Static<typeof questionRecordSchema>;
 export const questionRecordDirectory = (root: string): string =>
   join(root, '.tau', 'handoverQuestions');
 
-const questionRecordPath = (root: string, questionId: string): string =>
-  join(questionRecordDirectory(root), `${questionId}.json`);
+const notUuidReason = (questionId: string): string =>
+  `Question ID ${JSON.stringify(questionId)} is not a UUID.`;
+
+const questionRecordPath = (root: string, questionId: string): string => {
+  if (!isUuid(questionId)) {
+    throw new Error(notUuidReason(questionId));
+  }
+
+  return join(questionRecordDirectory(root), `${questionId}.json`);
+};
 
 export const readQuestionRecord = async (
   root: string,
   questionId: string,
 ): Promise<QuestionRead> => {
   if (!isUuid(questionId)) {
-    return {
-      kind: 'malformed',
-      reason: `Question ID ${JSON.stringify(questionId)} is not a UUID.`,
-    };
+    return { kind: 'malformed', reason: notUuidReason(questionId) };
   }
 
   try {
@@ -73,17 +78,19 @@ export const writeQuestionRecord = async (
   root: string,
   record: QuestionRecord,
 ): Promise<string> => {
-  await ensureTauDirectory(root, 'handoverQuestions');
   const path = questionRecordPath(root, record.questionId);
 
+  await ensureTauDirectory(root, 'handoverQuestions');
   await writeRecord(path, record);
 
   return path;
 };
 
 export const deleteQuestionRecord = async (root: string, questionId: string): Promise<void> => {
+  const path = questionRecordPath(root, questionId);
+
   try {
-    await unlink(questionRecordPath(root, questionId));
+    await unlink(path);
   } catch (error) {
     if (!isMissingFile(error)) {
       throw error;
