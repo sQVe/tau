@@ -25,7 +25,10 @@ Use this skill when you change behavior and `run_tests` is available.
 1. For a behavior change, write a failing test next to the code, importing the production module
    normally. If the module does not exist, create it empty, so an unresolved import is not taken for
    RED. When a property-test trigger from the coding instructions holds for the module, also write a
-   property test, or note one PR line on why examples are enough.
+   property test, or note one PR line on why examples are enough. Pick the fixture so the test also
+   fails for the nearest false substitute: the wrong implementation that comes closest to passing.
+   For example, a lossy decode must fail an invalid-UTF-8 test, and compact output must fail a
+   render test. Name that substitute in the test or in the step 6 report.
 2. Call `run_tests` with `scope: "focused"`. Do not restructure tests or widen the selection to make
    the tool run.
 3. Read the runner report. Implement the change. Rerun focused with the same files and names until
