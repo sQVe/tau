@@ -318,6 +318,37 @@ it('refuses a handover-question payload with an extra field', () => {
   expect(reason.length).toBeGreaterThan(0);
 });
 
+const handoverAnswerFixture = (name: string): unknown =>
+  JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, '..', '..', 'tests', 'fixtures', 'handoverAnswer', name),
+      'utf8',
+    ),
+  ) as unknown;
+
+it('decodes the handover-answer frame fixture', () => {
+  const request = handoverAnswerFixture('request.json');
+
+  expect(decodeRequest(line(request))).toEqual({ kind: 'frame', value: request });
+});
+
+it.each([
+  ['an extra payload field', { extra: true }],
+  ['an empty answer', { answer: '' }],
+  ['a question ID that is not a UUID', { questionId: 'question-1' }],
+])('refuses a handover-answer frame with %s', (_name, override) => {
+  const request = handoverAnswerFixture('request.json') as {
+    payload: Record<string, unknown>;
+  };
+
+  const frame = { ...request, payload: { ...request.payload, ...override } };
+
+  expect(decodeRequest(line(frame))).toEqual({
+    kind: 'refused',
+    reason: 'The frame is not an rpc1 request.',
+  });
+});
+
 it('refuses an unknown reply without a reason', () => {
   const { reason: _reason, ...reply } = answerRequestFixture('unknown.json') as Record<
     string,
