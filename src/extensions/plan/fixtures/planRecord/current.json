@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "steps": [
+    { "text": "Review worker change for ME-123", "status": "in_progress" },
+    { "text": "Open the PR", "status": "pending" }
+  ]
+}

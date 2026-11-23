@@ -50,13 +50,13 @@ it('drops a skill tool the worker role never registers', () => {
   expect(tools).not.toContain('architect');
 });
 
-it('drops a role-gated tool the profile lists', () => {
+it.each(['architect', 'plan'])('drops the role-gated %s tool the profile lists', (gatedTool) => {
   const tools = workerTools(
-    { tools: ['read', 'architect'], skills: [], role: 'investigation' },
+    { tools: ['read', gatedTool], skills: [], role: 'investigation' },
     bundledSkillTools,
   );
 
-  expect(tools).not.toContain('architect');
+  expect(tools).not.toContain(gatedTool);
   expect(tools).toContain('read');
 });
 
