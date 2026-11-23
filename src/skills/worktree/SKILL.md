@@ -58,5 +58,5 @@ creates the worktree and runs the repository's add hooks, such as dependency ins
      about 40 characters, lowercase, one line, and no ticket ID.
 4. Send a handover for the new checkout with the [handover skill](../handover/SKILL.md) when the
    user asked for one. From the bare repository root, also send the approved implementation task
-   without waiting to be asked. The handover skill passes the `<title>` from step 3 as `name` only
-   when it finds neither a receiver nor a space for the checkout.
+   without waiting to be asked. When the handover starts Pi, the handover skill passes the `<title>`
+   from step 3 as `name`, whether or not it reuses a space.

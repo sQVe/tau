@@ -114,7 +114,8 @@ that agents start, the rule is to open a new tab with `tab.new`.
 The exception is `handover start` when no workspace exists for the checkout. It creates the
 workspace with Pi and its task in the first tab. The operation that starts Pi also creates the
 workspace so the user sees the task in the first tab instead of an empty shell. In an existing
-workspace, `handover start` uses `tab.new` and leaves existing panes alone.
+workspace, `handover start` uses `tab.new` and leaves existing panes alone. Each handover tab is
+named `lead: <name>`, after the short title of its work.
 
 ### Models
 
