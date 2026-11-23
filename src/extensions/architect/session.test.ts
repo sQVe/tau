@@ -300,6 +300,33 @@ it('ending fails only running hidden asks', async ({ onTestFinished }) => {
   expect(await readAskRecord(root, liveIds.live)).toMatchObject({ status: 'sending' });
 });
 
+const newerHiddenId = '0190c1d2-0000-7000-8000-000000000307';
+
+it('ending keeps a newer ask running when it is published after the claim is released', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const notify = vi.fn<(message: string, level?: string) => void>();
+
+  const newer = {
+    ...hiddenAsk('running', 'running'),
+    askId: newerHiddenId,
+    createdAt: '2026-11-17T10:00:01.000Z',
+  };
+
+  await writeAskRecord(root, hiddenAsk('running', 'running'));
+
+  const session: ArchitectSession = {
+    ...hiddenSession(root, notify),
+    release: () => writeAskRecord(root, newer),
+  };
+
+  await endArchitectSession(session, hcRuntime(createHcFake()), endOptions());
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
+  expect(await readAskRecord(root, newerHiddenId)).toMatchObject({ status: 'running' });
+});
+
 it('ending reports a bad ask file and still fails the running ask', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const notify = vi.fn<(message: string, level?: string) => void>();

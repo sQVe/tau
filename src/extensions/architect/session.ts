@@ -193,7 +193,9 @@ const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> 
     notifyOnce(ui, gap.path, 'ask-record', gap.reason, 'warning');
   }
 
-  const hidden = records.filter((record): record is HiddenAskRecord => record.route === 'hidden');
+  const hidden = records.filter(
+    (record): record is HiddenAskRecord => record.route === 'hidden' && record.status === 'running',
+  );
 
   await Promise.all(
     hidden.map((record) =>
@@ -272,14 +274,17 @@ export const endArchitectSession = async (
   const closing = closeAdmitted(answers, admissions);
 
   try {
-    const closed = await closing;
+    try {
+      const closed = await closing;
 
-    await closeLiveAsks(session, hc, closed);
-    await note;
-    await session.release();
+      await closeLiveAsks(session, hc, closed);
+      await note;
+    } finally {
+      await failRunningAsks(session.root, session.ui);
+    }
   } finally {
     try {
-      await failRunningAsks(session.root, session.ui);
+      await session.release();
     } finally {
       if (note !== undefined) {
         await deliverEndNote(await note, hc, (message) => {
