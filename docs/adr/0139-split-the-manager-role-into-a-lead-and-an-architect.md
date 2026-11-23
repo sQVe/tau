@@ -32,6 +32,21 @@ architect to the right of the lead when the lead terminal has a `herdr.space` la
 named space when it has none. `ask` does not follow that placement rule. It sends one question to
 the architect and has two paths. `gate` classifies a user request that no skill covers.
 
+The gate answers `specified`, `open`, or `uncertain`. A label below 0.7, a timeout, an error, or a
+missing classifier is `uncertain`, so a failed check reaches the architect instead of hiding a
+design decision. The lead follows `specified` and opens the architect on `open`. On `uncertain` the
+lead calls `ask` with `gate` set to the gate record path, and never asks the user to pick a route.
+Tau builds the question from that record, so the request and the restatement reach the architect
+unchanged. The architect answers with `Worker: <notes for the worker brief>` or
+`Open the architect: <reason>`. On `Worker:` the lead briefs a worker from the restatement and the
+notes. On `Open the architect:` the lead opens the architect. A live architect may talk to the user
+first and still answers with one of the two prefixes. Each ask record saves the gate record path in
+`gateRecord`, so a review can join an uncertain gate to the architect's route.
+
+The lead calls the gate only for a new user request that no skill covers. A reply that accepts the
+lead's own offer, such as "Yes." to "Shall a worker add the test?", follows the offered route
+without a gate call.
+
 Every session the lead opens with `open` ends with one final handover whose text starts with
 `Final:`. It states the outcome and the lead's next step, and the lead leaves that request alone
 until it arrives.
