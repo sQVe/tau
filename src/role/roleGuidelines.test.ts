@@ -41,6 +41,17 @@ it('keeps every lead-only guideline out of the architect set', () => {
   }
 });
 
+it('sends a changed design fact to the architect from the lead guidelines only', () => {
+  const changedFactGuideline =
+    'When new evidence changes a fact the design rests on, send it to the architect before you write or file plan text, ticket bodies, or acceptance criteria.';
+
+  const lead = managerGuidelines('lead', options);
+  const architect = managerGuidelines('architect', options);
+
+  expect(lead).toContain(changedFactGuideline);
+  expect(architect).not.toContain(changedFactGuideline);
+});
+
 it('a lead guideline set names the lead rules and no architect rule', () => {
   const guidelines = managerGuidelines('lead', options);
 
