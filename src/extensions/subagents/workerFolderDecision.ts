@@ -1,4 +1,4 @@
-import { assignmentPrefixFromName } from './workerName.js';
+import { assignmentPrefixFromName, assignmentShortId } from './workerName.js';
 
 export interface WorkerFolder {
   name: string;
@@ -99,7 +99,7 @@ const runningTerminals = (terminals: readonly ReadTerminalFact[]): ReadTerminalF
   terminals.filter((terminal) => terminal.running);
 
 const namesAssignment = (terminals: readonly ReadTerminalFact[], name: string): boolean =>
-  terminals.some((terminal) => terminal.assignmentId === name);
+  terminals.some((terminal) => assignmentShortId(terminal.assignmentId) === name);
 
 const keepsScratchFolder = (terminal: UnreadTerminalFact, name: string): boolean =>
   terminal.assignmentPrefix === undefined ||

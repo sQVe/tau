@@ -20,6 +20,9 @@ const now = 1_000_000_000_000;
 const second = 1000;
 const hour = 3_600_000;
 
+const fullAssignmentId = '3f9a2c1d-0000-4000-8000-000000000000';
+const shortId = '3f9a2c1d';
+
 const folder = (name: string, age: number): WorkerFolder => ({
   name,
   bornAt: now - age,
@@ -69,22 +72,22 @@ const table: {
   expected: Partial<WorkerFolderRemoval>;
 }[] = [
   {
-    name: 'removes the scratch folder of a finished worker',
+    name: 'removes a finished worker short-form scratch folder after the launch grace',
     facts: {
       now,
-      scratch: [folder('assignment-a', 120 * second)],
+      scratch: [folder(shortId, 120 * second)],
       snapshots: [],
-      terminals: [terminal('assignment-a', false, null)],
+      terminals: [terminal(fullAssignmentId, false, null)],
     },
-    expected: { scratch: ['assignment-a'], snapshots: [] },
+    expected: { scratch: [shortId], snapshots: [] },
   },
   {
-    name: 'keeps the scratch folder of a running worker',
+    name: "keeps a scratch folder named with a running worker's short form",
     facts: {
       now,
-      scratch: [folder('assignment-a', 120 * second)],
+      scratch: [folder(shortId, 120 * second)],
       snapshots: [],
-      terminals: [terminal('assignment-a', true, null)],
+      terminals: [terminal(fullAssignmentId, true, null)],
     },
     expected: { scratch: [], snapshots: [] },
   },
@@ -92,11 +95,11 @@ const table: {
     name: 'removes the scratch folder of a finished worker inside the launch grace',
     facts: {
       now,
-      scratch: [folder('assignment-a', 5 * second)],
+      scratch: [folder(shortId, 5 * second)],
       snapshots: [],
-      terminals: [terminal('assignment-a', false, null)],
+      terminals: [terminal(fullAssignmentId, false, null)],
     },
-    expected: { scratch: ['assignment-a'], snapshots: [] },
+    expected: { scratch: [shortId], snapshots: [] },
   },
   {
     name: 'keeps a scratch folder inside the launch grace',
@@ -169,9 +172,12 @@ const table: {
     name: "keeps every snapshot when a running worker's assignment is unread",
     facts: {
       now,
-      scratch: [folder('assignment-a', 120 * second), folder('assignment-b', 120 * second)],
+      scratch: [folder(shortId, 120 * second), folder('assignment-b', 120 * second)],
       snapshots: [snapshot('snapshot-a', 25 * hour), snapshot('snapshot-b', undefined)],
-      terminals: [terminal('assignment-a', true, 'unread'), terminal('assignment-c', false, null)],
+      terminals: [
+        terminal(fullAssignmentId, true, 'unread'),
+        terminal('assignment-c', false, null),
+      ],
     },
     expected: { scratch: ['assignment-b'] },
   },
@@ -249,11 +255,11 @@ const table: {
     name: 'removes a scratch folder that no unread prefix matches and a finished worker names',
     facts: {
       now,
-      scratch: [folder('0123abcd-1111', 120 * second), folder('fedcba98-1111', 5 * second)],
+      scratch: [folder('0123abcd-1111', 120 * second), folder('fedcba98', 5 * second)],
       snapshots: [snapshot('snapshot-a', 25 * hour)],
       terminals: [unread('0123abcd'), terminal('fedcba98-1111', false, null)],
     },
-    expected: { scratch: ['fedcba98-1111'], snapshots: [] },
+    expected: { scratch: ['fedcba98'], snapshots: [] },
   },
   {
     name: 'keeps a folder born in the future',
@@ -409,15 +415,15 @@ const table: {
     name: 'removes young scratch when a labeled finish names its assignment',
     facts: {
       now,
-      scratch: [folder('assignment-a', 10 * second)],
+      scratch: [folder(shortId, 10 * second)],
       snapshots: [],
       terminals: [
-        starting('assignment-a', null, 't-a'),
+        starting(fullAssignmentId, null, 't-a'),
         finished('t-a'),
-        terminal('assignment-a', false, null),
+        terminal(fullAssignmentId, false, null),
       ],
     },
-    expected: { scratch: ['assignment-a'] },
+    expected: { scratch: [shortId] },
   },
   {
     name: 'keeps a snapshot a live worker names when the starting hint finished',

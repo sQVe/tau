@@ -16,10 +16,12 @@ started.
 
 ## Decision
 
-Tau gives each worker its own scratch folder under the agent directory, outside `/tmp`, and sets it
-as the worker's `TMPDIR`. A liveness sweep removes the folder after the worker ended. The worker
-never removes it. The launch creates the folder right before `hc run`, after its slower reads, and
-the worker creates it again at start, in case a sweep removed it while `hc run` was slow.
+Tau gives each worker its own scratch folder at
+`<agentDirectory>/tmp/ws/<first 8 hex of the assignment ID>`, outside `/tmp`, and sets it as the
+worker's `TMPDIR`. The short path keeps Chrome's `SingletonSocket` under the 103-byte Unix socket
+limit. A liveness sweep removes the folder after the worker ended. The worker never removes it. The
+launch creates the folder right before `hc run`, after its slower reads, and the worker creates it
+again at start, in case a sweep removed it while `hc run` was slow.
 
 The sweep runs after each worker scan and after each launch starts its worker, in any manager. The
 launch does not wait for it. A manager that exited is covered by the next launch or scan from any
@@ -30,10 +32,10 @@ because the list carries no labels. Each `hc get` is stopped at 10 seconds, and 
 counts as a failed read. Pi sends SIGTERM at 10 seconds and SIGKILL 5 seconds later if the process
 lives, so a read ends within 10 seconds plus that grace. A finished terminal needs no read, since it
 protects nothing. A live terminal whose name is not a worker name needs no read either. It removes a
-scratch folder only when no running worker has its assignment ID. A folder that no terminal names
-must also be at least a minute old. The minute protects a launch that created its folder but has not
-started the worker yet. A worker that is starting counts as running, so a launch never removes its
-own folders.
+scratch folder only when no running worker has its assignment's short form. A folder that no
+terminal names must also be at least a minute old. The minute protects a launch that created its
+folder but has not started the worker yet. A worker that is starting counts as running, so a launch
+never removes its own folders.
 
 The sweep removes a package snapshot only when no running worker has named it for 24 hours. The
 clock starts at the first sweep that sees no running worker name the snapshot. That sweep writes a
@@ -105,6 +107,10 @@ no timer is needed.
 - A sweep waits for another sweep of the same agent directory, so its own reads and effects can be
   delayed by that sweep's terminal reads.
 - A folder named by a finished worker, and younger than a minute, stays until the next sweep.
+- An agent directory longer than 46 bytes still makes Chrome's socket path too long, because
+  `/tmp/ws/` and the 8-byte folder name leave 47 bytes for the agent directory.
+- Two assignments with the same first 8 hex digits share one scratch folder, so the sweep keeps it
+  while either one runs.
 - Tests cannot use the worker's `TMPDIR`, because it sits inside the real HOME and makes Unix socket
   paths too long. In a worker session the test run sets `TMPDIR` to `/tmp`, and each test removes
   its own folders as today.
@@ -126,3 +132,12 @@ ended.
 
 Keep the current rule that an ended worker keeps its snapshot. Rejected because snapshots grow
 without bound, and one snapshot holds a full copy of each profile package.
+
+### Put the scratch root under `/tmp`
+
+A root at `/tmp/tau-<uid>/<agent-directory hash>/` would fit an agent directory of any length.
+Rejected because it needs a per-agent-directory key, so a test sweep with a fake `hc` would remove
+real workers' folders. It needs owner and mode checks on a shared world-writable parent. On macOS,
+`/tmp` resolves to `/private/tmp`, which makes the canonical path 66 bytes or more. It also moves
+worker files onto `/tmp`, which is RAM on tmpfs systems. Revisit it only if a real agent directory
+is longer than 46 bytes.

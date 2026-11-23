@@ -12,6 +12,34 @@ import {
   scratchRootFor,
 } from './workerScratch.js';
 
+const assignmentId = '3f9a2c1d-0000-4000-8000-000000000000';
+
+// Chrome appends this suffix to TMPDIR for its singleton socket.
+const chromeSingletonSocketSuffix = '/com.google.Chrome.XXXXXX/SingletonSocket';
+// macOS limits a Unix socket path to 103 bytes, the stricter bound Tau uses.
+const unixSocketPathLimit = 103;
+
+const socketPathFor = (agentDirectory: string): string =>
+  `${scratchDirectoryFor(agentDirectory, assignmentId)}${chromeSingletonSocketSuffix}`;
+
+it.each([
+  { agentDirectory: '/home/sqve/.pi/agent', byteLength: 20 },
+  { agentDirectory: '/home/sqve/.pi/agent'.padEnd(46, 'x'), byteLength: 46 },
+])(
+  'keeps the Chrome socket path within the Unix limit for a $byteLength-byte agent directory',
+  ({ agentDirectory, byteLength }) => {
+    expect(Buffer.byteLength(agentDirectory)).toBe(byteLength);
+
+    expect(Buffer.byteLength(socketPathFor(agentDirectory))).toBeLessThanOrEqual(
+      unixSocketPathLimit,
+    );
+  },
+);
+
+it('names the scratch folder with the assignment short id', () => {
+  expect(scratchDirectoryFor('/agent', assignmentId)).toBe('/agent/tmp/ws/3f9a2c1d');
+});
+
 it.each(['', '.', '..', 'a/b'])(
   'refuses to remove a scratch name that escapes the root: %s',
   async (name) => {
@@ -61,7 +89,7 @@ it.each(['root', 'tmp'] as const)(
       symlinkSync(elsewhere, scratchRootFor(agentDirectory));
     }
 
-    const rootName = redirected === 'tmp' ? 'tmp' : 'tau-worker-scratch';
+    const rootName = redirected === 'tmp' ? 'tmp' : 'ws';
 
     await expect(
       createScratchDirectory(agentDirectory, '11111111-1111-1111-1111-111111111111'),

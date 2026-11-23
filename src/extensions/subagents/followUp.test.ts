@@ -35,6 +35,7 @@ import { Admission } from './launch.js';
 import type { LaunchRuntime } from './launch.js';
 import type { StartingWorker } from './workerFolderDecision.js';
 import { sweepWorkerFolders } from './workerFolderSweep.js';
+import { assignmentShortId } from './workerName.js';
 
 vi.mock(import('node:fs/promises'), { spy: true });
 
@@ -659,7 +660,7 @@ it('starts a new child that resumes the source session', async () => {
   expect(assignment.deadline).toBe(31_000);
 
   expect(request?.env.TMPDIR).toBe(
-    join(directory, 'tmp', 'tau-worker-scratch', assignment.assignmentId),
+    join(directory, 'tmp', 'ws', assignmentShortId(assignment.assignmentId)),
   );
 
   expect(request?.env.TAU_ASSIGNMENT_DIRECTORY).toBe(assignmentDirectory(assignment.assignmentId));

@@ -30,6 +30,7 @@ import type { LaunchRuntime } from './launch.js';
 import type { LaunchParameters } from './launchParameters.js';
 import * as loadouts from './loadout.js';
 import * as packageSnapshot from './packageSnapshot.js';
+import { assignmentShortId } from './workerName.js';
 import { scratchRootFor } from './workerScratch.js';
 
 vi.mock(import('./assignment.js'), { spy: true });
@@ -847,7 +848,7 @@ it('creates the scratch folder before the worker starts', async () => {
 
   expect(launchedId).not.toBe('');
   expect(scratchExistedAtRun()).toBe(true);
-  expect(scratch).toBe(join(scratchRootFor(runtime.agentDirectory), launchedId));
+  expect(scratch).toBe(join(scratchRootFor(runtime.agentDirectory), assignmentShortId(launchedId)));
   expect(request?.env.TAU_ASSIGNMENT_DIRECTORY).toBe(assignmentDirectory(launchedId));
   expect([request?.env.TMP, request?.env.TEMP]).toEqual([scratch, scratch]);
   expect(scratchNames(runtime.agentDirectory)).toHaveLength(1);
@@ -985,7 +986,10 @@ it('keeps the launch folders and its snapshot when hc lists no worker', async ()
   });
 
   expect(existsSync(reused)).toBe(true);
-  expect(scratchNames(runtime.agentDirectory)).toEqual([assignment.assignmentId]);
+
+  expect(scratchNames(runtime.agentDirectory)).toEqual([
+    assignmentShortId(assignment.assignmentId),
+  ]);
 });
 
 it('launches when the sweep rejects', async () => {

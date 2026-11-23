@@ -11,6 +11,7 @@ import type { HcRuntime } from '../../hc/hc.js';
 import type { DeadlineWatchdog, DeadlineWatchdogContext } from './deadlineWatchdog.js';
 import { registerWorkerScan } from './subagents.js';
 import type { WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
+import { assignmentShortId } from './workerName.js';
 import { createWorkerScan } from './workerScan.js';
 import { scratchRootFor } from './workerScratch.js';
 
@@ -360,7 +361,7 @@ const scratchLabel = (agentDirectory: string, assignmentId: string) => ({
 
 it('sweeps after a scan', async () => {
   const { agentDirectory, hcFake, hc, steps, scratchRoot } = sweepSetup();
-  const folder = join(scratchRoot, 'assignment-a');
+  const folder = join(scratchRoot, assignmentShortId('assignment-a'));
   const labels = scratchLabel(agentDirectory, 'assignment-a');
 
   mkdirSync(folder, { recursive: true });
@@ -402,10 +403,7 @@ it('reports each sweep removal error', async () => {
   expect(existsSync(target)).toBe(true);
 
   expect(steps.notifications).toEqual([
-    [
-      'Worker folder sweep failed: Temporary root tau-worker-scratch is redirected. Cleanup refused.',
-      'error',
-    ],
+    ['Worker folder sweep failed: Temporary root ws is redirected. Cleanup refused.', 'error'],
   ]);
 });
 

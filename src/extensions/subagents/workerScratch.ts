@@ -2,14 +2,15 @@ import { mkdir, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
+import { assignmentShortId } from './workerName.js';
 
-const scratchRootName = 'tau-worker-scratch';
+const scratchRootName = 'ws';
 
 export const scratchRootFor = (agentDirectory: string): string =>
   join(agentDirectory, 'tmp', scratchRootName);
 
 export const scratchDirectoryFor = (agentDirectory: string, assignmentId: string): string =>
-  join(scratchRootFor(agentDirectory), assignmentId);
+  join(scratchRootFor(agentDirectory), assignmentShortId(assignmentId));
 
 const refuseRedirected = async (folder: string, rootName: string): Promise<void> => {
   let canonical: string;
@@ -40,7 +41,7 @@ export const createScratchDirectory = async (
   await refuseRedirected(temporaryFolder, 'tmp');
   await refuseRedirected(join(temporaryFolder, scratchRootName), scratchRootName);
 
-  await mkdir(join(temporaryFolder, scratchRootName, assignmentId), {
+  await mkdir(join(temporaryFolder, scratchRootName, assignmentShortId(assignmentId)), {
     recursive: true,
     mode: 0o700,
   });
@@ -97,11 +98,17 @@ export const removeAgentTemporaryFolder = async (
   }
 };
 
+export const removeScratchFolder = (
+  agentDirectory: string,
+  folderName: string,
+): Promise<string | undefined> =>
+  removeAgentTemporaryFolder(agentDirectory, scratchRootName, folderName);
+
 export const removeScratchDirectory = (
   agentDirectory: string,
   assignmentId: string,
 ): Promise<string | undefined> =>
-  removeAgentTemporaryFolder(agentDirectory, scratchRootName, assignmentId);
+  removeScratchFolder(agentDirectory, assignmentShortId(assignmentId));
 
 export const errorAfterScratchCleanup = async (
   agentDirectory: string,
