@@ -93,8 +93,6 @@ export const messageText = (body: SavableMessageBody): string => {
   return parseSenderLine(text) === undefined ? text : `Handover text without a sender:\n\n${text}`;
 };
 
-// A sender-free handover also matches its payload text, which a receipt saved without the escape
-// line holds.
 const matchesSenderFreePayload = (content: unknown, body: SavableMessageBody): boolean => {
   if (body.family !== 'handover' || body.payload.sender !== undefined) {
     return false;
@@ -103,8 +101,6 @@ const matchesSenderFreePayload = (content: unknown, body: SavableMessageBody): b
   return content === body.payload.text;
 };
 
-// A retry matches when the text it would show, or the payload text of a sender-free handover,
-// equals the saved content for the same question.
 export const matchesReceipt = (
   { receipt, content }: ReceiptedMessage,
   body: SavableMessageBody,
