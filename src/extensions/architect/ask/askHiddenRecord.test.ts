@@ -1,0 +1,325 @@
+import { expect, it, onTestFinished, vi } from 'vitest';
+
+import { succeededResult } from '../../../../tests/execFake.js';
+import { holdAskLock, recordSession, setup } from '../fixtures/toolHarness.js';
+import { readAskRecord, readAskRecords, writeAskRecord } from '../record.js';
+import { askArchitect } from './ask.js';
+import type { AskRequest } from './ask.js';
+import { ask, endedWait, endedWithRecord, runningAsk, startFake } from './fixtures/askHarness.js';
+
+it('returns the failed result when the child exits nonzero before settling', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true, 1));
+
+  const result = await ask(hc, root);
+
+  expect(result).toMatchObject({ details: { status: 'failed' } });
+
+  const { records } = await readAskRecords(root);
+
+  expect(records[0]).toMatchObject({ status: 'failed' });
+});
+
+it('returns the deadline outcome and writes nothing after a child timeout ends the wait', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true));
+
+  const exec = endedWithRecord(hc, root, (record) => ({
+    ...record,
+    status: 'timeout',
+    detail: 'The child wrote the deadline first.',
+  }));
+
+  const result = await ask({ ...hc, exec }, root);
+
+  const { records } = await readAskRecords(root);
+  const askId = records[0]?.askId;
+
+  expect(result).toMatchObject({
+    details: {
+      status: 'needsOpen',
+      reason: 'The ask reached its deadline. Call architect open to talk to the architect.',
+    },
+  });
+
+  if (askId === undefined) {
+    throw new Error('The ask record was not written.');
+  }
+
+  expect(await readAskRecord(root, askId)).toMatchObject({
+    status: 'timeout',
+    detail: 'The child wrote the deadline first.',
+  });
+});
+
+it('returns the answer after a sent record ends the wait', async ({ onTestFinished: cleanup }) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true));
+
+  const exec = endedWithRecord(hc, root, (record) => ({
+    ...record,
+    status: 'sent',
+    answer: 'Use --quick.',
+  }));
+
+  await expect(ask({ ...hc, exec }, root)).resolves.toMatchObject({
+    details: { status: 'ended', answer: 'Use --quick.' },
+  });
+});
+
+it('repairs a running ask whose terminal has ended', async ({ onTestFinished: cleanup }) => {
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  await writeAskRecord(root, runningAsk);
+  hc.replyGet('t-ask', JSON.stringify({ address: 't-ask', state: 'exited' }));
+  hc.fail('run', 'hc run failed', 1);
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  await askArchitect(request).catch(() => undefined);
+
+  expect(await readAskRecord(root, runningAsk.askId)).toMatchObject({ status: 'failed' });
+});
+
+it('leaves a running ask unchanged when its terminal lookup fails', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  await writeAskRecord(root, runningAsk);
+  hc.failGet('t-ask', 'no such terminal');
+  hc.fail('run', 'hc run failed', 1);
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  await askArchitect(request).catch(() => undefined);
+
+  expect(await readAskRecord(root, runningAsk.askId)).toMatchObject({ status: 'running' });
+});
+
+it.each([
+  {
+    name: 'timeout',
+    settle: (record: Extract<Awaited<ReturnType<typeof readAskRecord>>, { route: 'hidden' }>) => ({
+      ...record,
+      status: 'timeout' as const,
+      detail: 'The child wrote the deadline first.',
+    }),
+    expected: {
+      status: 'needsOpen',
+      reason: 'The ask reached its deadline. Call architect open to talk to the architect.',
+    },
+  },
+  {
+    name: 'sent',
+    settle: (record: Extract<Awaited<ReturnType<typeof readAskRecord>>, { route: 'hidden' }>) => ({
+      ...record,
+      status: 'sent' as const,
+      answer: 'Use --quick.',
+    }),
+    expected: { status: 'ended', answer: 'Use --quick.' },
+  },
+  {
+    name: 'failed',
+    settle: (record: Extract<Awaited<ReturnType<typeof readAskRecord>>, { route: 'hidden' }>) => ({
+      ...record,
+      status: 'failed' as const,
+      detail: 'The child failed first.',
+    }),
+    expected: { status: 'failed' },
+  },
+])(
+  'keeps a $name record the child settled while the lead was stalled',
+  async ({ settle, expected }) => {
+    const { root } = await setup(onTestFinished);
+    const hc = startFake();
+    const launched = Promise.withResolvers<string>();
+    const locked = Promise.withResolvers<Awaited<ReturnType<typeof holdAskLock>>>();
+    let waits = 0;
+
+    await recordSession(root);
+
+    const exec: typeof hc.exec = async (command, commandArguments, options) => {
+      if (command === 'hc' && commandArguments[0] === 'run') {
+        const result = await hc.exec(command, commandArguments, options);
+        const { records } = await readAskRecords(root);
+
+        launched.resolve(records[0]?.askId ?? '');
+
+        return result;
+      }
+
+      if (command === 'hc' && commandArguments[0] === 'wait') {
+        waits += 1;
+
+        if (waits === 1) {
+          const askId = await launched.promise;
+
+          locked.resolve(await holdAskLock(onTestFinished, root, askId));
+
+          return succeededResult(endedWait('t-ask', false));
+        }
+
+        return succeededResult(endedWait('t-ask', true));
+      }
+
+      return hc.exec(command, commandArguments, options);
+    };
+
+    const asking = ask({ ...hc, exec }, root).catch((error: unknown) => error);
+    const askId = await launched.promise;
+    const held = await locked.promise;
+    const record = await readAskRecord(root, askId);
+
+    if (record?.route !== 'hidden') {
+      throw new Error('The ask record is not hidden.');
+    }
+
+    await writeAskRecord(root, settle(record));
+    held.release();
+
+    const result = await asking;
+
+    expect(result).toMatchObject({ details: expected });
+    expect(await readAskRecord(root, askId)).toMatchObject(settle(record));
+  },
+);
+
+it('keeps an answer saved between the repair scan and its get reply', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+  const getEntered = Promise.withResolvers<undefined>();
+  const getRelease = Promise.withResolvers<undefined>();
+
+  await recordSession(root);
+  await writeAskRecord(root, runningAsk);
+  hc.replyGet('t-ask', JSON.stringify({ address: 't-ask', state: 'exited' }));
+  hc.fail('run', 'hc run failed', 1);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      getEntered.resolve(undefined);
+      await getRelease.promise;
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root, exec },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  const asking = askArchitect(request).catch(() => undefined);
+
+  await getEntered.promise;
+
+  await writeAskRecord(root, {
+    ...runningAsk,
+    status: 'sent',
+    answer: 'Use --quick.',
+  });
+
+  getRelease.resolve(undefined);
+  await asking;
+
+  expect(await readAskRecord(root, runningAsk.askId)).toMatchObject({
+    status: 'sent',
+    answer: 'Use --quick.',
+  });
+});
+
+it('keeps a running ask whose terminal changed between the repair scan and its lock', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+  const getEntered = Promise.withResolvers<undefined>();
+  const getRelease = Promise.withResolvers<undefined>();
+
+  await recordSession(root);
+  await writeAskRecord(root, runningAsk);
+  hc.replyGet('t-ask', JSON.stringify({ address: 't-ask', state: 'exited' }));
+  hc.fail('run', 'hc run failed', 1);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      getEntered.resolve(undefined);
+      await getRelease.promise;
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root, exec },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  const asking = askArchitect(request).catch(() => undefined);
+
+  await getEntered.promise;
+
+  await writeAskRecord(root, { ...runningAsk, terminal: 't-other' });
+
+  getRelease.resolve(undefined);
+  await asking;
+
+  expect(await readAskRecord(root, runningAsk.askId)).toMatchObject({
+    status: 'running',
+    terminal: 't-other',
+  });
+});
