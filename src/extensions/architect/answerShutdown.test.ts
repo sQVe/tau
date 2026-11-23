@@ -10,7 +10,6 @@ import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { createAnswerTracker } from './answer.js';
 import { createAskAdmissions } from './ask/askAcceptance.js';
-import { createFinalHandoverTracker } from './endNoteSend.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
 import { contextOf, setup } from './fixtures/toolHarness.js';
 import { askRecordDirectory, askRecordPath, readAskRecord, writeAskRecord } from './record.js';
@@ -116,8 +115,6 @@ const closingArchitect = async (
       sessionId: 'session-architect',
     },
     held: createHeldLockToken(),
-    leadTerminal: null,
-    finalHandover: createFinalHandoverTracker(),
   };
 
   const send = (answerHc: AnswerHc, file: string | undefined) =>

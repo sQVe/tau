@@ -1,29 +1,51 @@
-export type FinalHandoverState = 'none' | 'unknown' | 'queued';
+type FinalHandoverState = 'none' | 'unknown' | 'queued';
+
+export interface EndNoteRoute {
+  leadTerminal: string;
+  architectTerminal: string | null;
+  finalHandover: FinalHandoverState;
+}
 
 export type ArchitectRecordFact =
   | { kind: 'read'; sessionFile: string | null; updatedAt: string }
   | { kind: 'missing' }
   | { kind: 'unreadable'; reason: string };
 
-export interface EndNoteFacts {
-  mode: 'visible' | 'ask';
-  leadTerminal: string | null;
-  architectTerminal: string | null;
-  finalHandover: FinalHandoverState;
-  record: ArchitectRecordFact;
-}
+export type EndNoteSelection =
+  | { kind: 'none' }
+  | {
+      kind: 'send';
+      target: string;
+      architectTerminal: string | null;
+      finalHandover: FinalHandoverState;
+    };
 
 export type EndNoteDecision = { kind: 'none' } | { kind: 'send'; target: string; text: string };
 
-export const nextFinalHandoverState = (
-  current: FinalHandoverState,
-  status: 'queued' | 'unknown' | undefined,
-): FinalHandoverState => {
-  if (current === 'queued' || status === 'queued') {
-    return 'queued';
+export const nextEndNoteRoute = (
+  route: EndNoteRoute | undefined,
+  status: 'queued' | 'unknown',
+): EndNoteRoute | undefined => {
+  if (route === undefined || route.finalHandover === 'queued' || status === 'queued') {
+    return undefined;
   }
 
-  return status === 'unknown' && current === 'none' ? 'unknown' : current;
+  const finalHandover = route.finalHandover === 'none' ? 'unknown' : route.finalHandover;
+
+  return { ...route, finalHandover };
+};
+
+export const selectEndNote = (route: EndNoteRoute | undefined): EndNoteSelection => {
+  if (route === undefined || route.finalHandover === 'queued') {
+    return { kind: 'none' };
+  }
+
+  return {
+    kind: 'send',
+    target: route.leadTerminal,
+    architectTerminal: route.architectTerminal,
+    finalHandover: route.finalHandover,
+  };
 };
 
 const recordLine = (record: ArchitectRecordFact): string => {
@@ -38,26 +60,27 @@ const recordLine = (record: ArchitectRecordFact): string => {
   return `Its record could not be read: ${record.reason}.`;
 };
 
-const endText = (facts: EndNoteFacts, terminal: string): string => {
-  const line = recordLine(facts.record);
+const endText = (
+  selection: Extract<EndNoteSelection, { kind: 'send' }>,
+  record: ArchitectRecordFact,
+): string => {
+  const line = recordLine(record);
+  const terminal = selection.architectTerminal ?? 'unknown';
 
-  if (facts.finalHandover === 'unknown') {
+  if (selection.finalHandover === 'unknown') {
     return `Your architect in terminal ${terminal} ended after a final handover send returned unknown, so it may not have reached you. If no final handover arrived, decide what to do next: call architect open to resume that session, or ask the user. ${line}`;
   }
 
   return `Your architect in terminal ${terminal} ended without a final handover. ${line} Decide what to do next: call architect open to resume that session, or ask the user.`;
 };
 
-export const decideEndNote = (facts: EndNoteFacts): EndNoteDecision => {
-  if (facts.mode === 'ask' || facts.finalHandover === 'queued') {
-    return { kind: 'none' };
+export const decideEndNote = (
+  selection: EndNoteSelection,
+  record: ArchitectRecordFact,
+): EndNoteDecision => {
+  if (selection.kind === 'none') {
+    return selection;
   }
 
-  if (facts.leadTerminal === null || facts.leadTerminal === '') {
-    return { kind: 'none' };
-  }
-
-  const terminal = facts.architectTerminal ?? 'unknown';
-
-  return { kind: 'send', target: facts.leadTerminal, text: endText(facts, terminal) };
+  return { kind: 'send', target: selection.target, text: endText(selection, record) };
 };

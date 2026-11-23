@@ -65,6 +65,11 @@ releases the lock. A confirmed answer settles as answered. An answer with an unk
 once more with the same ID, because the lead inbox replies `queued` for a message it already has.
 Any other open ask fails, and the lead gets a note to ask again.
 
+On orderly shutdown a visible architect also tells its lead it ended, even when no ask is
+outstanding. It sends no notice when a final handover was confirmed queued; an unknown result is not
+confirmation. The notice is best effort and follows cleanup, because the architect holds the
+handover result and the lead must be able to resume once notified.
+
 Without a live holder, `ask` resumes the saved session in a hidden terminal with one question and a
 deadline. This path needs the recorded session file. The architect answers, updates the ticket if
 needed, sends the answer to the lead's inbox, and ends.

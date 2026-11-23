@@ -1,7 +1,6 @@
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 
-import type { ExtensionContext, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
@@ -13,12 +12,15 @@ import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
-import type { HcRuntime } from '../../hc/hc.js';
 import { createAnswerTracker } from './answer.js';
 import { createAskAdmissions } from './ask/askAcceptance.js';
-import { createFinalHandoverTracker } from './endNoteSend.js';
-import { startLeadInbox } from './fixtures/leadInbox.js';
 import { readArchitectOwner } from './fixtures/toolHarness.js';
+import {
+  hcRuntime,
+  sessionContext,
+  stubArchitect,
+  visibleArchitect,
+} from './fixtures/visibleSession.js';
 import { architectLockPath } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import {
@@ -32,40 +34,11 @@ import type { HiddenAskRecord, LiveAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
 import type { ArchitectSession } from './session.js';
 
-const hcRuntime = (hc: HcFake): HcRuntime => ({ ...hc, cwd: process.cwd() });
-
-const sessionContext = (cwd: string) => {
-  const notify = vi.fn<(message: string, level?: string) => void>();
-  const shutdown = vi.fn<() => void>();
-
-  const context = {
-    cwd,
-    ui: { notify },
-    shutdown,
-    isProjectTrusted: () => true,
-    sessionManager: {
-      getSessionFile: () => '/sessions/architect.jsonl',
-      getSessionId: () => 'session-architect',
-    },
-  } as unknown as ExtensionContext;
-
-  return { context, notify, shutdown };
-};
-
 const holdLock = async (root: string, released: boolean): Promise<void> => {
   const path = `${architectLockPath(root)}.1`;
 
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, ownerJson('holder', released));
-};
-
-const stubArchitect = (cleanup: (cleanup: () => void) => void): void => {
-  vi.stubEnv('TAU_ROLE', 'architect');
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-
-  cleanup(() => {
-    vi.unstubAllEnvs();
-  });
 };
 
 it('a held lock notifies and shuts the architect down', async ({ onTestFinished }) => {
@@ -215,8 +188,6 @@ const hiddenSession = (
   ui: { notify },
   owner: { lockToken: 'live', mode: 'ask', terminal: 't-ask', sessionId: 'session-architect' },
   held: createHeldLockToken(),
-  leadTerminal: null,
-  finalHandover: createFinalHandoverTracker(),
 });
 
 it('ending fails only running hidden asks', async ({ onTestFinished }) => {
@@ -271,104 +242,6 @@ it('a non-architect session takes no lock', async ({ onTestFinished }) => {
 
   expect(await startArchitectSession(context, createHeldLockToken())).toBeUndefined();
   expect(await readArchitectRecord(root)).toBeUndefined();
-});
-
-const visibleArchitect = async (cleanup: (cleanup: () => void) => void) => {
-  stubArchitect(cleanup);
-
-  const root = await createTemporaryRepository(cleanup);
-  const { context } = sessionContext(root);
-  const session = await startArchitectSession(context, createHeldLockToken());
-
-  if (session === undefined) {
-    throw new Error('The architect did not start.');
-  }
-
-  return { root, session };
-};
-
-it('ending a visible architect without a final handover tells the lead its terminal and record', async ({
-  onTestFinished,
-}) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const hc = createHcFake();
-  const lead = await startLeadInbox(onTestFinished, hc);
-  const { root, session } = await visibleArchitect(onTestFinished);
-  const record = await readArchitectRecord(root);
-
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
-
-  const names = lead.savedRecords().filter((name) => name.endsWith('.json'));
-
-  expect(names).toHaveLength(1);
-
-  const name = basename(names[0] as string);
-  const text = await readFile(join(lead.inbox, name), 'utf8');
-  const saved = JSON.parse(text) as { payload: { text: string } };
-
-  expect(saved.payload.text).toContain('t-architect');
-  expect(saved.payload.text).toContain('/sessions/architect.jsonl');
-  expect(saved.payload.text).toContain(record?.updatedAt);
-});
-
-const finalHandoverEvent = (status: 'queued' | 'unknown'): ToolResultEvent =>
-  ({
-    toolName: 'handover',
-    details: { status },
-    input: { action: 'send', final: true },
-  }) as unknown as ToolResultEvent;
-
-it('ending a visible architect after a queued final handover sends the lead nothing', async ({
-  onTestFinished,
-}) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const hc = createHcFake();
-  const lead = await startLeadInbox(onTestFinished, hc);
-  const { session } = await visibleArchitect(onTestFinished);
-
-  session.finalHandover.record(finalHandoverEvent('queued'));
-
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
-
-  const saved = lead.savedRecords().filter((name) => name.endsWith('.json'));
-
-  expect(saved).toEqual([]);
-});
-
-it('ending a visible architect releases the lock and warns once when the end note fails', async ({
-  onTestFinished,
-}) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const { root, session } = await visibleArchitect(onTestFinished);
-  const hc = createHcFake();
-  const notify = session.ui.notify as unknown as Mock;
-
-  hc.fail('get', 'no such terminal', 1);
-
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
-
-  const warnings = notify.mock.calls.filter(([message]) => String(message).includes('end note'));
-
-  expect(warnings).toHaveLength(1);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('ending a visible architect fails its open live ask and tells the lead to ask again', async ({

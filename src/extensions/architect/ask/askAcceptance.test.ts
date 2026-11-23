@@ -16,7 +16,6 @@ import { decodeReply, encodeMessageFrame } from '../../../inbox/protocol.js';
 import type { MessageReply } from '../../../inbox/protocol.js';
 import { pendingMessages } from '../../../inbox/store.js';
 import { createAnswerTracker } from '../answer.js';
-import { createFinalHandoverTracker } from '../endNoteSend.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
 import { createHeldLockToken, endArchitectSession } from '../session.js';
 import type { ArchitectSession } from '../session.js';
@@ -117,8 +116,6 @@ const closingSetup = async (cleanup: Cleanup, stallPoint: StallPoint = 'commit')
       sessionId: 'session-architect',
     },
     held,
-    leadTerminal: null,
-    finalHandover: createFinalHandoverTracker(),
   };
 
   const frame = encodeMessageFrame({

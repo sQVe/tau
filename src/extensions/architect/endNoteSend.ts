@@ -1,31 +1,16 @@
-import type { ToolResultEvent } from '@earendil-works/pi-coding-agent';
-
 import { errorMessage } from '../../errors.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { sendInboxMessage } from '../../inbox/inbox.js';
-import { decideEndNote, nextFinalHandoverState } from './endNoteDecision.js';
-import type { ArchitectRecordFact, FinalHandoverState } from './endNoteDecision.js';
-import { finalHandoverStatus } from './queuedHandover.js';
+import { decideEndNote, selectEndNote } from './endNoteDecision.js';
+import type { ArchitectRecordFact, EndNoteRoute } from './endNoteDecision.js';
 import { readArchitectRecord } from './record.js';
-import type { ArchitectSession } from './session.js';
 
-export interface FinalHandoverTracker {
-  record: (event: ToolResultEvent) => void;
-  state: () => FinalHandoverState;
+export interface PreparedEndNote {
+  target: string;
+  text: string;
 }
 
-export const createFinalHandoverTracker = (): FinalHandoverTracker => {
-  let state: FinalHandoverState = 'none';
-
-  return {
-    record: (event) => {
-      state = nextFinalHandoverState(state, finalHandoverStatus(event));
-    },
-    state: () => state,
-  };
-};
-
-export const readRecordFact = async (root: string): Promise<ArchitectRecordFact> => {
+const readRecordFact = async (root: string): Promise<ArchitectRecordFact> => {
   try {
     const record = await readArchitectRecord(root);
 
@@ -37,39 +22,42 @@ export const readRecordFact = async (root: string): Promise<ArchitectRecordFact>
   }
 };
 
-const reportFailure = (session: ArchitectSession, reason: string): void => {
-  session.ui.notify(`The lead got no end note: ${reason}`, 'warning');
+export const prepareEndNote = async (
+  route: EndNoteRoute | undefined,
+  root: string,
+): Promise<PreparedEndNote | undefined> => {
+  const selection = selectEndNote(route);
+
+  if (selection.kind === 'none') {
+    return undefined;
+  }
+
+  const decision = decideEndNote(selection, await readRecordFact(root));
+
+  return decision.kind === 'send' ? { target: decision.target, text: decision.text } : undefined;
 };
 
-export const noteArchitectEnd = async (
-  session: ArchitectSession,
+export const deliverEndNote = async (
+  prepared: PreparedEndNote | undefined,
   hc: HcRuntime,
-  record: ArchitectRecordFact,
+  report: (message: string) => void,
 ): Promise<void> => {
-  const decision = decideEndNote({
-    mode: session.owner.mode,
-    leadTerminal: session.leadTerminal,
-    architectTerminal: session.owner.terminal,
-    finalHandover: session.finalHandover.state(),
-    record,
-  });
-
-  if (decision.kind === 'none') {
+  if (prepared === undefined) {
     return;
   }
 
   try {
     const sent = await sendInboxMessage({
       hc,
-      target: decision.target,
-      body: { family: 'handover', payload: { text: decision.text } },
+      target: prepared.target,
+      body: { family: 'handover', payload: { text: prepared.text } },
       refusal: 'Nothing was queued.',
     });
 
     if (sent.status !== 'queued') {
-      reportFailure(session, `the send returned ${sent.status}`);
+      report(`The lead got no end note: the send returned ${sent.status}`);
     }
   } catch (error) {
-    reportFailure(session, errorMessage(error));
+    report(`The lead got no end note: ${errorMessage(error)}`);
   }
 };

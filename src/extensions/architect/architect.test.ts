@@ -1,5 +1,5 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
@@ -7,9 +7,11 @@ import type { Mock } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createHcFake } from '../../../tests/hcFake.js';
 import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import architectExtension from './architect.js';
+import { startLeadInbox } from './fixtures/leadInbox.js';
 import { architectLockPath } from './lock.js';
 import { writeAskRecord } from './record.js';
 import type { LiveAskRecord } from './record.js';
@@ -17,6 +19,7 @@ import type { LiveAskRecord } from './record.js';
 const registerSession = (
   cleanup: (cleanup: () => void) => void,
   role: 'lead' | 'architect' | undefined,
+  overrides: Parameters<typeof fakeExtensionApi>[0] = {},
 ) => {
   vi.stubEnv('TAU_ARCHITECT_ASK', '');
   vi.stubEnv('TAU_ROLE', role);
@@ -26,7 +29,7 @@ const registerSession = (
     forgetAcceptCheck('architect-ask');
   });
 
-  const fake = fakeExtensionApi();
+  const fake = fakeExtensionApi(overrides);
 
   architectExtension(fake.pi);
 
@@ -66,9 +69,6 @@ const sessionContext = (cwd: string) => {
   return { context, notify, shutdown };
 };
 
-const endNoteWarnings = (notify: Mock): unknown[][] =>
-  notify.mock.calls.filter(([message]) => String(message).includes('end note'));
-
 const runHandlers = async (
   fake: ReturnType<typeof fakeExtensionApi>,
   name: string,
@@ -92,9 +92,12 @@ it('a visible architect shuts down and releases its lock after the final handove
   onTestFinished,
 }) => {
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
 
   const root = await createTemporaryRepository(onTestFinished);
-  const fake = registerSession(onTestFinished, 'architect');
+  const hc = createHcFake();
+  const lead = await startLeadInbox(onTestFinished, hc);
+  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
   const { context, shutdown } = sessionContext(root);
 
   await runHandlers(fake, 'session_start', context);
@@ -109,7 +112,10 @@ it('a visible architect shuts down and releases its lock after the final handove
 
   await runHandlers(fake, 'session_shutdown', context);
 
+  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+
   expect(shutdown).not.toHaveBeenCalled();
+  expect(savedRecords).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
@@ -127,37 +133,39 @@ it('a lead session does not shut down after a queued handover', ({ onTestFinishe
   expect(shutdown).not.toHaveBeenCalled();
 });
 
-it('a visible architect that queued its final handover sends no end note at shutdown', async ({
+it('a visible architect that ended after an unknown final handover tells the lead it may not have arrived', async ({
   onTestFinished,
 }) => {
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
   vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
 
   const root = await createTemporaryRepository(onTestFinished);
-  const fake = registerSession(onTestFinished, 'architect');
-  const { context, notify } = sessionContext(root);
+  const hc = createHcFake();
+  const lead = await startLeadInbox(onTestFinished, hc);
+  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
+  const { context } = sessionContext(root);
 
   await runHandlers(fake, 'session_start', context);
-  receiveHandover(fake, { status: 'queued' }, { action: 'send', final: true });
+
+  const handoverShutdown = receiveHandover(
+    fake,
+    { status: 'unknown' },
+    { action: 'send', final: true },
+  );
+
+  expect(handoverShutdown).not.toHaveBeenCalled();
+
   await runHandlers(fake, 'session_shutdown', context);
 
-  expect(endNoteWarnings(notify)).toEqual([]);
-});
+  const names = lead.savedRecords().filter((name) => name.endsWith('.json'));
 
-it('a visible architect without a final handover warns once when the end note cannot be sent', async ({
-  onTestFinished,
-}) => {
-  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+  expect(names).toHaveLength(1);
 
-  const root = await createTemporaryRepository(onTestFinished);
-  const fake = registerSession(onTestFinished, 'architect');
-  const { context, notify } = sessionContext(root);
+  const text = await readFile(join(lead.inbox, basename(names[0] as string)), 'utf8');
+  const saved = JSON.parse(text) as { payload: { text: string } };
 
-  await runHandlers(fake, 'session_start', context);
-  await runHandlers(fake, 'session_shutdown', context);
-
-  expect(endNoteWarnings(notify)).toHaveLength(1);
+  expect(saved.payload.text).toContain('returned unknown');
+  expect(saved.payload.text).toContain('may not have reached you');
 });
 
 const roleCases: readonly {

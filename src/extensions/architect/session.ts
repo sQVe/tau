@@ -10,8 +10,9 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
-import { createFinalHandoverTracker, noteArchitectEnd, readRecordFact } from './endNoteSend.js';
-import type { FinalHandoverTracker } from './endNoteSend.js';
+import { nextEndNoteRoute } from './endNoteDecision.js';
+import type { EndNoteRoute } from './endNoteDecision.js';
+import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
@@ -29,8 +30,7 @@ export interface ArchitectSession {
   ui: ConfigWarnings;
   owner: ArchitectOwner;
   held: HeldLockToken;
-  leadTerminal: string | null;
-  finalHandover: FinalHandoverTracker;
+  endNote?: EndNoteRoute;
 }
 
 export const createHeldLockToken = (): HeldLockToken => {
@@ -107,14 +107,18 @@ const startArchitect = async (
 
     await afterPublish?.();
 
+    const endNote =
+      owner.mode === 'visible' && leadTerminal !== null && leadTerminal !== ''
+        ? { leadTerminal, architectTerminal: owner.terminal, finalHandover: 'none' as const }
+        : undefined;
+
     return {
       root,
       release: lock.release,
       ui: context.ui,
       owner,
       held,
-      leadTerminal,
-      finalHandover: createFinalHandoverTracker(),
+      ...(endNote === undefined ? {} : { endNote }),
     };
   } catch (error) {
     held.set(undefined);
@@ -195,6 +199,19 @@ const closeLiveAsks = async (
   });
 };
 
+export const recordEndNoteStatus = (
+  session: ArchitectSession,
+  status: 'queued' | 'unknown',
+): void => {
+  const route = nextEndNoteRoute(session.endNote, status);
+
+  if (route === undefined) {
+    delete session.endNote;
+  } else {
+    session.endNote = route;
+  }
+};
+
 // The token goes first so no new question is saved. The wait lets a save that already started
 // finish before the lock is released.
 export const endArchitectSession = async (
@@ -205,11 +222,11 @@ export const endArchitectSession = async (
 ): Promise<void> => {
   session.held.set(undefined);
 
-  // The read must finish before the lock is released, so a new owner cannot overwrite the record
-  // first. The close work starts alongside it so its deadline starts now.
-  const recordRead = readRecordFact(session.root);
+  // The note read must finish before the lock is released, so a new owner cannot overwrite the
+  // record first. The close work starts alongside it so its deadline starts now.
+  const note = prepareEndNote(session.endNote, session.root);
   const closing = closeAdmitted(answers, admissions);
-  const record = await recordRead;
+  const preparedNote = await note;
 
   try {
     const closed = await closing;
@@ -220,7 +237,9 @@ export const endArchitectSession = async (
     try {
       await failRunningAsks(session.root, session.ui);
     } finally {
-      await noteArchitectEnd(session, hc, record);
+      await deliverEndNote(preparedNote, hc, (message) => {
+        session.ui.notify(message, 'warning');
+      });
     }
   }
 };

@@ -12,8 +12,13 @@ import { createAskAdmissions } from './ask/askAcceptance.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
 import { registerAskMode } from './ask/askMode.js';
 import { blockFinalHandover } from './open/openLiveAsks.js';
-import { isFinalHandover } from './queuedHandover.js';
-import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
+import { finalHandoverStatus } from './queuedHandover.js';
+import {
+  createHeldLockToken,
+  endArchitectSession,
+  recordEndNoteStatus,
+  startArchitectSession,
+} from './session.js';
 import type { ArchitectSession } from './session.js';
 import { createArchitectAnswerTool, createArchitectTool } from './tool.js';
 
@@ -37,9 +42,14 @@ const registerVisibleArchitect = (
   });
 
   pi.on('tool_result', (event, context) => {
-    current()?.finalHandover.record(event);
+    const status = finalHandoverStatus(event);
+    const session = current();
 
-    if (isFinalHandover(event)) {
+    if (session !== undefined && status !== undefined) {
+      recordEndNoteStatus(session, status);
+    }
+
+    if (status === 'queued') {
       context.shutdown();
     }
   });

@@ -2,11 +2,21 @@ import type { ToolResultEvent } from '@earendil-works/pi-coding-agent';
 
 import { isRecord } from '../../schema.js';
 
+const handoverDetails = (event: ToolResultEvent): Record<string, unknown> | undefined => {
+  if (event.toolName !== 'handover' || !isRecord(event.details)) {
+    return undefined;
+  }
+
+  return event.details;
+};
+
 export const isQueuedHandover = (event: ToolResultEvent): boolean =>
-  event.toolName === 'handover' && isRecord(event.details) && event.details['status'] === 'queued';
+  handoverDetails(event)?.['status'] === 'queued';
 
 export const finalHandoverStatus = (event: ToolResultEvent): 'queued' | 'unknown' | undefined => {
-  if (event.toolName !== 'handover' || !isRecord(event.details)) {
+  const details = handoverDetails(event);
+
+  if (details === undefined) {
     return undefined;
   }
 
@@ -14,10 +24,7 @@ export const finalHandoverStatus = (event: ToolResultEvent): 'queued' | 'unknown
     return undefined;
   }
 
-  const status = event.details['status'];
+  const status = details['status'];
 
   return status === 'queued' || status === 'unknown' ? status : undefined;
 };
-
-export const isFinalHandover = (event: ToolResultEvent): boolean =>
-  finalHandoverStatus(event) === 'queued';
