@@ -87,6 +87,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'github/repositoryTargetDecisions',
     ],
   },
+  { name: 'handoverSender', entry: 'handoverSender', publicFiles: [] },
   { name: 'hc', entry: 'hc/hc', publicFiles: ['hc/connect', 'hc/events'] },
   {
     name: 'improvement',
@@ -174,6 +175,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   fileText: ['errors'],
   git: ['errors'],
   github: ['command', 'errors', 'git', 'schema'],
+  handoverSender: [],
   hc: ['command', 'errors', 'schema'],
   improvement: [
     'command',

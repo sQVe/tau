@@ -49,6 +49,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0146: Load one generated Tau bundle that matches the package inputs](./0146-load-one-generated-tau-bundle-that-matches-the-package-inputs.md)
 - [0147: Measure the question gate in shadow mode](./0147-measure-the-question-gate-in-shadow-mode.md)
 - [0148: Answer eligible questions in decide mode](./0148-answer-eligible-questions-in-decide-mode.md)
+- [0149: Ask the lead that sent a handover](./0149-ask-the-lead-that-sent-a-handover.md)
 
 ### Documentation and writing
 

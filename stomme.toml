@@ -476,6 +476,11 @@ public = [
 ]
 imports = ["command", "errors", "git", "schema"]
 
+[modules.handoverSender]
+entry = "src/handoverSender.ts"
+public = []
+imports = []
+
 [modules.hc]
 entry = "src/hc/hc.ts"
 public = ["src/hc/connect.ts", "src/hc/events.ts"]

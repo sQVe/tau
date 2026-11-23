@@ -57,9 +57,9 @@ starts a process, so it is an I/O module.
 In this section, a pure module is a module with no I/O file. It is not the same as a module in
 `pureModules`, which makes pure decisions.
 
-The pure modules are `errors`, `judgeSchema`, `schema`, `shell`, and `tabName`. None of their files
-does I/O by the criterion above. Every other module in `importTable` is an I/O module. Each of its
-edges to a pure module follows the shared rule and is not listed.
+The pure modules are `errors`, `handoverSender`, `judgeSchema`, `schema`, `shell`, and `tabName`.
+None of their files does I/O by the criterion above. Every other module in `importTable` is an I/O
+module. Each of its edges to a pure module follows the shared rule and is not listed.
 
 `questionGate` is an I/O module because its judges call models and set timers. It imports no I/O
 module, so it has no line below.

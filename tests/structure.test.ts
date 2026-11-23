@@ -187,6 +187,7 @@ const pureModules = [
   'src/fileLock/lockHolderDecision.ts',
   'src/github/pullRequestDecisions.ts',
   'src/github/repositoryTargetDecisions.ts',
+  'src/handoverSender.ts',
   'src/improvement/classIdentity.ts',
   'src/improvement/correctDecision.ts',
   'src/improvement/historyRead.ts',
