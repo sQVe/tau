@@ -147,7 +147,9 @@ const startArchitect = async (
     });
 
     const askPath = owner.mode === 'ask' ? askRecordPathFromEnvironment() : undefined;
-    const deadline = askPath === undefined ? undefined : await startAskDeadline(askPath, context);
+
+    const deadline =
+      askPath === undefined ? undefined : await startAskDeadline(root, askPath, context);
 
     return {
       root,

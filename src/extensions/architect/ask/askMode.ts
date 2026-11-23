@@ -36,7 +36,11 @@ const handoverFile = (event: ToolResultEvent): string | undefined => {
   return typeof file === 'string' ? file : undefined;
 };
 
-export const registerAskMode = (pi: ExtensionAPI, recordPath: string): void => {
+export const registerAskMode = (
+  pi: ExtensionAPI,
+  checkoutOf: () => string | undefined,
+  recordPath: string,
+): void => {
   pi.on('before_agent_start', async (event) => {
     const record = await readAskRecordAt(recordPath);
 
@@ -76,9 +80,15 @@ export const registerAskMode = (pi: ExtensionAPI, recordPath: string): void => {
       return;
     }
 
+    const checkout = checkoutOf();
+
+    if (checkout === undefined) {
+      return;
+    }
+
     const answer = await readFile(resolve(context.cwd, file), 'utf8');
 
-    const change = await updateHiddenAskRecordAt(recordPath, (current) => ({
+    const change = await updateHiddenAskRecordAt(checkout, recordPath, (current) => ({
       ...current,
       status: 'sent',
       answer,

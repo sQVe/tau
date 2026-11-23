@@ -12,10 +12,11 @@ export interface AskDeadline {
 // Returns the deadline to rearm when a clock rollback leaves the locked record running before
 // its deadline.
 const expireAskRecord = async (
+  checkout: string,
   path: string,
   context: ExtensionContext,
 ): Promise<number | undefined> => {
-  const change = await updateHiddenAskRecordAt(path, (current) => {
+  const change = await updateHiddenAskRecordAt(checkout, path, (current) => {
     const action = askDeadlineAction({ now: Date.now(), deadline: current.deadline });
 
     if (action !== 'expire') {
@@ -43,6 +44,7 @@ const expireAskRecord = async (
 };
 
 export const startAskDeadline = async (
+  checkout: string,
   path: string,
   context: ExtensionContext,
 ): Promise<AskDeadline | undefined> => {
@@ -77,7 +79,7 @@ export const startAskDeadline = async (
           return;
         }
 
-        const rearmAt = await expireAskRecord(path, context);
+        const rearmAt = await expireAskRecord(checkout, path, context);
 
         if (rearmAt !== undefined) {
           schedule(rearmAt);
