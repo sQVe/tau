@@ -72,9 +72,8 @@ Tau refuses a frame that carries `sender`; that refusal is accepted and needs no
 
 The Pi session receipt moves to version 3 when it gains the `handover-question` family. Tau writes
 that one version for every family. It still reads version 2 for `handover` and `answer`, and it
-skips a version 2 `handover-question` receipt. An older Tau skips a version 3 receipt and a version
-3 inbox file. Therefore, a message this Tau saved and delivered is not shown twice after a
-downgrade.
+skips a version 2 `handover-question` receipt. An older Tau does not replay the original version 3
+inbox file. The downgrade limits under Consequences still apply.
 
 ### Ask with handover_question
 
