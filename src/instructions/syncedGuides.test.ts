@@ -18,7 +18,7 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { readSyncedGuides } from './syncedGuides.js';
-import type { GuideFileSystem, SyncedGuides } from './syncedGuides.js';
+import type { GuideFileSystem } from './syncedGuides.js';
 
 interface BrokenRow {
   name: string;
@@ -172,6 +172,11 @@ const brokenRows: BrokenRow[] = [
     },
     reason: ['shared/rules.md', 'not a file'],
   },
+  {
+    name: 'a dangling link',
+    files: { ...guides, 'shared/rules.md': '[gone](./gone.md)\n' },
+    reason: ['shared/rules.md', './gone.md', 'not a synced file', 'run stomme sync'],
+  },
 ];
 
 it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) => {
@@ -189,41 +194,40 @@ it.for(brokenRows)('reports $name as broken', async ({ files, change, reason }) 
   }
 });
 
-it('reports a dangling link as broken with the whole reason', async () => {
-  const directory = writeGuides({ ...guides, 'shared/rules.md': '[gone](./gone.md)\n' });
-
-  const result = await readSyncedGuides(directory);
-
-  expect(result).toEqual({
-    kind: 'broken',
-    reason: `${join(directory, 'shared/rules.md')} links to ./gone.md, which is not a synced file; run stomme sync`,
-  });
-});
-
 // The depth that overflows the stack depends on the runner's stack size, so the test deepens the
 // quote until the read overflows.
-it('reports a guide the tokenizer cannot read before an earlier broken link', async () => {
+it('reports a guide the tokenizer cannot read, after an earlier broken link', async () => {
+  let depth = 1000;
   let directory = '';
-  let result: SyncedGuides | undefined;
+  let reason = '';
 
-  for (let depth = 1000; depth <= 16_000; depth *= 2) {
-    directory = writeGuides({
-      ...guides,
-      'shared/coding.md': `${coding}[gone](./gone.md)\n`,
-      'shared/rules.md': `${'> '.repeat(depth)}[a](./a.md)\n`,
-    });
+  for (; depth <= 16_000; depth *= 2) {
+    directory = writeGuides({ ...guides, 'shared/rules.md': `${'> '.repeat(depth)}[a](./a.md)\n` });
 
-    result = await readSyncedGuides(directory);
+    const result = await readSyncedGuides(directory);
 
-    if (result.kind === 'broken' && result.reason.includes('cannot be read as Markdown')) {
+    reason = result.kind === 'broken' ? result.reason : '';
+
+    if (reason.includes('cannot be read as Markdown')) {
       break;
     }
   }
 
-  expect(result).toEqual({
-    kind: 'broken',
-    reason: `${join(directory, 'shared/rules.md')} cannot be read as Markdown: Maximum call stack size exceeded`,
+  expect(reason).toContain(join(directory, 'shared/rules.md'));
+  expect(reason).toContain('cannot be read as Markdown');
+  expect(reason).not.toContain('run stomme sync');
+
+  const earlier = writeGuides({
+    ...guides,
+    'shared/coding.md': `${coding}[gone](./gone.md)\n`,
+    'shared/rules.md': `${'> '.repeat(depth)}[a](./a.md)\n`,
   });
+
+  const earlierResult = await readSyncedGuides(earlier);
+  const earlierReason = earlierResult.kind === 'broken' ? earlierResult.reason : '';
+
+  expect(earlierReason).toContain(join(earlier, 'shared/coding.md'));
+  expect(earlierReason).toContain('./gone.md');
 });
 
 it('reports a synced folder that is a symbolic link as broken', async () => {

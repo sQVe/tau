@@ -10,8 +10,7 @@ export type GuideLinkCheck =
   | { kind: 'unreadable'; path: string; error: unknown }
   | { kind: 'broken'; path: string; target: string; problem: LinkProblem };
 
-type IndexedFile = { kind: 'other' } | { kind: 'markdown'; links: MarkdownLinks };
-type GuideIndex = ReadonlyMap<string, IndexedFile>;
+type ParsedFile = { kind: 'parsed'; links: MarkdownLinks } | { kind: 'unreadable'; error: unknown };
 
 const resolvedPath = (path: string, decodedPath: string) =>
   decodedPath === '' ? path : posix.normalize(posix.join(posix.dirname(path), decodedPath));
@@ -19,77 +18,99 @@ const resolvedPath = (path: string, decodedPath: string) =>
 const leavesFolder = (decodedPath: string, resolved: string) =>
   decodedPath.startsWith('/') || resolved === '..' || resolved.startsWith('../');
 
-const fragmentProblem = (
-  fragment: string | undefined,
-  entry: IndexedFile,
-): LinkProblem | undefined => {
-  if (fragment === undefined || fragment === '' || entry.kind === 'other') {
-    return undefined;
+const parsedFile = (text: string): ParsedFile => {
+  try {
+    return { kind: 'parsed', links: readMarkdownLinks(text) };
+  } catch (error) {
+    return { kind: 'unreadable', error };
   }
-
-  const slug = decodedComponent(fragment);
-
-  if (slug !== undefined && entry.links.slugs.has(slug)) {
-    return undefined;
-  }
-
-  return 'missing-heading';
 };
 
-const targetProblem = (
+const targetCheck = (
   path: string,
   target: string,
-  index: GuideIndex,
-): LinkProblem | undefined => {
+  files: ReadonlyMap<string, string>,
+  parse: (path: string) => ParsedFile,
+): GuideLinkCheck => {
   const destination = readDestination(target);
 
   if (destination.kind === 'external') {
-    return undefined;
+    return { kind: 'valid' };
   }
 
   if (destination.kind === 'undecodable') {
-    return 'undecodable';
+    return { kind: 'broken', path, target, problem: 'undecodable' };
   }
 
   const resolved = resolvedPath(path, destination.path);
 
   if (leavesFolder(destination.path, resolved)) {
-    return 'leaves-folder';
+    return { kind: 'broken', path, target, problem: 'leaves-folder' };
   }
 
-  const entry = index.get(resolved);
-
-  if (entry === undefined) {
-    return 'not-synced';
+  if (!files.has(resolved)) {
+    return { kind: 'broken', path, target, problem: 'not-synced' };
   }
 
-  return fragmentProblem(destination.fragment, entry);
+  const fragment = destination.fragment;
+
+  if (fragment === undefined || fragment === '' || !resolved.endsWith('.md')) {
+    return { kind: 'valid' };
+  }
+
+  const parsed = parse(resolved);
+
+  if (parsed.kind === 'unreadable') {
+    return { kind: 'unreadable', path: resolved, error: parsed.error };
+  }
+
+  const slug = decodedComponent(fragment);
+  const headingFound = slug !== undefined && parsed.links.slugs.has(slug);
+
+  return headingFound
+    ? { kind: 'valid' }
+    : { kind: 'broken', path, target, problem: 'missing-heading' };
 };
 
-const indexFile = (path: string, text: string): IndexedFile =>
-  path.endsWith('.md') ? { kind: 'markdown', links: readMarkdownLinks(text) } : { kind: 'other' };
-
 export const checkGuideLinks = (files: ReadonlyMap<string, string>): GuideLinkCheck => {
-  const index = new Map<string, IndexedFile>();
+  const cache = new Map<string, ParsedFile>();
 
-  for (const [path, text] of files) {
-    try {
-      index.set(path, indexFile(path, text));
-    } catch (error) {
-      return { kind: 'unreadable', path, error };
+  const parse = (path: string): ParsedFile => {
+    const cached = cache.get(path);
+
+    if (cached !== undefined) {
+      return cached;
     }
-  }
 
-  for (const [path, entry] of index) {
-    if (entry.kind === 'other') {
+    const text = files.get(path);
+
+    if (text === undefined) {
+      return { kind: 'unreadable', error: new Error(`${path} is not in the record`) };
+    }
+
+    const parsed = parsedFile(text);
+
+    cache.set(path, parsed);
+
+    return parsed;
+  };
+
+  for (const path of files.keys()) {
+    if (!path.endsWith('.md')) {
       continue;
     }
 
-    for (const target of entry.links.targets) {
-      const problem = targetProblem(path, target, index);
+    const parsed = parse(path);
 
-      if (problem !== undefined) {
-        return { kind: 'broken', path, target, problem };
+    if (parsed.kind === 'unreadable') {
+      return { kind: 'unreadable', path, error: parsed.error };
+    }
+
+    for (const target of parsed.links.targets) {
+      const check = targetCheck(path, target, files, parse);
+
+      if (check.kind !== 'valid') {
+        return check;
       }
     }
   }

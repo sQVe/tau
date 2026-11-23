@@ -224,6 +224,16 @@ const table: {
     expected: { kind: 'valid' },
   },
   {
+    name: 'reports a nested image before its link',
+    files: [['a.md', '[![Badge](./badge.png)](./page.md)\n']],
+    expected: {
+      kind: 'broken',
+      path: 'a.md',
+      target: './badge.png',
+      problem: 'not-synced',
+    },
+  },
+  {
     name: 'checks a reference use at its definition',
     files: [['a.md', '[r][a] [i](./inline.md)\n\n[a]: ./definition.md\n']],
     expected: {

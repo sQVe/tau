@@ -1,5 +1,5 @@
 import { Marked, Tokenizer } from 'marked';
-import type { Token } from 'marked';
+import type { Token, Tokens } from 'marked';
 
 export interface MarkdownLinks {
   targets: readonly string[];
@@ -135,25 +135,56 @@ const headingTextOf = (token: Token): string | undefined => {
   return renderedText(token.tokens ?? []);
 };
 
-export const readMarkdownLinks = (markdown: string): MarkdownLinks => {
-  const targets: string[] = [];
-  const headings: string[] = [];
-  const tokens = tokenizer.lexer(withoutByteOrderMark(markdown));
+const hasTableHeader = (token: Token): boolean => 'header' in token && Array.isArray(token.header);
 
-  // oxlint-disable-next-line typescript/no-floating-promises -- The visit returns void, so the walk has no promise to handle.
-  tokenizer.walkTokens(tokens, (token) => {
-    const target = targetOf(token);
+const hasTableRows = (token: Token): boolean => 'rows' in token && Array.isArray(token.rows);
 
-    if (target !== undefined) {
-      targets.push(target);
-    }
+const hasTableCells = (token: Token): boolean => hasTableHeader(token) && hasTableRows(token);
 
+const isTable = (token: Token): token is Tokens.Table =>
+  token.type === 'table' && hasTableCells(token);
+
+const isList = (token: Token): token is Tokens.List =>
+  token.type === 'list' && 'items' in token && Array.isArray(token.items);
+
+const childrenOf = (token: Token): readonly Token[] => {
+  if (isTable(token)) {
+    const header = token.header.flatMap((cell) => cell.tokens);
+    const rows = token.rows.flatMap((row) => row.flatMap((cell) => cell.tokens));
+
+    return [...header, ...rows];
+  }
+
+  if (isList(token)) {
+    return token.items;
+  }
+
+  return 'tokens' in token ? token.tokens : [];
+};
+
+const collectLinks = (tokens: readonly Token[], targets: string[], headings: string[]): void => {
+  for (const token of tokens) {
     const heading = headingTextOf(token);
 
     if (heading !== undefined) {
       headings.push(heading);
     }
-  });
+
+    collectLinks(childrenOf(token), targets, headings);
+
+    const target = targetOf(token);
+
+    if (target !== undefined) {
+      targets.push(target);
+    }
+  }
+};
+
+export const readMarkdownLinks = (markdown: string): MarkdownLinks => {
+  const targets: string[] = [];
+  const headings: string[] = [];
+
+  collectLinks(tokenizer.lexer(withoutByteOrderMark(markdown)), targets, headings);
 
   return { targets, slugs: headingSlugs(headings) };
 };

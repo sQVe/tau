@@ -124,6 +124,42 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
     markdown: '[adr]:\r\n  ./coding.md\r\n',
     expected: ['./coding.md'],
   },
+  {
+    name: 'reads a link after a fence inside an HTML comment',
+    markdown: '<!--\n```markdown\n-->\n[gone](./gone.md)\n',
+    expected: ['./gone.md'],
+  },
+  {
+    name: 'reads no link inside a comment opened after a lone backtick',
+    markdown: 'A literal `\n\n<!-- `\n[ignored](./gone.md)\n-->\n',
+    expected: [],
+  },
+  {
+    name: 'reads an indented angle definition with a title',
+    markdown: '[r][a]\n\n   [a]: <./a b.md> "Title"\n',
+    expected: ['./a b.md'],
+  },
+  {
+    name: 'reads only the definition after ignored blocks',
+    markdown:
+      '```markdown\n[a]: ./fenced.md\n```\n`[b]: ./span.md`\n<!--\n[c]: ./comment.md\n-->\n    [d]: ./indented.md\n\n[e]: <./after.md>\n',
+    expected: ['./after.md'],
+  },
+  {
+    name: 'reads a nested image before its link',
+    markdown: '[![Badge](./badge.png)](./page.md)\n',
+    expected: ['./badge.png', './page.md'],
+  },
+  {
+    name: 'reads targets inside table cells in order',
+    markdown: '| a | b |\n|---|---|\n| [t](./t.md) | ![i](./i.png) |\n',
+    expected: ['./t.md', './i.png'],
+  },
+  {
+    name: 'reads a reference image inside a reference link',
+    markdown: '[![i](./i.png)][a] [x](./x.md)\n\n[a]: ./d.md\n',
+    expected: ['./i.png', './x.md', './d.md'],
+  },
 ];
 
 it.for(targetTable)('$name', ({ markdown, expected }) => {
