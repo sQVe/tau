@@ -20,6 +20,11 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
     expected: ['./one.md', './two.md', './three.md'],
   },
   {
+    name: 'reads a reference use only at its definition',
+    markdown: '[r][a] [c][] [s] ![im][a] [i](./i.md)\n\n[a]: ./d.md\n[c]: ./c.md\n[s]: ./s.md\n',
+    expected: ['./i.md', './d.md', './c.md', './s.md'],
+  },
+  {
     name: 'reads a definition with a title',
     markdown: '[b]: ./titled.md "Title"',
     expected: ['./titled.md'],

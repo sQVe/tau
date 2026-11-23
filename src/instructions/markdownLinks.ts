@@ -1,4 +1,4 @@
-import { Marked } from 'marked';
+import { Marked, Tokenizer } from 'marked';
 import type { Token } from 'marked';
 
 export interface MarkdownLinks {
@@ -16,7 +16,17 @@ const externalTarget = /^[a-z][a-z\d+.-]*:/i;
 const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
 const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 
-const tokenizer = new Marked();
+const tokenizer = new Marked({
+  tokenizer: {
+    reflink(source, links) {
+      const token = Tokenizer.prototype.reflink.call(this, source, links);
+
+      return token?.type === 'link' || token?.type === 'image'
+        ? { ...token, reference: true }
+        : token;
+    },
+  },
+});
 
 const withoutByteOrderMark = (markdown: string) =>
   markdown.startsWith('\uFEFF') ? markdown.slice(1) : markdown;
@@ -78,7 +88,17 @@ export const readDestination = (target: string): Destination => {
   return { kind: 'local', path, fragment };
 };
 
+const isReferenceUse = (token: Token): boolean => {
+  const reference: unknown = 'reference' in token ? token.reference : undefined;
+
+  return reference === true;
+};
+
 const targetOf = (token: Token): string | undefined => {
+  if (isReferenceUse(token)) {
+    return undefined;
+  }
+
   if (token.type !== 'link' && token.type !== 'image' && token.type !== 'def') {
     return undefined;
   }
