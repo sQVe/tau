@@ -1,5 +1,4 @@
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
-import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
@@ -26,6 +25,7 @@ import type { AskedQuestion } from './dialog.js';
 import { judgeQuestionOf, prepareJudges, variantModels } from './judges.js';
 import type { PreparedJudges } from './judges.js';
 import type { Answer } from './questionnaire.js';
+import { readAllowedGateConfig } from './readAllowedGateConfig.js';
 
 export interface DecidePorts {
   now: () => number;
@@ -261,27 +261,25 @@ export const createDecider = (overrides: Partial<DecidePorts> = {}): Decider => 
         return undefined;
       }
 
-      const location: ConfigLocation = {
-        cwd: request.cwd,
-        agentDirectory: getAgentDir(),
-        projectTrusted: request.projectTrusted,
-      };
+      const config = readAllowedGateConfig(
+        request,
+        (location) => {
+          const read = ports.readConfig(location, request.ui);
 
-      try {
-        const config = ports.readConfig(location, request.ui);
+          if (read?.decide !== true) {
+            return undefined;
+          }
 
-        if (config?.decide !== true) {
-          return undefined;
-        }
+          return { config: read, models: variantModels(read.shadow.variant, read) };
+        },
+        ports.requireModel,
+      );
 
-        for (const reference of variantModels(config.shadow.variant, config)) {
-          ports.requireModel(reference, location);
-        }
-
-        return runDecision(ports, request, config, sessionId, eligibility.rows);
-      } catch {
+      if (config === undefined) {
         return undefined;
       }
+
+      return runDecision(ports, request, config, sessionId, eligibility.rows);
     },
   };
 };

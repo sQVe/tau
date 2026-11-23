@@ -10,12 +10,18 @@ import type { Mock } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { git, initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import type { ConfigWarnings } from '../../config/config.js';
-import { shadowCohort } from '../../config/questionGateModels.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
+import {
+  readQuestionGateConfig,
+  readQuestionGateShadow,
+  shadowCohort,
+} from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
+import { errorMessage } from '../../errors.js';
 import type { ShadowRecord, ShadowRecordWriter } from '../../questionGate/questionGate.js';
 import { ensureTauDirectory, findSharedRepositoryRoot } from '../../tauDirectory.js';
 import askUserQuestionExtension from './askUserQuestion.js';
+import type { DecidePorts } from './decide.js';
 import type { DialogResult } from './dialog.js';
 import { createShadowRunner, shadowAnswer } from './shadow.js';
 
@@ -76,6 +82,7 @@ interface HarnessOptions {
   directoryGate?: Deferred<undefined>;
   dialogResult?: Deferred<DialogResult | undefined>;
   projectTrusted?: boolean;
+  decideReadConfig?: DecidePorts['readConfig'];
   // Prepares the repository and returns the checkout the tool runs in.
   prepareRepository?: (repository: string) => Promise<string>;
 }
@@ -303,6 +310,9 @@ const createHarness = async (
   const notify = vi.fn<ConfigWarnings['notify']>();
 
   askUserQuestionExtension(fake.pi, {
+    ...(options.decideReadConfig === undefined
+      ? {}
+      : { decide: { readConfig: options.decideReadConfig } }),
     shadow: {
       now: options.now ?? (() => clock.now),
       schedule: (work) => {
@@ -428,6 +438,14 @@ const createHarness = async (
     }
   };
 
+  const runDialog = async (questions: unknown[] = [eligibleQuestion]) => {
+    const pending = run(questions);
+
+    latest().handleInput('\r');
+    await pending;
+    await flush();
+  };
+
   return {
     agentDirectory,
     repository,
@@ -448,6 +466,7 @@ const createHarness = async (
     latest,
     start,
     flush,
+    runDialog,
     scheduledCount: () => scheduled.length,
   };
 };
@@ -480,6 +499,19 @@ const withoutPanelB = judgeModels.filter((model) => model !== 'tau-fixture/panel
 const writeAllowedModels = (directory: string, models: string[]) => {
   mkdirSync(join(directory, '.pi'), { recursive: true });
   writeFileSync(join(directory, '.pi', 'tau.json'), JSON.stringify({ allowedModels: models }));
+};
+
+const configErrorMessage = (
+  read: (location: ConfigLocation, ui: ConfigWarnings) => unknown,
+  location: ConfigLocation,
+): string => {
+  try {
+    read(location, { notify: () => undefined });
+  } catch (error) {
+    return errorMessage(error);
+  }
+
+  throw new Error('The config did not fail.');
 };
 
 // A linked checkout of the repository, with its own narrower allowlist than the shared root.
@@ -656,9 +688,18 @@ it('warns once about an ignored config key and still saves the shadow record', a
 });
 
 it('reports an invalid shadow config once and skips each dialog', async ({ onTestFinished }) => {
-  const harness = await createHarness(onTestFinished, { config: invalidConfig() });
+  const harness = await createHarness(onTestFinished, {
+    config: invalidConfig(),
+    decideReadConfig: () => undefined,
+  });
+
   const userFile = join(harness.agentDirectory, 'tau.json');
-  const reason = 'needs at least one example';
+
+  const expected = configErrorMessage(readQuestionGateShadow, {
+    cwd: harness.cwd,
+    agentDirectory: harness.agentDirectory,
+    projectTrusted: false,
+  });
 
   const first = harness.run([eligibleQuestion]);
 
@@ -668,7 +709,7 @@ it('reports an invalid shadow config once and skips each dialog', async ({ onTes
 
   expect(harness.notify).toHaveBeenCalledTimes(1);
   expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
-  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(reason), 'error');
+  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(expected), 'error');
 
   const second = harness.run([eligibleQuestion]);
 
@@ -685,7 +726,11 @@ it('reports an invalid shadow config once and skips each dialog', async ({ onTes
 it('reports a different config error after an earlier one in the same session', async ({
   onTestFinished,
 }) => {
-  const harness = await createHarness(onTestFinished, { config: invalidPanelConfig() });
+  const harness = await createHarness(onTestFinished, {
+    config: invalidPanelConfig(),
+    decideReadConfig: () => undefined,
+  });
+
   const userFile = join(harness.agentDirectory, 'tau.json');
 
   const first = harness.run([eligibleQuestion]);
@@ -700,6 +745,12 @@ it('reports a different config error after an earlier one in the same session', 
 
   writeFileSync(join(harness.agentDirectory, 'tau.json'), JSON.stringify(invalidConfig()));
 
+  const expected = configErrorMessage(readQuestionGateShadow, {
+    cwd: harness.cwd,
+    agentDirectory: harness.agentDirectory,
+    projectTrusted: false,
+  });
+
   const second = harness.run([eligibleQuestion]);
 
   harness.latest().handleInput('\r');
@@ -709,10 +760,7 @@ it('reports a different config error after an earlier one in the same session', 
   expect(harness.notify).toHaveBeenCalledTimes(2);
   expect(harness.notify).toHaveBeenLastCalledWith(expect.stringContaining(userFile), 'error');
 
-  expect(harness.notify).toHaveBeenLastCalledWith(
-    expect.stringContaining('needs at least one example'),
-    'error',
-  );
+  expect(harness.notify).toHaveBeenLastCalledWith(expect.stringContaining(expected), 'error');
 
   const third = harness.run([eligibleQuestion]);
 
@@ -727,24 +775,20 @@ it('reports a different config error after an earlier one in the same session', 
 });
 
 it('reports A, B, A config errors as two notices', async ({ onTestFinished }) => {
-  const harness = await createHarness(onTestFinished, { config: invalidPanelConfig() });
+  const harness = await createHarness(onTestFinished, {
+    config: invalidPanelConfig(),
+    decideReadConfig: () => undefined,
+  });
+
   const userFile = join(harness.agentDirectory, 'tau.json');
 
-  const runDialog = async () => {
-    const pending = harness.run([eligibleQuestion]);
-
-    harness.latest().handleInput('\r');
-    await pending;
-    await harness.flush();
-  };
-
-  await runDialog();
+  await harness.runDialog();
 
   writeFileSync(join(harness.agentDirectory, 'tau.json'), JSON.stringify(invalidConfig()));
-  await runDialog();
+  await harness.runDialog();
 
   writeFileSync(join(harness.agentDirectory, 'tau.json'), JSON.stringify(invalidPanelConfig()));
-  await runDialog();
+  await harness.runDialog();
 
   expect(harness.notify).toHaveBeenCalledTimes(2);
   expect(harness.notify).toHaveBeenNthCalledWith(1, expect.stringContaining(userFile), 'error');
@@ -754,11 +798,18 @@ it('reports A, B, A config errors as two notices', async ({ onTestFinished }) =>
   expect(harness.saved).toEqual([]);
 });
 
-it('saves a record when decide is malformed and the shadow block is valid', async ({
+it('reports a malformed decide config once and still saves the shadow record', async ({
   onTestFinished,
 }) => {
   const config = { questionGate: { ...frozenConfig(), decide: 'yes' } };
   const harness = await createHarness(onTestFinished, { config });
+  const userFile = join(harness.agentDirectory, 'tau.json');
+
+  const expected = configErrorMessage(readQuestionGateConfig, {
+    cwd: harness.cwd,
+    agentDirectory: harness.agentDirectory,
+    projectTrusted: false,
+  });
 
   const pending = harness.run([eligibleQuestion]);
 
@@ -775,9 +826,52 @@ it('saves a record when decide is malformed and the shadow block is valid', asyn
   harness.saveGate.resolve(undefined);
   await shadowDone;
 
-  expect(harness.notify).not.toHaveBeenCalled();
+  expect(harness.notify).toHaveBeenCalledTimes(1);
+  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
+
+  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(expected), 'error');
+
+  expect(harness.saved).toHaveLength(1);
+  expect(recordOf(harness)).toMatchObject({ kind: 'shadow' });
+
+  const second = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await second;
+  await harness.flush();
+
+  expect(harness.notify).toHaveBeenCalledTimes(1);
   expect(harness.saved).toHaveLength(1);
 });
+
+for (const refused of ['tau-fixture/classifier', 'tau-fixture/panel-b']) {
+  it(`reports the refused shadow model ${refused} once without judging or saving`, async ({
+    onTestFinished,
+  }) => {
+    const allowed = judgeModels.filter((model) => model !== refused);
+    const config = { allowedModels: allowed, questionGate: frozenConfig() };
+    const harness = await createHarness(onTestFinished, { config });
+    const userFile = join(harness.agentDirectory, 'tau.json');
+
+    await harness.runDialog();
+
+    expect(harness.notify).toHaveBeenCalledTimes(1);
+
+    expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(refused), 'error');
+
+    expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
+    expect(harness.registry.classify).not.toHaveBeenCalled();
+    expect(harness.registry.complete).not.toHaveBeenCalled();
+    expect(harness.saved).toEqual([]);
+
+    await harness.runDialog();
+
+    expect(harness.notify).toHaveBeenCalledTimes(1);
+    expect(harness.registry.classify).not.toHaveBeenCalled();
+    expect(harness.registry.complete).not.toHaveBeenCalled();
+    expect(harness.saved).toEqual([]);
+  });
+}
 
 it('saves a record when the answer settles before judges', async ({ onTestFinished }) => {
   const harness = await createHarness(onTestFinished, { config: configWithShadow() });
@@ -1171,51 +1265,72 @@ it('saves no record when a preflight that ignores the abort returns a shared roo
   expect(harness.saved).toHaveLength(1);
 });
 
-it('reads the allowlist of the checkout that asked, not the shared root', async ({
-  onTestFinished,
-}) => {
-  const saveGate = deferred<undefined>();
-  const registry = fakeRegistry();
-
-  saveGate.resolve(undefined);
-  registry.judgeGate.resolve(undefined);
-
-  const harness = await createHarness(onTestFinished, {
+const trustedCheckoutRows: {
+  name: string;
+  config: unknown;
+  userPathInNotice: boolean;
+}[] = [
+  {
+    name: 'user and checkout allowlists',
+    config: { ...configWithShadow(), allowedModels: judgeModels },
+    userPathInNotice: true,
+  },
+  {
+    name: 'checkout allowlist only',
     config: configWithShadow(),
-    projectTrusted: true,
-    saveGate,
-    registry,
-    prepareRepository: (repository) => addLinkedCheckout(onTestFinished, repository),
-  });
+    userPathInNotice: false,
+  },
+];
 
-  const denied = harness.run([eligibleQuestion]);
-  const deniedDone = harness.start();
+for (const row of trustedCheckoutRows) {
+  it(`reads the allowlist of the checkout that asked with ${row.name}`, async ({
+    onTestFinished,
+  }) => {
+    const harness = await createHarness(onTestFinished, {
+      config: row.config,
+      projectTrusted: true,
+      prepareRepository: (repository) => addLinkedCheckout(onTestFinished, repository),
+    });
 
-  harness.latest().handleInput('\r');
-  await denied;
-  await deniedDone;
+    const userFile = join(harness.agentDirectory, 'tau.json');
+    const checkoutFile = join(harness.cwd, '.pi', 'tau.json');
 
-  expect(harness.registry.classify).not.toHaveBeenCalled();
-  expect(harness.registry.complete).not.toHaveBeenCalled();
-  expect(harness.saved).toEqual([]);
+    const denied = harness.run([eligibleQuestion]);
+    const deniedDone = harness.start();
 
-  writeAllowedModels(harness.cwd, judgeModels);
+    harness.latest().handleInput('\r');
+    await denied;
+    await deniedDone;
 
-  const allowed = harness.run([eligibleQuestion]);
-  const allowedDone = harness.start();
+    expect(harness.notify).toHaveBeenCalledTimes(1);
 
-  await waitFor(() => {
+    const [notice = '', level] = harness.notify.mock.calls[0] ?? [];
+
+    expect(level).toBe('error');
+    expect(notice).toContain(checkoutFile);
+    expect(notice).toContain('tau-fixture/panel-b');
+    expect(notice.includes(userFile)).toBe(row.userPathInNotice);
+    expect(harness.registry.classify).not.toHaveBeenCalled();
+    expect(harness.registry.complete).not.toHaveBeenCalled();
+    expect(harness.saved).toEqual([]);
+
+    writeAllowedModels(harness.cwd, judgeModels);
+
+    const allowed = harness.run([eligibleQuestion]);
+    const allowedDone = harness.start();
+
+    harness.latest().handleInput('\r');
+    await allowed;
+
+    harness.registry.judgeGate.resolve(undefined);
+    harness.saveGate.resolve(undefined);
+    await allowedDone;
+
     expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+    expect(harness.registry.classify).toHaveBeenCalledTimes(2);
+    expect(harness.saved).toHaveLength(1);
   });
-
-  expect(harness.registry.classify).toHaveBeenCalledTimes(2);
-
-  harness.latest().handleInput('\r');
-  await allowed;
-  await allowedDone;
-
-  expect(harness.saved).toHaveLength(1);
-});
+}
 
 it('ignores the checkout allowlist when the project is untrusted', async ({ onTestFinished }) => {
   const harness = await createHarness(onTestFinished, {
@@ -1330,27 +1445,44 @@ const refusedRows: {
   name: string;
   config: unknown;
   question: Record<string, unknown>;
+  noticeCount: number;
   openWithoutFactory?: boolean;
   git?: boolean;
 }[] = [
-  { name: 'off', config: configWithoutShadow(), question: eligibleQuestion },
+  { name: 'off', config: configWithoutShadow(), question: eligibleQuestion, noticeCount: 0 },
   {
     name: 'ineligible',
     config: configWithShadow(),
     question: { ...eligibleQuestion, kind: 'approval' },
+    noticeCount: 0,
   },
-  { name: 'invalid', config: invalidConfig(), question: eligibleQuestion },
+  { name: 'invalid', config: invalidConfig(), question: eligibleQuestion, noticeCount: 1 },
   {
     name: 'unopened',
     config: configWithShadow(),
     question: eligibleQuestion,
+    noticeCount: 0,
     openWithoutFactory: true,
   },
-  { name: 'missing root', config: configWithShadow(), question: eligibleQuestion, git: false },
+  {
+    name: 'missing root',
+    config: { allowedModels: ['tau-fixture/allowed'], questionGate: frozenConfig() },
+    question: eligibleQuestion,
+    noticeCount: 0,
+    git: false,
+  },
   {
     name: 'denied model',
     config: { allowedModels: ['tau-fixture/allowed'], questionGate: frozenConfig() },
     question: eligibleQuestion,
+    noticeCount: 1,
+  },
+  {
+    name: 'unrestricted missing root',
+    config: { allowedModels: judgeModels, questionGate: frozenConfig() },
+    question: eligibleQuestion,
+    noticeCount: 0,
+    git: false,
   },
 ];
 
@@ -1371,6 +1503,7 @@ for (const row of refusedRows) {
     await pending;
     await harness.flush();
 
+    expect(harness.notify).toHaveBeenCalledTimes(row.noticeCount);
     expect(harness.registry.classify).not.toHaveBeenCalled();
     expect(harness.registry.complete).not.toHaveBeenCalled();
     expect(harness.saved).toEqual([]);

@@ -1,6 +1,3 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { ToolCall } from '@earendil-works/pi-ai';
 import type { ModelRegistry, ToolDefinition } from '@earendil-works/pi-coding-agent';
@@ -8,9 +5,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
+import type { ConfigLocation } from '../../config/config.js';
 import { requireAllowedModel } from '../../config/models.js';
+import { readQuestionGateConfig } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
+import { errorMessage } from '../../errors.js';
 import { decideDeadlineMilliseconds } from '../../questionGate/decideDecision.js';
 import type { DecisionRecordWriter } from '../../questionGate/decision/decisionRecord.js';
 import type { DecisionRecord, JudgeVerdict } from '../../questionGate/questionGate.js';
@@ -36,6 +36,7 @@ interface HarnessOptions {
   requireModel?: DecidePorts['requireModel'];
   ensureDirectory?: DecidePorts['ensureDirectory'];
   now?: DecidePorts['now'];
+  readConfig?: DecidePorts['readConfig'];
 }
 
 const eligibleQuestion = {
@@ -101,7 +102,7 @@ const createHarness = (options: HarnessOptions = {}) => {
   const ports: DecidePorts = {
     now: options.now ?? (() => 1_760_000_000_000),
     findSharedRoot: async () => '/shared-root',
-    readConfig: () => options.config ?? decideConfig(),
+    readConfig: options.readConfig ?? (() => options.config ?? decideConfig()),
     requireModel: options.requireModel ?? (() => undefined),
     readBranch: options.readBranch ?? (async () => ({ branch: 'me-1623-decide', head: 'abc1234' })),
     ensureDirectory: options.ensureDirectory ?? (async () => '/shared-root/.tau/questions'),
@@ -179,6 +180,40 @@ const createHarness = (options: HarnessOptions = {}) => {
     custom,
     scheduled,
   };
+};
+
+const createFileBackedHarness = (
+  onTestFinished: (cleanup: () => void) => void,
+  writeUser?: (config: ReturnType<typeof temporaryTauConfig>) => void,
+  options: HarnessOptions = {},
+) => {
+  const config = temporaryTauConfig(onTestFinished, 'tau-decide-agent-');
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', config.location.agentDirectory);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  writeUser?.(config);
+
+  const harness = createHarness({
+    ...options,
+    readConfig: readQuestionGateConfig,
+    requireModel: requireAllowedModel,
+  });
+
+  return { config, harness };
+};
+
+const configErrorMessage = (location: ConfigLocation): string => {
+  try {
+    readQuestionGateConfig(location, { notify: () => undefined });
+  } catch (error) {
+    return errorMessage(error);
+  }
+
+  throw new Error('The config did not fail.');
 };
 
 it('answers an eligible call after showing the notice and saving the record', async () => {
@@ -335,28 +370,94 @@ it('cancels after judging before the notice or record', async () => {
   expect(harness.custom).not.toHaveBeenCalled();
 });
 
-it('asks without calling a provider when the judge model is blocked', async ({
+it('asks without a notice when the user config has no question gate', async ({
   onTestFinished,
 }) => {
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-decide-agent-');
+  const { harness } = createFileBackedHarness(onTestFinished);
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
+  const result = await harness.run([eligibleQuestion]);
+
+  expect(result.details).toEqual(answeredDetails);
+  expect(harness.custom).toHaveBeenCalledTimes(1);
+  expect(harness.notices).toEqual([]);
+  expect(harness.writes).toEqual([]);
+});
+
+it('reports decide without a shadow block once and still asks the question', async ({
+  onTestFinished,
+}) => {
+  const { config, harness } = createFileBackedHarness(onTestFinished, ({ writeUser }) => {
+    writeUser({
+      questionGate: {
+        classifier: 'tau-fixture/classifier',
+        panel: ['tau-fixture/panel-a', 'tau-fixture/panel-b', 'tau-fixture/panel-c'],
+        decide: true,
+      },
+    });
   });
 
-  writeFileSync(
-    join(agentDirectory, 'tau.json'),
-    JSON.stringify({ allowedModels: ['tau-fixture/allowed'] }),
+  const expected = configErrorMessage({
+    cwd: '/checkout',
+    agentDirectory: config.location.agentDirectory,
+    projectTrusted: false,
+  });
+
+  const first = await harness.run([eligibleQuestion]);
+
+  expect(first.details).toEqual(answeredDetails);
+  expect(harness.custom).toHaveBeenCalledTimes(1);
+  expect(harness.notices).toHaveLength(1);
+  expect(harness.noticeLevels).toEqual(['error']);
+  expect(harness.notices[0]).toContain(config.userFile);
+  expect(harness.notices[0]).toContain(expected);
+  expect(harness.writes).toEqual([]);
+
+  const second = await harness.run([eligibleQuestion]);
+
+  expect(second.details).toEqual(answeredDetails);
+  expect(harness.custom).toHaveBeenCalledTimes(2);
+  expect(harness.notices).toHaveLength(1);
+  expect(harness.writes).toEqual([]);
+});
+
+it('opens the dialog when the refusal notice throws', async ({ onTestFinished }) => {
+  const { harness } = createFileBackedHarness(
+    onTestFinished,
+    ({ writeUser }) => {
+      writeUser({
+        questionGate: {
+          classifier: 'tau-fixture/classifier',
+          panel: ['tau-fixture/panel-a', 'tau-fixture/panel-b', 'tau-fixture/panel-c'],
+          decide: true,
+        },
+      });
+    },
+    {
+      notify: () => {
+        throw new Error('The notice could not be shown.');
+      },
+    },
   );
 
-  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+  const result = await harness.run([eligibleQuestion]);
 
-  const harness = createHarness({
-    config: decideConfig({
-      classifier: 'tau-fixture/blocked',
-      shadow: { ...shadow, variant: 'classifier' },
-    }),
-    requireModel: requireAllowedModel,
+  expect(result.details).toEqual(answeredDetails);
+  expect(harness.custom).toHaveBeenCalledTimes(1);
+  expect(harness.notices).toHaveLength(1);
+  expect(harness.writes).toEqual([]);
+});
+
+it('reports a refused decide variant model once and still asks the question', async ({
+  onTestFinished,
+}) => {
+  const { config, harness } = createFileBackedHarness(onTestFinished, ({ writeUser }) => {
+    writeUser({
+      allowedModels: ['tau-fixture/allowed'],
+      questionGate: decideConfig({
+        classifier: 'tau-fixture/blocked',
+        shadow: { ...shadow, variant: 'classifier' },
+      }),
+    });
   });
 
   const result = await harness.run([eligibleQuestion]);
@@ -364,7 +465,10 @@ it('asks without calling a provider when the judge model is blocked', async ({
   expect(result.details).toEqual(answeredDetails);
   expect(harness.judge).not.toHaveBeenCalled();
   expect(harness.custom).toHaveBeenCalledTimes(1);
-  expect(harness.notices).toEqual([]);
+  expect(harness.notices).toHaveLength(1);
+  expect(harness.noticeLevels).toEqual(['error']);
+  expect(harness.notices[0]).toContain('tau-fixture/blocked');
+  expect(harness.notices[0]).toContain(config.userFile);
   expect(harness.writes).toEqual([]);
 });
 
