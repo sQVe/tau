@@ -148,6 +148,7 @@ it('warns about an unknown shadow key and still scores', async ({ onTestFinished
     },
   });
 
+  const before = await snapshot(agentDirectory);
   const result = runShadow(repository, agentDirectory);
 
   expect(result.status).toBe(0);
@@ -158,6 +159,7 @@ it('warns about an unknown shadow key and still scores', async ({ onTestFinished
 
   expect(warnings).toHaveLength(1);
   expect(result.stderr).toContain(userFile);
+  expect(await snapshot(agentDirectory)).toEqual(before);
 });
 
 it('reports n/a when every shadow record is a gap', async ({ onTestFinished }) => {
