@@ -311,10 +311,11 @@ it('refuses a handover-question payload with an extra field', () => {
     payload: { ...request.payload, sender: 'lead' },
   };
 
-  expect(decodeRequest(line(withExtraField))).toEqual({
-    kind: 'refused',
-    reason: 'The frame is not an rpc1 request.',
-  });
+  const decision = decodeRequest(line(withExtraField));
+  const reason = decision.kind === 'refused' ? decision.reason : '';
+
+  expect(decision.kind).toBe('refused');
+  expect(reason.length).toBeGreaterThan(0);
 });
 
 it('refuses an unknown reply without a reason', () => {

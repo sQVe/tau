@@ -3,11 +3,14 @@ import { join } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
+import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
-import { isUuid, uuidSchema } from '../../inbox/inbox.js';
+import { senderTerminalPattern } from '../../handoverSender.js';
+import { isUuid, sessionIdSchema, uuidSchema } from '../../inbox/inbox.js';
 import { readVersionedRecord, writeRecord } from '../../record.js';
-import { ensureTauDirectory } from '../../tauDirectory.js';
+import { describeSchemaProblem } from '../../schema.js';
+import { ensureTauDirectory, rejectLinkedFile, rejectTauSymlinks } from '../../tauDirectory.js';
 
 export type QuestionRead =
   | { kind: 'record'; record: QuestionRecord }
@@ -18,15 +21,19 @@ const questionRecordVersion = 1;
 
 const strict = { additionalProperties: false } as const;
 
+const isoTime = Type.String({
+  pattern: String.raw`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$`,
+});
+
 const questionFields = {
   version: Type.Literal(questionRecordVersion),
   questionId: uuidSchema,
-  askerTerminal: Type.String(),
-  askerSession: Type.String(),
-  senderTerminal: Type.String(),
-  senderSession: Type.String(),
+  askerTerminal: Type.String({ pattern: senderTerminalPattern }),
+  askerSession: sessionIdSchema,
+  senderTerminal: Type.String({ pattern: senderTerminalPattern }),
+  senderSession: sessionIdSchema,
   text: Type.String({ minLength: 1, maxLength: 4000 }),
-  askedAt: Type.String(),
+  askedAt: isoTime,
 };
 
 const questionRecordSchema = Type.Union([
@@ -45,6 +52,14 @@ export const questionRecordDirectory = (root: string): string =>
 const notUuidReason = (questionId: string): string =>
   `Question ID ${JSON.stringify(questionId)} is not a UUID.`;
 
+const mismatchReason = (requested: string, found: string): string =>
+  `Question ID ${JSON.stringify(found)} does not match requested ${JSON.stringify(requested)}.`;
+
+const questionRecordProblem = (record: QuestionRecord): string | undefined =>
+  Value.Check(questionRecordSchema, record)
+    ? undefined
+    : `Malformed handover question record: ${describeSchemaProblem(questionRecordSchema, record)}.`;
+
 const questionRecordPath = (root: string, questionId: string): string => {
   if (!isUuid(questionId)) {
     throw new Error(notUuidReason(questionId));
@@ -61,14 +76,27 @@ export const readQuestionRecord = async (
     return { kind: 'malformed', reason: notUuidReason(questionId) };
   }
 
+  const path = questionRecordPath(root, questionId);
+
   try {
-    const record = await readVersionedRecord(questionRecordPath(root, questionId), {
+    await rejectTauSymlinks(root, 'handoverQuestions');
+    await rejectLinkedFile(path, 'read');
+
+    const record = await readVersionedRecord(path, {
       label: 'handover question record',
       version: questionRecordVersion,
       schema: questionRecordSchema,
     });
 
-    return record === undefined ? { kind: 'missing' } : { kind: 'record', record };
+    if (record === undefined) {
+      return { kind: 'missing' };
+    }
+
+    if (record.questionId !== questionId) {
+      return { kind: 'malformed', reason: mismatchReason(questionId, record.questionId) };
+    }
+
+    return { kind: 'record', record };
   } catch (error) {
     return { kind: 'malformed', reason: errorMessage(error) };
   }
@@ -79,6 +107,11 @@ export const writeQuestionRecord = async (
   record: QuestionRecord,
 ): Promise<string> => {
   const path = questionRecordPath(root, record.questionId);
+  const problem = questionRecordProblem(record);
+
+  if (problem !== undefined) {
+    throw new Error(problem);
+  }
 
   await ensureTauDirectory(root, 'handoverQuestions');
   await writeRecord(path, record);
@@ -88,6 +121,8 @@ export const writeQuestionRecord = async (
 
 export const deleteQuestionRecord = async (root: string, questionId: string): Promise<void> => {
   const path = questionRecordPath(root, questionId);
+
+  await rejectTauSymlinks(root, 'handoverQuestions');
 
   try {
     await unlink(path);

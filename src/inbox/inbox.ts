@@ -11,6 +11,7 @@ export {
   inboxLabelKey,
   isUuid,
   requestByteLimit,
+  sessionIdSchema,
   uuidSchema,
 } from './protocol.js';
 

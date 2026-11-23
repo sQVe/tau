@@ -532,6 +532,8 @@ it('passes a registered handover-question check in a non-worker session', async 
     reason: 'The question is closed.',
     messageId,
   });
+
+  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
 });
 
 it('refuses an architect-ask without a registered check and saves nothing', async () => {

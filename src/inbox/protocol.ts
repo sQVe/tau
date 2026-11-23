@@ -56,7 +56,7 @@ const sessionIdExpression = new RegExp(sessionIdPattern, 'u');
 
 export const isSessionId = (value: string): boolean => sessionIdExpression.test(value);
 
-const sessionIdSchema = Type.String({ pattern: sessionIdPattern });
+export const sessionIdSchema = Type.String({ pattern: sessionIdPattern });
 
 const strict = { additionalProperties: false } as const;
 
