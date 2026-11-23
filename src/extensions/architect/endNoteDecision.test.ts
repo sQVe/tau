@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 
 import { decideEndNote, nextEndNoteRoute, selectEndNote } from './endNoteDecision.js';
 import type { ArchitectRecordFact, EndNoteRoute } from './endNoteDecision.js';
+import type { FinalHandoverResult } from './queuedHandover.js';
 
 interface ExpectedDecision {
   kind: 'none' | 'send';
@@ -88,6 +89,12 @@ const cases: readonly {
     expected: expected('send', ['terminal unknown']),
   },
   {
+    name: 'a readable record with a null session file names none',
+    selection: route(),
+    record: { kind: 'read', sessionFile: null, updatedAt: readUpdatedAt },
+    expected: expected('send', ['session file none', readUpdatedAt]),
+  },
+  {
     name: 'a missing record says it is missing',
     selection: route(),
     record: { kind: 'missing' },
@@ -115,51 +122,84 @@ it.each(cases)('$name', ({ selection: selected, record, expected: wanted }) => {
   expect(target).toBe(wantedTarget);
 });
 
+const result = (
+  status: FinalHandoverResult['status'],
+  terminal: string | undefined = 't-lead',
+): FinalHandoverResult => ({ status, terminal });
+
 it.each([
   {
-    name: 'no route stays absent without a status',
+    name: 'no route stays absent without a result for it',
     current: undefined,
-    status: 'unknown',
+    result: result('unknown'),
     expected: undefined,
   },
   {
-    name: 'none becomes unknown',
+    name: 'none becomes unknown after an unknown result for the lead',
     current: route(),
-    status: 'unknown',
-    expected: 'unknown',
+    result: result('unknown'),
+    expected: route({ finalHandover: 'unknown' }),
   },
   {
-    name: 'none becomes absent after queued',
+    name: 'none becomes absent after a queued result for the lead',
     current: route(),
-    status: 'queued',
+    result: result('queued'),
     expected: undefined,
   },
   {
-    name: 'unknown stays unknown',
+    name: 'none is unchanged by a queued result for another terminal',
+    current: route(),
+    result: result('queued', 't-other'),
+    expected: route(),
+  },
+  {
+    name: 'none is unchanged by an unknown result for another terminal',
+    current: route(),
+    result: result('unknown', 't-other'),
+    expected: route(),
+  },
+  {
+    name: 'none is unchanged by a result without a terminal',
+    current: route(),
+    result: { status: 'queued', terminal: undefined },
+    expected: route(),
+  },
+  {
+    name: 'unknown stays unknown after an unknown result for the lead',
     current: route({ finalHandover: 'unknown' }),
-    status: 'unknown',
-    expected: 'unknown',
+    result: result('unknown'),
+    expected: route({ finalHandover: 'unknown' }),
   },
   {
-    name: 'unknown becomes absent after queued',
+    name: 'unknown becomes absent after a queued result for the lead',
     current: route({ finalHandover: 'unknown' }),
-    status: 'queued',
+    result: result('queued'),
     expected: undefined,
   },
   {
-    name: 'queued stays absent after unknown',
+    name: 'unknown is unchanged by a queued result for another terminal',
+    current: route({ finalHandover: 'unknown' }),
+    result: result('queued', 't-other'),
+    expected: route({ finalHandover: 'unknown' }),
+  },
+  {
+    name: 'queued stays absent after an unknown result for the lead',
     current: route({ finalHandover: 'queued' }),
-    status: 'unknown',
+    result: result('unknown'),
     expected: undefined,
   },
   {
-    name: 'queued stays absent after queued',
+    name: 'queued stays absent after a queued result for the lead',
     current: route({ finalHandover: 'queued' }),
-    status: 'queued',
+    result: result('queued'),
     expected: undefined,
   },
-] as const)('$name', ({ current, status, expected: wanted }) => {
-  const next = nextEndNoteRoute(current, status);
-
-  expect(next?.finalHandover).toBe(wanted);
+  {
+    name: 'queued stays queued after a result for another terminal',
+    current: route({ finalHandover: 'queued' }),
+    result: result('queued', 't-other'),
+    expected: route({ finalHandover: 'queued' }),
+  },
+] as const)('$name', ({ current, result: handover, expected: wanted }) => {
+  expect(nextEndNoteRoute(current, handover)).toEqual(wanted);
 });

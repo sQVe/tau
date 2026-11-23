@@ -142,8 +142,11 @@ const closingArchitect = async (
       endArchitectSession(
         session,
         { ...hc, cwd: root },
-        answers,
-        createAskAdmissions(() => undefined),
+        {
+          answers,
+          admissions: createAskAdmissions(() => undefined),
+          sendEndNote: true,
+        },
       ),
   };
 };

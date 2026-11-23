@@ -1,3 +1,5 @@
+import type { FinalHandoverResult } from './queuedHandover.js';
+
 type FinalHandoverState = 'none' | 'unknown' | 'queued';
 
 export interface EndNoteRoute {
@@ -24,9 +26,17 @@ export type EndNoteDecision = { kind: 'none' } | { kind: 'send'; target: string;
 
 export const nextEndNoteRoute = (
   route: EndNoteRoute | undefined,
-  status: 'queued' | 'unknown',
+  result: FinalHandoverResult,
 ): EndNoteRoute | undefined => {
-  if (route === undefined || route.finalHandover === 'queued' || status === 'queued') {
+  if (route === undefined) {
+    return undefined;
+  }
+
+  if (result.terminal !== route.leadTerminal) {
+    return route;
+  }
+
+  if (route.finalHandover === 'queued' || result.status === 'queued') {
     return undefined;
   }
 

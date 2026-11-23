@@ -13,7 +13,7 @@ import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import architectExtension from './architect.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
 import { architectLockPath } from './lock.js';
-import { writeAskRecord } from './record.js';
+import { writeAskRecord, readAskRecord } from './record.js';
 import type { LiveAskRecord } from './record.js';
 
 const registerSession = (
@@ -73,9 +73,10 @@ const runHandlers = async (
   fake: ReturnType<typeof fakeExtensionApi>,
   name: string,
   context: ExtensionContext,
+  event: Record<string, unknown> = {},
 ): Promise<void> => {
   for (const handler of fake.handlers.get(name) ?? []) {
-    await handler({} as never, context);
+    await handler({ type: name, ...event } as never, context);
   }
 };
 
@@ -104,13 +105,13 @@ it('a visible architect shuts down and releases its lock after the final handove
 
   const handoverShutdown = receiveHandover(
     fake,
-    { status: 'queued' },
+    { status: 'queued', terminal: 't-lead' },
     { action: 'send', final: true },
   );
 
   expect(handoverShutdown).toHaveBeenCalledTimes(1);
 
-  await runHandlers(fake, 'session_shutdown', context);
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
 
   const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
 
@@ -133,7 +134,7 @@ it('a lead session does not shut down after a queued handover', ({ onTestFinishe
   expect(shutdown).not.toHaveBeenCalled();
 });
 
-it('a visible architect that ended after an unknown final handover tells the lead it may not have arrived', async ({
+it('a visible architect shuts down but still notes its end after a final handover to another terminal', async ({
   onTestFinished,
 }) => {
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
@@ -149,13 +150,97 @@ it('a visible architect that ended after an unknown final handover tells the lea
 
   const handoverShutdown = receiveHandover(
     fake,
-    { status: 'unknown' },
+    { status: 'queued', terminal: 't-other' },
+    { action: 'send', final: true },
+  );
+
+  expect(handoverShutdown).toHaveBeenCalledTimes(1);
+
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
+
+  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+
+  expect(savedRecords).toHaveLength(1);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('a visible architect sends nothing for a handover result without a final status', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+  const lead = await startLeadInbox(onTestFinished, hc);
+  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
+  const { context } = sessionContext(root);
+
+  await runHandlers(fake, 'session_start', context);
+
+  const handoverShutdown = receiveHandover(
+    fake,
+    { status: 'queued', terminal: 't-lead' },
+    { action: 'send' },
+  );
+
+  expect(handoverShutdown).not.toHaveBeenCalled();
+  expect(lead.savedRecords()).toEqual([]);
+
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
+
+  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+
+  expect(savedRecords).toHaveLength(1);
+});
+
+it('a visible architect sends no end note on reload but still releases its lock and fails open asks', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+  const lead = await startLeadInbox(onTestFinished, hc);
+  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
+  const { context } = sessionContext(root);
+
+  await runHandlers(fake, 'session_start', context);
+  await writeAskRecord(root, openAsk);
+
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'reload' });
+
+  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
+
+  expect(savedRecords).toHaveLength(1);
+  expect(await readAskRecord(root, openAsk.askId)).toMatchObject({ status: 'failed' });
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('a visible architect that quit after an unknown final handover tells the lead it may not have arrived', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('HC_TERMINAL_ID', 't-architect');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const hc = createHcFake();
+  const lead = await startLeadInbox(onTestFinished, hc);
+  const fake = registerSession(onTestFinished, 'architect', { exec: hc.exec });
+  const { context } = sessionContext(root);
+
+  await runHandlers(fake, 'session_start', context);
+
+  const handoverShutdown = receiveHandover(
+    fake,
+    { status: 'unknown', terminal: 't-lead' },
     { action: 'send', final: true },
   );
 
   expect(handoverShutdown).not.toHaveBeenCalled();
 
-  await runHandlers(fake, 'session_shutdown', context);
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
 
   const names = lead.savedRecords().filter((name) => name.endsWith('.json'));
 
@@ -230,7 +315,7 @@ it('a visible architect blocks a final handover while an ask to it is open', asy
   await writeAskRecord(root, openAsk);
 
   onTestFinished(async () => {
-    await runHandlers(fake, 'session_shutdown', context);
+    await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
   });
 
   const [blocked] = await callHandover(fake, { ...send, final: true }, context);
@@ -299,7 +384,7 @@ it('a non-final tool call is not blocked by a broken ask folder', async ({ onTes
   await runHandlers(fake, 'session_start', context);
 
   onTestFinished(async () => {
-    await runHandlers(fake, 'session_shutdown', context);
+    await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
   });
 
   await mkdir(join(root, '.tau', 'lead'), { recursive: true });

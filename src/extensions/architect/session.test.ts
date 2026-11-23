@@ -34,6 +34,18 @@ import type { HiddenAskRecord, LiveAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
 import type { ArchitectSession } from './session.js';
 
+const endOptions = () => ({
+  answers: createAnswerTracker(),
+  admissions: createAskAdmissions(() => undefined),
+  sendEndNote: true,
+});
+
+const endWithoutNote = (session: ArchitectSession): Promise<void> =>
+  endArchitectSession(session, hcRuntime(createHcFake()), {
+    ...endOptions(),
+    sendEndNote: false,
+  });
+
 const holdLock = async (root: string, released: boolean): Promise<void> => {
   const path = `${architectLockPath(root)}.1`;
 
@@ -91,8 +103,7 @@ it('a released lock starts the architect and writes its record', async ({ onTest
   await endArchitectSession(
     session as NonNullable<typeof session>,
     hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    endOptions(),
   );
 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
@@ -111,8 +122,7 @@ it('an ask session records ask mode', async ({ onTestFinished }) => {
   await endArchitectSession(
     session as NonNullable<typeof session>,
     hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    endOptions(),
   );
 });
 
@@ -129,9 +139,74 @@ it('an empty ask path records visible mode', async ({ onTestFinished }) => {
   await endArchitectSession(
     session as NonNullable<typeof session>,
     hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    endOptions(),
   );
+});
+
+it('an ask session with a lead terminal builds no end note route', async ({ onTestFinished }) => {
+  stubArchitect(onTestFinished);
+  vi.stubEnv('TAU_ARCHITECT_ASK', '/sessions/ask.json');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session?.endNote).toBeUndefined();
+
+  await endWithoutNote(session as ArchitectSession);
+});
+
+it('a visible architect with a lead terminal builds its end note route', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+  vi.stubEnv('TAU_ARCHITECT_ASK', '');
+  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session?.endNote).toEqual({
+    leadTerminal: 't-lead',
+    architectTerminal: 't-architect',
+    finalHandover: 'none',
+  });
+
+  await endWithoutNote(session as ArchitectSession);
+});
+
+it('a visible architect with no lead terminal builds no end note route', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+  vi.stubEnv('TAU_ARCHITECT_ASK', '');
+  vi.stubEnv('TAU_LEAD_TERMINAL', undefined);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session?.endNote).toBeUndefined();
+
+  await endWithoutNote(session as ArchitectSession);
+});
+
+it('a visible architect with an empty lead terminal builds no end note route', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+  vi.stubEnv('TAU_ARCHITECT_ASK', '');
+  vi.stubEnv('TAU_LEAD_TERMINAL', '');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session?.endNote).toBeUndefined();
+
+  await endWithoutNote(session as ArchitectSession);
 });
 
 const hiddenIds = {
@@ -199,12 +274,7 @@ it('ending fails only running hidden asks', async ({ onTestFinished }) => {
 
   const notify = vi.fn<(message: string, level?: string) => void>();
 
-  await endArchitectSession(
-    hiddenSession(root, notify),
-    hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(hiddenSession(root, notify), hcRuntime(createHcFake()), endOptions());
 
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
   expect(await readAskRecord(root, hiddenIds.sent)).toMatchObject({ status: 'sent' });
@@ -219,12 +289,7 @@ it('ending reports a bad ask file and still fails the running ask', async ({ onT
   await mkdir(askRecordDirectory(root), { recursive: true });
   await writeFile(join(askRecordDirectory(root), 'malformed.json'), '{"version":2');
 
-  await endArchitectSession(
-    hiddenSession(root, notify),
-    hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(hiddenSession(root, notify), hcRuntime(createHcFake()), endOptions());
 
   expect(notify).toHaveBeenCalledWith(expect.stringContaining('Malformed ask record'), 'warning');
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
@@ -267,12 +332,7 @@ it('ending a visible architect fails its open live ask and tells the lead to ask
   await writeAskRecord(root, liveAsk('open', 'queued'));
   await writeAskRecord(root, liveAsk('answered', 'answered'));
 
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(session, hcRuntime(hc), endOptions());
 
   const directory = join(sockets, 'records', 'session-lead');
   const names = await readdir(directory);
@@ -310,12 +370,7 @@ it('ending a visible architect releases its lock when the close note cannot be s
   await writeAskRecord(root, liveAsk('open', 'unknown'));
   const notify = session.ui.notify as unknown as Mock;
 
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(session, hcRuntime(hc), endOptions());
 
   expect(notify).toHaveBeenCalledWith(
     expect.stringContaining(`The lead got no close note for ask ${liveIds.open}:`),
@@ -356,8 +411,7 @@ it('holds the lock token from the lock, before the record and startup return', a
   await endArchitectSession(
     session as NonNullable<typeof session>,
     hcRuntime(createHcFake()),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
+    endOptions(),
   );
 
   expect(held.current()).toBeUndefined();
@@ -402,12 +456,7 @@ it('ending a visible architect does not note an ask that is already closed', asy
   await writeAskRecord(root, liveAsk('answered', 'answered'));
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
-  await endArchitectSession(
-    session,
-    hcRuntime(hc),
-    createAnswerTracker(),
-    createAskAdmissions(() => undefined),
-  );
+  await endArchitectSession(session, hcRuntime(hc), endOptions());
 
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 

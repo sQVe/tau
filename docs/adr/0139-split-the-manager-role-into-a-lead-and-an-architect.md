@@ -65,10 +65,13 @@ releases the lock. A confirmed answer settles as answered. An answer with an unk
 once more with the same ID, because the lead inbox replies `queued` for a message it already has.
 Any other open ask fails, and the lead gets a note to ask again.
 
-On orderly shutdown a visible architect also tells its lead it ended, even when no ask is
-outstanding. It sends no notice when a final handover was confirmed queued; an unknown result is not
-confirmation. The notice is best effort and follows cleanup, because the architect holds the
-handover result and the lead must be able to resume once notified.
+When a shutdown ends a visible architect, it also tells its lead it ended, even when no ask is
+outstanding. A reload is not such a shutdown: Pi restarts the same session in the same pane, so a
+reload still releases the lock and cleans up asks but sends no notice. It sends no notice when a
+final handover was confirmed queued to the lead's own terminal; a queued result for another
+terminal, and an unknown result, are not confirmation. The notice is best effort and follows
+cleanup, because the architect holds the handover result and the lead must be able to resume once
+notified.
 
 Without a live holder, `ask` resumes the saved session in a hidden terminal with one question and a
 deadline. This path needs the recorded session file. The architect answers, updates the ticket if

@@ -1,54 +1,83 @@
 import type { ToolResultEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-import { finalHandoverStatus, isQueuedHandover } from './queuedHandover.js';
+import { finalHandoverResult, isQueuedHandover } from './queuedHandover.js';
 
 const event = (toolName: string, details?: unknown, input?: unknown): ToolResultEvent =>
   ({ toolName, details, input }) as unknown as ToolResultEvent;
 
 it.each([
   {
-    name: 'a queued final handover is queued',
+    name: 'a queued final handover keeps its resolved terminal',
+    value: event(
+      'handover',
+      { status: 'queued', terminal: 't-lead' },
+      { action: 'send', final: true },
+    ),
+    expected: { status: 'queued', terminal: 't-lead' },
+  },
+  {
+    name: 'an unknown final handover keeps its resolved terminal',
+    value: event(
+      'handover',
+      { status: 'unknown', terminal: 't-lead' },
+      { action: 'send', final: true },
+    ),
+    expected: { status: 'unknown', terminal: 't-lead' },
+  },
+  {
+    name: 'a final handover without a terminal has no resolved terminal',
     value: event('handover', { status: 'queued' }, { action: 'send', final: true }),
-    expected: 'queued',
+    expected: { status: 'queued', terminal: undefined },
   },
   {
-    name: 'an unknown final handover is unknown',
-    value: event('handover', { status: 'unknown' }, { action: 'send', final: true }),
-    expected: 'unknown',
-  },
-  {
-    name: 'a non-final handover has no status',
-    value: event('handover', { status: 'queued' }, { action: 'send', final: false }),
+    name: 'a non-final handover has no result',
+    value: event(
+      'handover',
+      { status: 'queued', terminal: 't-lead' },
+      { action: 'send', final: false },
+    ),
     expected: undefined,
   },
   {
-    name: 'another tool has no status',
-    value: event('other', { status: 'queued' }, { action: 'send', final: true }),
+    name: 'another tool has no result',
+    value: event(
+      'other',
+      { status: 'queued', terminal: 't-lead' },
+      { action: 'send', final: true },
+    ),
     expected: undefined,
   },
   {
-    name: 'missing details has no status',
+    name: 'missing details has no result',
     value: event('handover', undefined, { action: 'send', final: true }),
     expected: undefined,
   },
   {
-    name: 'another status has no status',
-    value: event('handover', { status: 'refused' }, { action: 'send', final: true }),
+    name: 'another status has no result',
+    value: event(
+      'handover',
+      { status: 'refused', terminal: 't-lead' },
+      { action: 'send', final: true },
+    ),
     expected: undefined,
   },
   {
-    name: 'a queued handover with no input has no status',
-    value: event('handover', { status: 'queued' }),
+    name: 'a queued handover with no input has no result',
+    value: event('handover', { status: 'queued', terminal: 't-lead' }),
     expected: undefined,
   },
   {
-    name: 'a queued handover with a string final has no status',
-    value: event('handover', { status: 'queued' }, { action: 'send', final: 'true' }),
+    name: 'a queued handover with a string final has no result',
+    value: event(
+      'handover',
+      { status: 'queued', terminal: 't-lead' },
+      { action: 'send', final: 'true' },
+    ),
     expected: undefined,
   },
-] as const)('finalHandoverStatus for $name', ({ value, expected }) => {
-  expect(finalHandoverStatus(value)).toBe(expected);
+] as const)('finalHandoverResult for $name', ({ value, expected }) => {
+  expect(finalHandoverResult(value)).toEqual(expected);
 });
 
 it.each([

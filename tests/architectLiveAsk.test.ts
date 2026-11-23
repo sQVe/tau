@@ -374,8 +374,11 @@ it('an architect-ask sent after the record is published but before startup retur
   await endArchitectSession(
     session as NonNullable<typeof session>,
     { ...hc, cwd: root },
-    createAnswerTracker(),
-    admissions,
+    {
+      answers: createAnswerTracker(),
+      admissions,
+      sendEndNote: true,
+    },
   );
 
   expect(held.current()).toBeUndefined();

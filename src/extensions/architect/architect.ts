@@ -12,14 +12,15 @@ import { createAskAdmissions } from './ask/askAcceptance.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
 import { registerAskMode } from './ask/askMode.js';
 import { blockFinalHandover } from './open/openLiveAsks.js';
-import { finalHandoverStatus } from './queuedHandover.js';
+import { finalHandoverResult } from './queuedHandover.js';
 import {
   createHeldLockToken,
   endArchitectSession,
-  recordEndNoteStatus,
+  recordFinalHandover,
   startArchitectSession,
 } from './session.js';
 import type { ArchitectSession } from './session.js';
+import { endsArchitect } from './shutdownDecision.js';
 import { createArchitectAnswerTool, createArchitectTool } from './tool.js';
 
 const registerVisibleArchitect = (
@@ -42,14 +43,14 @@ const registerVisibleArchitect = (
   });
 
   pi.on('tool_result', (event, context) => {
-    const status = finalHandoverStatus(event);
+    const result = finalHandoverResult(event);
     const session = current();
 
-    if (session !== undefined && status !== undefined) {
-      recordEndNoteStatus(session, status);
+    if (session !== undefined && result !== undefined) {
+      recordFinalHandover(session, result);
     }
 
-    if (status === 'queued') {
+    if (result?.status === 'queued') {
       context.shutdown();
     }
   });
@@ -78,13 +79,17 @@ export default function architectExtension(pi: ExtensionAPI): void {
     session = await startArchitectSession(context, held);
   });
 
-  pi.on('session_shutdown', async () => {
+  pi.on('session_shutdown', async (event) => {
     const ending = session;
 
     session = undefined;
 
     if (ending !== undefined) {
-      await endArchitectSession(ending, hc, answers, admissions);
+      await endArchitectSession(ending, hc, {
+        answers,
+        admissions,
+        sendEndNote: endsArchitect(event.reason),
+      });
     }
   });
 }

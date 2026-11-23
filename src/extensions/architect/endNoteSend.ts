@@ -54,8 +54,8 @@ export const deliverEndNote = async (
       refusal: 'Nothing was queued.',
     });
 
-    if (sent.status !== 'queued') {
-      report(`The lead got no end note: the send returned ${sent.status}`);
+    if (sent.status === 'unknown') {
+      report('The end note to the lead has an unknown delivery: the receiver may have saved it.');
     }
   } catch (error) {
     report(`The lead got no end note: ${errorMessage(error)}`);

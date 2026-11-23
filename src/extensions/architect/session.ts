@@ -16,6 +16,7 @@ import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
+import type { FinalHandoverResult } from './queuedHandover.js';
 import { readAskRecords, writeArchitectRecord, writeAskRecord } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
 
@@ -31,6 +32,12 @@ export interface ArchitectSession {
   owner: ArchitectOwner;
   held: HeldLockToken;
   endNote?: EndNoteRoute;
+}
+
+export interface EndArchitectOptions {
+  answers: AnswerTracker;
+  admissions: AskAdmissions;
+  sendEndNote: boolean;
 }
 
 export const createHeldLockToken = (): HeldLockToken => {
@@ -199,11 +206,11 @@ const closeLiveAsks = async (
   });
 };
 
-export const recordEndNoteStatus = (
+export const recordFinalHandover = (
   session: ArchitectSession,
-  status: 'queued' | 'unknown',
+  result: FinalHandoverResult,
 ): void => {
-  const route = nextEndNoteRoute(session.endNote, status);
+  const route = nextEndNoteRoute(session.endNote, result);
 
   if (route === undefined) {
     delete session.endNote;
@@ -217,14 +224,13 @@ export const recordEndNoteStatus = (
 export const endArchitectSession = async (
   session: ArchitectSession,
   hc: HcRuntime,
-  answers: AnswerTracker,
-  admissions: AskAdmissions,
+  { answers, admissions, sendEndNote }: EndArchitectOptions,
 ): Promise<void> => {
   session.held.set(undefined);
 
   // The note read must finish before the lock is released, so a new owner cannot overwrite the
   // record first. The close work starts alongside it so its deadline starts now.
-  const note = prepareEndNote(session.endNote, session.root);
+  const note = sendEndNote ? prepareEndNote(session.endNote, session.root) : undefined;
   const closing = closeAdmitted(answers, admissions);
   const preparedNote = await note;
 
