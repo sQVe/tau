@@ -1,8 +1,12 @@
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { succeededResult } from '../../../../tests/execFake.js';
 import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
+import { appCommands, open, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { openArchitect, openKeptClaimMessage } from './open.js';
@@ -107,6 +111,57 @@ it('an abort during the poll keeps the claim and throws the kept-claim message w
   expect((failure as Error).message).toBe(openKeptClaimMessage(root));
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
+it('resolves an unused ticket when a valid reply arrives before the rename and a retry starts', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled after the valid reply');
+  const replied = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+
+  await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      replied.resolve(undefined);
+      await release.promise;
+
+      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+    }
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const opening = openArchitect(
+    requestFor(root, config.location, { ...runtime, exec, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  await replied.promise;
+
+  const names = await readdir(join(root, '.tau', 'architect', 'start'));
+
+  expect(names.some((name) => name.includes('.started.'))).toBe(false);
+
+  release.resolve(undefined);
+  await sleepEntered.current.promise;
+  controller.abort(cancellation);
+
+  const failure = await opening;
+
+  expect(failure).toBe(cancellation);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await readdir(join(root, '.tau', 'architect', 'start'))).toEqual([]);
+
+  const retry = openTool(root);
+  const result = await open(retry.tool, root, { request: openRequest });
+
+  expect(result.details).toMatchObject({ status: 'resumed' });
+  expect(appCommands(retry.app)).toContain('pane.split');
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
 });
 
 it('an abort after the takeover rejects and leaves the architect running', async ({

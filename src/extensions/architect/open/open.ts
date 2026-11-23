@@ -342,14 +342,6 @@ const waitForTakeover = async (
   }
 };
 
-const abandonTicket = async (state: LaunchState): Promise<void> => {
-  if (state.ticket !== 'notCreated' || state.ticketPath === undefined) {
-    return;
-  }
-
-  state.ticket = await cancelStartTicket(state.ticketPath);
-};
-
 const readLaunchedProcess = async (
   root: string,
   claimToken: string,
@@ -361,6 +353,32 @@ const readLaunchedProcess = async (
     : { processId: undefined, child: 'unknown' };
 };
 
+const abandonTicket = async (
+  request: OpenRequest,
+  claimToken: string,
+  state: LaunchState,
+): Promise<void> => {
+  if (state.ticket !== 'notCreated' && state.ticket !== 'taken') {
+    return;
+  }
+
+  if (state.ticketPath === undefined) {
+    return;
+  }
+
+  state.ticket = await cancelStartTicket(state.ticketPath);
+
+  if (state.ticket !== 'taken') {
+    return;
+  }
+
+  if (state.processId === undefined) {
+    Object.assign(state, await readLaunchedProcess(request.root, claimToken));
+  }
+
+  state.adopted = await claimTakenOver(request.root, claimToken);
+};
+
 const applyLaunchOutcome = async (
   request: OpenRequest,
   claimToken: string,
@@ -370,15 +388,14 @@ const applyLaunchOutcome = async (
   const outcome = launchOutcomeDecision(launchFacts(started));
 
   if (outcome === 'notCreated') {
-    await abandonTicket(state);
+    await abandonTicket(request, claimToken, state);
 
-    if (state.ticket === 'taken') {
-      Object.assign(state, await readLaunchedProcess(request.root, claimToken));
-      state.adopted = await claimTakenOver(request.root, claimToken);
+    if (request.hc.signal?.aborted === true) {
+      request.hc.signal.throwIfAborted();
+    }
 
-      if (request.hc.signal?.aborted === true) {
-        request.hc.signal.throwIfAborted();
-      }
+    if (state.adopted) {
+      return;
     }
 
     throw launchFailure(started);
@@ -527,7 +544,7 @@ export const openArchitect = async (
 
     return result;
   } catch (error) {
-    await abandonTicket(state);
+    await abandonTicket(request, claim.token, state);
 
     const kept = await finishLaunch(request, claim, state);
 

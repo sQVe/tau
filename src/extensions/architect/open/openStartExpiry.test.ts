@@ -216,7 +216,7 @@ it('fails a space reply without a terminal and releases when the child is gone',
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('releases an adopted claim when a space reply has no terminal', async ({
+it('returns the normal result when a space reply has no terminal and the child adopted the claim', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
@@ -227,7 +227,7 @@ it('releases an adopted claim when a space reply has no terminal', async ({
 
   useFakeStartProcess(cleanup, 'running');
   app.overrideOutput('space.new', '{"ok":true}');
-  await recordSession(root);
+  const sessionFile = await recordSession(root);
 
   const appExec: typeof app.exec = async (command, commandArguments, options) => {
     const result = await app.exec(command, commandArguments, options);
@@ -258,14 +258,73 @@ it('releases an adopted claim when a space reply has no terminal', async ({
       ? appExec(command, commandArguments, options)
       : runtime.exec(command, commandArguments, options);
 
-  const failure = await openArchitect(
+  const result = await openArchitect(
     requestFor(root, config.location, { ...runtime, exec: routedExec }),
+  );
+
+  expect(result).toEqual({ status: 'resumed', sessionFile });
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({ token: 'adopted' });
+});
+
+it('rejects a cancel when a space reply has no terminal and the child adopted the claim', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+
+  const { app, hc, runtime } = openTool(root, { space: undefined }, undefined, {
+    takeover: false,
+  });
+
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled after the adoption');
+
+  useFakeStartProcess(cleanup, 'running');
+  app.overrideOutput('space.new', '{"ok":true}');
+  await recordSession(root);
+
+  const appExec: typeof app.exec = async (command, commandArguments, options) => {
+    const result = await app.exec(command, commandArguments, options);
+
+    if (commandArguments[1] === 'space.new') {
+      const holder = await readLiveLockHolder(architectLockPath(root));
+
+      if (holder !== undefined) {
+        const held = await holdFileLock({
+          lockPath: architectLockPath(root),
+          checkout: root,
+          terminal: 't-space',
+          token: 'adopted',
+          adopt: holder.token,
+        });
+
+        if (held.kind === 'held') {
+          cleanup(held.release);
+        }
+      }
+
+      controller.abort(cancellation);
+    }
+
+    return result;
+  };
+
+  const routedExec: typeof runtime.exec = async (command, commandArguments, options) =>
+    command === 'herdr-app'
+      ? appExec(command, commandArguments, options)
+      : runtime.exec(command, commandArguments, options);
+
+  const failure = await openArchitect(
+    requestFor(root, config.location, {
+      ...runtime,
+      exec: routedExec,
+      signal: controller.signal,
+    }),
   ).catch((error: unknown) => error);
 
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain('herdr-app do');
+  expect(failure).toBe(cancellation);
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+  expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({ token: 'adopted' });
 });
 
 it.each([

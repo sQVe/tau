@@ -101,6 +101,10 @@ const askDeadlineReason =
 const askEndedReason =
   'The architect ended without sending an answer. Call architect open to talk to it.';
 
+const askEndedDetail = 'The ask ended without sending an answer.';
+
+const askEndedFailureDetail = 'The ask terminal failed before the architect answered.';
+
 const askFailedReason =
   'The ask terminal failed before the architect answered. Call architect open instead.';
 
@@ -261,9 +265,11 @@ const readLaunchedProcess = async (
 ): Promise<Pick<HiddenAskClaim, 'processId' | 'child'>> => {
   const marker = await readStartMarker(root, claimToken);
 
-  return marker?.kind === 'process'
-    ? { processId: marker.pid, child: 'running' }
-    : { processId: undefined, child: 'unknown' };
+  if (marker?.kind !== 'process') {
+    return { processId: undefined, child: 'unknown' };
+  }
+
+  return { processId: marker.pid, child: processState(marker.pid) };
 };
 
 const claimTakenOver = async (root: string, claimToken: string): Promise<boolean> => {
@@ -272,13 +278,25 @@ const claimTakenOver = async (root: string, claimToken: string): Promise<boolean
   return holder !== undefined && holder.token !== claimToken;
 };
 
-const stopAskTerminal = async (request: AskRequest, state: HiddenAskClaim): Promise<void> => {
-  if (state.terminal !== undefined) {
-    await kill({ ...request.hc, signal: undefined }, state.terminal).catch(() => undefined);
+const terminalStopped = async (
+  request: AskRequest,
+  terminal: string | undefined,
+): Promise<boolean> => {
+  if (terminal === undefined) {
+    return false;
   }
 
+  return kill({ ...request.hc, signal: undefined }, terminal).then(
+    (reply) => reply.state !== 'live',
+    () => false,
+  );
+};
+
+const stopAskTerminal = async (request: AskRequest, state: HiddenAskClaim): Promise<void> => {
+  const stopped = await terminalStopped(request, state.terminal);
+
   state.child = state.processId === undefined ? 'unknown' : processState(state.processId);
-  state.stopAttempted = true;
+  state.stopAttempted = stopped;
 };
 
 const resultFromRecord = (
@@ -370,12 +388,30 @@ const settleTimeout = async (
   return resultFromRecord(request.root, started.askId, record);
 };
 
-const abandonAskTicket = async (state: HiddenAskClaim, ticketPath: string): Promise<void> => {
-  if (state.ticket !== 'notCreated') {
+const abandonAskTicket = async (
+  request: AskRequest,
+  claimToken: string,
+  state: HiddenAskClaim,
+  ticketPath: string,
+): Promise<void> => {
+  if (state.ticket !== 'notCreated' && state.ticket !== 'taken') {
     return;
   }
 
   state.ticket = await cancelStartTicket(ticketPath);
+
+  if (state.ticket !== 'taken') {
+    return;
+  }
+
+  if (state.processId === undefined) {
+    Object.assign(state, await readLaunchedProcess(request.root, claimToken));
+  }
+
+  if (await claimTakenOver(request.root, claimToken)) {
+    state.child = 'running';
+    state.stopAttempted = true;
+  }
 };
 
 const launchHiddenRecord = async (
@@ -411,17 +447,7 @@ const launchHiddenRecord = async (
     return { started, terminal: launched.terminal };
   }
 
-  await abandonAskTicket(state, ticketPath);
-
-  if (state.ticket === 'taken') {
-    Object.assign(state, await readLaunchedProcess(request.root, claimToken));
-    state.stopAttempted = false;
-
-    if (await claimTakenOver(request.root, claimToken)) {
-      state.child = 'running';
-      state.stopAttempted = true;
-    }
-  }
+  await abandonAskTicket(request, claimToken, state, ticketPath);
 
   await changeHiddenAsk(request.root, initial.askId, (current) => ({
     ...current,
@@ -430,6 +456,36 @@ const launchHiddenRecord = async (
   }));
 
   throw launched.error;
+};
+
+const settleEnded = async (
+  request: AskRequest,
+  askId: string,
+  exitCode: number | null,
+): Promise<AskResult> => {
+  const failed = exitCode !== 0;
+  const detail = failed ? askEndedFailureDetail : askEndedDetail;
+
+  const changed = await changeHiddenAsk(request.root, askId, (current) =>
+    current.status === 'running'
+      ? {
+          ...current,
+          status: 'failed',
+          detail,
+        }
+      : undefined,
+  );
+
+  if (changed?.changed === true) {
+    return failed
+      ? { status: 'failed', askId, reason: askFailedReason }
+      : needsOpen(askEndedReason);
+  }
+
+  const current = changed?.record;
+  const record = current?.route === 'hidden' ? current : undefined;
+
+  return resultFromRecord(request.root, askId, record);
 };
 
 const runHiddenAsk = async (
@@ -497,24 +553,7 @@ const runHiddenAsk = async (
   state.child = state.processId === undefined ? 'unknown' : processState(state.processId);
   state.stopAttempted = true;
 
-  const changed = await changeHiddenAsk(request.root, askId, (current) =>
-    current.status === 'running'
-      ? {
-          ...current,
-          status: 'failed',
-          detail: 'The ask ended without sending an answer.',
-        }
-      : undefined,
-  );
-
-  if (changed?.changed === true) {
-    return needsOpen(askEndedReason);
-  }
-
-  const current = changed?.record;
-  const record = current?.route === 'hidden' ? current : undefined;
-
-  return resultFromRecord(request.root, askId, record);
+  return settleEnded(request, askId, waited.exit_code ?? null);
 };
 
 const sweepRefusal = (sweep: Exclude<StartSweepResult, { kind: 'clear' }>): string | undefined => {
@@ -573,9 +612,7 @@ const askHiddenArchitect = async (
 
       state.settled = true;
 
-      if (state.ticket === 'notCreated') {
-        state.ticket = await cancelStartTicket(ticketPath);
-      }
+      await abandonAskTicket(request, claim.token, state, ticketPath);
 
       const released = await releaseClaim({
         claim,

@@ -49,9 +49,8 @@ const details = async (root: string): Promise<(string | null)[]> => {
   return records.map((record) => record.detail);
 };
 
-const endedWait = (terminal: string, ended: boolean): string => {
+const endedWait = (terminal: string, ended: boolean, exitCode = ended ? 0 : null): string => {
   const reason = ended ? 'ended' : 'timeout';
-  const exitCode = ended ? 0 : null;
 
   return JSON.stringify({ terminal, ended, reason, turn: 1, children: [], exit_code: exitCode });
 };
@@ -230,6 +229,100 @@ it('stops the hidden terminal at its deadline and releases after it ends', async
 
   expect(waits).toBe(1);
   expect(await statuses(root)).toEqual(['timeout']);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('stops the hidden ask by process id when the wait and the kill both fail', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const processControl = useFakeStartProcess(cleanup, 'running', true);
+
+  await recordSession(root);
+  hc.fail('kill', 'hc kill failed', 1);
+
+  const rejected = failFirstWait(hc, new Error('The wait failed.'));
+  const failure = await ask(rejected, root).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('The wait failed.');
+  expect(processControl.signals).toEqual(['SIGTERM']);
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('resolves an unused ticket when a valid reply arrives before the rename and a retry starts', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const replied = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  const waitFailure = new Error('The wait failed.');
+
+  useFakeStartProcess(cleanup, 'running');
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      replied.resolve(undefined);
+      await release.promise;
+
+      return succeededResult(JSON.stringify({ address: 't-ask', state: 'live' }));
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      throw waitFailure;
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const asking = ask({ ...hc, exec }, root).catch((error: unknown) => error);
+
+  await replied.promise;
+
+  const names = await readdir(join(root, '.tau', 'architect', 'start'));
+
+  expect(names.some((name) => name.includes('.started.'))).toBe(false);
+
+  release.resolve(undefined);
+
+  const failure = await asking;
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('The wait failed.');
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await readdir(join(root, '.tau', 'architect', 'start'))).toEqual([]);
+
+  const retry = startFake();
+
+  retry.reply('wait', endedWait('t-ask', true));
+
+  await expect(ask(retry, root)).resolves.toMatchObject({ details: { status: 'needsOpen' } });
+  expect(retry.calls.filter((call) => call.commandArguments[0] === 'run')).toHaveLength(1);
+});
+
+it('returns the failed result when the child exits nonzero before settling', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true, 1));
+
+  const result = await ask(hc, root);
+
+  expect(result).toMatchObject({ details: { status: 'failed' } });
+
+  const { records } = await readAskRecords(root);
+
+  expect(records[0]).toMatchObject({ status: 'failed' });
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
@@ -579,6 +672,15 @@ it.each([
       answer: 'Use --quick.',
     }),
     expected: { status: 'ended', answer: 'Use --quick.' },
+  },
+  {
+    name: 'failed',
+    settle: (record: Extract<Awaited<ReturnType<typeof readAskRecord>>, { route: 'hidden' }>) => ({
+      ...record,
+      status: 'failed' as const,
+      detail: 'The child failed first.',
+    }),
+    expected: { status: 'failed' },
   },
 ])(
   'keeps a $name record the child settled while the lead was stalled',
