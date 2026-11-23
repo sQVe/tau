@@ -135,6 +135,13 @@ const invalidConfig = () => ({
   },
 });
 
+const invalidPanelConfig = () => ({
+  questionGate: {
+    classifier: 'tau-fixture/classifier',
+    panel: ['tau-fixture/panel-a', 'tau-fixture/panel-b'],
+  },
+});
+
 const stackedDescription = 'One column. Simple, but wide screens waste space.';
 const splitDescription = 'Two columns. Uses wide screens, but needs a fallback.';
 
@@ -651,7 +658,7 @@ it('warns once about an ignored config key and still saves the shadow record', a
 it('reports an invalid shadow config once and skips each dialog', async ({ onTestFinished }) => {
   const harness = await createHarness(onTestFinished, { config: invalidConfig() });
   const userFile = join(harness.agentDirectory, 'tau.json');
-  const error = 'questionGate shadow variant "classifierExamples" needs at least one example.';
+  const reason = 'needs at least one example';
 
   const first = harness.run([eligibleQuestion]);
 
@@ -661,7 +668,7 @@ it('reports an invalid shadow config once and skips each dialog', async ({ onTes
 
   expect(harness.notify).toHaveBeenCalledTimes(1);
   expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
-  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(error), 'error');
+  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(reason), 'error');
 
   const second = harness.run([eligibleQuestion]);
 
@@ -673,6 +680,75 @@ it('reports an invalid shadow config once and skips each dialog', async ({ onTes
   expect(harness.registry.classify).not.toHaveBeenCalled();
   expect(harness.registry.complete).not.toHaveBeenCalled();
   expect(harness.saved).toEqual([]);
+});
+
+it('reports a different config error after an earlier one in the same session', async ({
+  onTestFinished,
+}) => {
+  const harness = await createHarness(onTestFinished, { config: invalidPanelConfig() });
+  const userFile = join(harness.agentDirectory, 'tau.json');
+
+  const first = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await first;
+  await harness.flush();
+
+  expect(harness.notify).toHaveBeenCalledTimes(1);
+  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
+  expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining('panel'), 'error');
+
+  writeFileSync(join(harness.agentDirectory, 'tau.json'), JSON.stringify(invalidConfig()));
+
+  const second = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await second;
+  await harness.flush();
+
+  expect(harness.notify).toHaveBeenCalledTimes(2);
+  expect(harness.notify).toHaveBeenLastCalledWith(expect.stringContaining(userFile), 'error');
+
+  expect(harness.notify).toHaveBeenLastCalledWith(
+    expect.stringContaining('needs at least one example'),
+    'error',
+  );
+
+  const third = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await third;
+  await harness.flush();
+
+  expect(harness.notify).toHaveBeenCalledTimes(2);
+  expect(harness.registry.classify).not.toHaveBeenCalled();
+  expect(harness.registry.complete).not.toHaveBeenCalled();
+  expect(harness.saved).toEqual([]);
+});
+
+it('saves a record when decide is malformed and the shadow block is valid', async ({
+  onTestFinished,
+}) => {
+  const config = { questionGate: { ...frozenConfig(), decide: 'yes' } };
+  const harness = await createHarness(onTestFinished, { config });
+
+  const pending = harness.run([eligibleQuestion]);
+
+  harness.latest().handleInput('\r');
+  await pending;
+
+  const shadowDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  harness.registry.judgeGate.resolve(undefined);
+  harness.saveGate.resolve(undefined);
+  await shadowDone;
+
+  expect(harness.notify).not.toHaveBeenCalled();
+  expect(harness.saved).toHaveLength(1);
 });
 
 it('saves a record when the answer settles before judges', async ({ onTestFinished }) => {

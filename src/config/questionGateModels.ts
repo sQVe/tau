@@ -27,7 +27,6 @@ export type QuestionGateConfig = QuestionGateModels &
   ({ decide: false; shadow?: ShadowConfig } | { decide: true; shadow: ShadowConfig });
 
 export type QuestionGateShadow = QuestionGateModels & {
-  decide: boolean;
   shadow: ShadowConfig;
 };
 
@@ -276,21 +275,20 @@ export const readQuestionGateShadow = (
   location: ConfigLocation,
   ui: ConfigWarnings,
 ): QuestionGateShadow | undefined => {
-  const settings = readQuestionGateSettings(location, ui);
+  const gate = readQuestionGateValue(location, ui);
 
-  if (settings === undefined) {
+  if (gate === undefined) {
     return undefined;
   }
 
-  if (settings.shadow === undefined) {
-    if (settings.decide) {
-      throw invalid(settings.source, decideNeedsShadowMessage);
-    }
+  const value = requireModelsValue(gate);
+  const shadow = readShadow(gate.source, value.shadow);
 
+  if (shadow === undefined) {
     return undefined;
   }
 
-  return { ...settings.models, decide: settings.decide, shadow: settings.shadow };
+  return { ...readModels(gate.source, value), shadow };
 };
 
 export const readQuestionGateConfig = (

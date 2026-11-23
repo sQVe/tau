@@ -251,10 +251,24 @@ it('exits 1 naming an invalid shadow block and the user config file', async ({
 
   expect(result.status).toBe(1);
   expect(result.stderr).toContain(userFile);
+  expect(result.stderr).toContain('classifierExamples');
+  expect(result.stderr).toContain('needs at least one example');
+});
 
-  expect(result.stderr).toContain(
-    'questionGate shadow variant "classifierExamples" needs at least one example.',
-  );
+it('does not fail on a malformed decide when the shadow block is valid', async ({
+  onTestFinished,
+}) => {
+  const repository = await createTemporaryRepository(onTestFinished, 'tau-shadow-decide-');
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-shadow-agent-');
+
+  await writeConfig(agentDirectory, {
+    questionGate: { ...gateConfig.questionGate, decide: 'yes' },
+  });
+
+  const result = runShadow(repository, agentDirectory);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('Agreement: n/a');
 });
 
 it('exits 1 naming the missing shadow setting and user config path', async ({ onTestFinished }) => {

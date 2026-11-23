@@ -138,13 +138,9 @@ const readConfigOrReport = (
   try {
     return ports.readConfig(location, request.ui);
   } catch (error) {
-    notifyOnce(
-      request.ui,
-      userConfigPath(location.agentDirectory),
-      'shadow-config',
-      errorMessage(error),
-      'error',
-    );
+    const message = errorMessage(error);
+
+    notifyOnce(request.ui, userConfigPath(location.agentDirectory), message, message, 'error');
 
     return undefined;
   }

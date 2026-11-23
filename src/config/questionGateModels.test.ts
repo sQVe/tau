@@ -6,6 +6,7 @@ import { models, pastAnswer, question } from './fixtures/questionGateModelsFixtu
 import {
   readQuestionGateConfig,
   readQuestionGateModels,
+  readQuestionGateShadow,
   shadowCohort,
 } from './questionGateModels.ts';
 import type { QuestionGateConfig, ShadowConfig } from './questionGateModels.ts';
@@ -190,10 +191,20 @@ it('refuses an invalid shadow in a decide config', ({ onTestFinished }) => {
   const read = () => readQuestionGateConfig(location, ui());
 
   expect(read).toThrow(userFile);
+  expect(read).toThrow('classifierExamples');
+  expect(read).toThrow('needs at least one example');
+});
 
-  expect(read).toThrow(
-    'questionGate shadow variant "classifierExamples" needs at least one example.',
-  );
+it('reads the shadow without validating decide', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-question-gate-');
+  const shadow = { variant: 'panel', cutoff: 0.5 } as const;
+
+  writeUser({ questionGate: { ...models, decide: 'yes', shadow } });
+
+  expect(readQuestionGateShadow(location, ui())).toEqual({
+    ...models,
+    shadow: { ...shadow, examples: [] },
+  });
 });
 
 it('defaults decide to off', ({ onTestFinished }) => {
