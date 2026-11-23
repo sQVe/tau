@@ -123,7 +123,7 @@ it('saves one open record, sends one frame, and ends the turn', async () => {
   );
 
   expect(saved).toMatchObject({
-    version: 3,
+    version: 4,
     messageId: questionId,
     family: 'handover-question',
     payload: {
