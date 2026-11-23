@@ -15,7 +15,8 @@ By hand, because it needs two live Pi sessions and `hc`.
 ## Steps
 
 1. From the lead session, call `handover` `prepare` and write the task to a file in the printed
-   directory. Then call `handover` `start` with that file and a folder.
+   directory. Then call `handover` `start` with that file, the checkout's space ID as `space` or a
+   new space name as `name`, and the checkout's absolute path as `folder`.
    A new tab opens, and its task text starts with
    `Handover sender: terminal <terminal>, session <sessionId>.`
 2. In the new session, ask it to change a test that contradicts its brief.
