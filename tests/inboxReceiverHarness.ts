@@ -172,7 +172,6 @@ export const savedTextsIn = async (directory: string): Promise<string[]> => {
 export const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> =>
   savedTextsIn(receiver.inbox);
 
-// `savedRecords` lists every record below the root, including the session directory entry.
 export const savedFiles = (receiver: HandoverReceiver): string[] =>
   receiver.savedRecords().filter((name) => name.startsWith(`${receiver.sessionId}/`));
 
