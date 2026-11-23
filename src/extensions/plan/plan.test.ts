@@ -67,7 +67,6 @@ const runIn = (tool: ToolDefinition, steps: PlanStep[], context: ExtensionContex
 
 const widgetTheme = { fg: (_color: string, text: string) => text } as unknown as Theme;
 
-// Renders the widget the way Pi renders one above the editor.
 const renderedLines = (content: WidgetContent): readonly string[] => {
   if (content === undefined) {
     return [];
