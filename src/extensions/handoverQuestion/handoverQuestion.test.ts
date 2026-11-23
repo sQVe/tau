@@ -78,7 +78,6 @@ it('registers the tool once a handover brings a sender', async () => {
   vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
 
   const registerTool = vi.fn<ExtensionAPI['registerTool']>();
-  // SAFETY: The mock records calls only; it never uses the tool's generic renderers.
   const overrides = { registerTool: registerTool as unknown as ExtensionAPI['registerTool'] };
   const fake = fakeExtensionApi(overrides);
 

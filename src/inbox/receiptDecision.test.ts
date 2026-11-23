@@ -353,7 +353,6 @@ const answerPayload = {
   answer: 'Use option A.',
 };
 
-// A handover receipt and body never carry a question. These rows check that a stray one is ignored.
 const strayQuestionReceipt = {
   receipt: { ...handoverReceipt, questionId: 'q1' },
   content: 'handover text',
