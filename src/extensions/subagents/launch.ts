@@ -104,7 +104,6 @@ export interface WorkerStart {
 interface StartedFollowUp {
   terminal: HcTerminal;
   warning?: string;
-  createdScratch: boolean;
 }
 
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
@@ -489,7 +488,7 @@ const startPackageBackedFollowUp = async (
       return started;
     });
 
-    return { terminal, createdScratch: createdScratch.value };
+    return { terminal };
   } catch (error) {
     if (started === undefined) {
       throw error;
@@ -498,7 +497,6 @@ const startPackageBackedFollowUp = async (
     return {
       terminal: started,
       warning: `The folder sweep lock was not released after the follow-up started: ${errorMessage(error)}`,
-      createdScratch: createdScratch.value,
     };
   }
 };
