@@ -170,6 +170,52 @@ it('reports a retry whose sender differs from a pending version 1 record as chan
   await expect(saveMessage(directory, record)).resolves.toBe('changed');
 });
 
+it('reports a pending record with a different message ID as changed', async () => {
+  const directory = directoryFixture();
+  const otherMessageId = '33333333-3333-4333-8333-333333333333';
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(
+    join(directory, `${messageId}.json`),
+    JSON.stringify({ ...record, messageId: otherMessageId }),
+  );
+
+  await expect(saveMessage(directory, record)).resolves.toBe('changed');
+});
+
+it('reports a pending record with a different family as changed', async () => {
+  const directory = directoryFixture();
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(
+    join(directory, `${messageId}.json`),
+    JSON.stringify({
+      version: 2,
+      messageId,
+      family: 'answer',
+      payload: {
+        assignmentId: '33333333-3333-4333-8333-333333333333',
+        questionId: '44444444-4444-4444-8444-444444444444',
+        parentSession: 'lead-session',
+        answer: 'Use 42.',
+      },
+    }),
+  );
+
+  await expect(saveMessage(directory, record)).resolves.toBe('changed');
+});
+
+it('reports a retry over a saved entry that is not a record as changed', async () => {
+  const directory = directoryFixture();
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, `${messageId}.json`), 'not JSON\n');
+
+  await expect(saveMessage(directory, record)).resolves.toBe('changed');
+});
+
 it('writes nothing when the fence gives a reason', async () => {
   const directory = directoryFixture();
 

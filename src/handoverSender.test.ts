@@ -64,6 +64,15 @@ const lookupRows: {
     expected: undefined,
   },
   {
+    name: 'takes no sender from an empty terminal environment variable',
+    environment: {
+      TAU_HANDOVER_SENDER_TERMINAL: '',
+      TAU_HANDOVER_SENDER_SESSION: 'lead-id',
+    },
+    messages: [],
+    expected: undefined,
+  },
+  {
     name: 'takes no sender from a session environment variable alone',
     environment: { TAU_HANDOVER_SENDER_SESSION: 'lead-id' },
     messages: [],
