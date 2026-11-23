@@ -74,8 +74,9 @@ export default async function tauRegistration(pi: ExtensionAPI): Promise<void> {
   fullCheckExtension(pi);
   handoverExtension(pi);
   handBackExtension(pi);
-  inboxExtension(pi);
+  // The handover question extension sets the session directory that the inbox's accept check reads, so it registers before the inbox.
   handoverQuestionExtension(pi);
+  inboxExtension(pi);
   architectExtension(pi);
   draftReviewExtension(pi);
   trackerExtension(pi);
