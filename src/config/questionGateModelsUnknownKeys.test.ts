@@ -1,36 +1,11 @@
 import { Value } from 'typebox/value';
 import { expect, it, vi } from 'vitest';
 
+import { models, pastAnswer, question } from '../../tests/questionGateModelsFixture.ts';
 import { tauConfigSnapshot, temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import { pastAnswerSchema } from '../judgeSchema.ts';
-import type { PastAnswer } from '../questionGate/questionGate.ts';
 import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
 import type { ShadowConfig } from './questionGateModels.ts';
-
-const models = {
-  classifier: 'tau-fixture/judge-a',
-  panel: ['tau-fixture/judge-a', 'tau-fixture/judge-b', 'tau-fixture/judge-c'] as [
-    string,
-    string,
-    string,
-  ],
-};
-
-const question = {
-  question: 'Which route?',
-  problem: 'The route is open.',
-  impact: 'The wrong route wastes a day.',
-  options: [
-    { label: 'Fast', description: 'Ship now.', recommended: true },
-    { label: 'Careful', description: 'Check first.', recommended: false },
-  ],
-};
-
-const pastAnswer = (time: number, text: string): PastAnswer => ({
-  time,
-  question,
-  outcome: { kind: 'typed', text },
-});
 
 const shadow: ShadowConfig = {
   variant: 'classifierExamples',
@@ -91,7 +66,9 @@ it('accepts a field from another outcome variant, drops it, and warns nothing', 
       shadow: {
         variant: 'classifierExamples',
         cutoff: 0.8,
-        examples: [{ time: 1, question, outcome: { kind: 'recommended', label: 'ignored' } }],
+        examples: [
+          { time: 1, question: question(), outcome: { kind: 'recommended', label: 'ignored' } },
+        ],
       },
     },
   });
@@ -104,7 +81,7 @@ it('accepts a field from another outcome variant, drops it, and warns nothing', 
     shadow: {
       variant: 'classifierExamples',
       cutoff: 0.8,
-      examples: [{ time: 1, question, outcome: { kind: 'recommended' } }],
+      examples: [{ time: 1, question: question(), outcome: { kind: 'recommended' } }],
     },
   });
 
@@ -123,7 +100,9 @@ it('warns about an unknown key inside an outcome variant and drops it', ({ onTes
       shadow: {
         variant: 'classifierExamples',
         cutoff: 0.8,
-        examples: [{ time: 1, question, outcome: { kind: 'typed', text: 'first', extra: true } }],
+        examples: [
+          { time: 1, question: question(), outcome: { kind: 'typed', text: 'first', extra: true } },
+        ],
       },
     },
   });
@@ -149,6 +128,7 @@ it('reads extra keys inside shadow and examples, warns once per path, and keeps 
   writeUser({ questionGate: { ...models, shadow } });
 
   const cohort = shadowCohortOf(shadow);
+  const exampleQuestion = question();
 
   writeUser({
     questionGate: {
@@ -160,8 +140,11 @@ it('reads extra keys inside shadow and examples, warns once per path, and keeps 
           {
             ...pastAnswer(1, 'first'),
             question: {
-              ...question,
-              options: [{ ...question.options[0], note: 'ignored' }, question.options[1]],
+              ...exampleQuestion,
+              options: [
+                { ...exampleQuestion.options[0], note: 'ignored' },
+                exampleQuestion.options[1],
+              ],
             },
           },
         ],

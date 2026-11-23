@@ -10,6 +10,7 @@ import type { Mock } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { git, initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import type { ConfigWarnings } from '../../config/config.js';
 import { shadowCohort } from '../../config/questionGateModels.js';
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
 import type { ShadowRecord, ShadowRecordWriter } from '../../questionGate/questionGate.js';
@@ -292,6 +293,8 @@ const createHarness = async (
 
   const fake = fakeExtensionApi();
 
+  const notify = vi.fn<ConfigWarnings['notify']>();
+
   askUserQuestionExtension(fake.pi, {
     shadow: {
       now: options.now ?? (() => clock.now),
@@ -369,7 +372,7 @@ const createHarness = async (
     cwd: activeDirectory,
     isProjectTrusted: () => options.projectTrusted === true,
     modelRegistry: registry.registry,
-    ui: { custom },
+    ui: { custom, notify },
     sessionManager: {
       getSessionId: () => options.sessionId ?? 'session-shadow-1',
       getBranch: () => [],
@@ -433,6 +436,7 @@ const createHarness = async (
     preparedDirectories,
     writeStarted: () => writeStarted,
     dialogs,
+    notify,
     run,
     latest,
     start,
@@ -609,6 +613,39 @@ it('saves a record when judges settle before the answer', async ({ onTestFinishe
     },
     answer: { kind: 'answered', selected: ['Stacked'], typed: false },
   });
+});
+
+it('warns once about an ignored config key and still saves the shadow record', async ({
+  onTestFinished,
+}) => {
+  const config = { questionGate: { ...frozenConfig(), ignored: true } };
+  const harness = await createHarness(onTestFinished, { config });
+
+  const pending = harness.run([eligibleQuestion]);
+
+  expect(harness.notify).toHaveBeenCalledTimes(1);
+
+  expect(harness.notify).toHaveBeenCalledWith(
+    expect.stringContaining('questionGate.ignored'),
+    'warning',
+  );
+
+  const shadowDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  expect(harness.notify).toHaveBeenCalledTimes(1);
+
+  harness.latest().handleInput('\r');
+  await pending;
+
+  harness.registry.judgeGate.resolve(undefined);
+  harness.saveGate.resolve(undefined);
+  await shadowDone;
+
+  expect(harness.saved).toHaveLength(1);
 });
 
 it('saves a record when the answer settles before judges', async ({ onTestFinished }) => {

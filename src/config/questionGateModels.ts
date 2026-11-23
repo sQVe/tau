@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 
 import { Type } from 'typebox';
+import type { TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { openPastAnswerSchema, shadowVariantSchema } from '../judgeSchema.ts';
 import type { PastAnswer, ShadowVariant } from '../judgeSchema.ts';
-import { anyItem, isRecord } from '../schema.ts';
+import { anyItem } from '../schema.ts';
 import type { KnownKeys } from '../schema.ts';
 import { readUserOnlyKey, warnUnknownKeys } from './config.ts';
 import type { ConfigLocation, ConfigWarnings } from './config.ts';
@@ -40,36 +41,26 @@ const shadowSchema = Type.Object({
   examples: Type.Optional(Type.Array(openPastAnswerSchema, { maxItems: 5 })),
 });
 
-const knownKeysOf = (schema: unknown): KnownKeys => {
-  if (!isRecord(schema)) {
-    return {};
+const knownKeysOf = (schema: TSchema): KnownKeys | true => {
+  if (Type.IsUnion(schema)) {
+    const { anyOf } = schema;
+
+    return Object.fromEntries(anyOf.flatMap((variant) => Object.entries(knownKeysOf(variant))));
   }
 
-  const variants = schema.anyOf;
-
-  if (Array.isArray(variants)) {
-    return Object.fromEntries(variants.flatMap((variant) => Object.entries(knownKeysOf(variant))));
+  if (Type.IsArray(schema)) {
+    return { [anyItem]: knownKeysOf(schema.items) };
   }
 
-  const { properties } = schema;
+  if (Type.IsObject(schema)) {
+    const entries = Object.entries(schema.properties).map(
+      ([key, child]) => [key, knownKeysOf(child)] as const,
+    );
 
-  if (!isRecord(properties)) {
-    return {};
+    return Object.fromEntries(entries);
   }
 
-  const entries = Object.entries(properties).map(([key, child]) => {
-    if (isRecord(child) && child.type === 'array') {
-      return [key, { [anyItem]: knownKeysOf(child.items) }] as const;
-    }
-
-    const isObject = isRecord(child) && child.type === 'object';
-    const isUnion = isRecord(child) && Array.isArray(child.anyOf);
-    const nested = isObject || isUnion;
-
-    return [key, nested ? knownKeysOf(child) : true] as const;
-  });
-
-  return Object.fromEntries(entries);
+  return true;
 };
 
 const knownExampleKeys = knownKeysOf(openPastAnswerSchema);

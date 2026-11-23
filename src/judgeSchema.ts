@@ -1,50 +1,44 @@
 import { Type } from 'typebox';
-import type { Static, TObjectOptions, TSchema } from 'typebox';
+import type { Static, TObjectOptions } from 'typebox';
 
 export type JudgeOption = JudgeQuestion['options'][number];
 
 export type PastOutcome = PastAnswer['outcome'];
 
-const optionProperties = {
-  label: Type.String(),
-  description: Type.String(),
-  recommended: Type.Boolean(),
-};
-
-const questionProperties = <Options extends TSchema>(options: Options) => ({
-  question: Type.String(),
-  problem: Type.String(),
-  impact: Type.String(),
-  options: Type.Array(options),
-});
-
-const outcomeVariantProperties = {
-  recommended: { kind: Type.Literal('recommended') },
-  otherOption: { kind: Type.Literal('otherOption'), label: Type.String() },
-  typed: { kind: Type.Literal('typed'), text: Type.String() },
-};
-
-const pastAnswerProperties = <Question extends TSchema, Outcome extends TSchema>(
-  question: Question,
-  outcome: Outcome,
-) => ({
-  time: Type.Number(),
-  question,
-  outcome,
-});
-
 const buildJudgeSchemas = (options: TObjectOptions) => {
-  const option = Type.Object(optionProperties, options);
+  const option = Type.Object(
+    {
+      label: Type.String(),
+      description: Type.String(),
+      recommended: Type.Boolean(),
+    },
+    options,
+  );
 
-  const question = Type.Object(questionProperties(option), options);
+  const question = Type.Object(
+    {
+      question: Type.String(),
+      problem: Type.String(),
+      impact: Type.String(),
+      options: Type.Array(option),
+    },
+    options,
+  );
 
   const outcome = Type.Union([
-    Type.Object(outcomeVariantProperties.recommended, options),
-    Type.Object(outcomeVariantProperties.otherOption, options),
-    Type.Object(outcomeVariantProperties.typed, options),
+    Type.Object({ kind: Type.Literal('recommended') }, options),
+    Type.Object({ kind: Type.Literal('otherOption'), label: Type.String() }, options),
+    Type.Object({ kind: Type.Literal('typed'), text: Type.String() }, options),
   ]);
 
-  const pastAnswer = Type.Object(pastAnswerProperties(question, outcome), options);
+  const pastAnswer = Type.Object(
+    {
+      time: Type.Number(),
+      question,
+      outcome,
+    },
+    options,
+  );
 
   return { question, pastAnswer };
 };

@@ -1,5 +1,6 @@
 import { expect, it, onTestFinished as registerTestCleanup } from 'vitest';
 
+import { models, pastAnswer, question } from '../../tests/questionGateModelsFixture.ts';
 import { tauConfigSnapshot, temporaryTauConfig } from '../../tests/tauConfigHarness.ts';
 import type { PastAnswer } from '../questionGate/questionGate.ts';
 import { readQuestionGateConfig, shadowCohort } from './questionGateModels.ts';
@@ -7,32 +8,7 @@ import type { QuestionGateConfig, ShadowConfig } from './questionGateModels.ts';
 
 type FrozenConfig = QuestionGateConfig & { shadow: ShadowConfig };
 
-const models = {
-  classifier: 'tau-fixture/judge-a',
-  panel: ['tau-fixture/judge-a', 'tau-fixture/judge-b', 'tau-fixture/judge-c'] as [
-    string,
-    string,
-    string,
-  ],
-};
-
 const ui = () => ({ notify: () => undefined });
-
-const question = (text = 'Which route?') => ({
-  question: text,
-  problem: 'The route is open.',
-  impact: 'The wrong route wastes a day.',
-  options: [
-    { label: 'Fast', description: 'Ship now.', recommended: true },
-    { label: 'Careful', description: 'Check first.', recommended: false },
-  ],
-});
-
-const pastAnswer = (time: number, text: string, questionText?: string): PastAnswer => ({
-  time,
-  question: question(questionText),
-  outcome: { kind: 'typed', text },
-});
 
 const otherAnswer = (time: number, label: string): PastAnswer => ({
   time,
