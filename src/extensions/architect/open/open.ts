@@ -15,24 +15,17 @@ import { findPane } from '../../../piStart/herdrPane.js';
 import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
 import type { PiLaunchResult } from '../../../piStart/piStart.js';
 import { tabName } from '../../../tabName.js';
-import { releaseClaim } from '../claimRelease/claimRelease.js';
-import type { ClaimReleaseFacts } from '../claimRelease/claimReleaseDecision.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
-import { architectLockPath, claimArchitectLock } from '../lock.js';
+import { architectLockPath } from '../lock.js';
 import type { ArchitectClaimOptions } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
+import { acquireStartFence } from '../startFence/startFence.js';
+import type { StartFence, StartFenceBlocker } from '../startFence/startFence.js';
 import {
-  cancelStartTicket,
-  createStartTicket,
-  deleteStartMarker,
   malformedStartMarkerReason,
-  readStartMarker,
   startHeldByProcessReason,
-  sweepStartFolder,
-  wrapStartArgv,
 } from '../startTicket/startTicket.js';
-import type { StartSweepResult } from '../startTicket/startTicket.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 import { openStartProgress } from './openStartClaimDecision.js';
@@ -61,14 +54,6 @@ interface PreparedArchitectStart {
 }
 
 type ReplyTerminal = Parameters<typeof launchOutcomeDecision>[0]['replyTerminal'];
-
-interface LaunchState {
-  ticket: ClaimReleaseFacts['ticket'];
-  ticketPath: string | undefined;
-  processId: number | undefined;
-  child: ClaimReleaseFacts['child'];
-  adopted: boolean;
-}
 
 const askLabel = 'tau.architect.ask';
 
@@ -231,7 +216,7 @@ const launchArchitect = (
   hc: HcRuntime,
   request: OpenRequest,
   prepared: PreparedArchitectStart,
-  ticket: string,
+  fence: StartFence,
 ): Promise<PiLaunchResult> => {
   const start = {
     folder: request.root,
@@ -240,7 +225,7 @@ const launchArchitect = (
     session: prepared.session,
     bareRoot: prepared.bareRoot,
     environment: prepared.environment,
-    argvWrapper: (argv: string[]): string[] => wrapStartArgv(ticket, argv),
+    argvWrapper: (argv: string[]): string[] => fence.wrapArgv(argv),
   };
 
   if (prepared.pane === undefined) {
@@ -273,17 +258,21 @@ const launchResult = (prepared: PreparedArchitectStart): OpenResult =>
     ? { status: 'opened', sessionFile: null }
     : { status: 'resumed', sessionFile: prepared.session };
 
-const claimTakenOver = async (root: string, claimToken: string): Promise<boolean> => {
-  const holder = await readLiveLockHolder(architectLockPath(root));
-
-  return holder !== undefined && holder.token !== claimToken;
-};
-
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
 
 export const startingError = (root: string): Error =>
   new Error(`The architect in ${root} is starting. Call architect open again shortly.`);
+
+const blockedStartError = (root: string, blocker: StartFenceBlocker): Error => {
+  if (blocker.kind === 'runningProcess') {
+    return new Error(startHeldByProcessReason(blocker.processId));
+  }
+
+  return blocker.kind === 'malformedMarker'
+    ? new Error(malformedStartMarkerReason(blocker.path))
+    : startingError(root);
+};
 
 export const openKeptClaimMessage = (root: string): string =>
   `The architect in ${root} did not take the checkout lock, so the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect open again.`;
@@ -342,76 +331,6 @@ const waitForTakeover = async (
   }
 };
 
-const readLaunchedProcess = async (
-  root: string,
-  claimToken: string,
-): Promise<Pick<LaunchState, 'processId' | 'child'>> => {
-  const marker = await readStartMarker(root, claimToken);
-
-  return marker?.kind === 'process'
-    ? { processId: marker.pid, child: 'running' }
-    : { processId: undefined, child: 'unknown' };
-};
-
-const abandonTicket = async (
-  request: OpenRequest,
-  claimToken: string,
-  state: LaunchState,
-): Promise<void> => {
-  if (state.ticket !== 'notCreated' && state.ticket !== 'taken') {
-    return;
-  }
-
-  if (state.ticketPath === undefined) {
-    return;
-  }
-
-  state.ticket = await cancelStartTicket(state.ticketPath);
-
-  if (state.ticket !== 'taken') {
-    return;
-  }
-
-  if (state.processId === undefined) {
-    Object.assign(state, await readLaunchedProcess(request.root, claimToken));
-  }
-
-  state.adopted = await claimTakenOver(request.root, claimToken);
-};
-
-const applyLaunchOutcome = async (
-  request: OpenRequest,
-  claimToken: string,
-  started: PiLaunchResult,
-  state: LaunchState,
-): Promise<void> => {
-  const outcome = launchOutcomeDecision(launchFacts(started));
-
-  if (outcome === 'notCreated') {
-    await abandonTicket(request, claimToken, state);
-
-    if (request.hc.signal?.aborted === true) {
-      request.hc.signal.throwIfAborted();
-    }
-
-    if (state.adopted) {
-      return;
-    }
-
-    throw launchFailure(started);
-  }
-
-  state.ticket = 'taken';
-  Object.assign(state, await readLaunchedProcess(request.root, claimToken));
-
-  await waitForTakeover(request.root, claimToken, request.hc.signal);
-  state.adopted = true;
-
-  if (request.hc.signal?.aborted === true) {
-    request.hc.signal.throwIfAborted();
-  }
-};
-
 const runningTerminal = async (
   request: OpenRequest,
   record: SavedArchitectRecord | undefined,
@@ -457,29 +376,31 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
-const sweepOwnStart = (root: string, claimToken: string): Promise<StartSweepResult> =>
-  sweepStartFolder({ root, currentToken: claimToken });
-
-const finishLaunch = async (
+const applyLaunchOutcome = async (
   request: OpenRequest,
-  claim: { release: () => Promise<void>; token: string },
-  state: LaunchState,
-): Promise<boolean> => {
-  const released = await releaseClaim({
-    claim,
-    ticket: state.ticket,
-    adopted: state.adopted,
-    child: state.child,
-    processId: state.processId,
-  });
+  fence: StartFence,
+  started: PiLaunchResult,
+): Promise<void> => {
+  if (launchOutcomeDecision(launchFacts(started)) === 'notCreated') {
+    const abandoned = await fence.abandon();
 
-  const gone = !released.kept && state.ticket === 'taken' && released.child === 'gone';
+    if (request.hc.signal?.aborted === true) {
+      request.hc.signal.throwIfAborted();
+    }
 
-  if (gone && state.processId !== undefined) {
-    await deleteStartMarker(request.root, claim.token, state.processId).catch(() => undefined);
+    if (!abandoned.takenOver) {
+      throw launchFailure(started);
+    }
+
+    return;
   }
 
-  return released.kept;
+  await fence.recordStarted();
+  await waitForTakeover(request.root, fence.token, request.hc.signal);
+
+  if (request.hc.signal?.aborted === true) {
+    request.hc.signal.throwIfAborted();
+  }
 };
 
 export const openArchitect = async (
@@ -493,62 +414,46 @@ export const openArchitect = async (
     return { status: 'running', terminal: running };
   }
 
-  const claim = await claimArchitectLock(request.root, claimOptions);
+  const acquisition = await acquireStartFence(request.root, claimOptions);
 
-  if (claim.kind === 'refused') {
+  if (acquisition.kind === 'refused') {
     throw startingError(request.root);
   }
 
+  if (acquisition.kind === 'blocked') {
+    throw blockedStartError(request.root, acquisition.blocker);
+  }
+
+  const fence = acquisition.fence;
   const launchHc = { ...request.hc, signal: undefined };
 
-  const state: LaunchState = {
-    ticket: 'notCreated',
-    ticketPath: undefined,
-    processId: undefined,
-    child: 'unknown',
-    adopted: false,
-  };
-
   try {
-    const starting = await sweepOwnStart(request.root, claim.token);
-
-    if (starting.kind === 'starting') {
-      throw startingError(request.root);
-    }
-
-    if (starting.kind === 'refuseRunning') {
-      throw new Error(startHeldByProcessReason(starting.processId));
-    }
-
-    if (starting.kind === 'refuseMalformed') {
-      throw new Error(malformedStartMarkerReason(starting.path));
-    }
-
-    state.ticketPath = await createStartTicket(request.root, claim.token);
+    await fence.createTicket();
 
     const prepared = await prepareArchitectStart(
       request,
       record?.sessionFile ?? undefined,
-      claim.token,
+      fence.token,
     );
 
     request.hc.signal?.throwIfAborted();
 
-    const started = await launchArchitect(launchHc, request, prepared, state.ticketPath);
+    const started = await launchArchitect(launchHc, request, prepared, fence);
 
-    await applyLaunchOutcome(request, claim.token, started, state);
+    await applyLaunchOutcome(request, fence, started);
 
     const result = launchResult(prepared);
 
-    await finishLaunch(request, claim, state);
+    // applyLaunchOutcome returns only after the child adopted the claim or another holder took it.
+    await fence.finish({ adopted: true, stopAttempted: false });
 
     return result;
   } catch (error) {
-    await abandonTicket(request, claim.token, state);
+    const abandoned = await fence.abandon();
 
-    const kept = await finishLaunch(request, claim, state);
+    const finished = await fence.finish({ adopted: abandoned.takenOver, stopAttempted: false });
 
-    if (kept) {
+    if (finished.kept) {
       throw openKeptClaimError(request.root);
     }
 

@@ -88,6 +88,7 @@ const pureModules = [
   'src/extensions/architect/queuedHandover.ts',
   'src/extensions/architect/readFailureDecision.ts',
   'src/extensions/architect/shutdownDecision.ts',
+  'src/extensions/architect/startFence/startFenceDecision.ts',
   'src/extensions/architect/startTicket/startTicketDecision.ts',
   'src/extensions/askUserQuestion/layout.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',

@@ -9,14 +9,14 @@ import { takeStartTicket, useFakeStartProcess } from '../../../../tests/startTic
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
+import { askArchitect } from './ask.js';
+import type { AskRequest } from './ask.js';
 import {
-  askArchitect,
   askKeptClaimMessage,
   askLaunchFailureDetail,
   askUnconfirmedStopDetail,
   askWaitFailureDetail,
-} from './ask.js';
-import type { AskRequest } from './ask.js';
+} from './askHiddenRun.js';
 import {
   ask,
   details,

@@ -17,7 +17,7 @@ import {
 } from '../record.js';
 import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
 import { createArchitectTool } from '../tool.js';
-import { askDeadlineSeconds } from './ask.js';
+import { askDeadlineSeconds } from './askHiddenRun.js';
 
 const hiddenAsk = (
   askId: string,
