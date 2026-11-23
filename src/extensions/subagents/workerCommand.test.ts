@@ -16,7 +16,7 @@ afterEach(() => {
 
 const agentDirectory = '/agent';
 const sessionFile = '/records/session.jsonl';
-const scratchDirectory = '/agent/tmp/tau-worker-scratch/one';
+const scratchDirectory = '/agent/tmp/ws/3f9a2c1d';
 const assignmentFolder = '/agent/tau/checkout/assignments/one';
 
 const environmentFor = (input: NodeJS.ProcessEnv) =>

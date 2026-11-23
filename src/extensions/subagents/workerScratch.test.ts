@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -11,6 +19,34 @@ import {
   scratchDirectoryFor,
   scratchRootFor,
 } from './workerScratch.js';
+
+const assignmentId = '3f9a2c1d-0000-4000-8000-000000000000';
+
+// Chrome appends this suffix to TMPDIR for its singleton socket.
+const chromeSingletonSocketSuffix = '/com.google.Chrome.XXXXXX/SingletonSocket';
+// macOS limits a Unix socket path to 103 bytes, the stricter bound Tau uses.
+const unixSocketPathLimit = 103;
+
+const socketPathFor = (agentDirectory: string): string =>
+  `${scratchDirectoryFor(agentDirectory, assignmentId)}${chromeSingletonSocketSuffix}`;
+
+it.each([
+  { agentDirectory: '/home/sqve/.pi/agent', byteLength: 20 },
+  { agentDirectory: '/home/sqve/.pi/agent'.padEnd(46, 'x'), byteLength: 46 },
+])(
+  'keeps the Chrome socket path within the Unix limit for a $byteLength-byte agent directory',
+  ({ agentDirectory, byteLength }) => {
+    expect(Buffer.byteLength(agentDirectory)).toBe(byteLength);
+
+    expect(Buffer.byteLength(socketPathFor(agentDirectory))).toBeLessThanOrEqual(
+      unixSocketPathLimit,
+    );
+  },
+);
+
+it('names the scratch folder with the assignment short id', () => {
+  expect(scratchDirectoryFor('/agent', assignmentId)).toBe('/agent/tmp/ws/3f9a2c1d');
+});
 
 it.each(['', '.', '..', 'a/b'])(
   'refuses to remove a scratch name that escapes the root: %s',
@@ -61,7 +97,7 @@ it.each(['root', 'tmp'] as const)(
       symlinkSync(elsewhere, scratchRootFor(agentDirectory));
     }
 
-    const rootName = redirected === 'tmp' ? 'tmp' : 'tau-worker-scratch';
+    const rootName = redirected === 'tmp' ? 'tmp' : 'ws';
 
     await expect(
       createScratchDirectory(agentDirectory, '11111111-1111-1111-1111-111111111111'),
@@ -74,9 +110,27 @@ it.each(['root', 'tmp'] as const)(
 it('creates a private scratch folder under a missing root', async () => {
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-new-');
 
-  await createScratchDirectory(agentDirectory, 'one');
+  const created = await createScratchDirectory(agentDirectory, 'one');
 
+  expect(created).toBe(true);
   expect(existsSync(scratchDirectoryFor(agentDirectory, 'one'))).toBe(true);
+  expect(await createScratchDirectory(agentDirectory, 'one')).toBe(false);
+});
+
+it('refuses a regular file at the scratch folder path', async () => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-file-');
+  const leaf = scratchDirectoryFor(realpathSync(agentDirectory), 'one');
+
+  mkdirSync(scratchRootFor(realpathSync(agentDirectory)), { recursive: true });
+  writeFileSync(leaf, 'not a directory');
+
+  await expect(createScratchDirectory(agentDirectory, 'one')).rejects.toThrow(
+    `Scratch path ${leaf} is not a directory.`,
+  );
+
+  const entry = statSync(leaf);
+
+  expect(entry.isFile()).toBe(true);
 });
 
 it('treats a missing scratch folder as removed', async () => {
@@ -93,12 +147,27 @@ it('keeps the launch error and adds the scratch cleanup error', async () => {
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-error-');
   const original = new Error('launch failure');
 
-  const clean = await errorAfterScratchCleanup(agentDirectory, 'one', original);
-  const refused = await errorAfterScratchCleanup(agentDirectory, '..', original);
+  const clean = await errorAfterScratchCleanup(agentDirectory, 'one', true, original);
+  const refused = await errorAfterScratchCleanup(agentDirectory, '..', true, original);
 
   expect(clean).toBe(original);
   expect(refused).toBeInstanceOf(Error);
   expect((refused as Error).message).toContain('launch failure');
   expect((refused as Error).message).toContain('Also failed to remove the worker scratch folder');
   expect((refused as Error).cause).toBe(original);
+});
+
+it('keeps an existing folder when the launch did not create it', async () => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scratch-existing-');
+  const folder = scratchDirectoryFor(agentDirectory, 'one');
+  const marker = join(folder, 'keep.txt');
+  const original = new Error('launch failure');
+
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(marker, 'keep');
+
+  const error = await errorAfterScratchCleanup(agentDirectory, 'one', false, original);
+
+  expect(error).toBe(original);
+  expect(existsSync(marker)).toBe(true);
 });

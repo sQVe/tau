@@ -25,7 +25,7 @@ import type {
   WorkerTerminalFact,
 } from './workerFolderDecision.js';
 import { assignmentPrefixFromName } from './workerName.js';
-import { removeScratchDirectory, scratchRootFor } from './workerScratch.js';
+import { removeScratchFolder, scratchRootFor } from './workerScratch.js';
 
 export interface WorkerFolderSweep {
   removed: string[];
@@ -212,7 +212,7 @@ const removeDecidedFolders = async (
   const snapshotRoot = snapshotRootFor(agentDirectory);
 
   const scratchErrors = await Promise.all(
-    decision.scratch.map((name) => removeScratchDirectory(agentDirectory, name)),
+    decision.scratch.map((name) => removeScratchFolder(agentDirectory, name)),
   );
 
   const snapshotErrors = await Promise.all(

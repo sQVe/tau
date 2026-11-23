@@ -1,15 +1,16 @@
-import { mkdir, realpath, rm } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { errorMessage, isMissingFile } from '../../errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from '../../errors.js';
+import { assignmentShortId } from './workerName.js';
 
-const scratchRootName = 'tau-worker-scratch';
+const scratchRootName = 'ws';
 
 export const scratchRootFor = (agentDirectory: string): string =>
   join(agentDirectory, 'tmp', scratchRootName);
 
 export const scratchDirectoryFor = (agentDirectory: string, assignmentId: string): string =>
-  join(scratchRootFor(agentDirectory), assignmentId);
+  join(scratchRootFor(agentDirectory), assignmentShortId(assignmentId));
 
 const refuseRedirected = async (folder: string, rootName: string): Promise<void> => {
   let canonical: string;
@@ -29,21 +30,40 @@ const refuseRedirected = async (folder: string, rootName: string): Promise<void>
   }
 };
 
-// A redirected root would put the folder where cleanup refuses to remove it.
+// A redirected root would put the folder where cleanup refuses to remove it. Returns true when this
+// call created the leaf, so the caller removes only its own folder.
 export const createScratchDirectory = async (
   agentDirectory: string,
   assignmentId: string,
-): Promise<void> => {
+): Promise<boolean> => {
   const canonicalAgent = await realpath(agentDirectory);
   const temporaryFolder = join(canonicalAgent, 'tmp');
+  const root = join(temporaryFolder, scratchRootName);
 
   await refuseRedirected(temporaryFolder, 'tmp');
-  await refuseRedirected(join(temporaryFolder, scratchRootName), scratchRootName);
+  await refuseRedirected(root, scratchRootName);
 
-  await mkdir(join(temporaryFolder, scratchRootName, assignmentId), {
-    recursive: true,
-    mode: 0o700,
-  });
+  await mkdir(root, { recursive: true, mode: 0o700 });
+
+  const leaf = join(root, assignmentShortId(assignmentId));
+
+  try {
+    await mkdir(leaf, { mode: 0o700 });
+
+    return true;
+  } catch (error) {
+    if (!hasErrorCode(error, 'EEXIST')) {
+      throw error;
+    }
+
+    const entry = await lstat(leaf);
+
+    if (!entry.isDirectory()) {
+      throw new Error(`Scratch path ${leaf} is not a directory.`, { cause: error });
+    }
+
+    return false;
+  }
 };
 
 const isDotName = (name: string): boolean => name === '' || name === '.' || name === '..';
@@ -97,17 +117,28 @@ export const removeAgentTemporaryFolder = async (
   }
 };
 
+export const removeScratchFolder = (
+  agentDirectory: string,
+  folderName: string,
+): Promise<string | undefined> =>
+  removeAgentTemporaryFolder(agentDirectory, scratchRootName, folderName);
+
 export const removeScratchDirectory = (
   agentDirectory: string,
   assignmentId: string,
 ): Promise<string | undefined> =>
-  removeAgentTemporaryFolder(agentDirectory, scratchRootName, assignmentId);
+  removeScratchFolder(agentDirectory, assignmentShortId(assignmentId));
 
 export const errorAfterScratchCleanup = async (
   agentDirectory: string,
   assignmentId: string,
+  createdScratch: boolean,
   error: unknown,
 ): Promise<unknown> => {
+  if (!createdScratch) {
+    return error;
+  }
+
   const cleanupError = await removeScratchDirectory(agentDirectory, assignmentId);
 
   if (cleanupError === undefined) {

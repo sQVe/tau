@@ -21,6 +21,7 @@ import { savedAssignment } from './fixtures/deliveryManager.js';
 import type { StartingWorker } from './workerFolderDecision.js';
 import { sweepWorkerFolders } from './workerFolderSweep.js';
 import type { WorkerFolderSweep } from './workerFolderSweep.js';
+import { assignmentShortId } from './workerName.js';
 import { scratchRootFor } from './workerScratch.js';
 
 vi.mock(import('node:fs/promises'), { spy: true });
@@ -176,7 +177,7 @@ const saveAssignmentWithSnapshot = async (
 
 it('removes the scratch folder of a finished worker', async () => {
   const { agentDirectory, hc, scratchRoot, listTerminals } = setup();
-  const folder = makeFolder(scratchRoot, 'assignment-a');
+  const folder = makeFolder(scratchRoot, assignmentShortId('assignment-a'));
 
   listTerminals([{ assignmentId: 'assignment-a', state: 'finished' }]);
 
@@ -197,10 +198,22 @@ it('removes the scratch folder of a worker hc no longer lists', async () => {
   expect(existsSync(folder)).toBe(false);
 });
 
+it('removes a finished folder by the name it read', async () => {
+  const { agentDirectory, hc, scratchRoot, listTerminals } = setup();
+  const folder = makeFolder(scratchRoot, idA);
+
+  listTerminals([{ assignmentId: idA, state: 'finished' }]);
+
+  const result = await sweepAt(hc, agentDirectory, bornAt(folder) + 2 * minute, []);
+
+  expect(existsSync(folder)).toBe(false);
+  expect(result.removed).toEqual([folder]);
+});
+
 it('keeps the scratch folder of a running worker', async () => {
   const { agentDirectory, hc, scratchRoot, listTerminals } = setup();
   const runningId = await saveAssignmentWithSnapshot(agentDirectory, null);
-  const folder = makeFolder(scratchRoot, runningId);
+  const folder = makeFolder(scratchRoot, assignmentShortId(runningId));
 
   listTerminals([{ assignmentId: runningId, state: 'live' }]);
 
@@ -426,7 +439,7 @@ it('keeps a snapshot unused for just under a day', async () => {
 
 it('keeps the scratch folder of a starting launch', async () => {
   const { agentDirectory, hc, scratchRoot, listTerminals } = setup();
-  const folder = makeFolder(scratchRoot, 'assignment-starting');
+  const folder = makeFolder(scratchRoot, assignmentShortId('assignment-starting'));
 
   listTerminals([]);
 
@@ -606,7 +619,7 @@ it('does not read the assignment of a finished worker for its snapshot', async (
 it('keeps the scratch folder and snapshot of a running worker that hc ls lists without labels', async () => {
   const { agentDirectory, hc, scratchRoot, snapshotRoot, listTerminals } = setup();
   const runningId = await saveAssignmentWithSnapshot(agentDirectory, 'snapshot-used');
-  const scratch = makeFolder(scratchRoot, runningId);
+  const scratch = makeFolder(scratchRoot, assignmentShortId(runningId));
   const snapshot = makeFolder(snapshotRoot, 'snapshot-used');
 
   listTerminals([{ assignmentId: runningId, state: 'live' }]);
