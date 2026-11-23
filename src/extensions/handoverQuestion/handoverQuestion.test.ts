@@ -194,6 +194,27 @@ it('registers no tool when no handover sender starts the turn', async () => {
   expect(fake.calls).toHaveLength(0);
 });
 
+it('refuses to ask after switching to a branch with no sender', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const tool = await registeredTool({ exec: fake.exec });
+
+  vi.stubEnv('HC_TERMINAL_ID', 'worker-1');
+
+  const execution = tool.execute(
+    'call',
+    { question },
+    undefined,
+    undefined,
+    toolContext({ branch: branchWithoutSender, cwd: root }),
+  );
+
+  await expect(execution).rejects.toBeInstanceOf(Error);
+
+  expect(await askerRecords(root)).toEqual([]);
+  expect(fake.calls).toHaveLength(0);
+});
+
 it('refuses to ask without a terminal address', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();
@@ -309,7 +330,11 @@ it('asks the sender that starts the turn with a custom message', async () => {
     { question },
     undefined,
     undefined,
-    toolContext({ branch: branchWithoutSender, cwd: root, sessionId: askerSession }),
+    toolContext({
+      branch: handoverBranch('lead-1', eventReceiver.sessionId),
+      cwd: root,
+      sessionId: askerSession,
+    }),
   );
 
   const firstDetails = first.details as QuestionOutcome;

@@ -37,11 +37,7 @@ const senderAtStart = (
   return senderFrom(withEventText);
 };
 
-const registerQuestionTool = (
-  pi: ExtensionAPI,
-  hc: HcRuntime,
-  startSender: () => HandoverSender | undefined,
-): void => {
+const registerQuestionTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
   pi.registerTool({
     name: 'handover_question',
     exposure: 'model-only',
@@ -50,7 +46,7 @@ const registerQuestionTool = (
     promptSnippet: 'Ask the lead that sent this handover; the answer arrives as a new message.',
     parameters: questionParameters,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      const sender = senderOf(context) ?? startSender();
+      const sender = senderOf(context);
 
       if (sender === undefined) {
         throw new Error('This session has no handover sender to ask.');
@@ -81,20 +77,15 @@ export default function handoverQuestionExtension(pi: ExtensionAPI): void {
 
   const hc: HcRuntime = { exec: piExec(pi), connect, cwd: process.cwd() };
   let registered = false;
-  let startSender: HandoverSender | undefined;
 
   pi.on('before_agent_start', (event, context) => {
     const sender = senderAtStart(context, event);
-
-    if (sender !== undefined) {
-      startSender = sender;
-    }
 
     if (registered || currentRole() !== 'lead' || sender === undefined) {
       return;
     }
 
     registered = true;
-    registerQuestionTool(pi, hc, () => startSender);
+    registerQuestionTool(pi, hc);
   });
 }
