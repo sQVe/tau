@@ -2,6 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
+import {
+  decodedComponent,
+  headingSlugs,
+  readDestination,
+} from '../src/instructions/markdownLinks.js';
+
 export type DocumentProblemKind =
   | 'broken-link'
   | 'missing-heading'
@@ -49,13 +55,10 @@ const inlineLink =
 const htmlCommentBlock = /^ {0,3}<!--[\s\S]*?(?:-->|(?![\s\S]))/gm;
 
 const referenceDefinition = /^ {0,3}\[[^\]]+\]:[ \t]*(?:<([^>\n]*)>|(\S+))/gm;
-const externalTarget = /^[a-z][a-z\d+.-]*:/i;
 const atxHeading = /^ {0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/;
 const setextUnderline = /^ {0,3}(?:=+|-+)[ \t]*$/;
 const paragraphLine = /^ {0,3}(?![#>|*+-]|\d+[.)][ \t])\S/;
 const frontmatter = /^---\n[\s\S]*?\n---\n/;
-const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
-const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 const notPathCharacter = /[\s<>*?$~{}[\]:@|"'=,()]/;
 
 // The changelog records history, so it may name paths that no longer exist.
@@ -101,77 +104,36 @@ const headingsOf = (markdown: string) => {
   });
 };
 
-// GitHub keeps the rendered text of a heading, so code and link markup do not reach the slug.
-const slugOf = (heading: string) =>
-  heading
-    .replaceAll(headingLink, '$1')
-    .replaceAll('`', '')
-    .trim()
-    .toLowerCase()
-    .replaceAll(notSlugCharacter, '')
-    .replaceAll(' ', '-');
-
-// GitHub numbers repeated slugs from the second one on and skips numbers another heading already
-// took: `Notes`, `Notes`, `Notes-1` give `notes`, `notes-1`, `notes-1-1`.
-const headingSlugs = (markdown: string): Set<string> => {
-  const counts = new Map<string, number>();
-  const slugs = new Set<string>();
-
-  for (const heading of headingsOf(markdown)) {
-    const base = slugOf(heading);
-    let slug = base;
-
-    while (slugs.has(slug)) {
-      const count = (counts.get(base) ?? 0) + 1;
-
-      counts.set(base, count);
-      slug = `${base}-${count}`;
-    }
-
-    slugs.add(slug);
-  }
-
-  return slugs;
-};
-
-const decoded = (text: string) => {
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return undefined;
-  }
-};
-
 const targetProblem = (
   file: string,
   markdown: string,
   target: string,
   files: Files,
 ): LinkProblem | undefined => {
-  const fragmentStart = target.indexOf('#');
-  const encodedReference = fragmentStart === -1 ? target : target.slice(0, fragmentStart);
-  const queryStart = encodedReference.indexOf('?');
-  const encodedPath = queryStart === -1 ? encodedReference : encodedReference.slice(0, queryStart);
-  const path = decoded(encodedPath);
+  const destination = readDestination(target);
 
-  if (path === undefined) {
+  if (destination.kind === 'external') {
+    return undefined;
+  }
+
+  if (destination.kind === 'undecodable') {
     return { kind: 'broken-link', detail: `links to undecodable ${target}` };
   }
 
-  const targetFile = path === '' ? file : resolve(dirname(file), path);
+  const targetFile = destination.path === '' ? file : resolve(dirname(file), destination.path);
 
   if (!files.exists(targetFile)) {
     return { kind: 'broken-link', detail: `links to missing ${target}` };
   }
 
-  if (fragmentStart === -1 || extname(targetFile) !== '.md') {
+  if (destination.fragment === undefined || extname(targetFile) !== '.md') {
     return undefined;
   }
 
-  const fragment = decoded(target.slice(fragmentStart + 1));
-  const targetMarkdown = path === '' ? markdown : files.readMarkdown(targetFile);
+  const fragment = decodedComponent(destination.fragment);
+  const targetMarkdown = destination.path === '' ? markdown : files.readMarkdown(targetFile);
 
-  if (fragment !== undefined && headingSlugs(targetMarkdown).has(fragment)) {
+  if (fragment !== undefined && headingSlugs(headingsOf(targetMarkdown)).has(fragment)) {
     return undefined;
   }
 
@@ -183,9 +145,9 @@ export const linkProblems = (file: string, markdown: string, files: Files): Link
     .replaceAll(htmlCommentBlock, '')
     .replaceAll(inlineCode, '');
 
-  return linkTargets(linkableMarkdown)
-    .filter((target) => !externalTarget.test(target))
-    .flatMap((target) => targetProblem(file, markdown, target, files) ?? []);
+  return linkTargets(linkableMarkdown).flatMap(
+    (target) => targetProblem(file, markdown, target, files) ?? [],
+  );
 };
 
 export const diskFiles: Files = {

@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
-import { join, posix } from 'node:path';
+import { join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
+import { checkGuideLinks } from './guideLinks.js';
+import type { LinkProblem } from './guideLinks.js';
 import { readRegularFile } from './regularFile.js';
 import { parseSyncRecord } from './syncRecord.js';
 import type { SyncRecord } from './syncRecord.js';
@@ -21,15 +23,12 @@ type TextRead = { text: string; bytes: Uint8Array } | { reason: string };
 const recordName = '.sync-record.toml';
 const fix = 'run stomme sync';
 
-// Matches the spans that are not rendered as a link, in document order, so one span cannot hide
-// another: a fence inside an HTML comment stays comment text, and a link after it still renders.
-// Inline code ends at a blank line or a fence, so it cannot reach into a later block. The last two
-// alternatives capture an inline link target and a reference definition target. A definition is the
-// target alone, with an optional title, to the end of the line; other text after a label is prose.
-const markdownToken =
-  /<!--[\s\S]*?(?:-->|(?![\s\S]))|^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^[ \t]*\1[`~]*[ \t]*$|(?![\s\S]))|(`+)(?:(?!\n[ \t]*(?:\n|`{3,}|~{3,}))[\s\S])*?\2|\]\(\s*(?:<([^>\n]*)>|((?:[^()\s]|\([^()\s]*\))+))|^ {0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:\n[ \t]*)?(?:<([^>\n]*)>|(\S+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/gm;
-
-const urlScheme = /^[a-z][a-z\d+.-]*:/i;
+const linkProblemText: Readonly<Record<LinkProblem, string>> = {
+  undecodable: 'cannot be decoded',
+  'leaves-folder': 'leaves the synced folder',
+  'not-synced': 'is not a synced file',
+  'missing-heading': 'names a missing heading',
+};
 
 const broken = (reason: string): SyncedGuides => ({ kind: 'broken', reason });
 
@@ -108,51 +107,21 @@ const readGuide = async (
   return read;
 };
 
-const linkTargets = (markdown: string): string[] =>
-  [...markdown.replaceAll('\r\n', '\n').matchAll(markdownToken)].flatMap((match) => {
-    const inlineTarget = match[3] ?? match[4];
-    const definitionTarget = match[5] ?? match[6];
-
-    return inlineTarget ?? definitionTarget ?? [];
-  });
-
-const linkProblem = (
-  path: string,
-  target: string,
-  recorded: ReadonlyMap<string, string>,
-): string | undefined => {
-  const [targetPath = ''] = target.split(/[?#]/u);
-
-  if (targetPath === '' || urlScheme.test(target)) {
-    return undefined;
-  }
-
-  const resolved = posix.normalize(posix.join(posix.dirname(path), targetPath));
-
-  const leavesFolder =
-    targetPath.startsWith('/') || resolved === '..' || resolved.startsWith('../');
-
-  if (leavesFolder) {
-    return `links to ${target}, which leaves the synced folder`;
-  }
-
-  return recorded.has(resolved) ? undefined : `links to ${target}, which is not a synced file`;
-};
-
 const firstLinkProblem = (
   directory: string,
   files: ReadonlyMap<string, string>,
 ): string | undefined => {
-  for (const [path, text] of files) {
-    const targets = path.endsWith('.md') ? linkTargets(text) : [];
-    const problem = targets.map((target) => linkProblem(path, target, files)).find(Boolean);
+  const check = checkGuideLinks(files);
 
-    if (problem !== undefined) {
-      return `${join(directory, path)} ${problem}; ${fix}`;
-    }
+  if (check.kind === 'valid') {
+    return undefined;
   }
 
-  return undefined;
+  if (check.kind === 'unreadable') {
+    return `${join(directory, check.path)} cannot be read as Markdown: ${errorMessage(check.error)}`;
+  }
+
+  return `${join(directory, check.path)} links to ${check.target}, which ${linkProblemText[check.problem]}; ${fix}`;
 };
 
 const readRecordedGuides = async (
