@@ -305,6 +305,7 @@ const startAssignmentWorker = async (
   const labels: Record<string, string> = {
     'tau.assignment': join(assignmentDirectory(assignment.assignmentId), 'assignment.json'),
     'tau.profile': assignment.profile,
+    'tau.role': 'worker',
     'tau.model': assignment.loadout.model,
     'tau.deadline': String(assignment.deadline),
     'tau.task': shortTask(facts.task, facts.label),
