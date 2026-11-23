@@ -1,5 +1,4 @@
-import { kill, wait } from '../../../hc/hc.js';
-import type { HcRuntime } from '../../../hc/hc.js';
+import { stopStartedChild } from '../startTicket/stopStartedChild.js';
 import { claimReleaseDecision } from './claimReleaseDecision.js';
 import type { ClaimReleaseFacts } from './claimReleaseDecision.js';
 
@@ -7,63 +6,49 @@ export interface ClaimReleaseRequest {
   claim: { release: () => Promise<void> };
   ticket: ClaimReleaseFacts['ticket'];
   adopted: boolean;
-  terminal: string | undefined;
-  terminalState: ClaimReleaseFacts['terminal'];
-  hc: HcRuntime;
+  child: ClaimReleaseFacts['child'];
+  processId: number | undefined;
+  stopAttempted?: boolean;
 }
 
-const claimStopSeconds = 10;
+export interface ClaimReleaseResult {
+  kept: boolean;
+  child: ClaimReleaseFacts['child'];
+}
 
-const withoutSignal = (hc: HcRuntime): HcRuntime => ({ ...hc, signal: undefined });
+// Releases the claim only when the process that took the ticket is gone. A running or unknown
+// child keeps the claim and the marker.
+export const releaseClaim = async (request: ClaimReleaseRequest): Promise<ClaimReleaseResult> => {
+  const decide = (child: ClaimReleaseFacts['child'], stopAttempted: boolean) =>
+    claimReleaseDecision({
+      ticket: request.ticket,
+      adopted: request.adopted,
+      child,
+      stopAttempted,
+    });
 
-// Releases the claim only when no Pi can still take it over. A live terminal is stopped and waited
-// on first. An unknown or still-live terminal keeps the claim.
-export const releaseClaim = async (request: ClaimReleaseRequest): Promise<boolean> => {
-  const first = claimReleaseDecision({
-    ticket: request.ticket,
-    adopted: request.adopted,
-    terminal: request.terminalState,
-    stopAttempted: false,
-  });
+  const first = decide(request.child, request.stopAttempted ?? false);
 
   if (first === 'release') {
     await request.claim.release();
 
-    return false;
+    return { kept: false, child: request.child };
   }
 
-  if (first === 'keep' || request.terminal === undefined) {
-    return true;
+  if (first === 'keep') {
+    return { kept: true, child: request.child };
   }
 
-  const hc = withoutSignal(request.hc);
+  const child =
+    request.processId === undefined ? 'unknown' : await stopStartedChild(request.processId);
 
-  await kill(hc, request.terminal).catch(() => undefined);
-
-  let ended: boolean;
-
-  try {
-    const waited = await wait(hc, request.terminal, { timeout: claimStopSeconds });
-
-    ended = waited.ended;
-  } catch {
-    return true;
-  }
-
-  const terminal = ended ? 'ended' : 'live';
-
-  const second = claimReleaseDecision({
-    ticket: request.ticket,
-    adopted: request.adopted,
-    terminal,
-    stopAttempted: true,
-  });
+  const second = decide(child, true);
 
   if (second === 'release') {
     await request.claim.release();
 
-    return false;
+    return { kept: false, child };
   }
 
-  return true;
+  return { kept: true, child };
 };

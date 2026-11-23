@@ -7,7 +7,6 @@ const facts = (overrides: Partial<LaunchOutcomeFacts>): LaunchOutcomeFacts => ({
   exitCode: 0,
   killed: false,
   aborted: false,
-  timedOut: false,
   replyTerminal: 'valid',
   ...overrides,
 });
@@ -31,11 +30,6 @@ it.each<{ name: string; facts: LaunchOutcomeFacts; expected: LaunchOutcome }>([
   {
     name: 'an aborted launch client',
     facts: facts({ aborted: true, replyTerminal: 'missing' }),
-    expected: 'notCreated',
-  },
-  {
-    name: 'a timed-out launch client',
-    facts: facts({ timedOut: true, replyTerminal: 'missing' }),
     expected: 'notCreated',
   },
   {

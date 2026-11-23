@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import type { ArchitectOwner } from '../record.js';
 import {
   askDeadlineAction,
-  askOutcome,
+  askRecordOutcome,
   askRoute,
   askTransition,
   staleAskRepair,
@@ -13,36 +13,31 @@ import type { AskRouteFacts } from './askDecision.js';
 it.each([
   {
     name: 'a sent answer is answered',
-    facts: { status: 'sent', ended: true, exitCode: 0 },
+    facts: { status: 'sent', answer: 'Use --quick.' },
     expected: 'answered',
   },
   {
-    name: 'a deadline is needsOpen',
-    facts: { status: 'timeout', ended: false, exitCode: null },
-    expected: 'needsOpen',
+    name: 'a sent record without an answer is kept',
+    facts: { status: 'sent', answer: null },
+    expected: 'kept',
   },
   {
-    name: 'a running ask that has not ended is needsOpen',
-    facts: { status: 'running', ended: false, exitCode: null },
-    expected: 'needsOpen',
-  },
-  {
-    name: 'an ask that ended without sending is needsOpen',
-    facts: { status: 'running', ended: true, exitCode: 0 },
-    expected: 'needsOpen',
+    name: 'a deadline is a deadline outcome',
+    facts: { status: 'timeout', answer: null },
+    expected: 'deadline',
   },
   {
     name: 'a failed ask is failed',
-    facts: { status: 'failed', ended: true, exitCode: 1 },
+    facts: { status: 'failed', answer: null },
     expected: 'failed',
   },
   {
-    name: 'an ask that ended on a failure is failed',
-    facts: { status: 'running', ended: true, exitCode: 1 },
-    expected: 'failed',
+    name: 'a running ask is kept',
+    facts: { status: 'running', answer: null },
+    expected: 'kept',
   },
 ] as const)('$name', ({ facts, expected }) => {
-  expect(askOutcome(facts)).toBe(expected);
+  expect(askRecordOutcome(facts)).toBe(expected);
 });
 
 const owner = (overrides: Partial<ArchitectOwner> = {}): ArchitectOwner => ({
@@ -289,23 +284,53 @@ it.each([
 
 it.each([
   {
-    name: 'a running ask whose terminal ended repairs',
-    facts: { status: 'running', terminalState: 'ended' },
+    name: 'a running ask whose recorded terminal ended repairs',
+    facts: {
+      status: 'running',
+      terminalState: 'ended',
+      recordTerminal: 't-ask',
+      endedTerminal: 't-ask',
+    },
     expected: 'repair',
   },
   {
     name: 'a running ask whose terminal is live leaves it',
-    facts: { status: 'running', terminalState: 'live' },
+    facts: {
+      status: 'running',
+      terminalState: 'live',
+      recordTerminal: 't-ask',
+      endedTerminal: 't-ask',
+    },
     expected: 'leave',
   },
   {
-    name: 'a running ask whose terminal is unread leaves it',
-    facts: { status: 'running', terminalState: 'unread' },
+    name: 'a running ask whose recorded terminal changed leaves it',
+    facts: {
+      status: 'running',
+      terminalState: 'ended',
+      recordTerminal: 't-old',
+      endedTerminal: 't-new',
+    },
+    expected: 'leave',
+  },
+  {
+    name: 'a running ask without a recorded terminal leaves it',
+    facts: {
+      status: 'running',
+      terminalState: 'ended',
+      recordTerminal: null,
+      endedTerminal: 't-ask',
+    },
     expected: 'leave',
   },
   {
     name: 'a sent ask whose terminal ended leaves it',
-    facts: { status: 'sent', terminalState: 'ended' },
+    facts: {
+      status: 'sent',
+      terminalState: 'ended',
+      recordTerminal: 't-ask',
+      endedTerminal: 't-ask',
+    },
     expected: 'leave',
   },
 ] as const)('stale ask repair: $name', ({ facts, expected }) => {

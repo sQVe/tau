@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
@@ -57,10 +58,9 @@ it('an abort during the poll stops the terminal, releases the claim, and rejects
   const { app, hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
   const controller = new AbortController();
   const cancellation = new Error('cancelled during the poll');
+  const processControl = useFakeStartProcess(cleanup, 'running', true);
 
   await recordSession(root);
-  hc.reply('kill', JSON.stringify({ address: 't-architect', state: 'finished' }));
-  hc.reply('wait', endedWait('t-architect', true));
 
   const opening = openArchitect(
     requestFor(root, config.location, { ...runtime, signal: controller.signal }),
@@ -76,11 +76,8 @@ it('an abort during the poll stops the terminal, releases the claim, and rejects
 
   expect(failure).toBe(cancellation);
 
-  const kills = hc.calls
-    .filter((call) => call.commandArguments[0] === 'kill')
-    .map((call) => call.commandArguments);
-
-  expect(kills).toEqual([['kill', '--json', '--', 't-architect']]);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+  expect(processControl.signals).toEqual(['SIGTERM']);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
@@ -91,9 +88,8 @@ it('an abort during the poll keeps the claim and throws the kept-claim message w
   const { app, hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
   const controller = new AbortController();
 
+  useFakeStartProcess(cleanup, 'unknown');
   await recordSession(root);
-  hc.reply('kill', JSON.stringify({ address: 't-architect', state: 'finished' }));
-  hc.reply('wait', endedWait('t-architect', false));
 
   const opening = openArchitect(
     requestFor(root, config.location, { ...runtime, signal: controller.signal }),
@@ -109,6 +105,7 @@ it('an abort during the poll keeps the claim and throws the kept-claim message w
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toBe(openKeptClaimMessage(root));
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });
 

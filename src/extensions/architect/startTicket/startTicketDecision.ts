@@ -1,20 +1,24 @@
-export type StartTicketMarker = 'unused' | 'started';
+export type StartTicketMarker = 'unused' | 'started' | 'malformed';
 
-export type StartTicketTerminal = 'live' | 'ended' | 'unread' | 'none';
+type StartTicketChild = 'running' | 'gone' | 'unknown';
 
 export interface SweepFacts {
   marker: StartTicketMarker;
-  terminal: StartTicketTerminal;
+  child: StartTicketChild;
 }
 
-export type SweepAction = 'cancel' | 'deleteMarker' | 'refuse';
+export type SweepAction = 'cancel' | 'deleteMarker' | 'refuseRunning' | 'refuseMalformed';
 
-// A started marker proves the child took the ticket, not that Pi made a terminal. Only a terminal
-// seen to end proves no Pi can still run, so an unknown or absent terminal refuses.
+// A started marker proves the child took the ticket, not that Pi made a terminal. Only the kernel's
+// answer that the child is gone proves no Pi can still run.
 export const sweepAction = (facts: SweepFacts): SweepAction => {
   if (facts.marker === 'unused') {
     return 'cancel';
   }
 
-  return facts.terminal === 'ended' ? 'deleteMarker' : 'refuse';
+  if (facts.marker === 'malformed') {
+    return 'refuseMalformed';
+  }
+
+  return facts.child === 'gone' ? 'deleteMarker' : 'refuseRunning';
 };

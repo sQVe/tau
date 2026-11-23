@@ -1,12 +1,11 @@
 import type { ArchitectOwner, AskStatus } from '../record.js';
 
-export interface AskOutcomeFacts {
+export interface AskRecordOutcomeFacts {
   status: AskStatus;
-  ended: boolean;
-  exitCode: number | null;
+  answer: string | null;
 }
 
-export type AskOutcome = 'answered' | 'needsOpen' | 'failed';
+export type AskRecordOutcome = 'answered' | 'deadline' | 'failed' | 'kept';
 
 export type ArchitectPublication =
   | { kind: 'none' }
@@ -38,6 +37,8 @@ export type StaleAskRepair = 'repair' | 'leave';
 export interface StaleAskFacts {
   status: AskStatus;
   terminalState: 'live' | 'ended' | 'unread';
+  recordTerminal: string | null;
+  endedTerminal: string;
 }
 
 export type AskTransition = 'allowed' | 'refused';
@@ -51,26 +52,22 @@ export interface AskTransitionFacts {
 export const askTransition = (facts: AskTransitionFacts): AskTransition =>
   facts.current === 'running' ? 'allowed' : 'refused';
 
-// A sent answer is the only answered outcome. A timeout, or an ended ask that never sent, tells
-// the lead to open the architect. A terminal that failed on its own is failed.
-export const askOutcome = (facts: AskOutcomeFacts): AskOutcome => {
-  if (facts.status === 'sent') {
+// The locked record decides the result after the wait. A sent answer wins, a deadline is the
+// deadline outcome, and a running record means the claim was kept.
+export const askRecordOutcome = (facts: AskRecordOutcomeFacts): AskRecordOutcome => {
+  if (facts.status === 'sent' && facts.answer !== null) {
     return 'answered';
+  }
+
+  if (facts.status === 'timeout') {
+    return 'deadline';
   }
 
   if (facts.status === 'failed') {
     return 'failed';
   }
 
-  if (facts.status === 'timeout') {
-    return 'needsOpen';
-  }
-
-  if (!facts.ended) {
-    return 'needsOpen';
-  }
-
-  return facts.exitCode === 0 ? 'needsOpen' : 'failed';
+  return 'kept';
 };
 
 export const askRoute = (facts: AskRouteFacts): AskRoute => {
@@ -131,4 +128,8 @@ export const askDeadlineAction = (facts: AskDeadlineFacts): AskDeadlineAction =>
   facts.status === 'running' && facts.now >= facts.deadline ? 'expire' : 'wait';
 
 export const staleAskRepair = (facts: StaleAskFacts): StaleAskRepair =>
-  facts.status === 'running' && facts.terminalState === 'ended' ? 'repair' : 'leave';
+  facts.status === 'running' &&
+  facts.terminalState === 'ended' &&
+  facts.recordTerminal === facts.endedTerminal
+    ? 'repair'
+    : 'leave';

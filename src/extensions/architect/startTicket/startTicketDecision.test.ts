@@ -5,44 +5,39 @@ import type { SweepAction, SweepFacts } from './startTicketDecision.js';
 
 it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
   {
-    name: 'an unused ticket with a live terminal',
-    facts: { marker: 'unused', terminal: 'live' },
+    name: 'an unused ticket with a running child',
+    facts: { marker: 'unused', child: 'running' },
     expected: 'cancel',
   },
   {
-    name: 'an unused ticket with an ended terminal',
-    facts: { marker: 'unused', terminal: 'ended' },
+    name: 'an unused ticket with a gone child',
+    facts: { marker: 'unused', child: 'gone' },
     expected: 'cancel',
   },
   {
-    name: 'an unused ticket with an unread terminal',
-    facts: { marker: 'unused', terminal: 'unread' },
+    name: 'an unused ticket with an unknown child',
+    facts: { marker: 'unused', child: 'unknown' },
     expected: 'cancel',
   },
   {
-    name: 'an unused ticket with no terminal',
-    facts: { marker: 'unused', terminal: 'none' },
-    expected: 'cancel',
-  },
-  {
-    name: 'a started ticket with a live terminal',
-    facts: { marker: 'started', terminal: 'live' },
-    expected: 'refuse',
-  },
-  {
-    name: 'a started ticket with an ended terminal',
-    facts: { marker: 'started', terminal: 'ended' },
+    name: 'a started ticket whose process is gone',
+    facts: { marker: 'started', child: 'gone' },
     expected: 'deleteMarker',
   },
   {
-    name: 'a started ticket with an unread terminal',
-    facts: { marker: 'started', terminal: 'unread' },
-    expected: 'refuse',
+    name: 'a started ticket whose process runs',
+    facts: { marker: 'started', child: 'running' },
+    expected: 'refuseRunning',
   },
   {
-    name: 'a started ticket with no terminal',
-    facts: { marker: 'started', terminal: 'none' },
-    expected: 'refuse',
+    name: 'a started ticket whose process state is unknown',
+    facts: { marker: 'started', child: 'unknown' },
+    expected: 'refuseRunning',
+  },
+  {
+    name: 'a marker name without a process id',
+    facts: { marker: 'malformed', child: 'gone' },
+    expected: 'refuseMalformed',
   },
 ])('decides to $expected for $name', ({ facts, expected }) => {
   expect(sweepAction(facts)).toBe(expected);

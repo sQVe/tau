@@ -5,13 +5,18 @@ import { writeFile } from 'node:fs/promises';
 import { expect, it, vi } from 'vitest';
 
 import { argumentAfter, succeededResult } from '../../../../tests/execFake.js';
-import { runLaunchArgv, takeStartTicket } from '../../../../tests/startTicketFake.js';
+import {
+  fakeStartProcessId,
+  runLaunchArgv,
+  takeStartTicket,
+  useFakeStartProcess,
+} from '../../../../tests/startTicketFake.js';
 import { holdFileLock, readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { createStartTicket } from '../startTicket/startTicket.js';
-import { openArchitect, startingError } from './open.js';
+import { openArchitect } from './open.js';
 import type { OpenRequest } from './open.js';
 
 const requestFor = (
@@ -44,12 +49,13 @@ const claimTerminal = (address: string, token: string, state = 'live'): string =
     argv: ['env', `TAU_ARCHITECT_CLAIM=${token}`, 'pi'],
   });
 
-const startedMarker = async (root: string, token: string): Promise<string> => {
+const startedMarker = async (root: string, token: string, processId: number): Promise<string> => {
   const ticket = await createStartTicket(root, token);
+  const marker = `${ticket}.started.${processId}`;
 
-  await writeFile(`${ticket}.started`, '');
+  await writeFile(marker, '');
 
-  return `${ticket}.started`;
+  return marker;
 };
 
 it('never runs Pi when the server creates the terminal after the caller gave up', async ({
@@ -110,39 +116,35 @@ it('cancels a gone claim ticket and then starts', async ({ onTestFinished: clean
   expect(existsSync(gone)).toBe(false);
 });
 
-it('refuses while a started marker names a live terminal and releases its claim', async ({
+it('refuses while a started marker names a running process and releases its claim', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { hc, runtime, terminals } = openTool(root);
+  const { runtime } = openTool(root);
 
+  useFakeStartProcess(cleanup, 'running');
   await recordSession(root);
-  const marker = await startedMarker(root, 'gone');
-
-  hc.reply('ls', JSON.stringify({ terminals: [{ address: 't-gone', state: 'live' }] }));
-  terminals.set('t-gone', succeededResult(claimTerminal('t-gone', 'gone')));
+  const marker = await startedMarker(root, 'gone', fakeStartProcessId);
 
   const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
     (error: unknown) => error,
   );
 
   expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe(startingError(root).message);
+  expect((failure as Error).message).toContain(String(fakeStartProcessId));
   expect(existsSync(marker)).toBe(true);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('deletes a started marker whose terminal ended and then starts', async ({
+it('deletes a started marker whose process is gone and then starts', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { hc, runtime, terminals } = openTool(root);
+  const { runtime } = openTool(root);
 
+  useFakeStartProcess(cleanup, 'gone');
   await recordSession(root);
-  const marker = await startedMarker(root, 'gone');
-
-  hc.reply('ls', JSON.stringify({ terminals: [{ address: 't-gone', state: 'exited' }] }));
-  terminals.set('t-gone', succeededResult(claimTerminal('t-gone', 'gone', 'exited')));
+  const marker = await startedMarker(root, 'gone', fakeStartProcessId);
 
   const result = await openArchitect(requestFor(root, config.location, runtime));
 
@@ -150,67 +152,22 @@ it('deletes a started marker whose terminal ended and then starts', async ({
   expect(existsSync(marker)).toBe(false);
 });
 
-it('refuses and keeps a started marker whose terminal could not be read', async ({
-  onTestFinished: cleanup,
-}) => {
+it('refuses a malformed marker name and names its path', async ({ onTestFinished: cleanup }) => {
   const { root, config } = await setup(cleanup);
-  const { hc, runtime } = openTool(root);
+  const { runtime } = openTool(root);
+  const ticket = await createStartTicket(root, 'gone');
+  const marker = `${ticket}.started`;
 
+  await writeFile(marker, '');
   await recordSession(root);
-  const marker = await startedMarker(root, 'gone');
-  hc.fail('ls', 'hc ls failed', 1);
 
   const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
     (error: unknown) => error,
   );
 
   expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe(startingError(root).message);
+  expect((failure as Error).message).toContain(marker);
   expect(existsSync(marker)).toBe(true);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-});
-
-it('recovers an empty split terminal without an empty hc address', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root, config } = await setup(cleanup);
-
-  const { app, hc, runtime, terminals } = openTool(root, undefined, undefined, {
-    takeover: false,
-  });
-
-  app.overrideOutput('pane.split', '{"pane":"p-architect","terminal":""}');
-  await recordSession(root);
-  hc.reply('kill', JSON.stringify({ address: 't-architect', state: 'finished' }));
-  hc.reply('wait', endedWait('t-architect'));
-
-  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
-    const result = await runtime.exec(command, commandArguments, options);
-
-    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
-      const token = (await readLiveLockHolder(architectLockPath(root)))?.token ?? '';
-
-      hc.reply('ls', JSON.stringify({ terminals: [{ address: 't-architect', state: 'live' }] }));
-      terminals.set('t-architect', succeededResult(claimTerminal('t-architect', token)));
-    }
-
-    return result;
-  };
-
-  const failure = await openArchitect(
-    requestFor(root, config.location, { ...runtime, exec }),
-  ).catch((error: unknown) => error);
-
-  expect(failure).toBeInstanceOf(Error);
-  expect(hc.calls.filter((call) => call.commandArguments[0] === 'get')).not.toEqual([]);
-  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toHaveLength(1);
-
-  const addressedCalls = hc.calls.filter((call) =>
-    ['get', 'kill', 'wait', 'label', 'rm'].includes(call.commandArguments[0] ?? ''),
-  );
-
-  expect(addressedCalls.map((call) => call.commandArguments.at(-1))).not.toContain('');
-
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 

@@ -55,6 +55,10 @@ const splitReplySchema = Type.Object({
   terminal: Type.String({ minLength: 1 }),
 });
 
+const terminalReplySchema = Type.Object({
+  terminal: Type.String({ minLength: 1 }),
+});
+
 const argvOf = (request: PiSessionRequest, message: string | undefined): string[] => {
   const argv = piArguments({
     model: request.model,
@@ -225,11 +229,15 @@ const spaceTerminal = (
   label: string,
   reply: string,
 ): { terminal: string | undefined; error: unknown } => {
-  const terminal = replyTerminal(reply);
+  try {
+    const created = parseJson(label, reply);
 
-  return terminal === undefined
-    ? { terminal: undefined, error: new Error(`${label} printed no usable terminal address`) }
-    : { terminal, error: undefined };
+    checkOutput(label, terminalReplySchema, created);
+
+    return { terminal: created.terminal, error: undefined };
+  } catch (error) {
+    return { terminal: undefined, error };
+  }
 };
 
 const splitTerminal = (

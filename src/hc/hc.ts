@@ -54,7 +54,7 @@ const runHc = async <Command extends HcCommand>(
   command: Command,
   commandArguments: string[],
   label: string,
-  options: { timeout?: number } = {},
+  options: { timeout?: number | undefined } = {},
 ): Promise<HcCommandReply<Command>> => {
   let result: Awaited<ReturnType<Exec>>;
 
@@ -98,21 +98,19 @@ export const run = (runtime: HcRuntime, request: RunRequest): Promise<HcTerminal
     flags.push('--no-notify');
   }
 
-  const timeoutOptions = request.timeout === undefined ? {} : { timeout: request.timeout };
-
   return runHc(
     runtime,
     'run',
     ['run', '--json', ...flags, ...labelFlags(request.labels), '--', ...request.argv],
     'hc run',
-    timeoutOptions,
+    { timeout: request.timeout },
   );
 };
 
 export const get = (
   runtime: CommandRuntime,
   terminal: string,
-  options: { timeout?: number } = {},
+  options: { timeout?: number | undefined } = {},
 ): Promise<HcTerminal> =>
   runHc(runtime, 'get', ['get', '--json', '--', terminal], `hc get ${terminal}`, options);
 
@@ -162,7 +160,7 @@ export const label = (
   runtime: HcRuntime,
   terminal: string,
   labels: Record<string, string>,
-  options: { timeout?: number } = {},
+  options: { timeout?: number | undefined } = {},
 ): Promise<HcTerminal> => {
   const assignments = Object.entries(labels).map(([key, value]) => `${key}=${value}`);
 

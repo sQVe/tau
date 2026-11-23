@@ -1,13 +1,23 @@
+import { existsSync } from 'node:fs';
+import { readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
-import { takeStartTicket } from '../../../../tests/startTicketFake.js';
+import {
+  fakeStartProcessId,
+  takeStartTicket,
+  useFakeStartProcess,
+} from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { contextOf, holdAskLock, recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { readAskRecord, readAskRecords, writeAskRecord } from '../record.js';
+import type { HiddenAskRecord } from '../record.js';
+import { createStartTicket } from '../startTicket/startTicket.js';
 import { createArchitectTool } from '../tool.js';
 import {
   askArchitect,
@@ -140,6 +150,7 @@ it('keeps the record running and the claim live when a rejected wait terminal do
   const { root } = await setup(cleanup);
   const hc = startFake();
 
+  useFakeStartProcess(cleanup, 'running');
   await recordSession(root);
   hc.reply('wait', endedWait('t-ask', false));
 
@@ -158,6 +169,7 @@ it('a timeout whose terminal does not end returns the kept-claim message and kee
   const hc = startFake();
   let waits = 0;
 
+  useFakeStartProcess(cleanup, 'running');
   await recordSession(root);
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
@@ -174,7 +186,7 @@ it('a timeout whose terminal does not end returns the kept-claim message and kee
     details: { status: 'needsOpen', reason: askKeptClaimMessage(root) },
   });
 
-  expect(waits).toBe(2);
+  expect(waits).toBe(1);
   expect(await statuses(root)).toEqual(['running']);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });
@@ -216,69 +228,156 @@ it('stops the hidden terminal at its deadline and releases after it ends', async
     details: { status: 'needsOpen' },
   });
 
-  expect(waits).toBe(2);
+  expect(waits).toBe(1);
   expect(await statuses(root)).toEqual(['timeout']);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('finds an aborted launch by its ask label and keeps the claim until the terminal ends', async ({
+it('keeps the claim when an address-less launch child state is unknown', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
-  const waitEntered = Promise.withResolvers<undefined>();
-  const waitRelease = Promise.withResolvers<undefined>();
-  let waits = 0;
-  let runSignal: AbortSignal | undefined;
-  let listArguments: string[] | undefined;
 
+  useFakeStartProcess(cleanup, 'unknown');
   await recordSession(root);
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'run') {
-      runSignal = options?.signal;
       await takeStartTicket(commandArguments);
 
       return { code: 0, killed: true, truncated: false, stdout: '', stderr: '' };
     }
 
-    if (command === 'hc' && commandArguments[0] === 'ls') {
-      listArguments = [...commandArguments];
+    return hc.exec(command, commandArguments, options);
+  };
 
-      return succeededResult(JSON.stringify({ terminals: [{ address: 't-ask', state: 'live' }] }));
-    }
+  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
 
-    if (command === 'hc' && commandArguments[0] === 'wait') {
-      waits += 1;
+  expect(failure).toBeInstanceOf(Error);
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askLaunchFailureDetail);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 
-      if (waits === 1) {
-        waitEntered.resolve(undefined);
-        await waitRelease.promise;
-      }
+  const names = await readdir(join(root, '.tau', 'architect', 'start'));
 
-      return succeededResult(endedWait('t-ask', true));
+  expect(names.some((name) => name.includes('.started.'))).toBe(true);
+});
+
+it('releases the claim and deletes the marker when an address-less launch child is gone', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  useFakeStartProcess(cleanup, 'gone');
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      await takeStartTicket(commandArguments);
+
+      return { code: 0, killed: true, truncated: false, stdout: '', stderr: '' };
     }
 
     return hc.exec(command, commandArguments, options);
   };
 
-  const asking = ask({ ...hc, exec }, root);
+  await expect(ask({ ...hc, exec }, root)).rejects.toThrow(/hc run failed/u);
 
-  await waitEntered.promise;
-
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
-
-  expect(runSignal).toBeUndefined();
-  expect(listArguments).toContain('--label');
-  expect(await statuses(root)).toEqual(['running']);
-
-  waitRelease.resolve(undefined);
-
-  await expect(asking).resolves.toMatchObject({ details: { status: 'needsOpen' } });
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askLaunchFailureDetail);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await readdir(join(root, '.tau', 'architect', 'start'))).toEqual([]);
 });
 
-it('an abort before dispatch starts no launch and releases the claim', async ({
+const endedWithRecord = (
+  hc: HcFake,
+  root: string,
+  settle: (record: HiddenAskRecord) => HiddenAskRecord,
+) => {
+  let askId: string | undefined;
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      const result = await hc.exec(command, commandArguments, options);
+      const { records } = await readAskRecords(root);
+
+      askId = records[0]?.askId;
+
+      return result;
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'wait' && askId !== undefined) {
+      const record = await readAskRecord(root, askId);
+
+      if (record?.route === 'hidden') {
+        await writeAskRecord(root, settle(record));
+      }
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  return exec;
+};
+
+it('returns the deadline outcome and writes nothing after a child timeout ends the wait', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true));
+
+  const exec = endedWithRecord(hc, root, (record) => ({
+    ...record,
+    status: 'timeout',
+    detail: 'The child wrote the deadline first.',
+  }));
+
+  const result = await ask({ ...hc, exec }, root);
+
+  const { records } = await readAskRecords(root);
+  const askId = records[0]?.askId;
+
+  expect(result).toMatchObject({
+    details: {
+      status: 'needsOpen',
+      reason: 'The ask reached its deadline. Call architect open to talk to the architect.',
+    },
+  });
+
+  if (askId === undefined) {
+    throw new Error('The ask record was not written.');
+  }
+
+  expect(await readAskRecord(root, askId)).toMatchObject({
+    status: 'timeout',
+    detail: 'The child wrote the deadline first.',
+  });
+});
+
+it('returns the answer after a sent record ends the wait', async ({ onTestFinished: cleanup }) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true));
+
+  const exec = endedWithRecord(hc, root, (record) => ({
+    ...record,
+    status: 'sent',
+    answer: 'Use --quick.',
+  }));
+
+  await expect(ask({ ...hc, exec }, root)).resolves.toMatchObject({
+    details: { status: 'ended', answer: 'Use --quick.' },
+  });
+});
+
+it('an abort before dispatch cancels its ticket and releases the claim', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
@@ -301,7 +400,7 @@ it('an abort before dispatch starts no launch and releases the claim', async ({
   };
 
   const failure = await askArchitect(request, {
-    beforeLink: () => {
+    beforeDispatch: () => {
       controller.abort(cancellation);
 
       return Promise.resolve();
@@ -311,6 +410,7 @@ it('an abort before dispatch starts no launch and releases the claim', async ({
   expect(failure).toBe(cancellation);
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await readdir(join(root, '.tau', 'architect', 'start'))).toEqual([]);
 });
 
 it('keeps the record running with the unconfirmed-stop detail when the cleanup wait rejects', async ({
@@ -320,6 +420,7 @@ it('keeps the record running with the unconfirmed-stop detail when the cleanup w
   const hc = startFake();
   let waits = 0;
 
+  useFakeStartProcess(cleanup, 'running');
   await recordSession(root);
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
@@ -602,4 +703,86 @@ it('fails its own record and releases the claim after a real-shaped nonzero laun
   expect(await statuses(root)).toEqual(['failed']);
   expect(await details(root)).toEqual([askLaunchFailureDetail]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('deletes an orphaned marker whose process is gone and starts', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const ticket = await createStartTicket(root, 'gone');
+  const marker = `${ticket}.started.${fakeStartProcessId}`;
+
+  useFakeStartProcess(cleanup, 'gone');
+  hc.reply('wait', endedWait('t-ask', true));
+  await writeFile(marker, '');
+  await recordSession(root);
+
+  const result = await ask(hc, root);
+
+  expect(result).toMatchObject({ details: { status: 'needsOpen' } });
+  expect(existsSync(marker)).toBe(false);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toHaveLength(1);
+});
+
+it('refuses an orphaned marker whose process runs and names the process id', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const ticket = await createStartTicket(root, 'gone');
+  const marker = `${ticket}.started.${fakeStartProcessId}`;
+
+  useFakeStartProcess(cleanup, 'running');
+  await writeFile(marker, '');
+  await recordSession(root);
+
+  const result = await ask(hc, root);
+
+  expect(result).toMatchObject({ details: { status: 'needsOpen' } });
+  expect((result.details as { reason: string }).reason).toContain(String(fakeStartProcessId));
+  expect(existsSync(marker)).toBe(true);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('refuses a malformed orphaned marker and names the path', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const ticket = await createStartTicket(root, 'gone');
+  const marker = `${ticket}.started`;
+
+  await writeFile(marker, '');
+  await recordSession(root);
+
+  const result = await ask(hc, root);
+
+  expect(result).toMatchObject({ details: { status: 'needsOpen' } });
+  expect((result.details as { reason: string }).reason).toContain(marker);
+  expect(existsSync(marker)).toBe(true);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('bounds the hidden launch with the launch timeout', async ({ onTestFinished: cleanup }) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  let timeout: number | undefined;
+
+  hc.reply('wait', endedWait('t-ask', true));
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      timeout = options?.timeout;
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  await ask({ ...hc, exec }, root);
+
+  expect(timeout).toBe(30_000);
 });

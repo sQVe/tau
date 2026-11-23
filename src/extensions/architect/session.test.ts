@@ -877,8 +877,54 @@ it('an ask session writes nothing at the deadline for an already settled record'
 
   await vi.advanceTimersByTimeAsync(1);
 
+  await session?.deadline?.expiry();
+
   expect(await readAskRecord(root, hiddenIds.sent)).toMatchObject({ status: 'sent' });
   expect(shutdown).not.toHaveBeenCalled();
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+});
+
+it('an ask session rearms the deadline when the timer fires before the saved deadline', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const now = Date.now();
+  const deadline = now + 1000;
+
+  await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.running));
+
+  const { context, shutdown } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  vi.setSystemTime(now - 5000);
+
+  await vi.advanceTimersByTimeAsync(1000);
+  await session?.deadline?.expiry();
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
+  expect(shutdown).not.toHaveBeenCalled();
+
+  await vi.advanceTimersByTimeAsync(5000);
+  await session?.deadline?.expiry();
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
+  expect(shutdown).toHaveBeenCalledTimes(1);
 
   await endArchitectSession(
     session as NonNullable<typeof session>,

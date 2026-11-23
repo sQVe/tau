@@ -124,15 +124,11 @@ const expireAskRecord = async (path: string, context: ExtensionContext): Promise
       return undefined;
     }
 
-    const next = {
+    return {
       ...current,
       status: 'timeout' as const,
       detail: 'The ask reached its deadline before the architect answered.',
     };
-
-    return askTransition({ current: current.status, next: next.status }) === 'allowed'
-      ? next
-      : undefined;
   });
 
   if (change?.changed === true) {
@@ -153,16 +149,45 @@ const armAskDeadline = async (context: ExtensionContext): Promise<AskDeadline | 
     return undefined;
   }
 
-  const delay = Math.max(0, record.deadline - Date.now());
+  let timer: NodeJS.Timeout | undefined;
   let running: Promise<void> | undefined;
 
-  const timer = setTimeout(() => {
-    running = expireAskRecord(path, context).catch((error: unknown) => {
-      notifyOnce(context.ui, path, 'ask-deadline', errorMessage(error), 'error');
-    });
-  }, delay);
+  const schedule = (deadline: number): void => {
+    const delay = Math.max(0, deadline - Date.now());
 
-  return { timer, expiry: () => running };
+    timer = setTimeout(() => {
+      running = (async () => {
+        const current = await readAskRecordAt(path);
+
+        if (current?.route !== 'hidden') {
+          return;
+        }
+
+        if (current.status === 'running' && Date.now() < current.deadline) {
+          schedule(current.deadline);
+
+          return;
+        }
+
+        await expireAskRecord(path, context);
+      })().catch((error: unknown) => {
+        notifyOnce(context.ui, path, 'ask-deadline', errorMessage(error), 'error');
+      });
+    }, delay);
+  };
+
+  schedule(record.deadline);
+
+  return {
+    get timer(): NodeJS.Timeout {
+      if (timer === undefined) {
+        throw new Error('The ask deadline timer was not armed.');
+      }
+
+      return timer;
+    },
+    expiry: () => running,
+  };
 };
 
 const startArchitect = async (
@@ -181,7 +206,7 @@ const startArchitect = async (
     held.set(lock.token);
 
     if (claimToken !== undefined) {
-      await deleteStartMarker(root, claimToken).catch(() => undefined);
+      await deleteStartMarker(root, claimToken, process.pid).catch(() => undefined);
     }
 
     // oxlint-disable-next-line node/no-process-env -- A reload must not try to adopt the old claim again.

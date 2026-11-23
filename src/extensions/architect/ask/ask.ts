@@ -5,13 +5,13 @@ import { notifyOnce, userConfigPath } from '../../../config/config.js';
 import { readRoleModel } from '../../../config/roleModels.js';
 import { errorMessage } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { get, run, wait } from '../../../hc/hc.js';
+import { get, kill, run, wait } from '../../../hc/hc.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { piArguments } from '../../../piStart/piArguments.js';
 import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
+import { processState } from '../../../process/process.js';
 import { releaseClaim } from '../claimRelease/claimRelease.js';
 import type { ClaimReleaseFacts } from '../claimRelease/claimReleaseDecision.js';
-import { launchLookup, lookupLaunchTerminal } from '../claimRelease/launchLookup.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import type { LaunchOutcome } from '../claimRelease/launchOutcomeDecision.js';
 import type { LiveAskResult, StartLiveAsk } from '../liveAsk.js';
@@ -21,7 +21,6 @@ import {
   askRecordPath,
   changeAskRecord,
   readArchitectRecord,
-  readAskRecord,
   readAskRecords,
   writeAskRecord,
 } from '../record.js';
@@ -35,11 +34,14 @@ import {
   cancelStartTicket,
   createStartTicket,
   deleteStartMarker,
+  malformedStartMarkerReason,
+  readStartMarker,
+  startHeldByProcessReason,
   sweepStartFolder,
   wrapStartArgv,
 } from '../startTicket/startTicket.js';
-import type { StartTicketTerminal } from '../startTicket/startTicketDecision.js';
-import { askOutcome, askRoute, askTransition, staleAskRepair } from './askDecision.js';
+import type { StartSweepResult } from '../startTicket/startTicket.js';
+import { askRecordOutcome, askRoute, askTransition, staleAskRepair } from './askDecision.js';
 import type { ArchitectPublication } from './askDecision.js';
 
 export interface AskRequest {
@@ -63,7 +65,9 @@ export type AskResult =
 interface HiddenAskClaim {
   ticket: ClaimReleaseFacts['ticket'];
   terminal: string | undefined;
-  terminalState: ClaimReleaseFacts['terminal'];
+  processId: number | undefined;
+  child: ClaimReleaseFacts['child'];
+  stopAttempted: boolean;
   settled: boolean;
   kept: boolean;
 }
@@ -88,10 +92,17 @@ export const askUnconfirmedStopDetail =
 
 export const askLaunchFailureDetail = 'The ask terminal could not be started.';
 
-const askUnconfirmedLaunchDetail = 'The ask terminal launch could not be confirmed.';
-
 export const askWaitFailureDetail = (cancelled: boolean, error: unknown): string =>
   `The ask wait was ${cancelled ? 'cancelled' : 'failed'}: ${errorMessage(error)}`;
+
+const askDeadlineReason =
+  'The ask reached its deadline. Call architect open to talk to the architect.';
+
+const askEndedReason =
+  'The architect ended without sending an answer. Call architect open to talk to it.';
+
+const askFailedReason =
+  'The ask terminal failed before the architect answered. Call architect open instead.';
 
 const millisecondsPerSecond = 1000;
 
@@ -151,9 +162,16 @@ const liveRunningAsk = async (
 
   const terminalState = terminal.state === 'live' ? 'live' : 'ended';
 
-  if (staleAskRepair({ status: newest.status, terminalState }) === 'repair') {
+  const repair = staleAskRepair({
+    status: newest.status,
+    terminalState,
+    recordTerminal: newest.terminal,
+    endedTerminal: terminal.address,
+  });
+
+  if (repair === 'repair') {
     await changeHiddenAsk(root, newest.askId, (current) =>
-      current.status === 'running' && current.terminal === newest.terminal
+      current.status === 'running'
         ? {
             ...current,
             status: 'failed',
@@ -165,7 +183,7 @@ const liveRunningAsk = async (
     return undefined;
   }
 
-  return terminalState === 'live' ? newest : undefined;
+  return terminal.state === 'live' ? newest : undefined;
 };
 
 const requireModel = (request: AskRequest): string => {
@@ -222,7 +240,6 @@ const hiddenAskLaunch = async (
       exitCode: 0,
       killed: false,
       aborted: false,
-      timedOut: false,
       replyTerminal,
     });
 
@@ -238,6 +255,58 @@ const hiddenAskLaunch = async (
   }
 };
 
+const readLaunchedProcess = async (
+  root: string,
+  claimToken: string,
+): Promise<Pick<HiddenAskClaim, 'processId' | 'child'>> => {
+  const marker = await readStartMarker(root, claimToken);
+
+  return marker?.kind === 'process'
+    ? { processId: marker.pid, child: 'running' }
+    : { processId: undefined, child: 'unknown' };
+};
+
+const claimTakenOver = async (root: string, claimToken: string): Promise<boolean> => {
+  const holder = await readLiveLockHolder(architectLockPath(root));
+
+  return holder !== undefined && holder.token !== claimToken;
+};
+
+const stopAskTerminal = async (request: AskRequest, state: HiddenAskClaim): Promise<void> => {
+  if (state.terminal !== undefined) {
+    await kill({ ...request.hc, signal: undefined }, state.terminal).catch(() => undefined);
+  }
+
+  state.child = state.processId === undefined ? 'unknown' : processState(state.processId);
+  state.stopAttempted = true;
+};
+
+const resultFromRecord = (
+  root: string,
+  askId: string,
+  record: HiddenAskRecord | undefined,
+): AskResult => {
+  if (record === undefined) {
+    return needsOpen(askKeptClaimMessage(root));
+  }
+
+  const outcome = askRecordOutcome({ status: record.status, answer: record.answer });
+
+  if (outcome === 'answered' && record.answer !== null) {
+    return { status: 'ended', askId, answer: record.answer };
+  }
+
+  if (outcome === 'deadline') {
+    return needsOpen(askDeadlineReason);
+  }
+
+  if (outcome === 'failed') {
+    return { status: 'failed', askId, reason: askFailedReason };
+  }
+
+  return needsOpen(askKeptClaimMessage(root));
+};
+
 const settleWaitFailure = async (
   request: AskRequest,
   started: HiddenAskRecord,
@@ -247,7 +316,7 @@ const settleWaitFailure = async (
 ): Promise<never> => {
   const cancelled = request.hc.signal?.aborted === true;
 
-  state.terminalState = 'live';
+  await stopAskTerminal(request, state);
 
   const kept = await settle();
 
@@ -276,7 +345,7 @@ const settleTimeout = async (
   state: HiddenAskClaim,
   settle: SettleHiddenAskClaim,
 ): Promise<AskResult> => {
-  state.terminalState = 'live';
+  await stopAskTerminal(request, state);
 
   const kept = await settle();
   const status = kept ? 'running' : 'timeout';
@@ -285,10 +354,6 @@ const settleTimeout = async (
     ? askUnconfirmedStopDetail
     : 'The ask reached its deadline before the architect answered.';
 
-  const reason = kept
-    ? askKeptClaimMessage(request.root)
-    : 'The ask reached its deadline. Call architect open to talk to the architect.';
-
   const changed = await changeHiddenAsk(request.root, started.askId, (current) => ({
     ...current,
     status,
@@ -296,12 +361,13 @@ const settleTimeout = async (
   }));
 
   const current = changed?.record;
+  const record = current?.route === 'hidden' ? current : undefined;
 
-  if (current?.route === 'hidden' && current.status === 'sent' && current.answer !== null) {
-    return { status: 'ended', askId: started.askId, answer: current.answer };
+  if (record?.status === 'running') {
+    return needsOpen(askKeptClaimMessage(request.root));
   }
 
-  return needsOpen(reason);
+  return resultFromRecord(request.root, started.askId, record);
 };
 
 const abandonAskTicket = async (state: HiddenAskClaim, ticketPath: string): Promise<void> => {
@@ -333,7 +399,7 @@ const launchHiddenRecord = async (
   if (launched.outcome === 'created' && launched.terminal !== undefined) {
     state.ticket = 'taken';
     state.terminal = launched.terminal;
-    state.terminalState = 'live';
+    Object.assign(state, await readLaunchedProcess(request.root, claimToken));
 
     const started: HiddenAskRecord = { ...initial, terminal: launched.terminal };
 
@@ -348,39 +414,13 @@ const launchHiddenRecord = async (
   await abandonAskTicket(state, ticketPath);
 
   if (state.ticket === 'taken') {
-    const lookup = await launchLookup({
-      kind: 'ask',
-      identifier: initial.askId,
-      hc: request.hc,
-    });
+    Object.assign(state, await readLaunchedProcess(request.root, claimToken));
+    state.stopAttempted = false;
 
-    if (lookup.kind === 'found') {
-      state.terminal = lookup.terminal;
-      state.terminalState = 'live';
-
-      const started: HiddenAskRecord = { ...initial, terminal: lookup.terminal };
-
-      await changeHiddenAsk(request.root, initial.askId, (current) => ({
-        ...current,
-        terminal: lookup.terminal,
-      }));
-
-      return { started, terminal: lookup.terminal };
+    if (await claimTakenOver(request.root, claimToken)) {
+      state.child = 'running';
+      state.stopAttempted = true;
     }
-
-    if (lookup.kind === 'unread') {
-      state.ticket = 'unread';
-
-      await changeHiddenAsk(request.root, initial.askId, (current) => ({
-        ...current,
-        status: 'running',
-        detail: askUnconfirmedLaunchDetail,
-      }));
-
-      throw launched.error;
-    }
-
-    state.terminalState = 'absent';
   }
 
   await changeHiddenAsk(request.root, initial.askId, (current) => ({
@@ -454,44 +494,35 @@ const runHiddenAsk = async (
     return settleTimeout(request, started, state, settle);
   }
 
-  state.terminalState = 'ended';
+  state.child = state.processId === undefined ? 'unknown' : processState(state.processId);
+  state.stopAttempted = true;
 
-  const recorded = await readAskRecord(request.root, askId);
-  const latest: HiddenAskRecord = recorded?.route === 'hidden' ? recorded : started;
+  const changed = await changeHiddenAsk(request.root, askId, (current) =>
+    current.status === 'running'
+      ? {
+          ...current,
+          status: 'failed',
+          detail: 'The ask ended without sending an answer.',
+        }
+      : undefined,
+  );
 
-  const outcome = askOutcome({
-    status: latest.status,
-    ended: waited.ended,
-    exitCode: waited.exit_code ?? null,
-  });
-
-  if (outcome === 'answered' && latest.answer !== null) {
-    return { status: 'ended', askId, answer: latest.answer };
+  if (changed?.changed === true) {
+    return needsOpen(askEndedReason);
   }
 
-  if (outcome === 'needsOpen') {
-    await changeHiddenAsk(request.root, askId, (current) => ({
-      ...current,
-      status: 'failed',
-      detail: 'The ask ended without sending an answer.',
-    }));
+  const current = changed?.record;
+  const record = current?.route === 'hidden' ? current : undefined;
 
-    return needsOpen(
-      'The architect ended without sending an answer. Call architect open to talk to it.',
-    );
+  return resultFromRecord(request.root, askId, record);
+};
+
+const sweepRefusal = (sweep: Exclude<StartSweepResult, { kind: 'clear' }>): string | undefined => {
+  if (sweep.kind === 'refuseRunning') {
+    return startHeldByProcessReason(sweep.processId);
   }
 
-  await changeHiddenAsk(request.root, askId, (current) => ({
-    ...current,
-    status: 'failed',
-    detail: 'The ask terminal failed before the architect answered.',
-  }));
-
-  return {
-    status: 'failed',
-    askId,
-    reason: 'The ask terminal failed before the architect answered. Call architect open instead.',
-  };
+  return sweep.kind === 'refuseMalformed' ? malformedStartMarkerReason(sweep.path) : undefined;
 };
 
 const askHiddenArchitect = async (
@@ -506,74 +537,88 @@ const askHiddenArchitect = async (
     return needsOpen(askStartingReason);
   }
 
-  const launchHc = { ...request.hc, signal: undefined };
-
   const state: HiddenAskClaim = {
     ticket: 'notCreated',
     terminal: undefined,
-    terminalState: 'unknown',
+    processId: undefined,
+    child: 'unknown',
+    stopAttempted: false,
     settled: false,
     kept: false,
   };
 
-  let ticketPath: string | undefined;
-
-  const settle = async (): Promise<boolean> => {
-    if (state.settled) {
-      return state.kept;
-    }
-
-    state.settled = true;
-
-    if (state.ticket === 'notCreated' && ticketPath !== undefined) {
-      state.ticket = await cancelStartTicket(ticketPath);
-    }
-
-    state.kept = await releaseClaim({
-      claim,
-      ticket: state.ticket,
-      adopted: false,
-      terminal: state.terminal,
-      terminalState: state.terminalState,
-      hc: request.hc,
-    });
-
-    if (!state.kept && state.ticket === 'taken') {
-      await deleteStartMarker(request.root, claim.token).catch(() => undefined);
-    }
-
-    return state.kept;
-  };
-
-  const terminalOf = async (token: string): Promise<StartTicketTerminal> => {
-    const lookup = await lookupLaunchTerminal({ kind: 'open', identifier: token, hc: launchHc });
-
-    if (lookup.kind === 'found') {
-      return lookup.state === 'live' ? 'live' : 'ended';
-    }
-
-    return lookup.kind === 'absent' ? 'none' : 'unread';
-  };
+  let settle: SettleHiddenAskClaim | undefined;
 
   try {
     const sweep = await sweepStartFolder({
       root: request.root,
       currentToken: claim.token,
-      terminalOf,
     });
 
-    if (sweep === 'starting') {
+    const reason = sweep.kind === 'clear' ? undefined : sweepRefusal(sweep);
+
+    if (sweep.kind !== 'clear') {
       state.settled = true;
       await claim.release();
 
-      return needsOpen(askStartingReason);
+      return needsOpen(reason ?? askStartingReason);
     }
 
-    ticketPath = await createStartTicket(request.root, claim.token);
+    const ticketPath = await createStartTicket(request.root, claim.token);
 
-    return await runHiddenAsk(request, sessionFile, model, claim.token, ticketPath, state, settle);
+    const settleClaim = async (): Promise<boolean> => {
+      if (state.settled) {
+        return state.kept;
+      }
+
+      state.settled = true;
+
+      if (state.ticket === 'notCreated') {
+        state.ticket = await cancelStartTicket(ticketPath);
+      }
+
+      const released = await releaseClaim({
+        claim,
+        ticket: state.ticket,
+        adopted: false,
+        child: state.child,
+        processId: state.processId,
+        stopAttempted: state.stopAttempted,
+      });
+
+      state.kept = released.kept;
+
+      const gone = !released.kept && state.ticket === 'taken' && released.child === 'gone';
+
+      if (gone && state.processId !== undefined) {
+        await deleteStartMarker(request.root, claim.token, state.processId).catch(() => undefined);
+      }
+
+      return state.kept;
+    };
+
+    settle = settleClaim;
+
+    await claimOptions.beforeDispatch?.();
+
+    return await runHiddenAsk(
+      request,
+      sessionFile,
+      model,
+      claim.token,
+      ticketPath,
+      state,
+      settleClaim,
+    );
   } finally {
-    await settle();
+    if (settle === undefined) {
+      if (!state.settled) {
+        state.settled = true;
+        await claim.release();
+      }
+    } else {
+      await settle();
+    }
   }
 };
 

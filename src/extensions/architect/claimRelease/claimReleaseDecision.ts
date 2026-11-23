@@ -3,7 +3,7 @@ export type ClaimReleaseAction = 'release' | 'stop' | 'keep';
 export interface ClaimReleaseFacts {
   ticket: 'notCreated' | 'cancelled' | 'taken' | 'unread';
   adopted: boolean;
-  terminal: 'unknown' | 'live' | 'ended' | 'absent';
+  child: 'running' | 'gone' | 'unknown';
   stopAttempted: boolean;
 }
 
@@ -20,11 +20,11 @@ export const claimReleaseDecision = (facts: ClaimReleaseFacts): ClaimReleaseActi
     return 'release';
   }
 
-  if (facts.terminal === 'ended' || facts.terminal === 'absent') {
+  if (facts.child === 'gone') {
     return 'release';
   }
 
-  if (facts.terminal === 'unknown') {
+  if (facts.child === 'unknown') {
     return 'keep';
   }
 

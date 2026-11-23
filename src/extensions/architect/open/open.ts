@@ -17,7 +17,6 @@ import type { PiLaunchResult } from '../../../piStart/piStart.js';
 import { tabName } from '../../../tabName.js';
 import { releaseClaim } from '../claimRelease/claimRelease.js';
 import type { ClaimReleaseFacts } from '../claimRelease/claimReleaseDecision.js';
-import { launchLookup, lookupLaunchTerminal } from '../claimRelease/launchLookup.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import { architectLockPath, claimArchitectLock } from '../lock.js';
 import type { ArchitectClaimOptions } from '../lock.js';
@@ -27,10 +26,13 @@ import {
   cancelStartTicket,
   createStartTicket,
   deleteStartMarker,
+  malformedStartMarkerReason,
+  readStartMarker,
+  startHeldByProcessReason,
   sweepStartFolder,
   wrapStartArgv,
 } from '../startTicket/startTicket.js';
-import type { StartTicketTerminal } from '../startTicket/startTicketDecision.js';
+import type { StartSweepResult } from '../startTicket/startTicket.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 import { openStartProgress } from './openStartClaimDecision.js';
@@ -63,8 +65,8 @@ type ReplyTerminal = Parameters<typeof launchOutcomeDecision>[0]['replyTerminal'
 interface LaunchState {
   ticket: ClaimReleaseFacts['ticket'];
   ticketPath: string | undefined;
-  terminal: string | undefined;
-  terminalState: ClaimReleaseFacts['terminal'];
+  processId: number | undefined;
+  child: ClaimReleaseFacts['child'];
   adopted: boolean;
 }
 
@@ -258,7 +260,6 @@ const launchFacts = (launch: PiLaunchResult): Parameters<typeof launchOutcomeDec
   exitCode: launch.exitCode,
   killed: launch.killed,
   aborted: launch.aborted,
-  timedOut: launch.timedOut,
   replyTerminal: replyTerminalOf(launch),
 });
 
@@ -276,30 +277,6 @@ const claimTakenOver = async (root: string, claimToken: string): Promise<boolean
   const holder = await readLiveLockHolder(architectLockPath(root));
 
   return holder !== undefined && holder.token !== claimToken;
-};
-
-const recoverTakenTicket = async (
-  request: OpenRequest,
-  claimToken: string,
-  launchHc: HcRuntime,
-  started: PiLaunchResult,
-  state: LaunchState,
-): Promise<void> => {
-  const lookup = await launchLookup({ kind: 'open', identifier: claimToken, hc: launchHc });
-
-  if (lookup.kind === 'found') {
-    state.terminal = lookup.terminal;
-    state.terminalState = 'live';
-    state.adopted = await claimTakenOver(request.root, claimToken);
-
-    if (state.adopted) {
-      return;
-    }
-  } else {
-    state.terminalState = lookup.kind === 'absent' ? 'absent' : 'unknown';
-  }
-
-  throw launchFailure(started);
 };
 
 const refusal = (checkout: string): Error =>
@@ -373,10 +350,20 @@ const abandonTicket = async (state: LaunchState): Promise<void> => {
   state.ticket = await cancelStartTicket(state.ticketPath);
 };
 
+const readLaunchedProcess = async (
+  root: string,
+  claimToken: string,
+): Promise<Pick<LaunchState, 'processId' | 'child'>> => {
+  const marker = await readStartMarker(root, claimToken);
+
+  return marker?.kind === 'process'
+    ? { processId: marker.pid, child: 'running' }
+    : { processId: undefined, child: 'unknown' };
+};
+
 const applyLaunchOutcome = async (
   request: OpenRequest,
   claimToken: string,
-  launchHc: HcRuntime,
   started: PiLaunchResult,
   state: LaunchState,
 ): Promise<void> => {
@@ -386,24 +373,22 @@ const applyLaunchOutcome = async (
     await abandonTicket(state);
 
     if (state.ticket === 'taken') {
-      await recoverTakenTicket(request, claimToken, launchHc, started, state);
+      Object.assign(state, await readLaunchedProcess(request.root, claimToken));
+      state.adopted = await claimTakenOver(request.root, claimToken);
 
       if (request.hc.signal?.aborted === true) {
         request.hc.signal.throwIfAborted();
       }
-
-      return;
     }
 
     throw launchFailure(started);
   }
 
-  state.terminal = started.terminal;
-  state.terminalState = 'live';
+  state.ticket = 'taken';
+  Object.assign(state, await readLaunchedProcess(request.root, claimToken));
 
   await waitForTakeover(request.root, claimToken, request.hc.signal);
   state.adopted = true;
-  state.ticket = 'taken';
 
   if (request.hc.signal?.aborted === true) {
     request.hc.signal.throwIfAborted();
@@ -455,71 +440,29 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
-const terminalStateOf = async (
-  launchHc: HcRuntime,
-  token: string,
-): Promise<StartTicketTerminal> => {
-  const lookup = await lookupLaunchTerminal({ kind: 'open', identifier: token, hc: launchHc });
-
-  if (lookup.kind === 'found') {
-    return lookup.state === 'live' ? 'live' : 'ended';
-  }
-
-  return lookup.kind === 'absent' ? 'none' : 'unread';
-};
-
-const sweepOwnStart = async (
-  root: string,
-  claimToken: string,
-  launchHc: HcRuntime,
-): Promise<boolean> => {
-  const sweep = await sweepStartFolder({
-    root,
-    currentToken: claimToken,
-    terminalOf: (token) => terminalStateOf(launchHc, token),
-  });
-
-  return sweep === 'starting';
-};
+const sweepOwnStart = (root: string, claimToken: string): Promise<StartSweepResult> =>
+  sweepStartFolder({ root, currentToken: claimToken });
 
 const finishLaunch = async (
   request: OpenRequest,
   claim: { release: () => Promise<void>; token: string },
   state: LaunchState,
-  launchHc: HcRuntime,
 ): Promise<boolean> => {
-  const kept = await releaseClaim({ claim, ...state, hc: launchHc });
+  const released = await releaseClaim({
+    claim,
+    ticket: state.ticket,
+    adopted: state.adopted,
+    child: state.child,
+    processId: state.processId,
+  });
 
-  if (!kept && state.ticket === 'taken') {
-    await deleteStartMarker(request.root, claim.token).catch(() => undefined);
+  const gone = !released.kept && state.ticket === 'taken' && released.child === 'gone';
+
+  if (gone && state.processId !== undefined) {
+    await deleteStartMarker(request.root, claim.token, state.processId).catch(() => undefined);
   }
 
-  return kept;
-};
-
-const recoverAbandonedTerminal = async (
-  claimToken: string,
-  launchHc: HcRuntime,
-  state: LaunchState,
-): Promise<void> => {
-  if (state.ticket !== 'taken' || state.terminal !== undefined) {
-    return;
-  }
-
-  if (state.terminalState !== 'unknown') {
-    return;
-  }
-
-  const lookup = await launchLookup({ kind: 'open', identifier: claimToken, hc: launchHc });
-
-  if (lookup.kind === 'found') {
-    state.terminal = lookup.terminal;
-    state.terminalState = 'live';
-
-    return;
-  }
-
-  state.terminalState = lookup.kind === 'absent' ? 'absent' : 'unknown';
+  return released.kept;
 };
 
 export const openArchitect = async (
@@ -544,16 +487,24 @@ export const openArchitect = async (
   const state: LaunchState = {
     ticket: 'notCreated',
     ticketPath: undefined,
-    terminal: undefined,
-    terminalState: 'unknown',
+    processId: undefined,
+    child: 'unknown',
     adopted: false,
   };
 
   try {
-    const starting = await sweepOwnStart(request.root, claim.token, launchHc);
+    const starting = await sweepOwnStart(request.root, claim.token);
 
-    if (starting) {
+    if (starting.kind === 'starting') {
       throw startingError(request.root);
+    }
+
+    if (starting.kind === 'refuseRunning') {
+      throw new Error(startHeldByProcessReason(starting.processId));
+    }
+
+    if (starting.kind === 'refuseMalformed') {
+      throw new Error(malformedStartMarkerReason(starting.path));
     }
 
     state.ticketPath = await createStartTicket(request.root, claim.token);
@@ -568,18 +519,17 @@ export const openArchitect = async (
 
     const started = await launchArchitect(launchHc, request, prepared, state.ticketPath);
 
-    await applyLaunchOutcome(request, claim.token, launchHc, started, state);
+    await applyLaunchOutcome(request, claim.token, started, state);
 
     const result = launchResult(prepared);
 
-    await finishLaunch(request, claim, state, launchHc);
+    await finishLaunch(request, claim, state);
 
     return result;
   } catch (error) {
     await abandonTicket(state);
-    await recoverAbandonedTerminal(claim.token, launchHc, state);
 
-    const kept = await finishLaunch(request, claim, state, launchHc);
+    const kept = await finishLaunch(request, claim, state);
 
     if (kept) {
       throw openKeptClaimError(request.root);

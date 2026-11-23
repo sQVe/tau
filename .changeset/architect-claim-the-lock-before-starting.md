@@ -4,11 +4,15 @@
 
 `architect` `open` and the hidden route of `ask` take the architect lock before they start Pi. A
 second caller is refused before it starts Pi or writes an ask record. A one-shot start ticket fences
-each launch: the child renames the ticket before it runs Pi, and a caller that abandons a launch
-cancels the ticket and releases its claim only when the rename proves no Pi can run. A `.started`
-marker makes a new caller refuse while its terminal is live or unread, so a claim whose lead died no
-longer lets a second Pi open the session file. A launch whose child took the ticket is looked up for
-up to 10 seconds; the lookup bounds each `hc` call and treats a partial read as unread. Hidden ask
+each launch: the child renames the ticket to a marker whose name carries its process ID, and `exec`
+keeps that ID for Pi. A caller that abandons a launch cancels the ticket and releases its claim only
+when the rename proves no Pi can run, or when the kernel reports the marker's process gone.
+`running` and `unknown` keep the claim and the marker. The caller stops a taken child by process ID
+with `SIGTERM` and then `SIGKILL`, within one absolute 10 second deadline. Absence from `hc` no
+longer releases a claim, deletes a marker, or refuses a start. A sweep deletes an orphaned marker
+whose process is gone, even when its finished terminal was removed, and otherwise refuses with the
+process ID. A `.started` name without a valid process ID refuses with the marker path. Hidden ask
 records change only while they are `running`, under the per-ask lock, so `sent`, `timeout`, and
-`failed` are final. A hidden ask enforces its own deadline, and a reader repairs a running ask whose
-terminal has ended.
+`failed` are final. The lead reports `timeout` and `sent` from the locked record after its wait. A
+hidden ask enforces its own deadline, and a reader repairs a running ask whose recorded terminal has
+ended.

@@ -228,6 +228,48 @@ it('passes an ls timeout to the exec options', async () => {
   expect(timeout).toBe(1234);
 });
 
+it('passes no run timeout when none is requested', async () => {
+  const fake = createHcFake();
+  let hasTimeout: boolean | undefined;
+
+  const runtime: HcRuntime = {
+    exec: (command, commandArguments, options) => {
+      hasTimeout = options !== undefined && 'timeout' in options;
+
+      return fake.exec(command, commandArguments, options);
+    },
+    connect: fake.connect,
+    cwd: '/repository',
+  };
+
+  fake.reply('run', JSON.stringify({ address: 't7', state: 'live' }));
+
+  await run(runtime, { argv: ['pi'] });
+
+  expect(hasTimeout).toBe(false);
+});
+
+it('passes a run timeout to the exec options', async () => {
+  const fake = createHcFake();
+  let timeout: number | undefined;
+
+  const runtime: HcRuntime = {
+    exec: (command, commandArguments, options) => {
+      timeout = options?.timeout;
+
+      return fake.exec(command, commandArguments, options);
+    },
+    connect: fake.connect,
+    cwd: '/repository',
+  };
+
+  fake.reply('run', JSON.stringify({ address: 't7', state: 'live' }));
+
+  await run(runtime, { argv: ['pi'], timeout: 30_000 });
+
+  expect(timeout).toBe(30_000);
+});
+
 it('separates a get terminal that starts with a dash from the flags', async () => {
   const fake = createHcFake();
 

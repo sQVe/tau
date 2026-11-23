@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { succeededResult } from '../../../../tests/execFake.js';
+import { argumentAfter, succeededResult } from '../../../../tests/execFake.js';
+import { takeStartTicket, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { holdFileLock, readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { appCommands, open, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
@@ -31,142 +32,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const endedWait = (terminal: string, ended: boolean): string => {
-  const reason = ended ? 'ended' : 'timeout';
-  const exitCode = ended ? 0 : null;
-
-  return JSON.stringify({ terminal, ended, reason, turn: 1, children: [], exit_code: exitCode });
-};
-
-const killCalls = (calls: { commandArguments: string[] }[]): string[][] =>
-  calls.filter((call) => call.commandArguments[0] === 'kill').map((call) => call.commandArguments);
-
 const startFakeTimers = (): void => {
   vi.useFakeTimers({
     toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
   });
 };
-
-it('stops the pane terminal at the deadline, releases after it ends, and lets a retry start', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const { app, hc, tool } = openTool(root, undefined, undefined, { takeover: false });
-
-  await recordSession(root);
-  hc.reply('kill', JSON.stringify({ address: 't-architect', state: 'finished' }));
-  hc.reply('wait', endedWait('t-architect', true));
-  startFakeTimers();
-
-  const opening = open(tool, root, { request: openRequest }).catch((error: unknown) => error);
-
-  await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(60_000);
-
-  const failure = await opening;
-
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe(takeoverExpiryError().message);
-  expect(killCalls(hc.calls)).toEqual([['kill', '--json', '--', 't-architect']]);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  expect(appCommands(app)).toContain('pane.split');
-
-  vi.useRealTimers();
-
-  const retry = openTool(root);
-  const result = await open(retry.tool, root, { request: openRequest });
-
-  expect(result.details).toMatchObject({ status: 'resumed' });
-  expect(appCommands(retry.app)).toContain('pane.split');
-});
-
-it('stops the space terminal at the deadline, releases after it ends, and lets a retry start', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const { app, hc, tool } = openTool(root, { space: undefined }, undefined, { takeover: false });
-
-  app.overrideOutput('space.new', '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}');
-  await recordSession(root);
-  hc.reply('kill', JSON.stringify({ address: 't-space', state: 'finished' }));
-  hc.reply('wait', endedWait('t-space', true));
-  startFakeTimers();
-
-  const opening = open(tool, root, { request: openRequest }).catch((error: unknown) => error);
-
-  await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(60_000);
-
-  const failure = await opening;
-
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe(takeoverExpiryError().message);
-  expect(killCalls(hc.calls)).toEqual([['kill', '--json', '--', 't-space']]);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-
-  vi.useRealTimers();
-
-  const retry = openTool(root, { space: undefined });
-
-  retry.app.overrideOutput('space.new', '{"space":"sp-2","tab":"tb-2","terminal":"t-space-2"}');
-
-  const result = await open(retry.tool, root, { request: openRequest });
-
-  expect(result.details).toMatchObject({ status: 'resumed' });
-});
-
-it('keeps the claim when the pane terminal does not end and refuses a retry as starting', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-  const { hc, tool } = openTool(root, undefined, undefined, { takeover: false });
-
-  hc.reply('kill', JSON.stringify({ address: 't-architect', state: 'finished' }));
-  hc.reply('wait', endedWait('t-architect', false));
-  startFakeTimers();
-
-  const opening = open(tool, root, { request: openRequest }).catch((error: unknown) => error);
-
-  await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(60_000);
-
-  const failure = await opening;
-
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe(openKeptClaimMessage(root));
-  expect(killCalls(hc.calls)).toEqual([['kill', '--json', '--', 't-architect']]);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
-
-  vi.useRealTimers();
-
-  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
-    startingError(root).message,
-  );
-});
-
-it('keeps the claim when the space reply has no terminal and the lookup fails', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root } = await setup(cleanup);
-
-  const { app, hc, tool } = openTool(root, { space: undefined }, undefined, {
-    takeover: false,
-  });
-
-  app.overrideOutput('space.new', '{"ok":true}');
-  hc.fail('ls', 'hc ls failed', 1);
-
-  const failure = await open(tool, root, { request: openRequest }).catch((error: unknown) => error);
-
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe(openKeptClaimMessage(root));
-  expect(killCalls(hc.calls)).toEqual([]);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
-
-  await expect(open(tool, root, { request: openRequest })).rejects.toThrow(
-    startingError(root).message,
-  );
-});
 
 const requestFor = (
   root: string,
@@ -181,40 +51,111 @@ const requestFor = (
   hc,
 });
 
-it('stops a split whose reply fails its schema before releasing the claim', async ({
+it('stops the pane child by process id at the deadline, releases after it is gone, and lets a retry start', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const { app, hc, tool } = openTool(root, undefined, undefined, { takeover: false });
+  const processControl = useFakeStartProcess(cleanup, 'running', true);
+
+  await recordSession(root);
+  startFakeTimers();
+
+  const opening = open(tool, root, { request: openRequest }).catch((error: unknown) => error);
+
+  await poll.started.promise;
+  await vi.advanceTimersByTimeAsync(60_300);
+
+  const failure = await opening;
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe(takeoverExpiryError().message);
+  expect(processControl.signals).toEqual(['SIGTERM']);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(appCommands(app)).toContain('pane.split');
+
+  vi.useRealTimers();
+
+  const retry = openTool(root);
+  const result = await open(retry.tool, root, { request: openRequest });
+
+  expect(result.details).toMatchObject({ status: 'resumed' });
+  expect(appCommands(retry.app)).toContain('pane.split');
+});
+
+it('keeps the claim when the child never goes away and finishes within one recovery window', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { app, hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
-  const waitEntered = Promise.withResolvers<undefined>();
-  const waitRelease = Promise.withResolvers<undefined>();
-  let waits = 0;
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const processControl = useFakeStartProcess(cleanup, 'running');
 
-  app.overrideOutput('pane.split', '{"pane":"p-architect"}');
   await recordSession(root);
-  hc.reply('ls', JSON.stringify({ terminals: [{ address: 't-architect', state: 'live' }] }));
-  hc.reply('kill', JSON.stringify({ address: 't-architect', state: 'finished' }));
-  hc.reply('wait', endedWait('t-architect', true));
+  startFakeTimers();
 
-  const exec: typeof hc.exec = async (command, commandArguments, options) => {
-    if (
-      command === 'hc' &&
-      commandArguments[0] === 'get' &&
-      commandArguments.at(-1) === 't-architect'
-    ) {
-      const holder = await readLiveLockHolder(architectLockPath(root));
-      const argv = ['env', `TAU_ARCHITECT_CLAIM=${holder?.token ?? ''}`, 'pi'];
+  const startedAt = Date.now();
+  let finishedAt: number | undefined;
 
-      return succeededResult(JSON.stringify({ address: 't-architect', state: 'live', argv }));
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      await takeStartTicket(argv);
+
+      return { code: 0, killed: true, truncated: false, stdout: '', stderr: '' };
     }
 
-    if (command === 'hc' && commandArguments[0] === 'wait') {
-      waits += 1;
+    return runtime.exec(command, commandArguments, options);
+  };
 
-      if (waits === 1) {
-        waitEntered.resolve(undefined);
-        await waitRelease.promise;
-      }
+  const request = requestFor(root, config.location, { ...runtime, exec });
+
+  const opening = openArchitect(request)
+    .catch((error: unknown) => error)
+    .then((error: unknown) => {
+      finishedAt = Date.now();
+
+      return error;
+    });
+
+  await poll.started.promise;
+  await vi.advanceTimersByTimeAsync(10_100);
+
+  const failure = await opening;
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe(openKeptClaimMessage(root));
+  expect(processControl.signals).toEqual(['SIGTERM', 'SIGKILL']);
+  expect(finishedAt).toBeDefined();
+
+  const stopStartedAt = processControl.signalTimes[0] ?? startedAt;
+
+  expect((finishedAt as number) - stopStartedAt).toBeLessThanOrEqual(10_000);
+  expect((finishedAt as number) - stopStartedAt).toBeGreaterThanOrEqual(10_000);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
+it('keeps a paused child fence until its process is gone and then a retry starts one Pi', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const processControl = useFakeStartProcess(cleanup, 'running');
+
+  await recordSession(root);
+  startFakeTimers();
+
+  let splits = 0;
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      splits += 1;
+      await takeStartTicket(argv);
+
+      return { code: 0, killed: true, truncated: false, stdout: '', stderr: '' };
     }
 
     return runtime.exec(command, commandArguments, options);
@@ -223,24 +164,35 @@ it('stops a split whose reply fails its schema before releasing the claim', asyn
   const request = requestFor(root, config.location, { ...runtime, exec });
   const opening = openArchitect(request).catch((error: unknown) => error);
 
-  await waitEntered.promise;
+  await poll.started.promise;
+  await vi.advanceTimersByTimeAsync(5_300);
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+  expect(splits).toBe(1);
 
   await expect(openArchitect(request)).rejects.toThrow(startingError(root).message);
 
-  waitRelease.resolve(undefined);
+  processControl.state = 'gone';
+
+  await vi.advanceTimersByTimeAsync(5_000);
 
   const failure = await opening;
 
-  const splits = appCommands(app).filter((name) => name === 'pane.split');
-
   expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain('herdr-app do pane.split');
-  expect(killCalls(hc.calls)).toEqual([['kill', '--json', '--', 't-architect']]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  expect(splits).toHaveLength(1);
+
+  vi.useRealTimers();
+
+  const retry = openTool(root);
+  const result = await open(retry.tool, root, { request: openRequest });
+
+  expect(result.details).toMatchObject({ status: 'resumed' });
+  const retrySplits = appCommands(retry.app).filter((name) => name === 'pane.split');
+
+  expect(retrySplits).toHaveLength(1);
 });
 
-it('returns the normal result when a space reply has no terminal but the child adopts its claim', async ({
+it('fails a space reply without a terminal and releases when the child is gone', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
@@ -249,33 +201,39 @@ it('returns the normal result when a space reply has no terminal but the child a
     takeover: false,
   });
 
+  useFakeStartProcess(cleanup, 'gone');
   app.overrideOutput('space.new', '{"ok":true}');
-  const sessionFile = await recordSession(root);
+  await recordSession(root);
 
-  hc.reply('ls', JSON.stringify({ terminals: [{ address: 't-space', state: 'live' }] }));
-  let launchedClaim: string | undefined;
+  const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
+    (error: unknown) => error,
+  );
 
-  const exec: typeof hc.exec = async (command, commandArguments, options) => {
-    if (
-      command === 'hc' &&
-      commandArguments[0] === 'get' &&
-      commandArguments.at(-1) === 't-space'
-    ) {
-      const argv = ['env', `TAU_ARCHITECT_CLAIM=${launchedClaim ?? ''}`, 'pi'];
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('herdr-app do');
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'ls')).toEqual([]);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
 
-      return succeededResult(JSON.stringify({ address: 't-space', state: 'live', argv }));
-    }
+it('releases an adopted claim when a space reply has no terminal', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
 
-    return runtime.exec(command, commandArguments, options);
-  };
+  const { app, hc, runtime } = openTool(root, { space: undefined }, undefined, {
+    takeover: false,
+  });
+
+  useFakeStartProcess(cleanup, 'running');
+  app.overrideOutput('space.new', '{"ok":true}');
+  await recordSession(root);
 
   const appExec: typeof app.exec = async (command, commandArguments, options) => {
     const result = await app.exec(command, commandArguments, options);
 
     if (commandArguments[1] === 'space.new') {
       const holder = await readLiveLockHolder(architectLockPath(root));
-
-      launchedClaim = holder?.token;
 
       if (holder !== undefined) {
         const held = await holdFileLock({
@@ -298,45 +256,16 @@ it('returns the normal result when a space reply has no terminal but the child a
   const routedExec: typeof runtime.exec = async (command, commandArguments, options) =>
     command === 'herdr-app'
       ? appExec(command, commandArguments, options)
-      : exec(command, commandArguments, options);
+      : runtime.exec(command, commandArguments, options);
 
-  const result = await openArchitect(
+  const failure = await openArchitect(
     requestFor(root, config.location, { ...runtime, exec: routedExec }),
-  );
-
-  const spaces = appCommands(app).filter((name) => name === 'space.new');
-
-  expect(result).toEqual({ status: 'resumed', sessionFile });
-  expect(killCalls(hc.calls)).toEqual([]);
-  expect(spaces).toHaveLength(1);
-});
-
-it('releases the claim after the lookup finds no terminal for ten seconds', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root, config } = await setup(cleanup);
-
-  const { app, hc, runtime } = openTool(root, { space: undefined }, undefined, {
-    takeover: false,
-  });
-
-  app.overrideOutput('space.new', '{"ok":true}');
-  await recordSession(root);
-  hc.reply('ls', JSON.stringify({ terminals: [] }));
-  startFakeTimers();
-
-  const opening = openArchitect(requestFor(root, config.location, runtime)).catch(
-    (error: unknown) => error,
-  );
-
-  await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(10_000);
-
-  const failure = await opening;
+  ).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain('herdr-app do');
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });
 
 it.each([
@@ -346,34 +275,26 @@ it.each([
   { name: 'a non-string terminal', reply: '{"terminal":42}' },
   { name: 'a null terminal', reply: '{"terminal":null}' },
   { name: 'an empty terminal', reply: '{"terminal":""}' },
-])(
-  'releases only after the lookup confirms no terminal for a reply with $name',
-  async ({ reply }) => {
-    const { root, config } = await setup(onTestFinished);
+])('fails a space reply with $name and releases when the child is gone', async ({ reply }) => {
+  const { root, config } = await setup(onTestFinished);
 
-    const { app, hc, runtime } = openTool(root, { space: undefined }, undefined, {
-      takeover: false,
-    });
+  const { app, hc, runtime } = openTool(root, { space: undefined }, undefined, {
+    takeover: false,
+  });
 
-    app.overrideOutput('space.new', reply);
-    await recordSession(root);
-    hc.reply('ls', JSON.stringify({ terminals: [] }));
-    startFakeTimers();
+  useFakeStartProcess(onTestFinished, 'gone');
+  app.overrideOutput('space.new', reply);
+  await recordSession(root);
 
-    const opening = openArchitect(requestFor(root, config.location, runtime)).catch(
-      (error: unknown) => error,
-    );
+  const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
+    (error: unknown) => error,
+  );
 
-    await poll.started.promise;
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    const failure = await opening;
-
-    expect(failure).toBeInstanceOf(Error);
-    expect(killCalls(hc.calls)).toEqual([]);
-    expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  },
-);
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('herdr-app do');
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
 
 it('reports a launch failure at once when the child never took the ticket', async ({
   onTestFinished: cleanup,
@@ -393,4 +314,117 @@ it('reports a launch failure at once when the child never took the ticket', asyn
   expect((failure as Error).message).not.toBe(takeoverExpiryError().message);
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'ls')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('fails a split whose reply fails its schema without a lookup', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { app, hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+
+  useFakeStartProcess(cleanup, 'gone');
+  app.overrideOutput('pane.split', '{"pane":"p-architect"}');
+  await recordSession(root);
+
+  const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
+    (error: unknown) => error,
+  );
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('herdr-app do pane.split');
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'ls')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('rejects a cancel in the recovered path after the child took over and does not kill it', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled after the child took over');
+  const adopted = Promise.withResolvers<string>();
+
+  useFakeStartProcess(cleanup, 'running');
+  await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      const holder = await readLiveLockHolder(architectLockPath(root));
+      const token = holder?.token ?? '';
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      await takeStartTicket(argv);
+
+      const adoptedToken = 'adopted';
+
+      const held = await holdFileLock({
+        lockPath: architectLockPath(root),
+        checkout: root,
+        terminal: 't-architect',
+        token: adoptedToken,
+        adopt: token,
+      });
+
+      if (held.kind === 'held') {
+        cleanup(held.release);
+        adopted.resolve(adoptedToken);
+      }
+
+      controller.abort(cancellation);
+
+      return { code: 0, killed: true, truncated: false, stdout: '', stderr: '' };
+    }
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const failure = await openArchitect(
+    requestFor(root, config.location, { ...runtime, exec, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBe(cancellation);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+
+  const holder = await readLiveLockHolder(architectLockPath(root));
+
+  expect(holder?.token).toBe(await adopted.promise);
+});
+
+it('keeps a successful result when a split adopts the claim', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const sessionFile = await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      const holder = await readLiveLockHolder(architectLockPath(root));
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      await takeStartTicket(argv);
+
+      const held = await holdFileLock({
+        lockPath: architectLockPath(root),
+        checkout: root,
+        terminal: 't-architect',
+        token: 'adopted',
+        adopt: holder?.token ?? '',
+      });
+
+      if (held.kind === 'held') {
+        cleanup(held.release);
+      }
+
+      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+    }
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const result = await openArchitect(requestFor(root, config.location, { ...runtime, exec }));
+
+  expect(result).toEqual({ status: 'resumed', sessionFile });
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
 });
