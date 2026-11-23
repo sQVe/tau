@@ -102,7 +102,7 @@ export const handoverQuestionBody = {
   ),
 };
 
-export const handoverAnswerBody = {
+const handoverAnswerBody = {
   family: Type.Literal('handover-answer'),
   payload: Type.Object(
     {
