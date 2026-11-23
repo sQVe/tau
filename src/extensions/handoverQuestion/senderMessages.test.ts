@@ -61,6 +61,14 @@ it.each([
     ],
   },
   {
+    name: 'selects a version 3 handover receipt',
+    entries: [
+      user('first task'),
+      inbox('handover', 'Handover sender: terminal lead-1, session s1.\n\nOne.', 3),
+    ],
+    expected: ['first task', 'Handover sender: terminal lead-1, session s1.\n\nOne.'],
+  },
+  {
     name: 'skips other custom messages',
     entries: [custom('Another message.'), user('first task'), custom('And another.')],
     expected: ['first task'],

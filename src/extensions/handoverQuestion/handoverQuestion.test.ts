@@ -62,8 +62,8 @@ const question = 'Which option should I use?';
 const handoverText = (terminal: string, sessionId: string): string =>
   `Handover sender: terminal ${terminal}, session ${sessionId}.\n\nDo the work.`;
 
-const handoverReceipt = (sessionId: string) => ({
-  version: 2,
+const handoverReceipt = (sessionId: string, version = 2) => ({
+  version,
   messageId: '44444444-4444-4444-8444-444444444444',
   sessionId,
   family: 'handover',
@@ -88,7 +88,7 @@ const handoverBranch = (terminal: string, sessionId: string) => [
     customType: 'tau-inbox-message',
     content: handoverText(terminal, sessionId),
     display: true,
-    details: handoverReceipt(sessionId),
+    details: handoverReceipt(sessionId, 3),
   },
 ];
 
