@@ -1,4 +1,5 @@
 import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import type {
   ExtensionAPI,
@@ -12,13 +13,21 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import {
   advertiseInbox,
+  forgetAcceptCheck,
   savedFiles,
   startHandoverReceiver,
 } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { acceptChecks, createReceiptStore, createReceiver } from '../../inbox/inbox.js';
+import type { MessageReply, MessageRequest } from '../../inbox/protocol.js';
 import handoverQuestionExtension from './handoverQuestion.js';
 import type { QuestionOutcome } from './question/question.js';
-import { questionRecordDirectory, readQuestionRecord } from './question/questionRecord.js';
+import type { QuestionRecord } from './question/questionRecord.js';
+import {
+  questionRecordDirectory,
+  readQuestionRecord,
+  writeQuestionRecord,
+} from './question/questionRecord.js';
 
 interface ContextOptions {
   branch?: unknown;
@@ -367,4 +376,103 @@ it('asks the sender that starts the turn with a custom message', async () => {
 
   expect(savedFiles(eventReceiver)).toHaveLength(1);
   expect(savedFiles(laterReceiver)).toHaveLength(1);
+});
+
+const answerQuestionId = '11111111-1111-4111-8111-111111111111';
+const answerAskerSession = '22222222-2222-4222-8222-222222222222';
+const answerSenderSession = '33333333-3333-4333-8333-333333333333';
+
+const answerRequest = (): MessageRequest => ({
+  protocol: 'rpc1',
+  kind: 'message',
+  messageId: answerQuestionId,
+  targetTerminal: 'worker-1',
+  targetSessionId: answerAskerSession,
+  family: 'handover-answer',
+  payload: {
+    questionId: answerQuestionId,
+    senderSession: answerSenderSession,
+    answer: 'Use option A.',
+  },
+});
+
+const openAnswerRecord = (): QuestionRecord => ({
+  version: 1,
+  questionId: answerQuestionId,
+  askerTerminal: 'worker-1',
+  askerSession: answerAskerSession,
+  senderTerminal: 'lead-1',
+  senderSession: answerSenderSession,
+  text: 'Which option should I use?',
+  askedAt: '2026-11-18T12:00:00.000Z',
+  state: 'open',
+  answer: null,
+});
+
+const queuedAnswerReply: MessageReply = {
+  protocol: 'rpc1',
+  kind: 'queued',
+  messageId: answerQuestionId,
+  terminal: 'worker-1',
+  sessionId: answerAskerSession,
+};
+
+it('reads the session cwd instead of the process cwd', async () => {
+  vi.stubEnv('TAU_ROLE', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const processDirectory = temporaryDirectory(onTestFinished, 'tau-outside-repository-');
+  const processCwd = vi.spyOn(process, 'cwd').mockReturnValue(processDirectory);
+
+  onTestFinished(() => {
+    processCwd.mockRestore();
+    forgetAcceptCheck('handover-answer');
+  });
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+
+  const check = acceptChecks()['handover-answer'];
+
+  if (check === undefined) {
+    throw new Error('The extension registered no handover-answer check.');
+  }
+
+  expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toBe(
+    'This session has not started, so it cannot accept a handover answer.',
+  );
+
+  await writeQuestionRecord(root, openAnswerRecord());
+
+  await fake.handler('session_start')(
+    { type: 'session_start', reason: 'startup' },
+    context({ cwd: root, sessionId: answerAskerSession }),
+  );
+
+  const inboxRoot = temporaryDirectory(onTestFinished, 'tau-answer-inbox-');
+
+  const receiver = createReceiver({
+    directory: join(inboxRoot, answerAskerSession),
+    terminal: 'worker-1',
+    sessionId: answerAskerSession,
+    accepts: { 'handover-answer': check },
+    receipts: createReceiptStore(answerAskerSession),
+    entries: () => [],
+    wake: () => true,
+    notify: () => undefined,
+  });
+
+  expect(await receiver.accept(answerRequest())).toEqual(queuedAnswerReply);
+
+  await fake.handler('session_shutdown')(
+    { type: 'session_shutdown', reason: 'quit' },
+    context({ cwd: root, sessionId: answerAskerSession }),
+  );
+
+  expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toBe(
+    'This session has not started, so it cannot accept a handover answer.',
+  );
 });

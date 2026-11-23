@@ -13,6 +13,7 @@ import type { HcRuntime } from '../../hc/hc.js';
 import { setAcceptCheck } from '../../inbox/inbox.js';
 import { currentRole } from '../../role/role.js';
 import { handoverQuestionCheck } from './acceptCheck.js';
+import { handoverAnswerCheck } from './answer/answerCheck.js';
 import { askSender, questionParameters, questionToolDescription } from './question/question.js';
 import { handoverMessageText, senderMessages } from './senderMessages.js';
 
@@ -73,7 +74,18 @@ const registerQuestionTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
 };
 
 export default function handoverQuestionExtension(pi: ExtensionAPI): void {
+  let sessionDirectory: string | undefined;
+
   setAcceptCheck('handover-question', handoverQuestionCheck);
+
+  setAcceptCheck(
+    'handover-answer',
+    handoverAnswerCheck(() => sessionDirectory),
+  );
+
+  pi.on('session_start', (_event, context) => {
+    sessionDirectory = context.cwd;
+  });
 
   const hc: HcRuntime = { exec: piExec(pi), connect, cwd: process.cwd() };
   let registered = false;
