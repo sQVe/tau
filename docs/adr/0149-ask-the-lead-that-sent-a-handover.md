@@ -45,11 +45,10 @@ sender in its saved transcript with no other record.
 ### Take the newest sender, then the environment
 
 A session reads its handover messages and its first task message, oldest first. The newest message
-whose first line is a sender line gives the sender. The message that starts a turn counts as the
-newest message even before Pi adds it to the branch. Without such a line, both environment variables
-give the sender when the terminal is one non-empty token without whitespace, the session ID is
-non-empty, and it matches Pi's session ID rule. Without either, the session has no sender and asks
-its user.
+whose first line is a sender line gives the sender. An inbox handover counts as the newest message
+even before Pi adds it to the branch. Without such a line, both environment variables give the
+sender when the terminal is one non-empty token without whitespace, the session ID is non-empty, and
+it matches Pi's session ID rule. Without either, the session has no sender and asks its user.
 
 The newest message wins because a session can receive several handovers, and the latest one names
 the session that currently sends it work.
@@ -73,11 +72,13 @@ Tau refuses a frame that carries `sender`; that refusal is accepted and needs no
 
 ### Ask with handover_question
 
-A lead session gets the `handover_question` tool only when it finds a sender. The tool saves an open
-question record in the asker's checkout, sends a saved `handover-question` frame to the sender's
-session, and ends the turn. Before it saves, the tool checks that the asker's own inbox is
-listening, so the answer can reach it. Without that inbox, the tool saves nothing and tells the
-asker to ask its user. A refused send deletes the record and tells the asker to ask its user.
+A lead session gets the `handover_question` tool only when it finds a sender. When the tool runs, it
+resolves the sender again from the current branch and environment, so a branch without a sender
+refuses and saves nothing. The tool saves an open question record in the asker's checkout, sends a
+saved `handover-question` frame to the sender's session, and ends the turn. Before it saves, the
+tool checks that the asker's own inbox is listening, so the answer can reach it. Without that inbox,
+the tool saves nothing and tells the asker to ask its user. A refused send deletes the record and
+tells the asker to ask its user.
 
 ### Ask the user when the sender is gone
 
