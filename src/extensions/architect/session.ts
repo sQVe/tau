@@ -11,7 +11,7 @@ import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
 import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
-import type { EndNote, EndNoteRoute } from './endNoteDecision.js';
+import type { EndNoteRoute } from './endNoteDecision.js';
 import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
@@ -232,25 +232,28 @@ export const endArchitectSession = async (
   // The note read must finish before the lock is released, so a new owner cannot overwrite the
   // record first. It starts with the close so its deadline starts now, but live ask settlement does
   // not wait for it.
-  const note = sendEndNote ? prepareEndNote(session.endNote, session.root) : undefined;
+  const note =
+    sendEndNote && session.endNote !== undefined
+      ? prepareEndNote(session.endNote, session.root)
+      : undefined;
+
   const closing = closeAdmitted(answers, admissions);
-  let preparedNote: EndNote | undefined;
 
   try {
     const closed = await closing;
 
     await closeLiveAsks(session, hc, closed);
-    preparedNote = await note;
+    await note;
     await session.release();
   } finally {
     try {
       await failRunningAsks(session.root, session.ui);
     } finally {
-      const deliveredNote = preparedNote ?? (await note);
-
-      await deliverEndNote(deliveredNote, hc, (message) => {
-        session.ui.notify(message, 'warning');
-      });
+      if (note !== undefined) {
+        await deliverEndNote(await note, hc, (message) => {
+          session.ui.notify(message, 'warning');
+        });
+      }
     }
   }
 };

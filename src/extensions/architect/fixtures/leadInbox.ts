@@ -1,7 +1,7 @@
 import type { onTestFinished } from 'vitest';
 
 import type { HcFake } from '../../../../tests/hcFake.js';
-import { startHandoverReceiver } from '../../../../tests/inboxReceiverHarness.js';
+import { advertiseInbox, startHandoverReceiver } from '../../../../tests/inboxReceiverHarness.js';
 import type {
   HandoverReceiver,
   HandoverReceiverOptions,
@@ -23,15 +23,7 @@ export const startLeadInbox = async (
     { sessionId, ...options },
   );
 
-  hc.replyGet(
-    't-lead',
-    JSON.stringify({
-      address: 't-lead',
-      name: null,
-      state: 'live',
-      labels: { 'tau.inbox': `rpc1:${lead.path}` },
-    }),
-  );
+  advertiseInbox(hc, 't-lead', lead.path);
 
   return lead;
 };

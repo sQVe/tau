@@ -7,9 +7,15 @@ import type { onTestFinished } from 'vitest';
 import { ensurePrivateDirectory, openEndpoint, socketPathFor } from '../src/inbox/endpoint.js';
 import { createReceiptStore, createReceiver, startInbox } from '../src/inbox/inbox.js';
 import type { ReceiverOptions } from '../src/inbox/inbox.js';
-import { decodeRequest, encodeFrame, refusedReply } from '../src/inbox/protocol.js';
+import {
+  decodeRequest,
+  encodeFrame,
+  formatInboxLabel,
+  refusedReply,
+} from '../src/inbox/protocol.js';
 import type { Family, MessageReply, MessageRequest } from '../src/inbox/protocol.js';
 import { pendingMessages, readMessage } from '../src/inbox/store.js';
+import type { HcFake } from './hcFake.js';
 
 export interface HandoverReceiver {
   sessionId: string;
@@ -29,6 +35,22 @@ export interface HandoverReceiverOptions {
 }
 
 type Accept = (request: MessageRequest) => Promise<MessageReply>;
+
+export const advertiseInbox = (
+  hc: Pick<HcFake, 'replyGet'>,
+  terminal: string,
+  path: string,
+): void => {
+  hc.replyGet(
+    terminal,
+    JSON.stringify({
+      address: terminal,
+      name: null,
+      state: 'live',
+      labels: { 'tau.inbox': formatInboxLabel(path) },
+    }),
+  );
+};
 
 const acceptHandovers: ReceiverOptions['accepts'] = { handover: (_request, save) => save() };
 
@@ -149,6 +171,10 @@ export const savedTextsIn = async (directory: string): Promise<string[]> => {
 
 export const savedTexts = async (receiver: HandoverReceiver): Promise<string[]> =>
   savedTextsIn(receiver.inbox);
+
+// `savedRecords` lists every record below the root, including the session directory entry.
+export const savedFiles = (receiver: HandoverReceiver): string[] =>
+  receiver.savedRecords().filter((name) => name.startsWith(`${receiver.sessionId}/`));
 
 // Accept checks live in the process-wide inbox slot, so a test that registers one removes it after.
 export const forgetAcceptCheck = (family: Family): void => {

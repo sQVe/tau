@@ -15,6 +15,7 @@ export interface CapturingInbox {
   path: string;
   frames: string[];
   saved: () => string[];
+  savedRecords: () => string[];
   savedTexts: () => Promise<string[]>;
   releaseFirst: () => void;
   // Sets the mode for every frame after the first.
@@ -121,13 +122,15 @@ export const startCapturingInbox = async (
     server.close();
   });
 
-  const saved = (): string[] =>
-    readdirSyncSafe(join(records, sessionId)).filter((name) => name.endsWith('.json'));
+  const savedRecords = (): string[] => readdirSyncSafe(join(records, sessionId));
+
+  const saved = (): string[] => savedRecords().filter((name) => name.endsWith('.json'));
 
   return {
     path,
     frames,
     saved,
+    savedRecords,
     savedTexts: () => savedTextsIn(join(records, sessionId)),
     releaseFirst: () => {
       release?.();

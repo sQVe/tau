@@ -44,6 +44,7 @@ export const sessionContext = (cwd: string): SessionContext => {
 
 export const stubArchitect = (cleanup: (cleanup: () => void) => void): void => {
   vi.stubEnv('TAU_ROLE', 'architect');
+  vi.stubEnv('TAU_ARCHITECT_ASK', '');
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
   cleanup(() => {
@@ -53,8 +54,10 @@ export const stubArchitect = (cleanup: (cleanup: () => void) => void): void => {
 
 export const visibleArchitect = async (
   cleanup: (cleanup: () => void) => void,
+  leadTerminal = '',
 ): Promise<{ root: string; session: ArchitectSession }> => {
   stubArchitect(cleanup);
+  vi.stubEnv('TAU_LEAD_TERMINAL', leadTerminal);
 
   const root = await createTemporaryRepository(cleanup);
   const { context } = sessionContext(root);

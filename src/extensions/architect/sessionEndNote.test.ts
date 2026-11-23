@@ -4,10 +4,9 @@ import { expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createHcFake } from '../../../tests/hcFake.js';
-import { savedTexts } from '../../../tests/inboxReceiverHarness.js';
+import { advertiseInbox, savedFiles, savedTexts } from '../../../tests/inboxReceiverHarness.js';
 import type { HandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
-import { formatInboxLabel } from '../../inbox/protocol.js';
 import { startCapturingInbox } from './fixtures/capturingInbox.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
 import { endOptions, hcRuntime, visibleArchitect } from './fixtures/visibleSession.js';
@@ -21,26 +20,29 @@ import {
 import type { LiveAskRecord } from './record.js';
 import { endArchitectSession, recordFinalHandover } from './session.js';
 
-const noteRead = vi.hoisted(() => {
-  const started = Promise.withResolvers<undefined>();
-  const resume = Promise.withResolvers<undefined>();
+const readGate = vi.hoisted(() => ({
+  path: '',
+  hold: undefined as (() => Promise<void>) | undefined,
+}));
 
-  return { hold: false, started, resume };
-});
-
-vi.mock(import('./endNoteSend.js'), async (importOriginal) => {
-  const actual = await importOriginal();
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
 
   return {
-    ...actual,
-    prepareEndNote: async (...argumentsList: Parameters<typeof actual.prepareEndNote>) => {
-      if (noteRead.hold) {
-        noteRead.started.resolve(undefined);
-        await noteRead.resume.promise;
+    ...original,
+    readFile: (async (...parameters: Parameters<typeof original.readFile>) => {
+      const [path] = parameters;
+
+      if (typeof path === 'string' && path === readGate.path && readGate.hold !== undefined) {
+        const hold = readGate.hold;
+
+        readGate.path = '';
+        readGate.hold = undefined;
+        await hold();
       }
 
-      return actual.prepareEndNote(...argumentsList);
-    },
+      return original.readFile(...parameters);
+    }) as typeof original.readFile,
   };
 });
 
@@ -78,9 +80,7 @@ const openAsk: LiveAskRecord = {
 it('ending a visible architect tells the lead the departing record after release', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const { root, session } = await visibleArchitect(onTestFinished);
+  const { root, session } = await visibleArchitect(onTestFinished, 't-lead');
 
   const departing = {
     version: 2 as const,
@@ -93,11 +93,11 @@ it('ending a visible architect tells the lead the departing record after release
   await writeArchitectRecord(root, departing);
 
   const hc = createHcFake();
-  let lockAtAccept: Awaited<ReturnType<typeof readLiveLockHolder>> = undefined;
+  const locksAtAccept: (Awaited<ReturnType<typeof readLiveLockHolder>> | undefined)[] = [];
 
   const lead = await startLeadInbox(onTestFinished, hc, 'session-lead', {
     beforeCommit: async () => {
-      lockAtAccept = await readLiveLockHolder(architectLockPath(root));
+      locksAtAccept.push(await readLiveLockHolder(architectLockPath(root)));
     },
   });
 
@@ -115,9 +115,7 @@ it('ending a visible architect tells the lead the departing record after release
 
   await endArchitectSession(session, hcRuntime(hc), endOptions());
 
-  const names = lead.savedRecords().filter((name) => name.endsWith('.json'));
-
-  expect(names).toHaveLength(1);
+  expect(savedFiles(lead)).toHaveLength(1);
 
   const text = await savedNoteText(lead);
 
@@ -125,36 +123,30 @@ it('ending a visible architect tells the lead the departing record after release
   expect(text).toContain('/sessions/departing.jsonl');
   expect(text).toContain(departing.updatedAt);
   expect(text).not.toContain('/sessions/successor.jsonl');
-  expect(lockAtAccept).toBeUndefined();
+  expect(locksAtAccept).toEqual([undefined]);
   expect(endNoteWarnings(session.ui.notify as unknown as Mock)).toEqual([]);
 });
 
 it('ending a visible architect after a queued final handover to its lead sends nothing', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
   const hc = createHcFake();
   const lead = await startLeadInbox(onTestFinished, hc);
-  const { session } = await visibleArchitect(onTestFinished);
+  const { session } = await visibleArchitect(onTestFinished, 't-lead');
 
   recordFinalHandover(session, { status: 'queued', terminal: 't-lead' });
 
   await endArchitectSession(session, hcRuntime(hc), endOptions());
 
-  const saved = lead.savedRecords().filter((name) => name.endsWith('.json'));
-
-  expect(saved).toEqual([]);
+  expect(savedFiles(lead)).toEqual([]);
 });
 
 it('ending a visible architect with a missing record tells the lead the record is missing', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
   const hc = createHcFake();
   const lead = await startLeadInbox(onTestFinished, hc);
-  const { root, session } = await visibleArchitect(onTestFinished);
+  const { root, session } = await visibleArchitect(onTestFinished, 't-lead');
 
   await rm(architectRecordPath(root), { force: true });
 
@@ -166,11 +158,9 @@ it('ending a visible architect with a missing record tells the lead the record i
 it('ending a visible architect with a malformed record tells the lead the record is unreadable', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
   const hc = createHcFake();
   const lead = await startLeadInbox(onTestFinished, hc);
-  const { root, session } = await visibleArchitect(onTestFinished);
+  const { root, session } = await visibleArchitect(onTestFinished, 't-lead');
 
   await writeFile(architectRecordPath(root), '{"version":2');
 
@@ -182,8 +172,6 @@ it('ending a visible architect with a malformed record tells the lead the record
 it('ending a visible architect warns that delivery is unknown when the lead does not confirm', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
   const hc = createHcFake();
 
   const inbox = await startCapturingInbox(
@@ -194,24 +182,16 @@ it('ending a visible architect warns that delivery is unknown when the lead does
     't-lead',
   );
 
-  hc.replyGet(
-    't-lead',
-    JSON.stringify({
-      address: 't-lead',
-      name: null,
-      state: 'live',
-      labels: { 'tau.inbox': formatInboxLabel(inbox.path) },
-    }),
-  );
+  advertiseInbox(hc, 't-lead', inbox.path);
 
-  const { session } = await visibleArchitect(onTestFinished);
+  const { session } = await visibleArchitect(onTestFinished, 't-lead');
   const notify = session.ui.notify as unknown as Mock;
 
   await endArchitectSession(session, hcRuntime(hc), endOptions());
 
   const warnings = endNoteWarnings(notify);
 
-  expect(inbox.saved()).toEqual([]);
+  expect(inbox.savedRecords()).toEqual([]);
   expect(warnings).toHaveLength(1);
   expect(warnings[0]).toContain('unknown');
   expect(warnings[0]).not.toContain('got no end note');
@@ -220,9 +200,7 @@ it('ending a visible architect warns that delivery is unknown when the lead does
 it('ending a visible architect releases the lock and warns once when the end note fails', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
-  const { root, session } = await visibleArchitect(onTestFinished);
+  const { root, session } = await visibleArchitect(onTestFinished, 't-lead');
   const hc = createHcFake();
   const notify = session.ui.notify as unknown as Mock;
 
@@ -240,45 +218,54 @@ it('ending a visible architect releases the lock and warns once when the end not
 it('ending settles live asks without waiting for the note record read', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-  noteRead.hold = true;
+  const hc = createHcFake();
+  const noteArrived = Promise.withResolvers<undefined>();
 
-  onTestFinished(() => {
-    noteRead.hold = false;
-    noteRead.resume.resolve(undefined);
+  const lead = await startLeadInbox(onTestFinished, hc, 'session-lead', {
+    beforeCommit: async () => {
+      noteArrived.resolve(undefined);
+    },
   });
 
-  const hc = createHcFake();
-  const lead = await startLeadInbox(onTestFinished, hc);
-  const { root, session } = await visibleArchitect(onTestFinished);
+  const { root, session } = await visibleArchitect(onTestFinished, 't-lead');
 
   await writeAskRecord(root, openAsk);
 
-  const ending = endArchitectSession(session, hcRuntime(hc), endOptions());
+  const readStarted = Promise.withResolvers<undefined>();
+  const resumeRead = Promise.withResolvers<undefined>();
 
-  await noteRead.started.promise;
+  readGate.path = architectRecordPath(root);
 
-  await vi.waitFor(async () => {
-    expect(await readAskRecord(root, openAsk.askId)).toMatchObject({ status: 'failed' });
+  readGate.hold = async () => {
+    readStarted.resolve(undefined);
+    await resumeRead.promise;
+  };
+
+  onTestFinished(() => {
+    readGate.path = '';
+    readGate.hold = undefined;
+    resumeRead.resolve(undefined);
   });
 
+  const ending = endArchitectSession(session, hcRuntime(hc), endOptions());
+
+  await readStarted.promise;
+  await noteArrived.promise;
+
+  expect(await readAskRecord(root, openAsk.askId)).toMatchObject({ status: 'failed' });
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 
-  noteRead.resume.resolve(undefined);
+  resumeRead.resolve(undefined);
   await ending;
 
-  const savedRecords = lead.savedRecords().filter((name) => name.endsWith('.json'));
-
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  expect(savedRecords).toHaveLength(2);
+  expect(savedFiles(lead)).toHaveLength(2);
 });
 
 it('ending still sends the end note when the admitted close fails', async ({ onTestFinished }) => {
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
-
   const hc = createHcFake();
   const lead = await startLeadInbox(onTestFinished, hc);
-  const { session } = await visibleArchitect(onTestFinished);
+  const { session } = await visibleArchitect(onTestFinished, 't-lead');
   const options = endOptions();
   const failure = new Error('The admitted close failed.');
 

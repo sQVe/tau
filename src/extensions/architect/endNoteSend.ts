@@ -17,26 +17,14 @@ const readRecordFact = async (root: string): Promise<ArchitectRecordFact> => {
   }
 };
 
-export const prepareEndNote = async (
-  route: EndNoteRoute | undefined,
-  root: string,
-): Promise<EndNote | undefined> => {
-  if (route === undefined) {
-    return undefined;
-  }
-
-  return decideEndNote(route, await readRecordFact(root));
-};
+export const prepareEndNote = async (route: EndNoteRoute, root: string): Promise<EndNote> =>
+  decideEndNote(route, await readRecordFact(root));
 
 export const deliverEndNote = async (
-  prepared: EndNote | undefined,
+  prepared: EndNote,
   hc: HcRuntime,
   report: (message: string) => void,
 ): Promise<void> => {
-  if (prepared === undefined) {
-    return;
-  }
-
   try {
     const sent = await sendInboxMessage({
       hc,

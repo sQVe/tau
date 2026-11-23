@@ -32,7 +32,13 @@ import { fakeExtensionApi } from './extensionApi.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { createHcFake } from './hcFake.js';
 import type { HcFake } from './hcFake.js';
-import { forgetAcceptCheck, savedTexts, startHandoverReceiver } from './inboxReceiverHarness.js';
+import {
+  advertiseInbox,
+  forgetAcceptCheck,
+  savedFiles,
+  savedTexts,
+  startHandoverReceiver,
+} from './inboxReceiverHarness.js';
 import type { HandoverReceiver } from './inboxReceiverHarness.js';
 import { temporaryTauConfig } from './tauConfigHarness.js';
 
@@ -122,13 +128,6 @@ const startArchitectInbox = (check: AcceptCheck): Promise<HandoverReceiver> =>
     outsideSlot: true,
   });
 
-const replyTerminal = (hc: HcFake, address: string, path: string): void => {
-  hc.replyGet(
-    address,
-    JSON.stringify({ address, name: null, state: 'live', labels: { 'tau.inbox': `rpc1:${path}` } }),
-  );
-};
-
 const askLiveArchitect = async (root: string, hc: HcFake) => {
   const { fake, context, check } = await startVisibleArchitect(root, hc);
   const architectInbox = await startArchitectInbox(check);
@@ -138,8 +137,8 @@ const askLiveArchitect = async (root: string, hc: HcFake) => {
     sessionId: 'session-lead',
   });
 
-  replyTerminal(hc, 't-lead', lead.path);
-  replyTerminal(hc, 't-architect', architectInbox.path);
+  advertiseInbox(hc, 't-lead', lead.path);
+  advertiseInbox(hc, 't-architect', architectInbox.path);
 
   const asked = await createArchitectTool({ ...hc, cwd: root }).execute(
     'call',
@@ -194,6 +193,7 @@ it('the lead session that asked receives the live architect answer in its inbox'
   const texts = await savedTexts(lead);
 
   expect(answered.details).toEqual({ action: 'answer', status: 'queued', askId });
+  expect(savedFiles(lead)).toHaveLength(1);
   expect(texts).toHaveLength(1);
   expect(texts[0]?.startsWith(`Answer to ask ${askId}`)).toBe(true);
   expect(texts[0]).toContain('Use --dry-run.');
@@ -242,10 +242,11 @@ it('an answer to a lead terminal that started a new session saves nothing and fa
     sessionId: 'session-lead-new',
   });
 
-  replyTerminal(hc, 't-lead', newSession.path);
+  advertiseInbox(hc, 't-lead', newSession.path);
 
   await expect(answer()).rejects.toThrow(/changed session/);
   await expect(savedTexts(newSession)).resolves.toEqual([]);
+  expect(savedFiles(newSession)).toEqual([]);
   expect(await readAskRecord(root, askId)).toMatchObject({ status: 'failed' });
 });
 
@@ -259,7 +260,7 @@ it('an architect-ask is saved only while the architect holds the lock token it n
   const inbox = await startArchitectInbox(check);
   const tokenOne = (await readArchitectOwner(root))?.lockToken ?? '';
 
-  replyTerminal(hc, 't-architect', inbox.path);
+  advertiseInbox(hc, 't-architect', inbox.path);
 
   const send = (text: string, lockToken?: string) => {
     const body: MessageBody =
@@ -302,6 +303,8 @@ it('an architect-ask is saved only while the architect holds the lock token it n
   expect((await savedTexts(inbox)).toSorted()).toEqual(
     ['closed handover', 'held ask', 'held handover', 'new ask', 'restarted handover'].toSorted(),
   );
+
+  expect(savedFiles(inbox)).toHaveLength(5);
 });
 
 it('an architect-ask sent after the record is published but before startup returns is saved', async () => {
@@ -319,7 +322,7 @@ it('an architect-ask sent after the record is published but before startup retur
   });
 
   stubLead();
-  replyTerminal(hc, 't-architect', inbox.path);
+  advertiseInbox(hc, 't-architect', inbox.path);
   vi.stubEnv('TAU_ROLE', 'architect');
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
@@ -349,6 +352,8 @@ it('an architect-ask sent after the record is published but before startup retur
   ).resolves.toMatchObject({ status: 'queued' });
 
   await expect(savedTexts(inbox)).resolves.toEqual(['startup ask']);
+
+  expect(savedFiles(inbox)).toHaveLength(1);
 
   resume.resolve(undefined);
 
@@ -416,7 +421,7 @@ it.for([
   });
 
   vi.stubEnv('HC_TERMINAL_ID', 't-lead');
-  replyTerminal(hc, 't-session', join(sockets, 'sockets', 'session-x.sock'));
+  advertiseInbox(hc, 't-session', join(sockets, 'sockets', 'session-x.sock'));
 
   await expect(
     sendInboxMessage({
@@ -498,7 +503,7 @@ it('a second ask refuses while a hidden ask runs, even with this checkout holdin
     }),
   );
 
-  replyTerminal(hc, 't-ask', receiver.path);
+  advertiseInbox(hc, 't-ask', receiver.path);
 
   const asked = await createArchitectTool({ ...hc, cwd: root }).execute(
     'call',
@@ -537,8 +542,8 @@ it('ask refuses a changed architect session', async () => {
 
   stubLead();
   await recordLiveArchitect(root, 'recorded-session');
-  replyTerminal(hc, 't-lead', lead.path);
-  replyTerminal(hc, 't-architect', architect.path);
+  advertiseInbox(hc, 't-lead', lead.path);
+  advertiseInbox(hc, 't-architect', architect.path);
 
   const tool = createArchitectTool({ ...hc, cwd: root });
 
