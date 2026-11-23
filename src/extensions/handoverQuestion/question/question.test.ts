@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
@@ -8,6 +8,7 @@ import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import { advertiseInbox, startHandoverReceiver } from '../../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import type { Exec } from '../../../command.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { askSender } from './question.js';
 import type { QuestionTarget } from './question.js';
@@ -51,6 +52,16 @@ const targetOf = (
   askerSession,
   sender: { terminal: senderTerminal, sessionId: senderSession },
 });
+
+const askerRecords = async (root: string): Promise<string[]> => {
+  try {
+    const names = await readdir(questionRecordDirectory(root));
+
+    return names.filter((name) => name.endsWith('.json')).toSorted();
+  } catch {
+    return [];
+  }
+};
 
 const textOf = (result: { content: { type: string; text?: string }[] }): string =>
   result.content.map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('');
@@ -143,6 +154,91 @@ it('refuses when the asker has no listening inbox', async () => {
   const savedJson = receiver.savedRecords().filter((name) => name.endsWith('.json'));
 
   expect(existsSync(questionRecordDirectory(root))).toBe(false);
+  expect(savedJson).toHaveLength(0);
+});
+
+it('sends nothing and saves nothing when the call is already cancelled', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
+    outsideSlot: true,
+    accepts: { 'handover-question': (_request, save) => save() },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, senderTerminal, receiver.path);
+  await startAskerInbox(fake);
+
+  const controller = new AbortController();
+
+  controller.abort();
+
+  const target: QuestionTarget = {
+    ...targetOf(fake, root, receiver.sessionId),
+    hc: { ...runtimeOf(fake), signal: controller.signal },
+  };
+
+  await expect(askSender(target, { question: questionText })).rejects.toMatchObject({
+    name: 'AbortError',
+  });
+
+  const savedJson = receiver.savedRecords().filter((name) => name.endsWith('.json'));
+
+  expect(await askerRecords(root)).toEqual([]);
+  expect(savedJson).toHaveLength(0);
+  expect(fake.calls).toHaveLength(0);
+});
+
+it('deletes the record when cancellation stops the send before delivery', async () => {
+  vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const sockets = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, senderTerminal, {
+    outsideSlot: true,
+    accepts: { 'handover-question': (_request, save) => save() },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, senderTerminal, receiver.path);
+  await startAskerInbox(fake);
+
+  const controller = new AbortController();
+  let gets = 0;
+
+  const exec: Exec = (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      gets += 1;
+
+      if (gets === 2) {
+        controller.abort();
+      }
+    }
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  const target: QuestionTarget = {
+    ...targetOf(fake, root, receiver.sessionId),
+    hc: { exec, connect: fake.connect, cwd: '/repository', signal: controller.signal },
+  };
+
+  await expect(askSender(target, { question: questionText })).rejects.toMatchObject({
+    name: 'AbortError',
+  });
+
+  const savedJson = receiver.savedRecords().filter((name) => name.endsWith('.json'));
+  const signals = fake.calls.map((call) => call.signal);
+
+  expect(gets).toBe(2);
+  expect(signals.every((signal) => signal === controller.signal)).toBe(true);
+  expect(await askerRecords(root)).toEqual([]);
   expect(savedJson).toHaveLength(0);
 });
 

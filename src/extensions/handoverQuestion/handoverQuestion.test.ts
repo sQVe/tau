@@ -201,6 +201,41 @@ it('refuses to ask without a saved session ID', async () => {
   await expect(execution).rejects.toThrow('This session has no saved Pi session ID to ask from.');
 });
 
+it('passes the call signal to the inbox send', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const receiverRoot = temporaryDirectory(onTestFinished, 'tau-handover-question-');
+
+  const receiver = await startHandoverReceiver(onTestFinished, receiverRoot, 'lead-1', {
+    outsideSlot: true,
+    sessionId: senderSession,
+    accepts: { 'handover-question': (_request, save) => save() },
+  });
+
+  advertiseInbox(fake, 'lead-1', receiver.path);
+  await startAskerInbox(fake, 'session-1');
+
+  const tool = await registeredTool({ exec: fake.exec });
+
+  vi.stubEnv('HC_TERMINAL_ID', 'worker-1');
+
+  const controller = new AbortController();
+
+  const result = await tool.execute(
+    'call',
+    { question },
+    controller.signal,
+    undefined,
+    toolContext({ cwd: root }),
+  );
+
+  const hcCalls = fake.calls.filter((call) => call.command === 'hc');
+
+  expect(result.details).toMatchObject({ status: 'sent' });
+  expect(hcCalls.length).toBeGreaterThan(0);
+  expect(hcCalls.every((call) => call.signal === controller.signal)).toBe(true);
+});
+
 it('asks the sender that starts the turn with a custom message', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();

@@ -124,6 +124,8 @@ export const askSender = async (
   target: QuestionTarget,
   input: QuestionInput,
 ): Promise<AgentToolResult<QuestionOutcome>> => {
+  target.hc.signal?.throwIfAborted();
+
   const root = await findTauRoot(target.cwd, 'handover_question');
   const questionId = randomUUID();
 
@@ -148,9 +150,9 @@ export const askSender = async (
 
     return result(note, { status: 'unknown', questionId, note }, { terminate: true });
   } catch (error) {
-    target.hc.signal?.throwIfAborted();
-
     await deleteQuestionRecord(root, questionId);
+
+    target.hc.signal?.throwIfAborted();
 
     return result(refusalText(error), { status: 'refused', questionId }, { isError: true });
   }
