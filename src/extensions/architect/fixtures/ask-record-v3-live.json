@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "route": "live",
+  "askId": "0190c1d2-0000-7000-8000-000000000109",
+  "createdAt": "2026-11-17T10:00:00.000Z",
+  "question": "Which flag name?",
+  "leadTerminal": "t-lead",
+  "leadSessionId": "session-lead",
+  "architectTerminal": "t-architect",
+  "architectSessionId": "session-architect",
+  "architectLockToken": "lock-architect",
+  "status": "queued",
+  "detail": null,
+  "answer": null,
+  "gateRecord": "/checkout/.tau/lead/gate/0190c1d2-0000-7000-8000-000000000902.json"
+}

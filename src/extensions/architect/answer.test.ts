@@ -36,7 +36,7 @@ const replyTerminal = (hc: HcFake, address: string, path: string): void => {
 };
 
 const liveRecord = (status: LiveAskRecord['status']): LiveAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'live',
   askId: randomUUID(),
   createdAt: '2026-11-18T10:00:00.000Z',
@@ -49,10 +49,11 @@ const liveRecord = (status: LiveAskRecord['status']): LiveAskRecord => ({
   status,
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const hiddenRecord = (askId: string): HiddenAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'hidden',
   askId,
   createdAt: '2026-11-18T10:00:00.000Z',
@@ -64,6 +65,7 @@ const hiddenRecord = (askId: string): HiddenAskRecord => ({
   status: 'running',
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const answering = async (cleanup: Cleanup, options: HandoverReceiverOptions = {}) => {

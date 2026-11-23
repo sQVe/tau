@@ -168,7 +168,7 @@ export const writeAsk = (
   status: 'running' | 'sent',
 ): Promise<void> =>
   writeAskRecord(root, {
-    version: 2,
+    version: 3,
     route: 'hidden',
     askId: '11111111-1111-1111-1111-111111111111',
     createdAt: new Date().toISOString(),
@@ -180,4 +180,5 @@ export const writeAsk = (
     status,
     detail: null,
     answer: null,
+    gateRecord: null,
   });

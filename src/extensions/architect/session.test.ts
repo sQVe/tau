@@ -183,7 +183,7 @@ const hiddenAsk = (
   name: keyof typeof hiddenIds,
   status: HiddenAskRecord['status'],
 ): HiddenAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'hidden',
   askId: hiddenIds[name],
   createdAt: '2026-11-17T10:00:00.000Z',
@@ -195,6 +195,7 @@ const hiddenAsk = (
   status,
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const liveIds = {
@@ -204,7 +205,7 @@ const liveIds = {
 } as const;
 
 const liveAsk = (name: keyof typeof liveIds, status: LiveAskRecord['status']): LiveAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'live',
   askId: liveIds[name],
   createdAt: '2026-11-17T10:00:00.000Z',
@@ -217,6 +218,7 @@ const liveAsk = (name: keyof typeof liveIds, status: LiveAskRecord['status']): L
   status,
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const hiddenSession = (

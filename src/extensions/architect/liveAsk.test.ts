@@ -52,7 +52,7 @@ const liveArchitect = (cleanup: Cleanup, withLeadInbox = true) =>
   startLiveArchitect(cleanup, { withLeadInbox });
 
 const liveRecord = (status: LiveAskRecord['status']): LiveAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'live',
   askId: randomUUID(),
   createdAt: '2026-11-18T10:00:00.000Z',
@@ -65,10 +65,11 @@ const liveRecord = (status: LiveAskRecord['status']): LiveAskRecord => ({
   status,
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 const hiddenRecord = (): HiddenAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'hidden',
   askId: randomUUID(),
   createdAt: '2026-11-18T10:00:00.000Z',
@@ -80,6 +81,7 @@ const hiddenRecord = (): HiddenAskRecord => ({
   status: 'sent',
   detail: null,
   answer: null,
+  gateRecord: null,
 });
 
 it('a live ask records the lead session and queues the question with the ask ID', async ({

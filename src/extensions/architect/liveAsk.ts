@@ -25,6 +25,7 @@ interface LiveAskRoute {
 interface LiveAskRequest {
   root: string;
   question: string;
+  gateRecord: string | null;
   leadTerminal: string;
   leadSessionId: string;
   listenerPath: string | undefined;
@@ -72,11 +73,14 @@ const proofKey = (root: string, askId: string): string => `${root}\n${askId}`;
 const noLeadInbox =
   'This lead session has no working inbox, so the answer cannot reach it. Reload Pi, then ask again.';
 
-const architectInboxMissing = (terminal: string): string =>
-  `The live architect in ${terminal} advertises no Tau inbox. No ask was saved. Call architect ask again with the question in a few seconds. If the terminal still shows no inbox, switch to its pane to talk to the architect.`;
+const askAgainInput = (gateRecord: string | null): string =>
+  gateRecord === null ? 'the question' : `gate ${gateRecord}`;
 
-const missingRecordNote =
-  'The question may be in the architect inbox, but its ask record is gone, so the architect cannot answer it. Call architect ask again with the question.';
+const architectInboxMissing = (terminal: string, gateRecord: string | null): string =>
+  `The live architect in ${terminal} advertises no Tau inbox. No ask was saved. Call architect ask again with ${askAgainInput(gateRecord)} in a few seconds. If the terminal still shows no inbox, switch to its pane to talk to the architect.`;
+
+const missingRecordNote = (gateRecord: string | null): string =>
+  `The question may be in the architect inbox, but its ask record is gone, so the architect cannot answer it. Call architect ask again with ${askAgainInput(gateRecord)}.`;
 
 // A retry sends these exact bytes again, so the text depends only on the record.
 const questionText = (record: LiveAskRecord): string =>
@@ -154,7 +158,10 @@ const repairedRefusal = (
   change: AskRecordChange | undefined,
 ): Error => {
   const state = recordState(change);
-  const advice = state === 'failed' ? ' Call architect ask again with the question.' : '';
+  const gateRecord = change?.record.gateRecord ?? null;
+
+  const advice =
+    state === 'failed' ? ` Call architect ask again with ${askAgainInput(gateRecord)}.` : '';
 
   return new Error(`${errorMessage(refusal)} Ask ${askId} is ${state}.${advice}`, {
     cause: refusal,
@@ -272,7 +279,12 @@ const sendQuestion = async (
     }
 
     if (settled.change === undefined) {
-      return { status: 'unknown', askId, terminal: sent.terminal, note: missingRecordNote };
+      return {
+        status: 'unknown',
+        askId,
+        terminal: sent.terminal,
+        note: missingRecordNote(record.gateRecord),
+      };
     }
 
     if (!settled.change.changed) {
@@ -304,7 +316,12 @@ const sendQuestion = async (
   }
 
   if (settled.change === undefined) {
-    return { status: 'queued', askId, terminal: sent.terminal, note: missingRecordNote };
+    return {
+      status: 'queued',
+      askId,
+      terminal: sent.terminal,
+      note: missingRecordNote(record.gateRecord),
+    };
   }
 
   if (!settled.change.changed) {
@@ -331,7 +348,7 @@ const readArchitectTerminal = async (request: LiveAskRequest, route: LiveAskRout
     request.hc.signal?.throwIfAborted();
 
     throw new Error(
-      `The architect terminal ${route.terminal} could not be read: ${errorMessage(error)}. No ask was saved. Call architect ask again with the question.`,
+      `The architect terminal ${route.terminal} could not be read: ${errorMessage(error)}. No ask was saved. Call architect ask again with ${askAgainInput(request.gateRecord)}.`,
       { cause: error },
     );
   }
@@ -354,11 +371,14 @@ const askLiveArchitect = async (
   });
 
   if (inboxDecision === 'inboxMissing') {
-    return { status: 'needsOpen', reason: architectInboxMissing(route.terminal) };
+    return {
+      status: 'needsOpen',
+      reason: architectInboxMissing(route.terminal, request.gateRecord),
+    };
   }
 
   const record: LiveAskRecord = {
-    version: 2,
+    version: 3,
     route: 'live',
     askId: randomUUID(),
     createdAt: new Date().toISOString(),
@@ -371,6 +391,7 @@ const askLiveArchitect = async (
     status: 'sending',
     detail: null,
     answer: null,
+    gateRecord: request.gateRecord,
   };
 
   await writeAskRecord(request.root, record);

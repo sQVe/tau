@@ -12,12 +12,14 @@ import { answerLiveAsk } from './answer.js';
 import type { AnswerResult, AnswerTracker } from './answer.js';
 import { askArchitect } from './ask/ask.js';
 import type { AskResult } from './ask/ask.js';
+import { decideAskIntake } from './ask/askIntakeDecision.js';
 import { runGate } from './gate.js';
 import type { GateResult } from './gate.js';
 import { createLiveAskOperations } from './liveAsk.js';
 import type { LiveAskOperations } from './liveAsk.js';
 import { openArchitect } from './open/open.js';
 import type { OpenResult } from './open/open.js';
+import { readGateRecord } from './record.js';
 
 type ArchitectDetails =
   | ({ action: 'open' } & OpenResult)
@@ -29,6 +31,11 @@ type AnswerDetails = { action: 'answer' } & AnswerResult;
 const parameters = Type.Object({
   action: Type.Union([Type.Literal('open'), Type.Literal('ask'), Type.Literal('gate')]),
   question: Type.Optional(Type.String({ description: 'ask: the question for the architect.' })),
+  gate: Type.Optional(
+    Type.String({
+      description: 'ask: an uncertain gate record path.',
+    }),
+  ),
   askId: Type.Optional(Type.String()),
   request: Type.Optional(
     Type.String({ description: 'open, gate: the user request, in the user words.' }),
@@ -40,12 +47,17 @@ const parameters = Type.Object({
 
 type ArchitectInput = Static<typeof parameters>;
 
+const unsetWhenBlank = (value: string | undefined): string | undefined =>
+  value === undefined || value.trim() === '' ? undefined : value;
+
 const requireText = (name: string, value: string | undefined): string => {
-  if (value === undefined || value.trim() === '') {
+  const text = unsetWhenBlank(value);
+
+  if (text === undefined) {
     throw new Error(`${name} is required.`);
   }
 
-  return value;
+  return text;
 };
 
 const rejectUnexpected = (input: ArchitectInput, names: readonly (keyof ArchitectInput)[]) => {
@@ -74,7 +86,7 @@ const leadTerminal = (): string => {
   return address;
 };
 
-const runAsk = (
+const runAsk = async (
   hc: HcRuntime,
   context: ExtensionToolContext,
   input: ArchitectInput,
@@ -82,18 +94,28 @@ const runAsk = (
   liveAsk: LiveAskOperations,
 ): Promise<AskResult> => {
   const leadSessionId = context.sessionManager.getSessionId();
+  const gate = unsetWhenBlank(input.gate);
+  const gateRead = gate === undefined ? undefined : await readGateRecord(root, gate);
 
-  if (input.askId !== undefined) {
-    if (input.question !== undefined) {
-      throw new Error('action ask with askId does not take question.');
-    }
+  const decision = decideAskIntake({
+    askId: input.askId,
+    question: input.question,
+    gate: input.gate,
+    gateRead,
+  });
 
-    return liveAsk.retry({ root, askId: requireAskId(input.askId), leadSessionId, hc });
+  if (decision.kind === 'refusal') {
+    throw new Error(decision.message);
+  }
+
+  if (decision.kind === 'retry') {
+    return liveAsk.retry({ root, askId: requireAskId(decision.askId), leadSessionId, hc });
   }
 
   return askArchitect({
     root,
-    question: requireText('question', input.question),
+    question: decision.question,
+    gateRecord: decision.gateRecord,
     leadTerminal: leadTerminal(),
     leadSessionId,
     listenerPath: currentInboxPath(),
@@ -115,7 +137,7 @@ const runAction = async (
   const location = readConfigLocation(root, {}, context);
 
   if (input.action === 'open') {
-    rejectUnexpected(input, ['question', 'askId', 'restatement']);
+    rejectUnexpected(input, ['question', 'askId', 'restatement', 'gate']);
 
     return {
       action: 'open',
@@ -136,7 +158,7 @@ const runAction = async (
     return { action: 'ask', ...(await runAsk({ ...hc, signal }, context, input, root, liveAsk)) };
   }
 
-  rejectUnexpected(input, ['question', 'askId']);
+  rejectUnexpected(input, ['question', 'askId', 'gate']);
 
   return {
     action: 'gate',
@@ -159,11 +181,9 @@ export const createArchitectTool = (
   return defineTool({
     name: 'architect',
     label: 'Architect',
-    description: `Open, ask, or gate the checkout's architect.
-- action open: with request, starts the architect in a pane beside the lead, or resumes its recorded session. Returns {status, sessionFile}, or {status: "running", terminal} for a live architect; send it the request with handover. Refuses while another architect holds the lock.
-- action ask: live architect in this checkout: queues question {queued|unknown, askId, note}; follow note, retry unknown by askId. Else hidden: {askId, answer} or needsOpen. Refuses during a hidden ask or another checkout's lock.
-- action gate: classifies request and restatement with typesafe/jev-latest. Returns {decision, label, confidence, recordPath}. Follow specified; on open, call architect open; on uncertain, ask the user whether to brief a worker or open the architect.
-Every gate call writes a record under .tau/lead/gate.`,
+    description: `- open: with request, starts or resumes it beside the lead. Returns {status, sessionFile} or {status: "running", terminal}; send a live one the request with handover. Refuses if locked.
+- ask: with question or gate, a gate record path. Live: {queued|unknown, askId, note}; follow note, retry unknown by askId. Else hidden: {askId, answer} or needsOpen. Refuses if busy.
+- gate: classifies request and restatement. Returns {decision, label, confidence, recordPath}. Gate only a new request; an acceptance reply follows your offer. Follow specified; on open, open it; on uncertain, ask with gate = recordPath.`,
     promptSnippet: 'Open, ask, or gate the checkout architect.',
     parameters,
     executionMode: 'sequential',

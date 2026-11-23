@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -35,6 +35,12 @@ export interface ChangeAskOptions {
   afterRead?: () => Promise<void>;
   onWaiting?: () => void;
 }
+
+export type GateRecordRead =
+  | { kind: 'outside'; directory: string }
+  | { kind: 'missing' }
+  | { kind: 'unreadable'; message: string }
+  | { kind: 'found'; path: string; record: GateRecord };
 
 const choiceOutcomeSchema = Type.Union([
   Type.Object({
@@ -128,11 +134,23 @@ const askRecordV1Schema = Type.Object({
   ...hiddenAskFields,
 });
 
-const hiddenAskRecordSchema = Type.Object(
+const hiddenAskRecordV2Schema = Type.Object(
   {
     version: Type.Literal(2),
     route: Type.Literal('hidden'),
     ...hiddenAskFields,
+  },
+  { additionalProperties: false },
+);
+
+const askRecordVersion = 3;
+
+const hiddenAskRecordSchema = Type.Object(
+  {
+    version: Type.Literal(askRecordVersion),
+    route: Type.Literal('hidden'),
+    ...hiddenAskFields,
+    gateRecord: Type.Union([Type.String(), Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -147,48 +165,76 @@ const liveAskStatusSchema = Type.Union([
 
 type LiveAskStatus = Static<typeof liveAskStatusSchema>;
 
-const liveAskRecordSchema = Type.Object(
+const liveAskFields = {
+  askId: Type.String(),
+  createdAt: Type.String(),
+  question: Type.String(),
+  leadTerminal: Type.String(),
+  leadSessionId: Type.String(),
+  architectTerminal: Type.String(),
+  architectSessionId: Type.String(),
+  architectLockToken: Type.String(),
+  status: liveAskStatusSchema,
+  detail: Type.Union([Type.String(), Type.Null()]),
+  answer: Type.Union([Type.String(), Type.Null()]),
+};
+
+const liveAskRecordV2Schema = Type.Object(
   {
     version: Type.Literal(2),
     route: Type.Literal('live'),
-    askId: Type.String(),
-    createdAt: Type.String(),
-    question: Type.String(),
-    leadTerminal: Type.String(),
-    leadSessionId: Type.String(),
-    architectTerminal: Type.String(),
-    architectSessionId: Type.String(),
-    architectLockToken: Type.String(),
-    status: liveAskStatusSchema,
-    detail: Type.Union([Type.String(), Type.Null()]),
-    answer: Type.Union([Type.String(), Type.Null()]),
+    ...liveAskFields,
   },
   { additionalProperties: false },
 );
 
-const askRecordSchema = Type.Union([askRecordV1Schema, hiddenAskRecordSchema, liveAskRecordSchema]);
+const liveAskRecordSchema = Type.Object(
+  {
+    version: Type.Literal(askRecordVersion),
+    route: Type.Literal('live'),
+    ...liveAskFields,
+    gateRecord: Type.Union([Type.String(), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+const askRecordSchema = Type.Union([
+  askRecordV1Schema,
+  hiddenAskRecordV2Schema,
+  liveAskRecordV2Schema,
+  hiddenAskRecordSchema,
+  liveAskRecordSchema,
+]);
 
 export type HiddenAskRecord = Static<typeof hiddenAskRecordSchema>;
 
 export type LiveAskRecord = Static<typeof liveAskRecordSchema>;
 
-const toAskRecord = (record: Static<typeof askRecordSchema>): AskRecord =>
-  record.version === 1
-    ? {
-        version: 2,
-        route: 'hidden',
-        askId: record.askId,
-        createdAt: record.createdAt,
-        question: record.question,
-        sessionFile: record.sessionFile,
-        terminal: record.terminal,
-        leadTerminal: record.leadTerminal,
-        deadline: record.deadline,
-        status: record.status,
-        detail: record.detail,
-        answer: record.answer,
-      }
-    : record;
+const toAskRecord = (record: Static<typeof askRecordSchema>): AskRecord => {
+  if (record.version === 1) {
+    return {
+      version: 3,
+      route: 'hidden',
+      askId: record.askId,
+      createdAt: record.createdAt,
+      question: record.question,
+      sessionFile: record.sessionFile,
+      terminal: record.terminal,
+      leadTerminal: record.leadTerminal,
+      deadline: record.deadline,
+      status: record.status,
+      detail: record.detail,
+      answer: record.answer,
+      gateRecord: null,
+    };
+  }
+
+  if (record.version === 2) {
+    return { ...record, version: 3, gateRecord: null };
+  }
+
+  return record;
+};
 
 export const architectRecordPath = (root: string): string =>
   join(root, '.tau', 'architect', 'record.json');
@@ -217,12 +263,30 @@ export const writeArchitectRecord = async (
   await writeRecord(architectRecordPath(root), record);
 };
 
-export const readGateRecord = (root: string, name: string): Promise<GateRecord | undefined> =>
-  readVersionedRecord(join(gateRecordDirectory(root), name), {
-    label: 'gate record',
-    version: 1,
-    schema: gateRecordSchema,
-  });
+export const readGateRecord = async (root: string, reference: string): Promise<GateRecordRead> => {
+  const resolved = resolve(root, reference);
+  const directory = gateRecordDirectory(root);
+  const fromDirectory = relative(directory, resolved);
+
+  const inside =
+    fromDirectory !== '' && !fromDirectory.startsWith('..') && !isAbsolute(fromDirectory);
+
+  if (!inside) {
+    return { kind: 'outside', directory };
+  }
+
+  try {
+    const record = await readVersionedRecord(resolved, {
+      label: 'gate record',
+      version: 1,
+      schema: gateRecordSchema,
+    });
+
+    return record === undefined ? { kind: 'missing' } : { kind: 'found', path: resolved, record };
+  } catch (error) {
+    return { kind: 'unreadable', message: errorMessage(error) };
+  }
+};
 
 export const writeGateRecord = async (root: string, record: GateRecord): Promise<string> => {
   await ensureTauDirectory(root, 'lead/gate');
@@ -257,7 +321,7 @@ const askRecordProblem = (path: string, value: unknown): string | undefined => {
 export const readAskRecordAt = async (path: string): Promise<AskRecord | undefined> => {
   const record = await readVersionedRecord(path, {
     label: 'ask record',
-    version: 2,
+    version: askRecordVersion,
     schema: askRecordSchema,
     check: (value) => askRecordProblem(path, value),
   });

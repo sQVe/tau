@@ -228,7 +228,7 @@ for (const { case: description, role, tools } of roleCases) {
 }
 
 const openAsk: LiveAskRecord = {
-  version: 2,
+  version: 3,
   route: 'live',
   askId: '0190c1d2-0000-7000-8000-000000000107',
   createdAt: '2026-11-18T10:00:00.000Z',
@@ -241,6 +241,7 @@ const openAsk: LiveAskRecord = {
   status: 'queued',
   detail: null,
   answer: null,
+  gateRecord: null,
 };
 
 const callHandover = async (

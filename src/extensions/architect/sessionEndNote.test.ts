@@ -62,7 +62,7 @@ const endNoteWarnings = (notify: Mock): string[] =>
     .filter((message) => message.includes('end note'));
 
 const openAsk: LiveAskRecord = {
-  version: 2,
+  version: 3,
   route: 'live',
   askId: '0190c1d2-0000-7000-8000-000000000401',
   createdAt: '2026-11-23T08:00:00.000Z',
@@ -75,6 +75,7 @@ const openAsk: LiveAskRecord = {
   status: 'queued',
   detail: null,
   answer: null,
+  gateRecord: null,
 };
 
 it('ending a visible architect tells the lead the departing record after release', async ({
