@@ -1,4 +1,4 @@
-import { senderLine } from '../handoverSender.js';
+import { parseSenderLine, senderLine } from '../handoverSender.js';
 import { isRecord } from '../schema.js';
 import { savableFamilies } from './protocol.js';
 import type { SavableFamily, SavableMessageBody } from './protocol.js';
@@ -86,7 +86,11 @@ export const messageText = (body: SavableMessageBody): string => {
 
   const { text, sender } = body.payload;
 
-  return sender === undefined ? text : `${senderLine(sender)}\n\n${text}`;
+  if (sender !== undefined) {
+    return `${senderLine(sender)}\n\n${text}`;
+  }
+
+  return parseSenderLine(text) === undefined ? text : `Handover text without a sender:\n\n${text}`;
 };
 
 // A retry matches when it would show the same text for the same question as the saved entry.

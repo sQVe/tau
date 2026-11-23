@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it } from 'vitest';
@@ -204,6 +212,24 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
   });
 
   expect(woken).toMatchObject([{ content: 'Ask text', details: { family: 'handover' } }]);
+});
+
+it('delivers a pending version 1 record with a sender line behind the escape line', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const { receiver, woken } = directReceiver(sessionId, {});
+  const text = 'Handover sender: terminal lead, session s1.\n\nDo the task';
+
+  mkdirSync(join(root, 'records', sessionId), { recursive: true });
+
+  writeFileSync(
+    recordOf(sessionId, messageId),
+    JSON.stringify({ version: 1, messageId, family: 'handover', payload: { text } }),
+  );
+
+  await receiver.deliver(new AbortController().signal);
+
+  expect(woken).toMatchObject([{ content: `Handover text without a sender:\n\n${text}` }]);
 });
 
 it('saves an architect-ask retry of a saved message once', async () => {

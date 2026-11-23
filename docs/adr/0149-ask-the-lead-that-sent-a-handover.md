@@ -57,6 +57,10 @@ the session that currently sends it work.
 A handover file whose first line is a sender line is refused. A file that could pose as a sender
 would let its author redirect the receiver's questions.
 
+A receiver puts a fixed `Handover text without a sender:` line above sender-free text whose first
+line is a sender line. So only a payload `sender` or the start environment and task line give a
+sender, whatever Tau version sent the text.
+
 ### Keep the saved handover record compatible
 
 The sender is a new optional field in the saved handover record, so the record moves to version 2
@@ -84,7 +88,11 @@ stall the work.
   carries none.
 - An older Tau refuses a handover frame with a sender, so mixed versions cannot exchange one.
 - A session with no usable sender in its transcript or environment still asks its user.
-- A sender line in the first line of handover text is refused, which is a new restriction on text.
+- A current sender refuses a handover file whose first line is a sender line, and a receiver shows
+  such text from any other source with the escape line first.
+- A sender line already saved in a transcript before the upgrade, or in the task of a session that
+  an older Tau's `handover start` opened, still reads as a sender. Restarting that session ends it,
+  as [ADR 0053](./0053-version-each-saved-record-format.md) says for older sessions.
 
 ## Alternatives considered
 
