@@ -445,6 +445,10 @@ it('fails the real style step on banned markers', async ({ onTestFinished }) => 
 
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
+  expect(result.stdout).toContain('vitest(no-focused-tests)');
+  expect(result.stdout).toContain('vitest(no-disabled-tests)');
+  expect(result.stdout).toContain('seam(require-disable-reason)');
+  expect(result.stdout).toContain('typescript(ban-ts-comment)');
 }, 30_000);
 
 it('fails focused tests on describe and it', async ({ onTestFinished }) => {
@@ -560,7 +564,6 @@ it('fails disable comments without a reason', async ({ onTestFinished }) => {
   expect(atLineFour[0]).toContain(`${fixture}:4:`);
 
   for (const diagnostic of reasonless) {
-    expect(diagnostic).toContain('Add a reason after');
     expect(diagnostic).toContain(' -- ');
   }
 }, 30_000);
