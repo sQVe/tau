@@ -15,6 +15,7 @@ import compactionExtension from '../extensions/compaction/compaction.js';
 import draftReviewExtension from '../extensions/draftReview/draftReview.js';
 import fullCheckExtension from '../extensions/fullCheck/fullCheck.js';
 import handoverExtension from '../extensions/handover/handover.js';
+import handoverQuestionExtension from '../extensions/handoverQuestion/handoverQuestion.js';
 import improvementExtension from '../extensions/improvement/improvement.js';
 import inboxExtension from '../extensions/inbox/inbox.js';
 import instructionsExtension from '../extensions/instructions.js';
@@ -71,6 +72,7 @@ export default async function tauRegistration(pi: ExtensionAPI): Promise<void> {
   fullCheckExtension(pi);
   handoverExtension(pi);
   inboxExtension(pi);
+  handoverQuestionExtension(pi);
   architectExtension(pi);
   draftReviewExtension(pi);
   trackerExtension(pi);

@@ -5,12 +5,12 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { errorMessage, isMissingFile } from '../../errors.js';
-import { senderTerminalPattern } from '../../handoverSender.js';
-import { isUuid, sessionIdSchema, uuidSchema } from '../../inbox/inbox.js';
-import { readVersionedRecord, writeRecord } from '../../record.js';
-import { describeSchemaProblem } from '../../schema.js';
-import { ensureTauDirectory, rejectLinkedFile, rejectTauSymlinks } from '../../tauDirectory.js';
+import { errorMessage, isMissingFile } from '../../../errors.js';
+import { senderTerminalPattern } from '../../../handoverSender.js';
+import { isUuid, sessionIdSchema, uuidSchema } from '../../../inbox/inbox.js';
+import { readVersionedRecord, writeRecord } from '../../../record.js';
+import { describeSchemaProblem } from '../../../schema.js';
+import { ensureTauDirectory, rejectLinkedFile, rejectTauSymlinks } from '../../../tauDirectory.js';
 
 export type QuestionRead =
   | { kind: 'record'; record: QuestionRecord }

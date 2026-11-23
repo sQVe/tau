@@ -4,8 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, expect, it } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.ts';
-import { ensureTauDirectory } from '../../tauDirectory.ts';
+import { createTemporaryRepository } from '../../../../tests/gitRepository.ts';
+import { ensureTauDirectory } from '../../../tauDirectory.ts';
 import {
   deleteQuestionRecord,
   questionRecordDirectory,
