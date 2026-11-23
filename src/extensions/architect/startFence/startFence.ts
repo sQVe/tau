@@ -58,6 +58,7 @@ interface FenceState {
   ticketPath: string | undefined;
   processId: number | undefined;
   child: ProcessState;
+  takenOver: boolean;
   // Memoizes the one release so a caller that settles twice reports the same result.
   finished: StartFenceFinish | undefined;
 }
@@ -87,6 +88,7 @@ const startFence = (
     ticketPath: undefined,
     processId: undefined,
     child: 'unknown',
+    takenOver: false,
     finished: undefined,
   };
 
@@ -122,7 +124,7 @@ const startFence = (
 
   const abandon = async (): Promise<StartFenceAbandonment> => {
     if (state.finished !== undefined || !startFenceCancellable(state.phase)) {
-      return { takenOver: false };
+      return { takenOver: state.takenOver };
     }
 
     const cancelled = await cancelStartTicket(currentTicketPath());
@@ -130,13 +132,13 @@ const startFence = (
     if (cancelled === 'cancelled') {
       state.phase = 'cancelled';
 
-      return { takenOver: false };
+      return { takenOver: state.takenOver };
     }
 
     if (cancelled === 'unread') {
       state.phase = 'unread';
 
-      return { takenOver: false };
+      return { takenOver: state.takenOver };
     }
 
     state.phase = takenPhase(state.processId);
@@ -145,13 +147,15 @@ const startFence = (
       await recordStarted();
     }
 
-    const takenOver = await claimTakenOver();
+    if (!state.takenOver) {
+      state.takenOver = await claimTakenOver();
+    }
 
-    if (takenOver) {
+    if (state.takenOver) {
       state.child = 'running';
     }
 
-    return { takenOver };
+    return { takenOver: state.takenOver };
   };
 
   const finish = async (request: StartFenceFinishRequest): Promise<StartFenceFinish> => {
