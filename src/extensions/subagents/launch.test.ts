@@ -337,7 +337,7 @@ it('refuses a launch when the fresh skill table needs an unregistered tool', asy
 });
 
 it('launches from an architect session when the skill table lists the architect tool', async () => {
-  const { runtime } = setup();
+  const { fake, runtime } = setup();
 
   vi.stubEnv('TAU_ROLE', 'architect');
 
@@ -357,6 +357,11 @@ it('launches from an architect session when the skill table lists the architect 
   const result = await launch(runtime, {});
 
   expect(result.isError).not.toBe(true);
+
+  expect(terminalRun(fake)?.labels).toMatchObject({
+    'tau.profile': 'scout',
+    'tau.role': 'worker',
+  });
 });
 
 it('refuses an editing launch from an architect session', async () => {
@@ -591,6 +596,7 @@ it('writes the tau labels and no space and tab labels when the manager has no ta
 
   expect(request?.labels).toMatchObject({
     'tau.profile': 'worker',
+    'tau.role': 'worker',
     'tau.model': 'faux/test',
     'tau.deadline': '3601000',
     'tau.task': 'Fix the counts.',
