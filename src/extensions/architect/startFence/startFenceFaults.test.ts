@@ -1,11 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
-import { takeStartTicket, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
+import { takenFence } from '../../../../tests/startFenceSetup.js';
+import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { architectLockPath } from '../lock.js';
 import { acquireStartFence } from './startFence.js';
-import type { StartFence } from './startFence.js';
 
 const faults = vi.hoisted(() => ({
   failStartSweep: false,
@@ -85,26 +85,6 @@ const resetFaults = (): void => {
 
 afterEach(resetFaults);
 
-const acquiredFence = async (root: string): Promise<StartFence> => {
-  const acquisition = await acquireStartFence(root);
-
-  if (acquisition.kind !== 'acquired') {
-    throw new Error('The start fence was not acquired.');
-  }
-
-  return acquisition.fence;
-};
-
-const takenFence = async (root: string): Promise<StartFence> => {
-  const fence = await acquiredFence(root);
-
-  await fence.createTicket();
-
-  expect(await takeStartTicket(fence.wrapArgv(['true']))).toBe(true);
-
-  return fence;
-};
-
 it('reports the sweep failure and the release failure together', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
 
@@ -141,6 +121,31 @@ it('keeps the claim and reports the release failure beside a gone child', async 
   expect(completion.failure?.cause).toMatchObject({
     message: 'The lock could not be truncated.',
   });
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
+it('reports the release failure ahead of an earlier marker read failure when the claim stays kept', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  useFakeStartProcess(onTestFinished, 'gone');
+  const fence = await takenFence(root);
+
+  await fence.recordStarted();
+
+  faults.failMarkerRead = true;
+  faults.failClaimRelease = true;
+
+  const completion = await fence.complete();
+
+  expect(completion.outcome).toBe('gone');
+  expect(completion.claim).toBe('kept');
+
+  expect(completion.failure?.message).toBe(
+    'The claim could not be released: The lock could not be truncated.',
+  );
 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });

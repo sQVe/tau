@@ -281,7 +281,7 @@ const startFence = (
       await deleteOwnMarker();
     }
 
-    const failure = cancelled.failure ?? stopFailure ?? readFailure ?? releaseError;
+    const failure = releaseError ?? cancelled.failure ?? stopFailure ?? readFailure;
 
     const completion: StartFenceCompletion = {
       outcome: plan.outcome,
