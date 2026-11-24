@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
 import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
@@ -202,90 +202,77 @@ it('an abort after the takeover rejects and leaves the architect running', async
   });
 });
 
-it('an abort after preparation starts no launch and releases the claim', async ({
-  onTestFinished: cleanup,
-}) => {
-  const { root, config } = await setup(cleanup);
-  const { app, hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
-  const controller = new AbortController();
-  const cancellation = new Error('cancelled before dispatch');
+const expectCancelled = (failure: unknown, reason: unknown): void => {
+  if (reason instanceof Error) {
+    expect(failure).toBe(reason);
 
-  await recordSession(root);
-
-  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
-    const result = await runtime.exec(command, commandArguments, options);
-
-    if (command === 'herdr-app' && commandArguments[0] === 'ls') {
-      controller.abort(cancellation);
-    }
-
-    return result;
-  };
-
-  const failure = await openArchitect(
-    requestFor(root, config.location, { ...runtime, exec, signal: controller.signal }),
-  ).catch((error: unknown) => error);
-
-  expect(failure).toBe(cancellation);
-  expect(appCommands(app)).toEqual(['ls']);
-  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-});
-
-it('an abort while the takeover sleep waits rejects without the sleep timer', async ({
-  onTestFinished: cleanup,
-}) => {
-  vi.useFakeTimers({
-    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
-  });
-
-  const { root, config } = await setup(cleanup);
-  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
-  const controller = new AbortController();
-  const cancellation = new Error('cancelled in the sleep');
-
-  const child = useFakeStartProcess(cleanup, 'running');
-  await recordSession(root);
-
-  const opening = openArchitect(
-    requestFor(root, config.location, { ...runtime, signal: controller.signal }),
-  ).catch((error: unknown) => error);
-
-  await sleepEntered.current.promise;
-
-  child.state = 'gone';
-
-  controller.abort(cancellation);
-
-  await expect(opening).resolves.toBe(cancellation);
-});
-
-it('an abort with a non-Error reason while the takeover sleep waits rejects with an Error', async ({
-  onTestFinished: cleanup,
-}) => {
-  vi.useFakeTimers({
-    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
-  });
-
-  const { root, config } = await setup(cleanup);
-  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
-  const controller = new AbortController();
-
-  const child = useFakeStartProcess(cleanup, 'running');
-  await recordSession(root);
-
-  const opening = openArchitect(
-    requestFor(root, config.location, { ...runtime, signal: controller.signal }),
-  ).catch((error: unknown) => error);
-
-  await sleepEntered.current.promise;
-
-  child.state = 'gone';
-
-  controller.abort('cancelled in the sleep');
-
-  const failure = await opening;
+    return;
+  }
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toBe('The open was cancelled.');
+};
+
+it.each([
+  ['an Error reason', () => new Error('cancelled before dispatch')],
+  ['a non-Error reason', () => 'cancelled before dispatch'],
+])(
+  'an abort with %s after preparation starts no launch and releases the claim',
+  async (_, reasonOf) => {
+    const { root, config } = await setup(onTestFinished);
+    const { app, hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+    const controller = new AbortController();
+    const reason: unknown = reasonOf();
+
+    await recordSession(root);
+
+    const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+      const result = await runtime.exec(command, commandArguments, options);
+
+      if (command === 'herdr-app' && commandArguments[0] === 'ls') {
+        controller.abort(reason);
+      }
+
+      return result;
+    };
+
+    const failure = await openArchitect(
+      requestFor(root, config.location, { ...runtime, exec, signal: controller.signal }),
+    ).catch((error: unknown) => error);
+
+    expectCancelled(failure, reason);
+    expect(appCommands(app)).toEqual(['ls']);
+    expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+    expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  },
+);
+
+it.each([
+  ['an Error reason', () => new Error('cancelled in the sleep')],
+  ['a non-Error reason', () => 'cancelled in the sleep'],
+])('an abort with %s while the takeover sleep waits rejects with an Error', async (_, reasonOf) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  const { root, config } = await setup(onTestFinished);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+  const reason: unknown = reasonOf();
+
+  const child = useFakeStartProcess(onTestFinished, 'running');
+  await recordSession(root);
+
+  const opening = openArchitect(
+    requestFor(root, config.location, { ...runtime, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  await sleepEntered.current.promise;
+
+  child.state = 'gone';
+
+  controller.abort(reason);
+
+  expectCancelled(await opening, reason);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });

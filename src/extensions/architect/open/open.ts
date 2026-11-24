@@ -303,14 +303,16 @@ const childGone = (fence: StartFence): boolean => {
   return childPid !== undefined && processState(childPid) === 'gone';
 };
 
-const throwIfOpenCancelled = (signal: AbortSignal | undefined): void => {
-  signal?.throwIfAborted();
-};
-
 const cancelledOpenError = (signal: AbortSignal | undefined): Error => {
   const reason: unknown = signal?.reason;
 
   return reason instanceof Error ? reason : new Error('The open was cancelled.');
+};
+
+const throwIfOpenCancelled = (signal: AbortSignal | undefined): void => {
+  if (signal?.aborted === true) {
+    throw cancelledOpenError(signal);
+  }
 };
 
 const waitForTakeover = async (
@@ -469,7 +471,7 @@ export const openArchitect = async (
       fence.token,
     );
 
-    request.hc.signal?.throwIfAborted();
+    throwIfOpenCancelled(request.hc.signal);
 
     const started = await launchArchitect(launchHc, request, prepared, fence);
 
