@@ -1,7 +1,7 @@
 import type { HerdrSpace } from '../../piStart/herdrPane.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
 
-// Both folder values are absolute paths that the caller resolved with path.resolve.
+// Both folder values are the caller's real paths, so a symlinked path to one checkout matches it.
 export interface StartPlacementFacts {
   folder: string;
   spaces: readonly HerdrSpace[];

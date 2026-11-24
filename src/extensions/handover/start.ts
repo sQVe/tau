@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { Type } from 'typebox';
@@ -41,17 +42,29 @@ const launchReplySchema = Type.Object({
   terminal: Type.String(),
 });
 
+const realFolder = async (folder: string): Promise<string> => {
+  try {
+    return await realpath(folder);
+  } catch {
+    return resolve(folder);
+  }
+};
+
 const placementFor = async (runtime: CommandRuntime, request: StartHandoverRequest) => {
   const spaces = request.space === undefined ? await listSpaces(runtime) : [];
 
-  return startPlacement({
-    folder: resolve(request.folder),
-    spaces: spaces.map((space) => ({
+  const listed = await Promise.all(
+    spaces.map(async (space) => ({
       id: space.id,
       name: space.name,
-      folder: resolve(space.folder),
+      folder: await realFolder(space.folder),
       machine: space.machine,
     })),
+  );
+
+  return startPlacement({
+    folder: await realFolder(request.folder),
+    spaces: listed,
     space: request.space,
     newSpace: request.newSpace,
     title: request.title,

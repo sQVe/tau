@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -136,6 +136,82 @@ it('refuses a start without space when the request folder has a trailing slash',
 
   expect(failure.message).toContain('sp-1');
   expect(launchCommands(app)).toEqual([]);
+});
+
+it('refuses a start when the folder has a space listed through a symlink', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root);
+  const alias = join(root, 'alias');
+
+  await symlink(root, alias, 'dir');
+
+  const app = createHerdrAppFake({ spaces: [{ id: 'sp-1', name: 'platform', folder: alias }] });
+
+  const execution = startTool(app).execute(
+    'call',
+    startRequest(root, file, {}),
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  const failure = await failureOf(execution);
+
+  expect(failure.message).toContain('sp-1 "platform"');
+  expect(launchCommands(app)).toEqual([]);
+});
+
+it('refuses a start when a listed space path crosses a symlink with ..', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root);
+  const base = join(root, 'base');
+  const child = join(root, 'child');
+
+  await mkdir(base);
+  await mkdir(child);
+  await symlink(child, join(base, 'link'), 'dir');
+
+  const listed = `${join(base, 'link')}/..`;
+  const app = createHerdrAppFake({ spaces: [{ id: 'sp-1', name: 'platform', folder: listed }] });
+
+  const execution = startTool(app).execute(
+    'call',
+    startRequest(root, file, {}),
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  const failure = await failureOf(execution);
+
+  expect(failure.message).toContain('sp-1 "platform"');
+  expect(launchCommands(app)).toEqual([]);
+});
+
+it('creates a space when a listed space folder no longer exists', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root);
+  const gone = join(root, 'gone');
+  const app = createHerdrAppFake({ spaces: [{ id: 'sp-1', name: 'platform', folder: gone }] });
+
+  const result = await startTool(app).execute(
+    'call',
+    startRequest(root, file, {}),
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({
+    space: 'sp-new',
+    tab: 'tb-new',
+    terminal: 't-new',
+    spaceStatus: 'created',
+  });
+
+  const launchKinds = launchCommands(app).map((call) => call.commandArguments[1]);
+
+  expect(launchKinds).toEqual(['space.new']);
 });
 
 it('creates a space when only another machine has one for the folder', async () => {
