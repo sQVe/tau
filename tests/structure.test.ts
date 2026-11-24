@@ -101,6 +101,7 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
+  'src/extensions/handover/placement.ts',
   'src/extensions/handoverQuestion/senderMessages.ts',
   'src/extensions/improvement/recordPassDecision.ts',
   'src/extensions/improvement/recordRequest.ts',

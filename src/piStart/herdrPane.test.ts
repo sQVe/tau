@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
-import { findPane } from './herdrPane.js';
+import { findPane, listSpaces } from './herdrPane.js';
 
 const layoutOf = (stdout: string) => {
   const fake = createHerdrAppFake();
@@ -39,6 +39,25 @@ it.each([
 
   await expect(findPane(runtime, terminal)).resolves.toBe(expected);
   expect(fake.calls.map((call) => call.commandArguments)).toEqual([['ls']]);
+});
+
+it('a listed space carries the machine it runs on', async () => {
+  const fake = createHerdrAppFake();
+
+  fake.overrideOutput(
+    'ls',
+    JSON.stringify({
+      spaces: [
+        { id: 'sp-1', name: 'local', folder: '/work/repo', machine: null },
+        { id: 'sp-2', name: 'remote', folder: '/work/repo', machine: 'build-2' },
+      ],
+    }),
+  );
+
+  await expect(listSpaces({ exec: fake.exec, cwd: '/tmp' })).resolves.toEqual([
+    { id: 'sp-1', name: 'local', folder: '/work/repo', machine: null },
+    { id: 'sp-2', name: 'remote', folder: '/work/repo', machine: 'build-2' },
+  ]);
 });
 
 it('a layout of the wrong shape is refused', async () => {

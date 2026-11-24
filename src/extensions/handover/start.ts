@@ -1,16 +1,26 @@
+import { resolve } from 'node:path';
+
+import { Type } from 'typebox';
+
+import { checkOutput, parseJson } from '../../command.js';
 import type { CommandRuntime } from '../../command.js';
 import type { HandoverSender } from '../../handoverSender.js';
 import { senderEnvironment, senderLine } from '../../handoverSender.js';
+import { listSpaces } from '../../piStart/herdrPane.js';
 import { startPiSession } from '../../piStart/piStart.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
 import { tabName } from '../../tabName.js';
 import { readHandoverText } from './handoverFile.js';
+import { startPlacement } from './placement.js';
+
+type SpaceStatus = 'created' | 'reused';
 
 export interface StartHandoverRequest {
   cwd: string;
   file: string;
   folder: string;
-  target: PiStartTarget;
+  space: string | undefined;
+  newSpace: boolean;
   title: string;
   model: string | undefined;
   bareRoot: boolean;
@@ -19,7 +29,47 @@ export interface StartHandoverRequest {
 
 export interface StartHandoverResult {
   reply: string;
+  space: string;
+  tab: string;
+  terminal: string;
+  spaceStatus: SpaceStatus;
 }
+
+const launchReplySchema = Type.Object({
+  space: Type.String(),
+  tab: Type.String(),
+  terminal: Type.String(),
+});
+
+const placementFor = async (runtime: CommandRuntime, request: StartHandoverRequest) => {
+  const spaces = request.space === undefined ? await listSpaces(runtime) : [];
+
+  return startPlacement({
+    folder: resolve(request.folder),
+    spaces: spaces.map((space) => ({
+      id: space.id,
+      name: space.name,
+      folder: resolve(space.folder),
+      machine: space.machine,
+    })),
+    space: request.space,
+    newSpace: request.newSpace,
+    title: request.title,
+  });
+};
+
+const launchTarget = async (
+  runtime: CommandRuntime,
+  request: StartHandoverRequest,
+): Promise<PiStartTarget> => {
+  const placement = await placementFor(runtime, request);
+
+  if (placement.kind === 'refuse') {
+    throw new Error(placement.message);
+  }
+
+  return placement.target;
+};
 
 export const startHandover = async (
   runtime: CommandRuntime,
@@ -32,7 +82,7 @@ export const startHandover = async (
 
   const started = await startPiSession(runtime, {
     folder: request.folder,
-    target: request.target,
+    target: () => launchTarget(runtime, request),
     tabName: tabName('lead', request.title),
     task,
     model: request.model,
@@ -41,5 +91,17 @@ export const startHandover = async (
     environment,
   });
 
-  return { reply: started.reply };
+  const parsed = parseJson('herdr-app do', started.reply);
+
+  checkOutput('herdr-app do', launchReplySchema, parsed);
+
+  const spaceStatus = 'space' in started.target ? 'reused' : 'created';
+
+  return {
+    reply: started.reply,
+    space: parsed.space,
+    tab: parsed.tab,
+    terminal: parsed.terminal,
+    spaceStatus,
+  };
 };

@@ -33,7 +33,11 @@ it('a space start opens one tab with the argv as JSON', async () => {
     },
   );
 
-  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(result).toEqual({
+    reply: '{"space":"space-1","tab":"tb-new","terminal":"t-new"}',
+    target: { space: 'space-1' },
+    terminal: 't-new',
+  });
 
   expect(fake.calls).toEqual([
     {
@@ -81,6 +85,7 @@ it('a space start returns the terminal from its reply', async () => {
 
   expect(result).toEqual({
     reply: '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}',
+    target: { name: 'ticket-1' },
     terminal: 't-space',
   });
 });
@@ -88,6 +93,8 @@ it('a space start returns the terminal from its reply', async () => {
 it('a space start without a terminal in its reply returns no terminal', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
+
+  fake.overrideOutput('space.new', '{"ok":true}');
 
   const result = await startPiSession(
     { exec: fake.exec, cwd: root },
@@ -103,7 +110,7 @@ it('a space start without a terminal in its reply returns no terminal', async ()
     },
   );
 
-  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(result).toEqual({ reply: '{"ok":true}', target: { name: 'ticket-1' } });
   expect(result.terminal).toBeUndefined();
 });
 
@@ -125,7 +132,11 @@ it('a space start names its first tab', async () => {
     },
   );
 
-  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(result).toEqual({
+    reply: '{"space":"sp-new","tab":"tb-new","terminal":"t-new"}',
+    target: { name: 'ticket-1' },
+    terminal: 't-new',
+  });
 
   expect(fake.calls).toEqual([
     {
@@ -151,6 +162,30 @@ it('a space start names its first tab', async () => {
   ]);
 });
 
+it('a launcher reply outside the handover schema is returned unchanged', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  fake.overrideOutput('space.new', '{"ok":true}');
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { name: 'ticket-1' },
+      tabName: 'architect',
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      bareRoot: false,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"ok":true}', target: { name: 'ticket-1' } });
+  expect(fake.calls).toHaveLength(1);
+});
+
 it('a true bare repository root starts a session', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryBareRepository(onTestFinished);
@@ -169,8 +204,61 @@ it('a true bare repository root starts a session', async () => {
     },
   );
 
-  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(result).toEqual({
+    reply: '{"space":"space-1","tab":"tb-new","terminal":"t-new"}',
+    target: { space: 'space-1' },
+    terminal: 't-new',
+  });
+
   expect(fake.calls).toHaveLength(1);
+});
+
+it('a resolver start runs the target it resolves', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: async () => ({ space: 'resolved-space' }),
+      tabName: 'lead',
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      bareRoot: false,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({
+    reply: '{"space":"resolved-space","tab":"tb-new","terminal":"t-new"}',
+    target: { space: 'resolved-space' },
+    terminal: 't-new',
+  });
+
+  expect(fake.calls).toEqual([
+    {
+      command: 'herdr-app',
+      commandArguments: [
+        'do',
+        'tab.new',
+        '--space',
+        'resolved-space',
+        '--folder',
+        root,
+        '--name',
+        'lead',
+        '--argv',
+        '["pi"]',
+        '--task',
+        'Next steps\n',
+        '--focus',
+        'false',
+      ],
+      signal: undefined,
+    },
+  ]);
 });
 
 it('a folder that is not a Git checkout is refused', async () => {
@@ -194,6 +282,36 @@ it('a folder that is not a Git checkout is refused', async () => {
     ),
   ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
 
+  expect(fake.calls).toEqual([]);
+});
+
+it('a folder that is not a Git checkout refuses before the resolver runs', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-');
+  const calls: string[] = [];
+
+  await expect(
+    startPiSession(
+      { exec: fake.exec, cwd: root },
+      {
+        folder,
+        target: async () => {
+          calls.push('resolved');
+
+          return { name: 'ticket-1' };
+        },
+        tabName: 'lead',
+        task: 'Next steps\n',
+        model: undefined,
+        session: undefined,
+        bareRoot: false,
+        environment: undefined,
+      },
+    ),
+  ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(calls).toEqual([]);
   expect(fake.calls).toEqual([]);
 });
 
