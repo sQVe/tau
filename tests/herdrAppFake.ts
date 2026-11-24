@@ -1,14 +1,20 @@
+import type { HerdrSpace } from '../src/piStart/herdrPane.js';
 import { argumentAfter, createExecFake, succeededResult } from './execFake.js';
-import type { ExecFake } from './execFake.js';
+import type { ExecCall, ExecFake } from './execFake.js';
 
 export type HerdrAppCommand = 'ls' | 'pane.split' | 'space.new' | 'tab.new';
 
+type HerdrAppSpace = Omit<HerdrSpace, 'machine'> & { machine?: string | null };
+
 export interface HerdrAppFakeOptions {
   beforeReply?: (key: HerdrAppCommand) => void;
-  spaces?: readonly { id: string; name: string; folder: string; machine?: string | null }[];
+  spaces?: readonly HerdrAppSpace[];
 }
 
-const defaultLaunch = JSON.stringify({ space: 'sp-new', tab: 'tb-new', terminal: 't-new' });
+const launchReply = (space: string): string =>
+  JSON.stringify({ space, tab: 'tb-new', terminal: 't-new' });
+
+const defaultLaunch = launchReply('sp-new');
 const defaultSplit = JSON.stringify({ pane: 'p-new', terminal: 't-new' });
 
 const commands = new Set<HerdrAppCommand>(['ls', 'pane.split', 'space.new', 'tab.new']);
@@ -37,22 +43,24 @@ const commandOf = (
   return isHerdrAppCommand(name) ? name : undefined;
 };
 
+// The listing is one document for both readers, so a listed space carries the tabs findPane reads.
 const listedSpaces = (spaces: HerdrAppFakeOptions['spaces']) =>
   (spaces ?? []).map((space) => ({
     id: space.id,
     name: space.name,
     folder: space.folder,
     machine: space.machine ?? null,
+    tabs: [],
   }));
 
 const tabReply = (commandArguments: readonly string[]): string => {
   const space = argumentAfter(commandArguments, '--space');
 
-  if (space === undefined) {
+  if (space === undefined || space.startsWith('--')) {
     throw new Error('tab.new needs --space');
   }
 
-  return JSON.stringify({ space, tab: 'tb-new', terminal: 't-new' });
+  return launchReply(space);
 };
 
 const replyFor = (
@@ -83,3 +91,6 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
       return succeededResult(replyFor(key, commandArguments, options.spaces));
     },
   });
+
+export const launchesOf = (fake: ExecFake<HerdrAppCommand>): ExecCall[] =>
+  fake.calls.filter(({ commandArguments }) => commandArguments[0] === 'do');

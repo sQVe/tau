@@ -21,10 +21,28 @@ it('fails a tab.new without a space instead of inventing one', async () => {
   );
 });
 
+it('fails a tab.new whose space value is another flag', async () => {
+  await expect(replyTo(['tab.new', '--space', '--folder', '/work/repo'])).rejects.toThrow(
+    'tab.new needs --space',
+  );
+});
+
 it('answers space.new with a launch reply', async () => {
   const reply = await replyTo(['space.new', '--name', 'ticket-1', '--folder', '/work/repo']);
 
   expect(JSON.parse(reply)).toEqual({ space: 'sp-new', tab: 'tb-new', terminal: 't-new' });
+});
+
+it('lists the spaces it was given with no tabs', async () => {
+  const fake = createHerdrAppFake({
+    spaces: [{ id: 'sp-1', name: 'platform', folder: '/work/repo', machine: 'build-2' }],
+  });
+
+  const result = await fake.exec('herdr-app', ['ls'], undefined);
+
+  expect(JSON.parse(result.stdout)).toEqual({
+    spaces: [{ id: 'sp-1', name: 'platform', folder: '/work/repo', machine: 'build-2', tabs: [] }],
+  });
 });
 
 it('fails a command it does not model instead of answering it', async () => {
