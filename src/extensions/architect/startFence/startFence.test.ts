@@ -145,9 +145,7 @@ it('sends no second signal when the child adopts during the stop', async ({ onTe
   expect(processControl.signals).toEqual(['SIGTERM']);
 });
 
-it('counts a lock holder with the child process id as adopted when its rename failed', async ({
-  onTestFinished,
-}) => {
+it('keeps a lock-only adoption cached after the lock is gone', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const processControl = useFakeStartProcess(onTestFinished, 'running');
   const acquisition = await acquireStartFence(root);
@@ -172,9 +170,11 @@ it('counts a lock holder with the child process id as adopted when its rename fa
 
   expect(await fence.childAdopted()).toBe(true);
 
-  const finished = await fence.finish({ adopted: false, stopAttempted: false });
-
   await holder.release();
+
+  expect(await fence.childAdopted()).toBe(true);
+
+  const finished = await fence.finish({ adopted: false, stopAttempted: false });
 
   expect(finished).toEqual({ kept: false });
   expect(processControl.signals).toEqual([]);
