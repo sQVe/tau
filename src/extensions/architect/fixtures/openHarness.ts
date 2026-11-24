@@ -197,6 +197,11 @@ const withTakeover = (
   ...app,
   exec: async (command, commandArguments, options) => {
     const result = await app.exec(command, commandArguments, options);
+
+    if (result.code !== 0) {
+      return result;
+    }
+
     const adopted = await takeOverClaim(root, commandArguments, processId);
 
     if (adopted) {

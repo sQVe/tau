@@ -256,3 +256,23 @@ it('treats an address-less launch as taken over when its child adopted and relea
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(await readdir(startDirectory(root))).toHaveLength(1);
 });
+
+it('reports a failed app command without adopting its claim', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const afterTakeover = vi.fn<() => void>();
+  const { app, runtime } = openTool(root, undefined, undefined, { afterTakeover });
+
+  app.failCommand('pane.split', 'pane p-lead is gone');
+  await recordSession(root);
+
+  const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
+    (error: unknown) => error,
+  );
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('pane p-lead is gone');
+  expect(afterTakeover).not.toHaveBeenCalled();
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
