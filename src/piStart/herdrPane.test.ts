@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createHerdrAppFake, herdrAppSpace } from '../../tests/herdrAppFake.js';
+import { createHerdrAppFake, listedSpace } from '../../tests/herdrAppFake.js';
 import { findPane, listSpaces } from './herdrPane.js';
 
 const layoutOf = (stdout: string) => {
@@ -14,7 +14,7 @@ const layoutOf = (stdout: string) => {
 const layout = JSON.stringify({
   spaces: [
     {
-      ...herdrAppSpace('sp-1', 'platform', '/work/repo'),
+      ...listedSpace('sp-1', 'platform', '/work/repo'),
       tabs: [
         { terminals: [{ terminal: 't1', pane: 'p1' }] },
         {
@@ -26,7 +26,7 @@ const layout = JSON.stringify({
       ],
     },
     {
-      ...herdrAppSpace('sp-2', 'second', '/work/other'),
+      ...listedSpace('sp-2', 'second', '/work/other'),
       tabs: [{ terminals: [{ terminal: 't4', pane: 'p4' }] }],
     },
   ],

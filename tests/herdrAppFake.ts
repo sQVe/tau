@@ -11,7 +11,7 @@ export interface HerdrAppFakeOptions {
   spaces?: readonly HerdrAppSpace[];
 }
 
-export const herdrAppSpace = (
+export const listedSpace = (
   id: string,
   name: string,
   folder: string,
@@ -103,10 +103,15 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
     },
   });
 
-const launchCommands = new Set<string>(['space.new', 'tab.new']);
+const launchCommands = new Set<HerdrAppCommand>(['space.new', 'tab.new']);
 
-export const launchesOf = (fake: ExecFake<HerdrAppCommand>): ExecCall[] =>
+const isLaunchCommand = (value: string | undefined): value is HerdrAppCommand =>
+  value !== undefined && launchCommands.has(value as HerdrAppCommand);
+
+export const commandArgumentsOf = (fake: ExecFake<HerdrAppCommand>): string[][] =>
+  fake.calls.map(({ commandArguments }) => commandArguments);
+
+export const spaceOrTabLaunchesOf = (fake: ExecFake<HerdrAppCommand>): ExecCall[] =>
   fake.calls.filter(
-    ({ commandArguments }) =>
-      commandArguments[0] === 'do' && launchCommands.has(commandArguments[1] ?? ''),
+    ({ commandArguments }) => commandArguments[0] === 'do' && isLaunchCommand(commandArguments[1]),
   );

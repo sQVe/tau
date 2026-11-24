@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createHerdrAppFake, launchesOf } from './herdrAppFake.js';
+import { createHerdrAppFake, spaceOrTabLaunchesOf } from './herdrAppFake.js';
 
 const replyTo = async (commandArguments: readonly string[]): Promise<string> => {
   const fake = createHerdrAppFake();
@@ -45,15 +45,19 @@ it('lists the spaces it was given with no tabs', async () => {
   });
 });
 
-it('counts a space or tab launch and not a pane split', async () => {
+it('counts a space launch and a tab launch and not a pane split', async () => {
   const fake = createHerdrAppFake();
 
   await fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1'], undefined);
+  await fake.exec('herdr-app', ['do', 'space.new', '--name', 'ticket-1'], undefined);
   await fake.exec('herdr-app', ['do', 'tab.new', '--space', 'sp-1'], undefined);
 
-  const launches = launchesOf(fake).map((call) => call.commandArguments);
+  const launches = spaceOrTabLaunchesOf(fake).map((call) => call.commandArguments);
 
-  expect(launches).toEqual([['do', 'tab.new', '--space', 'sp-1']]);
+  expect(launches).toEqual([
+    ['do', 'space.new', '--name', 'ticket-1'],
+    ['do', 'tab.new', '--space', 'sp-1'],
+  ]);
 });
 
 it('fails a command it does not model instead of answering it', async () => {

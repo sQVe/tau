@@ -7,7 +7,11 @@ import { argumentAfter } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
-import { createHerdrAppFake, launchesOf } from '../../../tests/herdrAppFake.js';
+import {
+  commandArgumentsOf,
+  createHerdrAppFake,
+  spaceOrTabLaunchesOf,
+} from '../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand, HerdrAppFakeOptions } from '../../../tests/herdrAppFake.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { tabName } from '../../tabName.js';
@@ -68,7 +72,7 @@ it('refuses a start without space when the listed folder has a trailing slash', 
   const failure = await failureOf(execution);
 
   expect(failure.message).toContain('sp-1 "platform"');
-  expect(launchesOf(app)).toEqual([]);
+  expect(commandArgumentsOf(app)).toEqual([['ls']]);
 });
 
 it('refuses a start without space when the request folder has a trailing slash', async () => {
@@ -87,7 +91,7 @@ it('refuses a start without space when the request folder has a trailing slash',
   const failure = await failureOf(execution);
 
   expect(failure.message).toContain('sp-1 "platform"');
-  expect(launchesOf(app)).toEqual([]);
+  expect(commandArgumentsOf(app)).toEqual([['ls']]);
 });
 
 it('refuses a start when the folder has a space listed through a symlink', async () => {
@@ -110,7 +114,7 @@ it('refuses a start when the folder has a space listed through a symlink', async
   const failure = await failureOf(execution);
 
   expect(failure.message).toContain('sp-1 "platform"');
-  expect(launchesOf(app)).toEqual([]);
+  expect(commandArgumentsOf(app)).toEqual([['ls']]);
 });
 
 it('refuses a start when a listed space path crosses a symlink with ..', async () => {
@@ -137,7 +141,7 @@ it('refuses a start when a listed space path crosses a symlink with ..', async (
   const failure = await failureOf(execution);
 
   expect(failure.message).toContain('sp-1 "platform"');
-  expect(launchesOf(app)).toEqual([]);
+  expect(commandArgumentsOf(app)).toEqual([['ls']]);
 });
 
 it('creates a space when a listed space folder no longer exists', async () => {
@@ -162,7 +166,7 @@ it('creates a space when a listed space folder no longer exists', async () => {
     spaceStatus: 'created',
   });
 
-  const launchKinds = launchesOf(app).map((call) => call.commandArguments[1]);
+  const launchKinds = spaceOrTabLaunchesOf(app).map((call) => call.commandArguments[1]);
 
   expect(launchKinds).toEqual(['space.new']);
 });
@@ -205,7 +209,7 @@ it.each(creationRows)('creates a space in $label', async ({ spacesFor, extras })
     spaceStatus: 'created',
   });
 
-  const launches = launchesOf(app);
+  const launches = spaceOrTabLaunchesOf(app);
 
   expect(launches).toHaveLength(1);
 
@@ -242,7 +246,7 @@ it('creates a space when a listed space folder cannot be resolved', async () => 
     spaceStatus: 'created',
   });
 
-  const launchKinds = launchesOf(app).map((call) => call.commandArguments[1]);
+  const launchKinds = spaceOrTabLaunchesOf(app).map((call) => call.commandArguments[1]);
 
   expect(launchKinds).toEqual(['space.new']);
 });
@@ -262,7 +266,7 @@ it('refuses a start with newSpace false when the folder already has a space', as
 
   await expect(execution).rejects.toThrow(/folder already has a space: sp-1/);
 
-  expect(launchesOf(app)).toEqual([]);
+  expect(commandArgumentsOf(app)).toEqual([['ls']]);
 });
 
 it('creates a space without listing the spaces when the caller asks for one', async () => {
@@ -316,7 +320,7 @@ it('opens a tab in the space the caller names without listing the spaces', async
 
   expect(commands).toEqual(['do']);
 
-  const launches = launchesOf(app);
+  const launches = spaceOrTabLaunchesOf(app);
 
   expect(launches.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
 

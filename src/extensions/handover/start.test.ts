@@ -6,7 +6,11 @@ import { expect, it, onTestFinished } from 'vitest';
 import { argumentAfter } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { createHerdrAppFake, launchesOf } from '../../../tests/herdrAppFake.js';
+import {
+  commandArgumentsOf,
+  createHerdrAppFake,
+  spaceOrTabLaunchesOf,
+} from '../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { tabName } from '../../tabName.js';
@@ -157,7 +161,7 @@ it('opens a new space with Pi in its only tab', async () => {
     spaceStatus: 'created',
   });
 
-  expect(launchesOf(fake)).toEqual([
+  expect(spaceOrTabLaunchesOf(fake)).toEqual([
     {
       command: 'herdr-app',
       commandArguments: [
@@ -195,7 +199,7 @@ it.each([
     requestFor(root, file, { kind: 'decide' }, 'ticket-1'),
   );
 
-  const [launch] = launchesOf(fake);
+  const [launch] = spaceOrTabLaunchesOf(fake);
 
   expect(argumentAfter(launch?.commandArguments ?? [], '--argv')).toBe('["pi"]');
   expect(argumentAfter(launch?.commandArguments ?? [], '--task')).toBe(task);
@@ -248,7 +252,7 @@ it('refuses a folder that already has a space before any herdr-app launch', asyn
     startHandover(runtimeOf(fake, root), requestFor(root, file, { kind: 'decide' }, 'ticket-1')),
   ).rejects.toThrow(/folder already has a space: sp-1/);
 
-  expect(launchesOf(fake)).toEqual([]);
+  expect(commandArgumentsOf(fake)).toEqual([['ls']]);
 });
 
 it('refuses a folder that is not a Git checkout before any herdr-app call', async () => {
@@ -327,7 +331,7 @@ it.each([
     ),
   ).rejects.toThrow('herdr-app do printed unexpected output');
 
-  expect(launchesOf(fake)).toHaveLength(1);
+  expect(spaceOrTabLaunchesOf(fake)).toHaveLength(1);
 });
 
 it('refuses a listed space without a folder before any launch', async () => {
@@ -346,5 +350,5 @@ it('refuses a listed space without a folder before any launch', async () => {
     startHandover(runtimeOf(fake, root), requestFor(root, file, { kind: 'decide' }, 'ticket-1')),
   ).rejects.toThrow('herdr-app ls printed unexpected output');
 
-  expect(launchesOf(fake)).toEqual([]);
+  expect(commandArgumentsOf(fake)).toEqual([['ls']]);
 });
