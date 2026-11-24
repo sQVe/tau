@@ -1,14 +1,8 @@
+import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
-
-export interface HerdrSpace {
-  id: string;
-  name: string;
-  folder: string;
-  machine: string | null;
-}
 
 const herdrLayoutSchema = Type.Object({
   spaces: Type.Array(
@@ -38,6 +32,8 @@ const herdrSpacesSchema = Type.Object({
   ),
 });
 
+export type HerdrSpace = Static<typeof herdrSpacesSchema>['spaces'][number];
+
 const readLayout = async (runtime: CommandRuntime): Promise<unknown> => {
   const output = await runCommand(runtime, 'herdr-app', ['ls'], 'herdr-app ls');
 
@@ -63,5 +59,5 @@ export const listSpaces = async (runtime: CommandRuntime): Promise<HerdrSpace[]>
 
   checkOutput('herdr-app ls', herdrSpacesSchema, layout);
 
-  return layout.spaces.map(({ id, name, folder, machine }) => ({ id, name, folder, machine }));
+  return layout.spaces;
 };

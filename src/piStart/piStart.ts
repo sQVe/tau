@@ -325,6 +325,7 @@ export const startPiSession = async (
     startArguments(request, target),
     'herdr-app do',
   );
+
   const terminal = replyTerminal(reply);
 
   return terminal === undefined ? { reply, target } : { reply, target, terminal };

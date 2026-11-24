@@ -261,6 +261,34 @@ it('a resolver start runs the target it resolves', async () => {
   ]);
 });
 
+it('a resolver that aborts the signal runs no command', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+
+  await expect(
+    startPiSession(
+      { exec: fake.exec, cwd: root, signal: controller.signal },
+      {
+        folder: root,
+        target: async () => {
+          controller.abort(new Error('cancelled during resolution'));
+
+          return { space: 'resolved-space' };
+        },
+        tabName: 'lead',
+        task: 'Next steps\n',
+        model: undefined,
+        session: undefined,
+        bareRoot: false,
+        environment: undefined,
+      },
+    ),
+  ).rejects.toThrow('cancelled during resolution');
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('a folder that is not a Git checkout is refused', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
