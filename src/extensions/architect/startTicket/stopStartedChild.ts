@@ -74,16 +74,25 @@ export const stopStartedChild = async (
     return initial;
   }
 
+  // The probe can outlive the window, so every signal follows a fresh deadline check.
+  if (options.now() >= deadline) {
+    return initial;
+  }
+
   options.signal(processId, 'SIGTERM');
 
   const termDeadline = Math.min(options.now() + termWindowMilliseconds, deadline);
   const afterTerm = await waitForStop(processId, termDeadline, options);
 
-  if (afterTerm !== 'running' || options.now() >= deadline) {
+  if (afterTerm !== 'running') {
     return afterTerm;
   }
 
   if (await options.adopted()) {
+    return afterTerm;
+  }
+
+  if (options.now() >= deadline) {
     return afterTerm;
   }
 

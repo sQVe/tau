@@ -6,6 +6,7 @@ import type { StopStartedChildOptions } from './stopStartedChild.js';
 interface Clock {
   now: () => number;
   sleep: (milliseconds: number) => Promise<void>;
+  advance: (milliseconds: number) => void;
   sleeps: number[];
 }
 
@@ -17,6 +18,9 @@ const clockOf = (start: number): Clock => {
     now: () => current,
     sleep: async (milliseconds) => {
       sleeps.push(milliseconds);
+      current += milliseconds;
+    },
+    advance: (milliseconds) => {
       current += milliseconds;
     },
     sleeps,
@@ -120,4 +124,65 @@ it('returns unknown for an unreadable process state', async () => {
 
   expect(state).toBe('unknown');
   expect(signals).toEqual([]);
+});
+
+it('sends no signal when the first adoption probe outlives the stop deadline', async () => {
+  const clock = clockOf(0);
+  const signals: NodeJS.Signals[] = [];
+
+  const state = await stopStartedChild(4006, {
+    ...optionsOf(clock, () => 'running', signals),
+    adopted: () => {
+      clock.advance(10_000);
+
+      return Promise.resolve(false);
+    },
+  });
+
+  expect(state).toBe('running');
+  expect(signals).toEqual([]);
+});
+
+it('sends no SIGKILL when the escalation probe outlives the stop deadline', async () => {
+  const clock = clockOf(0);
+  const signals: NodeJS.Signals[] = [];
+  let probes = 0;
+
+  const state = await stopStartedChild(4007, {
+    ...optionsOf(clock, () => 'running', signals),
+    adopted: () => {
+      probes += 1;
+
+      if (probes === 2) {
+        clock.advance(10_000);
+      }
+
+      return Promise.resolve(false);
+    },
+  });
+
+  expect(state).toBe('running');
+  expect(signals).toEqual(['SIGTERM']);
+});
+
+it('sends no SIGKILL when the escalation probe ends at the stop deadline', async () => {
+  const clock = clockOf(0);
+  const signals: NodeJS.Signals[] = [];
+  let probes = 0;
+
+  const state = await stopStartedChild(4008, {
+    ...optionsOf(clock, () => 'running', signals),
+    adopted: () => {
+      probes += 1;
+
+      if (probes === 2) {
+        clock.advance(5_000);
+      }
+
+      return Promise.resolve(false);
+    },
+  });
+
+  expect(state).toBe('running');
+  expect(signals).toEqual(['SIGTERM']);
 });

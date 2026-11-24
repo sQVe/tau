@@ -1,3 +1,5 @@
+import type { setTimeout as promiseDelay } from 'node:timers/promises';
+
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { argumentAfter, succeededResult } from '../../../../tests/execFake.js';
@@ -6,6 +8,7 @@ import {
   takeStartTicket,
   useFakeStartProcess,
 } from '../../../../tests/startTicketFake.js';
+import type { FakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { adoptClaim, appCommands, open, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
@@ -40,6 +43,19 @@ const startFakeTimers = (): void => {
   vi.useFakeTimers({
     toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
   });
+};
+
+// The stop checks its deadline after each adoption probe, so the fake clock must stand still while
+// the real filesystem probe runs. Only a real delay lets that probe finish.
+const waitForStopSignals = async (
+  processControl: FakeStartProcess,
+  count: number,
+): Promise<void> => {
+  const actual = await vi.importActual<{ setTimeout: typeof promiseDelay }>('node:timers/promises');
+
+  for (let attempt = 0; attempt < 1_000 && processControl.signals.length < count; attempt += 1) {
+    await actual.setTimeout(5);
+  }
 };
 
 const requestFor = (
@@ -124,7 +140,9 @@ it('keeps the claim when the child never goes away and finishes within one recov
     });
 
   await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(10_000);
+  await vi.advanceTimersByTimeAsync(5_000);
+  await waitForStopSignals(processControl, 2);
+  await vi.advanceTimersByTimeAsync(5_000);
 
   const failure = await opening;
 
@@ -169,7 +187,8 @@ it('keeps a paused child fence until its process is gone and then a retry starts
   const opening = openArchitect(request).catch((error: unknown) => error);
 
   await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(5_300);
+  await vi.advanceTimersByTimeAsync(5_000);
+  await waitForStopSignals(processControl, 2);
 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
   expect(splits).toBe(1);
