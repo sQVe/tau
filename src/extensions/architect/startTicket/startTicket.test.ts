@@ -419,11 +419,6 @@ it.each([
     fileName: 'token.lead.9000.adopted.4100',
     expected: { kind: 'marker', token: 'token', markerKind: 'adopted' },
   },
-  {
-    name: 'a bare ticket from an older start',
-    fileName: 'token',
-    expected: { kind: 'unused', token: 'token' },
-  },
 ])('parses $name', async ({ fileName, expected }) => {
   const root = await createTemporaryRepository(onFinished);
   const path = await startFile(root, fileName);
@@ -437,6 +432,25 @@ it.each([
   expect(entries).toHaveLength(1);
   expect(entries[0]).toMatchObject(expectedEntry);
 });
+
+it.each(['token.cancelled', 'token.other'])(
+  'refuses %s beside a valid marker for the same token',
+  async (fileName) => {
+    const root = await createTemporaryRepository(onFinished);
+    const marker = await startedMarker(root, 'token', 4100);
+    const path = await startFile(root, fileName);
+
+    const outcome = await sweepStartFolder({
+      root,
+      currentToken: 'current',
+      stateOf: () => 'gone',
+    });
+
+    expect(outcome).toEqual({ kind: 'refuseMalformed', path });
+    expect(existsSync(path)).toBe(true);
+    expect(existsSync(marker)).toBe(true);
+  },
+);
 
 it('parses a cancelled ticket name', async () => {
   const root = await createTemporaryRepository(onFinished);

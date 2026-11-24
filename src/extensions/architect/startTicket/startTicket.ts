@@ -40,6 +40,12 @@ type EntryResolution =
   | { kind: 'starting' }
   | { kind: 'marker'; marker: StartMarker };
 
+type StartName =
+  | { kind: 'ticket'; token: string; ticket: string }
+  | { kind: 'marker'; marker: StartMarker }
+  | { kind: 'cancelled'; token: string }
+  | { kind: 'unknown'; name: string };
+
 const markerSuffixes = ['.started', '.adopted'] as const;
 const cancelledSuffix = '.cancelled';
 const leadSegment = '.lead.';
@@ -102,21 +108,6 @@ export const cancelStartTicket = async (ticket: string): Promise<StartTicketCanc
   return 'cancelled';
 };
 
-const markerOffset = (name: string): number =>
-  Math.min(
-    ...markerSuffixes.map((suffix) => {
-      const at = name.indexOf(suffix);
-
-      return at === -1 ? Number.POSITIVE_INFINITY : at;
-    }),
-  );
-
-const markerToken = (name: string): string => {
-  const offset = markerOffset(name);
-
-  return Number.isFinite(offset) ? name.slice(0, offset) : name;
-};
-
 const processIdFrom = (raw: string): number | undefined => {
   if (!/^[1-9][0-9]*$/u.test(raw)) {
     return undefined;
@@ -163,63 +154,102 @@ const markerParts = (
     : markerOf(directory, token, leadPid, kind, childPid, name);
 };
 
-const entryOf = (directory: string, name: string): StartEntry | undefined => {
+// Only the four agreed names are accepted. Every other name is malformed, so a later release's
+// name never lets the sweep delete or cancel it.
+const parseStartName = (directory: string, name: string): StartName => {
   const leadAt = name.indexOf(leadSegment);
 
-  if (leadAt !== -1) {
-    const token = name.slice(0, leadAt);
-    const rest = name.slice(leadAt + leadSegment.length);
-    const path = join(directory, name);
-    const ticket = join(directory, token);
-
-    if (token === '') {
-      return { kind: 'marker', token, ticket, marker: { kind: 'malformed', token, path } };
-    }
-
-    const leadPid = processIdFrom(rest);
-
-    if (leadPid !== undefined) {
-      return { kind: 'unused', token, ticket: join(directory, name) };
-    }
-
-    const marker = markerParts(directory, token, rest, name);
-
-    if (marker !== undefined) {
-      return { kind: 'marker', token, ticket, marker };
-    }
-
-    if (rest.endsWith(cancelledSuffix)) {
-      const leadRaw = rest.slice(0, -cancelledSuffix.length);
-
-      if (processIdFrom(leadRaw) !== undefined) {
-        return undefined;
-      }
-    }
-
-    return { kind: 'marker', token, ticket, marker: { kind: 'malformed', token, path } };
+  if (leadAt === -1) {
+    return { kind: 'unknown', name };
   }
 
-  if (name.endsWith(cancelledSuffix)) {
-    const cancelledToken = name.slice(0, -cancelledSuffix.length);
-    const hasMarkerSuffix = markerSuffixes.some((suffix) => cancelledToken.includes(suffix));
+  const token = name.slice(0, leadAt);
+  const rest = name.slice(leadAt + leadSegment.length);
+  const path = join(directory, name);
 
-    if (cancelledToken !== '' && !hasMarkerSuffix) {
-      return undefined;
+  if (token === '') {
+    return { kind: 'marker', marker: { kind: 'malformed', token, path } };
+  }
+
+  const leadPid = processIdFrom(rest);
+
+  if (leadPid !== undefined) {
+    return { kind: 'ticket', token, ticket: join(directory, name) };
+  }
+
+  const marker = markerParts(directory, token, rest, name);
+
+  if (marker !== undefined) {
+    return { kind: 'marker', marker };
+  }
+
+  if (rest.endsWith(cancelledSuffix)) {
+    const leadRaw = rest.slice(0, -cancelledSuffix.length);
+
+    if (processIdFrom(leadRaw) !== undefined) {
+      return { kind: 'cancelled', token };
     }
   }
 
-  if (Number.isFinite(markerOffset(name))) {
-    const token = markerToken(name);
+  return { kind: 'marker', marker: { kind: 'malformed', token, path } };
+};
 
-    return {
-      kind: 'marker',
-      token,
-      ticket: join(directory, token),
-      marker: { kind: 'malformed', token, path: join(directory, name) },
-    };
+const knownTokensOf = (names: readonly StartName[]): Set<string> => {
+  const tokens = new Set<string>();
+
+  for (const name of names) {
+    if (name.kind === 'ticket') {
+      tokens.add(name.token);
+    }
+
+    if (name.kind === 'marker' && name.marker.kind !== 'malformed') {
+      tokens.add(name.marker.token);
+    }
+
+    if (name.kind === 'cancelled') {
+      tokens.add(name.token);
+    }
   }
 
-  return name === '' ? undefined : { kind: 'unused', token: name, ticket: join(directory, name) };
+  return tokens;
+};
+
+const knownTokenPrefix = (name: string, tokens: ReadonlySet<string>): string | undefined =>
+  [...tokens]
+    .filter((token) => name === token || name.startsWith(`${token}.`))
+    .toSorted((left, right) => right.length - left.length)[0];
+
+const entryOfName = (
+  directory: string,
+  name: StartName,
+  knownTokens: ReadonlySet<string>,
+): StartEntry | undefined => {
+  if (name.kind === 'cancelled') {
+    return undefined;
+  }
+
+  if (name.kind === 'ticket') {
+    return { kind: 'unused', token: name.token, ticket: name.ticket };
+  }
+
+  if (name.kind === 'marker') {
+    const { token } = name.marker;
+
+    return { kind: 'marker', token, ticket: join(directory, token), marker: name.marker };
+  }
+
+  const token = knownTokenPrefix(name.name, knownTokens) ?? name.name;
+
+  if (token === '') {
+    return undefined;
+  }
+
+  return {
+    kind: 'marker',
+    token,
+    ticket: join(directory, token),
+    marker: { kind: 'malformed', token, path: join(directory, name.name) },
+  };
 };
 
 export const readStartMarker = async (
@@ -231,12 +261,10 @@ export const readStartMarker = async (
   const names = await readNames(directory);
 
   const markers = names
-    .map((name) => entryOf(directory, name))
-    .filter(
-      (entry): entry is Extract<StartEntry, { kind: 'marker' }> =>
-        entry?.kind === 'marker' && entry.token === token,
-    )
-    .map((entry) => entry.marker)
+    .map((name) => parseStartName(directory, name))
+    .filter((name): name is Extract<StartName, { kind: 'marker' }> => name.kind === 'marker')
+    .map((name) => name.marker)
+    .filter((marker) => marker.token === token)
     .filter((marker) => {
       const matchesLead = marker.kind === 'malformed' || marker.leadPid === leadPid;
 
@@ -314,10 +342,12 @@ const preferredEntry = (current: StartEntry | undefined, entry: StartEntry): Sta
 export const readStartEntries = async (root: string): Promise<StartEntry[]> => {
   const directory = await startDirectory(root);
   const names = await readNames(directory);
+  const parsed = names.map((name) => parseStartName(directory, name));
+  const knownTokens = knownTokensOf(parsed);
   const entries = new Map<string, StartEntry>();
 
-  for (const name of names) {
-    const entry = entryOf(directory, name);
+  for (const name of parsed) {
+    const entry = entryOfName(directory, name, knownTokens);
 
     if (entry === undefined) {
       continue;
