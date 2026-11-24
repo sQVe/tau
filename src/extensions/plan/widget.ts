@@ -32,7 +32,7 @@ const borderLine = (width: number, theme: Pick<Theme, 'fg'>): string => {
   return truncateToWidth(line, width, '');
 };
 
-const planLine = (step: PlanStep, width: number, theme: Theme): string => {
+const planLine = (step: PlanStep, width: number, theme: Pick<Theme, 'fg'>): string => {
   const { mark, color } = statusMarks[step.status];
   const text = sanitizeSingleLine(step.text);
   const drawnMark = theme.fg(color, mark);
@@ -43,10 +43,11 @@ const planLine = (step: PlanStep, width: number, theme: Theme): string => {
   return truncateToWidth(`${drawnMark} ${drawnText}`, width, '');
 };
 
-export const planLines = (steps: readonly PlanStep[], width: number, theme: Theme): string[] => [
-  borderLine(width, theme),
-  ...steps.map((step) => planLine(step, width, theme)),
-];
+export const planLines = (
+  steps: readonly PlanStep[],
+  width: number,
+  theme: Pick<Theme, 'fg'>,
+): string[] => [borderLine(width, theme), ...steps.map((step) => planLine(step, width, theme))];
 
 const planBox = (steps: readonly PlanStep[], theme: Theme): Component => ({
   render: (width) => planLines(steps, width, theme),

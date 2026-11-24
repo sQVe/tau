@@ -1,24 +1,31 @@
 import { stripVTControlCharacters } from 'node:util';
 
-import type { Theme } from '@earendil-works/pi-coding-agent';
+import type { Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { expect, it } from 'vitest';
 
 import type { PlanStep } from './steps.js';
 import { planLines } from './widget.js';
 
-const theme = { fg: (_color: string, text: string) => text } as unknown as Theme;
+const theme = {
+  fg: (_color: ThemeColor, text: string) => text,
+} satisfies Pick<Theme, 'fg'>;
 
 const borderLine = (width: number): string => `─ Plan ${'─'.repeat(width - 7)}`;
 
 const codes = { border: '90', muted: '2', accent: '36', dim: '35', warning: '33' } as const;
 
-const styled = (color: keyof typeof codes, text: string) =>
-  `\u001B[${codes[color]}m${text}\u001B[0m`;
+const styled = (color: ThemeColor, text: string) => {
+  if (!(color in codes)) {
+    throw new Error(`The test theme does not style the ${color} color.`);
+  }
+
+  return `\u001B[${codes[color as keyof typeof codes]}m${text}\u001B[0m`;
+};
 
 const styledTheme = {
-  fg: (color: keyof typeof codes, text: string) => styled(color, text),
-} as unknown as Theme;
+  fg: (color: ThemeColor, text: string) => styled(color, text),
+} satisfies Pick<Theme, 'fg'>;
 
 const steps: PlanStep[] = [
   { text: 'Brief worker for ME-123', status: 'pending' },
