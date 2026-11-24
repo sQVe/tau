@@ -801,15 +801,13 @@ it('clears an adopted claim token so a later start takes the lock normally', asy
 
   const second = await startArchitectSession(context, createHeldLockToken());
 
-  expect(second).toBeDefined();
+  if (second === undefined) {
+    throw new Error('The second architect did not start.');
+  }
 
   expect((await readArchitectOwner(root))?.lockToken).toBe(
     (await readLiveLockHolder(architectLockPath(root)))?.token,
   );
-
-  if (second === undefined) {
-    throw new Error('The second architect did not start.');
-  }
 
   await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
 });

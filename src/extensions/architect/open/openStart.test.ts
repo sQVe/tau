@@ -1,4 +1,4 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { argumentAfter } from '../../../../tests/execFake.js';
 import {
@@ -6,8 +6,11 @@ import {
   createTemporaryRepository,
 } from '../../../../tests/gitRepository.js';
 import { temporaryTauConfig } from '../../../../tests/tauConfigHarness.js';
+import { isBareRootWithoutGitEntry } from '../../../git.js';
 import { appCommands, architectArgv, openTool, requestFor } from '../fixtures/openHarness.js';
 import { openArchitect } from './open.js';
+
+vi.mock(import('../../../git.js'), { spy: true });
 
 const locationFor = (cleanup: (cleanup: () => void) => void) => {
   const config = temporaryTauConfig(cleanup, 'tau-architect-open-');
@@ -39,22 +42,17 @@ it('opens the architect in one split to the right of the lead from a bare reposi
   expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });
 
-it('starts from a repository with a .git entry without a Git call', async () => {
+it('starts from a repository with a .git entry without a bare-root probe', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const { app, runtime } = openTool(root);
-  const commands: string[] = [];
 
-  const exec: typeof runtime.exec = (command, commandArguments, options) => {
-    commands.push(command);
-
-    return runtime.exec(command, commandArguments, options);
-  };
+  vi.mocked(isBareRootWithoutGitEntry).mockClear();
 
   const result = await openArchitect(
-    requestFor(root, locationFor(onTestFinished), { ...runtime, exec }, 'Start ME-1611'),
+    requestFor(root, locationFor(onTestFinished), runtime, 'Start ME-1611'),
   );
 
   expect(result).toEqual({ status: 'opened', sessionFile: null });
-  expect(commands).not.toContain('git');
+  expect(vi.mocked(isBareRootWithoutGitEntry)).toHaveBeenCalledWith(root);
   expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });
