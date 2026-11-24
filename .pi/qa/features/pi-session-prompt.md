@@ -4,7 +4,7 @@ Target: pi-session
 
 A `qa` worker runs this feature, for behavior that launches no worker. Change the prompt after its
 first two sentences to trigger the changed behavior. The brief names the tools line and the reply
-text that the changed prompt should produce.
+text or tool result text that the changed prompt should produce.
 
 ## Entry points
 
@@ -38,14 +38,21 @@ prompt.
    jq -c 'select(.type == "tool_execution_end") | [.toolName, .isError]' "$log"
    ```
 
-4. Run the reply check from the [QA guide](../../qa.md#what-to-check-1). Record the text it prints,
-   then compare it with the reply text that the brief names.
+4. Compare the text that the brief names. When it names a reply text, run the reply check from the
+   [QA guide](../../qa.md#what-to-check-1), and compare the text it prints with it. When it names a
+   tool result instead, run this check with the event log, and compare the text it prints with it.
+   Change `bash` to the tool that the brief names.
+
+   ```sh
+   jq -r 'select(.type == "tool_execution_end" and .toolName == "bash")
+     | .result.content[] | select(.type == "text") | .text' "$log"
+   ```
 
 ## Observable results
 
 - The session command exits with code 0.
 - The tools line matches the tools line that the brief names.
-- The reply text matches the reply text that the brief names.
+- The reply text or the tool result text matches the text that the brief names.
 
 ## Worked example
 
@@ -54,8 +61,8 @@ reply check prints `SESSION-OK`.
 
 ## End state
 
-The event log holds the tool calls that the brief names, and the reply is the text that the brief
-names.
+The event log holds the tool calls that the brief names. It also holds the reply text or the tool
+result text that the brief names.
 
 ## Gotchas
 
