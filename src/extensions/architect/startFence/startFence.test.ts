@@ -12,7 +12,11 @@ import {
 } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
-import { acquireStartFence } from './startFence.js';
+import {
+  malformedStartMarkerReason,
+  startHeldByProcessReason,
+} from '../startTicket/startTicket.js';
+import { acquireStartFence, startFenceBlockerMessage } from './startFence.js';
 import type { StartFence } from './startFence.js';
 
 const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
@@ -119,6 +123,22 @@ it('sends no second signal when the child adopts during the stop', async ({ onTe
 
   expect(finished).toEqual({ kept: false });
   expect(processControl.signals).toEqual(['SIGTERM']);
+});
+
+it.each([
+  { name: 'a starting blocker', blocker: { kind: 'starting' as const }, expected: undefined },
+  {
+    name: 'a running process',
+    blocker: { kind: 'runningProcess' as const, processId: 4321 },
+    expected: startHeldByProcessReason(4321),
+  },
+  {
+    name: 'a malformed marker',
+    blocker: { kind: 'malformedMarker' as const, path: '/start/marker' },
+    expected: malformedStartMarkerReason('/start/marker'),
+  },
+])('names the message for $name', ({ blocker, expected }) => {
+  expect(startFenceBlockerMessage(blocker)).toBe(expected);
 });
 
 it('re-probes the child when its marker is gone', async ({ onTestFinished }) => {

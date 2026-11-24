@@ -103,6 +103,8 @@ export const cancelStartTicket = async (ticket: string): Promise<StartTicketCanc
     return isMissingFile(error) ? 'taken' : 'unread';
   }
 
+  // A leftover cancelled name is ignored by the sweep, so a failed removal must not fail the
+  // cancellation.
   await rm(cancelled, { force: true }).catch(() => undefined);
 
   return 'cancelled';
