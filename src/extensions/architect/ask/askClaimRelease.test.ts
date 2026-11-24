@@ -24,6 +24,7 @@ import type { StartFence } from '../startFence/startFence.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
 import {
+  askAdoptedKeptClaimMessage,
   askAdoptedChildStoppedDetail,
   askFailedReason,
   askKeptClaimMessage,
@@ -313,7 +314,7 @@ it('surfaces a kept claim when the launch adopts and the claim release fails', a
 
   expect(result).toMatchObject({
     status: 'needsOpen',
-    reason: `${askKeptClaimMessage(root)} ${releaseFailure.message}`,
+    reason: `${askAdoptedKeptClaimMessage(root)} ${releaseFailure.message}`,
   });
 
   expect(await statuses(root)).toEqual(['running']);

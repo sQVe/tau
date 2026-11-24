@@ -8,7 +8,7 @@ import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
 import { processState } from '../../../process/process.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import type { LaunchOutcome } from '../claimRelease/launchOutcomeDecision.js';
-import { askRecordPath, readAskRecord, updateHiddenAskRecord, writeAskRecord } from '../record.js';
+import { askRecordPath, updateHiddenAskRecord, writeAskRecord } from '../record.js';
 import type { ChangeAskOptions, HiddenAskRecord, HiddenAskRecordChange } from '../record.js';
 import type { StartFence, StartFenceCompletion } from '../startFence/startFence.js';
 import type { AskRequest, AskResult } from './ask.js';
@@ -33,11 +33,28 @@ type HiddenAskLaunchResult =
 
 export const askDeadlineSeconds = 900;
 
-export const askKeptClaimMessage = (root: string, failure?: Error): string => {
-  const message = `The architect in ${root} did not take the checkout lock, so the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect ask again.`;
+const reservedCheckoutSuffix =
+  'the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect ask again.';
+
+const keptClaimMessageFor = (prefix: string, failure?: Error): string => {
+  const message = `${prefix} ${reservedCheckoutSuffix}`;
 
   return failure === undefined ? message : `${message} ${failure.message}`;
 };
+
+export const askKeptClaimMessage = (root: string, failure?: Error): string =>
+  keptClaimMessageFor(`The architect in ${root} did not take the checkout lock, so`, failure);
+
+export const askAdoptedKeptClaimMessage = (root: string, failure?: Error): string =>
+  keptClaimMessageFor(`The architect in ${root} holds the checkout lock, so`, failure);
+
+const completionKeptClaimMessage = (
+  request: AskRequest,
+  completion: StartFenceCompletion,
+): string =>
+  completion.outcome === 'adopted'
+    ? askAdoptedKeptClaimMessage(request.root, completion.failure)
+    : askKeptClaimMessage(request.root, completion.failure);
 
 export const askMissingRecordReason =
   'The ask record could not be read after the ask settled. Call architect open to talk to the architect.';
@@ -50,6 +67,9 @@ export const askUnconfirmedStopDetail =
 
 export const askTimeoutStopDetail =
   'The ask reached its deadline, and its terminal did not confirm that it stopped. The record stays running until another ask repairs it.';
+
+export const askTimeoutReleaseDetail =
+  'The ask reached its deadline, and its claim could not be released. The record stays running until another ask repairs it.';
 
 export const askTimeoutStopReason =
   'The ask reached its deadline, but its terminal did not confirm that it stopped. Call architect open to talk to the architect.';
@@ -225,14 +245,31 @@ const settleAdoptedChild = async (
 const failureBeside = (message: string, failure: Error | undefined): string =>
   failure === undefined ? message : `${message} ${failure.message}`;
 
+const errorOf = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(errorMessage(error));
+
 const launchError = (error: unknown, failure: Error | undefined): Error => {
   if (failure === undefined) {
-    return error instanceof Error ? error : new Error(errorMessage(error));
+    return errorOf(error);
   }
 
-  const message = `${errorMessage(error)} ${failure.message}`;
+  const message = `${errorOf(error).message} ${failure.message}`;
 
   return new Error(message, { cause: error });
+};
+
+const keptClaimError = (
+  request: AskRequest,
+  completion: StartFenceCompletion,
+  launched: HiddenAskLaunch,
+): Error => {
+  const kept = completionKeptClaimMessage(request, completion);
+
+  if (launched.error === undefined) {
+    return new Error(kept);
+  }
+
+  return new Error(`${kept} ${errorOf(launched.error).message}`, { cause: launched.error });
 };
 
 const keptClaimResult = (
@@ -240,7 +277,7 @@ const keptClaimResult = (
   completion: StartFenceCompletion,
 ): HiddenAskLaunchResult => ({
   kind: 'settled',
-  result: needsOpen(askKeptClaimMessage(request.root, completion.failure)),
+  result: needsOpen(completionKeptClaimMessage(request, completion)),
 });
 
 const launchFailureResult = async (
@@ -297,7 +334,7 @@ const launchFailureResult = async (
 
   if (completion.outcome === 'cancelled') {
     throw completion.claim === 'kept'
-      ? new Error(askKeptClaimMessage(request.root, completion.failure))
+      ? keptClaimError(request, completion, launched)
       : launchError(launched.error, completion.failure);
   }
 
@@ -369,11 +406,14 @@ const settleWaitFailure = async (
           options,
         );
 
-  const locked = await readAskRecord(request.root, started.askId);
-  const record = changed?.record ?? (locked?.route === 'hidden' ? locked : undefined);
+  const record = changed?.record;
 
-  if (completion.claim === 'kept' && record?.status === 'running') {
-    throw new Error(askKeptClaimMessage(request.root, completion.failure));
+  if (completion.claim === 'kept') {
+    if (record?.status === 'sent') {
+      return resultFromRecord(request.root, started.askId, record);
+    }
+
+    throw new Error(completionKeptClaimMessage(request, completion));
   }
 
   if (completion.outcome === 'cancelled') {
@@ -399,8 +439,11 @@ const settleTimeout = async (
     completion.outcome === 'adopted' ||
     completion.outcome === 'unresolved';
 
+  const releaseFailed = completion.claim === 'kept' && completion.outcome === 'gone';
   const status = unconfirmed ? 'running' : 'timeout';
-  const detail = unconfirmed ? askTimeoutStopDetail : askDeadlineDetail;
+
+  const stopDetail = releaseFailed ? askTimeoutReleaseDetail : askTimeoutStopDetail;
+  const detail = unconfirmed ? stopDetail : askDeadlineDetail;
 
   const changed = await updateHiddenAskRecord(
     request.root,
@@ -414,7 +457,7 @@ const settleTimeout = async (
   if (record?.status === 'running') {
     const reason =
       completion.claim === 'kept'
-        ? askKeptClaimMessage(request.root, completion.failure)
+        ? completionKeptClaimMessage(request, completion)
         : askTimeoutStopReason;
 
     return needsOpen(reason);

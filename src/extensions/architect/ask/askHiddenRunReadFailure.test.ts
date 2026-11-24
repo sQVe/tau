@@ -4,7 +4,7 @@ import {
   armFileSystemFault,
   pathNamed,
   resetFileSystemFaults,
-} from '../../../../tests/fileSystemFaults.js';
+} from '../../../../tests/fileSystemFaultsFake.js';
 import { takeStartTicket, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
@@ -14,7 +14,7 @@ import { ask, details, startFake, statuses } from './fixtures/askHarness.js';
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const original = await importOriginal();
-  const { takeFileSystemFault } = await import('../../../../tests/fileSystemFaults.js');
+  const { takeFileSystemFault } = await import('../../../../tests/fileSystemFaultsFake.js');
 
   const faultyReaddir = (async (
     ...readArguments: Parameters<typeof original.readdir>

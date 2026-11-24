@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
-import { takenFence } from '../../../../tests/startFenceSetup.js';
+import { takenFence } from '../../../../tests/startFenceHarness.js';
 import { fakeStartProcessId, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
