@@ -1,33 +1,41 @@
 import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
+import { access, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const usage = 'Usage: node osLockParent.ts <abandon|exit|wait> <marker> <command> [arguments...]';
+const usage =
+  'Usage: node osLockParentHarness.ts <abandon|exit|wait> <marker> <holder-pid-file> <command> [arguments...]';
 
 const readinessPollMilliseconds = 20;
 const readinessTimeoutMilliseconds = 10_000;
 
-const [mode, markerPath, command, ...commandArguments] = process.argv.slice(2);
+const [mode, markerPath, holderPidPath, command, ...commandArguments] = process.argv.slice(2);
 
 const refuseUsage: (problem: string) => never = (problem) => {
   process.stderr.write(`${problem}\n${usage}\n`);
   process.exit(64);
 };
 
-if (command === undefined || markerPath === undefined) {
-  refuseUsage('A parent needs a marker path and a command to start.');
+if (command === undefined || holderPidPath === undefined || markerPath === undefined) {
+  refuseUsage('A parent needs a marker path, a holder process ID file, and a command to start.');
 }
 
 if (mode !== 'abandon' && mode !== 'exit' && mode !== 'wait') {
   refuseUsage('A parent runs in abandon, exit, or wait mode.');
 }
 
+// Only wait mode leaves the holder in the parent group, so the other modes outlive a killed parent.
 const holder = spawn(command, commandArguments, {
-  detached: mode === 'exit',
+  detached: mode !== 'wait',
   stdio: 'ignore',
 });
 
 holder.unref();
+
+// The file reaches the caller before the printed ID does, so a caller that never reads the print
+// still learns which detached holder to stop.
+if (holder.pid !== undefined) {
+  await writeFile(holderPidPath, `${String(holder.pid)}\n`);
+}
 
 if (mode !== 'abandon') {
   process.stdout.write(`${String(holder.pid)}\n`);

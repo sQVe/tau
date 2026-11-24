@@ -8,7 +8,7 @@
     "scripts/*.ts",
     "scripts/fixtures/fakePi.ts",
     "stryker.vitest.config.ts",
-    "tests/osLockParent.ts"
+    "tests/osLockParentHarness.ts"
   ],
   "ignoreDependencies": ["pi-web-access"],
   "ignoreBinaries": ["flock", "hc", "mise"]

@@ -1,8 +1,8 @@
-import { spawn, spawnSync } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -11,12 +11,11 @@ import {
   holderOutlivesKilledParent,
   lockFreesWhenEveryHolderIsGone,
   osLockConflictExitCode,
-  osLockHolderArgv,
   osLockParentFixturePath,
-  osLockWrapperArgv,
   readOsLockState,
   runSpikeCommand,
   secondHolderRefused,
+  startHolder,
   startParentWithHolder,
   supervisorWithoutFork,
   waitForHolderReady,
@@ -24,8 +23,12 @@ import {
   wrapperHoldsLockAcrossExec,
 } from '../scripts/osLockSpike.js';
 import { processState } from '../src/process/process.js';
+import type { ProcessState } from '../src/process/process.js';
 
 vi.setConfig({ testTimeout: 30_000 });
+
+const processPollMilliseconds = 20;
+const processTimeoutMilliseconds = 10_000;
 
 const flockVersion = spawnSync('flock', ['-V'], { encoding: 'utf8' });
 
@@ -34,17 +37,16 @@ const flockAvailable =
   flockVersion.status === 0 &&
   flockVersion.stdout.includes('util-linux');
 
-const spawnHolder = (lockPath: string, markerPath: string): ChildProcess => {
-  const [command, ...commandArguments] = osLockWrapperArgv(
-    lockPath,
-    osLockHolderArgv(markerPath, ['sleep', '60']),
-  );
+const waitForProcessGone = async (processId: number): Promise<ProcessState> => {
+  const deadline = Date.now() + processTimeoutMilliseconds;
+  let state = processState(processId);
 
-  if (command === undefined) {
-    throw new Error('A holder needs a program to run.');
+  while (state !== 'gone' && Date.now() < deadline) {
+    await sleep(processPollMilliseconds);
+    state = processState(processId);
   }
 
-  return spawn(command, commandArguments, { stdio: 'ignore' });
+  return state;
 };
 
 let directory: string;
@@ -71,15 +73,20 @@ it('spawns the parent fixture from the resolved path', () => {
   const result = spawnSync(process.execPath, [osLockParentFixturePath], { encoding: 'utf8' });
 
   expect(result.status).toBe(64);
-  expect(result.stderr).toContain('Usage: node osLockParent.ts');
+  expect(result.stderr).toContain('Usage: node osLockParentHarness.ts');
 });
 
-it.skipIf(!flockAvailable)('stops the parent group when the process ID read fails', async () => {
-  await expect(startParentWithHolder('abandon', lockPath, markerPath)).rejects.toThrow(
-    'exited before it printed its holder process ID',
-  );
+it.skipIf(!flockAvailable)('stops a detached holder when the process ID read fails', async () => {
+  const holderPidPath = join(directory, 'holder.pid');
 
-  expect(await readOsLockState(lockPath)).toBe('free');
+  await expect(
+    startParentWithHolder('abandon', lockPath, markerPath, holderPidPath),
+  ).rejects.toThrow('exited before it printed its holder process ID');
+
+  const holderPid = Number((await readFile(holderPidPath, 'utf8')).trim());
+
+  expect(await waitForProcessGone(holderPid)).toBe('gone');
+  expect(await waitForOsLockState(lockPath, 'free')).toBe('free');
 });
 
 it.skipIf(!flockAvailable)('reports a free lock and creates its file', async () => {
@@ -111,7 +118,7 @@ it.skipIf(!flockAvailable)(
 
 it.skipIf(!flockAvailable)('reports a held lock apart from a marker write failure', async () => {
   const heldMarker = join(directory, 'held.ready');
-  const holder = spawnHolder(lockPath, heldMarker);
+  const holder = startHolder(lockPath, heldMarker);
 
   try {
     await waitForHolderReady(heldMarker, holder);
@@ -130,6 +137,24 @@ it.skipIf(!flockAvailable)('reports a held lock apart from a marker write failur
     expect(await readOsLockState(lockPath)).toBe('held');
   } finally {
     holder.kill('SIGKILL');
+    await waitForOsLockState(lockPath, 'free');
+  }
+});
+
+it.skipIf(!flockAvailable)('reports why a tracked holder exited before it was ready', async () => {
+  const first = startHolder(lockPath, markerPath);
+
+  try {
+    await waitForHolderReady(markerPath, first);
+
+    const secondMarker = join(directory, 'second.ready');
+    const second = startHolder(lockPath, secondMarker);
+
+    await expect(waitForHolderReady(secondMarker, second)).rejects.toThrow(
+      'found the lock already held',
+    );
+  } finally {
+    first.kill('SIGKILL');
     await waitForOsLockState(lockPath, 'free');
   }
 });

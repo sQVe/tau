@@ -30,7 +30,9 @@ it('resolves the parent fixture path with its spaces decoded', () => {
   const checkout = join('/checkout with space');
   const moduleUrl = pathToFileURL(join(checkout, 'scripts', 'osLockSpike.ts'));
 
-  expect(osLockParentFixturePathFrom(moduleUrl)).toBe(join(checkout, 'tests', 'osLockParent.ts'));
+  expect(osLockParentFixturePathFrom(moduleUrl)).toBe(
+    join(checkout, 'tests', 'osLockParentHarness.ts'),
+  );
 });
 
 it('wraps a holder so it signals readiness after the lock is taken', () => {
