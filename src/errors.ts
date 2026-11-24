@@ -21,6 +21,24 @@ export const errorMessage = (error: unknown): string => {
   return typeof message === 'string' ? message : describeObject(error);
 };
 
+// Returns the failure that came before the release, adding the release failure when it fails. A
+// release that throws synchronously must not hide the earlier failure.
+export const failureWithRelease = async (
+  failure: unknown,
+  release: () => Promise<void>,
+  labels: { failure: string; release: string },
+): Promise<unknown> => {
+  try {
+    await release();
+  } catch (error) {
+    const message = `${labels.failure}: ${errorMessage(failure)}; ${labels.release}: ${errorMessage(error)}`;
+
+    return new Error(message, { cause: failure });
+  }
+
+  return failure;
+};
+
 export const toError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error));
 

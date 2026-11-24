@@ -35,7 +35,7 @@ export const recordNeedsRereading = (facts: LockHolderFacts): boolean =>
   facts.recorded && !facts.released && holderIsGone(facts);
 
 // A holder that left no token is never a claim to take over, even when the caller passes none.
-const hasAdoptToken = (adoptToken: string | undefined): adoptToken is string =>
+export const hasAdoptToken = (adoptToken: string | undefined): adoptToken is string =>
   adoptToken !== undefined && adoptToken !== '';
 
 export const claimIsAdoptable = (facts: LockAdoptionFacts): boolean => {

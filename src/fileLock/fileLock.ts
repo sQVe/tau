@@ -2,10 +2,15 @@ import { link, mkdir, readdir, readFile, rename, rm, truncate, writeFile } from 
 import { basename, dirname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
+import { failureWithRelease, hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
-import { holderIsGone, holderIsTakeable, recordNeedsRereading } from './lockHolderDecision.js';
+import {
+  hasAdoptToken,
+  holderIsGone,
+  holderIsTakeable,
+  recordNeedsRereading,
+} from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
 export interface LiveLockHolder {
@@ -318,18 +323,10 @@ const claimGeneration = async (
 
     await removeOlderGenerations(lockPath, next);
   } catch (claimError) {
-    const releaseError = await releaseOwnFile(path, owner).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-
-    if (releaseError === undefined) {
-      throw claimError;
-    }
-
-    const message = `The claim failed: ${errorMessage(claimError)}; releasing it failed: ${errorMessage(releaseError)}`;
-
-    throw new Error(message, { cause: claimError });
+    throw await failureWithRelease(claimError, () => releaseOwnFile(path, owner), {
+      failure: 'The claim failed',
+      release: 'releasing it failed',
+    });
   }
 
   return owner;
@@ -477,8 +474,7 @@ export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFi
 
   if (refusal !== undefined) {
     const holder = refusal.holder === undefined ? undefined : toLiveHolder(refusal.holder);
-    const adopting = adopt !== undefined && adopt !== '';
-    const reason = adopting ? 'claimGone' : 'held';
+    const reason = hasAdoptToken(adopt) ? 'claimGone' : 'held';
 
     return { kind: 'refused', reason, holder };
   }

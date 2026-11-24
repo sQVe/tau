@@ -1,4 +1,4 @@
-import { errorMessage } from '../../../errors.js';
+import { failureWithRelease } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { processState } from '../../../process/process.js';
 import type { ProcessState } from '../../../process/process.js';
@@ -78,13 +78,6 @@ export const startFenceBlockerMessage = (blocker: StartFenceBlocker): string | u
 
   return blocker.kind === 'malformedMarker' ? malformedStartMarkerReason(blocker.path) : undefined;
 };
-
-// A failed release must not hide the failure that came before it.
-const releaseFailure = (release: () => Promise<void>): Promise<unknown> =>
-  release().then(
-    () => undefined,
-    (error: unknown) => error,
-  );
 
 const childOf = (processId: number | undefined): ProcessState =>
   processId === undefined ? 'unknown' : processState(processId);
@@ -285,15 +278,10 @@ export const acquireStartFence = async (
   try {
     sweep = await sweepStartFolder({ root, currentToken: claim.token });
   } catch (error) {
-    const releaseError = await releaseFailure(claim.release);
-
-    if (releaseError === undefined) {
-      throw error;
-    }
-
-    const message = `The start sweep failed: ${errorMessage(error)}; releasing the claim failed: ${errorMessage(releaseError)}`;
-
-    throw new Error(message, { cause: error });
+    throw await failureWithRelease(error, claim.release, {
+      failure: 'The start sweep failed',
+      release: 'releasing the claim failed',
+    });
   }
 
   if (sweep.kind !== 'clear') {

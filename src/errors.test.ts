@@ -1,6 +1,12 @@
 import { expect, it } from 'vitest';
 
-import { errorMessage, hasErrorCode, isMissingFile, toError } from './errors.js';
+import {
+  errorMessage,
+  failureWithRelease,
+  hasErrorCode,
+  isMissingFile,
+  toError,
+} from './errors.js';
 
 const withCode = (code: string) => Object.assign(new Error('failed'), { code });
 
@@ -42,4 +48,33 @@ it('keeps an Error as it is', () => {
 
 it('wraps a thrown value that is not an Error', () => {
   expect(toError('plain')).toStrictEqual(new Error('plain'));
+});
+
+it('returns the first failure when the release succeeds', async () => {
+  const failure = new Error('The claim failed.');
+
+  const reported = await failureWithRelease(failure, () => Promise.resolve(), {
+    failure: 'The claim failed',
+    release: 'releasing it failed',
+  });
+
+  expect(reported).toBe(failure);
+});
+
+it('returns the first failure and a synchronous release failure together', async () => {
+  const failure = new Error('The claim failed.');
+
+  const reported = await failureWithRelease(
+    failure,
+    () => {
+      throw new Error('The release failed.');
+    },
+    { failure: 'The claim failed', release: 'releasing it failed' },
+  );
+
+  expect((reported as Error).message).toBe(
+    'The claim failed: The claim failed.; releasing it failed: The release failed.',
+  );
+
+  expect((reported as Error).cause).toBe(failure);
 });
