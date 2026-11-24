@@ -1,12 +1,17 @@
 import type { HerdrSpace } from '../../piStart/herdrPane.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
 
-// Both folder values are the caller's real paths, so a symlinked path to one checkout matches it.
+export type SpaceChoice =
+  | { kind: 'reuse'; space: string }
+  | { kind: 'create' }
+  | { kind: 'decide' };
+
+// Both folder values are real paths where the folder can be read, so a symlinked path to one
+// checkout matches it.
 export interface StartPlacementFacts {
   folder: string;
   spaces: readonly HerdrSpace[];
-  space: string | undefined;
-  newSpace: boolean;
+  spaceChoice: SpaceChoice;
   title: string;
 }
 
@@ -23,19 +28,11 @@ const folderRefusal = (spaces: readonly HerdrSpace[]): string => {
 };
 
 export const startPlacement = (facts: StartPlacementFacts): StartPlacement => {
-  if (facts.space !== undefined && facts.newSpace) {
-    return {
-      kind: 'refuse',
-      message:
-        'space and newSpace cannot be used together. Pass space to reuse it, or newSpace: true to create another.',
-    };
+  if (facts.spaceChoice.kind === 'reuse') {
+    return { kind: 'launch', target: { space: facts.spaceChoice.space } };
   }
 
-  if (facts.space !== undefined) {
-    return { kind: 'launch', target: { space: facts.space } };
-  }
-
-  if (facts.newSpace) {
+  if (facts.spaceChoice.kind === 'create') {
     return { kind: 'launch', target: { name: facts.title } };
   }
 

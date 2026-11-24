@@ -5,6 +5,7 @@ import { Type } from 'typebox';
 
 import { checkOutput, parseJson } from '../../command.js';
 import type { CommandRuntime } from '../../command.js';
+import { isMissingFile } from '../../errors.js';
 import type { HandoverSender } from '../../handoverSender.js';
 import { senderEnvironment, senderLine } from '../../handoverSender.js';
 import { listSpaces } from '../../piStart/herdrPane.js';
@@ -13,6 +14,7 @@ import type { PiStartTarget } from '../../piStart/piStart.js';
 import { tabName } from '../../tabName.js';
 import { readHandoverText } from './handoverFile.js';
 import { startPlacement } from './placement.js';
+import type { SpaceChoice } from './placement.js';
 
 type SpaceStatus = 'created' | 'reused';
 
@@ -20,8 +22,7 @@ export interface StartHandoverRequest {
   cwd: string;
   file: string;
   folder: string;
-  space: string | undefined;
-  newSpace: boolean;
+  spaceChoice: SpaceChoice;
   title: string;
   model: string | undefined;
   bareRoot: boolean;
@@ -45,19 +46,32 @@ const launchReplySchema = Type.Object({
 const realFolder = async (folder: string): Promise<string> => {
   try {
     return await realpath(folder);
+  } catch (error) {
+    if (!isMissingFile(error)) {
+      throw error;
+    }
+
+    return resolve(folder);
+  }
+};
+
+// A listed space may be unreadable or on another machine, so its path must never abort the start.
+const listedSpaceFolder = async (folder: string): Promise<string> => {
+  try {
+    return await realpath(folder);
   } catch {
     return resolve(folder);
   }
 };
 
 const placementFor = async (runtime: CommandRuntime, request: StartHandoverRequest) => {
-  const spaces = request.space === undefined ? await listSpaces(runtime) : [];
+  const spaces = request.spaceChoice.kind === 'decide' ? await listSpaces(runtime) : [];
 
   const listed = await Promise.all(
     spaces.map(async (space) => ({
       id: space.id,
       name: space.name,
-      folder: await realFolder(space.folder),
+      folder: await listedSpaceFolder(space.folder),
       machine: space.machine,
     })),
   );
@@ -65,8 +79,7 @@ const placementFor = async (runtime: CommandRuntime, request: StartHandoverReque
   return startPlacement({
     folder: await realFolder(request.folder),
     spaces: listed,
-    space: request.space,
-    newSpace: request.newSpace,
+    spaceChoice: request.spaceChoice,
     title: request.title,
   });
 };

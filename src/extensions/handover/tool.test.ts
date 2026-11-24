@@ -823,6 +823,92 @@ it('refuses final outside send', async () => {
   expect(existsSync(join(root, '.tau'))).toBe(false);
 });
 
+it('refuses space with prepare and creates no directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const execution = createTool().execute(
+    'call',
+    { action: 'prepare', space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('space is only for action start.');
+
+  expect(existsSync(join(root, '.tau'))).toBe(false);
+});
+
+it('refuses space with send before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+
+  const execution = createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('space is only for action start.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses newSpace with prepare and creates no directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const execution = createTool().execute(
+    'call',
+    { action: 'prepare', newSpace: true },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('newSpace is only for action start.');
+
+  expect(existsSync(join(root, '.tau'))).toBe(false);
+});
+
+it('refuses newSpace with send before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+
+  const execution = createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', newSpace: true },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('newSpace is only for action start.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses space together with newSpace before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createHerdrAppFake();
+
+  const execution = createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, name: 'next step', space: 'space-1', newSpace: true },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow(
+    'space and newSpace cannot be used together: pass one of them.',
+  );
+
+  expect(app.calls).toEqual([]);
+});
+
 it('refuses an already-aborted start before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');

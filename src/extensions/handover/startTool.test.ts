@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -51,50 +50,6 @@ const startRequest = (
   folder: root,
   name: 'next step',
   ...extras,
-});
-
-it('refuses a start without space when the folder already has a space', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root);
-  const app = createHerdrAppFake({ spaces: [{ id: 'sp-1', name: 'platform', folder: root }] });
-
-  const execution = startTool(app).execute(
-    'call',
-    startRequest(root, file, { newSpace: false }),
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
-
-  const failure = await failureOf(execution);
-
-  expect(failure.message).toContain('sp-1');
-  expect(launchCommands(app)).toEqual([]);
-});
-
-it('refuses a start without space when the folder has two spaces and names both', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root);
-
-  const app = createHerdrAppFake({
-    spaces: [
-      { id: 'sp-1', name: 'platform', folder: root },
-      { id: 'sp-2', name: 'second', folder: root },
-    ],
-  });
-
-  const execution = startTool(app).execute(
-    'call',
-    startRequest(root, file, {}),
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
-
-  const failure = await failureOf(execution);
-
-  expect(failure.message).toContain('sp-1 "platform", sp-2 "second"');
-  expect(launchCommands(app)).toEqual([]);
 });
 
 it('refuses a start without space when the listed folder has a trailing slash', async () => {
@@ -203,34 +158,6 @@ it('creates a space when a listed space folder no longer exists', async () => {
   );
 
   expect(result.details).toEqual({
-    space: 'sp-new',
-    tab: 'tb-new',
-    terminal: 't-new',
-    spaceStatus: 'created',
-  });
-
-  const launchKinds = launchCommands(app).map((call) => call.commandArguments[1]);
-
-  expect(launchKinds).toEqual(['space.new']);
-});
-
-it('creates a space when only another machine has one for the folder', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root);
-
-  const app = createHerdrAppFake({
-    spaces: [{ id: 'sp-1', name: 'platform', folder: root, machine: 'build-2' }],
-  });
-
-  const result = await startTool(app).execute(
-    'call',
-    startRequest(root, file, {}),
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
-
-  expect(result.details).toEqual({
     reply: '{"space":"sp-new","tab":"tb-new","terminal":"t-new"}',
     space: 'sp-new',
     tab: 'tb-new',
@@ -291,6 +218,80 @@ it.each(creationRows)('creates a space in $label', async ({ spacesFor, extras })
   expect(argumentAfter(launch?.commandArguments ?? [], '--name')).toBe('next step');
 
   expect(argumentAfter(launch?.commandArguments ?? [], '--tab')).toBe(tabName('lead', 'next step'));
+});
+
+it('creates a space when a listed space folder cannot be resolved', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root);
+  const loop = join(root, 'loop');
+
+  await symlink(loop, loop, 'dir');
+
+  const app = createHerdrAppFake({ spaces: [{ id: 'sp-1', name: 'platform', folder: loop }] });
+
+  const result = await startTool(app).execute(
+    'call',
+    startRequest(root, file, {}),
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({
+    reply: '{"space":"sp-new","tab":"tb-new","terminal":"t-new"}',
+    space: 'sp-new',
+    tab: 'tb-new',
+    terminal: 't-new',
+    spaceStatus: 'created',
+  });
+
+  const launchKinds = launchCommands(app).map((call) => call.commandArguments[1]);
+
+  expect(launchKinds).toEqual(['space.new']);
+});
+
+it('refuses a start with newSpace false when the folder already has a space', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root);
+  const app = createHerdrAppFake({ spaces: [{ id: 'sp-1', name: 'platform', folder: root }] });
+
+  const execution = startTool(app).execute(
+    'call',
+    startRequest(root, file, { newSpace: false }),
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow(/folder already has a space: sp-1/);
+
+  expect(launchCommands(app)).toEqual([]);
+});
+
+it('creates a space without listing the spaces when the caller asks for one', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root);
+  const app = createHerdrAppFake();
+
+  app.failCommand('ls', 'ls failed');
+
+  const result = await startTool(app).execute(
+    'call',
+    startRequest(root, file, { newSpace: true }),
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({
+    reply: '{"space":"sp-new","tab":"tb-new","terminal":"t-new"}',
+    space: 'sp-new',
+    tab: 'tb-new',
+    terminal: 't-new',
+    spaceStatus: 'created',
+  });
+
+  expect(app.calls.map((call) => call.commandArguments[0])).toEqual(['do']);
 });
 
 it('opens a tab in the space the caller names without listing the spaces', async () => {
@@ -389,24 +390,6 @@ it('rejects malformed launch output after exactly one launch', async () => {
   expect(launchCommands(app)).toHaveLength(1);
 });
 
-it('refuses newSpace together with space before any herdr-app call', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root);
-  const app = createHerdrAppFake();
-
-  const execution = startTool(app).execute(
-    'call',
-    startRequest(root, file, { space: 'space-1', newSpace: true }),
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
-
-  await expect(execution).rejects.toThrow(/space and newSpace/);
-
-  expect(app.calls).toEqual([]);
-});
-
 it('refuses a listed space without a folder before any launch', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root);
@@ -428,39 +411,4 @@ it('refuses a listed space without a folder before any launch', async () => {
   await expect(execution).rejects.toThrow('herdr-app ls printed unexpected output');
 
   expect(launchCommands(app)).toEqual([]);
-});
-
-it('refuses newSpace with prepare and creates no directory', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const tool = startTool(createHerdrAppFake());
-
-  const execution = tool.execute(
-    'call',
-    { action: 'prepare', newSpace: true },
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
-
-  await expect(execution).rejects.toThrow(/newSpace is only for action start/);
-
-  expect(existsSync(join(root, '.tau'))).toBe(false);
-});
-
-it('refuses newSpace with send before any hc call', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const hc = createHcFake();
-  const tool = createHandoverTool({ exec: hc.exec, connect: hc.connect, cwd: '/repository' });
-
-  const execution = tool.execute(
-    'call',
-    { action: 'send', terminal: 't7', file: join(root, 'message.md'), newSpace: true },
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
-
-  await expect(execution).rejects.toThrow(/newSpace is only for action start/);
-
-  expect(hc.calls).toEqual([]);
 });
