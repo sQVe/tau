@@ -31,7 +31,9 @@ export const failureWithRelease = async (
   try {
     await release();
   } catch (error) {
-    const message = `${labels.failure}: ${errorMessage(failure)}; ${labels.release}: ${errorMessage(error)}`;
+    const failureMessage = errorMessage(failure);
+    const releaseMessage = errorMessage(error);
+    const message = `${labels.failure}: ${failureMessage}; ${labels.release}: ${releaseMessage}`;
 
     return new Error(message, { cause: failure });
   }
