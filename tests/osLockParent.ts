@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const usage = 'Usage: node osLockParent.ts <exit|wait> <marker> <command> [arguments...]';
+const usage = 'Usage: node osLockParent.ts <abandon|exit|wait> <marker> <command> [arguments...]';
+
 const readinessPollMilliseconds = 20;
 const readinessTimeoutMilliseconds = 10_000;
 
@@ -17,8 +18,8 @@ if (command === undefined || markerPath === undefined) {
   refuseUsage('A parent needs a marker path and a command to start.');
 }
 
-if (mode !== 'exit' && mode !== 'wait') {
-  refuseUsage('A parent runs in exit or wait mode.');
+if (mode !== 'abandon' && mode !== 'exit' && mode !== 'wait') {
+  refuseUsage('A parent runs in abandon, exit, or wait mode.');
 }
 
 const holder = spawn(command, commandArguments, {
@@ -27,7 +28,10 @@ const holder = spawn(command, commandArguments, {
 });
 
 holder.unref();
-process.stdout.write(`${String(holder.pid)}\n`);
+
+if (mode !== 'abandon') {
+  process.stdout.write(`${String(holder.pid)}\n`);
+}
 
 const markerExists = async (path: string): Promise<boolean> => {
   try {
@@ -60,6 +64,10 @@ const holderIsReady = async (): Promise<boolean> => {
 if (!(await holderIsReady())) {
   process.stderr.write('The holder did not take the lock.\n');
   process.exit(70);
+}
+
+if (mode === 'abandon') {
+  process.exit(0);
 }
 
 if (mode === 'wait') {

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { processState, signalGroup } from '../src/process/process.ts';
+import { processState, signalGroup, stopGroup } from '../src/process/process.ts';
 import { readProcessId } from './osLockProcessId.ts';
 
 export type OsLockState = 'free' | 'held';
@@ -56,11 +56,9 @@ export const osLockConflictExitCode = 75;
 export const osLockMarkerWriteExitCode = 74;
 
 export const osLockParentFixturePathFrom = (moduleUrl: URL): string =>
-  fileURLToPath(new URL('fixtures/osLockParent.ts', moduleUrl));
+  fileURLToPath(new URL('../tests/osLockParent.ts', moduleUrl));
 
-export const osLockParentFixturePath = fileURLToPath(
-  new URL('fixtures/osLockParent.ts', import.meta.url),
-);
+export const osLockParentFixturePath = osLockParentFixturePathFrom(new URL(import.meta.url));
 
 const probePollMilliseconds = 20;
 const probeTimeoutMilliseconds = 10_000;
@@ -167,7 +165,10 @@ const markerExists = async (markerPath: string): Promise<boolean> => {
   }
 };
 
-const waitForHolderReady = async (markerPath: string, watched: ChildProcess): Promise<void> => {
+export const waitForHolderReady = async (
+  markerPath: string,
+  watched: ChildProcess,
+): Promise<void> => {
   const deadline = Date.now() + probeTimeoutMilliseconds;
 
   while (Date.now() < deadline) {
@@ -251,8 +252,8 @@ export const secondHolderRefused = async (
   }
 };
 
-const startParentWithHolder = async (
-  mode: 'exit' | 'wait',
+export const startParentWithHolder = async (
+  mode: 'abandon' | 'exit' | 'wait',
   lockPath: string,
   markerPath: string,
 ): Promise<ParentHolder> => {
@@ -260,10 +261,16 @@ const startParentWithHolder = async (
 
   const parent = startCommand(
     [process.execPath, osLockParentFixturePath, mode, markerPath, ...holderArgv],
-    { stdio: ['pipe', 'pipe', 'ignore'] },
+    { detached: true, stdio: ['pipe', 'pipe', 'ignore'] },
   );
 
-  return { holderPid: await readProcessId(parent), parent };
+  try {
+    return { holderPid: await readProcessId(parent), parent };
+  } catch (error) {
+    await stopGroup(parent, 0);
+
+    throw error;
+  }
 };
 
 // A signal aimed at no process would reach the caller's own process group.

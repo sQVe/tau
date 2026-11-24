@@ -1,9 +1,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -14,15 +13,17 @@ import {
   osLockConflictExitCode,
   osLockHolderArgv,
   osLockParentFixturePath,
-  osLockParentFixturePathFrom,
   osLockWrapperArgv,
   readOsLockState,
   runSpikeCommand,
   secondHolderRefused,
+  startParentWithHolder,
   supervisorWithoutFork,
+  waitForHolderReady,
   waitForOsLockState,
   wrapperHoldsLockAcrossExec,
 } from '../scripts/osLockSpike.js';
+import { processState } from '../src/process/process.js';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -66,27 +67,19 @@ it('rejects a command that cannot start', async () => {
   );
 });
 
-it('refuses to run the parent fixture without a marker and a command', () => {
+it('spawns the parent fixture from the resolved path', () => {
   const result = spawnSync(process.execPath, [osLockParentFixturePath], { encoding: 'utf8' });
 
   expect(result.status).toBe(64);
   expect(result.stderr).toContain('Usage: node osLockParent.ts');
 });
 
-it('spawns the parent fixture from a checkout path with a space', async () => {
-  const scriptDirectory = join(directory, 'checkout with space', 'scripts');
-
-  const fixturePath = osLockParentFixturePathFrom(
-    pathToFileURL(join(scriptDirectory, 'osLockSpike.ts')),
+it.skipIf(!flockAvailable)('stops the parent group when the process ID read fails', async () => {
+  await expect(startParentWithHolder('abandon', lockPath, markerPath)).rejects.toThrow(
+    'exited before it printed its holder process ID',
   );
 
-  await mkdir(join(scriptDirectory, 'fixtures'), { recursive: true });
-  await copyFile(osLockParentFixturePath, fixturePath);
-
-  const result = spawnSync(process.execPath, [fixturePath], { encoding: 'utf8' });
-
-  expect(result.status).toBe(64);
-  expect(result.stderr).toContain('Usage: node osLockParent.ts');
+  expect(await readOsLockState(lockPath)).toBe('free');
 });
 
 it.skipIf(!flockAvailable)('reports a free lock and creates its file', async () => {
@@ -111,18 +104,30 @@ it.skipIf(!flockAvailable)(
     await expect(secondHolderRefused(lockPath, missingMarker)).rejects.toThrow(
       'could not write its readiness marker',
     );
+
+    expect(await readOsLockState(lockPath)).toBe('free');
   },
 );
 
 it.skipIf(!flockAvailable)('reports a held lock apart from a marker write failure', async () => {
-  const holder = spawnHolder(lockPath, join(directory, 'held.ready'));
+  const heldMarker = join(directory, 'held.ready');
+  const holder = spawnHolder(lockPath, heldMarker);
 
   try {
-    await waitForOsLockState(lockPath, 'held');
+    await waitForHolderReady(heldMarker, holder);
 
     await expect(secondHolderRefused(lockPath, join(directory, 'conflict.ready'))).rejects.toThrow(
       'found the lock already held',
     );
+
+    const { pid: holderPid } = holder;
+
+    if (holderPid === undefined) {
+      throw new Error('A spawned lock holder has a process ID.');
+    }
+
+    expect(processState(holderPid)).not.toBe('gone');
+    expect(await readOsLockState(lockPath)).toBe('held');
   } finally {
     holder.kill('SIGKILL');
     await waitForOsLockState(lockPath, 'free');

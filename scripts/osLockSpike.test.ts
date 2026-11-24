@@ -1,6 +1,14 @@
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import { expect, it } from 'vitest';
 
-import { osLockHolderArgv, osLockMarkerWriteExitCode, osLockWrapperArgv } from './osLockSpike.js';
+import {
+  osLockHolderArgv,
+  osLockMarkerWriteExitCode,
+  osLockParentFixturePathFrom,
+  osLockWrapperArgv,
+} from './osLockSpike.js';
 
 it('wraps a command so the command itself holds the lock', () => {
   expect(
@@ -16,6 +24,13 @@ it('wraps a command so the command itself holds the lock', () => {
     'TAU_ROLE=architect',
     'pi',
   ]);
+});
+
+it('resolves the parent fixture path with its spaces decoded', () => {
+  const checkout = join('/checkout with space');
+  const moduleUrl = pathToFileURL(join(checkout, 'scripts', 'osLockSpike.ts'));
+
+  expect(osLockParentFixturePathFrom(moduleUrl)).toBe(join(checkout, 'tests', 'osLockParent.ts'));
 });
 
 it('wraps a holder so it signals readiness after the lock is taken', () => {

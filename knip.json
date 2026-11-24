@@ -7,7 +7,8 @@
     "src/extensions/handoverQuestion/handoverQuestion.ts",
     "scripts/*.ts",
     "scripts/fixtures/fakePi.ts",
-    "stryker.vitest.config.ts"
+    "stryker.vitest.config.ts",
+    "tests/osLockParent.ts"
   ],
   "ignoreDependencies": ["pi-web-access"],
   "ignoreBinaries": ["flock", "hc", "mise"]
