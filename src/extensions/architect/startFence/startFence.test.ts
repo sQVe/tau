@@ -1,9 +1,10 @@
-import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readdir, rename } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
+import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeStartProcessId,
   takeStartTicket,
@@ -43,30 +44,6 @@ const startFakeTimers = (): void => {
 };
 
 const startDirectory = (root: string): string => join(root, '.tau', 'architect', 'start');
-
-const latestLockPath = async (root: string): Promise<string> => {
-  const directory = dirname(architectLockPath(root));
-
-  const generations = (await readdir(directory))
-    .map((name) => /^lock\.(\d+)$/u.exec(name))
-    .filter((match): match is RegExpExecArray => match !== null)
-    .map((match) => Number(match[1]));
-
-  const generation = generations.toSorted((left, right) => left - right).at(-1);
-
-  if (generation === undefined) {
-    throw new Error('The lock has no generation.');
-  }
-
-  return `${architectLockPath(root)}.${generation}`;
-};
-
-const renameLockHolder = async (root: string, processId: number): Promise<void> => {
-  const path = await latestLockPath(root);
-  const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
-
-  await writeFile(path, JSON.stringify({ ...owner, pid: processId }));
-};
 
 const adoptTakenTicket = async (root: string): Promise<void> => {
   const directory = startDirectory(root);
@@ -166,7 +143,7 @@ it('keeps a lock-only adoption cached after the lock is gone', async ({ onTestFi
 
   expect(await fence.childAdopted()).toBe(false);
 
-  await renameLockHolder(root, fakeStartProcessId);
+  await replaceCurrentLockOwnerPid(architectLockPath(root), fakeStartProcessId);
 
   expect(await fence.childAdopted()).toBe(true);
 

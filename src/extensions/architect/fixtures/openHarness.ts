@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { onTestFinished } from 'vitest';
@@ -10,6 +10,7 @@ import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
 import { createHerdrAppFake } from '../../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
+import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeRunningStartProcessId,
   fakeStartProcessId,
@@ -120,26 +121,6 @@ const claimTokenOf = (commandArguments: readonly string[]): string | undefined =
   return argv.find((entry) => entry.startsWith(claimArgument))?.slice(claimArgument.length);
 };
 
-const renameLockHolder = async (root: string, processId: number): Promise<void> => {
-  const directory = dirname(architectLockPath(root));
-
-  const generations = (await readdir(directory))
-    .map((name) => /^lock\.(\d+)$/u.exec(name))
-    .filter((match): match is RegExpExecArray => match !== null)
-    .map((match) => Number(match[1]));
-
-  const generation = generations.toSorted((left, right) => left - right).at(-1);
-
-  if (generation === undefined) {
-    return;
-  }
-
-  const path = `${architectLockPath(root)}.${generation}`;
-  const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
-
-  await writeFile(path, JSON.stringify({ ...owner, pid: processId }));
-};
-
 export const adoptClaim = async (
   root: string,
   claimToken: string,
@@ -158,7 +139,7 @@ export const adoptClaim = async (
     return undefined;
   }
 
-  await renameLockHolder(root, processId);
+  await replaceCurrentLockOwnerPid(architectLockPath(root), processId);
 
   await adoptStartMarker(root, claimToken, processId);
 

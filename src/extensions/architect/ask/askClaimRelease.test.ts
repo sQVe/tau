@@ -1,11 +1,12 @@
 import { readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readdir, rename } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
+import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeStartProcessId,
   takeStartTicket,
@@ -72,21 +73,6 @@ const childClaimToken = (commandArguments: readonly string[]): string | undefine
     .find((argument) => argument.startsWith(claimArgument))
     ?.slice(claimArgument.length);
 
-// The adopted lock belongs to the child process the marker names, not to this test process.
-const renameLockHolder = async (root: string, processId: number): Promise<void> => {
-  const directory = dirname(architectLockPath(root));
-
-  const generations = (await readdir(directory))
-    .map((name) => /^lock\.(\d+)$/u.exec(name))
-    .filter((match): match is RegExpExecArray => match !== null)
-    .map((match) => Number(match[1]));
-
-  const path = `${architectLockPath(root)}.${generations.toSorted((left, right) => left - right).at(-1)}`;
-  const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
-
-  await writeFile(path, JSON.stringify({ ...owner, pid: processId }));
-};
-
 // The child wins the claim without awaiting anything, so a probe can trigger the takeover.
 const adoptLockSync = (root: string, token: string): void => {
   const lockPath = architectLockPath(root);
@@ -133,7 +119,8 @@ const adoptAsChild = async (
 
   const adopted = await holdArchitectLock(root, claimToken);
 
-  await renameLockHolder(root, fakeStartProcessId);
+  // The adopted lock belongs to the child process the marker names, not to this test process.
+  await replaceCurrentLockOwnerPid(architectLockPath(root), fakeStartProcessId);
 
   const ticket = commandArguments[commandArguments.indexOf('tau-architect-start') + 1];
 
