@@ -87,6 +87,37 @@ const installFakeProcesses = (): FakeStartProcesses => {
   return { spy, states };
 };
 
+// A signal that never arrives must fail its assertion, not hang the suite until the global timeout.
+const signalTimeoutMilliseconds = 5_000;
+
+const waitForSignal = (control: FakeStartProcessControl, count: number): Promise<void> => {
+  if (control.signals.length >= count) {
+    return Promise.resolve();
+  }
+
+  const timeout = AbortSignal.timeout(signalTimeoutMilliseconds);
+
+  return new Promise((resolve, reject) => {
+    const onTimeout = (): void => {
+      reject(
+        new Error(
+          `The fake start process received ${control.signals.length} signals, but the test waited for ${count}.`,
+        ),
+      );
+    };
+
+    control.signalWaiters.push({
+      count,
+      resolve: () => {
+        timeout.removeEventListener('abort', onTimeout);
+        resolve();
+      },
+    });
+
+    timeout.addEventListener('abort', onTimeout, { once: true });
+  });
+};
+
 export const useFakeStartProcess = (
   cleanup: (cleanup: () => void) => void,
   initial: FakeStartProcess['state'] = 'gone',
@@ -101,15 +132,7 @@ export const useFakeStartProcess = (
     signalTimes: [],
     stopOnSignal,
     signalWaiters: [],
-    nextSignal: (count) => {
-      if (control.signals.length >= count) {
-        return Promise.resolve();
-      }
-
-      return new Promise((resolve) => {
-        control.signalWaiters.push({ count, resolve });
-      });
-    },
+    nextSignal: (count) => waitForSignal(control, count),
   };
 
   fakeProcesses.states.set(processId, control);
