@@ -42,13 +42,28 @@ const drawMark = (status: PlanStep['status'], theme: Pick<Theme, 'fg'>): string 
   return `${drawnMark}${' '.repeat(padding)}`;
 };
 
+const markPrefix = (
+  status: PlanStep['status'],
+  width: number,
+  theme: Pick<Theme, 'fg'>,
+): string => {
+  const drawnMark = drawMark(status, theme);
+
+  if (width <= markWidth) {
+    return drawnMark;
+  }
+
+  const markGap = ' '.repeat(Math.max(0, planLabelColumn - visibleWidth(markIndent) - markWidth));
+
+  return `${markIndent}${drawnMark}${markGap}`;
+};
+
 const planLine = (step: PlanStep, width: number, theme: Pick<Theme, 'fg'>): string => {
   const text = sanitizeSingleLine(step.text);
   const textWidth = Math.max(0, width - planLabelColumn);
   const fittedText = stripVTControlCharacters(truncateToWidth(text, textWidth));
   const drawnText = step.status === 'completed' ? theme.fg('dim', fittedText) : fittedText;
-  const markGap = ' '.repeat(Math.max(0, planLabelColumn - visibleWidth(markIndent) - markWidth));
-  const prefix = `${markIndent}${drawMark(step.status, theme)}${markGap}`;
+  const prefix = markPrefix(step.status, width, theme);
 
   return truncateToWidth(`${prefix}${drawnText}`, width, '');
 };

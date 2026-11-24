@@ -76,9 +76,11 @@ const renderedLines = (content: WidgetContent): readonly string[] => {
   return content;
 };
 
-// The border line has its own layout test in widget.test.ts.
+// The border line and the step indent have their own layout test in widget.test.ts.
 const restoredSteps = (content: WidgetContent): readonly string[] =>
-  renderedLines(content).slice(1);
+  renderedLines(content)
+    .slice(1)
+    .map((line) => line.trimStart());
 
 const savedEntry = (data: unknown) => ({ type: 'custom', customType: planEntryType, data });
 
@@ -199,7 +201,7 @@ it.each(['session_start', 'session_tree'] as const)(
 
     const { widgets } = replayBranch(eventName, branch);
 
-    expect(restoredSteps(widgets.at(-1)?.content)).toEqual([' \u{F10C} Second', ' \u{F058} Third']);
+    expect(restoredSteps(widgets.at(-1)?.content)).toEqual(['\u{F10C} Second', '\u{F058} Third']);
   },
 );
 
@@ -222,7 +224,7 @@ it.each(['session_start', 'session_tree'] as const)(
 
     const { widgets, notify } = replayBranch(eventName, branch);
 
-    expect(restoredSteps(widgets.at(-1)?.content)).toEqual([' \u{F10C} Kept']);
+    expect(restoredSteps(widgets.at(-1)?.content)).toEqual(['\u{F10C} Kept']);
 
     expect(notify).toHaveBeenCalledExactlyOnceWith(
       'Skipped a plan entry from newer version 2.',
@@ -241,7 +243,7 @@ it.each(['session_start', 'session_tree'] as const)(
 
     const { widgets, notify } = replayBranch(eventName, branch);
 
-    expect(restoredSteps(widgets.at(-1)?.content)).toEqual([' \u{F10C} Kept']);
+    expect(restoredSteps(widgets.at(-1)?.content)).toEqual(['\u{F10C} Kept']);
 
     expect(notify).toHaveBeenCalledExactlyOnceWith('Skipped a malformed plan entry.', 'warning');
   },

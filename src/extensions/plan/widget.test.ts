@@ -11,8 +11,8 @@ const theme = {
   fg: (_color: ThemeColor, text: string) => text,
 } satisfies Pick<Theme, 'fg'>;
 
-const borderLine = (width: number): string =>
-  `${'─'.repeat(planLabelColumn - 1)} Plan ${'─'.repeat(width - planLabelColumn - 5)}`;
+const columnOf = (line: string, text: string): number =>
+  visibleWidth(line.slice(0, line.indexOf(text)));
 
 const codes = { border: '90', muted: '2', accent: '36', dim: '35', warning: '33' } as const;
 
@@ -47,10 +47,9 @@ it('draws a labeled border above the steps', () => {
 
 it('starts the label in the step text column', () => {
   const lines = planLines([{ text: 'Brief worker', status: 'pending' }], 80, theme);
-  const textColumn = lines[1]?.indexOf('Brief') ?? 0;
 
-  expect(lines[0]?.indexOf('Plan')).toBe(planLabelColumn);
-  expect(textColumn).toBe(planLabelColumn);
+  expect(columnOf(lines[0] ?? '', 'Plan')).toBe(planLabelColumn);
+  expect(columnOf(lines[1] ?? '', 'Brief')).toBe(planLabelColumn);
 });
 
 it.each([
@@ -77,7 +76,7 @@ it('fills every width from one column up', () => {
 });
 
 it.each([
-  [1, ' '],
+  [1, '\u{F10C}'],
   [2, ' \u{F10C}'],
   [3, ' \u{F10C} '],
   [4, ' \u{F10C} .'],
@@ -94,9 +93,9 @@ it('keeps the step text aligned when a mark draws narrower', () => {
   } satisfies Pick<Theme, 'fg'>;
 
   const [border, ...stepLines] = planLines(steps, 80, narrowMarkTheme);
-  const textColumns = steps.map(({ text }, index) => (stepLines[index] ?? '').indexOf(text));
+  const textColumns = steps.map(({ text }, index) => columnOf(stepLines[index] ?? '', text));
 
-  expect(border?.indexOf('Plan')).toBe(planLabelColumn);
+  expect(columnOf(border ?? '', 'Plan')).toBe(planLabelColumn);
   expect(textColumns).toEqual([3, 3, 3, 3]);
 });
 
@@ -138,5 +137,5 @@ it.each([
 it('renders a line break and an escape sequence as one line', () => {
   const lines = planLines([{ text: 'First\nSecond\u001B[31m', status: 'pending' }], 80, theme);
 
-  expect(lines).toEqual([borderLine(80), ' \u{F10C} First Second']);
+  expect(lines.slice(1)).toEqual([' \u{F10C} First Second']);
 });
