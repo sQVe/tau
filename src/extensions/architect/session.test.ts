@@ -320,6 +320,39 @@ const hiddenSession = (
   held: createHeldLockToken(),
 });
 
+it('clears the held token and releases the lock when the deadline stop fails', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const notify = vi.fn<(message: string, level?: string) => void>();
+  const release = vi.fn<() => Promise<void>>(() => Promise.resolve());
+  const held = createHeldLockToken();
+
+  held.set('claim');
+
+  const session: ArchitectSession = {
+    root,
+    release,
+    ui: { notify },
+    owner: { lockToken: 'claim', mode: 'ask', terminal: 't-ask', sessionId: 'session-architect' },
+    held,
+    deadline: {
+      whenSettled: () => Promise.resolve(),
+      stop: () => Promise.reject(new Error('The deadline could not be stopped.')),
+    },
+  };
+
+  await endArchitectSession(session, hcRuntime(createHcFake()), endOptions());
+
+  expect(held.current()).toBeUndefined();
+  expect(release).toHaveBeenCalledTimes(1);
+
+  expect(notify).toHaveBeenCalledWith(
+    'The ask deadline could not be stopped: The deadline could not be stopped.',
+    'warning',
+  );
+});
+
 it('ending fails only running hidden asks', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
 
@@ -773,4 +806,10 @@ it('clears an adopted claim token so a later start takes the lock normally', asy
   expect((await readArchitectOwner(root))?.lockToken).toBe(
     (await readLiveLockHolder(architectLockPath(root)))?.token,
   );
+
+  if (second === undefined) {
+    throw new Error('The second architect did not start.');
+  }
+
+  await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
 });

@@ -9,6 +9,7 @@ import { holdAskLock } from './fixtures/toolHarness.js';
 import { endOptions, hcRuntime, sessionContext, stubArchitect } from './fixtures/visibleSession.js';
 import { askRecordPath, readAskRecord, writeAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
+import type { ArchitectSession } from './session.js';
 
 it('an ask session times out its running ask at the deadline and shuts down', async ({
   onTestFinished,
@@ -121,6 +122,8 @@ it('an ask session waits for a stalled expiry and settles it as timeout', async 
   );
 
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
+
+  expect((session as ArchitectSession).held.current()).toBeUndefined();
 
   held.release();
   await ending;

@@ -77,13 +77,6 @@ const warnLeadModel = (context: ExtensionContext): void => {
   }
 };
 
-const architectMode = (): ArchitectOwner['mode'] => {
-  // oxlint-disable-next-line node/no-process-env -- The ask terminal receives its record path in its environment.
-  const askRecordPath = process.env.TAU_ARCHITECT_ASK;
-
-  return askRecordPath !== undefined && askRecordPath !== '' ? 'ask' : 'visible';
-};
-
 const architectClaim = (): string | undefined => {
   // oxlint-disable-next-line node/no-process-env -- The lead passes the claim it took in the architect's environment.
   const claim = process.env.TAU_ARCHITECT_CLAIM;
@@ -120,9 +113,11 @@ const startArchitect = async (
     // oxlint-disable-next-line node/no-process-env -- A reload must not try to adopt the old claim again.
     delete process.env['TAU_ARCHITECT_CLAIM'];
 
+    const askPath = askRecordPathFromEnvironment();
+
     const owner: ArchitectOwner = {
       lockToken: lock.token,
-      mode: architectMode(),
+      mode: askPath === undefined ? 'visible' : 'ask',
       terminal: currentTerminalAddress() ?? null,
       sessionId: context.sessionManager.getSessionId(),
     };
@@ -145,8 +140,6 @@ const startArchitect = async (
       leadTerminal,
       architectTerminal: owner.terminal,
     });
-
-    const askPath = owner.mode === 'ask' ? askRecordPathFromEnvironment() : undefined;
 
     const deadline =
       askPath === undefined ? undefined : await startAskDeadline(root, askPath, context);
@@ -259,9 +252,11 @@ export const endArchitectSession = async (
   hc: HcRuntime,
   { answers, admissions, sendEndNote }: EndArchitectOptions,
 ): Promise<void> => {
-  await session.deadline?.stop();
-
   session.held.set(undefined);
+
+  await session.deadline?.stop().catch((error: unknown) => {
+    session.ui.notify(`The ask deadline could not be stopped: ${errorMessage(error)}`, 'warning');
+  });
 
   // The note read must finish before the lock is released, so a new owner cannot overwrite the
   // record first. It starts with the close so its deadline starts now, but live ask settlement does
