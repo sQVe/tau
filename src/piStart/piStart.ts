@@ -195,17 +195,19 @@ const commandError = (
   return new Error(`${label} failed: ${output}`);
 };
 
+const findTerminal = (value: unknown): string | undefined => {
+  if (typeof value !== 'object' || value === null || !('terminal' in value)) {
+    return undefined;
+  }
+
+  const terminal = value.terminal;
+
+  return typeof terminal === 'string' && terminal !== '' ? terminal : undefined;
+};
+
 const replyTerminal = (reply: string): string | undefined => {
   try {
-    const value: unknown = JSON.parse(reply);
-
-    if (typeof value !== 'object' || value === null || !('terminal' in value)) {
-      return undefined;
-    }
-
-    const terminal = value.terminal;
-
-    return typeof terminal === 'string' && terminal !== '' ? terminal : undefined;
+    return findTerminal(JSON.parse(reply));
   } catch {
     return undefined;
   }
@@ -248,7 +250,7 @@ const terminalFromReply = (
 
     checkOutput(label, schema, created);
 
-    return { terminal: replyTerminal(reply), error: undefined };
+    return { terminal: findTerminal(created), error: undefined };
   } catch (error) {
     return { terminal: undefined, error };
   }
