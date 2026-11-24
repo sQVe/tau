@@ -31,7 +31,7 @@ const contextualFailure =
     new Error(`${label}: ${errorMessage(error)}`, { cause: error });
 
 const releaseFailure = contextualFailure('The claim could not be released');
-const stopFailure = contextualFailure('The child adoption could not be read');
+const adoptionReadFailure = contextualFailure('The child adoption could not be read');
 
 const stopChild = async (
   request: ClaimReleaseRequest,
@@ -44,7 +44,7 @@ const stopChild = async (
   try {
     return { child: await stopStartedChild(request.processId, { adopted }) };
   } catch (error) {
-    return { child: 'unknown', failure: stopFailure(error) };
+    return { child: 'unknown', failure: adoptionReadFailure(error) };
   }
 };
 
