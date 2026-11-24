@@ -11,8 +11,15 @@ const theme = {
   fg: (_color: ThemeColor, text: string) => text,
 } satisfies Pick<Theme, 'fg'>;
 
-const columnOf = (line: string, text: string): number =>
-  visibleWidth(line.slice(0, line.indexOf(text)));
+const columnOf = (line: string, text: string): number => {
+  const index = line.indexOf(text);
+
+  if (index === -1) {
+    throw new Error(`The line does not hold ${text}.`);
+  }
+
+  return visibleWidth(line.slice(0, index));
+};
 
 const codes = { border: '90', muted: '2', accent: '36', dim: '35', warning: '33' } as const;
 
