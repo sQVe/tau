@@ -821,7 +821,7 @@ it('refuses a root-based ask update when Git tracks a file in the ask directory'
   const root = await createTemporaryRepository(onTestFinished);
   const askId = '0190c1d2-0000-7000-8000-000000000707';
 
-  await writeAskRecord(root, { ...askRecordV2Live, askId });
+  await writeAskRecord(root, { ...askRecordLive, askId });
   await git(root, 'add', '--force', join('.tau', 'lead', 'ask', `${askId}.json`));
 
   const before = await snapshotDirectory(askRecordDirectory(root));
@@ -839,7 +839,7 @@ it('refuses a root-based hidden ask update when Git tracks a file in the ask dir
   const root = await createTemporaryRepository(onTestFinished);
   const askId = '0190c1d2-0000-7000-8000-000000000708';
 
-  await writeAskRecord(root, { ...askRecordV2Hidden, askId });
+  await writeAskRecord(root, { ...askRecordHidden, askId });
   await git(root, 'add', '--force', join('.tau', 'lead', 'ask', `${askId}.json`));
 
   const before = await snapshotDirectory(askRecordDirectory(root));
@@ -855,7 +855,7 @@ it('refuses a path-based hidden ask update when Git tracks a file in the ask dir
   const root = await createTemporaryRepository(onTestFinished);
   const askId = '0190c1d2-0000-7000-8000-000000000709';
 
-  await writeAskRecord(root, { ...askRecordV2Hidden, askId });
+  await writeAskRecord(root, { ...askRecordHidden, askId });
   await git(root, 'add', '--force', join('.tau', 'lead', 'ask', `${askId}.json`));
 
   const before = await snapshotDirectory(askRecordDirectory(root));
@@ -876,7 +876,7 @@ it('refuses a path-based hidden ask update outside the ask directory', async () 
   const path = join(root, 'tracked', `${askId}.json`);
 
   await mkdir(dirname(path), { recursive: true });
-  await writeAskRecordAt(path, { ...askRecordV2Hidden, askId });
+  await writeAskRecordAt(path, { ...askRecordHidden, askId });
   await git(root, 'add', '--', path);
 
   const before = await readFile(path, 'utf8');

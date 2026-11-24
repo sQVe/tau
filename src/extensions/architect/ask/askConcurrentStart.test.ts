@@ -35,6 +35,7 @@ const askRequest = (
 ): AskRequest => ({
   root,
   question: 'Which flag name?',
+  gateRecord: null,
   leadTerminal: 't-lead',
   leadSessionId: 'session-lead',
   listenerPath: undefined,

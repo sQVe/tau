@@ -28,6 +28,7 @@ it('an abort before dispatch cancels its ticket and releases the claim', async (
   const request: AskRequest = {
     root,
     question: 'Which flag name?',
+    gateRecord: null,
     leadTerminal: 't-lead',
     leadSessionId: 'session-lead',
     listenerPath: undefined,

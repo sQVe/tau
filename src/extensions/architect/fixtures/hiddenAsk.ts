@@ -9,7 +9,7 @@ export const hiddenAsk = (
   name: keyof typeof hiddenIds,
   status: HiddenAskRecord['status'],
 ): HiddenAskRecord => ({
-  version: 2,
+  version: 3,
   route: 'hidden',
   askId: hiddenIds[name],
   createdAt: '2026-11-17T10:00:00.000Z',
@@ -21,4 +21,5 @@ export const hiddenAsk = (
   status,
   detail: null,
   answer: null,
+  gateRecord: null,
 });

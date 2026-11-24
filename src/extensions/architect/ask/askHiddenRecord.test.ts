@@ -95,6 +95,7 @@ it('repairs a running ask whose terminal has ended', async ({ onTestFinished: cl
   const request: AskRequest = {
     root,
     question: 'Which flag name?',
+    gateRecord: null,
     leadTerminal: 't-lead',
     leadSessionId: 'session-lead',
     listenerPath: undefined,
@@ -123,6 +124,7 @@ it('leaves a running ask unchanged when its terminal lookup fails', async ({
   const request: AskRequest = {
     root,
     question: 'Which flag name?',
+    gateRecord: null,
     leadTerminal: 't-lead',
     leadSessionId: 'session-lead',
     listenerPath: undefined,
@@ -250,6 +252,7 @@ it('keeps an answer saved between the repair scan and its get reply', async ({
   const request: AskRequest = {
     root,
     question: 'Which flag name?',
+    gateRecord: null,
     leadTerminal: 't-lead',
     leadSessionId: 'session-lead',
     listenerPath: undefined,
@@ -303,6 +306,7 @@ it('keeps a running ask whose terminal changed between the repair scan and its l
   const request: AskRequest = {
     root,
     question: 'Which flag name?',
+    gateRecord: null,
     leadTerminal: 't-lead',
     leadSessionId: 'session-lead',
     listenerPath: undefined,

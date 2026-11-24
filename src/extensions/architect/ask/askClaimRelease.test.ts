@@ -478,6 +478,7 @@ it('records a real cancellation from the call signal as cancelled', async ({
   const request: AskRequest = {
     root,
     question: 'Which flag name?',
+    gateRecord: null,
     leadTerminal: 't-lead',
     leadSessionId: 'session-lead',
     listenerPath: undefined,

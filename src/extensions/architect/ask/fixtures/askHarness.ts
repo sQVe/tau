@@ -99,7 +99,7 @@ export const endedWithRecord = (
 };
 
 export const runningAsk = {
-  version: 2 as const,
+  version: 3 as const,
   route: 'hidden' as const,
   askId: '0190c1d2-0000-7000-8000-000000000399',
   createdAt: '2026-11-17T10:00:00.000Z',
@@ -111,4 +111,5 @@ export const runningAsk = {
   status: 'running' as const,
   detail: null,
   answer: null,
+  gateRecord: null,
 };
