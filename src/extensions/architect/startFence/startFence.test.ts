@@ -1,4 +1,4 @@
-import { readdir, rename } from 'node:fs/promises';
+import { readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -119,6 +119,22 @@ it('sends no second signal when the child adopts during the stop', async ({ onTe
 
   expect(finished).toEqual({ kept: false });
   expect(processControl.signals).toEqual(['SIGTERM']);
+});
+
+it('re-probes the child when its marker is gone', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const processControl = useFakeStartProcess(onTestFinished, 'running');
+  const fence = await acquiredFence(root);
+
+  await fence.createTicket();
+
+  expect(await takeStartTicket(fence.wrapArgv(['true']))).toBe(true);
+  await fence.recordStarted();
+
+  processControl.state = 'gone';
+  await rm(startDirectory(root), { recursive: true, force: true });
+
+  expect(await fence.refreshChild()).toBe('gone');
 });
 
 it('keeps a lock-only adoption cached after the lock is gone', async ({ onTestFinished }) => {

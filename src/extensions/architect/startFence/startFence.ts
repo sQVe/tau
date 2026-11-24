@@ -245,6 +245,7 @@ const startFence = (
 
   const refreshChild = async (): Promise<ProcessState> => {
     await readOwnMarker();
+    state.child = childOf(state.childPid);
 
     return state.child;
   };
