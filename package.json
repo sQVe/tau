@@ -61,7 +61,7 @@
     "@earendil-works/pi-tui": "1.6.0",
     "@oxlint/plugins": "1.79.0",
     "@sqve/mutation": "0.2.0",
-    "@sqve/stomme-ts-style": "0.3.0",
+    "@sqve/stomme-ts-style": "0.4.0",
     "@stryker-mutator/api": "10.0.0",
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/instrumenter": "10.0.0",

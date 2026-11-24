@@ -35,7 +35,11 @@ entry's path, rule, and key. A fixed break therefore fails until its entry is re
 ### Growth against the target branch
 
 When the list is not empty, the check reads `stomme.toml` from the target branch with `git` in the
-project root. The default ref is `origin/main`, and `check --base <ref>` names another ref.
+project root. `check --base <ref>` names the ref. Without the flag, the check uses the
+remote-tracking ref `refs/remotes/origin/<GITHUB_BASE_REF>` when `GITHUB_BASE_REF` is set and not
+empty, and `refs/remotes/origin/main` otherwise. The full ref keeps a tag named `origin/<name>` from
+replacing the fetched target. GitHub Actions sets `GITHUB_BASE_REF` in pull request runs. An empty
+value counts as unset, because GitHub sets it to an empty string on push and schedule runs.
 
 If the ref does not resolve, or `git` cannot run, the check reports one `violation-growth` problem
 that names the ref and tells the reader to fetch it. It never skips this gate. If the target branch
@@ -48,7 +52,8 @@ list lacks produces one `violation-growth` problem naming the entry. This catche
 an entry the target branch removed.
 
 An empty list never reads the target branch. A project's CI must fetch the target branch before it
-runs the check.
+runs the check. With `actions/checkout` this means `fetch-depth: 0`. A project needs no flag or
+wrapper to pass the base.
 
 ## Consequences
 

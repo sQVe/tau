@@ -156,8 +156,8 @@ importers:
         specifier: 0.2.0
         version: 0.2.0(@stryker-mutator/api@10.0.0)(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(@stryker-mutator/instrumenter@10.0.0)(@stryker-mutator/util@10.0.0)(@stryker-mutator/vitest-runner@10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(vitest@4.1.11))
       '@sqve/stomme-ts-style':
-        specifier: 0.3.0
-        version: 0.3.0(eslint@10.15.0(jiti@2.7.0)(supports-color@7.2.0))(vite-plus@0.3.0(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))
+        specifier: 0.4.0
+        version: 0.4.0(eslint@10.15.0(jiti@2.7.0)(supports-color@7.2.0))(vite-plus@0.3.0(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))
       '@stryker-mutator/api':
         specifier: 10.0.0
         version: 10.0.0
@@ -1516,8 +1516,8 @@ packages:
       '@stryker-mutator/vitest-runner':
         optional: true
 
-  '@sqve/stomme-ts-style@0.3.0':
-    resolution: {integrity: sha512-vmGDBrlebAkO3EeUQsj0j5Vb6PGunkuhTZO5VaKuxZURH/635QgErt0Z6mcBSBXQOuJiOr0nQqv2+CgZ/XUVEQ==}
+  '@sqve/stomme-ts-style@0.4.0':
+    resolution: {integrity: sha512-97rjEFbORdOsdQ8JjF9Mo5UuJszu7BeLpt5DhWw4OhOJ4xQequs9+tZWPVq7hvVHhNBNWfVE1fD5XQUsd8Ln7g==}
     engines: {bun: '>=1.4.2', node: '>=24.21.0'}
     hasBin: true
     peerDependencies:
@@ -5295,7 +5295,7 @@ snapshots:
     optionalDependencies:
       '@stryker-mutator/vitest-runner': 10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(vitest@4.1.11)
 
-  '@sqve/stomme-ts-style@0.3.0(eslint@10.15.0(jiti@2.7.0)(supports-color@7.2.0))(vite-plus@0.3.0(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))':
+  '@sqve/stomme-ts-style@0.4.0(eslint@10.15.0(jiti@2.7.0)(supports-color@7.2.0))(vite-plus@0.3.0(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))':
     dependencies:
       '@oxlint/plugins': 1.79.0
       '@stylistic/eslint-plugin': 5.10.0(eslint@10.15.0(jiti@2.7.0)(supports-color@7.2.0))
