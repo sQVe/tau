@@ -5,6 +5,7 @@ import {
   anyItem,
   anyKey,
   findUnknownKeys,
+  newerRecordVersion,
   reportedId,
   stringEnum,
   unreportedKeys,
@@ -62,6 +63,18 @@ it('drops key paths already reported for the same file and repeats them for anot
 
   expect(unreportedKeys(reported, '/user.json', ['a.b', 'a.c', 'a.c'])).toEqual(['a.c']);
   expect(unreportedKeys(reported, '/other.json', ['a.b'])).toEqual(['a.b']);
+});
+
+it.for<[string, unknown, number | undefined]>([
+  ['a newer numeric version', { version: 3 }, 3],
+  ['the supported version', { version: 2 }, undefined],
+  ['an older numeric version', { version: 1 }, undefined],
+  ['a non-numeric version', { version: '3' }, undefined],
+  ['a missing version', { steps: [] }, undefined],
+  ['a value that is not a record', 'version 3', undefined],
+  ['an array', [{ version: 3 }], undefined],
+])('reads the claimed newer version for %s', ([, value, expected]) => {
+  expect(newerRecordVersion(value, 2)).toBe(expected);
 });
 
 it('sends a string enum to model providers as a string type with an enum list', () => {

@@ -108,6 +108,7 @@ const pureModules = [
   'src/extensions/mergeWatch/watchStart.ts',
   'src/extensions/modelFallback/fallbackRoute.ts',
   'src/extensions/piResume/sessionDecision.ts',
+  'src/extensions/plan/steps.ts',
   'src/extensions/pr/evidenceDecisions.ts',
   'src/extensions/pr/reuseDecisions.ts',
   'src/extensions/pr/targetDecisions.ts',
@@ -292,6 +293,7 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'scripts/questionGateScore/questionGateScorePrepare.ts': ['node:crypto'],
   'src/extensions/modelFallback/fallbackRoute.ts': ['typebox', 'typebox/value'],
+  'src/extensions/plan/steps.ts': ['typebox', 'typebox/value'],
   'src/extensions/improvement/recordRequest.ts': ['node:path', 'typebox'],
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/projectPath.ts': ['node:path'],
@@ -488,6 +490,11 @@ const versionedRecords = [
   {
     writer: 'src/extensions/modelFallback/fallbackRoute.ts',
     fixtures: 'src/extensions/modelFallback/fixtures/routeState',
+    names: ['current.json', 'newer.json', 'malformed.json'],
+  },
+  {
+    writer: 'src/extensions/plan/steps.ts',
+    fixtures: 'src/extensions/plan/fixtures/planRecord',
     names: ['current.json', 'newer.json', 'malformed.json'],
   },
   {

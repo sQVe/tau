@@ -28,6 +28,24 @@ const cases: readonly {
     expected: false,
   },
   {
+    case: 'the lead registers the plan tool',
+    role: 'lead',
+    tool: 'plan',
+    expected: true,
+  },
+  {
+    case: 'the architect does not register the plan tool',
+    role: 'architect',
+    tool: 'plan',
+    expected: false,
+  },
+  {
+    case: 'a worker does not register the plan tool',
+    role: 'worker',
+    tool: 'plan',
+    expected: false,
+  },
+  {
     case: 'a tool outside the table is registered',
     role: 'architect',
     tool: 'slice',

@@ -12,6 +12,15 @@ export interface KnownKeys {
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+export const newerRecordVersion = (
+  value: unknown,
+  supportedVersion: number,
+): number | undefined => {
+  const claimed = isRecord(value) ? value['version'] : undefined;
+
+  return typeof claimed === 'number' && claimed > supportedVersion ? claimed : undefined;
+};
+
 export const describeSchemaProblem = (schema: TSchema, value: unknown): string => {
   const [error] = Value.Errors(schema, value);
 

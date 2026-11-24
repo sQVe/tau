@@ -1,7 +1,7 @@
-import { stripVTControlCharacters } from 'node:util';
-
 import type { ExtensionAPI, Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
+
+import { sanitizeSingleLine } from '../../terminalText.js';
 
 interface FooterInput {
   cost: number;
@@ -29,9 +29,6 @@ const colors: Partial<Record<ThemeColor, string>> = {
 export const footerTheme: Pick<Theme, 'fg'> = {
   fg: (color, text) => `\x1b[38;2;${colors[color] ?? colors.text}m${text}\x1b[39m`,
 };
-
-const sanitizeText = (text: string): string =>
-  stripVTControlCharacters(text).replace(/\p{Cc}/gu, ' ');
 
 const thousand = 1000;
 const million = 1_000_000;
@@ -86,7 +83,7 @@ export const renderStatusLine = (
   const texts: string[] = [];
 
   for (const [, status] of entries) {
-    const text = sanitizeText(status).replace(/\s+/gu, ' ').trim();
+    const text = sanitizeSingleLine(status).replace(/\s+/gu, ' ').trim();
 
     if (text !== '') {
       texts.push(text);
@@ -121,7 +118,7 @@ export const renderFooterLine = (
   const percentText = percent === null ? '?' : `${percent.toFixed(1)}%`;
   const context = `${percentText}/${formatTokens(input.contextWindow)}`;
 
-  let model = theme.fg('muted', sanitizeText(input.modelId));
+  let model = theme.fg('muted', sanitizeSingleLine(input.modelId));
 
   if (input.thinkingLevel !== undefined) {
     model += ` ${theme.fg(thinkingColors[input.thinkingLevel], `• ${input.thinkingLevel}`)}`;
