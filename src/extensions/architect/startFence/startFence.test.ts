@@ -1,6 +1,5 @@
 import { readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { setTimeout as promiseDelay } from 'node:timers/promises';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -11,7 +10,6 @@ import {
   takeStartTicket,
   useFakeStartProcess,
 } from '../../../../tests/startTicketFake.js';
-import type { FakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
 import {
@@ -48,19 +46,6 @@ const startFakeTimers = (): void => {
   vi.useFakeTimers({
     toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
   });
-};
-
-// The stop checks its deadline after each adoption probe, so the fake clock must stand still while
-// the real filesystem probe runs. Only a real delay lets that probe finish.
-const waitForStopSignals = async (
-  processControl: FakeStartProcess,
-  count: number,
-): Promise<void> => {
-  const actual = await vi.importActual<{ setTimeout: typeof promiseDelay }>('node:timers/promises');
-
-  for (let attempt = 0; attempt < 1_000 && processControl.signals.length < count; attempt += 1) {
-    await actual.setTimeout(5);
-  }
 };
 
 const startDirectory = (root: string): string => join(root, '.tau', 'architect', 'start');
@@ -164,7 +149,8 @@ it('keeps the claim when the child neither ends nor adopts', async ({ onTestFini
 
   await poll.started.promise;
   await vi.advanceTimersByTimeAsync(5_000);
-  await waitForStopSignals(processControl, 2);
+  await processControl.nextSignal(1);
+  await processControl.nextSignal(2);
   await vi.advanceTimersByTimeAsync(5_000);
 
   expect(await completing).toEqual({ outcome: 'unresolved', claim: 'kept' });

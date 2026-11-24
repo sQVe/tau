@@ -16,10 +16,12 @@ export interface FakeStartProcess {
   state: 'running' | 'gone' | 'unknown';
   signals: NodeJS.Signals[];
   signalTimes: number[];
+  nextSignal: (count: number) => Promise<void>;
 }
 
 interface FakeStartProcessControl extends FakeStartProcess {
   stopOnSignal: boolean;
+  signalWaiters: { count: number; resolve: () => void }[];
 }
 
 interface FakeStartProcesses {
@@ -69,6 +71,16 @@ const installFakeProcesses = (): FakeStartProcesses => {
       control.state = 'gone';
     }
 
+    control.signalWaiters = control.signalWaiters.filter((waiter) => {
+      if (control.signals.length < waiter.count) {
+        return true;
+      }
+
+      waiter.resolve();
+
+      return false;
+    });
+
     return true;
   });
 
@@ -88,6 +100,16 @@ export const useFakeStartProcess = (
     signals: [],
     signalTimes: [],
     stopOnSignal,
+    signalWaiters: [],
+    nextSignal: (count) => {
+      if (control.signals.length >= count) {
+        return Promise.resolve();
+      }
+
+      return new Promise((resolve) => {
+        control.signalWaiters.push({ count, resolve });
+      });
+    },
   };
 
   fakeProcesses.states.set(processId, control);

@@ -97,6 +97,11 @@ it.each<{ name: string; facts: StartFenceTakeoverFacts; expected: StartFenceTake
     expected: 'cancelled',
   },
   {
+    name: 'a cancel after the deadline',
+    facts: takeover({ cancelled: true, now: 1_001 }),
+    expected: 'cancelled',
+  },
+  {
     name: 'the deadline',
     facts: takeover({ now: 1_000 }),
     expected: 'expired',
