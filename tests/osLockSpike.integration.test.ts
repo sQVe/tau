@@ -120,7 +120,7 @@ it('refuses to start a holder it cannot record', () => {
 });
 
 it.skipIf(!flockAvailable)(
-  'reports the failed read when the holder-pid file is unreadable',
+  'keeps the start failure when the holder-pid file cannot be read',
   async () => {
     await mkdir(holderPidPathFrom(markerPath));
 

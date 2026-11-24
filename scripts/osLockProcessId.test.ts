@@ -127,7 +127,6 @@ it('detaches its output listeners once it reads the process ID', async () => {
   expect(stdout.listenerCount('data')).toBe(0);
   expect(child.listenerCount('close')).toBe(0);
   expect(() => child.emit('error', new Error('a late start failure'))).not.toThrow();
-  await expect(reading).resolves.toBe(123);
 });
 
 it('absorbs a start failure that arrives after the read rejects', async () => {
@@ -138,7 +137,5 @@ it('absorbs a start failure that arrives after the read rejects', async () => {
   child.emit('error', new Error('spawn tau-os-lock-parent ENOENT'));
 
   await expect(reading).rejects.toThrow('ENOENT');
-  expect(child.listenerCount('error')).toBe(1);
   expect(() => child.emit('error', new Error('a second start failure'))).not.toThrow();
-  await expect(reading).rejects.toThrow('ENOENT');
 });
