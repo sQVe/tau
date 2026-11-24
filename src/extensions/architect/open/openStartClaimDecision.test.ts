@@ -2,76 +2,63 @@ import { expect, it } from 'vitest';
 
 import { openStartProgress } from './openStartClaimDecision.js';
 
-const claimToken = 'claim';
-
 it.each([
   {
-    name: 'no live holder',
-    holderToken: undefined,
+    name: 'an adopted child',
+    adopted: true,
     now: 0,
     deadline: 60_000,
     cancelled: false,
     expected: 'taken',
   },
   {
-    name: 'another holder token',
-    holderToken: 'pi',
-    now: 0,
-    deadline: 60_000,
-    cancelled: false,
-    expected: 'taken',
-  },
-  {
-    name: 'another holder token on a cancelled call',
-    holderToken: 'pi',
+    name: 'an adopted child on a cancelled call',
+    adopted: true,
     now: 0,
     deadline: 60_000,
     cancelled: true,
     expected: 'taken',
   },
   {
-    name: 'the claim before the deadline',
-    holderToken: claimToken,
+    name: 'no adoption before the deadline',
+    adopted: false,
     now: 59_999,
     deadline: 60_000,
     cancelled: false,
     expected: 'waiting',
   },
   {
-    name: 'the claim at the deadline',
-    holderToken: claimToken,
+    name: 'no adoption at the deadline',
+    adopted: false,
     now: 60_000,
     deadline: 60_000,
     cancelled: false,
     expected: 'expired',
   },
   {
-    name: 'the claim after the deadline',
-    holderToken: claimToken,
+    name: 'no adoption after the deadline',
+    adopted: false,
     now: 60_001,
     deadline: 60_000,
     cancelled: false,
     expected: 'expired',
   },
   {
-    name: 'the claim before the deadline on a cancelled call',
-    holderToken: claimToken,
+    name: 'no adoption before the deadline on a cancelled call',
+    adopted: false,
     now: 59_999,
     deadline: 60_000,
     cancelled: true,
     expected: 'cancelled',
   },
   {
-    name: 'the claim after the deadline on a cancelled call',
-    holderToken: claimToken,
+    name: 'no adoption after the deadline on a cancelled call',
+    adopted: false,
     now: 60_001,
     deadline: 60_000,
     cancelled: true,
     expected: 'cancelled',
   },
-])(
-  'decides the start progress for $name',
-  ({ holderToken, now, deadline, cancelled, expected }) => {
-    expect(openStartProgress({ claimToken, holderToken, now, deadline, cancelled })).toBe(expected);
-  },
-);
+])('decides the start progress for $name', ({ adopted, now, deadline, cancelled, expected }) => {
+  expect(openStartProgress({ adopted, now, deadline, cancelled })).toBe(expected);
+});

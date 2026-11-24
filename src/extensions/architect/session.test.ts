@@ -158,10 +158,10 @@ it('renames the started marker to an adopted one and keeps it at a clean shutdow
   vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
 
   const directory = join(root, '.tau', 'architect', 'start');
-  const adoptedName = `${claim.token}.adopted.${process.pid}`;
+  const adoptedName = `${claim.token}.lead.${process.pid}.adopted.${process.pid}`;
 
   await mkdir(directory, { recursive: true });
-  await writeFile(join(directory, `${claim.token}.started.${process.pid}`), '');
+  await writeFile(join(directory, `${claim.token}.lead.${process.pid}.started.${process.pid}`), '');
 
   const session = await startArchitectSession(context, createHeldLockToken());
 

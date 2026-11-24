@@ -22,18 +22,21 @@ const run = promisify(execFile);
 
 // A process id that no test process uses, so the real process probe reports it gone.
 export const fakeStartProcessId = 999_999_999;
+// A second unused process id for a launched child whose fake state stays running.
+export const fakeRunningStartProcessId = 999_999_998;
 
 export const useFakeStartProcess = (
   cleanup: (cleanup: () => void) => void,
   initial: FakeStartProcess['state'] = 'gone',
   stopOnSignal = false,
+  processId: number = fakeStartProcessId,
 ): FakeStartProcess => {
   const control: FakeStartProcess = { state: initial, signals: [], signalTimes: [] };
   const original = process.kill.bind(process);
 
-  const spy = vi.spyOn(process, 'kill').mockImplementation((processId, signal) => {
-    if (processId !== fakeStartProcessId) {
-      return original(processId, signal);
+  const spy = vi.spyOn(process, 'kill').mockImplementation((killedProcessId, signal) => {
+    if (killedProcessId !== processId) {
+      return original(killedProcessId, signal);
     }
 
     if (signal === 0) {
@@ -65,7 +68,10 @@ export const useFakeStartProcess = (
   return control;
 };
 
-const startTicketOf = (argv: readonly string[]): StartTicketPaths | undefined => {
+const startTicketOf = (
+  argv: readonly string[],
+  processId: number,
+): StartTicketPaths | undefined => {
   const index = argv.indexOf(wrapperName);
   const ticket = argv[index + 1];
 
@@ -73,12 +79,15 @@ const startTicketOf = (argv: readonly string[]): StartTicketPaths | undefined =>
     return undefined;
   }
 
-  return { ticket, started: `${ticket}.started.${fakeStartProcessId}` };
+  return { ticket, started: `${ticket}.started.${processId}` };
 };
 
 // The child renames the ticket before it runs Pi. A fake launcher calls this to model that step.
-export const takeStartTicket = async (argv: readonly string[]): Promise<boolean> => {
-  const paths = startTicketOf(argv);
+export const takeStartTicket = async (
+  argv: readonly string[],
+  processId: number = fakeStartProcessId,
+): Promise<boolean> => {
+  const paths = startTicketOf(argv, processId);
 
   if (paths === undefined) {
     return false;

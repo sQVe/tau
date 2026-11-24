@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { onTestFinished } from 'vitest';
@@ -10,12 +10,19 @@ import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
 import { createHerdrAppFake } from '../../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
-import { takeStartTicket, takingStartTicket } from '../../../../tests/startTicketFake.js';
+import {
+  fakeRunningStartProcessId,
+  fakeStartProcessId,
+  takeStartTicket,
+  takingStartTicket,
+  useFakeStartProcess,
+} from '../../../../tests/startTicketFake.js';
 import type { Exec } from '../../../command.js';
 import { holdFileLock } from '../../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { architectLockPath } from '../lock.js';
 import { architectRecordPath, writeArchitectRecord, writeAskRecord } from '../record.js';
+import { adoptStartMarker } from '../startTicket/startTicket.js';
 import { createArchitectTool } from '../tool.js';
 import { contextOf } from './toolHarness.js';
 
@@ -113,11 +120,57 @@ const claimTokenOf = (commandArguments: readonly string[]): string | undefined =
   return argv.find((entry) => entry.startsWith(claimArgument))?.slice(claimArgument.length);
 };
 
+const renameLockHolder = async (root: string, processId: number): Promise<void> => {
+  const directory = dirname(architectLockPath(root));
+
+  const generations = (await readdir(directory))
+    .map((name) => /^lock\.(\d+)$/u.exec(name))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => Number(match[1]));
+
+  const generation = generations.toSorted((left, right) => left - right).at(-1);
+
+  if (generation === undefined) {
+    return;
+  }
+
+  const path = `${architectLockPath(root)}.${generation}`;
+  const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+
+  await writeFile(path, JSON.stringify({ ...owner, pid: processId }));
+};
+
+export const adoptClaim = async (
+  root: string,
+  claimToken: string,
+  token: string = randomUUID(),
+  processId: number = fakeRunningStartProcessId,
+): Promise<(() => Promise<void>) | undefined> => {
+  const held = await holdFileLock({
+    lockPath: architectLockPath(root),
+    checkout: root,
+    terminal: 't-architect',
+    token,
+    adopt: claimToken,
+  });
+
+  if (held.kind !== 'held') {
+    return undefined;
+  }
+
+  await renameLockHolder(root, processId);
+
+  await adoptStartMarker(root, claimToken, processId);
+
+  return held.release;
+};
+
 // The real herdr-app start launches Pi, which adopts the caller's claim with its next lock
-// generation. The fake does the same, so open sees the takeover it waits for.
+// generation and renames its marker. The fake does the same, so open sees the takeover it waits for.
 const takeOverClaim = async (
   root: string,
   commandArguments: readonly string[],
+  processId: number,
 ): Promise<boolean> => {
   const claimToken = claimTokenOf(commandArguments);
 
@@ -125,24 +178,21 @@ const takeOverClaim = async (
     return false;
   }
 
-  const held = await holdFileLock({
-    lockPath: architectLockPath(root),
-    checkout: root,
-    terminal: 't-architect',
-    token: randomUUID(),
-    adopt: claimToken,
-  });
+  const release = await adoptClaim(root, claimToken, randomUUID(), processId);
 
-  if (held.kind === 'held') {
-    onTestFinished(held.release);
-
-    return true;
+  if (release === undefined) {
+    return false;
   }
 
-  return false;
+  onTestFinished(release);
+
+  return true;
 };
 
-const withStartTicket = (app: ExecFake<HerdrAppCommand>): ExecFake<HerdrAppCommand> => ({
+const withStartTicket = (
+  app: ExecFake<HerdrAppCommand>,
+  processId: number,
+): ExecFake<HerdrAppCommand> => ({
   ...app,
   exec: async (command, commandArguments, options) => {
     const result = await app.exec(command, commandArguments, options);
@@ -150,7 +200,7 @@ const withStartTicket = (app: ExecFake<HerdrAppCommand>): ExecFake<HerdrAppComma
     if (result.code === 0) {
       const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
 
-      await takeStartTicket(argv);
+      await takeStartTicket(argv, processId);
     }
 
     return result;
@@ -160,12 +210,13 @@ const withStartTicket = (app: ExecFake<HerdrAppCommand>): ExecFake<HerdrAppComma
 const withTakeover = (
   app: ExecFake<HerdrAppCommand>,
   root: string,
+  processId: number,
   afterTakeover: (() => void) | undefined,
 ): ExecFake<HerdrAppCommand> => ({
   ...app,
   exec: async (command, commandArguments, options) => {
     const result = await app.exec(command, commandArguments, options);
-    const adopted = await takeOverClaim(root, commandArguments);
+    const adopted = await takeOverClaim(root, commandArguments, processId);
 
     if (adopted) {
       afterTakeover?.();
@@ -184,9 +235,17 @@ export const openTool = (
   options: OpenToolOptions = {},
 ): OpenTool => {
   const hc = takingStartTicket(createHcFake());
-  const fake = withStartTicket(appFake());
+  const processId = options.takeover === false ? fakeStartProcessId : fakeRunningStartProcessId;
+  const fake = withStartTicket(appFake(), processId);
 
-  const app = options.takeover === false ? fake : withTakeover(fake, root, options.afterTakeover);
+  if (options.takeover !== false) {
+    useFakeStartProcess(onTestFinished, 'running', false, fakeRunningStartProcessId);
+  }
+
+  const app =
+    options.takeover === false
+      ? fake
+      : withTakeover(fake, root, fakeRunningStartProcessId, options.afterTakeover);
 
   const terminals = new Map<string, ExecResult>();
 

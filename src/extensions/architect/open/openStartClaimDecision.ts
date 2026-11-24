@@ -1,6 +1,5 @@
 export interface OpenStartFacts {
-  claimToken: string;
-  holderToken: string | undefined;
+  adopted: boolean;
   now: number;
   deadline: number;
   cancelled: boolean;
@@ -8,9 +7,9 @@ export interface OpenStartFacts {
 
 export type OpenStartProgress = 'waiting' | 'expired' | 'taken' | 'cancelled';
 
-// A holder that is not this claim has taken over, even when the call was also cancelled.
+// Adoption by this caller's child is a takeover, even when the call was also cancelled.
 export const openStartProgress = (facts: OpenStartFacts): OpenStartProgress => {
-  if (facts.holderToken !== facts.claimToken) {
+  if (facts.adopted) {
     return 'taken';
   }
 

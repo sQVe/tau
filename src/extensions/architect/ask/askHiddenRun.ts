@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { errorMessage } from '../../../errors.js';
 import { kill, run, wait } from '../../../hc/hc.js';
 import { piArguments } from '../../../piStart/piArguments.js';
 import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
+import { processState } from '../../../process/process.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import type { LaunchOutcome } from '../claimRelease/launchOutcomeDecision.js';
-import { askRecordPath, updateHiddenAskRecord, writeAskRecord } from '../record.js';
+import { askRecordPath, readAskRecord, updateHiddenAskRecord, writeAskRecord } from '../record.js';
 import type { HiddenAskRecord } from '../record.js';
 import type { StartFence } from '../startFence/startFence.js';
 import type { AskRequest, AskResult } from './ask.js';
@@ -29,6 +31,10 @@ export interface HiddenAskRun {
   start: (sessionFile: string, model: string) => Promise<AskResult>;
   settle: () => Promise<boolean>;
 }
+
+type HiddenAskLaunchResult =
+  | { kind: 'started'; started: HiddenAskRecord; terminal: string }
+  | { kind: 'adopted'; started: HiddenAskRecord };
 
 export const askDeadlineSeconds = 900;
 
@@ -53,10 +59,11 @@ const askEndedDetail = 'The ask ended without sending an answer.';
 
 const askEndedFailureDetail = 'The ask terminal failed before the architect answered.';
 
-const askFailedReason =
+export const askFailedReason =
   'The ask terminal failed before the architect answered. Call architect open instead.';
 
 const millisecondsPerSecond = 1000;
+const adoptedChildPollMilliseconds = 100;
 
 const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason });
 
@@ -134,7 +141,7 @@ const stopAskTerminal = async (
 ): Promise<void> => {
   const stopped = await terminalStopped(request, stop.terminal);
 
-  fence.refreshChild();
+  await fence.refreshChild();
   stop.stopAttempted = stopped;
 };
 
@@ -228,6 +235,19 @@ const settleTimeout = async (
   return resultFromRecord(request.root, started.askId, record);
 };
 
+const waitForAdoptedChild = async (started: HiddenAskRecord, fence: StartFence): Promise<void> => {
+  const childPid = fence.childProcessId();
+
+  if (childPid === undefined) {
+    return;
+  }
+
+  while (processState(childPid) !== 'gone' && Date.now() < started.deadline) {
+    // oxlint-disable-next-line no-await-in-loop -- Each poll waits for the child to change state.
+    await sleep(adoptedChildPollMilliseconds);
+  }
+};
+
 const launchHiddenRecord = async (
   request: AskRequest,
   initial: HiddenAskRecord,
@@ -235,12 +255,12 @@ const launchHiddenRecord = async (
   model: string,
   fence: StartFence,
   stop: HiddenAskStop,
-): Promise<{ started: HiddenAskRecord; terminal: string }> => {
+): Promise<HiddenAskLaunchResult> => {
   const launched = await hiddenAskLaunch(request, initial, recordPath, model, fence);
 
-  if (launched.outcome === 'created' && launched.terminal !== undefined) {
-    await fence.recordStarted();
+  await fence.recordStarted();
 
+  if (launched.outcome === 'created' && launched.terminal !== undefined) {
     stop.terminal = launched.terminal;
 
     const started: HiddenAskRecord = { ...initial, terminal: launched.terminal };
@@ -250,7 +270,11 @@ const launchHiddenRecord = async (
       terminal: launched.terminal ?? null,
     }));
 
-    return { started, terminal: launched.terminal };
+    return { kind: 'started', started, terminal: launched.terminal };
+  }
+
+  if (await fence.childAdopted()) {
+    return { kind: 'adopted', started: initial };
   }
 
   await fence.abandon();
@@ -325,14 +349,18 @@ const runHiddenAsk = async (
     request.hc.signal.throwIfAborted();
   }
 
-  const { started, terminal } = await launchHiddenRecord(
-    request,
-    initial,
-    recordPath,
-    model,
-    fence,
-    stop,
-  );
+  const launched = await launchHiddenRecord(request, initial, recordPath, model, fence, stop);
+
+  if (launched.kind === 'adopted') {
+    await waitForAdoptedChild(launched.started, fence);
+
+    const record = await readAskRecord(request.root, askId);
+    const hidden = record?.route === 'hidden' ? record : undefined;
+
+    return resultFromRecord(request.root, askId, hidden);
+  }
+
+  const { started, terminal } = launched;
 
   let waited: Awaited<ReturnType<typeof wait>>;
 
@@ -346,7 +374,7 @@ const runHiddenAsk = async (
     return settleTimeout(request, started, fence, stop, settle);
   }
 
-  fence.refreshChild();
+  await fence.refreshChild();
   stop.stopAttempted = true;
 
   return settleEnded(request, askId, waited.exit_code ?? null);
@@ -358,12 +386,12 @@ export const startHiddenAskRun = (request: AskRequest, fence: StartFence): Hidde
   const settle = async (): Promise<boolean> => {
     const abandoned = await fence.abandon();
 
-    if (abandoned.takenOver) {
+    if (abandoned.adopted) {
       stop.stopAttempted = true;
     }
 
     const finished = await fence.finish({
-      adopted: false,
+      adopted: abandoned.adopted,
       stopAttempted: stop.stopAttempted,
     });
 

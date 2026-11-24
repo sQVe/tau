@@ -9,7 +9,6 @@ import {
   createStartTicket,
   deleteStartMarker,
   readStartMarker,
-  startMarkerProcessId,
   sweepStartFolder,
   wrapStartArgv,
 } from '../startTicket/startTicket.js';
@@ -32,7 +31,7 @@ export type StartFenceAcquisition =
   | { kind: 'acquired'; fence: StartFence };
 
 interface StartFenceAbandonment {
-  takenOver: boolean;
+  adopted: boolean;
 }
 
 interface StartFenceFinishRequest {
@@ -49,7 +48,9 @@ export interface StartFence {
   createTicket: () => Promise<void>;
   wrapArgv: (argv: string[]) => string[];
   recordStarted: () => Promise<void>;
-  refreshChild: () => ProcessState;
+  childProcessId: () => number | undefined;
+  childAdopted: () => Promise<boolean>;
+  refreshChild: () => Promise<ProcessState>;
   abandon: () => Promise<StartFenceAbandonment>;
   finish: (request: StartFenceFinishRequest) => Promise<StartFenceFinish>;
 }
@@ -57,9 +58,10 @@ export interface StartFence {
 interface FenceState {
   phase: StartFencePhase;
   ticketPath: string | undefined;
-  processId: number | undefined;
+  leadPid: number;
+  childPid: number | undefined;
   child: ProcessState;
-  takenOver: boolean;
+  adoptedSeen: boolean;
   // Memoizes the one release so a caller that settles twice reports the same result.
   finished: StartFenceFinish | undefined;
 }
@@ -83,13 +85,15 @@ const blockerOf = (sweep: Exclude<StartSweepResult, { kind: 'clear' }>): StartFe
 const startFence = (
   root: string,
   claim: { release: () => Promise<void>; token: string },
+  leadPid: number,
 ): StartFence => {
   const state: FenceState = {
     phase: 'noTicket',
     ticketPath: undefined,
-    processId: undefined,
+    leadPid,
+    childPid: undefined,
     child: 'unknown',
-    takenOver: false,
+    adoptedSeen: false,
     finished: undefined,
   };
 
@@ -101,31 +105,60 @@ const startFence = (
     return state.ticketPath;
   };
 
-  const claimTakenOver = async (): Promise<boolean> => {
-    const holder = await readLiveLockHolder(architectLockPath(root));
+  const readOwnMarker = async (): Promise<void> => {
+    const marker = await readStartMarker(root, claim.token, state.leadPid);
 
-    return holder !== undefined && holder.token !== claim.token;
+    if (marker === undefined || marker.kind === 'malformed') {
+      return;
+    }
+
+    state.childPid ??= marker.childPid;
+
+    if (marker.kind === 'adopted') {
+      state.adoptedSeen = true;
+    }
+
+    state.child = childOf(state.childPid);
   };
 
   const createTicket = async (): Promise<void> => {
-    state.ticketPath = await createStartTicket(root, claim.token);
+    state.ticketPath = await createStartTicket(root, claim.token, state.leadPid);
     state.phase = 'active';
   };
 
   const wrapArgv = (argv: string[]): string[] => wrapStartArgv(currentTicketPath(), argv);
 
   const recordStarted = async (): Promise<void> => {
-    const marker = await readStartMarker(root, claim.token);
-    const processId = startMarkerProcessId(marker);
+    await readOwnMarker();
+    state.phase = takenPhase(state.childPid);
+  };
 
-    state.processId = processId;
-    state.child = childOf(processId);
-    state.phase = takenPhase(processId);
+  const childProcessId = (): number | undefined => state.childPid;
+
+  const childAdopted = async (): Promise<boolean> => {
+    await readOwnMarker();
+
+    if (state.adoptedSeen) {
+      return true;
+    }
+
+    if (state.childPid === undefined) {
+      return false;
+    }
+
+    const holder = await readLiveLockHolder(architectLockPath(root));
+    const adopted = holder !== undefined && holder.pid === state.childPid;
+
+    if (adopted) {
+      state.adoptedSeen = true;
+    }
+
+    return adopted;
   };
 
   const abandon = async (): Promise<StartFenceAbandonment> => {
     if (state.finished !== undefined || !startFenceCancellable(state.phase)) {
-      return { takenOver: state.takenOver };
+      return { adopted: state.adoptedSeen };
     }
 
     const cancelled = await cancelStartTicket(currentTicketPath());
@@ -133,30 +166,19 @@ const startFence = (
     if (cancelled === 'cancelled') {
       state.phase = 'cancelled';
 
-      return { takenOver: state.takenOver };
+      return { adopted: state.adoptedSeen };
     }
 
     if (cancelled === 'unread') {
       state.phase = 'unread';
 
-      return { takenOver: state.takenOver };
+      return { adopted: state.adoptedSeen };
     }
 
-    state.phase = takenPhase(state.processId);
+    await readOwnMarker();
+    state.phase = takenPhase(state.childPid);
 
-    if (state.processId === undefined) {
-      await recordStarted();
-    }
-
-    if (!state.takenOver) {
-      state.takenOver = await claimTakenOver();
-    }
-
-    if (state.takenOver) {
-      state.child = 'running';
-    }
-
-    return { takenOver: state.takenOver };
+    return { adopted: await childAdopted() };
   };
 
   const finish = async (request: StartFenceFinishRequest): Promise<StartFenceFinish> => {
@@ -165,13 +187,14 @@ const startFence = (
     }
 
     const ticket = startFenceTicketFact(state.phase);
+    const adopted = request.adopted || (await childAdopted());
 
     const released = await releaseClaim({
       claim,
       ticket,
-      adopted: request.adopted,
+      adopted,
       child: state.child,
-      processId: state.processId,
+      processId: state.childPid,
       stopAttempted: request.stopAttempted,
     });
 
@@ -181,11 +204,13 @@ const startFence = (
       kept: released.kept,
       ticket,
       child: released.child,
-      processId: state.processId,
+      processId: state.childPid,
     });
 
     if (markerProcess !== undefined) {
-      await deleteStartMarker(root, claim.token, markerProcess).catch(() => undefined);
+      await deleteStartMarker(root, claim.token, state.leadPid, markerProcess).catch(
+        () => undefined,
+      );
     }
 
     const finished: StartFenceFinish = { kept: released.kept };
@@ -195,8 +220,9 @@ const startFence = (
     return finished;
   };
 
-  const refreshChild = (): ProcessState => {
-    state.child = childOf(state.processId);
+  const refreshChild = async (): Promise<ProcessState> => {
+    await readOwnMarker();
+    state.child = childOf(state.childPid);
 
     return state.child;
   };
@@ -206,6 +232,8 @@ const startFence = (
     createTicket,
     wrapArgv,
     recordStarted,
+    childProcessId,
+    childAdopted,
     refreshChild,
     abandon,
     finish,
@@ -217,6 +245,7 @@ const startFence = (
 export const acquireStartFence = async (
   root: string,
   claimOptions: ArchitectClaimOptions = {},
+  leadPid: number = process.pid,
 ): Promise<StartFenceAcquisition> => {
   const claim = await claimArchitectLock(root, claimOptions);
 
@@ -240,5 +269,5 @@ export const acquireStartFence = async (
     return { kind: 'blocked', blocker: blockerOf(sweep) };
   }
 
-  return { kind: 'acquired', fence: startFence(root, claim) };
+  return { kind: 'acquired', fence: startFence(root, claim, leadPid) };
 };

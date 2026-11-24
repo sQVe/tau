@@ -4,10 +4,17 @@ export type SweepFacts =
   | { kind: 'unused' }
   | { kind: 'malformed'; path: string }
   | {
-      kind: 'started' | 'adopted';
+      kind: 'started';
       path: string;
       processId: number;
       child: StartTicketChild;
+    }
+  | {
+      kind: 'adopted';
+      path: string;
+      processId: number;
+      child: StartTicketChild;
+      lead: StartTicketChild;
     };
 
 export type SweepAction =
@@ -19,7 +26,8 @@ export type SweepAction =
 
 // A started marker proves the child took the ticket, not that Pi made a terminal. Only the kernel's
 // answer that the child is gone proves no Pi can still run. An adopted marker's process already
-// passed the fence and takes the lock at every later session start, so it never refuses.
+// passed the fence and takes the lock at every later session start, so it never refuses. Its lead
+// keeps the marker as evidence until the kernel reads both processes as gone.
 export const sweepAction = (facts: SweepFacts): SweepAction => {
   if (facts.kind === 'unused') {
     return { kind: 'cancel' };
@@ -30,7 +38,9 @@ export const sweepAction = (facts: SweepFacts): SweepAction => {
   }
 
   if (facts.kind === 'adopted') {
-    return facts.child === 'gone' ? { kind: 'deleteMarker', path: facts.path } : { kind: 'leave' };
+    const bothGone = facts.child === 'gone' && facts.lead === 'gone';
+
+    return bothGone ? { kind: 'deleteMarker', path: facts.path } : { kind: 'leave' };
   }
 
   return facts.child === 'gone'

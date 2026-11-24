@@ -1,5 +1,5 @@
 import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, basename } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
@@ -13,9 +13,12 @@ import {
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
+import { readAskRecords, writeAskRecord } from '../record.js';
+import { acquireStartFence } from '../startFence/startFence.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
 import {
+  askFailedReason,
   askKeptClaimMessage,
   askLaunchFailureDetail,
   askUnconfirmedStopDetail,
@@ -76,8 +79,15 @@ const adoptAsChild = async (
 
   await renameLockHolder(root, fakeStartProcessId);
 
-  const started = `${claimToken}.started.${fakeStartProcessId}`;
-  const adoptedMarker = `${claimToken}.adopted.${fakeStartProcessId}`;
+  const ticket = commandArguments[commandArguments.indexOf('tau-architect-start') + 1];
+
+  if (ticket === undefined) {
+    throw new Error('The launch names no ticket.');
+  }
+
+  const ticketName = basename(ticket);
+  const started = `${ticketName}.started.${fakeStartProcessId}`;
+  const adoptedMarker = `${ticketName}.adopted.${fakeStartProcessId}`;
 
   await rename(join(startDirectory(root), started), join(startDirectory(root), adoptedMarker));
   await adopted.release();
@@ -444,6 +454,106 @@ it('records a real cancellation from the call signal as cancelled', async ({
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
+it('releases its claim and fails the record when an adopted child stopped before the launch reply and a later caller swept', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const child = useFakeStartProcess(cleanup, 'gone');
+  const waitFailure = new Error('The wait failed.');
+  let markerSurvivedSweep = false;
+  let taken = false;
+
+  await recordSession(root);
+
+  const rejected = failFirstWait(hc, waitFailure);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await adoptAsChild(root, commandArguments);
+
+      const newer = await acquireStartFence(root);
+
+      if (newer.kind !== 'acquired') {
+        throw new Error('The later caller did not acquire the fence.');
+      }
+
+      const names = await readdir(startDirectory(root));
+
+      markerSurvivedSweep = names.some((name) => name.includes('.adopted.'));
+
+      await newer.fence.finish({ adopted: false, stopAttempted: false });
+
+      return succeededResult(JSON.stringify({ address: 't-ask', state: 'live' }));
+    }
+
+    return rejected.exec(command, commandArguments, options);
+  };
+
+  const failure = await ask({ ...rejected, exec }, root).catch((error: unknown) => error);
+
+  expect(taken).toBe(true);
+  expect(markerSurvivedSweep).toBe(true);
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('The wait failed.');
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(child.signals).toEqual([]);
+  expect(await readdir(startDirectory(root))).toEqual([]);
+});
+
+it('keeps the newer claim live when the cached adopted child is gone before the wait rejects', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const child = useFakeStartProcess(cleanup, 'running');
+  const waitFailure = new Error('The wait failed.');
+  let taken = false;
+  let newerToken: string | undefined;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await adoptAsChild(root, commandArguments);
+
+      return succeededResult(JSON.stringify({ address: 't-ask', state: 'live' }));
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      child.state = 'gone';
+
+      const newer = await acquireStartFence(root);
+
+      if (newer.kind !== 'acquired') {
+        throw new Error('The newer caller did not acquire the fence.');
+      }
+
+      newerToken = (await readLiveLockHolder(architectLockPath(root)))?.token;
+
+      throw waitFailure;
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
+
+  expect(taken).toBe(true);
+  expect(failure).toBeInstanceOf(Error);
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
+  expect(child.signals).toEqual([]);
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({
+    token: newerToken,
+  });
+});
+
 it('releases its claim and fails the record when an adopted child stopped hard', async ({
   onTestFinished: cleanup,
 }) => {
@@ -474,7 +584,7 @@ it('releases its claim and fails the record when an adopted child stopped hard',
   expect(await readdir(startDirectory(root))).toEqual([]);
 });
 
-it('stops an adopted child that still runs when the terminal stop is not confirmed', async ({
+it('never signals an adopted child that still runs when the terminal stop is not confirmed', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
@@ -497,12 +607,15 @@ it('stops an adopted child that still runs when the terminal stop is not confirm
 
   expect(taken).toBe(true);
   expect(failure).toBeInstanceOf(Error);
-  expect(child.signals).toEqual(['SIGTERM']);
+  expect(child.signals).toEqual([]);
   expect(await statuses(root)).toEqual(['failed']);
   expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
   expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  expect(await readdir(startDirectory(root))).toEqual([]);
+
+  const names = await readdir(startDirectory(root));
+
+  expect(names.some((name) => name.includes('.adopted.'))).toBe(true);
 });
 
 it('fails its own record and releases the claim after a real-shaped nonzero launch exit', async ({
@@ -519,4 +632,48 @@ it('fails its own record and releases the claim after a real-shaped nonzero laun
   expect(await statuses(root)).toEqual(['failed']);
   expect(await details(root)).toEqual([askLaunchFailureDetail]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('waits on an adopted child after an address-less launch and reports from its record', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const child = useFakeStartProcess(cleanup, 'running');
+  let taken = false;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await adoptAsChild(root, commandArguments);
+
+      const { records } = await readAskRecords(root);
+      const record = records[0];
+
+      if (record?.route === 'hidden') {
+        await writeAskRecord(root, {
+          ...record,
+          status: 'failed',
+          detail: 'The adopted child stopped.',
+        });
+      }
+
+      setTimeout(() => {
+        child.state = 'gone';
+      }, 20);
+
+      return { code: 1, killed: false, truncated: false, stdout: '', stderr: 'launch failed' };
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = await ask({ ...hc, exec }, root);
+
+  expect(taken).toBe(true);
+  expect(result.details).toMatchObject({ status: 'failed', reason: askFailedReason });
+  expect(child.signals).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await readdir(startDirectory(root))).toEqual([]);
 });

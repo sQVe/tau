@@ -1,21 +1,75 @@
 import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import { argumentAfter } from '../../../../tests/execFake.js';
+import { argumentAfter, failedResult } from '../../../../tests/execFake.js';
 import {
   fakeStartProcessId,
   runLaunchArgv,
+  takeStartTicket,
   useFakeStartProcess,
 } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
-import { architectLockPath } from '../lock.js';
+import { architectLockPath, holdArchitectLock } from '../lock.js';
 import { createStartTicket } from '../startTicket/startTicket.js';
 import { openArchitect } from './open.js';
 import type { OpenRequest } from './open.js';
+
+const leadPid = fakeStartProcessId;
+const claimArgument = 'TAU_ARCHITECT_CLAIM=';
+
+const startDirectory = (root: string): string => join(root, '.tau', 'architect', 'start');
+
+const latestLockPath = async (root: string): Promise<string> => {
+  const directory = dirname(architectLockPath(root));
+
+  const generations = (await readdir(directory))
+    .map((name) => /^lock\.(\d+)$/u.exec(name))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map((match) => Number(match[1]));
+
+  const generation = generations.toSorted((left, right) => left - right).at(-1);
+
+  if (generation === undefined) {
+    throw new Error('The lock has no generation.');
+  }
+
+  return `${architectLockPath(root)}.${generation}`;
+};
+
+const renameLockHolder = async (root: string, processId: number): Promise<void> => {
+  const path = await latestLockPath(root);
+  const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+
+  await writeFile(path, JSON.stringify({ ...owner, pid: processId }));
+};
+
+const adoptAsChild = async (root: string, argv: readonly string[]): Promise<void> => {
+  const claimToken = argv
+    .find((argument) => argument.startsWith(claimArgument))
+    ?.slice(claimArgument.length);
+
+  const ticket = argv[argv.indexOf('tau-architect-start') + 1];
+
+  if (claimToken === undefined || ticket === undefined) {
+    throw new Error('The launch names no claim or ticket.');
+  }
+
+  const held = await holdArchitectLock(root, claimToken);
+
+  await renameLockHolder(root, fakeStartProcessId);
+
+  const ticketName = basename(ticket);
+  const started = join(startDirectory(root), `${ticketName}.started.${fakeStartProcessId}`);
+  const adopted = join(startDirectory(root), `${ticketName}.adopted.${fakeStartProcessId}`);
+
+  await rename(started, adopted);
+  await held.release();
+};
 
 const requestFor = (
   root: string,
@@ -31,7 +85,7 @@ const requestFor = (
 });
 
 const startedMarker = async (root: string, token: string, processId: number): Promise<string> => {
-  const ticket = await createStartTicket(root, token);
+  const ticket = await createStartTicket(root, token, leadPid);
   const marker = `${ticket}.started.${processId}`;
 
   await writeFile(marker, '');
@@ -40,7 +94,7 @@ const startedMarker = async (root: string, token: string, processId: number): Pr
 };
 
 const adoptedMarker = async (root: string, token: string, processId: number): Promise<string> => {
-  const ticket = await createStartTicket(root, token);
+  const ticket = await createStartTicket(root, token, leadPid);
   const marker = `${ticket}.adopted.${processId}`;
 
   await writeFile(marker, '');
@@ -96,7 +150,7 @@ it('never runs Pi when the server creates the terminal after the caller gave up'
 it('cancels a gone claim ticket and then starts', async ({ onTestFinished: cleanup }) => {
   const { root, config } = await setup(cleanup);
   const { runtime } = openTool(root);
-  const gone = await createStartTicket(root, 'gone');
+  const gone = await createStartTicket(root, 'gone', leadPid);
 
   await recordSession(root);
 
@@ -177,7 +231,7 @@ it('deletes an adopted marker whose process is gone and then starts', async ({
 it('refuses a malformed marker name and names its path', async ({ onTestFinished: cleanup }) => {
   const { root, config } = await setup(cleanup);
   const { runtime } = openTool(root);
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
   const marker = `${ticket}.started`;
 
   await writeFile(marker, '');
@@ -191,4 +245,37 @@ it('refuses a malformed marker name and names its path', async ({ onTestFinished
   expect((failure as Error).message).toContain(marker);
   expect(existsSync(marker)).toBe(true);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('treats an address-less launch as taken over when its child adopted and released the lock', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const child = useFakeStartProcess(cleanup, 'running');
+  let tookTicket = false;
+
+  await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      tookTicket = await takeStartTicket(argv);
+
+      await adoptAsChild(root, argv);
+
+      return failedResult('the launch reply failed');
+    }
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const result = await openArchitect(requestFor(root, config.location, { ...runtime, exec }));
+
+  expect(tookTicket).toBe(true);
+  expect(result).toMatchObject({ status: 'resumed' });
+  expect(child.signals).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await readdir(startDirectory(root))).toHaveLength(1);
 });

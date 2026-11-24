@@ -285,20 +285,17 @@ export const takeoverExpiryError = (): Error =>
   );
 
 const waitForTakeover = async (
-  root: string,
-  claimToken: string,
+  fence: StartFence,
   signal: AbortSignal | undefined,
 ): Promise<void> => {
-  const lockPath = architectLockPath(root);
   const deadline = Date.now() + takeoverSeconds * millisecondsPerSecond;
 
   for (;;) {
     // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
-    const holder = await readLiveLockHolder(lockPath);
+    const adopted = await fence.childAdopted();
 
     const progress = openStartProgress({
-      claimToken,
-      holderToken: holder?.token,
+      adopted,
       now: Date.now(),
       deadline,
       cancelled: signal?.aborted === true,
@@ -388,7 +385,7 @@ const applyLaunchOutcome = async (
       request.hc.signal.throwIfAborted();
     }
 
-    if (!abandoned.takenOver) {
+    if (!abandoned.adopted) {
       throw launchFailure(started);
     }
 
@@ -396,7 +393,7 @@ const applyLaunchOutcome = async (
   }
 
   await fence.recordStarted();
-  await waitForTakeover(request.root, fence.token, request.hc.signal);
+  await waitForTakeover(fence, request.hc.signal);
 
   if (request.hc.signal?.aborted === true) {
     request.hc.signal.throwIfAborted();
@@ -451,7 +448,7 @@ export const openArchitect = async (
   } catch (error) {
     const abandoned = await fence.abandon();
 
-    const finished = await fence.finish({ adopted: abandoned.takenOver, stopAttempted: false });
+    const finished = await fence.finish({ adopted: abandoned.adopted, stopAttempted: false });
 
     if (finished.kept) {
       throw openKeptClaimError(request.root);

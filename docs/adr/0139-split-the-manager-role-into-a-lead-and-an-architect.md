@@ -117,8 +117,8 @@ report that the architect is starting.
 Pi opens its session file, and can migrate it, before session start. So the caller releases a claim
 only when no Pi can still take it over. A one-shot start ticket fences the launch before Pi opens
 the session file. Before it launches, the caller creates an empty file
-`.tau/architect/start/<claimToken>` through `ensureTauDirectory`. The child's argv is wrapped so a
-shell renames the ticket before it runs Pi:
+`.tau/architect/start/<claimToken>.lead.<leadPid>` through `ensureTauDirectory`. The child's argv is
+wrapped so a shell renames the ticket before it runs Pi:
 `sh -c 'mv -- "$1" "$1.started.$$" 2>/dev/null || exit 75; shift; exec "$@"' tau-architect-start <ticket> <the Pi argv>`.
 The wrapper applies to the `hc run` argv in `ask`, the `space.new` argv, and the argv inside
 `env -C` for `pane.split`. `$$` is the shell's process ID, and `exec` keeps that ID for `env` and
@@ -126,10 +126,10 @@ Pi. The marker is an empty file whose name carries the process ID, so the child 
 cannot both take the ticket. The argv still contains `TAU_ARCHITECT_CLAIM=<token>`.
 
 The ticket and marker names are a synchronization protocol, not a saved record. The files are empty
-and only their names carry meaning, so ADR 0053 does not version them. A `.started` name without a
-valid process ID is refused with its path; any other name that is not a cancelled ticket is treated
-as an unused ticket and cancelled. A name a later release does not recognise therefore never lets a
-second Pi start.
+and only their names carry meaning, so ADR 0053 does not version them. A name with a known token
+prefix that is not a ticket, a started or adopted marker, or a cancelled ticket is refused as
+malformed. A `.started` or `.adopted` name without a valid process ID is refused with its path. A
+name a later release does not recognise therefore never lets a second Pi start.
 
 The proof that a taken child cannot run Pi is `processState(pid) === 'gone'`. A dead process cannot
 exec, and a child paused between its rename and its `exec` is alive, so the fence stays. `running`
@@ -137,11 +137,12 @@ and `unknown` are never proof, and a reused process ID errs toward refusal. Abse
 nothing anywhere, and no launch lookup exists. The caller stops a taken child by process ID:
 `SIGTERM`, then up to 5 seconds for `gone`, then `SIGKILL`, then up to 5 more seconds. The 10
 seconds share one absolute deadline. `gone` releases the claim and deletes the marker; anything else
-keeps both. The caller reads the process ID from a started or an adopted marker, so a Pi that
-adopted the claim and then stopped without its shutdown handler still reads as gone. A hidden `ask`
-whose launch reply gave no address abandons the launch, fails its own record with a launch detail,
-and releases once the child is gone. A valid reply keeps the `hc wait` path, and `processState(pid)`
-alone confirms a stop after `hc kill`.
+keeps both. The caller keeps its own copy of the child's process ID from the first marker read.
+Neither a later read nor another caller's lock can change that copy. A Pi that adopted the claim and
+then stopped without its shutdown handler reads as gone, even when another caller has since claimed
+the lock. A hidden `ask` whose launch reply gave no address abandons the launch, fails its own
+record with a launch detail, and releases once the child is gone, unless its child adopted. A valid
+reply keeps the `hc wait` path, and `processState(pid)` alone confirms a stop after `hc kill`.
 
 When the caller abandons a launch, it first renames the ticket to `<ticket>.cancelled`. Success
 means no Pi from this launch can run: a shell that starts later fails its `mv` and exits 75 before
@@ -157,12 +158,16 @@ every other ticket belongs to a gone claim. It cancels each unused ticket. For e
 it reads the process ID: `gone` deletes the marker and continues, even when the finished terminal
 was removed with `hc rm`; `running` or `unknown` releases the caller's claim and refuses with a
 message that names the process ID; a `.started` name without a valid process ID refuses with the
-marker path to remove. After it takes the claim over, the architect renames its marker to
-`<token>.adopted.<process.pid>`. It never deletes the marker, so the caller keeps the child's
-process ID after adoption. An adopted marker never makes the sweep refuse, because its process
-already passed the fence and takes the lock at every later session start. The sweep deletes an
-adopted marker whose process is gone and leaves the rest. The caller deletes its own marker, started
-or adopted, once the child is gone.
+marker path to remove. The ticket name carries its lead's process ID: `<token>.lead.<leadPid>`, so
+its markers read `<token>.lead.<leadPid>.started.<childPid>` and
+`<token>.lead.<leadPid>.adopted.<childPid>`. After it takes the claim over, the architect renames
+its marker from started to adopted. It never deletes it. The caller counts the child as adopted when
+it has seen its own adopted marker, or when the live lock holder's process ID is its child's. A
+different token or process ID in the lock is never its child's takeover. Adoption ends the fence:
+after it, the caller never signals the child for the fence, and a hidden ask without a terminal
+address waits on the child's process ID instead of abandoning it. The caller deletes its own markers
+once its child is gone. The sweep never refuses on an adopted marker. It deletes one only when both
+its child and its lead are gone, so a lead always finds its own evidence while it lives.
 
 The launch needs `sh` and `mv` on the machine that runs the terminal, and the ticket and Pi run in
 the same checkout.
@@ -258,6 +263,8 @@ the work.
   ends its session.
 - A `pi` command that forks instead of exec'ing breaks the process-ID proof.
 - A reused process ID keeps a start refused until that unrelated process ends.
+- An adopted marker of a lead that died stays until the kernel reads both processes as gone. A
+  reused process ID keeps it longer, but it never blocks a start.
 - A launch needs `sh` and `mv` on the machine that runs the terminal, and the ticket and Pi must run
   in the same checkout.
 

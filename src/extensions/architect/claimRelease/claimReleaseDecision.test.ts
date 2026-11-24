@@ -33,6 +33,16 @@ it.each<{ name: string; facts: ClaimReleaseFacts; expected: ClaimReleaseAction }
     expected: 'release',
   },
   {
+    name: 'a taken ticket for an adopted Pi after a stop attempt',
+    facts: facts({ adopted: true, child: 'running', stopAttempted: true }),
+    expected: 'release',
+  },
+  {
+    name: 'a taken ticket for an adopted Pi whose state is unknown',
+    facts: facts({ adopted: true, child: 'unknown' }),
+    expected: 'release',
+  },
+  {
     name: 'a taken ticket with a running child before a stop',
     facts: facts({ child: 'running', stopAttempted: false }),
     expected: 'stop',

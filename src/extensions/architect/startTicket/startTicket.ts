@@ -10,8 +10,14 @@ import { sweepAction } from './startTicketDecision.js';
 export type StartTicketCancel = 'cancelled' | 'taken' | 'unread';
 
 export type StartMarker =
-  | { kind: 'started' | 'adopted'; pid: number; path: string }
-  | { kind: 'malformed'; path: string };
+  | {
+      kind: 'started' | 'adopted';
+      token: string;
+      leadPid: number;
+      childPid: number;
+      path: string;
+    }
+  | { kind: 'malformed'; token: string; path: string };
 
 export type StartEntry =
   | { kind: 'unused'; token: string; ticket: string }
@@ -36,6 +42,7 @@ type EntryResolution =
 
 const markerSuffixes = ['.started', '.adopted'] as const;
 const cancelledSuffix = '.cancelled';
+const leadSegment = '.lead.';
 const wrapperScript = 'mv -- "$1" "$1.started.$$" 2>/dev/null || exit 75; shift; exec "$@"';
 const wrapperName = 'tau-architect-start';
 
@@ -57,9 +64,13 @@ const readNames = async (directory: string): Promise<string[]> =>
     throw error;
   });
 
-export const createStartTicket = async (root: string, token: string): Promise<string> => {
+export const createStartTicket = async (
+  root: string,
+  token: string,
+  leadPid: number,
+): Promise<string> => {
   const directory = await startDirectory(root);
-  const ticket = join(directory, token);
+  const ticket = join(directory, `${token}${leadSegment}${leadPid}`);
 
   await writeFile(ticket, '', { flag: 'wx' });
 
@@ -100,59 +111,140 @@ const markerOffset = (name: string): number =>
     }),
   );
 
-const markerKindOf = (token: string, name: string): 'started' | 'adopted' | undefined => {
-  if (name.startsWith(`${token}.started`)) {
-    return 'started';
-  }
+const markerToken = (name: string): string => {
+  const offset = markerOffset(name);
 
-  return name.startsWith(`${token}.adopted`) ? 'adopted' : undefined;
+  return Number.isFinite(offset) ? name.slice(0, offset) : name;
 };
 
-const parseMarkerName = (
-  directory: string,
-  token: string,
-  name: string,
-): StartMarker | undefined => {
-  const path = join(directory, name);
-  const kind = markerKindOf(token, name);
-
-  if (kind === undefined) {
+const processIdFrom = (raw: string): number | undefined => {
+  if (!/^[1-9][0-9]*$/u.test(raw)) {
     return undefined;
   }
 
-  const prefix = `${token}.${kind}`;
+  const processId = Number(raw);
 
-  if (!name.startsWith(`${prefix}.`)) {
-    return { kind: 'malformed', path };
+  return Number.isSafeInteger(processId) ? processId : undefined;
+};
+
+const markerOf = (
+  directory: string,
+  token: string,
+  leadPid: number,
+  kind: 'started' | 'adopted',
+  childPid: number,
+  name: string,
+): StartMarker => ({
+  kind,
+  token,
+  leadPid,
+  childPid,
+  path: join(directory, name),
+});
+
+const markerParts = (
+  directory: string,
+  token: string,
+  rest: string,
+  name: string,
+): StartMarker | undefined => {
+  const [leadRaw, kind, childRaw, ...extra] = rest.split('.');
+  const recognisedKind = kind === 'started' || kind === 'adopted';
+
+  if (extra.length > 0 || !recognisedKind) {
+    return undefined;
   }
 
-  const raw = name.slice(prefix.length + 1);
+  const leadPid = leadRaw === undefined ? undefined : processIdFrom(leadRaw);
+  const childPid = childRaw === undefined ? undefined : processIdFrom(childRaw);
 
-  if (!/^[1-9][0-9]*$/u.test(raw)) {
-    return { kind: 'malformed', path };
+  return leadPid === undefined || childPid === undefined
+    ? undefined
+    : markerOf(directory, token, leadPid, kind, childPid, name);
+};
+
+const entryOf = (directory: string, name: string): StartEntry | undefined => {
+  const leadAt = name.indexOf(leadSegment);
+
+  if (leadAt !== -1) {
+    const token = name.slice(0, leadAt);
+    const rest = name.slice(leadAt + leadSegment.length);
+    const path = join(directory, name);
+    const ticket = join(directory, token);
+
+    if (token === '') {
+      return { kind: 'marker', token, ticket, marker: { kind: 'malformed', token, path } };
+    }
+
+    const leadPid = processIdFrom(rest);
+
+    if (leadPid !== undefined) {
+      return { kind: 'unused', token, ticket: join(directory, name) };
+    }
+
+    const marker = markerParts(directory, token, rest, name);
+
+    if (marker !== undefined) {
+      return { kind: 'marker', token, ticket, marker };
+    }
+
+    if (rest.endsWith(cancelledSuffix)) {
+      const leadRaw = rest.slice(0, -cancelledSuffix.length);
+
+      if (processIdFrom(leadRaw) !== undefined) {
+        return undefined;
+      }
+    }
+
+    return { kind: 'marker', token, ticket, marker: { kind: 'malformed', token, path } };
   }
 
-  const pid = Number(raw);
+  if (name.endsWith(cancelledSuffix)) {
+    const cancelledToken = name.slice(0, -cancelledSuffix.length);
+    const hasMarkerSuffix = markerSuffixes.some((suffix) => cancelledToken.includes(suffix));
 
-  return Number.isSafeInteger(pid) ? { kind, pid, path } : { kind: 'malformed', path };
+    if (cancelledToken !== '' && !hasMarkerSuffix) {
+      return undefined;
+    }
+  }
+
+  if (Number.isFinite(markerOffset(name))) {
+    const token = markerToken(name);
+
+    return {
+      kind: 'marker',
+      token,
+      ticket: join(directory, token),
+      marker: { kind: 'malformed', token, path: join(directory, name) },
+    };
+  }
+
+  return name === '' ? undefined : { kind: 'unused', token: name, ticket: join(directory, name) };
 };
 
 export const readStartMarker = async (
   root: string,
   token: string,
+  leadPid?: number,
 ): Promise<StartMarker | undefined> => {
   const directory = await startDirectory(root);
   const names = await readNames(directory);
 
   const markers = names
-    .map((name) => parseMarkerName(directory, token, name))
-    .filter((marker): marker is StartMarker => marker !== undefined);
+    .map((name) => entryOf(directory, name))
+    .filter(
+      (entry): entry is Extract<StartEntry, { kind: 'marker' }> =>
+        entry?.kind === 'marker' && entry.token === token,
+    )
+    .map((entry) => entry.marker)
+    .filter((marker) => {
+      const matchesLead = marker.kind === 'malformed' || marker.leadPid === leadPid;
+
+      return leadPid === undefined || matchesLead;
+    });
 
   return markers.toSorted((left, right) => left.path.localeCompare(right.path))[0];
 };
-
-export const startMarkerProcessId = (marker: StartMarker | undefined): number | undefined =>
-  marker === undefined || marker.kind === 'malformed' ? undefined : marker.pid;
 
 // The architect keeps the started name only until it takes the claim over. A rename keeps the
 // kernel-verified process id for the caller after adoption.
@@ -162,12 +254,28 @@ export const adoptStartMarker = async (
   processId: number,
 ): Promise<void> => {
   const directory = await startDirectory(root);
+  const names = await readNames(directory);
+  const prefix = `${token}${leadSegment}`;
+  const suffix = `.started.${processId}`;
+
+  const name = names.find(
+    (candidate) => candidate.startsWith(prefix) && candidate.endsWith(suffix),
+  );
+
+  if (name === undefined) {
+    return;
+  }
+
+  const leadRaw = name.slice(prefix.length, -suffix.length);
+
+  if (processIdFrom(leadRaw) === undefined) {
+    return;
+  }
+
+  const adopted = `${token}${leadSegment}${leadRaw}.adopted.${processId}`;
 
   try {
-    await rename(
-      join(directory, `${token}.started.${processId}`),
-      join(directory, `${token}.adopted.${processId}`),
-    );
+    await rename(join(directory, name), join(directory, adopted));
   } catch (error) {
     if (!isMissingFile(error)) {
       throw error;
@@ -178,42 +286,16 @@ export const adoptStartMarker = async (
 export const deleteStartMarker = async (
   root: string,
   token: string,
+  leadPid: number,
   processId: number,
 ): Promise<void> => {
   const directory = await startDirectory(root);
-  const names = markerSuffixes.map((suffix) => `${token}${suffix}.${processId}`);
+
+  const names = markerSuffixes.map(
+    (suffix) => `${token}${leadSegment}${leadPid}${suffix}.${processId}`,
+  );
 
   await Promise.all(names.map((name) => rm(join(directory, name), { force: true })));
-};
-
-const entryOf = (directory: string, name: string): StartEntry | undefined => {
-  if (name.endsWith(cancelledSuffix)) {
-    const cancelledToken = name.slice(0, -cancelledSuffix.length);
-    const hasMarkerSuffix = markerSuffixes.some((suffix) => cancelledToken.includes(suffix));
-
-    if (cancelledToken !== '' && !hasMarkerSuffix) {
-      return undefined;
-    }
-  }
-
-  const offset = markerOffset(name);
-  const hasMarker = Number.isFinite(offset);
-  const token = hasMarker ? name.slice(0, offset) : name;
-
-  const ticket = join(directory, token);
-
-  if (!hasMarker) {
-    return token === '' ? undefined : { kind: 'unused', token, ticket };
-  }
-
-  const path = join(directory, name);
-
-  const marker =
-    token === ''
-      ? { kind: 'malformed' as const, path }
-      : (parseMarkerName(directory, token, name) ?? { kind: 'malformed' as const, path });
-
-  return { kind: 'marker', token, ticket, marker };
 };
 
 // A malformed name for a token must be reported even when another marker for the same token
@@ -267,9 +349,31 @@ const resolveEntry = async (root: string, entry: StartEntry): Promise<EntryResol
   return marker === undefined ? { kind: 'starting' } : { kind: 'marker', marker };
 };
 
+const sweepFactsOf = (
+  marker: StartMarker,
+  stateOf: (processId: number) => ProcessState,
+): Parameters<typeof sweepAction>[0] => {
+  if (marker.kind === 'malformed') {
+    return { kind: 'malformed', path: marker.path };
+  }
+
+  const child = stateOf(marker.childPid);
+
+  return marker.kind === 'started'
+    ? { kind: 'started', path: marker.path, processId: marker.childPid, child }
+    : {
+        kind: 'adopted',
+        path: marker.path,
+        processId: marker.childPid,
+        child,
+        lead: stateOf(marker.leadPid),
+      };
+};
+
 // Every other ticket belongs to a claim that is gone. A started marker is cleared only when the
 // kernel reports its process gone, so a child paused before its exec keeps the fence. An adopted
-// marker's process passed that fence and never refuses a later start.
+// marker's process passed that fence, so it never refuses, and it is deleted only after the kernel
+// reads both its child and its lead as gone.
 export const sweepStartFolder = async (request: StartSweepRequest): Promise<StartSweepResult> => {
   const stateOf = request.stateOf ?? processState;
   const entries = await readStartEntries(request.root);
@@ -290,19 +394,7 @@ export const sweepStartFolder = async (request: StartSweepRequest): Promise<Star
       return { kind: 'starting' };
     }
 
-    const { marker } = resolved;
-
-    const facts =
-      marker.kind === 'malformed'
-        ? { kind: 'malformed' as const, path: marker.path }
-        : {
-            kind: marker.kind,
-            path: marker.path,
-            processId: marker.pid,
-            child: stateOf(marker.pid),
-          };
-
-    const action = sweepAction(facts);
+    const action = sweepAction(sweepFactsOf(resolved.marker, stateOf));
 
     if (action.kind === 'refuseRunning') {
       return { kind: 'refuseRunning', processId: action.processId };

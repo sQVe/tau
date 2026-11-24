@@ -13,6 +13,8 @@ import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
 import { ask, endedWait, startFake } from './fixtures/askHarness.js';
 
+const leadPid = 9000;
+
 it('an abort before dispatch cancels its ticket and releases the claim', async ({
   onTestFinished: cleanup,
 }) => {
@@ -54,7 +56,7 @@ it('deletes an orphaned marker whose process is gone and starts', async ({
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
   const marker = `${ticket}.started.${fakeStartProcessId}`;
 
   useFakeStartProcess(cleanup, 'gone');
@@ -74,7 +76,7 @@ it('refuses an orphaned marker whose process runs and names the process id', asy
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
   const marker = `${ticket}.started.${fakeStartProcessId}`;
 
   useFakeStartProcess(cleanup, 'running');
@@ -95,7 +97,7 @@ it('refuses a malformed orphaned marker and names the path', async ({
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
   const marker = `${ticket}.started`;
 
   await writeFile(marker, '');

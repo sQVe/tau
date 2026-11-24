@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { argumentAfter, succeededResult } from '../../../../tests/execFake.js';
-import { takeStartTicket, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
-import { holdFileLock, readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { appCommands, open, openRequest, openTool } from '../fixtures/openHarness.js';
+import {
+  fakeStartProcessId,
+  takeStartTicket,
+  useFakeStartProcess,
+} from '../../../../tests/startTicketFake.js';
+import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
+import { adoptClaim, appCommands, open, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { openArchitect, openKeptClaimMessage, startingError, takeoverExpiryError } from './open.js';
@@ -236,16 +240,10 @@ it('returns the normal result when a space reply has no terminal and the child a
       const holder = await readLiveLockHolder(architectLockPath(root));
 
       if (holder !== undefined) {
-        const held = await holdFileLock({
-          lockPath: architectLockPath(root),
-          checkout: root,
-          terminal: 't-space',
-          token: 'adopted',
-          adopt: holder.token,
-        });
+        const release = await adoptClaim(root, holder.token, 'adopted', fakeStartProcessId);
 
-        if (held.kind === 'held') {
-          cleanup(held.release);
+        if (release !== undefined) {
+          cleanup(release);
         }
       }
     }
@@ -290,16 +288,10 @@ it('rejects a cancel when a space reply has no terminal and the child adopted th
       const holder = await readLiveLockHolder(architectLockPath(root));
 
       if (holder !== undefined) {
-        const held = await holdFileLock({
-          lockPath: architectLockPath(root),
-          checkout: root,
-          terminal: 't-space',
-          token: 'adopted',
-          adopt: holder.token,
-        });
+        const release = await adoptClaim(root, holder.token, 'adopted', fakeStartProcessId);
 
-        if (held.kind === 'held') {
-          cleanup(held.release);
+        if (release !== undefined) {
+          cleanup(release);
         }
       }
 
@@ -417,16 +409,10 @@ it('rejects a cancel in the recovered path after the child took over and does no
 
       const adoptedToken = 'adopted';
 
-      const held = await holdFileLock({
-        lockPath: architectLockPath(root),
-        checkout: root,
-        terminal: 't-architect',
-        token: adoptedToken,
-        adopt: token,
-      });
+      const release = await adoptClaim(root, token, adoptedToken, fakeStartProcessId);
 
-      if (held.kind === 'held') {
-        cleanup(held.release);
+      if (release !== undefined) {
+        cleanup(release);
         adopted.resolve(adoptedToken);
       }
 
@@ -464,16 +450,10 @@ it('keeps a successful result when a split adopts the claim', async ({
 
       await takeStartTicket(argv);
 
-      const held = await holdFileLock({
-        lockPath: architectLockPath(root),
-        checkout: root,
-        terminal: 't-architect',
-        token: 'adopted',
-        adopt: holder?.token ?? '',
-      });
+      const release = await adoptClaim(root, holder?.token ?? '', 'adopted', fakeStartProcessId);
 
-      if (held.kind === 'held') {
-        cleanup(held.release);
+      if (release !== undefined) {
+        cleanup(release);
       }
 
       return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');

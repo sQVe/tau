@@ -18,6 +18,7 @@ import {
 } from './startTicket.js';
 
 const run = promisify(execFile);
+const leadPid = 9000;
 
 const runWrapper = async (
   argv: string[],
@@ -38,7 +39,7 @@ const markerNames = async (root: string): Promise<string[]> =>
   readdir(join(root, '.tau', 'architect', 'start'));
 
 const startedMarker = async (root: string, token: string, processId: number): Promise<string> => {
-  const ticket = await createStartTicket(root, token);
+  const ticket = await createStartTicket(root, token, leadPid);
   const marker = `${ticket}.started.${processId}`;
 
   await writeFile(marker, '');
@@ -47,7 +48,7 @@ const startedMarker = async (root: string, token: string, processId: number): Pr
 };
 
 const adoptedMarker = async (root: string, token: string, processId: number): Promise<string> => {
-  const ticket = await createStartTicket(root, token);
+  const ticket = await createStartTicket(root, token, leadPid);
   const marker = `${ticket}.adopted.${processId}`;
 
   await writeFile(marker, '');
@@ -69,7 +70,7 @@ const startFile = async (root: string, name: string): Promise<string> => {
 
 it('names the marker with the process id of the exec command', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'token');
+  const ticket = await createStartTicket(root, 'token', leadPid);
 
   const argv = wrapStartArgv(ticket, ['sh', '-c', 'printf "%s" "$$"']);
 
@@ -79,7 +80,9 @@ it('names the marker with the process id of the exec command', async ({ onTestFi
 
   expect(await readStartMarker(root, 'token')).toEqual({
     kind: 'started',
-    pid: Number(result.stdout),
+    token: 'token',
+    leadPid,
+    childPid: Number(result.stdout),
     path: `${ticket}.started.${result.stdout}`,
   });
 });
@@ -97,7 +100,9 @@ it('renames a started marker to adopted and tolerates a missing source', async (
 
   expect(await readStartMarker(root, 'token')).toEqual({
     kind: 'adopted',
-    pid: 4100,
+    token: 'token',
+    leadPid,
+    childPid: 4100,
     path: adopted,
   });
 
@@ -107,7 +112,7 @@ it('renames a started marker to adopted and tolerates a missing source', async (
 
 it('runs no command on a second run and exits 75', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'token');
+  const ticket = await createStartTicket(root, 'token', leadPid);
   const first = join(root, 'first.txt');
   const second = join(root, 'second.txt');
 
@@ -130,7 +135,7 @@ it('passes arguments with a space and a double quote through unchanged', async (
   onTestFinished,
 }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'token');
+  const ticket = await createStartTicket(root, 'token', leadPid);
 
   const argv = wrapStartArgv(ticket, ['printf', '<%s>\n', 'a b', 'c"d', 'e f']);
 
@@ -141,12 +146,15 @@ it('passes arguments with a space and a double quote through unchanged', async (
   const marker = await readStartMarker(root, 'token');
 
   expect(marker?.kind).toBe('started');
-  expect((await markerNames(root)).some((name) => name.startsWith('token.started.'))).toBe(true);
+
+  expect(
+    (await markerNames(root)).some((name) => name.startsWith(`token.lead.${leadPid}.started.`)),
+  ).toBe(true);
 });
 
 it('sweeps an unused ticket from a gone claim by cancelling it', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
 
   expect(await readStartEntries(root)).toEqual([{ kind: 'unused', token: 'gone', ticket }]);
 
@@ -164,7 +172,7 @@ it('refuses a ticket taken after its claim ended and names the process id', asyn
   onTestFinished,
 }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
   const marker = `${ticket}.started.4004`;
 
   await rename(ticket, marker);
@@ -271,7 +279,7 @@ it('refuses a started marker whose process state is unknown and keeps the marker
 
 it('refuses a marker name without a process id and names the path', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
   const marker = `${ticket}.started`;
 
   await writeFile(marker, '');
@@ -290,7 +298,7 @@ it('refuses a marker name with an invalid process id and names the path', async 
   onTestFinished,
 }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
   const marker = `${ticket}.started.not-a-pid`;
 
   await writeFile(marker, '');
@@ -307,7 +315,7 @@ it('refuses a marker name with an invalid process id and names the path', async 
 
 it('does not sweep its own ticket', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'current');
+  const ticket = await createStartTicket(root, 'current', leadPid);
 
   const outcome = await sweepStartFolder({
     root,
@@ -322,7 +330,7 @@ it('does not sweep its own ticket', async ({ onTestFinished }) => {
 
 it('ignores a cancelled ticket file when it sweeps', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
 
   expect(await cancelStartTicket(ticket)).toBe('cancelled');
   await writeFile(`${ticket}.cancelled`, '');
@@ -340,7 +348,7 @@ it('ignores a cancelled ticket file when it sweeps', async ({ onTestFinished }) 
 
 it('refuses an unrecognised started name and names the path', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const ticket = await createStartTicket(root, 'gone');
+  const ticket = await createStartTicket(root, 'gone', leadPid);
   const marker = `${ticket}.started-other`;
 
   await rename(ticket, marker);
@@ -376,12 +384,12 @@ it('refuses a malformed marker when a valid marker exists for the same token', a
   onTestFinished,
 }) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const adopted = await startFile(root, 'old-token.adopted.4100');
-  const malformed = await startFile(root, 'old-token.started.bad');
+  const adopted = await startFile(root, 'old-token.lead.9000.adopted.4100');
+  const malformed = await startFile(root, 'old-token.lead.9000.started.bad');
   const names = await markerNames(root);
 
-  expect(names.indexOf('old-token.adopted.4100')).toBeLessThan(
-    names.indexOf('old-token.started.bad'),
+  expect(names.indexOf('old-token.lead.9000.adopted.4100')).toBeLessThan(
+    names.indexOf('old-token.lead.9000.started.bad'),
   );
 
   const outcome = await sweepStartFolder({
@@ -393,4 +401,67 @@ it('refuses a malformed marker when a valid marker exists for the same token', a
   expect(outcome).toEqual({ kind: 'refuseMalformed', path: malformed });
   expect(existsSync(adopted)).toBe(true);
   expect(existsSync(malformed)).toBe(true);
+});
+
+it.each([
+  {
+    name: 'a ticket',
+    fileName: 'token.lead.9000',
+    expected: { kind: 'unused', token: 'token' },
+  },
+  {
+    name: 'a started marker',
+    fileName: 'token.lead.9000.started.4100',
+    expected: { kind: 'marker', token: 'token', markerKind: 'started' },
+  },
+  {
+    name: 'an adopted marker',
+    fileName: 'token.lead.9000.adopted.4100',
+    expected: { kind: 'marker', token: 'token', markerKind: 'adopted' },
+  },
+  {
+    name: 'a bare ticket from an older start',
+    fileName: 'token',
+    expected: { kind: 'unused', token: 'token' },
+  },
+])('parses $name', async ({ fileName, expected }) => {
+  const root = await createTemporaryRepository(onFinished);
+  const path = await startFile(root, fileName);
+  const entries = await readStartEntries(root);
+
+  const expectedEntry =
+    'markerKind' in expected
+      ? { kind: expected.kind, token: expected.token, marker: { kind: expected.markerKind, path } }
+      : { kind: expected.kind, token: expected.token };
+
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject(expectedEntry);
+});
+
+it('parses a cancelled ticket name', async () => {
+  const root = await createTemporaryRepository(onFinished);
+
+  await startFile(root, 'token.lead.9000.cancelled');
+
+  expect(await readStartEntries(root)).toEqual([]);
+});
+
+it.each([
+  'token.lead.9000.started',
+  'token.lead.9000.started.bad',
+  'token.lead.bad.started.4100',
+  'token.started.4100',
+  'token.lead.9000.started.4100.cancelled',
+  'token.lead.9000.other',
+])('rejects %s as a malformed marker', async (fileName) => {
+  const root = await createTemporaryRepository(onFinished);
+  const path = await startFile(root, fileName);
+  const entries = await readStartEntries(root);
+
+  expect(entries).toHaveLength(1);
+
+  expect(entries[0]).toMatchObject({
+    kind: 'marker',
+    marker: { kind: 'malformed', path },
+  });
 });
