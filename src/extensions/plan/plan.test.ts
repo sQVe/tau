@@ -76,9 +76,11 @@ const renderedLines = (content: WidgetContent): readonly string[] => {
   return content;
 };
 
-// The border line has its own layout test in widget.test.ts.
+// The border line and the step indent have their own layout test in widget.test.ts.
 const restoredSteps = (content: WidgetContent): readonly string[] =>
-  renderedLines(content).slice(1);
+  renderedLines(content)
+    .slice(1)
+    .map((line) => line.trimStart());
 
 const savedEntry = (data: unknown) => ({ type: 'custom', customType: planEntryType, data });
 
@@ -135,10 +137,10 @@ it('an accepted call appends one record, returns the summary, and shows the step
   expect(widgets.map(({ key }) => key)).toEqual([planWidgetKey]);
 
   expect(renderedLines(widgets.at(-1)?.content)).toEqual([
-    `─ Plan ${'─'.repeat(73)}`,
-    '\u{F192} Brief worker for ME-123',
-    '\u{F10C} Review worker change for ME-123',
-    '\u{F058} Open the PR',
+    `── Plan ${'─'.repeat(72)}`,
+    ' \u{F192} Brief worker for ME-123',
+    ' \u{F10C} Review worker change for ME-123',
+    ' \u{F058} Open the PR',
   ]);
 });
 

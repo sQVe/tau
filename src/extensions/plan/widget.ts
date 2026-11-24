@@ -18,16 +18,22 @@ const statusMarks = {
 } satisfies Record<PlanStep['status'], { mark: string; color: ThemeColor }>;
 
 const planLabel = 'Plan';
+const markIndent = ' ';
+const markGap = ' ';
 
 const markWidths = Object.values(statusMarks).map(({ mark }) => visibleWidth(mark));
 const markWidth = Math.max(...markWidths);
-const stepPrefixWidth = markWidth + 1;
+const markIndentWidth = visibleWidth(markIndent);
+
+const stepPrefixWidth = markIndentWidth + markWidth + visibleWidth(markGap);
+const labelPrefix = `${'─'.repeat(stepPrefixWidth - 1)} `;
+
+export const planLabelColumn = stepPrefixWidth;
 
 const borderLine = (width: number, theme: Pick<Theme, 'fg'>): string => {
-  const labelEnd = stepPrefixWidth + visibleWidth(planLabel) + 1;
-  const ruleWidth = Math.max(0, width - labelEnd);
-  const head = `${theme.fg('border', '─')}${' '.repeat(stepPrefixWidth - 1)}`;
-  const line = `${head}${theme.fg('muted', planLabel)} ${theme.fg('border', '─'.repeat(ruleWidth))}`;
+  const labelWidth = visibleWidth(planLabel);
+  const ruleWidth = Math.max(0, width - visibleWidth(labelPrefix) - labelWidth - 1);
+  const line = `${theme.fg('border', labelPrefix)}${theme.fg('muted', planLabel)} ${theme.fg('border', '─'.repeat(ruleWidth))}`;
 
   return truncateToWidth(line, width, '');
 };
@@ -40,13 +46,30 @@ const drawMark = (status: PlanStep['status'], theme: Pick<Theme, 'fg'>): string 
   return `${drawnMark}${' '.repeat(padding)}`;
 };
 
+const markPrefix = (
+  status: PlanStep['status'],
+  width: number,
+  theme: Pick<Theme, 'fg'>,
+): string => {
+  const drawnMark = drawMark(status, theme);
+
+  if (width < markIndentWidth + markWidth) {
+    return drawnMark;
+  }
+
+  const gap = width >= stepPrefixWidth ? markGap : '';
+
+  return `${markIndent}${drawnMark}${gap}`;
+};
+
 const planLine = (step: PlanStep, width: number, theme: Pick<Theme, 'fg'>): string => {
   const text = sanitizeSingleLine(step.text);
-  const textWidth = Math.max(0, width - stepPrefixWidth);
+  const textWidth = Math.max(0, width - planLabelColumn);
   const fittedText = stripVTControlCharacters(truncateToWidth(text, textWidth));
   const drawnText = step.status === 'completed' ? theme.fg('dim', fittedText) : fittedText;
+  const prefix = markPrefix(step.status, width, theme);
 
-  return truncateToWidth(`${drawMark(step.status, theme)} ${drawnText}`, width, '');
+  return truncateToWidth(`${prefix}${drawnText}`, width, '');
 };
 
 export const planLines = (
