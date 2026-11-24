@@ -68,37 +68,71 @@ Pi pid.
 ## Evidence
 
 A prototype on this branch runs each behaviour against real processes and prints the result. Run it
-with `node scripts/osLockSpike.ts`. Its output on util-linux 2.42.4 and Node 24.22.1:
+with `node scripts/osLockSpike.ts`. Each holder writes a readiness marker after it takes the lock,
+so no probe can win the lock from it. Its output on util-linux 2.42.4 and Node 24.22.1:
 
 ```text
 secondHolder: secondExitCode=75
 holderOutlivesParent: holderAlive=true state=held
-everyHolderGone: before=held after=free
-detachedChild: parentExitCode=0 state=held
+everyHolderGone: after=free before=held
+detachedChild: parentExitCode=0 state=held stateBeforeParentExit=held
 wrapperAcrossExec: secondExitCode=75 stateAfterKillingHolder=free
-supervisorWithoutFork: stateAfterSupervisorKilled=held stateAfterGroupKilled=free
+supervisorWithoutFork: stateAfterGroupKilled=free stateAfterSupervisorKilled=held
 ```
 
 `wrapperAcrossExec` is the case that matters for a launch. The wrapper takes the lock and execs a
 long-running child. A second wrapper fails with 75 while that child runs, and killing the exec'd
 process frees the lock, which shows that the child itself holds it rather than a wrapper around it.
 
-The lock also survives the real launch path and a reload:
+### How these were run
 
-- A Pi started through `hc run` under the wrapper held the lock. `hc get` reported the Pi process as
-  both the terminal pid and the foreground pid, a holder from outside the terminal got 75, and
-  `hc kill` freed the lock.
-- A Pi under the wrapper reloaded in the same process: an extension saw `session_shutdown` reason
-  `reload` and `session_start` reason `reload` with the same pid, and the lock stayed held until the
-  process was killed. A visible Pi's `/reload` was not typed here, because typing into a terminal is
-  blocked; the RPC run uses the same in-process reload.
+The lock survives the real launch path and a reload. These runs used util-linux 2.42.4, Pi 1.6.0,
+and a temporary folder, written here as `<folder>`.
 
-When the wrapper cannot take the lock it exits 75 and prints nothing. Through `hc run` without
+A herdr terminal started a Pi under the wrapper, with the readiness wrapper the prototype uses:
+
+```sh
+hc run --bg --name oslock-spike --cwd <folder> -- \
+  flock -F -n -E 75 <folder>/lock \
+  sh -c 'printf ready > "$1" || exit 75; shift; exec "$@"' holder <folder>/ready \
+  pi --mode rpc --no-session --no-tools --no-extensions --no-skills \
+  --no-prompt-templates --no-context-files --no-mcp
+```
+
+Observed: the marker appeared, and `hc get` reported `pid` 3969511 and `foreground.pid` 3969511,
+which `ps -o comm=` named `pi`. `flock -F -n -E 75 <folder>/lock true` exited 75 with no output.
+After `hc kill` (terminal exit 129) the same probe exited 0.
+
+A Node driver spawned the same wrapper with `pi --mode rpc ... -e <extension>`, where the extension
+registers `/spike-reload` and calls `ctx.reload()`. Sending
+`{"id":"r1","type":"prompt","message":"/spike-reload"}` on stdin answered `"disposition":"handled"`,
+and the extension's log held:
+
+```text
+{"event":"session_start","pid":4038206,"reason":"startup"}
+{"event":"session_shutdown","pid":4038206,"reason":"reload"}
+{"event":"session_start","pid":4038206,"reason":"reload"}
+```
+
+The lock probe exited 75 before and after the reload, and 0 after the process was killed.
+`ctx.reload()` runs the same in-process reload as `/reload`, so the pid stays.
+
+With another holder on the lock, `hc run --json` without `--bg` returned `"output":""` and
+`"wait":{"ended":true,"exit_code":75,...}`. With `--bg`, the reply carried no exit code, `hc get`
+later showed the terminal finished with exit 75, and `hc read` was empty.
+
+`space.new` and `pane.split` were not run; only their argument lists in `herdr-app commands` were
+read. They start a terminal in the same herdr core as `hc run`, so the wrapper requirement is the
+same, but their launch replies are not checked.
+
+When another holder has the lock, the wrapper exits 75 and prints nothing. Through `hc run` without
 `--bg`, the launch reply carries `ended: true` and `exit_code: 75`. A `--bg` launch leaves a
 finished terminal with an empty screen, and a herdr launch reply carries no exit code at all, so a
 caller that does not check before launching reports a dead pane instead of a refusal. Keeping the
 fence avoids this case, because the launch is refused before it starts. A replacement would have to
 print the reason from the wrapper, since the pane is the only place a visible launch can report it.
+When `flock` itself fails, such as on a lock path it cannot open, it prints a diagnostic and exits
+with a `<sysexits.h>` code instead.
 
 Sources for the platform claims: the local `flock(1)` page (util-linux 2.42.4) for `-F`, `-E`,
 sysexits codes, and the network file system limit;
