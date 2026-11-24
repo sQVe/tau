@@ -50,6 +50,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0147: Measure the question gate in shadow mode](./0147-measure-the-question-gate-in-shadow-mode.md)
 - [0148: Answer eligible questions in decide mode](./0148-answer-eligible-questions-in-decide-mode.md)
 - [0149: Ask the lead that sent a handover](./0149-ask-the-lead-that-sent-a-handover.md)
+- [0151: Keep the file fence for architect launches](./0151-keep-the-file-fence-for-architect-launches.md)
 
 ### Documentation and writing
 
