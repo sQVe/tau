@@ -199,24 +199,16 @@ it('an ask deadline returns needsOpen and kills the terminal', async ({
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
 
-  let waits = 0;
-
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'wait') {
-      waits += 1;
-
-      const ended = waits > 1;
-      const reason = ended ? 'ended' : 'timeout';
-      const exitCode = ended ? 0 : null;
-
       return succeededResult(
         JSON.stringify({
           terminal: 't-ask',
-          ended,
-          reason,
+          ended: false,
+          reason: 'timeout',
           turn: 0,
           children: [],
-          exit_code: exitCode,
+          exit_code: null,
         }),
       );
     }

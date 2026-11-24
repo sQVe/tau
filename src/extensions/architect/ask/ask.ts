@@ -9,13 +9,9 @@ import { architectLockPath } from '../lock.js';
 import type { ArchitectClaimOptions } from '../lock.js';
 import { readArchitectRecord, readAskRecords, updateHiddenAskRecord } from '../record.js';
 import type { AskRecordGap, HiddenAskRecord, SavedArchitectRecord } from '../record.js';
-import { acquireStartFence } from '../startFence/startFence.js';
+import { acquireStartFence, startFenceBlockerMessage } from '../startFence/startFence.js';
 import type { StartFenceBlocker } from '../startFence/startFence.js';
-import {
-  malformedStartMarkerReason,
-  startHeldByProcessReason,
-} from '../startTicket/startTicket.js';
-import { askRoute, staleAskRepair } from './askDecision.js';
+import { askRoute, askStartingReason, staleAskRepair } from './askDecision.js';
 import type { ArchitectPublication } from './askDecision.js';
 import { startHiddenAskRun } from './askHiddenRun.js';
 
@@ -36,8 +32,6 @@ export type AskResult =
   | LiveAskResult
   | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
-
-export const askStartingReason = 'The architect is starting. Ask again shortly.';
 
 const reportAskGaps = (ui: ConfigWarnings, gaps: AskRecordGap[]): void => {
   for (const gap of gaps) {
@@ -104,15 +98,8 @@ const requireModel = (request: AskRequest): string => {
 
 const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason });
 
-const blockedStartReason = (blocker: StartFenceBlocker): string => {
-  if (blocker.kind === 'runningProcess') {
-    return startHeldByProcessReason(blocker.processId);
-  }
-
-  return blocker.kind === 'malformedMarker'
-    ? malformedStartMarkerReason(blocker.path)
-    : askStartingReason;
-};
+const blockedStartReason = (blocker: StartFenceBlocker): string =>
+  startFenceBlockerMessage(blocker) ?? askStartingReason;
 
 const askHiddenArchitect = async (
   request: AskRequest,

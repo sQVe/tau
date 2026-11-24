@@ -6,6 +6,7 @@ import { expect, it, vi } from 'vitest';
 
 import { fakeStartProcessId, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
+import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { createStartTicket } from '../startTicket/startTicket.js';
@@ -131,5 +132,5 @@ it('bounds the hidden launch with the launch timeout', async ({ onTestFinished: 
 
   await ask({ ...hc, exec }, root);
 
-  expect(timeout).toBe(30_000);
+  expect(timeout).toBe(launchTimeoutMilliseconds);
 });

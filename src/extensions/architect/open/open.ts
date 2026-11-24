@@ -21,12 +21,8 @@ import { architectLockPath } from '../lock.js';
 import type { ArchitectClaimOptions } from '../lock.js';
 import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
-import { acquireStartFence } from '../startFence/startFence.js';
+import { acquireStartFence, startFenceBlockerMessage } from '../startFence/startFence.js';
 import type { StartFence, StartFenceBlocker } from '../startFence/startFence.js';
-import {
-  malformedStartMarkerReason,
-  startHeldByProcessReason,
-} from '../startTicket/startTicket.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 import { openStartProgress } from './openStartClaimDecision.js';
@@ -266,13 +262,9 @@ export const startingError = (root: string): Error =>
   new Error(`The architect in ${root} is starting. Call architect open again shortly.`);
 
 const blockedStartError = (root: string, blocker: StartFenceBlocker): Error => {
-  if (blocker.kind === 'runningProcess') {
-    return new Error(startHeldByProcessReason(blocker.processId));
-  }
+  const message = startFenceBlockerMessage(blocker);
 
-  return blocker.kind === 'malformedMarker'
-    ? new Error(malformedStartMarkerReason(blocker.path))
-    : startingError(root);
+  return message === undefined ? startingError(root) : new Error(message);
 };
 
 export const openKeptClaimMessage = (root: string): string =>

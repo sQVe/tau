@@ -35,12 +35,14 @@ export type StaleAskRepair = 'repair' | 'leave';
 
 export interface StaleAskFacts {
   status: AskStatus;
-  terminalState: 'live' | 'ended' | 'unread';
+  terminalState: 'live' | 'ended';
   recordTerminal: string | null;
   endedTerminal: string;
 }
 
 export type AskTransition = 'allowed' | 'refused';
+
+export const askStartingReason = 'The architect is starting. Ask again shortly.';
 
 // A settled hidden ask is final, so only a running record may change.
 export const askTransition = (current: AskStatus): AskTransition =>
@@ -84,7 +86,7 @@ export const askRoute = (facts: AskRouteFacts): AskRoute => {
     }
 
     if (publication.kind !== 'owner' || publication.owner.lockToken !== holder.token) {
-      return { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' };
+      return { kind: 'needsOpen', reason: askStartingReason };
     }
 
     const { owner } = publication;

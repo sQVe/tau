@@ -168,11 +168,11 @@ it('a cancelled wait stops the hidden terminal and fails its record before relea
   const hc = startFake();
 
   await recordSession(root);
-  hc.reply('wait', endedWait('t-ask', true));
 
   const cancelled = failFirstWait(hc, new Error('The operation was cancelled.'));
+  const failure = await ask(cancelled, root).catch((error: unknown) => error);
 
-  await expect(ask(cancelled, root)).rejects.toThrow(/cancelled/u);
+  expect(failure).toBeInstanceOf(Error);
 
   const kills = hc.calls
     .filter((call) => call.commandArguments[0] === 'kill')
@@ -180,7 +180,7 @@ it('a cancelled wait stops the hidden terminal and fails its record before relea
 
   expect(kills).toEqual([['kill', '--json', '--', 't-ask']]);
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toMatch(/cancel/u);
+  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
@@ -191,7 +191,6 @@ it('a rejected wait stops the hidden terminal and fails its record before releas
   const hc = startFake();
 
   await recordSession(root);
-  hc.reply('wait', endedWait('t-ask', true));
 
   const rejected = failFirstWait(hc, new Error('The wait failed.'));
   const failure = await ask(rejected, root).catch((error: unknown) => error);
@@ -202,7 +201,7 @@ it('a rejected wait stops the hidden terminal and fails its record before releas
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('keeps the record running and the claim live when a rejected wait terminal does not end', async ({
+it('keeps the record running and the claim live when a rejected wait leaves a running child', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
@@ -210,7 +209,6 @@ it('keeps the record running and the claim live when a rejected wait terminal do
 
   useFakeStartProcess(cleanup, 'running');
   await recordSession(root);
-  hc.reply('wait', endedWait('t-ask', false));
 
   const rejected = failFirstWait(hc, new Error('The wait failed.'));
 
@@ -276,7 +274,7 @@ it('stops the hidden terminal at its deadline and releases after it ends', async
     if (command === 'hc' && commandArguments[0] === 'wait') {
       waits += 1;
 
-      return succeededResult(endedWait('t-ask', waits > 1));
+      return succeededResult(endedWait('t-ask', false));
     }
 
     return hc.exec(command, commandArguments, options);

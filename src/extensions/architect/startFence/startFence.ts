@@ -8,7 +8,9 @@ import {
   cancelStartTicket,
   createStartTicket,
   deleteStartMarker,
+  malformedStartMarkerReason,
   readStartMarker,
+  startHeldByProcessReason,
   sweepStartFolder,
   wrapStartArgv,
 } from '../startTicket/startTicket.js';
@@ -65,6 +67,15 @@ interface FenceState {
   // Memoizes the one release so a caller that settles twice reports the same result.
   finished: StartFenceFinish | undefined;
 }
+
+// The caller's own fallback names its start path, so only the blockers with one message live here.
+export const startFenceBlockerMessage = (blocker: StartFenceBlocker): string | undefined => {
+  if (blocker.kind === 'runningProcess') {
+    return startHeldByProcessReason(blocker.processId);
+  }
+
+  return blocker.kind === 'malformedMarker' ? malformedStartMarkerReason(blocker.path) : undefined;
+};
 
 const childOf = (processId: number | undefined): ProcessState =>
   processId === undefined ? 'unknown' : processState(processId);

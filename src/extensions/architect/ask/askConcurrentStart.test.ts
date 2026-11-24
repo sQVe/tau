@@ -9,9 +9,10 @@ import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { openArchitect, startingError } from '../open/open.js';
 import type { OpenRequest } from '../open/open.js';
-import { readAskRecords } from '../record.js';
-import { askArchitect, askStartingReason } from './ask.js';
+import { askRecordPath, readAskRecords } from '../record.js';
+import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
+import { askStartingReason } from './askDecision.js';
 
 const barrier = (): (() => Promise<void>) => {
   let arrivals = 0;
@@ -281,10 +282,16 @@ it('the hidden ask passes the claim, ask record, session, and role to its child'
   const parsed = argvOfRun(argv);
 
   expect(token).toMatch(/^[0-9a-f-]{36}$/u);
-  expect(parsed).toContain(`--session`);
+  expect(parsed).toContain('--session');
   expect(parsed[parsed.indexOf('--session') + 1]).toBe(sessionFile);
   expect(parsed).toContain(`TAU_ARCHITECT_CLAIM=${token}`);
   expect(parsed).toContain(`TAU_ARCHITECT_ASK=${recordPath}`);
+
+  const { records } = await readAskRecords(root);
+  const askId = records[0]?.askId;
+
+  expect(askId).toBeDefined();
+  expect(recordPath).toBe(askRecordPath(root, askId ?? ''));
   expect(parsed).toContain('TAU_ROLE=architect');
   expect(parsed).toContain('TAU_LEAD_TERMINAL=t-lead');
   expect(argv).toContain('--bg');
