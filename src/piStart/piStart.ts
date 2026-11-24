@@ -109,7 +109,7 @@ const placementOf = (target: PiStartTarget): LaunchPlacement =>
         tabNameFlag: '--tab',
       };
 
-const launchArguments = (request: PiStartRequest, placement: LaunchPlacement): string[] => [
+const launchArguments = (request: PiStartBaseRequest, placement: LaunchPlacement): string[] => [
   'do',
   placement.command,
   placement.destinationFlag,
@@ -137,7 +137,7 @@ const splitArguments = (request: PiSessionRequest, pane: string): string[] => [
   JSON.stringify(['env', '-C', request.folder, ...argvOf(request, request.task)]),
 ];
 
-const startArguments = (request: PiStartRequest, target: PiStartTarget): string[] =>
+const startArguments = (request: PiStartBaseRequest, target: PiStartTarget): string[] =>
   launchArguments(request, placementOf(target));
 
 const isDirectory = (path: string): Promise<boolean> =>
@@ -317,6 +317,7 @@ export const startPiSession = async (
 
   const target = isTargetResolver(request.target) ? await request.target() : request.target;
 
+  // The resolver awaits, so the signal can abort after the checkout check above.
   runtime.signal?.throwIfAborted();
 
   const reply = await runCommand(

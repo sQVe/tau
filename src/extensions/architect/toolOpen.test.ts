@@ -249,6 +249,10 @@ it('open refuses while a version 1 record names a terminal that carries the ask 
 const parkedLayout = JSON.stringify({
   spaces: [
     {
+      id: 'sp-lead',
+      name: 'lead',
+      folder: '/work/checkout',
+      machine: null,
       tabs: [{ terminals: [{ terminal: 't-lead', pane: 'p-lead' }, { terminal: 't-architect' }] }],
     },
   ],

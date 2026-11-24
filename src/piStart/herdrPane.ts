@@ -4,9 +4,17 @@ import { Type } from 'typebox';
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 
+const herdrSpaceFields = {
+  id: Type.String(),
+  name: Type.String(),
+  folder: Type.String(),
+  machine: Type.Union([Type.String(), Type.Null()]),
+};
+
 const herdrLayoutSchema = Type.Object({
   spaces: Type.Array(
     Type.Object({
+      ...herdrSpaceFields,
       tabs: Type.Array(
         Type.Object({
           terminals: Type.Array(
@@ -22,14 +30,7 @@ const herdrLayoutSchema = Type.Object({
 });
 
 const herdrSpacesSchema = Type.Object({
-  spaces: Type.Array(
-    Type.Object({
-      id: Type.String(),
-      name: Type.String(),
-      folder: Type.String(),
-      machine: Type.Union([Type.String(), Type.Null()]),
-    }),
-  ),
+  spaces: Type.Array(Type.Object(herdrSpaceFields)),
 });
 
 export type HerdrSpace = Static<typeof herdrSpacesSchema>['spaces'][number];
