@@ -17,9 +17,9 @@ it.each([
     expected: 'answered',
   },
   {
-    name: 'a sent record without an answer is kept',
+    name: 'a sent record without an answer is unreadable',
     facts: { status: 'sent', answer: null },
-    expected: 'kept',
+    expected: 'unreadable',
   },
   {
     name: 'a deadline is a deadline outcome',

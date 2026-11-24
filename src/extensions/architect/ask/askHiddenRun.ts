@@ -12,7 +12,7 @@ import { askRecordPath, updateHiddenAskRecord, writeAskRecord } from '../record.
 import type { ChangeAskOptions, HiddenAskRecord } from '../record.js';
 import type { StartFence } from '../startFence/startFence.js';
 import type { AskRequest, AskResult } from './ask.js';
-import { askRecordOutcome } from './askDecision.js';
+import { askDeadlineDetail, askRecordOutcome } from './askDecision.js';
 
 interface HiddenAskStop {
   terminal: string | undefined;
@@ -43,11 +43,23 @@ export const askDeadlineSeconds = 900;
 export const askKeptClaimMessage = (root: string): string =>
   `The architect in ${root} did not take the checkout lock, so the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect ask again.`;
 
+export const askMissingRecordReason =
+  'The ask record could not be read after the ask settled. Call architect open to talk to the architect.';
+
+export const askUnreadableAnswerReason =
+  'The architect sent an answer that could not be read. Call architect open to talk to the architect.';
+
 export const askUnconfirmedStopDetail =
   'The ask terminal did not confirm that it stopped. The ask ends at its deadline.';
 
 export const askUnconfirmedStopReason =
   'The ask still runs because its terminal did not confirm that it stopped. The ask ends at its deadline.';
+
+export const askTimeoutStopDetail =
+  'The ask reached its deadline, and its terminal did not confirm that it stopped. The record stays running until another ask repairs it.';
+
+export const askTimeoutStopReason =
+  'The ask reached its deadline, but its terminal did not confirm that it stopped. Call architect open to talk to the architect.';
 
 export const askLaunchFailureDetail = 'The ask terminal could not be started.';
 
@@ -159,7 +171,7 @@ const resultFromRecord = (
   record: HiddenAskRecord | undefined,
 ): AskResult => {
   if (record === undefined) {
-    return needsOpen(askKeptClaimMessage(root));
+    return needsOpen(askMissingRecordReason);
   }
 
   const outcome = askRecordOutcome({ status: record.status, answer: record.answer });
@@ -176,7 +188,11 @@ const resultFromRecord = (
     return { status: 'failed', askId, reason: askFailedReason };
   }
 
-  return needsOpen(askKeptClaimMessage(root));
+  if (outcome === 'kept') {
+    return needsOpen(askKeptClaimMessage(root));
+  }
+
+  return needsOpen(askUnreadableAnswerReason);
 };
 
 const settleWaitFailure = async (
@@ -243,9 +259,7 @@ const settleTimeout = async (
   const unconfirmed = settled !== 'released';
   const status = unconfirmed ? 'running' : 'timeout';
 
-  const detail = unconfirmed
-    ? askUnconfirmedStopDetail
-    : 'The ask reached its deadline before the architect answered.';
+  const detail = unconfirmed ? askTimeoutStopDetail : askDeadlineDetail;
 
   const changed = await updateHiddenAskRecord(
     request.root,
@@ -261,8 +275,7 @@ const settleTimeout = async (
   const record = changed?.record;
 
   if (record?.status === 'running') {
-    const reason =
-      settled === 'kept' ? askKeptClaimMessage(request.root) : askUnconfirmedStopReason;
+    const reason = settled === 'kept' ? askKeptClaimMessage(request.root) : askTimeoutStopReason;
 
     return needsOpen(reason);
   }

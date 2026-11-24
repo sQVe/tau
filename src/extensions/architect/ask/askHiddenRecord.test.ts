@@ -1,14 +1,21 @@
+import { rm } from 'node:fs/promises';
+
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { holdAskLock, recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
-import { readAskRecord, readAskRecords, writeAskRecord } from '../record.js';
+import { askRecordPath, readAskRecord, readAskRecords, writeAskRecord } from '../record.js';
 import { acquireStartFence } from '../startFence/startFence.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
-import { startHiddenAskRun } from './askHiddenRun.js';
+import {
+  askKeptClaimMessage,
+  askMissingRecordReason,
+  askUnreadableAnswerReason,
+  startHiddenAskRun,
+} from './askHiddenRun.js';
 import { ask, endedWait, endedWithRecord, runningAsk, startFake } from './fixtures/askHarness.js';
 
 it('returns the failed result when the child exits nonzero before settling', async ({
@@ -83,6 +90,83 @@ it('returns the answer after a sent record ends the wait', async ({ onTestFinish
   await expect(ask({ ...hc, exec }, root)).resolves.toMatchObject({
     details: { status: 'ended', answer: 'Use --quick.' },
   });
+});
+
+it('returns a distinct reason when the settled ask record is missing', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  let recordPath: string | undefined;
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true));
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      const result = await hc.exec(command, commandArguments, options);
+      const { records } = await readAskRecords(root);
+      const askId = records[0]?.askId;
+
+      recordPath = askId === undefined ? undefined : askRecordPath(root, askId);
+
+      return result;
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'wait' && recordPath !== undefined) {
+      await rm(recordPath, { force: true });
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = await ask({ ...hc, exec }, root);
+
+  expect(result).toMatchObject({
+    details: { status: 'needsOpen', reason: askMissingRecordReason },
+  });
+
+  expect(result).not.toMatchObject({ details: { reason: askKeptClaimMessage(root) } });
+});
+
+it('returns a distinct reason for a sent record without an answer', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  let askId: string | undefined;
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true));
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      const result = await hc.exec(command, commandArguments, options);
+      const { records } = await readAskRecords(root);
+
+      askId = records[0]?.askId;
+
+      return result;
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'wait' && askId !== undefined) {
+      const record = await readAskRecord(root, askId);
+
+      if (record?.route === 'hidden') {
+        await writeAskRecord(root, { ...record, status: 'sent', answer: null });
+      }
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = await ask({ ...hc, exec }, root);
+
+  expect(result).toMatchObject({
+    details: { status: 'needsOpen', reason: askUnreadableAnswerReason },
+  });
+
+  expect(result).not.toMatchObject({ details: { reason: askKeptClaimMessage(root) } });
 });
 
 it('repairs a running ask whose terminal has ended', async ({ onTestFinished: cleanup }) => {

@@ -24,8 +24,9 @@ import {
   askFailedReason,
   askKeptClaimMessage,
   askLaunchFailureDetail,
+  askTimeoutStopDetail,
+  askTimeoutStopReason,
   askUnconfirmedStopDetail,
-  askUnconfirmedStopReason,
   askWaitFailureDetail,
 } from './askHiddenRun.js';
 import {
@@ -775,12 +776,12 @@ it('keeps a timeout running and never signals an adopted child that still runs',
 
   expect(result.details).toMatchObject({
     status: 'needsOpen',
-    reason: askUnconfirmedStopReason,
+    reason: askTimeoutStopReason,
   });
 
   expect(child.signals).toEqual([]);
   expect(await statuses(root)).toEqual(['running']);
-  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
+  expect(await details(root)).toEqual([askTimeoutStopDetail]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 

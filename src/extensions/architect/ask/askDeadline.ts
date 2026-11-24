@@ -3,7 +3,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { notifyOnce } from '../../../config/config.js';
 import { errorMessage } from '../../../errors.js';
 import { readAskRecordAt, updateHiddenAskRecordAt } from '../record.js';
-import { askDeadlineAction } from './askDecision.js';
+import { askDeadlineAction, askDeadlineDetail } from './askDecision.js';
 
 export interface AskDeadline {
   // Resolves after the expiry attempt in progress finishes, including any rearm it schedules.
@@ -31,7 +31,7 @@ const expireAskRecord = async (
     return {
       ...current,
       status: 'timeout',
-      detail: 'The ask reached its deadline before the architect answered.',
+      detail: askDeadlineDetail,
     };
   });
 

@@ -5,7 +5,7 @@ export interface AskRecordOutcomeFacts {
   answer: string | null;
 }
 
-export type AskRecordOutcome = 'answered' | 'deadline' | 'failed' | 'kept';
+export type AskRecordOutcome = 'answered' | 'deadline' | 'failed' | 'kept' | 'unreadable';
 
 export type ArchitectPublication =
   | { kind: 'none' }
@@ -47,10 +47,10 @@ export const askTransition = (current: AskStatus): AskTransition =>
   current === 'running' ? 'allowed' : 'refused';
 
 // The locked record decides the result after the wait. A sent answer wins, a deadline is the
-// deadline outcome, and a running record means the claim was kept.
+// deadline outcome, and only a running record means the claim was kept.
 export const askRecordOutcome = (facts: AskRecordOutcomeFacts): AskRecordOutcome => {
-  if (facts.status === 'sent' && facts.answer !== null) {
-    return 'answered';
+  if (facts.status === 'sent') {
+    return facts.answer === null ? 'unreadable' : 'answered';
   }
 
   if (facts.status === 'timeout') {
@@ -117,6 +117,8 @@ export const askRoute = (facts: AskRouteFacts): AskRoute => {
 
   return { kind: 'hidden', sessionFile: facts.sessionFile };
 };
+
+export const askDeadlineDetail = 'The ask reached its deadline before the architect answered.';
 
 export const askDeadlineAction = (facts: AskDeadlineFacts): AskDeadlineAction =>
   facts.now >= facts.deadline ? 'expire' : 'wait';
