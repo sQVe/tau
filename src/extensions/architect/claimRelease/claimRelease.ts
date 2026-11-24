@@ -17,8 +17,8 @@ export interface ClaimReleaseResult {
   child: ClaimReleaseFacts['child'];
 }
 
-// Releases the claim only when the process that took the ticket is gone. A running or unknown
-// child keeps the claim and the marker.
+// Releases the claim when the ticket was never taken, the child is gone, or the child adopted.
+// A running or unknown child keeps the claim and the marker.
 export const releaseClaim = async (request: ClaimReleaseRequest): Promise<ClaimReleaseResult> => {
   const decide = (child: ClaimReleaseFacts['child'], stopAttempted: boolean, adopted: boolean) =>
     claimReleaseDecision({
@@ -28,13 +28,20 @@ export const releaseClaim = async (request: ClaimReleaseRequest): Promise<ClaimR
       stopAttempted,
     });
 
+  const release = async (child: ClaimReleaseFacts['child']): Promise<ClaimReleaseResult> => {
+    const released = await request.claim.release().then(
+      () => true,
+      () => false,
+    );
+
+    return released ? { kept: false, child } : { kept: true, child };
+  };
+
   let adopted = request.adopted;
   const first = decide(request.child, request.stopAttempted ?? false, adopted);
 
   if (first === 'release') {
-    await request.claim.release();
-
-    return { kept: false, child: request.child };
+    return release(request.child);
   }
 
   if (first === 'keep') {
@@ -52,14 +59,12 @@ export const releaseClaim = async (request: ClaimReleaseRequest): Promise<ClaimR
 
             return adopted;
           },
-        });
+        }).catch(() => 'unknown' as const);
 
   const second = decide(child, true, adopted);
 
   if (second === 'release') {
-    await request.claim.release();
-
-    return { kept: false, child };
+    return release(child);
   }
 
   return { kept: true, child };
