@@ -9,7 +9,7 @@ import { processState } from '../../../process/process.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import type { LaunchOutcome } from '../claimRelease/launchOutcomeDecision.js';
 import { askRecordPath, updateHiddenAskRecord, writeAskRecord } from '../record.js';
-import type { HiddenAskRecord } from '../record.js';
+import type { ChangeAskOptions, HiddenAskRecord } from '../record.js';
 import type { StartFence } from '../startFence/startFence.js';
 import type { AskRequest, AskResult } from './ask.js';
 import { askRecordOutcome } from './askDecision.js';
@@ -186,6 +186,7 @@ const settleWaitFailure = async (
   stop: HiddenAskStop,
   settle: SettleHiddenAskClaim,
   error: unknown,
+  options: ChangeAskOptions,
 ): Promise<never> => {
   const cancelled = request.hc.signal?.aborted === true;
 
@@ -194,11 +195,16 @@ const settleWaitFailure = async (
   const settled = await settle();
 
   if (settled !== 'released') {
-    await updateHiddenAskRecord(request.root, started.askId, (current) => ({
-      ...current,
-      status: 'running',
-      detail: askUnconfirmedStopDetail,
-    }));
+    await updateHiddenAskRecord(
+      request.root,
+      started.askId,
+      (current) => ({
+        ...current,
+        status: 'running',
+        detail: askUnconfirmedStopDetail,
+      }),
+      options,
+    );
   }
 
   if (settled === 'kept') {
@@ -209,11 +215,16 @@ const settleWaitFailure = async (
     throw error;
   }
 
-  await updateHiddenAskRecord(request.root, started.askId, (current) => ({
-    ...current,
-    status: 'failed',
-    detail: askWaitFailureDetail(cancelled, error),
-  }));
+  await updateHiddenAskRecord(
+    request.root,
+    started.askId,
+    (current) => ({
+      ...current,
+      status: 'failed',
+      detail: askWaitFailureDetail(cancelled, error),
+    }),
+    options,
+  );
 
   throw error;
 };
@@ -224,6 +235,7 @@ const settleTimeout = async (
   fence: StartFence,
   stop: HiddenAskStop,
   settle: SettleHiddenAskClaim,
+  options: ChangeAskOptions,
 ): Promise<AskResult> => {
   await stopAskTerminal(request, fence, stop);
 
@@ -235,11 +247,16 @@ const settleTimeout = async (
     ? askUnconfirmedStopDetail
     : 'The ask reached its deadline before the architect answered.';
 
-  const changed = await updateHiddenAskRecord(request.root, started.askId, (current) => ({
-    ...current,
-    status,
-    detail,
-  }));
+  const changed = await updateHiddenAskRecord(
+    request.root,
+    started.askId,
+    (current) => ({
+      ...current,
+      status,
+      detail,
+    }),
+    options,
+  );
 
   const record = changed?.record;
 
@@ -332,15 +349,21 @@ const settleEnded = async (
   request: AskRequest,
   askId: string,
   exitCode: number | null,
+  options: ChangeAskOptions,
 ): Promise<AskResult> => {
   const failed = exitCode !== 0;
   const detail = failed ? askEndedFailureDetail : askEndedDetail;
 
-  const changed = await updateHiddenAskRecord(request.root, askId, (current) => ({
-    ...current,
-    status: 'failed',
-    detail,
-  }));
+  const changed = await updateHiddenAskRecord(
+    request.root,
+    askId,
+    (current) => ({
+      ...current,
+      status: 'failed',
+      detail,
+    }),
+    options,
+  );
 
   if (changed?.changed === true) {
     return failed
@@ -358,6 +381,7 @@ const runHiddenAsk = async (
   fence: StartFence,
   stop: HiddenAskStop,
   settle: SettleHiddenAskClaim,
+  options: ChangeAskOptions,
 ): Promise<AskResult> => {
   const askId = randomUUID();
   const recordPath = askRecordPath(request.root, askId);
@@ -395,10 +419,14 @@ const runHiddenAsk = async (
   if (launched.kind === 'adopted') {
     const childGone = await waitForAdoptedChild(launched.started, fence, request.hc.signal);
 
-    const changed = await updateHiddenAskRecord(request.root, askId, (current) =>
-      childGone
-        ? { ...current, status: 'failed', detail: askAdoptedChildStoppedDetail }
-        : undefined,
+    const changed = await updateHiddenAskRecord(
+      request.root,
+      askId,
+      (current) =>
+        childGone
+          ? { ...current, status: 'failed', detail: askAdoptedChildStoppedDetail }
+          : undefined,
+      options,
     );
 
     request.hc.signal?.throwIfAborted();
@@ -413,20 +441,24 @@ const runHiddenAsk = async (
   try {
     waited = await wait(request.hc, terminal, { timeout: askDeadlineSeconds });
   } catch (error) {
-    return settleWaitFailure(request, started, fence, stop, settle, error);
+    return settleWaitFailure(request, started, fence, stop, settle, error, options);
   }
 
   if (!waited.ended) {
-    return settleTimeout(request, started, fence, stop, settle);
+    return settleTimeout(request, started, fence, stop, settle, options);
   }
 
   await fence.refreshChild();
   stop.stopAttempted = true;
 
-  return settleEnded(request, askId, waited.exit_code ?? null);
+  return settleEnded(request, askId, waited.exit_code ?? null, options);
 };
 
-export const startHiddenAskRun = (request: AskRequest, fence: StartFence): HiddenAskRun => {
+export const startHiddenAskRun = (
+  request: AskRequest,
+  fence: StartFence,
+  options: ChangeAskOptions = {},
+): HiddenAskRun => {
   const stop: HiddenAskStop = { terminal: undefined, stopAttempted: false };
 
   const settle = async (): Promise<HiddenAskSettlement> => {
@@ -455,6 +487,6 @@ export const startHiddenAskRun = (request: AskRequest, fence: StartFence): Hidde
   return {
     settle,
     start: (sessionFile: string, model: string): Promise<AskResult> =>
-      runHiddenAsk(request, sessionFile, model, fence, stop, settle),
+      runHiddenAsk(request, sessionFile, model, fence, stop, settle, options),
   };
 };

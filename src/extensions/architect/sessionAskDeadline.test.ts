@@ -4,11 +4,15 @@ import { expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
+import { withFileLock } from '../../fileLock/fileLock.js';
+import type * as FileLockModule from '../../fileLock/fileLock.js';
 import { hiddenAsk, hiddenIds } from './fixtures/hiddenAsk.js';
 import { holdAskLock } from './fixtures/toolHarness.js';
 import { endOptions, hcRuntime, sessionContext, stubArchitect } from './fixtures/visibleSession.js';
 import { askRecordPath, readAskRecord, writeAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
+
+vi.mock(import('../../fileLock/fileLock.js'), { spy: true });
 
 const flushMacrotask = (): Promise<void> =>
   new Promise((resolve) => {
@@ -403,39 +407,52 @@ it('an ask session rearms at zero delay when the clock recrosses the deadline af
   await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
   vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.running));
 
+  const expired = Promise.withResolvers<undefined>();
   const { context, shutdown } = sessionContext(root);
-  const session = await startArchitectSession(context, createHeldLockToken());
 
-  let nowCalls = 0;
-
-  const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => {
-    nowCalls += 1;
-
-    return nowCalls === 3 ? deadline - 6000 : deadline;
+  shutdown.mockImplementation(() => {
+    expired.resolve(undefined);
   });
 
-  await vi.advanceTimersByTimeAsync(1000);
+  const session = await startArchitectSession(context, createHeldLockToken());
 
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    await vi.advanceTimersByTimeAsync(0);
+  const askLock = `${askRecordPath(root, hiddenIds.running)}.lock`;
+  const locked = Promise.withResolvers<undefined>();
+  const actual = await vi.importActual<typeof FileLockModule>('../../fileLock/fileLock.js');
 
-    const record = await readAskRecord(root, hiddenIds.running);
-
-    if (record?.route === 'hidden' && record.status === 'timeout') {
-      break;
+  vi.mocked(withFileLock).mockImplementationOnce(async (options, run) => {
+    if (options.lockPath !== askLock) {
+      return actual.withFileLock(options, run);
     }
 
+    locked.resolve(undefined);
+    vi.setSystemTime(deadline - 6000);
+
+    return actual.withFileLock(options, run);
+  });
+
+  const askLockCalls = (): number =>
+    vi.mocked(withFileLock).mock.calls.filter(([options]) => options.lockPath === askLock).length;
+
+  vi.setSystemTime(deadline);
+  await vi.advanceTimersByTimeAsync(1000);
+  await locked.promise;
+
+  for (let attempt = 0; attempt < 1000 && vi.getTimerCount() === 0; attempt += 1) {
     await flushMacrotask();
   }
 
-  for (let attempt = 0; attempt < 100 && shutdown.mock.calls.length === 0; attempt += 1) {
-    await flushMacrotask();
-  }
+  expect(askLockCalls()).toBe(1);
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+  vi.setSystemTime(deadline);
+  await vi.advanceTimersByTimeAsync(6000);
+  await expired.promise;
 
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
   expect(shutdown).toHaveBeenCalledTimes(1);
-
-  nowSpy.mockRestore();
 
   await endArchitectSession(
     session as NonNullable<typeof session>,
@@ -488,11 +505,10 @@ it('an ask session retries the deadline after a guard refusal', async ({ onTestF
   await vi.waitFor(
     async () => {
       expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
+      expect(shutdown).toHaveBeenCalledTimes(1);
     },
     { timeout: 10_000, interval: 10 },
   );
-
-  expect(shutdown).toHaveBeenCalledTimes(1);
 
   await endArchitectSession(
     session as NonNullable<typeof session>,

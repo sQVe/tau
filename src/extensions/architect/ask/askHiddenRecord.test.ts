@@ -5,8 +5,10 @@ import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { holdAskLock, recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { readAskRecord, readAskRecords, writeAskRecord } from '../record.js';
+import { acquireStartFence } from '../startFence/startFence.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
+import { startHiddenAskRun } from './askHiddenRun.js';
 import { ask, endedWait, endedWithRecord, runningAsk, startFake } from './fixtures/askHarness.js';
 
 it('returns the failed result when the child exits nonzero before settling', async ({
@@ -173,13 +175,14 @@ it.each([
 ])(
   'keeps a $name record the child settled while the lead was stalled',
   async ({ settle, expected }) => {
-    const { root } = await setup(onTestFinished);
+    const { root, config } = await setup(onTestFinished);
     const hc = startFake();
     const launched = Promise.withResolvers<string>();
     const locked = Promise.withResolvers<Awaited<ReturnType<typeof holdAskLock>>>();
+    const waiting = Promise.withResolvers<undefined>();
     let waits = 0;
 
-    await recordSession(root);
+    const sessionFile = await recordSession(root);
 
     const exec: typeof hc.exec = async (command, commandArguments, options) => {
       if (command === 'hc' && commandArguments[0] === 'run') {
@@ -208,9 +211,46 @@ it.each([
       return hc.exec(command, commandArguments, options);
     };
 
-    const asking = ask({ ...hc, exec }, root).catch((error: unknown) => error);
+    const request: AskRequest = {
+      root,
+      question: 'Which flag name?',
+      gateRecord: null,
+      leadTerminal: 't-lead',
+      leadSessionId: 'session-lead',
+      listenerPath: undefined,
+      location: config.location,
+      ui: { notify: vi.fn<() => void>() },
+      hc: { ...hc, cwd: root, exec },
+      liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+    };
+
+    const acquisition = await acquireStartFence(root);
+
+    if (acquisition.kind !== 'acquired') {
+      throw new Error('The start fence was not acquired.');
+    }
+
+    const run = startHiddenAskRun(request, acquisition.fence, {
+      onWaiting: () => {
+        waiting.resolve(undefined);
+      },
+    });
+
+    await acquisition.fence.createTicket();
+
+    const asking = (async () => {
+      try {
+        return await run.start(sessionFile, 'a/architect');
+      } finally {
+        await run.settle();
+      }
+    })().catch((error: unknown) => error);
+
     const askId = await launched.promise;
     const held = await locked.promise;
+
+    await waiting.promise;
+
     const record = await readAskRecord(root, askId);
 
     if (record?.route !== 'hidden') {
@@ -222,7 +262,7 @@ it.each([
 
     const result = await asking;
 
-    expect(result).toMatchObject({ details: expected });
+    expect(result).toMatchObject(expected);
     expect(await readAskRecord(root, askId)).toMatchObject(settle(record));
   },
 );
