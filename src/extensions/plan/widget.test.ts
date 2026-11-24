@@ -70,6 +70,18 @@ it.each([
   expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 });
 
+it('keeps the step text in the label column when a mark draws narrower', () => {
+  const narrowMarkTheme = {
+    fg: (_color: ThemeColor, text: string) => (text === '\u{F192}' ? '' : text),
+  } satisfies Pick<Theme, 'fg'>;
+
+  const [border, ...stepLines] = planLines(steps, 80, narrowMarkTheme);
+  const textColumns = steps.map(({ text }, index) => (stepLines[index] ?? '').indexOf(text));
+
+  expect(border?.indexOf('Plan')).toBe(2);
+  expect(textColumns).toEqual([2, 2, 2, 2]);
+});
+
 it('keeps each line within the width', () => {
   const widths = planLines(steps, 20, theme).map((line) => visibleWidth(line));
 

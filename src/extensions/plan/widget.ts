@@ -32,15 +32,21 @@ const borderLine = (width: number, theme: Pick<Theme, 'fg'>): string => {
   return truncateToWidth(line, width, '');
 };
 
-const planLine = (step: PlanStep, width: number, theme: Pick<Theme, 'fg'>): string => {
-  const { mark, color } = statusMarks[step.status];
-  const text = sanitizeSingleLine(step.text);
+const drawMark = (status: PlanStep['status'], theme: Pick<Theme, 'fg'>): string => {
+  const { mark, color } = statusMarks[status];
   const drawnMark = theme.fg(color, mark);
+  const padding = Math.max(0, markWidth - visibleWidth(drawnMark));
+
+  return `${drawnMark}${' '.repeat(padding)}`;
+};
+
+const planLine = (step: PlanStep, width: number, theme: Pick<Theme, 'fg'>): string => {
+  const text = sanitizeSingleLine(step.text);
   const textWidth = Math.max(0, width - stepPrefixWidth);
   const fittedText = stripVTControlCharacters(truncateToWidth(text, textWidth));
   const drawnText = step.status === 'completed' ? theme.fg('dim', fittedText) : fittedText;
 
-  return truncateToWidth(`${drawnMark} ${drawnText}`, width, '');
+  return truncateToWidth(`${drawMark(step.status, theme)} ${drawnText}`, width, '');
 };
 
 export const planLines = (
