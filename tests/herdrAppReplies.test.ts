@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createHerdrAppFake, spaceOrTabLaunchesOf } from './herdrAppFake.js';
+import { commandArgumentsOf, createHerdrAppFake, spaceOrTabLaunchesOf } from './herdrAppFake.js';
 
 const replyTo = async (commandArguments: readonly string[]): Promise<string> => {
   const fake = createHerdrAppFake();
@@ -52,7 +52,7 @@ it('counts a space launch and a tab launch and not a pane split', async () => {
   await fake.exec('herdr-app', ['do', 'space.new', '--name', 'ticket-1'], undefined);
   await fake.exec('herdr-app', ['do', 'tab.new', '--space', 'sp-1'], undefined);
 
-  const launches = spaceOrTabLaunchesOf(fake).map((call) => call.commandArguments);
+  const launches = commandArgumentsOf(spaceOrTabLaunchesOf(fake));
 
   expect(launches).toEqual([
     ['do', 'space.new', '--name', 'ticket-1'],

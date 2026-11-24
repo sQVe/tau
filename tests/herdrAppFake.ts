@@ -4,6 +4,8 @@ import type { ExecCall, ExecFake } from './execFake.js';
 
 export type HerdrAppCommand = 'ls' | 'pane.split' | 'space.new' | 'tab.new';
 
+type LaunchCommand = Extract<HerdrAppCommand, 'space.new' | 'tab.new'>;
+
 type HerdrAppSpace = Omit<HerdrSpace, 'machine'> & { machine?: string | null };
 
 export interface HerdrAppFakeOptions {
@@ -24,10 +26,15 @@ const launchReply = (space: string): string =>
 const defaultLaunch = launchReply('sp-new');
 const defaultSplit = JSON.stringify({ pane: 'p-new', terminal: 't-new' });
 
+const isCommandOf = <Command extends string>(
+  commandSet: ReadonlySet<Command>,
+  value: string | undefined,
+): value is Command => value !== undefined && commandSet.has(value as Command);
+
 const commands = new Set<HerdrAppCommand>(['ls', 'pane.split', 'space.new', 'tab.new']);
 
 const isHerdrAppCommand = (value: string | undefined): value is HerdrAppCommand =>
-  value !== undefined && commands.has(value as HerdrAppCommand);
+  isCommandOf(commands, value);
 
 const commandOf = (
   command: string,
@@ -103,13 +110,13 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
     },
   });
 
-const launchCommands = new Set<HerdrAppCommand>(['space.new', 'tab.new']);
+const launchCommands = new Set<LaunchCommand>(['space.new', 'tab.new']);
 
-const isLaunchCommand = (value: string | undefined): value is HerdrAppCommand =>
-  value !== undefined && launchCommands.has(value as HerdrAppCommand);
+const isLaunchCommand = (value: string | undefined): value is LaunchCommand =>
+  isCommandOf(launchCommands, value);
 
-export const commandArgumentsOf = (fake: ExecFake<HerdrAppCommand>): string[][] =>
-  fake.calls.map(({ commandArguments }) => commandArguments);
+export const commandArgumentsOf = (calls: readonly ExecCall[]): string[][] =>
+  calls.map(({ commandArguments }) => commandArguments);
 
 export const spaceOrTabLaunchesOf = (fake: ExecFake<HerdrAppCommand>): ExecCall[] =>
   fake.calls.filter(

@@ -252,7 +252,7 @@ it('refuses a folder that already has a space before any herdr-app launch', asyn
     startHandover(runtimeOf(fake, root), requestFor(root, file, { kind: 'decide' }, 'ticket-1')),
   ).rejects.toThrow(/folder already has a space: sp-1/);
 
-  expect(commandArgumentsOf(fake)).toEqual([['ls']]);
+  expect(commandArgumentsOf(fake.calls)).toEqual([['ls']]);
 });
 
 it('refuses a folder that is not a Git checkout before any herdr-app call', async () => {
@@ -350,5 +350,5 @@ it('refuses a listed space without a folder before any launch', async () => {
     startHandover(runtimeOf(fake, root), requestFor(root, file, { kind: 'decide' }, 'ticket-1')),
   ).rejects.toThrow('herdr-app ls printed unexpected output');
 
-  expect(commandArgumentsOf(fake)).toEqual([['ls']]);
+  expect(commandArgumentsOf(fake.calls)).toEqual([['ls']]);
 });

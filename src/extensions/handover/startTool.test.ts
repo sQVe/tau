@@ -72,7 +72,7 @@ it('refuses a start without space when the listed folder has a trailing slash', 
   const failure = await failureOf(execution);
 
   expect(failure.message).toContain('sp-1 "platform"');
-  expect(commandArgumentsOf(app)).toEqual([['ls']]);
+  expect(commandArgumentsOf(app.calls)).toEqual([['ls']]);
 });
 
 it('refuses a start without space when the request folder has a trailing slash', async () => {
@@ -91,7 +91,7 @@ it('refuses a start without space when the request folder has a trailing slash',
   const failure = await failureOf(execution);
 
   expect(failure.message).toContain('sp-1 "platform"');
-  expect(commandArgumentsOf(app)).toEqual([['ls']]);
+  expect(commandArgumentsOf(app.calls)).toEqual([['ls']]);
 });
 
 it('refuses a start when the folder has a space listed through a symlink', async () => {
@@ -114,7 +114,7 @@ it('refuses a start when the folder has a space listed through a symlink', async
   const failure = await failureOf(execution);
 
   expect(failure.message).toContain('sp-1 "platform"');
-  expect(commandArgumentsOf(app)).toEqual([['ls']]);
+  expect(commandArgumentsOf(app.calls)).toEqual([['ls']]);
 });
 
 it('refuses a start when a listed space path crosses a symlink with ..', async () => {
@@ -141,7 +141,7 @@ it('refuses a start when a listed space path crosses a symlink with ..', async (
   const failure = await failureOf(execution);
 
   expect(failure.message).toContain('sp-1 "platform"');
-  expect(commandArgumentsOf(app)).toEqual([['ls']]);
+  expect(commandArgumentsOf(app.calls)).toEqual([['ls']]);
 });
 
 it('creates a space when a listed space folder no longer exists', async () => {
@@ -266,7 +266,7 @@ it('refuses a start with newSpace false when the folder already has a space', as
 
   await expect(execution).rejects.toThrow(/folder already has a space: sp-1/);
 
-  expect(commandArgumentsOf(app)).toEqual([['ls']]);
+  expect(commandArgumentsOf(app.calls)).toEqual([['ls']]);
 });
 
 it('creates a space without listing the spaces when the caller asks for one', async () => {
