@@ -120,15 +120,14 @@ const startFence = (
 
   const readOwnMarker = async (): Promise<void> => {
     const marker = await readStartMarker(root, claim.token, state.leadPid);
+    const usable = marker !== undefined && marker.kind !== 'malformed';
 
-    if (marker === undefined || marker.kind === 'malformed') {
-      return;
-    }
+    if (usable) {
+      state.childPid ??= marker.childPid;
 
-    state.childPid ??= marker.childPid;
-
-    if (marker.kind === 'adopted') {
-      state.adoptedSeen = true;
+      if (marker.kind === 'adopted') {
+        state.adoptedSeen = true;
+      }
     }
 
     state.child = childOf(state.childPid);
@@ -230,10 +229,10 @@ const startFence = (
       );
     }
 
-    const finished: StartFenceFinish =
-      released.failure === undefined
-        ? { kept: released.kept }
-        : { kept: released.kept, failure: released.failure };
+    const finished: StartFenceFinish = {
+      kept: released.kept,
+      ...(released.failure === undefined ? {} : { failure: released.failure }),
+    };
 
     state.finished = finished;
 
@@ -242,7 +241,6 @@ const startFence = (
 
   const refreshChild = async (): Promise<ProcessState> => {
     await readOwnMarker();
-    state.child = childOf(state.childPid);
 
     return state.child;
   };

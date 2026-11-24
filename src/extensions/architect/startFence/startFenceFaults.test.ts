@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { acquireStartFence } from './startFence.js';
@@ -15,8 +15,6 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
     ...readArguments: Parameters<typeof original.readdir>
   ): Promise<unknown> => {
     if (faults.failStartSweep && namedPath(readArguments[0], '/start')) {
-      faults.failLockRead = true;
-
       throw Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
     }
 
@@ -36,10 +34,18 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   return { ...original, readdir: faultyReaddir, readFile: faultyReadFile };
 });
 
+const resetFaults = (): void => {
+  faults.failStartSweep = false;
+  faults.failLockRead = false;
+};
+
+afterEach(resetFaults);
+
 it('reports the sweep failure and the release failure together', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
 
   faults.failStartSweep = true;
+  faults.failLockRead = true;
 
   const thrown: unknown = await acquireStartFence(root).catch((error: unknown) => error);
   const failure = thrown as Error;
