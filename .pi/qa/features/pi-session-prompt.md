@@ -32,7 +32,8 @@ prompt.
    ```
 
 3. Run the tools check with the event log. Record the line it prints, then compare it with the
-   tools line that the brief names.
+   tools line that the brief names. When the prompt uses the same tool more than once, select the
+   line for the call that the brief names, for example by its outcome or its occurrence.
 
    ```sh
    jq -c 'select(.type == "tool_execution_end") | [.toolName, .isError]' "$log"
