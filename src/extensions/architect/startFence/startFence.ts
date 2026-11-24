@@ -44,6 +44,7 @@ interface StartFenceFinishRequest {
 
 interface StartFenceFinish {
   kept: boolean;
+  failure?: Error;
 }
 
 export interface StartFence {
@@ -236,7 +237,10 @@ const startFence = (
       );
     }
 
-    const finished: StartFenceFinish = { kept: released.kept };
+    const finished: StartFenceFinish =
+      released.failure === undefined
+        ? { kept: released.kept }
+        : { kept: released.kept, failure: released.failure };
 
     state.finished = finished;
 

@@ -17,6 +17,7 @@ import { askDeadlineDetail, askRecordOutcome } from './askDecision.js';
 interface HiddenAskStop {
   terminal: string | undefined;
   stopAttempted: boolean;
+  failure?: Error;
 }
 
 interface HiddenAskLaunch {
@@ -40,8 +41,11 @@ type HiddenAskLaunchResult =
 
 export const askDeadlineSeconds = 900;
 
-export const askKeptClaimMessage = (root: string): string =>
-  `The architect in ${root} did not take the checkout lock, so the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect ask again.`;
+export const askKeptClaimMessage = (root: string, failure?: Error): string => {
+  const message = `The architect in ${root} did not take the checkout lock, so the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect ask again.`;
+
+  return failure === undefined ? message : `${message} ${failure.message}`;
+};
 
 export const askMissingRecordReason =
   'The ask record could not be read after the ask settled. Call architect open to talk to the architect.';
@@ -221,7 +225,7 @@ const settleWaitFailure = async (
   }
 
   if (settled === 'kept') {
-    throw new Error(askKeptClaimMessage(request.root));
+    throw new Error(askKeptClaimMessage(request.root, stop.failure));
   }
 
   if (settled === 'adopted') {
@@ -272,7 +276,8 @@ const settleTimeout = async (
   const record = changed?.record;
 
   if (record?.status === 'running') {
-    const reason = settled === 'kept' ? askKeptClaimMessage(request.root) : askTimeoutStopReason;
+    const reason =
+      settled === 'kept' ? askKeptClaimMessage(request.root, stop.failure) : askTimeoutStopReason;
 
     return needsOpen(reason);
   }
@@ -484,6 +489,10 @@ export const startHiddenAskRun = (
     });
 
     if (finished.kept) {
+      if (finished.failure !== undefined) {
+        stop.failure = finished.failure;
+      }
+
       return 'kept';
     }
 

@@ -52,6 +52,13 @@ interface PreparedArchitectStart {
 
 type ReplyTerminal = Parameters<typeof launchOutcomeDecision>[0]['replyTerminal'];
 
+// A kept claim names the token this process reserved and never released. The lead keeps it until
+// its session ends, so a later open reports the reservation instead of an in-flight start.
+interface KeptClaim {
+  token: string;
+  failure?: Error;
+}
+
 const askLabel = 'tau.architect.ask';
 
 const takeoverSeconds = 60;
@@ -270,11 +277,15 @@ const blockedStartError = (root: string, blocker: StartFenceBlocker): Error => {
 export const openKeptClaimMessage = (root: string): string =>
   `The architect in ${root} did not take the checkout lock, so the checkout stays reserved until this lead session exits. Stop the started terminal, or end this lead session, before calling architect open again.`;
 
-const openKeptClaimError = (root: string): Error => new Error(openKeptClaimMessage(root));
+const openKeptClaimError = (root: string, failure: Error | undefined): Error => {
+  const message = openKeptClaimMessage(root);
 
-// A kept claim names the token this process reserved and never released. The lead keeps it until
-// its session ends, so a later open reports the reservation instead of an in-flight start.
-const keptClaims = new Map<string, string>();
+  return failure === undefined
+    ? new Error(message)
+    : new Error(`${message} ${failure.message}`, { cause: failure });
+};
+
+const keptClaims = new Map<string, KeptClaim>();
 
 export const takeoverExpiryError = (): Error =>
   new Error(
@@ -365,7 +376,7 @@ const runningTerminal = async (
     root: request.root,
     holder,
     record,
-    keptClaim: keptClaims.get(request.root) === holder.token,
+    keptClaim: keptClaims.get(request.root)?.token === holder.token,
   });
 
   if (selection.kind === 'refuse') {
@@ -373,7 +384,7 @@ const runningTerminal = async (
   }
 
   if (selection.kind === 'keptClaim') {
-    throw openKeptClaimError(request.root);
+    throw openKeptClaimError(request.root, keptClaims.get(request.root)?.failure);
   }
 
   if (selection.kind === 'starting') {
@@ -475,9 +486,12 @@ export const openArchitect = async (
     const finished = await fence.finish({ adopted: abandoned.adopted, stopAttempted: false });
 
     if (finished.kept) {
-      keptClaims.set(request.root, fence.token);
+      keptClaims.set(request.root, {
+        token: fence.token,
+        ...(finished.failure === undefined ? {} : { failure: finished.failure }),
+      });
 
-      throw openKeptClaimError(request.root);
+      throw openKeptClaimError(request.root, finished.failure);
     }
 
     throw error;

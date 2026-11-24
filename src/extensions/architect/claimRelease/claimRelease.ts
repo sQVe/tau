@@ -1,3 +1,4 @@
+import { errorMessage } from '../../../errors.js';
 import { stopStartedChild } from '../startTicket/stopStartedChild.js';
 import { claimReleaseDecision } from './claimReleaseDecision.js';
 import type { ClaimReleaseFacts } from './claimReleaseDecision.js';
@@ -15,7 +16,43 @@ export interface ClaimReleaseRequest {
 export interface ClaimReleaseResult {
   kept: boolean;
   child: ClaimReleaseFacts['child'];
+  // The failure that kept the claim, so the caller reports it instead of an ordinary held claim.
+  failure?: Error;
 }
+
+interface StoppedChild {
+  child: ClaimReleaseFacts['child'];
+  failure?: Error;
+}
+
+const releaseFailure = (error: unknown): Error =>
+  new Error(`The claim could not be released: ${errorMessage(error)}`, { cause: error });
+
+const stopFailure = (error: unknown): Error =>
+  new Error(`The child could not be stopped: ${errorMessage(error)}`, { cause: error });
+
+const stopChild = async (
+  request: ClaimReleaseRequest,
+  adopted: () => Promise<boolean>,
+): Promise<StoppedChild> => {
+  if (request.processId === undefined) {
+    return { child: 'unknown' };
+  }
+
+  try {
+    return { child: await stopStartedChild(request.processId, { adopted }) };
+  } catch (error) {
+    return { child: 'unknown', failure: stopFailure(error) };
+  }
+};
+
+const keptClaim = (stopped: StoppedChild): ClaimReleaseResult => {
+  if (stopped.failure === undefined) {
+    return { kept: true, child: stopped.child };
+  }
+
+  return { kept: true, child: stopped.child, failure: stopped.failure };
+};
 
 // Releases the claim when the ticket was never taken, the child is gone, or the child adopted.
 // A running or unknown child keeps the claim and the marker.
@@ -29,12 +66,13 @@ export const releaseClaim = async (request: ClaimReleaseRequest): Promise<ClaimR
     });
 
   const release = async (child: ClaimReleaseFacts['child']): Promise<ClaimReleaseResult> => {
-    const released = await request.claim.release().then(
-      () => true,
-      () => false,
-    );
+    try {
+      await request.claim.release();
 
-    return released ? { kept: false, child } : { kept: true, child };
+      return { kept: false, child };
+    } catch (error) {
+      return { kept: true, child, failure: releaseFailure(error) };
+    }
   };
 
   let adopted = request.adopted;
@@ -48,24 +86,19 @@ export const releaseClaim = async (request: ClaimReleaseRequest): Promise<ClaimR
     return { kept: true, child: request.child };
   }
 
-  const child =
-    request.processId === undefined
-      ? 'unknown'
-      : await stopStartedChild(request.processId, {
-          adopted: async () => {
-            if (!adopted) {
-              adopted = await request.childAdopted();
-            }
+  const stopped = await stopChild(request, async () => {
+    if (!adopted) {
+      adopted = await request.childAdopted();
+    }
 
-            return adopted;
-          },
-        }).catch(() => 'unknown' as const);
+    return adopted;
+  });
 
-  const second = decide(child, true, adopted);
+  const second = decide(stopped.child, true, adopted);
 
   if (second === 'release') {
-    return release(child);
+    return release(stopped.child);
   }
 
-  return { kept: true, child };
+  return keptClaim(stopped);
 };
