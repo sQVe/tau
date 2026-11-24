@@ -57,6 +57,7 @@ it.each([
   [1, '─'],
   [2, '──'],
   [3, '── '],
+  [4, '── P'],
   [6, '── Pla'],
   [7, '── Plan'],
   [8, '── Plan '],
@@ -79,6 +80,7 @@ it.each([
   [1, ' '],
   [2, ' \u{F10C}'],
   [3, ' \u{F10C} '],
+  [4, ' \u{F10C} .'],
 ])('keeps the status mark at width %i', (width, expected) => {
   const line = planLines([{ text: 'Brief worker', status: 'pending' }], width, theme)[1] ?? '';
 
@@ -124,10 +126,13 @@ it('colors each mark and dims a completed step', () => {
   ]);
 });
 
-it('dims the clipped text of a completed step', () => {
-  const lines = planLines([{ text: 'Open the PR', status: 'completed' }], 5, styledTheme);
+it.each([
+  [5, '..'],
+  [6, '...'],
+])('dims the clipped text of a completed step at width %i', (width, expected) => {
+  const lines = planLines([{ text: 'Open the PR', status: 'completed' }], width, styledTheme);
 
-  expect(lines[1]).toBe(` ${styled('dim', '\u{F058}')} ${styled('dim', '..')}`);
+  expect(lines[1]).toBe(` ${styled('dim', '\u{F058}')} ${styled('dim', expected)}`);
 });
 
 it('renders a line break and an escape sequence as one line', () => {
