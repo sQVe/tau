@@ -24,7 +24,6 @@ const markIndent = ' ';
 const markWidths = Object.values(statusMarks).map(({ mark }) => visibleWidth(mark));
 const markWidth = Math.max(...markWidths);
 
-// The step text and the label share this column.
 export const planLabelColumn = visibleWidth(labelPrefix);
 
 const borderLine = (width: number, theme: Pick<Theme, 'fg'>): string => {
