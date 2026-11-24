@@ -24,6 +24,7 @@ import {
   askKeptClaimMessage,
   askLaunchFailureDetail,
   askUnconfirmedStopDetail,
+  askUnconfirmedStopReason,
   askWaitFailureDetail,
 } from './askHiddenRun.js';
 import {
@@ -714,7 +715,7 @@ it('releases its claim and fails the record when an adopted child stopped hard',
   expect(await readdir(startDirectory(root))).toEqual([]);
 });
 
-it('never signals an adopted child that still runs when the terminal stop is not confirmed', async ({
+it('keeps a failed wait running and never signals an adopted child that still runs', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
@@ -738,14 +739,48 @@ it('never signals an adopted child that still runs when the terminal stop is not
   expect(taken).toBe(true);
   expect(failure).toBeInstanceOf(Error);
   expect(child.signals).toEqual([]);
-  expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
-  expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
+  expect(await statuses(root)).toEqual(['running']);
+  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 
   const names = await readdir(startDirectory(root));
 
   expect(names.some((name) => name.includes('.adopted.'))).toBe(true);
+});
+
+it('keeps a timeout running and never signals an adopted child that still runs', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const child = useFakeStartProcess(cleanup, 'running', true);
+  let taken = false;
+
+  await recordSession(root);
+  hc.reply('kill', JSON.stringify({ address: 't-ask', state: 'live' }));
+  hc.reply('wait', endedWait('t-ask', false));
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await adoptAsChild(root, commandArguments);
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = await ask({ ...hc, exec }, root);
+
+  expect(taken).toBe(true);
+
+  expect(result.details).toMatchObject({
+    status: 'needsOpen',
+    reason: askUnconfirmedStopReason,
+  });
+
+  expect(child.signals).toEqual([]);
+  expect(await statuses(root)).toEqual(['running']);
+  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('fails its own record and releases the claim after a real-shaped nonzero launch exit', async ({

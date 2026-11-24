@@ -25,11 +25,13 @@ interface HiddenAskLaunch {
   error: unknown;
 }
 
-type SettleHiddenAskClaim = () => Promise<boolean>;
+type SettleHiddenAskClaim = () => Promise<HiddenAskSettlement>;
+
+type HiddenAskSettlement = 'kept' | 'adopted' | 'released';
 
 export interface HiddenAskRun {
   start: (sessionFile: string, model: string) => Promise<AskResult>;
-  settle: () => Promise<boolean>;
+  settle: () => Promise<HiddenAskSettlement>;
 }
 
 type HiddenAskLaunchResult =
@@ -43,6 +45,9 @@ export const askKeptClaimMessage = (root: string): string =>
 
 export const askUnconfirmedStopDetail =
   'The ask terminal did not confirm that it stopped. The ask ends at its deadline.';
+
+export const askUnconfirmedStopReason =
+  'The ask still runs because its terminal did not confirm that it stopped. The ask ends at its deadline.';
 
 export const askLaunchFailureDetail = 'The ask terminal could not be started.';
 
@@ -186,16 +191,22 @@ const settleWaitFailure = async (
 
   await stopAskTerminal(request, fence, stop);
 
-  const kept = await settle();
+  const settled = await settle();
 
-  if (kept) {
+  if (settled !== 'released') {
     await updateHiddenAskRecord(request.root, started.askId, (current) => ({
       ...current,
       status: 'running',
       detail: askUnconfirmedStopDetail,
     }));
+  }
 
+  if (settled === 'kept') {
     throw new Error(askKeptClaimMessage(request.root));
+  }
+
+  if (settled === 'adopted') {
+    throw error;
   }
 
   await updateHiddenAskRecord(request.root, started.askId, (current) => ({
@@ -216,10 +227,11 @@ const settleTimeout = async (
 ): Promise<AskResult> => {
   await stopAskTerminal(request, fence, stop);
 
-  const kept = await settle();
-  const status = kept ? 'running' : 'timeout';
+  const settled = await settle();
+  const unconfirmed = settled !== 'released';
+  const status = unconfirmed ? 'running' : 'timeout';
 
-  const detail = kept
+  const detail = unconfirmed
     ? askUnconfirmedStopDetail
     : 'The ask reached its deadline before the architect answered.';
 
@@ -232,7 +244,10 @@ const settleTimeout = async (
   const record = changed?.record;
 
   if (record?.status === 'running') {
-    return needsOpen(askKeptClaimMessage(request.root));
+    const reason =
+      settled === 'kept' ? askKeptClaimMessage(request.root) : askUnconfirmedStopReason;
+
+    return needsOpen(reason);
   }
 
   return resultFromRecord(request.root, started.askId, record);
@@ -403,7 +418,7 @@ const runHiddenAsk = async (
 export const startHiddenAskRun = (request: AskRequest, fence: StartFence): HiddenAskRun => {
   const stop: HiddenAskStop = { terminal: undefined, stopAttempted: false };
 
-  const settle = async (): Promise<boolean> => {
+  const settle = async (): Promise<HiddenAskSettlement> => {
     const abandoned = await fence.abandon();
 
     if (abandoned.adopted) {
@@ -415,7 +430,15 @@ export const startHiddenAskRun = (request: AskRequest, fence: StartFence): Hidde
       stopAttempted: stop.stopAttempted,
     });
 
-    return finished.kept;
+    if (finished.kept) {
+      return 'kept';
+    }
+
+    if (abandoned.adopted && (await fence.refreshChild()) !== 'gone') {
+      return 'adopted';
+    }
+
+    return 'released';
   };
 
   return {
