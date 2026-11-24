@@ -1,3 +1,4 @@
+import { errorMessage } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { processState } from '../../../process/process.js';
 import type { ProcessState } from '../../../process/process.js';
@@ -76,6 +77,13 @@ export const startFenceBlockerMessage = (blocker: StartFenceBlocker): string | u
 
   return blocker.kind === 'malformedMarker' ? malformedStartMarkerReason(blocker.path) : undefined;
 };
+
+// A failed release must not hide the failure that came before it.
+const releaseFailure = (release: () => Promise<void>): Promise<unknown> =>
+  release().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
 
 const childOf = (processId: number | undefined): ProcessState =>
   processId === undefined ? 'unknown' : processState(processId);
@@ -158,6 +166,8 @@ const startFence = (
     }
 
     const holder = await readLiveLockHolder(architectLockPath(root));
+
+    // The adopting child mints its own lock token, so its pid is the only link back to this child.
     const adopted = holder !== undefined && holder.pid === state.childPid;
 
     if (adopted) {
@@ -221,6 +231,7 @@ const startFence = (
 
     if (markerProcess !== undefined) {
       await deleteStartMarker(root, claim.token, state.leadPid, markerProcess).catch(
+        // A marker left by a child the kernel reports gone is swept by the next start.
         () => undefined,
       );
     }
@@ -234,7 +245,6 @@ const startFence = (
 
   const refreshChild = async (): Promise<ProcessState> => {
     await readOwnMarker();
-    state.child = childOf(state.childPid);
 
     return state.child;
   };
@@ -270,9 +280,15 @@ export const acquireStartFence = async (
   try {
     sweep = await sweepStartFolder({ root, currentToken: claim.token });
   } catch (error) {
-    await claim.release();
+    const releaseError = await releaseFailure(claim.release);
 
-    throw error;
+    if (releaseError === undefined) {
+      throw error;
+    }
+
+    const message = `The start sweep failed: ${errorMessage(error)}; releasing the claim failed: ${errorMessage(releaseError)}`;
+
+    throw new Error(message, { cause: error });
   }
 
   if (sweep.kind !== 'clear') {

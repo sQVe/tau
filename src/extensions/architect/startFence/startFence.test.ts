@@ -13,6 +13,7 @@ import {
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
 import { acquireStartFence } from './startFence.js';
+import type { StartFence } from './startFence.js';
 
 const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
 
@@ -60,18 +61,22 @@ const adoptTakenTicket = async (root: string): Promise<void> => {
   );
 };
 
-it('keeps the adopted child after the adopter releases its lock and never signals it', async ({
-  onTestFinished,
-}) => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const processControl = useFakeStartProcess(onTestFinished, 'running');
+const acquiredFence = async (root: string): Promise<StartFence> => {
   const acquisition = await acquireStartFence(root);
 
   if (acquisition.kind !== 'acquired') {
     throw new Error('The start fence was not acquired.');
   }
 
-  const { fence } = acquisition;
+  return acquisition.fence;
+};
+
+it('keeps the adopted child after the adopter releases its lock and never signals it', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const processControl = useFakeStartProcess(onTestFinished, 'running');
+  const fence = await acquiredFence(root);
 
   await fence.createTicket();
 
@@ -95,13 +100,7 @@ it('keeps the adopted child after the adopter releases its lock and never signal
 it('sends no second signal when the child adopts during the stop', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const processControl = useFakeStartProcess(onTestFinished, 'running');
-  const acquisition = await acquireStartFence(root);
-
-  if (acquisition.kind !== 'acquired') {
-    throw new Error('The start fence was not acquired.');
-  }
-
-  const { fence } = acquisition;
+  const fence = await acquiredFence(root);
 
   await fence.createTicket();
 
@@ -125,13 +124,7 @@ it('sends no second signal when the child adopts during the stop', async ({ onTe
 it('keeps a lock-only adoption cached after the lock is gone', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const processControl = useFakeStartProcess(onTestFinished, 'running');
-  const acquisition = await acquireStartFence(root);
-
-  if (acquisition.kind !== 'acquired') {
-    throw new Error('The start fence was not acquired.');
-  }
-
-  const { fence } = acquisition;
+  const fence = await acquiredFence(root);
 
   await fence.createTicket();
 
