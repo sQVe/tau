@@ -1,7 +1,7 @@
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished as afterTest, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
@@ -12,11 +12,14 @@ import {
   savedTexts,
   startHandoverReceiver,
 } from '../../../tests/inboxReceiverHarness.js';
+import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
+import { askArchitect } from './ask/ask.js';
 import { hiddenAsk, hiddenIds } from './fixtures/hiddenAsk.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
+import { appCommands, openTool, requestFor, terminalState } from './fixtures/openHarness.js';
 import { holdAskLock, readArchitectOwner } from './fixtures/toolHarness.js';
 import {
   endOptions,
@@ -25,13 +28,16 @@ import {
   stubArchitect,
   visibleArchitect,
 } from './fixtures/visibleSession.js';
+import type { StartLiveAsk } from './liveAsk.js';
 import { architectLockPath, claimArchitectLock } from './lock.js';
+import { openArchitect } from './open/open.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import {
   askRecordDirectory,
   askRecordPath,
   readArchitectRecord,
   readAskRecord,
+  readAskRecords,
   writeAskRecord,
 } from './record.js';
 import type { LiveAskRecord } from './record.js';
@@ -43,6 +49,23 @@ const holdLock = async (root: string, released: boolean): Promise<void> => {
 
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, ownerJson('holder', released));
+};
+
+const replaceHighestLockToken = async (root: string, token: string): Promise<void> => {
+  const directory = dirname(architectLockPath(root));
+  const generations = (await readdir(directory)).filter((name) => /^lock\.\d+$/u.test(name));
+
+  const highest = generations
+    .toSorted(
+      (left, right) => Number(left.slice('lock.'.length)) - Number(right.slice('lock.'.length)),
+    )
+    .at(-1);
+
+  if (highest === undefined) {
+    throw new Error('The lock has no generation.');
+  }
+
+  await writeFile(join(directory, highest), ownerJson(token));
 };
 
 it('a held lock notifies and shuts the architect down', async ({ onTestFinished }) => {
@@ -810,4 +833,301 @@ it('clears an adopted claim token so a later start takes the lock normally', asy
   );
 
   await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+});
+
+it('keeps the lock across a reload and adopts it at the next start', async ({ onTestFinished }) => {
+  stubArchitect(onTestFinished);
+
+  onTestFinished(() => {
+    delete process.env['TAU_ARCHITECT_CLAIM'];
+    delete process.env['TAU_ARCHITECT_HANDOFF_ROOT'];
+  });
+
+  const config = temporaryTauConfig(onTestFinished, 'tau-architect-reload-');
+
+  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const held = createHeldLockToken();
+  const first = await startArchitectSession(context, held);
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  const oldToken = first.owner.lockToken;
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions('reload'));
+
+  const holderAfterReload = await readLiveLockHolder(architectLockPath(root));
+
+  expect(holderAfterReload?.token).toBe(oldToken);
+  expect(holderAfterReload?.pid).toBe(process.pid);
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBe(oldToken);
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBe(root);
+
+  const barrier = Promise.withResolvers<undefined>();
+
+  const starting = (async () => {
+    await barrier.promise;
+
+    return startArchitectSession(context, held);
+  })();
+
+  const { app, runtime, terminals } = openTool(root);
+
+  terminals.set('t-architect', terminalState('live'));
+
+  const opened = await openArchitect(requestFor(root, config.location, runtime));
+
+  const launches = appCommands(app).filter((name) => name === 'pane.split' || name === 'space.new');
+
+  expect(opened).toEqual({ status: 'running', terminal: 't-architect' });
+  expect(launches).toEqual([]);
+
+  const askHc = createHcFake();
+
+  const liveAskStub = vi.fn<StartLiveAsk>(() =>
+    Promise.resolve({ status: 'needsOpen', reason: 'The live architect takes the question.' }),
+  );
+
+  const asked = await askArchitect({
+    root,
+    question: 'Which flag name?',
+    gateRecord: null,
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...askHc, cwd: root },
+    liveAsk: liveAskStub,
+  });
+
+  expect(asked).toEqual({
+    status: 'needsOpen',
+    reason: 'The live architect takes the question.',
+  });
+
+  expect(liveAskStub).toHaveBeenCalledTimes(1);
+  expect(askHc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
+  expect((await readAskRecords(root)).records).toEqual([]);
+
+  barrier.resolve(undefined);
+
+  const second = await starting;
+
+  if (second === undefined) {
+    throw new Error('The architect did not start again.');
+  }
+
+  const holderAfterStart = await readLiveLockHolder(architectLockPath(root));
+  const owner = await readArchitectOwner(root);
+
+  expect(holderAfterStart?.token).not.toBe(oldToken);
+  expect(holderAfterStart?.pid).toBe(process.pid);
+  expect(owner?.lockToken).toBe(holderAfterStart?.token);
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+
+  await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+});
+
+it.each(['new', 'resume', 'fork'] as const)(
+  'keeps the lock across a %s shutdown and adopts it at the next start',
+  async (reason) => {
+    stubArchitect(afterTest);
+
+    afterTest(() => {
+      delete process.env['TAU_ARCHITECT_CLAIM'];
+      delete process.env['TAU_ARCHITECT_HANDOFF_ROOT'];
+    });
+
+    const root = await createTemporaryRepository(afterTest);
+    const { context } = sessionContext(root);
+    const first = await startArchitectSession(context, createHeldLockToken());
+
+    if (first === undefined) {
+      throw new Error('The architect did not start.');
+    }
+
+    const oldToken = first.owner.lockToken;
+
+    await endArchitectSession(first, hcRuntime(createHcFake()), endOptions(reason));
+
+    const holderAfterEnd = await readLiveLockHolder(architectLockPath(root));
+
+    expect(holderAfterEnd?.token).toBe(oldToken);
+    expect(holderAfterEnd?.pid).toBe(process.pid);
+    expect(process.env['TAU_ARCHITECT_CLAIM']).toBe(oldToken);
+    expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBe(root);
+
+    const second = await startArchitectSession(context, createHeldLockToken());
+
+    if (second === undefined) {
+      throw new Error('The architect did not start again.');
+    }
+
+    const holderAfterStart = await readLiveLockHolder(architectLockPath(root));
+
+    expect(holderAfterStart?.token).not.toBe(oldToken);
+    expect(holderAfterStart?.pid).toBe(process.pid);
+    expect((await readArchitectOwner(root))?.lockToken).toBe(holderAfterStart?.token);
+    expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+    expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+
+    await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+  },
+);
+
+it('warns and takes the new checkout lock when the old checkout lock cannot be adopted', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  onTestFinished(() => {
+    delete process.env['TAU_ARCHITECT_CLAIM'];
+    delete process.env['TAU_ARCHITECT_HANDOFF_ROOT'];
+  });
+
+  const firstRoot = await createTemporaryRepository(onTestFinished);
+  const secondRoot = await createTemporaryRepository(onTestFinished);
+  const { context: firstContext } = sessionContext(firstRoot);
+  const first = await startArchitectSession(firstContext, createHeldLockToken());
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions('resume'));
+  await replaceHighestLockToken(firstRoot, 'other-token');
+
+  const { context, notify, shutdown } = sessionContext(secondRoot);
+  const second = await startArchitectSession(context, createHeldLockToken());
+
+  expect(second).toBeDefined();
+  expect(shutdown).not.toHaveBeenCalled();
+
+  expect(notify).toHaveBeenCalledWith(
+    expect.stringContaining(`The architect could not release its lock in ${firstRoot}:`),
+    'warning',
+  );
+
+  expect((await readLiveLockHolder(architectLockPath(firstRoot)))?.token).toBe('other-token');
+  expect((await readLiveLockHolder(architectLockPath(secondRoot)))?.pid).toBe(process.pid);
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+
+  if (second === undefined) {
+    throw new Error('The architect did not start in the second checkout.');
+  }
+
+  await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+});
+
+it('releases the old checkout lock and starts in another checkout after a resume', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  onTestFinished(() => {
+    delete process.env['TAU_ARCHITECT_CLAIM'];
+    delete process.env['TAU_ARCHITECT_HANDOFF_ROOT'];
+  });
+
+  const firstRoot = await createTemporaryRepository(onTestFinished);
+  const secondRoot = await createTemporaryRepository(onTestFinished);
+  const { context: firstContext } = sessionContext(firstRoot);
+  const first = await startArchitectSession(firstContext, createHeldLockToken());
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  const oldToken = first.owner.lockToken;
+  const startDirectory = join(firstRoot, '.tau', 'architect', 'start');
+  const startedName = `${oldToken}.lead.${process.pid}.started.${process.pid}`;
+
+  await mkdir(startDirectory, { recursive: true });
+  await writeFile(join(startDirectory, startedName), '');
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions('resume'));
+
+  const { context: secondContext, shutdown } = sessionContext(secondRoot);
+  const second = await startArchitectSession(secondContext, createHeldLockToken());
+
+  expect(second).toBeDefined();
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(await readLiveLockHolder(architectLockPath(firstRoot))).toBeUndefined();
+
+  const holder = await readLiveLockHolder(architectLockPath(secondRoot));
+
+  expect(holder?.pid).toBe(process.pid);
+  expect(holder?.token).not.toBe(oldToken);
+  expect(holder?.token).toBe((await readArchitectOwner(secondRoot))?.lockToken);
+  expect(await readdir(startDirectory)).toEqual([startedName]);
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+
+  if (second === undefined) {
+    throw new Error('The architect did not start in the second checkout.');
+  }
+
+  await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+});
+
+it('shuts down in another checkout whose lock is held and leaves the old checkout lock released', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  onTestFinished(() => {
+    delete process.env['TAU_ARCHITECT_CLAIM'];
+    delete process.env['TAU_ARCHITECT_HANDOFF_ROOT'];
+  });
+
+  const firstRoot = await createTemporaryRepository(onTestFinished);
+  const secondRoot = await createTemporaryRepository(onTestFinished);
+  const { context: firstContext } = sessionContext(firstRoot);
+  const first = await startArchitectSession(firstContext, createHeldLockToken());
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions('resume'));
+  await holdLock(secondRoot, false);
+
+  const { context, notify, shutdown } = sessionContext(secondRoot);
+
+  expect(await startArchitectSession(context, createHeldLockToken())).toBeUndefined();
+
+  expect(notify).toHaveBeenCalledWith(
+    'The architect is already running in another session.',
+    'error',
+  );
+
+  expect(shutdown).toHaveBeenCalledTimes(1);
+  expect(await readLiveLockHolder(architectLockPath(firstRoot))).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+});
+
+it('releases the lock and sets no claim on a quit shutdown', async ({ onTestFinished }) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  if (session === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  await endArchitectSession(session, hcRuntime(createHcFake()), endOptions('quit'));
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
 });

@@ -30,7 +30,7 @@ it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
     expected: { kind: 'refuseRunning', processId: 1 },
   },
   {
-    name: 'an adopted ticket whose child and lead are gone',
+    name: 'adopted, child gone, lead gone',
     facts: {
       kind: 'adopted',
       path: '/start/token.adopted.1',
@@ -41,7 +41,7 @@ it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
     expected: { kind: 'deleteMarker', path: '/start/token.adopted.1' },
   },
   {
-    name: 'an adopted ticket whose child is gone and whose lead runs',
+    name: 'adopted, child gone, lead runs',
     facts: {
       kind: 'adopted',
       path: '/start/token.adopted.1',
@@ -52,7 +52,18 @@ it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
     expected: { kind: 'leave' },
   },
   {
-    name: 'an adopted ticket whose child runs and whose lead is gone',
+    name: 'adopted, child gone, lead unknown',
+    facts: {
+      kind: 'adopted',
+      path: '/start/token.adopted.1',
+      processId: 1,
+      child: 'gone',
+      lead: 'unknown',
+    },
+    expected: { kind: 'leave' },
+  },
+  {
+    name: 'adopted, child runs, lead gone',
     facts: {
       kind: 'adopted',
       path: '/start/token.adopted.1',
@@ -60,10 +71,54 @@ it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
       child: 'running',
       lead: 'gone',
     },
-    expected: { kind: 'leave' },
+    expected: { kind: 'refuseRunning', processId: 1 },
   },
   {
-    name: 'an adopted ticket whose child and lead state are unknown',
+    name: 'adopted, child runs, lead runs',
+    facts: {
+      kind: 'adopted',
+      path: '/start/token.adopted.1',
+      processId: 1,
+      child: 'running',
+      lead: 'running',
+    },
+    expected: { kind: 'refuseRunning', processId: 1 },
+  },
+  {
+    name: 'adopted, child runs, lead unknown',
+    facts: {
+      kind: 'adopted',
+      path: '/start/token.adopted.1',
+      processId: 1,
+      child: 'running',
+      lead: 'unknown',
+    },
+    expected: { kind: 'refuseRunning', processId: 1 },
+  },
+  {
+    name: 'adopted, child unknown, lead gone',
+    facts: {
+      kind: 'adopted',
+      path: '/start/token.adopted.1',
+      processId: 1,
+      child: 'unknown',
+      lead: 'gone',
+    },
+    expected: { kind: 'refuseRunning', processId: 1 },
+  },
+  {
+    name: 'adopted, child unknown, lead runs',
+    facts: {
+      kind: 'adopted',
+      path: '/start/token.adopted.1',
+      processId: 1,
+      child: 'unknown',
+      lead: 'running',
+    },
+    expected: { kind: 'refuseRunning', processId: 1 },
+  },
+  {
+    name: 'adopted, child unknown, lead unknown',
     facts: {
       kind: 'adopted',
       path: '/start/token.adopted.1',
@@ -71,7 +126,7 @@ it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
       child: 'unknown',
       lead: 'unknown',
     },
-    expected: { kind: 'leave' },
+    expected: { kind: 'refuseRunning', processId: 1 },
   },
 ])('decides to $expected.kind for $name', ({ facts, expected }) => {
   expect(sweepAction(facts)).toEqual(expected);

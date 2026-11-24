@@ -135,6 +135,7 @@ const closingArchitect = async (
         {
           answers,
           admissions: createAskAdmissions(() => undefined),
+          reason: 'quit',
           sendEndNote: true,
         },
       ),

@@ -90,9 +90,9 @@ Any other open ask fails, and the lead gets a note to ask again.
 
 When a shutdown ends a visible architect, it also tells its lead it ended, even when no ask is
 outstanding. A reload is not such a shutdown: Pi restarts the same session in the same pane, so a
-reload still releases the lock and cleans up asks but sends no notice. It sends no notice when a
-final handover was confirmed queued to the lead's own terminal; a queued result for another
-terminal, and an unknown result, are not confirmation. The notice is best effort and follows
+reload still cleans up asks but keeps the lock for the next runtime and sends no notice. It sends no
+notice when a final handover was confirmed queued to the lead's own terminal; a queued result for
+another terminal, and an unknown result, are not confirmation. The notice is best effort and follows
 cleanup, because the architect holds the handover result and the lead must be able to resume once
 notified.
 
@@ -109,10 +109,10 @@ A check of the lock is not a reservation, so the caller that starts the architec
 first. `open` and the hidden route of `ask` take a claim on the lock before they start Pi, and pass
 the claim token to the new Pi in its environment. The new Pi takes the lock over from that claim
 with the next lock generation. A Pi started with a claim token takes only that claim. It ends at
-session start when the claim is released or replaced. Once it holds the lock it drops the token, so
-a reload takes the lock as usual. A second caller finds the claim held and is refused before it
-starts Pi or writes an ask record. While a holder has not published its record, `ask` and `open`
-report that the architect is starting.
+session start when the claim is released or replaced. Once it holds the lock it drops the token. A
+reload keeps the lock by handing the token to the next runtime. A second caller finds the claim held
+and is refused before it starts Pi or writes an ask record. While a holder has not published its
+record, `ask` and `open` report that the architect is starting.
 
 Pi opens its session file, and can migrate it, before session start. So the caller releases a claim
 only when no Pi can still take it over. A one-shot start ticket fences the launch before Pi opens
@@ -166,8 +166,10 @@ it has seen its own adopted marker, or when the live lock holder's process ID is
 different token or process ID in the lock is never its child's takeover. Adoption ends the fence:
 after it, the caller never signals the child for the fence, and a hidden ask without a terminal
 address waits on the child's process ID instead of abandoning it. The caller deletes its own markers
-once its child is gone. The sweep never refuses on an adopted marker. It deletes one only when both
-its child and its lead are gone, so a lead always finds its own evidence while it lives.
+once its child is gone. The sweep refuses on an adopted marker whose child is running or cannot be
+read, and names its process ID. It deletes an adopted marker only when both its child and its lead
+are gone, and it leaves one whose child is gone while its lead lives, so a lead always finds its own
+evidence.
 
 The launch needs `sh` and `mv` on the machine that runs the terminal, and the ticket and Pi run in
 the same checkout.
@@ -204,6 +206,18 @@ A Pi takes over its own claim while that claim is the highest generation and not
 the lead that took it has exited. The generation link still picks one winner when another caller
 claims at the same time. Refusing would end a valid architect whose only fault is that its lead
 exited.
+
+When Pi replaces the runtime in the same process, on any shutdown reason except `quit`, the
+architect keeps the lock. It passes its lock token in `TAU_ARCHITECT_CLAIM` and its checkout root in
+`TAU_ARCHITECT_HANDOFF_ROOT` to the next runtime. The next session start compares that root with the
+checkout of its own working directory. In the same checkout, it adopts the token with the next
+generation. So a reload, `/new`, `/resume`, or `/fork` never leaves the lock free while the process
+keeps the session file open. In another checkout, which `/resume` can reach, it adopts and releases
+the old checkout's lock first. Then it takes the new checkout's lock like any start. The start
+decides, not the shutdown, because Pi gives the shutdown only the target session file. `/new` has
+not written that file yet, and a working-directory override can contradict its header. On `quit`,
+the lock is released before the process exits, and the adopted marker refuses new starts until the
+kernel reads the process as gone.
 
 ### The lead's tab
 
@@ -264,7 +278,10 @@ the work.
 - A `pi` command that forks instead of exec'ing breaks the process-ID proof.
 - A reused process ID keeps a start refused until that unrelated process ends.
 - An adopted marker of a lead that died stays until the kernel reads both processes as gone. A
-  reused process ID keeps it longer, but it never blocks a start.
+  reused process ID keeps it longer and refuses starts until that process ends.
+- An architect that moves to another checkout through `/resume` leaves its adopted marker in the old
+  checkout. That checkout refuses new architect starts, and names the process ID, until the process
+  ends.
 - A launch needs `sh` and `mv` on the machine that runs the terminal, and the ticket and Pi must run
   in the same checkout.
 

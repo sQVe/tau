@@ -215,7 +215,9 @@ it('deletes an adopted marker whose process is gone and starts', async ({ onTest
   expect(existsSync(marker)).toBe(false);
 });
 
-it('leaves an adopted marker whose process runs and starts', async ({ onTestFinished }) => {
+it('refuses an adopted marker whose process runs and names the process id', async ({
+  onTestFinished,
+}) => {
   const root = await createTemporaryRepository(onTestFinished);
   const marker = await adoptedMarker(root, 'gone', 4006);
 
@@ -225,11 +227,11 @@ it('leaves an adopted marker whose process runs and starts', async ({ onTestFini
     stateOf: () => 'running',
   });
 
-  expect(outcome).toEqual({ kind: 'clear' });
+  expect(outcome).toEqual({ kind: 'refuseRunning', processId: 4006 });
   expect(existsSync(marker)).toBe(true);
 });
 
-it('leaves an adopted marker whose process state is unknown and starts', async ({
+it('refuses an adopted marker whose process state is unknown and names the process id', async ({
   onTestFinished,
 }) => {
   const root = await createTemporaryRepository(onTestFinished);
@@ -241,7 +243,7 @@ it('leaves an adopted marker whose process state is unknown and starts', async (
     stateOf: () => 'unknown',
   });
 
-  expect(outcome).toEqual({ kind: 'clear' });
+  expect(outcome).toEqual({ kind: 'refuseRunning', processId: 4007 });
   expect(existsSync(marker)).toBe(true);
 });
 

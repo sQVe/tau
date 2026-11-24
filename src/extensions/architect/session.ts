@@ -15,12 +15,17 @@ import { startAskDeadline } from './ask/askDeadline.js';
 import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
 import type { EndNoteRoute } from './endNoteDecision.js';
 import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
+import { startClaim } from './handoffDecision.js';
+import type { StartClaim } from './handoffDecision.js';
 import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
+import type { ArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import type { FinalHandoverResult } from './queuedHandover.js';
 import { readAskRecords, updateHiddenAskRecord, writeArchitectRecord } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
+import { keepsLock } from './shutdownDecision.js';
+import type { ShutdownReason } from './shutdownDecision.js';
 import { adoptStartMarker } from './startTicket/startTicket.js';
 
 export interface HeldLockToken {
@@ -41,6 +46,7 @@ export interface ArchitectSession {
 export interface EndArchitectOptions {
   answers: AnswerTracker;
   admissions: AskAdmissions;
+  reason: ShutdownReason;
   sendEndNote: boolean;
 }
 
@@ -77,11 +83,16 @@ const warnLeadModel = (context: ExtensionContext): void => {
   }
 };
 
-const architectClaim = (): string | undefined => {
-  // oxlint-disable-next-line node/no-process-env -- The lead passes the claim it took in the architect's environment.
-  const claim = process.env.TAU_ARCHITECT_CLAIM;
+const environmentValue = (value: string | undefined): string | undefined =>
+  value === '' ? undefined : value;
 
-  return claim === undefined || claim === '' ? undefined : claim;
+const handoffFacts = (): { claimToken: string | undefined; handoffRoot: string | undefined } => {
+  // oxlint-disable-next-line node/no-process-env -- The previous runtime passes the lock it kept.
+  const claimToken = process.env.TAU_ARCHITECT_CLAIM;
+  // oxlint-disable-next-line node/no-process-env -- The previous runtime passes the checkout it left.
+  const handoffRoot = process.env.TAU_ARCHITECT_HANDOFF_ROOT;
+
+  return { claimToken: environmentValue(claimToken), handoffRoot: environmentValue(handoffRoot) };
 };
 
 const askRecordPathFromEnvironment = (): string | undefined => {
@@ -89,6 +100,44 @@ const askRecordPathFromEnvironment = (): string | undefined => {
   const path = process.env.TAU_ARCHITECT_ASK;
 
   return path === undefined || path === '' ? undefined : path;
+};
+
+// The old checkout goes first, so a refused new start never leaves it locked. If the old lock cannot
+// be taken back, it still frees when the kernel reads this process as gone.
+const releasePreviousLock = async (
+  previousRoot: string,
+  token: string,
+  ui: ConfigWarnings,
+): Promise<void> => {
+  try {
+    const previous = await holdArchitectLock(previousRoot, token);
+
+    await previous.release();
+  } catch (error) {
+    ui.notify(
+      `The architect could not release its lock in ${previousRoot}: ${errorMessage(error)}`,
+      'warning',
+    );
+  }
+};
+
+const takeStartLock = async (
+  root: string,
+  claim: StartClaim,
+  ui: ConfigWarnings,
+): Promise<ArchitectLock> => {
+  if (claim.kind === 'leave') {
+    await releasePreviousLock(claim.previousRoot, claim.token, ui);
+  }
+
+  const token = claim.kind === 'adopt' ? claim.token : undefined;
+  const lock = await holdArchitectLock(root, token);
+
+  if (token !== undefined) {
+    await adoptStartMarker(root, token, process.pid).catch(() => undefined);
+  }
+
+  return lock;
 };
 
 const startArchitect = async (
@@ -100,18 +149,18 @@ const startArchitect = async (
   let release: (() => Promise<void>) | undefined;
 
   try {
-    const claimToken = architectClaim();
-    const lock = await holdArchitectLock(root, claimToken);
+    const facts = handoffFacts();
+
+    // oxlint-disable-next-line node/no-process-env -- The handoff names one next start only.
+    delete process.env['TAU_ARCHITECT_CLAIM'];
+    // oxlint-disable-next-line node/no-process-env -- The handoff names one next start only.
+    delete process.env['TAU_ARCHITECT_HANDOFF_ROOT'];
+
+    const claim = startClaim({ ...facts, root });
+    const lock = await takeStartLock(root, claim, context.ui);
 
     release = lock.release;
     held.set(lock.token);
-
-    if (claimToken !== undefined) {
-      await adoptStartMarker(root, claimToken, process.pid).catch(() => undefined);
-    }
-
-    // oxlint-disable-next-line node/no-process-env -- A reload must not try to adopt the old claim again.
-    delete process.env['TAU_ARCHITECT_CLAIM'];
 
     const askPath = askRecordPathFromEnvironment();
 
@@ -245,12 +294,28 @@ export const recordFinalHandover = (
   }
 };
 
+// A same-process runtime replacement keeps the lock, so no caller can take it between the two
+// runtimes. The next session start adopts the token from the environment after it compares the
+// checkout root. Only quit releases the lock, because the process is about to end.
+const handOffLock = async (session: ArchitectSession, reason: ShutdownReason): Promise<void> => {
+  if (keepsLock(reason)) {
+    // oxlint-disable-next-line node/no-process-env -- The next runtime reads the token it must adopt.
+    process.env['TAU_ARCHITECT_CLAIM'] = session.owner.lockToken;
+    // oxlint-disable-next-line node/no-process-env -- The next runtime compares its checkout with this root.
+    process.env['TAU_ARCHITECT_HANDOFF_ROOT'] = session.root;
+
+    return;
+  }
+
+  await session.release();
+};
+
 // The token goes first so no new question is saved. The wait lets a save that already started
 // finish before the lock is released.
 export const endArchitectSession = async (
   session: ArchitectSession,
   hc: HcRuntime,
-  { answers, admissions, sendEndNote }: EndArchitectOptions,
+  { answers, admissions, reason, sendEndNote }: EndArchitectOptions,
 ): Promise<void> => {
   session.held.set(undefined);
 
@@ -279,7 +344,7 @@ export const endArchitectSession = async (
     }
   } finally {
     try {
-      await session.release();
+      await handOffLock(session, reason);
     } finally {
       if (note !== undefined) {
         await deliverEndNote(await note, hc, (message) => {

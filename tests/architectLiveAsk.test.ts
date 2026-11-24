@@ -89,9 +89,16 @@ const architectContext = (root: string): ExtensionContext =>
     },
   }) as unknown as ExtensionContext;
 
-const runHandlers = async (fake: FakeApi, name: string, context: ExtensionContext) => {
+const startupEvent: Record<string, unknown> = { reason: 'startup' };
+
+const runHandlers = async (
+  fake: FakeApi,
+  name: string,
+  context: ExtensionContext,
+  event: Record<string, unknown> = startupEvent,
+) => {
   for (const handler of fake.handlers.get(name) ?? []) {
-    await handler({ reason: 'startup' } as never, context);
+    await handler({ ...event } as never, context);
   }
 };
 
@@ -108,7 +115,7 @@ const startVisibleArchitect = async (root: string, hc: HcFake) => {
   vi.stubEnv('HC_TERMINAL_ID', 't-lead');
 
   onTestFinished(async () => {
-    await runHandlers(fake, 'session_shutdown', context);
+    await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
     forgetAcceptCheck('architect-ask');
   });
 
@@ -282,7 +289,7 @@ it('an architect-ask is saved only while the architect holds the lock token it n
   await expect(send('held ask', tokenOne)).resolves.toMatchObject({ status: 'queued' });
   await expect(send('held handover')).resolves.toMatchObject({ status: 'queued' });
 
-  await runHandlers(fake, 'session_shutdown', context);
+  await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
 
   await expect(send('closed ask', tokenOne)).rejects.toThrow(refusal);
   await expect(send('closed handover')).resolves.toMatchObject({ status: 'queued' });
@@ -367,6 +374,7 @@ it('an architect-ask sent after the record is published but before startup retur
     {
       answers: createAnswerTracker(),
       admissions,
+      reason: 'quit',
       sendEndNote: true,
     },
   );

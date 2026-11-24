@@ -9,6 +9,7 @@ import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
+import { readAskRecords } from '../record.js';
 import { createStartTicket } from '../startTicket/startTicket.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
@@ -92,6 +93,28 @@ it('refuses an orphaned marker whose process runs and names the process id', asy
   expect(existsSync(marker)).toBe(true);
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('refuses an adopted marker whose child runs and whose lead is gone', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const ticket = await createStartTicket(root, 'gone', leadPid);
+  const marker = `${ticket}.adopted.${fakeStartProcessId}`;
+
+  useFakeStartProcess(cleanup, 'running');
+  await writeFile(marker, '');
+  await recordSession(root);
+
+  const result = await ask(hc, root);
+
+  expect(result).toMatchObject({ details: { status: 'needsOpen' } });
+  expect((result.details as { reason: string }).reason).toContain(String(fakeStartProcessId));
+  expect(existsSync(marker)).toBe(true);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect((await readAskRecords(root)).records).toEqual([]);
 });
 
 it('refuses a malformed orphaned marker and names the path', async ({

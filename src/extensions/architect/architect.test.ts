@@ -167,10 +167,15 @@ it('a visible architect sends nothing for a handover result without a final stat
   expect(savedRecords).toHaveLength(1);
 });
 
-it('a visible architect sends no end note on reload but still releases its lock and fails open asks', async ({
+it('a visible architect sends no end note on reload but keeps its lock for the next runtime and fails open asks', async ({
   onTestFinished,
 }) => {
   const { root, lead, fake, context } = await startRegisteredArchitect(onTestFinished);
+  const before = await readLiveLockHolder(architectLockPath(root));
+
+  onTestFinished(() => {
+    delete process.env['TAU_ARCHITECT_CLAIM'];
+  });
 
   await writeAskRecord(root, openAsk);
 
@@ -183,7 +188,13 @@ it('a visible architect sends no end note on reload but still releases its lock 
   expect(text).toContain(`Ask ${openAsk.askId} got no answer`);
   expect(text).toContain('Call architect ask again.');
   expect(await readAskRecord(root, openAsk.askId)).toMatchObject({ status: 'failed' });
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({
+    pid: process.pid,
+    token: before?.token,
+  });
+
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBe(before?.token);
 });
 
 it('a visible architect that quit after an unknown final handover tells the lead it may not have arrived', async ({

@@ -150,19 +150,25 @@ it('deletes a started marker whose process is gone and then starts', async ({
   expect(existsSync(marker)).toBe(false);
 });
 
-it('starts and leaves an adopted marker whose child runs and whose lead is gone', async ({
+it('refuses an adopted marker whose child runs and whose lead is gone', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { runtime } = openTool(root);
+  const { app, hc, runtime } = openTool(root);
 
   await recordSession(root);
   const marker = await adoptedMarker(root, 'gone', fakeRunningStartProcessId);
 
-  const result = await openArchitect(requestFor(root, config.location, runtime));
+  const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
+    (error: unknown) => error,
+  );
 
-  expect(result).toMatchObject({ status: 'resumed' });
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain(String(fakeRunningStartProcessId));
   expect(existsSync(marker)).toBe(true);
+  expect(appCommands(app)).toEqual([]);
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('deletes an adopted marker whose process is gone and then starts', async ({

@@ -9,6 +9,7 @@ import { createAnswerTracker } from '../answer.js';
 import { createAskAdmissions } from '../ask/askAcceptance.js';
 import { createHeldLockToken, startArchitectSession } from '../session.js';
 import type { ArchitectSession, EndArchitectOptions } from '../session.js';
+import type { ShutdownReason } from '../shutdownDecision.js';
 
 interface SessionContext {
   context: ExtensionContext;
@@ -18,9 +19,10 @@ interface SessionContext {
 
 export const hcRuntime = (hc: HcFake): HcRuntime => ({ ...hc, cwd: process.cwd() });
 
-export const endOptions = (): EndArchitectOptions => ({
+export const endOptions = (reason: ShutdownReason = 'quit'): EndArchitectOptions => ({
   answers: createAnswerTracker(),
   admissions: createAskAdmissions(() => undefined),
+  reason,
   sendEndNote: true,
 });
 
@@ -45,6 +47,8 @@ export const sessionContext = (cwd: string): SessionContext => {
 export const stubArchitect = (cleanup: (cleanup: () => void) => void): void => {
   vi.stubEnv('TAU_ROLE', 'architect');
   vi.stubEnv('TAU_ARCHITECT_ASK', '');
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', '');
+  vi.stubEnv('TAU_ARCHITECT_HANDOFF_ROOT', '');
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
 
   cleanup(() => {

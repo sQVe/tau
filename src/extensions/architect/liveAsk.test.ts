@@ -607,6 +607,7 @@ it('a close that lands before the lead send returns keeps the ask failed', async
     {
       answers: createAnswerTracker(),
       admissions: createAskAdmissions(() => undefined),
+      reason: 'quit',
       sendEndNote: true,
     },
   );
