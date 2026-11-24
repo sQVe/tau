@@ -140,11 +140,16 @@ seconds share one absolute deadline. `gone` releases the claim and deletes the m
 keeps both. The caller keeps its own copy of the child's process ID from the first marker read.
 Neither a later read nor another caller's lock can change that copy. A Pi that adopted the claim and
 then stopped without its shutdown handler reads as gone, even when another caller has since claimed
-the lock. A hidden `ask` whose launch reply gave no address abandons the launch, fails its own
-record with a launch detail, and releases once the child is gone, unless its child adopted. A valid
-reply keeps the `hc wait` path, and `processState(pid)` alone confirms a stop after `hc kill`.
+the lock. The fence completes once and reports one outcome: `cancelled`, `gone`, `adopted`, or
+`unresolved`. A release or read failure is reported beside the outcome. A caller writes a hidden ask
+as failed only for `cancelled` or `gone`, and reports from the record its locked read returns. After
+`adopted` a lost launch reply waits on the child's process ID. For `unresolved` it leaves the record
+`running` with the unconfirmed-stop detail, because the child may still adopt and answer. A valid
+reply keeps the `hc wait` path, and `processState(pid)` alone confirms a stop after `hc kill`. The
+fence reads the child and its adoption once, at completion, so no caller reports a released claim
+while an adopted child runs.
 
-When the caller abandons a launch, it first renames the ticket to `<ticket>.cancelled`. Success
+When the caller completes a launch, it first renames the ticket to `<ticket>.cancelled`. Success
 means no Pi from this launch can run: a shell that starts later fails its `mv` and exits 75 before
 Pi, so the caller releases the claim at once, with no kill. `ENOENT` means the child took the
 ticket, so the caller reads the process ID from the marker and follows the stop rule. Any other
@@ -165,11 +170,11 @@ its marker from started to adopted. It never deletes it. The caller counts the c
 it has seen its own adopted marker, or when the live lock holder's process ID is its child's. A
 different token or process ID in the lock is never its child's takeover. Adoption ends the fence:
 after it, the caller never signals the child for the fence, and a hidden ask without a terminal
-address waits on the child's process ID instead of abandoning it. The caller deletes its own markers
-once its child is gone. The sweep refuses on an adopted marker whose child is running or cannot be
-read, and names its process ID. It deletes an adopted marker only when both its child and its lead
-are gone, and it leaves one whose child is gone while its lead lives, so a lead always finds its own
-evidence.
+address waits on the child's process ID instead of cancelling it. The caller deletes the marker of a
+child it reads gone only when the claim is released. The sweep refuses on an adopted marker whose
+child is running or cannot be read, and names its process ID. It deletes an adopted marker only when
+both its child and its lead are gone, and it leaves one whose child is gone while its lead lives, so
+a lead always finds its own evidence.
 
 The launch needs `sh` and `mv` on the machine that runs the terminal, and the ticket and Pi run in
 the same checkout.

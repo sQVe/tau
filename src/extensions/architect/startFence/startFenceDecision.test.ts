@@ -1,73 +1,121 @@
 import { expect, it } from 'vitest';
 
-import {
-  startFenceCancellable,
-  startFenceMarkerToDelete,
-  startFenceTicketFact,
+import { startFenceCompletionDecision, startFenceTakeoverDecision } from './startFenceDecision.js';
+import type {
+  StartFenceCompletionFacts,
+  StartFenceCompletionPlan,
+  StartFenceTakeoverFacts,
+  StartFenceTakeoverProgress,
 } from './startFenceDecision.js';
-import type { StartFenceCleanupFacts, StartFencePhase } from './startFenceDecision.js';
 
-const cleanup = (overrides: Partial<StartFenceCleanupFacts>): StartFenceCleanupFacts => ({
-  kept: false,
+const completion = (overrides: Partial<StartFenceCompletionFacts>): StartFenceCompletionFacts => ({
   ticket: 'taken',
   child: 'gone',
+  adopted: false,
   processId: 41,
   ...overrides,
 });
 
-it.each<{ phase: StartFencePhase; expected: boolean }>([
-  { phase: 'noTicket', expected: false },
-  { phase: 'active', expected: true },
-  { phase: 'cancelled', expected: false },
-  { phase: 'unread', expected: false },
-  { phase: 'started', expected: true },
-  { phase: 'takenWithoutProcess', expected: true },
-])('decides whether the $phase phase can still be cancelled', ({ phase, expected }) => {
-  expect(startFenceCancellable(phase)).toBe(expected);
-});
-
-it.each<{ phase: StartFencePhase; expected: string }>([
-  { phase: 'noTicket', expected: 'notCreated' },
-  { phase: 'active', expected: 'taken' },
-  { phase: 'cancelled', expected: 'cancelled' },
-  { phase: 'unread', expected: 'unread' },
-  { phase: 'started', expected: 'taken' },
-  { phase: 'takenWithoutProcess', expected: 'taken' },
-])('reports the $phase phase as $expected to the release decision', ({ phase, expected }) => {
-  expect(startFenceTicketFact(phase)).toBe(expected);
-});
-
-it.each<{ name: string; facts: StartFenceCleanupFacts; expected: number | undefined }>([
+it.each<{ name: string; facts: StartFenceCompletionFacts; expected: StartFenceCompletionPlan }>([
   {
-    name: 'a released claim whose started child is gone',
-    facts: cleanup({}),
-    expected: 41,
-  },
-  {
-    name: 'a kept claim',
-    facts: cleanup({ kept: true }),
-    expected: undefined,
+    name: 'a ticket that was never created',
+    facts: completion({ ticket: 'notCreated', child: 'unknown' }),
+    expected: { outcome: 'cancelled', claim: 'release', marker: 'keep' },
   },
   {
     name: 'a cancelled ticket',
-    facts: cleanup({ ticket: 'cancelled' }),
-    expected: undefined,
+    facts: completion({ ticket: 'cancelled', child: 'unknown' }),
+    expected: { outcome: 'cancelled', claim: 'release', marker: 'keep' },
   },
   {
-    name: 'a child that may still run',
-    facts: cleanup({ child: 'running' }),
-    expected: undefined,
+    name: 'an unread cancel',
+    facts: completion({ ticket: 'unread', child: 'running' }),
+    expected: { outcome: 'unresolved', claim: 'keep', marker: 'keep' },
   },
   {
-    name: 'a child whose state is unknown',
-    facts: cleanup({ child: 'unknown' }),
-    expected: undefined,
+    name: 'a gone child',
+    facts: completion({ child: 'gone' }),
+    expected: { outcome: 'gone', claim: 'release', marker: 'delete' },
   },
   {
-    name: 'a taken marker with no usable process id',
-    facts: cleanup({ child: 'unknown', processId: undefined }),
-    expected: undefined,
+    name: 'a gone child whose process id is unknown',
+    facts: completion({ child: 'gone', processId: undefined }),
+    expected: { outcome: 'gone', claim: 'release', marker: 'keep' },
   },
-])('deletes the marker only for $name', ({ facts, expected }) => {
-  expect(startFenceMarkerToDelete(facts)).toBe(expected);
+  {
+    name: 'a gone child that had adopted',
+    facts: completion({ child: 'gone', adopted: true }),
+    expected: { outcome: 'gone', claim: 'release', marker: 'delete' },
+  },
+  {
+    name: 'an adopted running child',
+    facts: completion({ child: 'running', adopted: true }),
+    expected: { outcome: 'adopted', claim: 'release', marker: 'keep' },
+  },
+  {
+    name: 'an adopted child whose state is unknown',
+    facts: completion({ child: 'unknown', adopted: true }),
+    expected: { outcome: 'adopted', claim: 'release', marker: 'keep' },
+  },
+  {
+    name: 'a running child that has not adopted',
+    facts: completion({ child: 'running' }),
+    expected: { outcome: 'unresolved', claim: 'keep', marker: 'keep' },
+  },
+  {
+    name: 'a child whose state is unknown and that has not adopted',
+    facts: completion({ child: 'unknown', processId: undefined }),
+    expected: { outcome: 'unresolved', claim: 'keep', marker: 'keep' },
+  },
+])('completes $name as $expected.outcome with the claim $expected.claim', ({ facts, expected }) => {
+  expect(startFenceCompletionDecision(facts)).toEqual(expected);
+});
+
+const takeover = (overrides: Partial<StartFenceTakeoverFacts>): StartFenceTakeoverFacts => ({
+  adopted: false,
+  gone: false,
+  now: 0,
+  deadline: 1_000,
+  cancelled: false,
+  ...overrides,
+});
+
+it.each<{ name: string; facts: StartFenceTakeoverFacts; expected: StartFenceTakeoverProgress }>([
+  {
+    name: 'adoption over a cancel',
+    facts: takeover({ adopted: true, cancelled: true }),
+    expected: 'adopted',
+  },
+  {
+    name: 'adoption over a gone child',
+    facts: takeover({ adopted: true, gone: true }),
+    expected: 'adopted',
+  },
+  {
+    name: 'a cancel before the deadline',
+    facts: takeover({ cancelled: true }),
+    expected: 'cancelled',
+  },
+  {
+    name: 'the deadline',
+    facts: takeover({ now: 1_000 }),
+    expected: 'expired',
+  },
+  {
+    name: 'a deadline past a gone child',
+    facts: takeover({ gone: true, now: 1_001 }),
+    expected: 'expired',
+  },
+  {
+    name: 'a gone child before the deadline',
+    facts: takeover({ gone: true }),
+    expected: 'gone',
+  },
+  {
+    name: 'a live child before the deadline',
+    facts: takeover({}),
+    expected: 'waiting',
+  },
+])('waits for the takeover until $name', ({ facts, expected }) => {
+  expect(startFenceTakeoverDecision(facts)).toBe(expected);
 });

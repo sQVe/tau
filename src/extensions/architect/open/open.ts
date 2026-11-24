@@ -1,6 +1,5 @@
 import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
 import { userConfigPath } from '../../../config/config.js';
@@ -14,7 +13,6 @@ import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
 import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
 import type { PiLaunchResult } from '../../../piStart/piStart.js';
-import { processState } from '../../../process/process.js';
 import { tabName } from '../../../tabName.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import { architectLockPath } from '../lock.js';
@@ -25,7 +23,6 @@ import { acquireStartFence, startFenceBlockerMessage } from '../startFence/start
 import type { StartFence, StartFenceBlocker } from '../startFence/startFence.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
-import { openStartProgress } from './openStartClaimDecision.js';
 
 export interface OpenRequest {
   root: string;
@@ -62,7 +59,6 @@ interface KeptClaim {
 const askLabel = 'tau.architect.ask';
 
 const takeoverSeconds = 60;
-const takeoverPollMilliseconds = 250;
 const millisecondsPerSecond = 1000;
 
 const fileExists = (path: string): Promise<boolean> =>
@@ -297,12 +293,6 @@ export const takeoverChildGoneError = (): Error =>
     'The architect launch ended before it took the checkout lock. Call architect open again.',
   );
 
-const childGone = (fence: StartFence): boolean => {
-  const childPid = fence.childProcessId();
-
-  return childPid !== undefined && processState(childPid) === 'gone';
-};
-
 const cancelledOpenError = (signal: AbortSignal | undefined): Error => {
   const reason: unknown = signal?.reason;
 
@@ -320,46 +310,18 @@ const waitForTakeover = async (
   signal: AbortSignal | undefined,
 ): Promise<void> => {
   const deadline = Date.now() + takeoverSeconds * millisecondsPerSecond;
+  const takeover = await fence.waitForTakeover(deadline, signal);
 
-  for (;;) {
-    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
-    const adopted = await fence.childAdopted();
+  if (takeover === 'cancelled') {
+    throw cancelledOpenError(signal);
+  }
 
-    const progress = openStartProgress({
-      adopted,
-      now: Date.now(),
-      deadline,
-      cancelled: signal?.aborted === true,
-    });
+  if (takeover === 'expired') {
+    throw takeoverExpiryError();
+  }
 
-    if (progress === 'taken') {
-      return;
-    }
-
-    if (progress === 'cancelled') {
-      throw cancelledOpenError(signal);
-    }
-
-    if (progress === 'expired') {
-      throw takeoverExpiryError();
-    }
-
-    if (childGone(fence)) {
-      throw takeoverChildGoneError();
-    }
-
-    const sleepOptions = signal === undefined ? {} : { signal };
-
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
-      await sleep(takeoverPollMilliseconds, undefined, sleepOptions);
-    } catch (error) {
-      if (signal?.aborted === true) {
-        throw cancelledOpenError(signal);
-      }
-
-      throw error;
-    }
+  if (takeover === 'gone') {
+    throw takeoverChildGoneError();
   }
 };
 
@@ -421,15 +383,19 @@ const applyLaunchOutcome = async (
   started: PiLaunchResult,
 ): Promise<void> => {
   if (launchOutcomeDecision(launchFacts(started)) === 'notCreated') {
-    const abandoned = await fence.abandon();
+    const completion = await fence.complete();
 
     throwIfOpenCancelled(request.hc.signal);
 
-    if (!abandoned.adopted) {
-      throw launchFailure(started);
+    if (completion.outcome === 'adopted') {
+      return;
     }
 
-    return;
+    if (completion.claim === 'kept') {
+      throw openKeptClaimError(request.root, completion.failure);
+    }
+
+    throw launchFailure(started);
   }
 
   await fence.recordStarted();
@@ -480,22 +446,20 @@ export const openArchitect = async (
     const result = launchResult(prepared);
 
     // applyLaunchOutcome returns only after the child adopted the claim or another holder took it.
-    await fence.finish({ adopted: true, stopAttempted: false });
+    await fence.complete();
     keptClaims.delete(request.root);
 
     return result;
   } catch (error) {
-    const abandoned = await fence.abandon().catch(() => ({ adopted: false }));
+    const completion = await fence.complete();
 
-    const finished = await fence.finish({ adopted: abandoned.adopted, stopAttempted: false });
-
-    if (finished.kept) {
+    if (completion.claim === 'kept') {
       keptClaims.set(request.root, {
         token: fence.token,
-        ...(finished.failure === undefined ? {} : { failure: finished.failure }),
+        ...(completion.failure === undefined ? {} : { failure: completion.failure }),
       });
 
-      throw openKeptClaimError(request.root, finished.failure);
+      throw openKeptClaimError(request.root, completion.failure);
     }
 
     throw error;

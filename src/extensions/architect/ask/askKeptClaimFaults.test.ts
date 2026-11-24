@@ -4,7 +4,7 @@ import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
-import { askKeptClaimMessage, askUnconfirmedStopDetail } from './askHiddenRun.js';
+import { askKeptClaimMessage } from './askHiddenRun.js';
 import { ask, details, failFirstWait, startFake, statuses } from './fixtures/askHarness.js';
 
 const faults = vi.hoisted(() => ({ failClaimRelease: false }));
@@ -57,9 +57,8 @@ it('reports the claim release failure in the kept-claim message', async ({
 
   faults.failClaimRelease = true;
 
-  const failure = await ask(failFirstWait(hc, new Error('The wait failed.')), root).catch(
-    (error: unknown) => error,
-  );
+  const waitFailure = new Error('The wait failed.');
+  const failure = await ask(failFirstWait(hc, waitFailure), root).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain(askKeptClaimMessage(root));
@@ -68,7 +67,7 @@ it('reports the claim release failure in the kept-claim message', async ({
     'The claim could not be released: The lock could not be truncated.',
   );
 
-  expect(await statuses(root)).toEqual(['running']);
-  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toContain(waitFailure.message);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });

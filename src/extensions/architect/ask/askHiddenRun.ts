@@ -9,16 +9,10 @@ import { processState } from '../../../process/process.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import type { LaunchOutcome } from '../claimRelease/launchOutcomeDecision.js';
 import { askRecordPath, updateHiddenAskRecord, writeAskRecord } from '../record.js';
-import type { ChangeAskOptions, HiddenAskRecord } from '../record.js';
-import type { StartFence } from '../startFence/startFence.js';
+import type { ChangeAskOptions, HiddenAskRecord, HiddenAskRecordChange } from '../record.js';
+import type { StartFence, StartFenceCompletion } from '../startFence/startFence.js';
 import type { AskRequest, AskResult } from './ask.js';
 import { askDeadlineDetail, askRecordOutcome } from './askDecision.js';
-
-interface HiddenAskStop {
-  terminal: string | undefined;
-  stopAttempted: boolean;
-  failure?: Error;
-}
 
 interface HiddenAskLaunch {
   outcome: LaunchOutcome;
@@ -26,18 +20,16 @@ interface HiddenAskLaunch {
   error: unknown;
 }
 
-type SettleHiddenAskClaim = () => Promise<HiddenAskSettlement>;
-
-type HiddenAskSettlement = 'kept' | 'adopted' | 'released';
+type SettleHiddenAsk = () => Promise<StartFenceCompletion>;
 
 export interface HiddenAskRun {
   start: (sessionFile: string, model: string) => Promise<AskResult>;
-  settle: () => Promise<HiddenAskSettlement>;
+  settle: SettleHiddenAsk;
 }
 
 type HiddenAskLaunchResult =
   | { kind: 'started'; started: HiddenAskRecord; terminal: string }
-  | { kind: 'adopted'; started: HiddenAskRecord };
+  | { kind: 'settled'; result: AskResult };
 
 export const askDeadlineSeconds = 900;
 
@@ -64,7 +56,7 @@ export const askTimeoutStopReason =
 
 export const askLaunchFailureDetail = 'The ask terminal could not be started.';
 
-export const askWaitFailureDetail = (cancelled: boolean, error: unknown): string =>
+const askWaitFailureDetail = (cancelled: boolean, error: unknown): string =>
   `The ask wait was ${cancelled ? 'cancelled' : 'failed'}: ${errorMessage(error)}`;
 
 export const askAdoptedChildStoppedDetail =
@@ -141,29 +133,8 @@ const hiddenAskLaunch = async (
   }
 };
 
-const terminalStopped = async (
-  request: AskRequest,
-  terminal: string | undefined,
-): Promise<boolean> => {
-  if (terminal === undefined) {
-    return false;
-  }
-
-  return kill({ ...request.hc, signal: undefined }, terminal).then(
-    (reply) => reply.state !== 'live',
-    () => false,
-  );
-};
-
-const stopAskTerminal = async (
-  request: AskRequest,
-  fence: StartFence,
-  stop: HiddenAskStop,
-): Promise<void> => {
-  const stopped = await terminalStopped(request, stop.terminal);
-
-  await fence.refreshChild();
-  stop.stopAttempted = stopped;
+const stopAskTerminal = async (request: AskRequest, terminal: string): Promise<void> => {
+  await kill({ ...request.hc, signal: undefined }, terminal).catch(() => undefined);
 };
 
 const resultFromRecord = (
@@ -194,95 +165,6 @@ const resultFromRecord = (
   }
 
   return needsOpen(askUnreadableAnswerReason);
-};
-
-const settleWaitFailure = async (
-  request: AskRequest,
-  started: HiddenAskRecord,
-  fence: StartFence,
-  stop: HiddenAskStop,
-  settle: SettleHiddenAskClaim,
-  error: unknown,
-  options: ChangeAskOptions,
-): Promise<never> => {
-  const cancelled = request.hc.signal?.aborted === true;
-
-  await stopAskTerminal(request, fence, stop);
-
-  const settled = await settle();
-
-  if (settled !== 'released') {
-    await updateHiddenAskRecord(
-      request.root,
-      started.askId,
-      (current) => ({
-        ...current,
-        status: 'running',
-        detail: askUnconfirmedStopDetail,
-      }),
-      options,
-    );
-  }
-
-  if (settled === 'kept') {
-    throw new Error(askKeptClaimMessage(request.root, stop.failure));
-  }
-
-  if (settled === 'adopted') {
-    throw error;
-  }
-
-  await updateHiddenAskRecord(
-    request.root,
-    started.askId,
-    (current) => ({
-      ...current,
-      status: 'failed',
-      detail: askWaitFailureDetail(cancelled, error),
-    }),
-    options,
-  );
-
-  throw error;
-};
-
-const settleTimeout = async (
-  request: AskRequest,
-  started: HiddenAskRecord,
-  fence: StartFence,
-  stop: HiddenAskStop,
-  settle: SettleHiddenAskClaim,
-  options: ChangeAskOptions,
-): Promise<AskResult> => {
-  await stopAskTerminal(request, fence, stop);
-
-  const settled = await settle();
-  const unconfirmed = settled !== 'released';
-  const status = unconfirmed ? 'running' : 'timeout';
-
-  const detail = unconfirmed ? askTimeoutStopDetail : askDeadlineDetail;
-
-  const changed = await updateHiddenAskRecord(
-    request.root,
-    started.askId,
-    (current) => ({
-      ...current,
-      status,
-      detail,
-    }),
-    options,
-  );
-
-  const record = changed?.record;
-
-  if (record?.status === 'running') {
-    const reason =
-      settled === 'kept' ? askKeptClaimMessage(request.root, stop.failure) : askTimeoutStopReason;
-
-    return needsOpen(reason);
-  }
-
-  return resultFromRecord(request.root, started.askId, record);
 };
 
 const adoptedChildPoll = async (signal: AbortSignal | undefined): Promise<void> => {
@@ -316,21 +198,43 @@ const waitForAdoptedChild = async (
   return state === 'gone';
 };
 
+// An adopted child owns the claim, so the lead writes nothing until the kernel reads its pid gone.
+const settleAdoptedChild = async (
+  request: AskRequest,
+  started: HiddenAskRecord,
+  fence: StartFence,
+  options: ChangeAskOptions,
+): Promise<HiddenAskRecordChange | undefined> => {
+  const childGone = await waitForAdoptedChild(started, fence, request.hc.signal);
+
+  const changed = await updateHiddenAskRecord(
+    request.root,
+    started.askId,
+    (current) =>
+      childGone
+        ? { ...current, status: 'failed', detail: askAdoptedChildStoppedDetail }
+        : undefined,
+    options,
+  );
+
+  request.hc.signal?.throwIfAborted();
+
+  return changed;
+};
+
 const launchHiddenRecord = async (
   request: AskRequest,
   initial: HiddenAskRecord,
   recordPath: string,
   model: string,
   fence: StartFence,
-  stop: HiddenAskStop,
+  options: ChangeAskOptions,
 ): Promise<HiddenAskLaunchResult> => {
   const launched = await hiddenAskLaunch(request, initial, recordPath, model, fence);
 
   await fence.recordStarted();
 
   if (launched.outcome === 'created' && launched.terminal !== undefined) {
-    stop.terminal = launched.terminal;
-
     const started: HiddenAskRecord = { ...initial, terminal: launched.terminal };
 
     await updateHiddenAskRecord(request.root, initial.askId, (current) => ({
@@ -341,23 +245,127 @@ const launchHiddenRecord = async (
     return { kind: 'started', started, terminal: launched.terminal };
   }
 
-  if (await fence.childAdopted()) {
-    return { kind: 'adopted', started: initial };
+  const completion = await fence.complete();
+
+  if (completion.outcome === 'adopted') {
+    const changed = await settleAdoptedChild(request, initial, fence, options);
+
+    return {
+      kind: 'settled',
+      result: resultFromRecord(request.root, initial.askId, changed?.record),
+    };
   }
 
-  const abandoned = await fence.abandon();
+  if (completion.outcome === 'unresolved') {
+    await updateHiddenAskRecord(
+      request.root,
+      initial.askId,
+      (current) => ({ ...current, status: 'running', detail: askUnconfirmedStopDetail }),
+      options,
+    );
 
-  if (abandoned.adopted) {
-    return { kind: 'adopted', started: initial };
+    return {
+      kind: 'settled',
+      result: needsOpen(askKeptClaimMessage(request.root, completion.failure)),
+    };
   }
 
-  await updateHiddenAskRecord(request.root, initial.askId, (current) => ({
-    ...current,
-    status: 'failed',
-    detail: askLaunchFailureDetail,
-  }));
+  const changed = await updateHiddenAskRecord(
+    request.root,
+    initial.askId,
+    (current) => ({ ...current, status: 'failed', detail: askLaunchFailureDetail }),
+    options,
+  );
 
-  throw launched.error;
+  if (completion.outcome === 'cancelled') {
+    throw launched.error;
+  }
+
+  return {
+    kind: 'settled',
+    result: resultFromRecord(request.root, initial.askId, changed?.record),
+  };
+};
+
+const settleWaitFailure = async (
+  request: AskRequest,
+  started: HiddenAskRecord,
+  fence: StartFence,
+  terminal: string,
+  settle: SettleHiddenAsk,
+  error: unknown,
+  options: ChangeAskOptions,
+): Promise<AskResult> => {
+  const cancelled = request.hc.signal?.aborted === true;
+
+  await stopAskTerminal(request, terminal);
+
+  const completion = await settle();
+
+  const changed =
+    completion.outcome === 'adopted'
+      ? await settleAdoptedChild(request, started, fence, options)
+      : await updateHiddenAskRecord(
+          request.root,
+          started.askId,
+          (current) => ({
+            ...current,
+            status: completion.outcome === 'unresolved' ? 'running' : 'failed',
+            detail:
+              completion.outcome === 'unresolved'
+                ? askUnconfirmedStopDetail
+                : askWaitFailureDetail(cancelled, error),
+          }),
+          options,
+        );
+
+  const record = changed?.record;
+
+  if (completion.claim === 'kept') {
+    throw new Error(askKeptClaimMessage(request.root, completion.failure));
+  }
+
+  if (completion.outcome === 'cancelled') {
+    throw error;
+  }
+
+  return resultFromRecord(request.root, started.askId, record);
+};
+
+const settleTimeout = async (
+  request: AskRequest,
+  started: HiddenAskRecord,
+  terminal: string,
+  settle: SettleHiddenAsk,
+  options: ChangeAskOptions,
+): Promise<AskResult> => {
+  await stopAskTerminal(request, terminal);
+
+  const completion = await settle();
+
+  const unconfirmed = completion.outcome === 'adopted' || completion.outcome === 'unresolved';
+  const status = unconfirmed ? 'running' : 'timeout';
+  const detail = unconfirmed ? askTimeoutStopDetail : askDeadlineDetail;
+
+  const changed = await updateHiddenAskRecord(
+    request.root,
+    started.askId,
+    (current) => ({ ...current, status, detail }),
+    options,
+  );
+
+  const record = changed?.record;
+
+  if (record?.status === 'running') {
+    const reason =
+      completion.claim === 'kept'
+        ? askKeptClaimMessage(request.root, completion.failure)
+        : askTimeoutStopReason;
+
+    return needsOpen(reason);
+  }
+
+  return resultFromRecord(request.root, started.askId, record);
 };
 
 const settleEnded = async (
@@ -397,8 +405,7 @@ const runHiddenAsk = async (
   sessionFile: string,
   model: string,
   fence: StartFence,
-  stop: HiddenAskStop,
-  settle: SettleHiddenAskClaim,
+  settle: SettleHiddenAsk,
   options: ChangeAskOptions,
 ): Promise<AskResult> => {
   const askId = randomUUID();
@@ -432,24 +439,10 @@ const runHiddenAsk = async (
     request.hc.signal.throwIfAborted();
   }
 
-  const launched = await launchHiddenRecord(request, initial, recordPath, model, fence, stop);
+  const launched = await launchHiddenRecord(request, initial, recordPath, model, fence, options);
 
-  if (launched.kind === 'adopted') {
-    const childGone = await waitForAdoptedChild(launched.started, fence, request.hc.signal);
-
-    const changed = await updateHiddenAskRecord(
-      request.root,
-      askId,
-      (current) =>
-        childGone
-          ? { ...current, status: 'failed', detail: askAdoptedChildStoppedDetail }
-          : undefined,
-      options,
-    );
-
-    request.hc.signal?.throwIfAborted();
-
-    return resultFromRecord(request.root, askId, changed?.record);
+  if (launched.kind === 'settled') {
+    return launched.result;
   }
 
   const { started, terminal } = launched;
@@ -459,15 +452,12 @@ const runHiddenAsk = async (
   try {
     waited = await wait(request.hc, terminal, { timeout: askDeadlineSeconds });
   } catch (error) {
-    return settleWaitFailure(request, started, fence, stop, settle, error, options);
+    return settleWaitFailure(request, started, fence, terminal, settle, error, options);
   }
 
   if (!waited.ended) {
-    return settleTimeout(request, started, fence, stop, settle, options);
+    return settleTimeout(request, started, terminal, settle, options);
   }
-
-  await fence.refreshChild();
-  stop.stopAttempted = true;
 
   return settleEnded(request, askId, waited.exit_code ?? null, waited.signal ?? null, options);
 };
@@ -477,38 +467,11 @@ export const startHiddenAskRun = (
   fence: StartFence,
   options: ChangeAskOptions = {},
 ): HiddenAskRun => {
-  const stop: HiddenAskStop = { terminal: undefined, stopAttempted: false };
-
-  const settle = async (): Promise<HiddenAskSettlement> => {
-    const abandoned = await fence.abandon();
-
-    if (abandoned.adopted) {
-      stop.stopAttempted = true;
-    }
-
-    const finished = await fence.finish({
-      adopted: abandoned.adopted,
-      stopAttempted: stop.stopAttempted,
-    });
-
-    if (finished.kept) {
-      if (finished.failure !== undefined) {
-        stop.failure = finished.failure;
-      }
-
-      return 'kept';
-    }
-
-    if (abandoned.adopted && (await fence.refreshChild()) !== 'gone') {
-      return 'adopted';
-    }
-
-    return 'released';
-  };
+  const settle = (): Promise<StartFenceCompletion> => fence.complete();
 
   return {
     settle,
     start: (sessionFile: string, model: string): Promise<AskResult> =>
-      runHiddenAsk(request, sessionFile, model, fence, stop, settle, options),
+      runHiddenAsk(request, sessionFile, model, fence, settle, options),
   };
 };

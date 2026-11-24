@@ -18,6 +18,7 @@ import {
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
+import { readAskRecord, readAskRecords, updateHiddenAskRecord, writeAskRecord } from '../record.js';
 import { acquireStartFence } from '../startFence/startFence.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
@@ -29,7 +30,7 @@ import {
   askTimeoutStopDetail,
   askTimeoutStopReason,
   askUnconfirmedStopDetail,
-  askWaitFailureDetail,
+  startHiddenAskRun,
 } from './askHiddenRun.js';
 import {
   ask,
@@ -151,21 +152,20 @@ it('a cancelled wait stops the hidden terminal and fails its record before relea
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
+  const waitFailure = new Error('The operation was cancelled.');
 
   await recordSession(root);
 
-  const cancelled = failFirstWait(hc, new Error('The operation was cancelled.'));
-  const failure = await ask(cancelled, root).catch((error: unknown) => error);
-
-  expect(failure).toBeInstanceOf(Error);
+  const result = await ask(failFirstWait(hc, waitFailure), root);
 
   const kills = hc.calls
     .filter((call) => call.commandArguments[0] === 'kill')
     .map((call) => call.commandArguments);
 
   expect(kills).toEqual([['kill', '--json', '--', 't-ask']]);
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).toContain(waitFailure.message);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
@@ -174,25 +174,64 @@ it('a rejected wait stops the hidden terminal and fails its record before releas
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
+  const waitFailure = new Error('The wait failed.');
 
   await recordSession(root);
 
-  const rejected = failFirstWait(hc, new Error('The wait failed.'));
-  const failure = await ask(rejected, root).catch((error: unknown) => error);
+  const result = await ask(failFirstWait(hc, waitFailure), root);
 
-  expect(failure).toBeInstanceOf(Error);
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).toContain(waitFailure.message);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('keeps the record running and the claim live when a rejected wait leaves a running child', async ({
+it('returns an answer the child saved before the wait failed', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const waitFailure = new Error('The wait failed.');
+  let askId: string | undefined;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      const result = await hc.exec(command, commandArguments, options);
+      const { records } = await readAskRecords(root);
+
+      askId = records[0]?.askId;
+
+      return result;
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'wait' && askId !== undefined) {
+      const record = await readAskRecord(root, askId);
+
+      if (record?.route === 'hidden') {
+        await writeAskRecord(root, { ...record, status: 'sent', answer: 'Use --quick.' });
+      }
+
+      throw waitFailure;
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = await ask({ ...hc, exec }, root);
+
+  expect(result).toMatchObject({ details: { status: 'ended', answer: 'Use --quick.' } });
+  expect(await statuses(root)).toEqual(['sent']);
+});
+
+it('keeps the record running and the claim live when a rejected wait leaves an unconfirmed child', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
 
-  useFakeStartProcess(cleanup, 'running');
+  useFakeStartProcess(cleanup, 'unknown');
   await recordSession(root);
 
   const rejected = failFirstWait(hc, new Error('The wait failed.'));
@@ -200,6 +239,7 @@ it('keeps the record running and the claim live when a rejected wait leaves a ru
   await expect(ask(rejected, root)).rejects.toThrow(askKeptClaimMessage(root));
 
   expect(await statuses(root)).toEqual(['running']);
+  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });
 
@@ -210,7 +250,7 @@ it('a timeout whose terminal does not end returns the kept-claim message and kee
   const hc = startFake();
   let waits = 0;
 
-  useFakeStartProcess(cleanup, 'running');
+  useFakeStartProcess(cleanup, 'unknown');
   await recordSession(root);
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
@@ -284,14 +324,13 @@ it('stops the hidden ask by process id when the wait and the kill both fail', as
   await recordSession(root);
   hc.fail('kill', 'hc kill failed', 1);
 
-  const rejected = failFirstWait(hc, new Error('The wait failed.'));
-  const failure = await ask(rejected, root).catch((error: unknown) => error);
+  const waitFailure = new Error('The wait failed.');
+  const result = await ask(failFirstWait(hc, waitFailure), root);
 
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain('The wait failed.');
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
   expect(processControl.signals).toEqual(['SIGTERM']);
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).toContain(waitFailure.message);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
@@ -304,7 +343,7 @@ it('resolves an unused ticket when a valid reply arrives before the rename and a
   const release = Promise.withResolvers<undefined>();
   const waitFailure = new Error('The wait failed.');
 
-  useFakeStartProcess(cleanup, 'running');
+  useFakeStartProcess(cleanup, 'running', true);
   await recordSession(root);
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
@@ -337,7 +376,7 @@ it('resolves an unused ticket when a valid reply arrives before the rename and a
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain('The wait failed.');
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).toContain(waitFailure.message);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(await readdir(join(root, '.tau', 'architect', 'start'))).toEqual([]);
 
@@ -368,16 +407,35 @@ it('keeps the claim when an address-less launch child state is unknown', async (
     return hc.exec(command, commandArguments, options);
   };
 
-  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
+  const result = await ask({ ...hc, exec }, root);
 
-  expect(failure).toBeInstanceOf(Error);
-  expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askLaunchFailureDetail);
+  expect(result).toMatchObject({
+    details: { status: 'needsOpen', reason: askKeptClaimMessage(root) },
+  });
+
+  expect(await statuses(root)).toEqual(['running']);
+  expect((await details(root))[0]).toBe(askUnconfirmedStopDetail);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 
   const names = await readdir(join(root, '.tau', 'architect', 'start'));
 
   expect(names.some((name) => name.includes('.started.'))).toBe(true);
+
+  const { records } = await readAskRecords(root);
+  const askId = records[0]?.askId;
+
+  if (askId === undefined) {
+    throw new Error('The ask record was not written.');
+  }
+
+  // The child may still adopt and answer, because the record is not final.
+  const answered = await updateHiddenAskRecord(root, askId, (current) => ({
+    ...current,
+    status: 'sent',
+    answer: 'Use --quick.',
+  }));
+
+  expect(answered?.record).toMatchObject({ status: 'sent', answer: 'Use --quick.' });
 });
 
 it('releases the claim and deletes the marker when an address-less launch child is gone', async ({
@@ -399,8 +457,9 @@ it('releases the claim and deletes the marker when an address-less launch child 
     return hc.exec(command, commandArguments, options);
   };
 
-  await expect(ask({ ...hc, exec }, root)).rejects.toThrow(/hc run failed/u);
+  const result = await ask({ ...hc, exec }, root);
 
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
   expect(await statuses(root)).toEqual(['failed']);
   expect((await details(root))[0]).toBe(askLaunchFailureDetail);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
@@ -414,7 +473,7 @@ it('keeps the record running with the unconfirmed-stop detail when the cleanup w
   const hc = startFake();
   let waits = 0;
 
-  useFakeStartProcess(cleanup, 'running');
+  useFakeStartProcess(cleanup, 'unknown');
   await recordSession(root);
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
@@ -441,6 +500,7 @@ it('records a real cancellation from the call signal as cancelled', async ({
   const hc = startFake();
   const controller = new AbortController();
   const cancellation = new Error('cancelled by the caller');
+  const waitError = Object.assign(new Error('aborted'), { name: 'AbortError' });
   let waits = 0;
 
   await recordSession(root);
@@ -452,7 +512,7 @@ it('records a real cancellation from the call signal as cancelled', async ({
       if (waits === 1) {
         controller.abort(cancellation);
 
-        throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        throw waitError;
       }
 
       return succeededResult(endedWait('t-ask', true));
@@ -474,17 +534,16 @@ it('records a real cancellation from the call signal as cancelled', async ({
     liveAsk: () => Promise.reject(new Error('unexpected live ask')),
   };
 
-  const failure = await askArchitect(request).catch((error: unknown) => error);
+  const result = await askArchitect(request);
 
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain('aborted');
+  expect(result).toMatchObject({ status: 'failed', reason: askFailedReason });
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(true, failure));
-  expect((await details(root))[0]).not.toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).toContain(waitError.message);
+  expect((await details(root))[0]).toContain('The ask wait was cancelled');
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('waits on a child that adopts during abandonment instead of failing the launch', async ({
+it('keeps a child that adopts during the stop and returns the answer it sent', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
@@ -495,6 +554,7 @@ it('waits on a child that adopts during abandonment instead of failing the launc
   let adoptOnProbe = false;
   let childState: 'running' | 'gone' = 'running';
   let taken = false;
+  let askId: string | undefined;
 
   await recordSession(root);
 
@@ -549,7 +609,18 @@ it('waits on a child that adopts during abandonment instead of failing the launc
     poll.started.promise.then(() => ({ kind: 'waiting' as const })),
   ]);
 
+  // The child adopted during the stop. It answers before its process ends.
   if (first.kind === 'waiting') {
+    const { records } = await readAskRecords(root);
+
+    askId = records[0]?.askId;
+
+    const record = askId === undefined ? undefined : await readAskRecord(root, askId);
+
+    if (record?.route === 'hidden') {
+      await writeAskRecord(root, { ...record, status: 'sent', answer: 'Use --quick.' });
+    }
+
     childState = 'gone';
   }
 
@@ -562,12 +633,11 @@ it('waits on a child that adopts during abandonment instead of failing the launc
   }
 
   expect(taken).toBe(true);
-  expect(settled.value.details).toMatchObject({ status: 'failed', reason: askFailedReason });
-  expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askAdoptedChildStoppedDetail);
-  expect(signals).toEqual([]);
+  expect(settled.value.details).toMatchObject({ status: 'ended', answer: 'Use --quick.' });
+  expect(await statuses(root)).toEqual(['sent']);
+  expect((await details(root))[0]).not.toBe(askLaunchFailureDetail);
+  expect(signals).toEqual(['SIGTERM']);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  expect(await readdir(startDirectory(root))).toEqual([]);
 });
 
 it('releases its claim and fails the record when an adopted child stopped before the launch reply and a later caller swept', async ({
@@ -598,7 +668,7 @@ it('releases its claim and fails the record when an adopted child stopped before
 
         markerSurvivedSweep = names.some((name) => name.includes('.adopted.'));
 
-        await newer.fence.finish({ adopted: false, stopAttempted: false });
+        await newer.fence.complete();
       }
 
       return succeededResult(JSON.stringify({ address: 't-ask', state: 'live' }));
@@ -607,15 +677,14 @@ it('releases its claim and fails the record when an adopted child stopped before
     return rejected.exec(command, commandArguments, options);
   };
 
-  const failure = await ask({ ...rejected, exec }, root).catch((error: unknown) => error);
+  const result = await ask({ ...rejected, exec }, root);
 
   expect(taken).toBe(true);
   expect(newerAcquired).toBe(true);
   expect(markerSurvivedSweep).toBe(true);
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain('The wait failed.');
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).toContain(waitFailure.message);
   expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(child.signals).toEqual([]);
@@ -659,13 +728,13 @@ it('keeps the newer claim live when the cached adopted child is gone before the 
     return hc.exec(command, commandArguments, options);
   };
 
-  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
+  const result = await ask({ ...hc, exec }, root);
 
   expect(taken).toBe(true);
   expect(newerAcquired).toBe(true);
-  expect(failure).toBeInstanceOf(Error);
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).toContain(waitFailure.message);
   expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
   expect(child.signals).toEqual([]);
 
@@ -692,19 +761,19 @@ it('releases its claim and fails the record when an adopted child stopped hard',
     return hc.exec(command, commandArguments, options);
   };
 
-  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
+  const result = await ask({ ...hc, exec }, root);
 
   expect(taken).toBe(true);
-  expect(failure).toBeInstanceOf(Error);
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
   expect(await statuses(root)).toEqual(['failed']);
-  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).toContain('The ask wait was failed:');
   expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(child.signals).toEqual([]);
   expect(await readdir(startDirectory(root))).toEqual([]);
 });
 
-it('keeps a failed wait running and never signals an adopted child that still runs', async ({
+it('waits for an adopted child that still runs before it fails the record', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
@@ -714,6 +783,7 @@ it('keeps a failed wait running and never signals an adopted child that still ru
 
   await recordSession(root);
   hc.reply('kill', JSON.stringify({ address: 't-ask', state: 'live' }));
+  startFakeTimers();
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'run') {
@@ -723,13 +793,21 @@ it('keeps a failed wait running and never signals an adopted child that still ru
     return hc.exec(command, commandArguments, options);
   };
 
-  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
+  const asking = ask({ ...hc, exec }, root);
+
+  await poll.started.promise;
+
+  child.state = 'gone';
+
+  await vi.advanceTimersByTimeAsync(1_000);
+
+  const result = await asking;
 
   expect(taken).toBe(true);
-  expect(failure).toBeInstanceOf(Error);
+  expect(result.details).toMatchObject({ status: 'failed', reason: askFailedReason });
   expect(child.signals).toEqual([]);
-  expect(await statuses(root)).toEqual(['running']);
-  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askAdoptedChildStoppedDetail);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 
   const names = await readdir(startDirectory(root));
@@ -825,7 +903,74 @@ it('waits on an adopted child after an address-less launch and settles its runni
   expect((await details(root))[0]).toBe(askAdoptedChildStoppedDetail);
   expect(child.signals).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  expect(await readdir(startDirectory(root))).toEqual([]);
+
+  const names = await readdir(startDirectory(root));
+
+  expect(names.some((name) => name.includes('.adopted.'))).toBe(true);
+});
+
+it('returns one adopted completion after the lost-reply path, even when the child ends', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+  const child = useFakeStartProcess(cleanup, 'running');
+  const sessionFile = await recordSession(root);
+  let taken = false;
+
+  startFakeTimers();
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await adoptAsChild(root, commandArguments);
+
+      return { code: 1, killed: false, truncated: false, stdout: '', stderr: 'launch failed' };
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    gateRecord: null,
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root, exec },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  const acquisition = await acquireStartFence(root);
+
+  if (acquisition.kind !== 'acquired') {
+    throw new Error('The start fence was not acquired.');
+  }
+
+  const run = startHiddenAskRun(request, acquisition.fence);
+
+  await acquisition.fence.createTicket();
+
+  const asking = run.start(sessionFile, 'a/architect');
+
+  await poll.started.promise;
+
+  child.state = 'gone';
+
+  await vi.advanceTimersByTimeAsync(1_000);
+
+  const result = await asking;
+
+  expect(taken).toBe(true);
+  expect(result).toMatchObject({ status: 'failed', reason: askFailedReason });
+
+  const completion = await run.settle();
+
+  expect(completion.outcome).toBe('adopted');
+  expect(completion.claim).toBe('released');
+  expect(await run.settle()).toBe(completion);
 });
 
 it('ends the adopted-child wait on abort without signalling the child', async ({
