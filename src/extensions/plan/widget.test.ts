@@ -11,6 +11,15 @@ const theme = { fg: (_color: string, text: string) => text } as unknown as Theme
 
 const borderLine = (width: number): string => `─ Plan ${'─'.repeat(width - 7)}`;
 
+const codes = { border: '90', muted: '2', accent: '36', dim: '35', warning: '33' } as const;
+
+const styled = (color: keyof typeof codes, text: string) =>
+  `\u001B[${codes[color]}m${text}\u001B[0m`;
+
+const styledTheme = {
+  fg: (color: keyof typeof codes, text: string) => styled(color, text),
+} as unknown as Theme;
+
 const steps: PlanStep[] = [
   { text: 'Brief worker for ME-123', status: 'pending' },
   { text: 'Review worker change', status: 'in_progress' },
@@ -69,15 +78,6 @@ it('shows a Nerd Font mark for each status', () => {
 });
 
 it('colors each mark and dims a completed step', () => {
-  const codes = { border: '90', muted: '2', accent: '36', dim: '35', warning: '33' } as const;
-
-  const styled = (color: keyof typeof codes, text: string) =>
-    `\u001B[${codes[color]}m${text}\u001B[0m`;
-
-  const styledTheme = {
-    fg: (color: keyof typeof codes, text: string) => styled(color, text),
-  } as unknown as Theme;
-
   const lines = planLines(steps, 80, styledTheme);
 
   expect(lines).toEqual([
@@ -87,6 +87,12 @@ it('colors each mark and dims a completed step', () => {
     `${styled('dim', '\u{F058}')} ${styled('dim', 'Open the PR')}`,
     `${styled('warning', '\u{F06A}')} Wait for the review`,
   ]);
+});
+
+it('dims the clipped text of a completed step', () => {
+  const lines = planLines([{ text: 'Open the PR', status: 'completed' }], 5, styledTheme);
+
+  expect(lines[1]).toBe(`${styled('dim', '\u{F058}')} ${styled('dim', '...')}`);
 });
 
 it('renders a line break and an escape sequence as one line', () => {

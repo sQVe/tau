@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from 'node:util';
+
 import type { ExtensionContext, Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import type { Component } from '@earendil-works/pi-tui';
@@ -34,11 +36,11 @@ const planLine = (step: PlanStep, width: number, theme: Theme): string => {
   const { mark, color } = statusMarks[step.status];
   const text = sanitizeSingleLine(step.text);
   const drawnMark = theme.fg(color, mark);
-  const drawnText = step.status === 'completed' ? theme.fg('dim', text) : text;
   const textWidth = Math.max(0, width - stepPrefixWidth);
-  const fittedText = truncateToWidth(drawnText, textWidth);
+  const fittedText = stripVTControlCharacters(truncateToWidth(text, textWidth));
+  const drawnText = step.status === 'completed' ? theme.fg('dim', fittedText) : fittedText;
 
-  return truncateToWidth(`${drawnMark} ${fittedText}`, width, '');
+  return truncateToWidth(`${drawnMark} ${drawnText}`, width, '');
 };
 
 export const planLines = (steps: readonly PlanStep[], width: number, theme: Theme): string[] => [
