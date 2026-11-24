@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import { isMissingFile } from '../src/errors.ts';
 import { processState, signalGroup, stopGroup } from '../src/process/process.ts';
-import { readProcessId } from './osLockProcessId.ts';
+import { parseProcessId, probeTimeoutMilliseconds, readProcessId } from './osLockProcessId.ts';
 
 export type OsLockState = 'free' | 'held';
 
@@ -61,7 +62,6 @@ export const osLockParentFixturePathFrom = (moduleUrl: URL): string =>
 export const osLockParentFixturePath = osLockParentFixturePathFrom(new URL(import.meta.url));
 
 const probePollMilliseconds = 20;
-const probeTimeoutMilliseconds = 10_000;
 const holderSeconds = '60';
 const holderReadyScript = `printf ready > "$1" || exit ${String(osLockMarkerWriteExitCode)}; shift; exec "$@"`;
 
@@ -252,7 +252,7 @@ export const secondHolderRefused = async (
   }
 };
 
-const holderPidPathFrom = (markerPath: string): string => `${markerPath}.holder-pid`;
+export const holderPidPathFrom = (markerPath: string): string => `${markerPath}.holder-pid`;
 
 // A signal aimed at no process would reach the caller's own process group.
 const stopProcess = (processId: number | undefined, signal: NodeJS.Signals): void => {
@@ -268,14 +268,19 @@ const stopProcess = (processId: number | undefined, signal: NodeJS.Signals): voi
 };
 
 const readHolderPid = async (holderPidPath: string): Promise<number | undefined> => {
-  try {
-    const text = await readFile(holderPidPath, 'utf8');
-    const value = Number(text.trim());
+  let text: string;
 
-    return Number.isInteger(value) && value > 0 ? value : undefined;
-  } catch {
-    return undefined;
+  try {
+    text = await readFile(holderPidPath, 'utf8');
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
   }
+
+  return parseProcessId(text);
 };
 
 const stopHolderFromFile = async (holderPidPath: string): Promise<void> => {
@@ -286,8 +291,8 @@ export const startParentWithHolder = async (
   mode: 'abandon' | 'exit' | 'wait',
   lockPath: string,
   markerPath: string,
-  holderPidPath: string,
 ): Promise<ParentHolder> => {
+  const holderPidPath = holderPidPathFrom(markerPath);
   const holderArgv = sleepHolderArgv(lockPath, markerPath, true);
 
   const parent = startCommand(
@@ -309,12 +314,7 @@ export const holderOutlivesKilledParent = async (
   lockPath: string,
   markerPath: string,
 ): Promise<{ holderAlive: boolean; state: OsLockState }> => {
-  const { parent, holderPid } = await startParentWithHolder(
-    'wait',
-    lockPath,
-    markerPath,
-    holderPidPathFrom(markerPath),
-  );
+  const { parent, holderPid } = await startParentWithHolder('wait', lockPath, markerPath);
 
   try {
     await waitForHolderReady(markerPath, parent);
@@ -360,12 +360,7 @@ export const detachedChildKeepsLockAfterParentExit = async (
   stateBeforeParentExit: OsLockState;
   state: OsLockState;
 }> => {
-  const { parent, holderPid } = await startParentWithHolder(
-    'exit',
-    lockPath,
-    markerPath,
-    holderPidPathFrom(markerPath),
-  );
+  const { parent, holderPid } = await startParentWithHolder('exit', lockPath, markerPath);
 
   try {
     await waitForHolderReady(markerPath, parent);

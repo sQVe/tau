@@ -7,6 +7,7 @@ const usage =
 
 const readinessPollMilliseconds = 20;
 const readinessTimeoutMilliseconds = 10_000;
+const holderFailureExitCode = 70;
 
 const [mode, markerPath, holderPidPath, command, ...commandArguments] = process.argv.slice(2);
 
@@ -14,6 +15,14 @@ const refuseUsage: (problem: string) => never = (problem) => {
   process.stderr.write(`${problem}\n${usage}\n`);
   process.exit(64);
 };
+
+const refuseHolder: (problem: string) => never = (problem) => {
+  process.stderr.write(`${problem}\n`);
+  process.exit(holderFailureExitCode);
+};
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 if (command === undefined || holderPidPath === undefined || markerPath === undefined) {
   refuseUsage('A parent needs a marker path, a holder process ID file, and a command to start.');
@@ -31,14 +40,30 @@ const holder = spawn(command, commandArguments, {
 
 holder.unref();
 
+holder.once('error', (error) => {
+  refuseHolder(`The holder could not start: ${error.message}`);
+});
+
+const holderPid = holder.pid;
+
+if (holderPid === undefined) {
+  refuseHolder('The holder started without a process ID.');
+}
+
 // The file reaches the caller before the printed ID does, so a caller that never reads the print
 // still learns which detached holder to stop.
-if (holder.pid !== undefined) {
-  await writeFile(holderPidPath, `${String(holder.pid)}\n`);
+try {
+  await writeFile(holderPidPath, `${String(holderPid)}\n`);
+} catch (error) {
+  holder.kill('SIGKILL');
+
+  refuseHolder(
+    `The holder process ID could not be recorded at ${holderPidPath}: ${messageOf(error)}`,
+  );
 }
 
 if (mode !== 'abandon') {
-  process.stdout.write(`${String(holder.pid)}\n`);
+  process.stdout.write(`${String(holderPid)}\n`);
 }
 
 const markerExists = async (path: string): Promise<boolean> => {
@@ -59,7 +84,7 @@ const holderIsReady = async (): Promise<boolean> => {
       return true;
     }
 
-    if (holder.pid === undefined || holder.exitCode !== null) {
+    if (holder.exitCode !== null) {
       return false;
     }
 
@@ -71,7 +96,7 @@ const holderIsReady = async (): Promise<boolean> => {
 
 if (!(await holderIsReady())) {
   process.stderr.write('The holder did not take the lock.\n');
-  process.exit(70);
+  process.exit(holderFailureExitCode);
 }
 
 if (mode === 'abandon') {

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   detachedChildKeepsLockAfterParentExit,
   holderOutlivesKilledParent,
+  holderPidPathFrom,
   lockFreesWhenEveryHolderIsGone,
   osLockConflictExitCode,
   osLockParentFixturePath,
@@ -49,6 +50,17 @@ const waitForProcessGone = async (processId: number): Promise<ProcessState> => {
   return state;
 };
 
+const readHolderPid = async (path: string): Promise<number> => {
+  const text = await readFile(path, 'utf8');
+  const value = Number(text.trim());
+
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Expected a process ID in ${path}, found ${JSON.stringify(text)}.`);
+  }
+
+  return value;
+};
+
 let directory: string;
 let lockPath: string;
 let markerPath: string;
@@ -76,14 +88,49 @@ it('spawns the parent fixture from the resolved path', () => {
   expect(result.stderr).toContain('Usage: node osLockParentHarness.ts');
 });
 
+it('refuses to start a holder it has no process ID for', () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      osLockParentFixturePath,
+      'wait',
+      markerPath,
+      holderPidPathFrom(markerPath),
+      'tau-os-lock-program-that-does-not-exist',
+    ],
+    { encoding: 'utf8' },
+  );
+
+  expect(result.status).toBe(70);
+  expect(result.stdout).toBe('');
+  expect(result.stderr).toContain('without a process ID');
+});
+
+it('refuses to start a holder it cannot record', () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      osLockParentFixturePath,
+      'wait',
+      markerPath,
+      join(directory, 'missing', 'holder.pid'),
+      'sleep',
+      '60',
+    ],
+    { encoding: 'utf8' },
+  );
+
+  expect(result.status).toBe(70);
+  expect(result.stdout).toBe('');
+  expect(result.stderr).toContain('could not be recorded');
+});
+
 it.skipIf(!flockAvailable)('stops a detached holder when the process ID read fails', async () => {
-  const holderPidPath = join(directory, 'holder.pid');
+  await expect(startParentWithHolder('abandon', lockPath, markerPath)).rejects.toThrow(
+    'exited before it printed its holder process ID',
+  );
 
-  await expect(
-    startParentWithHolder('abandon', lockPath, markerPath, holderPidPath),
-  ).rejects.toThrow('exited before it printed its holder process ID');
-
-  const holderPid = Number((await readFile(holderPidPath, 'utf8')).trim());
+  const holderPid = await readHolderPid(holderPidPathFrom(markerPath));
 
   expect(await waitForProcessGone(holderPid)).toBe('gone');
   expect(await waitForOsLockState(lockPath, 'free')).toBe('free');

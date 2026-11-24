@@ -1,17 +1,17 @@
 import type { ChildProcess } from 'node:child_process';
 
-const probeTimeoutMilliseconds = 10_000;
+export const probeTimeoutMilliseconds = 10_000;
 
-const parseProcessId = (text: string): number => {
-  const newline = text.indexOf('\n');
-  const line = newline === -1 ? text : text.slice(0, newline);
-  const value = Number(line);
+const processIdPattern = /^[1-9][0-9]*$/;
 
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`The parent printed no usable process ID: ${JSON.stringify(text)}.`);
+export const parseProcessId = (text: string): number => {
+  const [line = ''] = text.split('\n');
+
+  if (!processIdPattern.test(line)) {
+    throw new Error(`A process ID is plain decimal digits, not ${JSON.stringify(line)}.`);
   }
 
-  return value;
+  return Number(line);
 };
 
 export const readProcessId = (child: ChildProcess): Promise<number> =>
@@ -26,6 +26,9 @@ export const readProcessId = (child: ChildProcess): Promise<number> =>
 
       settled = true;
       clearTimeout(timer);
+      child.off('error', listeners.error);
+      child.off('close', listeners.close);
+      child.stdout?.off('data', listeners.data);
 
       if (error !== undefined) {
         reject(error);
@@ -42,27 +45,34 @@ export const readProcessId = (child: ChildProcess): Promise<number> =>
       }
     };
 
-    const timer = setTimeout(() => {
-      const timeoutError = new Error(
-        `The parent did not print its holder process ID within ${String(probeTimeoutMilliseconds)} ms.`,
-      );
+    const listeners = {
+      // 'close' fires after the child's stdio is drained, so a parent that prints its ID and
+      // exits at once is still read.
+      close: (): void => {
+        finish(new Error('The parent exited before it printed its holder process ID.'));
+      },
+      data: (chunk: Buffer): void => {
+        text += chunk.toString('utf8');
 
-      finish(timeoutError);
-    }, probeTimeoutMilliseconds);
+        if (text.includes('\n')) {
+          finish();
+        }
+      },
+      error: (error: Error): void => {
+        finish(error);
+      },
+      timeout: (): void => {
+        finish(
+          new Error(
+            `The parent did not print its holder process ID within ${String(probeTimeoutMilliseconds)} ms.`,
+          ),
+        );
+      },
+    };
 
-    child.once('error', (error) => {
-      finish(error);
-    });
+    const timer = setTimeout(listeners.timeout, probeTimeoutMilliseconds);
 
-    child.once('exit', () => {
-      finish(new Error('The parent exited before it printed its holder process ID.'));
-    });
-
-    child.stdout?.on('data', (chunk: Buffer) => {
-      text += chunk.toString('utf8');
-
-      if (text.includes('\n')) {
-        finish();
-      }
-    });
+    child.once('error', listeners.error);
+    child.once('close', listeners.close);
+    child.stdout?.on('data', listeners.data);
   });
