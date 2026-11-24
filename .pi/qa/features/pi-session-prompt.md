@@ -41,7 +41,8 @@ prompt.
 4. Compare the text that the brief names. When it names a reply text, run the reply check from the
    [QA guide](../../qa.md#what-to-check-1), and compare the text it prints with it. When it names a
    tool result instead, run this check with the event log, and compare the text it prints with it.
-   Change `bash` to the tool that the brief names.
+   Change `bash` to the tool that the brief names. When the prompt uses that tool more than once,
+   select the call that the brief names, for example by its outcome or its occurrence.
 
    ```sh
    jq -r 'select(.type == "tool_execution_end" and .toolName == "bash")

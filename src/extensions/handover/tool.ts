@@ -214,7 +214,7 @@ export const createHandoverTool = (
   - queued: saved and shown once. Never resend it.
   - unknown: it may be saved; see note. Retry with the same file, messageId, and sessionId.
   - An error ending "Nothing was queued." is a refusal.
-- action start: starts Pi with the file's text as its task. Needs file, folder, and name (a short title of the work, used in the tab name). Without space and without newSpace, it reads herdr-app's spaces and refuses when the folder already has a space on this computer, naming each. space reuses one; newSpace: true creates another. Pass model as provider/model-id to run the new Pi on another model. Returns {space, tab, terminal, spaceStatus}, where spaceStatus is created or reused.`,
+- action start: starts Pi with the file's text as its task. Needs file, folder, and name (a short title of the work, used in the tab name). Unless given space or newSpace: true, it reads herdr-app's spaces and refuses when the folder already has a space on this computer, naming each. space reuses one; newSpace: true creates another. Pass model as provider/model-id to run the new Pi on another model. Returns {space, tab, terminal, spaceStatus}, where spaceStatus is created or reused.`,
     promptSnippet: 'Prepare, send, and start handover messages.',
     parameters,
     executionMode: 'sequential',
