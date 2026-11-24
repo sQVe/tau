@@ -3,6 +3,7 @@ import { rename } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
 import { vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 
 import type { HcFake } from './hcFake.js';
 
@@ -17,6 +18,15 @@ export interface FakeStartProcess {
   signalTimes: number[];
 }
 
+interface FakeStartProcessControl extends FakeStartProcess {
+  stopOnSignal: boolean;
+}
+
+interface FakeStartProcesses {
+  spy: MockInstance<typeof process.kill>;
+  states: Map<number, FakeStartProcessControl>;
+}
+
 const wrapperName = 'tau-architect-start';
 const run = promisify(execFile);
 
@@ -25,18 +35,19 @@ export const fakeStartProcessId = 999_999_999;
 // A second unused process id for a launched child whose fake state stays running.
 export const fakeRunningStartProcessId = 999_999_998;
 
-export const useFakeStartProcess = (
-  cleanup: (cleanup: () => void) => void,
-  initial: FakeStartProcess['state'] = 'gone',
-  stopOnSignal = false,
-  processId: number = fakeStartProcessId,
-): FakeStartProcess => {
-  const control: FakeStartProcess = { state: initial, signals: [], signalTimes: [] };
-  const original = process.kill.bind(process);
+// Vitest returns the existing mock from a second spyOn, so one spy serves every fake process and
+// keeps the native probe for the processes it does not know.
+let fakeProcesses: FakeStartProcesses | undefined;
+
+const installFakeProcesses = (): FakeStartProcesses => {
+  const nativeKill = process.kill.bind(process);
+  const states = new Map<number, FakeStartProcessControl>();
 
   const spy = vi.spyOn(process, 'kill').mockImplementation((killedProcessId, signal) => {
-    if (killedProcessId !== processId) {
-      return original(killedProcessId, signal);
+    const control = states.get(killedProcessId);
+
+    if (control === undefined) {
+      return nativeKill(killedProcessId, signal);
     }
 
     if (signal === 0) {
@@ -54,15 +65,44 @@ export const useFakeStartProcess = (
     control.signals.push(signal as NodeJS.Signals);
     control.signalTimes.push(Date.now());
 
-    if (stopOnSignal) {
+    if (control.stopOnSignal) {
       control.state = 'gone';
     }
 
     return true;
   });
 
+  return { spy, states };
+};
+
+export const useFakeStartProcess = (
+  cleanup: (cleanup: () => void) => void,
+  initial: FakeStartProcess['state'] = 'gone',
+  stopOnSignal = false,
+  processId: number = fakeStartProcessId,
+): FakeStartProcess => {
+  fakeProcesses ??= installFakeProcesses();
+
+  const control: FakeStartProcessControl = {
+    state: initial,
+    signals: [],
+    signalTimes: [],
+    stopOnSignal,
+  };
+
+  fakeProcesses.states.set(processId, control);
+
   cleanup(() => {
-    spy.mockRestore();
+    if (fakeProcesses === undefined) {
+      return;
+    }
+
+    fakeProcesses.states.delete(processId);
+
+    if (fakeProcesses.states.size === 0) {
+      fakeProcesses.spy.mockRestore();
+      fakeProcesses = undefined;
+    }
   });
 
   return control;
