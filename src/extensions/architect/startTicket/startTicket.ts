@@ -103,7 +103,7 @@ export const cancelStartTicket = async (ticket: string): Promise<StartTicketCanc
     return isMissingFile(error) ? 'taken' : 'unread';
   }
 
-  await rm(cancelled, { force: true });
+  await rm(cancelled, { force: true }).catch(() => undefined);
 
   return 'cancelled';
 };
@@ -438,10 +438,8 @@ export const sweepStartFolder = async (request: StartSweepRequest): Promise<Star
       continue;
     }
 
-    if (action.kind === 'deleteMarker') {
-      // oxlint-disable-next-line no-await-in-loop -- Each marker is deleted before the next check.
-      await rm(action.path, { force: true });
-    }
+    // oxlint-disable-next-line no-await-in-loop -- Each marker is deleted before the next check.
+    await rm(action.path, { force: true });
   }
 
   return { kind: 'clear' };

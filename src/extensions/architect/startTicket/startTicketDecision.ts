@@ -1,24 +1,22 @@
-type StartTicketChild = 'running' | 'gone' | 'unknown';
+import type { ProcessState } from '../../../process/process.js';
 
 export type SweepFacts =
-  | { kind: 'unused' }
   | { kind: 'malformed'; path: string }
   | {
       kind: 'started';
       path: string;
       processId: number;
-      child: StartTicketChild;
+      child: ProcessState;
     }
   | {
       kind: 'adopted';
       path: string;
       processId: number;
-      child: StartTicketChild;
-      lead: StartTicketChild;
+      child: ProcessState;
+      lead: ProcessState;
     };
 
 export type SweepAction =
-  | { kind: 'cancel' }
   | { kind: 'deleteMarker'; path: string }
   | { kind: 'leave' }
   | { kind: 'refuseRunning'; processId: number }
@@ -29,10 +27,6 @@ export type SweepAction =
 // passed the fence and takes the lock at every later session start, so it never refuses. Its lead
 // keeps the marker as evidence until the kernel reads both processes as gone.
 export const sweepAction = (facts: SweepFacts): SweepAction => {
-  if (facts.kind === 'unused') {
-    return { kind: 'cancel' };
-  }
-
   if (facts.kind === 'malformed') {
     return { kind: 'refuseMalformed', path: facts.path };
   }

@@ -36,13 +36,13 @@ const runWrapper = async (
 };
 
 const markerNames = async (root: string): Promise<string[]> =>
-  readdir(join(root, '.tau', 'architect', 'start'));
+  (await readdir(join(root, '.tau', 'architect', 'start'))).toSorted();
 
 const startedMarker = async (root: string, token: string, processId: number): Promise<string> => {
   const ticket = await createStartTicket(root, token, leadPid);
   const marker = `${ticket}.started.${processId}`;
 
-  await writeFile(marker, '');
+  await rename(ticket, marker);
 
   return marker;
 };
@@ -51,7 +51,7 @@ const adoptedMarker = async (root: string, token: string, processId: number): Pr
   const ticket = await createStartTicket(root, token, leadPid);
   const marker = `${ticket}.adopted.${processId}`;
 
-  await writeFile(marker, '');
+  await rename(ticket, marker);
 
   return marker;
 };
@@ -363,22 +363,22 @@ it('refuses an unrecognised started name and names the path', async ({ onTestFin
   expect(existsSync(marker)).toBe(true);
 });
 
-it.each([
-  { name: 'a cancelled marker with a started name', fileName: 'old-token.started.cancelled' },
-  { name: 'a lone started marker', fileName: '.started' },
-])('refuses $fileName as a malformed start marker', async ({ fileName }) => {
-  const root = await createTemporaryRepository(onFinished);
-  const marker = await startFile(root, fileName);
+it.each([{ fileName: 'old-token.started.cancelled' }, { fileName: '.started' }])(
+  'refuses $fileName as a malformed start marker',
+  async ({ fileName }) => {
+    const root = await createTemporaryRepository(onFinished);
+    const marker = await startFile(root, fileName);
 
-  const outcome = await sweepStartFolder({
-    root,
-    currentToken: 'current',
-    stateOf: () => 'gone',
-  });
+    const outcome = await sweepStartFolder({
+      root,
+      currentToken: 'current',
+      stateOf: () => 'gone',
+    });
 
-  expect(outcome).toEqual({ kind: 'refuseMalformed', path: marker });
-  expect(existsSync(marker)).toBe(true);
-});
+    expect(outcome).toEqual({ kind: 'refuseMalformed', path: marker });
+    expect(existsSync(marker)).toBe(true);
+  },
+);
 
 it('refuses a malformed marker when a valid marker exists for the same token', async ({
   onTestFinished,

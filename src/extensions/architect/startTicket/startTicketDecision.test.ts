@@ -5,11 +5,6 @@ import type { SweepAction, SweepFacts } from './startTicketDecision.js';
 
 it.each<{ name: string; facts: SweepFacts; expected: SweepAction }>([
   {
-    name: 'an unused ticket',
-    facts: { kind: 'unused' },
-    expected: { kind: 'cancel' },
-  },
-  {
     name: 'a marker name without a process id',
     facts: { kind: 'malformed', path: '/start/token.started' },
     expected: { kind: 'refuseMalformed', path: '/start/token.started' },
