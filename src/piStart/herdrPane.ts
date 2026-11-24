@@ -11,10 +11,13 @@ const herdrSpaceFields = {
   machine: Type.Union([Type.String(), Type.Null()]),
 };
 
+// findPane reads only tabs and terminals, so a listing may leave out the space fields.
+const optionalHerdrSpaceFields = Type.Partial(Type.Object(herdrSpaceFields)).properties;
+
 const herdrLayoutSchema = Type.Object({
   spaces: Type.Array(
     Type.Object({
-      ...herdrSpaceFields,
+      ...optionalHerdrSpaceFields,
       tabs: Type.Array(
         Type.Object({
           terminals: Type.Array(

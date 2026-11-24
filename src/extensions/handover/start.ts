@@ -45,12 +45,12 @@ const launchReplySchema = Type.Object({
 
 const resolvedFolder = async (
   folder: string,
-  rethrow: (error: unknown) => boolean,
+  shouldRethrow: (error: unknown) => boolean,
 ): Promise<string> => {
   try {
     return await realpath(folder);
   } catch (error) {
-    if (rethrow(error)) {
+    if (shouldRethrow(error)) {
       throw error;
     }
 

@@ -11,6 +11,13 @@ export interface HerdrAppFakeOptions {
   spaces?: readonly HerdrAppSpace[];
 }
 
+export const herdrAppSpace = (
+  id: string,
+  name: string,
+  folder: string,
+  machine: string | null = null,
+): HerdrSpace => ({ id, name, folder, machine });
+
 const launchReply = (space: string): string =>
   JSON.stringify({ space, tab: 'tb-new', terminal: 't-new' });
 
@@ -56,8 +63,12 @@ const listedSpaces = (spaces: HerdrAppFakeOptions['spaces']) =>
 const tabReply = (commandArguments: readonly string[]): string => {
   const space = argumentAfter(commandArguments, '--space');
 
-  if (space === undefined || space.startsWith('--')) {
+  if (space === undefined) {
     throw new Error('tab.new needs --space');
+  }
+
+  if (space.startsWith('--')) {
+    throw new Error(`tab.new --space needs a value, got the flag ${space}`);
   }
 
   return launchReply(space);
@@ -92,5 +103,10 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
     },
   });
 
+const launchCommands = new Set<string>(['space.new', 'tab.new']);
+
 export const launchesOf = (fake: ExecFake<HerdrAppCommand>): ExecCall[] =>
-  fake.calls.filter(({ commandArguments }) => commandArguments[0] === 'do');
+  fake.calls.filter(
+    ({ commandArguments }) =>
+      commandArguments[0] === 'do' && launchCommands.has(commandArguments[1] ?? ''),
+  );

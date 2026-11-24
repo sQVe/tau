@@ -45,10 +45,6 @@ interface OpenToolOptions {
 const appLayout = JSON.stringify({
   spaces: [
     {
-      id: 'sp-lead',
-      name: 'lead',
-      folder: '/work/checkout',
-      machine: null,
       tabs: [
         {
           terminals: [

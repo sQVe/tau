@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createHerdrAppFake } from './herdrAppFake.js';
+import { createHerdrAppFake, launchesOf } from './herdrAppFake.js';
 
 const replyTo = async (commandArguments: readonly string[]): Promise<string> => {
   const fake = createHerdrAppFake();
@@ -23,7 +23,7 @@ it('fails a tab.new without a space instead of inventing one', async () => {
 
 it('fails a tab.new whose space value is another flag', async () => {
   await expect(replyTo(['tab.new', '--space', '--folder', '/work/repo'])).rejects.toThrow(
-    'tab.new needs --space',
+    'tab.new --space needs a value, got the flag --folder',
   );
 });
 
@@ -43,6 +43,17 @@ it('lists the spaces it was given with no tabs', async () => {
   expect(JSON.parse(result.stdout)).toEqual({
     spaces: [{ id: 'sp-1', name: 'platform', folder: '/work/repo', machine: 'build-2', tabs: [] }],
   });
+});
+
+it('counts a space or tab launch and not a pane split', async () => {
+  const fake = createHerdrAppFake();
+
+  await fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1'], undefined);
+  await fake.exec('herdr-app', ['do', 'tab.new', '--space', 'sp-1'], undefined);
+
+  const launches = launchesOf(fake).map((call) => call.commandArguments);
+
+  expect(launches).toEqual([['do', 'tab.new', '--space', 'sp-1']]);
 });
 
 it('fails a command it does not model instead of answering it', async () => {

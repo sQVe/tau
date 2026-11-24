@@ -308,28 +308,12 @@ it('returns the reply and the parsed launch fields', async () => {
   });
 });
 
-it('rejects malformed launch output after exactly one launch', async () => {
-  const fake = createHerdrAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  fake.overrideOutput('tab.new', '{"space":"space-1","tab":"tb-new"}');
-
-  await expect(
-    startHandover(
-      runtimeOf(fake, root),
-      requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
-    ),
-  ).rejects.toThrow('herdr-app do printed unexpected output');
-
-  expect(launchesOf(fake)).toHaveLength(1);
-});
-
 it.each([
-  { label: 'space', reply: '{"space":"","tab":"tb-new","terminal":"t-new"}' },
-  { label: 'tab', reply: '{"space":"space-1","tab":"","terminal":"t-new"}' },
-  { label: 'terminal', reply: '{"space":"space-1","tab":"tb-new","terminal":""}' },
-])('rejects an empty $label in the launch reply after exactly one launch', async ({ reply }) => {
+  { label: 'a missing terminal', reply: '{"space":"space-1","tab":"tb-new"}' },
+  { label: 'an empty space', reply: '{"space":"","tab":"tb-new","terminal":"t-new"}' },
+  { label: 'an empty tab', reply: '{"space":"space-1","tab":"","terminal":"t-new"}' },
+  { label: 'an empty terminal', reply: '{"space":"space-1","tab":"tb-new","terminal":""}' },
+])('rejects $label in the launch reply after exactly one launch', async ({ reply }) => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');

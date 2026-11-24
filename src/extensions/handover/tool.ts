@@ -196,7 +196,9 @@ const rejectMisplacedOptions = (input: HandoverInput): void => {
   if (input.action !== 'start' && input.space !== undefined) {
     throw new Error('space is only for action start.');
   }
+};
 
+const rejectExclusiveSpaceOptions = (input: HandoverInput): void => {
   if (input.space !== undefined && input.newSpace === true) {
     throw new Error('space and newSpace cannot be used together: pass one of them.');
   }
@@ -208,6 +210,7 @@ const runAction = async (
   input: HandoverInput,
 ): Promise<HandoverDetails> => {
   rejectMisplacedOptions(input);
+  rejectExclusiveSpaceOptions(input);
 
   if (input.action === 'prepare') {
     return prepare(context.cwd);

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
+import { createHerdrAppFake, herdrAppSpace } from '../../tests/herdrAppFake.js';
 import { findPane, listSpaces } from './herdrPane.js';
 
 const layoutOf = (stdout: string) => {
@@ -11,17 +11,10 @@ const layoutOf = (stdout: string) => {
   return { fake, runtime: { exec: fake.exec, cwd: '/tmp' } };
 };
 
-const space = (id: string, name: string, folder: string, machine: string | null = null) => ({
-  id,
-  name,
-  folder,
-  machine,
-});
-
 const layout = JSON.stringify({
   spaces: [
     {
-      ...space('sp-1', 'platform', '/work/repo'),
+      ...herdrAppSpace('sp-1', 'platform', '/work/repo'),
       tabs: [
         { terminals: [{ terminal: 't1', pane: 'p1' }] },
         {
@@ -33,7 +26,7 @@ const layout = JSON.stringify({
       ],
     },
     {
-      ...space('sp-2', 'second', '/work/other'),
+      ...herdrAppSpace('sp-2', 'second', '/work/other'),
       tabs: [{ terminals: [{ terminal: 't4', pane: 'p4' }] }],
     },
   ],
@@ -52,18 +45,12 @@ it.each([
   expect(fake.calls.map((call) => call.commandArguments)).toEqual([['ls']]);
 });
 
-it('a fake built from listed spaces answers both ls readers', async () => {
-  const fake = createHerdrAppFake({
-    spaces: [{ id: 'sp-1', name: 'platform', folder: '/work/repo', machine: 'build-2' }],
-  });
+it('finds a pane in a listing whose spaces carry no space fields', async () => {
+  const { runtime } = layoutOf(
+    JSON.stringify({ spaces: [{ tabs: [{ terminals: [{ terminal: 't1', pane: 'p1' }] }] }] }),
+  );
 
-  const runtime = { exec: fake.exec, cwd: '/tmp' };
-
-  await expect(findPane(runtime, 't1')).resolves.toBeUndefined();
-
-  await expect(listSpaces(runtime)).resolves.toMatchObject([
-    { id: 'sp-1', name: 'platform', folder: '/work/repo', machine: 'build-2' },
-  ]);
+  await expect(findPane(runtime, 't1')).resolves.toBe('p1');
 });
 
 it('a listed space carries the machine it runs on', async () => {
@@ -86,12 +73,16 @@ it('a listed space carries the machine it runs on', async () => {
 });
 
 it.each([
-  { label: 'without a machine', machine: undefined },
-  { label: 'with a machine that is not a string', machine: 2 },
-])('a listed space $label is refused', async ({ machine }) => {
-  const { runtime } = layoutOf(
-    JSON.stringify({ spaces: [{ id: 'sp-1', name: 'platform', folder: '/work/repo', machine }] }),
-  );
+  { label: 'without an id', space: { name: 'platform', folder: '/work/repo', machine: null } },
+  { label: 'without a name', space: { id: 'sp-1', folder: '/work/repo', machine: null } },
+  { label: 'without a folder', space: { id: 'sp-1', name: 'platform', machine: null } },
+  { label: 'without a machine', space: { id: 'sp-1', name: 'platform', folder: '/work/repo' } },
+  {
+    label: 'with a machine that is not a string',
+    space: { id: 'sp-1', name: 'platform', folder: '/work/repo', machine: 2 },
+  },
+])('a listed space $label is refused', async ({ space }) => {
+  const { runtime } = layoutOf(JSON.stringify({ spaces: [space] }));
 
   await expect(listSpaces(runtime)).rejects.toThrow('herdr-app ls printed unexpected output');
 });
