@@ -37,12 +37,14 @@ export interface OpenTerminalFacts {
   root: string;
   holder: OpenLockHolder;
   record: SavedArchitectRecord | undefined;
+  keptClaim: boolean;
 }
 
 export type OpenTerminal =
   | { kind: 'lookup'; terminal: string }
   | { kind: 'refuse'; checkout: string }
-  | { kind: 'unrecorded' };
+  | { kind: 'keptClaim' }
+  | { kind: 'starting' };
 
 const isSameHolder = (first: OpenLockHolder, second: OpenLockHolder): boolean =>
   first.pid === second.pid && first.checkout === second.checkout && first.token === second.token;
@@ -87,21 +89,34 @@ export const openReuse = (facts: OpenReuseFacts): OpenReuse => {
 export const openTerminal = (facts: OpenTerminalFacts): OpenTerminal => {
   const { holder, record, root } = facts;
 
-  const owner = record?.version === 2 ? record.owner : undefined;
-  const token = owner?.lockToken;
-  const terminal = record?.version === 1 ? record.terminal : owner?.terminal;
+  if (record?.version === 1) {
+    const terminal = record.terminal;
 
-  if (token !== undefined && token !== holder.token) {
-    if (holder.checkout !== root) {
+    return terminal === null
+      ? { kind: 'refuse', checkout: holder.checkout }
+      : { kind: 'lookup', terminal };
+  }
+
+  const owner = record?.owner;
+  const token = owner?.lockToken;
+
+  if (token === holder.token) {
+    const terminal = owner?.terminal;
+
+    if (terminal === null || terminal === undefined) {
       return { kind: 'refuse', checkout: holder.checkout };
     }
 
-    return { kind: 'unrecorded' };
+    return { kind: 'lookup', terminal };
   }
 
-  if (terminal === null || terminal === undefined) {
+  if (holder.checkout !== root) {
     return { kind: 'refuse', checkout: holder.checkout };
   }
 
-  return { kind: 'lookup', terminal };
+  if (facts.keptClaim) {
+    return { kind: 'keptClaim' };
+  }
+
+  return { kind: 'starting' };
 };

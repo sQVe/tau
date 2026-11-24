@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import type { Mock } from 'vitest';
 
+import { succeededResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
+import { takingStartTicket } from '../../../../tests/startTicketFake.js';
 import { startLeadInbox } from '../fixtures/leadInbox.js';
 import { contextOf, holdLock, recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
@@ -16,7 +18,7 @@ import {
 } from '../record.js';
 import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
 import { createArchitectTool } from '../tool.js';
-import { askDeadlineSeconds } from './ask.js';
+import { askDeadlineSeconds } from './askHiddenRun.js';
 
 const hiddenAsk = (
   askId: string,
@@ -192,21 +194,32 @@ it('an ask deadline returns needsOpen and kills the terminal', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
-  const hc = createHcFake();
-  const tool = createArchitectTool({ ...hc, cwd: root });
+  const hc = takingStartTicket(createHcFake());
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
 
-  hc.reply(
-    'wait',
-    JSON.stringify({ terminal: 't-ask', ended: false, reason: 'timeout', turn: 0, children: [] }),
-  );
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      return succeededResult(
+        JSON.stringify({
+          terminal: 't-ask',
+          ended: false,
+          reason: 'timeout',
+          turn: 0,
+          children: [],
+          exit_code: null,
+        }),
+      );
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
 
   hc.reply('kill', JSON.stringify({ address: 't-ask', state: 'finished' }));
   const startedAt = Date.now();
 
-  const result = await tool.execute(
+  const result = await createArchitectTool({ ...hc, exec, cwd: root }).execute(
     'call',
     { action: 'ask', question: 'Which flag name?' },
     undefined,
@@ -226,7 +239,7 @@ it('an ask deadline returns needsOpen and kills the terminal', async ({
 
 it('ask returns the answer the architect saved', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
   const answer = 'Use --quick.';
 
   await recordSession(root);
@@ -301,7 +314,7 @@ it('a newer live record does not hide a running ask', async ({ onTestFinished: c
 
 it('ask falls back when its record disappears', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));
@@ -341,7 +354,7 @@ it('ask falls back when its record disappears', async ({ onTestFinished: cleanup
 
 it('ask ignores a present record on another route', async ({ onTestFinished: cleanup }) => {
   const { root } = await setup(cleanup);
-  const hc = createHcFake();
+  const hc = takingStartTicket(createHcFake());
 
   await recordSession(root);
   hc.reply('run', JSON.stringify({ address: 't-ask', state: 'live' }));

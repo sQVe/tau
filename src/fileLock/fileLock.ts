@@ -2,10 +2,15 @@ import { link, mkdir, readdir, readFile, rename, rm, truncate, writeFile } from 
 import { basename, dirname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
+import { failureWithRelease, hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
-import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
+import {
+  hasAdoptToken,
+  holderIsGone,
+  holderIsTakeable,
+  recordNeedsRereading,
+} from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
 export interface LiveLockHolder {
@@ -39,19 +44,25 @@ export interface FileLockOptions {
   // Runs between reading the holder and linking the next generation. Tests use it to stall a session.
   beforeLink?: () => Promise<void>;
   token?: string;
+  // Takes over the claim that names this token instead of waiting for it to go.
+  adopt?: string;
 }
 
 export interface HoldFileLockOptions {
   lockPath: string;
   checkout: string;
   terminal: string | undefined;
+  // Runs between reading the holder and linking the next generation. Tests use it to stall a session.
+  beforeLink?: () => Promise<void>;
   // Names the owner in the lock file. Without it, the lock makes a token.
   token?: string;
+  // Takes over the claim that names this token instead of refusing it.
+  adopt?: string;
 }
 
 export type HeldFileLock =
   | { kind: 'held'; release: () => Promise<void> }
-  | { kind: 'refused'; holder: LiveLockHolder | undefined };
+  | { kind: 'refused'; reason: 'held' | 'claimGone'; holder: LiveLockHolder | undefined };
 
 type LockClaim = Omit<LockOwner, 'startedAt'>;
 
@@ -147,7 +158,7 @@ const waitForNextPoll = async (
   }
 };
 
-const listGenerations = async (lockPath: string): Promise<number[]> => {
+export const listGenerations = async (lockPath: string): Promise<number[]> => {
   const prefix = `${basename(lockPath)}.`;
   const names = await readdir(dirname(lockPath));
 
@@ -170,8 +181,9 @@ const readHolderFacts = async (holder: LockOwner | undefined): Promise<LockHolde
 };
 
 // The lock is the file of the highest generation. A new owner takes the next generation with an
-// atomic link, so two sessions that both see a dead holder cannot both win, and no one ever
-// removes the file of an owner that is still live. Files of older generations are garbage.
+// atomic link, so two sessions that both see a dead holder cannot both win. Files of older
+// generations are garbage. A takeover of a live claim removes that holder's file too, so the
+// displaced claim can no longer rewrite or release its own record.
 const removeOlderGenerations = async (lockPath: string, generation: number): Promise<void> => {
   const generations = await listGenerations(lockPath);
   const older = generations.filter((candidate) => candidate < generation);
@@ -311,22 +323,20 @@ const claimGeneration = async (
 
     await removeOlderGenerations(lockPath, next);
   } catch (claimError) {
-    const releaseError = await releaseOwnFile(path, owner).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-
-    if (releaseError === undefined) {
-      throw claimError;
-    }
-
-    const message = `The claim failed: ${errorMessage(claimError)}; releasing it failed: ${errorMessage(releaseError)}`;
-
-    throw new Error(message, { cause: claimError });
+    throw await failureWithRelease(claimError, () => releaseOwnFile(path, owner), {
+      failure: 'The claim failed',
+      release: 'releasing it failed',
+    });
   }
 
   return owner;
 };
+
+const canTakeOver = (
+  facts: LockHolderFacts,
+  holder: LockOwner | undefined,
+  adopt: string | undefined,
+): boolean => holderIsTakeable({ facts, holderToken: holder?.token, adoptToken: adopt });
 
 // Polls until this process owns the lock and returns the path and owner record of its file. Each
 // poll depends on the one before, so the loop awaits.
@@ -345,7 +355,7 @@ const acquireLock = async (
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
     const { highest, holder, facts } = await findCurrentHolder(lockPath);
 
-    if (highest === undefined || holderIsGone(facts)) {
+    if (canTakeOver(facts, holder, options.adopt)) {
       const next = (highest ?? 0) + 1;
       const path = generationPath(lockPath, next);
 
@@ -416,7 +426,7 @@ export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFi
 
   const state: { refusal: { holder: LockOwner | undefined } | undefined } = { refusal: undefined };
 
-  const { lockPath, checkout, terminal, token } = options;
+  const { lockPath, checkout, terminal, token, adopt, beforeLink } = options;
 
   const holding = withFileLock(
     {
@@ -424,6 +434,8 @@ export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFi
       checkout,
       ...(terminal === undefined ? {} : { terminal }),
       ...(token === undefined ? {} : { token }),
+      ...(adopt === undefined ? {} : { adopt }),
+      ...(beforeLink === undefined ? {} : { beforeLink }),
       pollMilliseconds: 250,
       signal: controller.signal,
       cancelled: () => new Error('The lock is held by another session.'),
@@ -462,8 +474,9 @@ export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFi
 
   if (refusal !== undefined) {
     const holder = refusal.holder === undefined ? undefined : toLiveHolder(refusal.holder);
+    const reason = hasAdoptToken(adopt) ? 'claimGone' : 'held';
 
-    return { kind: 'refused', holder };
+    return { kind: 'refused', reason, holder };
   }
 
   if (acquired.kind === 'failed') {

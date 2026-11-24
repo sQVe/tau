@@ -10,6 +10,8 @@ import { currentRole } from '../../role/role.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { AnswerTracker, ClosedAnswers } from './answer.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
+import type { AskDeadline } from './ask/askDeadline.js';
+import { startAskDeadline } from './ask/askDeadline.js';
 import { initialEndNoteRoute, nextEndNoteRoute } from './endNoteDecision.js';
 import type { EndNoteRoute } from './endNoteDecision.js';
 import { deliverEndNote, prepareEndNote } from './endNoteSend.js';
@@ -17,8 +19,9 @@ import { leadModelWarning } from './leadModelWarning.js';
 import { holdArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import type { FinalHandoverResult } from './queuedHandover.js';
-import { readAskRecords, writeArchitectRecord, writeAskRecord } from './record.js';
+import { readAskRecords, updateHiddenAskRecord, writeArchitectRecord } from './record.js';
 import type { ArchitectOwner, HiddenAskRecord } from './record.js';
+import { adoptStartMarker } from './startTicket/startTicket.js';
 
 export interface HeldLockToken {
   current: () => string | undefined;
@@ -32,6 +35,7 @@ export interface ArchitectSession {
   owner: ArchitectOwner;
   held: HeldLockToken;
   endNote?: EndNoteRoute;
+  deadline?: AskDeadline;
 }
 
 export interface EndArchitectOptions {
@@ -73,11 +77,18 @@ const warnLeadModel = (context: ExtensionContext): void => {
   }
 };
 
-const architectMode = (): ArchitectOwner['mode'] => {
-  // oxlint-disable-next-line node/no-process-env -- The ask terminal receives its record path in its environment.
-  const askRecordPath = process.env.TAU_ARCHITECT_ASK;
+const architectClaim = (): string | undefined => {
+  // oxlint-disable-next-line node/no-process-env -- The lead passes the claim it took in the architect's environment.
+  const claim = process.env.TAU_ARCHITECT_CLAIM;
 
-  return askRecordPath !== undefined && askRecordPath !== '' ? 'ask' : 'visible';
+  return claim === undefined || claim === '' ? undefined : claim;
+};
+
+const askRecordPathFromEnvironment = (): string | undefined => {
+  // oxlint-disable-next-line node/no-process-env -- The ask terminal receives its record path in its environment.
+  const path = process.env.TAU_ARCHITECT_ASK;
+
+  return path === undefined || path === '' ? undefined : path;
 };
 
 const startArchitect = async (
@@ -89,14 +100,24 @@ const startArchitect = async (
   let release: (() => Promise<void>) | undefined;
 
   try {
-    const lock = await holdArchitectLock(root);
+    const claimToken = architectClaim();
+    const lock = await holdArchitectLock(root, claimToken);
 
     release = lock.release;
     held.set(lock.token);
 
+    if (claimToken !== undefined) {
+      await adoptStartMarker(root, claimToken, process.pid).catch(() => undefined);
+    }
+
+    // oxlint-disable-next-line node/no-process-env -- A reload must not try to adopt the old claim again.
+    delete process.env['TAU_ARCHITECT_CLAIM'];
+
+    const askPath = askRecordPathFromEnvironment();
+
     const owner: ArchitectOwner = {
       lockToken: lock.token,
-      mode: architectMode(),
+      mode: askPath === undefined ? 'visible' : 'ask',
       terminal: currentTerminalAddress() ?? null,
       sessionId: context.sessionManager.getSessionId(),
     };
@@ -120,6 +141,9 @@ const startArchitect = async (
       architectTerminal: owner.terminal,
     });
 
+    const deadline =
+      askPath === undefined ? undefined : await startAskDeadline(root, askPath, context);
+
     return {
       root,
       release: lock.release,
@@ -127,6 +151,7 @@ const startArchitect = async (
       owner,
       held,
       ...(endNote === undefined ? {} : { endNote }),
+      ...(deadline === undefined ? {} : { deadline }),
     };
   } catch (error) {
     held.set(undefined);
@@ -161,17 +186,17 @@ const failRunningAsks = async (root: string, ui: ConfigWarnings): Promise<void> 
     notifyOnce(ui, gap.path, 'ask-record', gap.reason, 'warning');
   }
 
-  const running = records.filter(
+  const hidden = records.filter(
     (record): record is HiddenAskRecord => record.route === 'hidden' && record.status === 'running',
   );
 
   await Promise.all(
-    running.map((record) =>
-      writeAskRecord(root, {
-        ...record,
+    hidden.map((record) =>
+      updateHiddenAskRecord(root, record.askId, (current) => ({
+        ...current,
         status: 'failed',
         detail: 'The architect session ended before it sent the answer.',
-      }),
+      })),
     ),
   );
 };
@@ -229,6 +254,10 @@ export const endArchitectSession = async (
 ): Promise<void> => {
   session.held.set(undefined);
 
+  await session.deadline?.stop().catch((error: unknown) => {
+    session.ui.notify(`The ask deadline could not be stopped: ${errorMessage(error)}`, 'warning');
+  });
+
   // The note read must finish before the lock is released, so a new owner cannot overwrite the
   // record first. It starts with the close so its deadline starts now, but live ask settlement does
   // not wait for it.
@@ -240,14 +269,17 @@ export const endArchitectSession = async (
   const closing = closeAdmitted(answers, admissions);
 
   try {
-    const closed = await closing;
+    try {
+      const closed = await closing;
 
-    await closeLiveAsks(session, hc, closed);
-    await note;
-    await session.release();
+      await closeLiveAsks(session, hc, closed);
+      await note;
+    } finally {
+      await failRunningAsks(session.root, session.ui);
+    }
   } finally {
     try {
-      await failRunningAsks(session.root, session.ui);
+      await session.release();
     } finally {
       if (note !== undefined) {
         await deliverEndNote(await note, hc, (message) => {

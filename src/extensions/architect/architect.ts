@@ -65,8 +65,10 @@ export default function architectExtension(pi: ExtensionAPI): void {
   const admissions = createAskAdmissions(held.current);
   let session: ArchitectSession | undefined;
 
+  const askCheckout = (): string | undefined => session?.root;
+
   if (askRecordPath !== undefined && askRecordPath !== '') {
-    registerAskMode(pi, askRecordPath);
+    registerAskMode(pi, askCheckout, askRecordPath);
   } else if (currentRole() === 'architect') {
     registerVisibleArchitect(pi, hc, () => session, answers, admissions);
   }

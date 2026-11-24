@@ -30,7 +30,7 @@ export const startHandover = async (
   const task = sender === undefined ? text : `${senderLine(sender)}\n\n${text}`;
   const environment = sender === undefined ? undefined : senderEnvironment(sender);
 
-  return startPiSession(runtime, {
+  const started = await startPiSession(runtime, {
     folder: request.folder,
     target: request.target,
     tabName: tabName('lead', request.title),
@@ -40,4 +40,6 @@ export const startHandover = async (
     bareRoot: request.bareRoot,
     environment,
   });
+
+  return { reply: started.reply };
 };

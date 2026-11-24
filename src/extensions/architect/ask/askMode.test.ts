@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../../tests/extensionApi.js';
+import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
-import { readAskRecordAt, writeAskRecordAt } from '../record.js';
+import { askRecordPath, readAskRecordAt, writeAskRecord, writeAskRecordAt } from '../record.js';
 import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
 import { askModePrompt, registerAskMode } from './askMode.js';
 
@@ -46,11 +47,11 @@ const liveRecord = (): LiveAskRecord => ({
 const askFile = async (
   cleanup: (cleanup: () => void) => void,
 ): Promise<{ directory: string; path: string; record: HiddenAskRecord }> => {
-  const directory = temporaryDirectory(cleanup, 'tau-ask-mode-');
-  const path = join(directory, `${askRecord().askId}.json`);
+  const directory = await createTemporaryRepository(cleanup);
   const record = askRecord();
+  const path = askRecordPath(directory, record.askId);
 
-  await writeAskRecordAt(path, record);
+  await writeAskRecord(directory, record);
 
   return { directory, path, record };
 };
@@ -72,7 +73,7 @@ it('ask mode names the ask in its prompt and saves the answer to the lead', asyn
   const answer = 'Use --quick.';
   const file = await writeHandover(directory, answer);
 
-  registerAskMode(fake.pi, path);
+  registerAskMode(fake.pi, () => directory, path);
 
   const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: [] } };
 
@@ -109,7 +110,7 @@ it('ask mode blocks a handover send to a terminal that is not the lead', async (
   const shutdown = vi.fn<() => void>();
   const file = await writeHandover(directory, 'Use --quick.');
 
-  registerAskMode(fake.pi, path);
+  registerAskMode(fake.pi, () => directory, path);
 
   const block = await fake.handler('tool_call')(
     {
@@ -139,7 +140,7 @@ it('ask mode leaves a live record alone', async ({ onTestFinished }) => {
   const shutdown = vi.fn<() => void>();
 
   await writeAskRecordAt(path, record);
-  registerAskMode(fake.pi, path);
+  registerAskMode(fake.pi, () => directory, path);
 
   await fake.handler('tool_result')(
     { toolName: 'handover', details: { status: 'queued' }, input: { terminal: 't-lead', file } },
@@ -157,7 +158,7 @@ it('ask mode ignores a missing record', async ({ onTestFinished }) => {
   const fake = fakeExtensionApi();
   const shutdown = vi.fn<() => void>();
 
-  registerAskMode(fake.pi, path);
+  registerAskMode(fake.pi, () => directory, path);
 
   await fake.handler('tool_result')(
     { toolName: 'handover', details: { status: 'queued' }, input: { terminal: 't-lead', file } },
@@ -169,11 +170,11 @@ it('ask mode ignores a missing record', async ({ onTestFinished }) => {
 });
 
 it('ask mode does not shut down when no handover was queued', async ({ onTestFinished }) => {
-  const { path } = await askFile(onTestFinished);
+  const { directory, path } = await askFile(onTestFinished);
   const fake = fakeExtensionApi();
   const shutdown = vi.fn<() => void>();
 
-  registerAskMode(fake.pi, path);
+  registerAskMode(fake.pi, () => directory, path);
 
   await fake.handler('tool_result')({ toolName: 'handover', details: { status: 'unknown' } }, {
     shutdown,

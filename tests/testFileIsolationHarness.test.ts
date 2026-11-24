@@ -156,6 +156,42 @@ const cases: IsolationCase[] = [
       },
     ],
   },
+  {
+    leak: 'a spy on a timer that was faked first',
+    files: [
+      {
+        name: '6-b.test.ts',
+        source: testFile([
+          "it('spies on the faked timer and then returns to real timers', () => {",
+          '  vi.useFakeTimers();',
+          '  const faked = globalThis.setTimeout;',
+          "  vi.spyOn(globalThis, 'setTimeout').mockImplementation((...args) => faked(...args));",
+          '  vi.useRealTimers();',
+          '});',
+        ]),
+      },
+      {
+        name: '6-c.test.ts',
+        source: testFile(
+          [
+            "it('sees a timer that fires', async () => {",
+            '  let fired = false;',
+            '  setTimeout(() => { fired = true; }, 1);',
+            '  for (let attempt = 0; attempt < 100 && !fired; attempt += 1) {',
+            '    await new Promise((resolve) => { setImmediate(resolve); });',
+            '    await delay(2);',
+            '  }',
+            '  expect(fired).toBe(true);',
+            '});',
+          ],
+          [
+            "import { setImmediate } from 'node:timers';",
+            "import { setTimeout as delay } from 'node:timers/promises';",
+          ],
+        ),
+      },
+    ],
+  },
 ];
 
 // One worker without isolation runs the files in name order, so each case's later file shares

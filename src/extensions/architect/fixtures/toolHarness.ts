@@ -6,8 +6,9 @@ import { vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { temporaryTauConfig } from '../../../../tests/tauConfigHarness.js';
+import { withFileLock } from '../../../fileLock/fileLock.js';
 import { architectLockPath } from '../lock.js';
-import { readArchitectRecord, writeArchitectRecord } from '../record.js';
+import { askRecordPath, readArchitectRecord, writeArchitectRecord } from '../record.js';
 import type { ArchitectRecord } from '../record.js';
 
 export interface RecordSessionOptions {
@@ -101,4 +102,42 @@ export const recordSession = async (
   });
 
   return sessionFile;
+};
+
+export const holdAskLock = async (
+  cleanup: (cleanup: () => Promise<void> | void) => void,
+  root: string,
+  askId: string,
+): Promise<{ release: () => void; holding: Promise<void> }> => {
+  const held = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+
+  const holding = withFileLock(
+    {
+      lockPath: `${askRecordPath(root, askId)}.lock`,
+      checkout: root,
+      signal: undefined,
+      pollMilliseconds: 10,
+      cancelled: () => new Error('Waiting for the ask lock was cancelled.'),
+      onWaiting: () => undefined,
+    },
+    async () => {
+      held.resolve(undefined);
+      await release.promise;
+    },
+  );
+
+  await held.promise;
+
+  cleanup(async () => {
+    release.resolve(undefined);
+    await holding;
+  });
+
+  return {
+    release: () => {
+      release.resolve(undefined);
+    },
+    holding,
+  };
 };

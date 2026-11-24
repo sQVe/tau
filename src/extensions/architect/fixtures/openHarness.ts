@@ -1,5 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+
+import { onTestFinished, vi } from 'vitest';
 
 import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
 import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
@@ -7,9 +10,21 @@ import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
 import { createHerdrAppFake } from '../../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
+import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
+import {
+  fakeRunningStartProcessId,
+  fakeStartProcessId,
+  takeStartTicket,
+  takingStartTicket,
+  useFakeStartProcess,
+} from '../../../../tests/startTicketFake.js';
 import type { Exec } from '../../../command.js';
+import { holdFileLock } from '../../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../../hc/hc.js';
+import { architectLockPath } from '../lock.js';
+import type { OpenRequest } from '../open/open.js';
 import { architectRecordPath, writeArchitectRecord, writeAskRecord } from '../record.js';
+import { adoptStartMarker } from '../startTicket/startTicket.js';
 import { createArchitectTool } from '../tool.js';
 import { contextOf } from './toolHarness.js';
 
@@ -19,6 +34,12 @@ interface OpenTool {
   terminals: Map<string, ExecResult>;
   tool: ReturnType<typeof createArchitectTool>;
   runtime: HcRuntime;
+}
+
+interface OpenToolOptions {
+  // A started Pi takes the lock over from the caller's claim. The takeover-expiry test turns it off.
+  takeover?: boolean;
+  afterTakeover?: () => void;
 }
 
 const appLayout = JSON.stringify({
@@ -43,6 +64,7 @@ const appFake = (): ExecFake<HerdrAppCommand> => {
 
   app.overrideOutput('ls', appLayout);
   app.overrideOutput('pane.split', appSplit);
+  app.overrideOutput('space.new', '{"space":"sp-1","tab":"tb-1","terminal":"t-architect"}');
 
   return app;
 };
@@ -92,15 +114,139 @@ const leadInSpace = (hc: HcFake, space: string | undefined): void => {
   );
 };
 
+const claimArgument = 'TAU_ARCHITECT_CLAIM=';
+
+const claimTokenOf = (commandArguments: readonly string[]): string | undefined => {
+  const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+  return argv.find((entry) => entry.startsWith(claimArgument))?.slice(claimArgument.length);
+};
+
+export const adoptClaim = async (
+  root: string,
+  claimToken: string,
+  token: string = randomUUID(),
+  processId: number = fakeRunningStartProcessId,
+): Promise<(() => Promise<void>) | undefined> => {
+  const held = await holdFileLock({
+    lockPath: architectLockPath(root),
+    checkout: root,
+    terminal: 't-architect',
+    token,
+    adopt: claimToken,
+  });
+
+  if (held.kind !== 'held') {
+    return undefined;
+  }
+
+  await replaceCurrentLockOwnerPid(architectLockPath(root), processId);
+
+  await adoptStartMarker(root, claimToken, processId);
+
+  return held.release;
+};
+
+// The real herdr-app start launches Pi, which adopts the caller's claim with its next lock
+// generation and renames its marker. The fake does the same, so open sees the takeover it waits for.
+const takeOverClaim = async (
+  root: string,
+  commandArguments: readonly string[],
+  processId: number,
+): Promise<boolean> => {
+  const claimToken = claimTokenOf(commandArguments);
+
+  if (claimToken === undefined || claimToken === '') {
+    return false;
+  }
+
+  const release = await adoptClaim(root, claimToken, randomUUID(), processId);
+
+  if (release === undefined) {
+    return false;
+  }
+
+  onTestFinished(release);
+
+  return true;
+};
+
+const withStartTicket = (
+  app: ExecFake<HerdrAppCommand>,
+  processId: number,
+): ExecFake<HerdrAppCommand> => ({
+  ...app,
+  exec: async (command, commandArguments, options) => {
+    const result = await app.exec(command, commandArguments, options);
+
+    if (result.code === 0) {
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      await takeStartTicket(argv, processId);
+    }
+
+    return result;
+  },
+});
+
+const withTakeover = (
+  app: ExecFake<HerdrAppCommand>,
+  root: string,
+  processId: number,
+  afterTakeover: (() => void) | undefined,
+): ExecFake<HerdrAppCommand> => ({
+  ...app,
+  exec: async (command, commandArguments, options) => {
+    const result = await app.exec(command, commandArguments, options);
+
+    if (result.code !== 0) {
+      return result;
+    }
+
+    const adopted = await takeOverClaim(root, commandArguments, processId);
+
+    if (adopted) {
+      afterTakeover?.();
+    }
+
+    return result;
+  },
+});
+
 export const openRequest = 'Start ME-1540';
+
+export const requestFor = (
+  root: string,
+  location: OpenRequest['location'],
+  hc: OpenRequest['hc'],
+  request: string = openRequest,
+): OpenRequest => ({
+  root,
+  leadTerminal: 't-lead',
+  request,
+  location,
+  ui: { notify: vi.fn<() => void>() },
+  hc,
+});
 
 export const openTool = (
   root: string,
   lead?: { space: string | undefined },
   afterTerminalLookup: () => Promise<void> = () => Promise.resolve(),
+  options: OpenToolOptions = {},
 ): OpenTool => {
-  const hc = createHcFake();
-  const app = appFake();
+  const hc = takingStartTicket(createHcFake());
+  const processId = options.takeover === false ? fakeStartProcessId : fakeRunningStartProcessId;
+  const fake = withStartTicket(appFake(), processId);
+
+  if (options.takeover !== false) {
+    useFakeStartProcess(onTestFinished, 'running', false, fakeRunningStartProcessId);
+  }
+
+  const app =
+    options.takeover === false
+      ? fake
+      : withTakeover(fake, root, fakeRunningStartProcessId, options.afterTakeover);
 
   const terminals = new Map<string, ExecResult>();
 

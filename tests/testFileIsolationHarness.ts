@@ -90,6 +90,10 @@ afterAll(() => {
 });
 
 afterAll(() => {
+  // A spy created over a faked timer restores the fake when mocks are restored, so hold the real
+  // timers in a fresh clock, restore the fakes, then install the real timers again.
+  vi.useFakeTimers();
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.useRealTimers();

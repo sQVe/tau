@@ -1,12 +1,11 @@
 import type { ArchitectOwner, AskStatus } from '../record.js';
 
-export interface AskOutcomeFacts {
+export interface AskRecordOutcomeFacts {
   status: AskStatus;
-  ended: boolean;
-  exitCode: number | null;
+  answer: string | null;
 }
 
-export type AskOutcome = 'answered' | 'needsOpen' | 'failed';
+export type AskRecordOutcome = 'answered' | 'deadline' | 'failed' | 'kept' | 'unreadable';
 
 export type ArchitectPublication =
   | { kind: 'none' }
@@ -25,26 +24,46 @@ export type AskRoute =
   | { kind: 'live'; terminal: string; sessionId: string; lockToken: string }
   | { kind: 'needsOpen'; reason: string };
 
-// A sent answer is the only answered outcome. A timeout, or an ended ask that never sent, tells
-// the lead to open the architect. A terminal that failed on its own is failed.
-export const askOutcome = (facts: AskOutcomeFacts): AskOutcome => {
+export type AskDeadlineAction = 'wait' | 'expire';
+
+export interface AskDeadlineFacts {
+  now: number;
+  deadline: number;
+}
+
+export type StaleAskRepair = 'repair' | 'leave';
+
+export interface StaleAskFacts {
+  status: AskStatus;
+  terminalState: 'live' | 'ended';
+  recordTerminal: string | null;
+  endedTerminal: string;
+}
+
+export type AskTransition = 'allowed' | 'refused';
+
+export const askStartingReason = 'The architect is starting. Ask again shortly.';
+
+// A settled hidden ask is final, so only a running record may change.
+export const askTransition = (current: AskStatus): AskTransition =>
+  current === 'running' ? 'allowed' : 'refused';
+
+// The locked record decides the result after the wait. A sent answer wins, a deadline is the
+// deadline outcome, and only a running record means the claim was kept.
+export const askRecordOutcome = (facts: AskRecordOutcomeFacts): AskRecordOutcome => {
   if (facts.status === 'sent') {
-    return 'answered';
+    return facts.answer === null ? 'unreadable' : 'answered';
+  }
+
+  if (facts.status === 'timeout') {
+    return 'deadline';
   }
 
   if (facts.status === 'failed') {
     return 'failed';
   }
 
-  if (facts.status === 'timeout') {
-    return 'needsOpen';
-  }
-
-  if (!facts.ended) {
-    return 'needsOpen';
-  }
-
-  return facts.exitCode === 0 ? 'needsOpen' : 'failed';
+  return 'kept';
 };
 
 export const askRoute = (facts: AskRouteFacts): AskRoute => {
@@ -67,7 +86,7 @@ export const askRoute = (facts: AskRouteFacts): AskRoute => {
     }
 
     if (publication.kind !== 'owner' || publication.owner.lockToken !== holder.token) {
-      return { kind: 'needsOpen', reason: 'The architect is starting. Ask again shortly.' };
+      return { kind: 'needsOpen', reason: askStartingReason };
     }
 
     const { owner } = publication;
@@ -100,3 +119,15 @@ export const askRoute = (facts: AskRouteFacts): AskRoute => {
 
   return { kind: 'hidden', sessionFile: facts.sessionFile };
 };
+
+export const askDeadlineDetail = 'The ask reached its deadline before the architect answered.';
+
+export const askDeadlineAction = (facts: AskDeadlineFacts): AskDeadlineAction =>
+  facts.now >= facts.deadline ? 'expire' : 'wait';
+
+export const staleAskRepair = (facts: StaleAskFacts): StaleAskRepair =>
+  facts.status === 'running' &&
+  facts.terminalState === 'ended' &&
+  facts.recordTerminal === facts.endedTerminal
+    ? 'repair'
+    : 'leave';

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readdir, realpath } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -13,6 +13,7 @@ import { isUuid } from '../../inbox/inbox.js';
 import { parseVersionedRecord, readVersionedRecord, writeRecord } from '../../record.js';
 import { isRecord } from '../../schema.js';
 import { ensureTauDirectory, existingEntry } from '../../tauDirectory.js';
+import { askTransition } from './ask/askDecision.js';
 
 export type AskRecord = HiddenAskRecord | LiveAskRecord;
 
@@ -30,6 +31,11 @@ type AskEntry = { record: AskRecord } | { gap: AskRecordGap } | undefined;
 
 export interface AskRecordChange {
   record: AskRecord;
+  changed: boolean;
+}
+
+export interface HiddenAskRecordChange {
+  record: HiddenAskRecord;
   changed: boolean;
 }
 
@@ -408,27 +414,35 @@ export const writeAskRecord = async (root: string, record: AskRecord): Promise<v
   await writeAskRecordAt(askRecordPath(root, record.askId), record);
 };
 
-const askLockPath = (root: string, askId: string): string => `${askRecordPath(root, askId)}.lock`;
+const askLockPath = (path: string): string => `${path}.lock`;
+
+const requireAskRecordPath = (checkout: string, path: string): void => {
+  const directory = askRecordDirectory(checkout);
+
+  if (dirname(resolve(path)) !== resolve(directory)) {
+    throw new Error(`Refusing to update an ask record outside .tau/lead/ask: ${path}`);
+  }
+};
 
 // One ask changes under its own cross-process lock, so a writer never reopens a record that
 // another process answered or failed after this writer read it.
-export const changeAskRecord = async (
-  root: string,
-  askId: string,
+const changeAskRecordAt = async (
+  checkout: string,
+  path: string,
   change: (current: AskRecord) => AskRecord | undefined,
   options: ChangeAskOptions = {},
 ): Promise<AskRecordChange | undefined> =>
   withFileLock(
     {
-      lockPath: askLockPath(root, askId),
-      checkout: root,
+      lockPath: askLockPath(path),
+      checkout,
       pollMilliseconds: 10,
       signal: undefined,
-      cancelled: () => new Error(`The ask lock for ${askId} was cancelled.`),
+      cancelled: () => new Error(`The ask lock for ${path} was cancelled.`),
       onWaiting: options.onWaiting ?? (() => undefined),
     },
     async () => {
-      const current = await readAskRecord(root, askId);
+      const current = await readAskRecordAt(path);
 
       if (current === undefined) {
         return undefined;
@@ -442,11 +456,59 @@ export const changeAskRecord = async (
         return { record: current, changed: false };
       }
 
-      await writeAskRecord(root, next);
+      await writeAskRecordAt(path, next);
 
       return { record: next, changed: true };
     },
   );
+
+export const changeAskRecord = async (
+  root: string,
+  askId: string,
+  change: (current: AskRecord) => AskRecord | undefined,
+  options: ChangeAskOptions = {},
+): Promise<AskRecordChange | undefined> => {
+  await ensureTauDirectory(root, 'lead/ask');
+
+  return changeAskRecordAt(root, askRecordPath(root, askId), change, options);
+};
+
+// A hidden ask is final once it leaves `running`, so every update applies that precondition
+// inside the lock instead of trusting each writer to repeat it.
+export const updateHiddenAskRecordAt = async (
+  checkout: string,
+  path: string,
+  update: (current: HiddenAskRecord) => HiddenAskRecord | undefined,
+  options: ChangeAskOptions = {},
+): Promise<HiddenAskRecordChange | undefined> => {
+  requireAskRecordPath(checkout, path);
+
+  await ensureTauDirectory(checkout, 'lead/ask');
+
+  const change = await changeAskRecordAt(
+    checkout,
+    path,
+    (current) =>
+      current.route === 'hidden' && askTransition(current.status) === 'allowed'
+        ? update(current)
+        : undefined,
+    options,
+  );
+
+  if (change?.record.route !== 'hidden') {
+    return undefined;
+  }
+
+  return { record: change.record, changed: change.changed };
+};
+
+export const updateHiddenAskRecord = (
+  root: string,
+  askId: string,
+  update: (current: HiddenAskRecord) => HiddenAskRecord | undefined,
+  options: ChangeAskOptions = {},
+): Promise<HiddenAskRecordChange | undefined> =>
+  updateHiddenAskRecordAt(root, askRecordPath(root, askId), update, options);
 
 export const readAskRecords = async (root: string): Promise<AskRecordScan> => {
   const names = await readdir(askRecordDirectory(root)).catch((error: unknown) => {

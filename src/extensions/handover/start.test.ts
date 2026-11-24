@@ -258,3 +258,19 @@ it('runs nothing when the signal is already aborted', async () => {
 
   expect(fake.calls).toEqual([]);
 });
+
+it('returns only the reply when a real-shaped space reply contains a terminal', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const reply = '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}';
+
+  fake.overrideOutput('space.new', reply);
+
+  const result = await startHandover(
+    runtimeOf(fake, root),
+    requestFor(root, file, { name: 'ticket-1' }, 'ticket-1'),
+  );
+
+  expect(result).toEqual({ reply });
+});

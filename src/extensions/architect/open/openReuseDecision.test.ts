@@ -111,6 +111,7 @@ const absentRecordFacts: OpenTerminalFacts = {
   root: '/checkout',
   holder,
   record: undefined,
+  keptClaim: false,
 };
 
 const updatedAt = '2026-01-01T00:00:00.000Z';
@@ -142,6 +143,7 @@ const terminalFacts: OpenTerminalFacts = {
   root: '/checkout',
   holder,
   record: savedOwner(owner),
+  keptClaim: false,
 };
 
 it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
@@ -158,12 +160,26 @@ it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
   {
     name: 'an absent record',
     facts: absentRecordFacts,
-    expected: { kind: 'refuse', checkout: '/checkout' },
+    expected: { kind: 'starting' },
+  },
+  {
+    name: 'an absent record in another checkout',
+    facts: { ...absentRecordFacts, holder: { ...holder, checkout: '/other' } },
+    expected: { kind: 'refuse', checkout: '/other' },
   },
   {
     name: 'a version 2 record with a null owner',
     facts: { ...terminalFacts, record: savedOwner(null) },
-    expected: { kind: 'refuse', checkout: '/checkout' },
+    expected: { kind: 'starting' },
+  },
+  {
+    name: 'a version 2 record with a null owner in another checkout',
+    facts: {
+      ...terminalFacts,
+      holder: { ...holder, checkout: '/other' },
+      record: savedOwner(null),
+    },
+    expected: { kind: 'refuse', checkout: '/other' },
   },
   {
     name: 'a null terminal in a version 2 record',
@@ -178,7 +194,7 @@ it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
   {
     name: 'a different token in this checkout',
     facts: { ...terminalFacts, record: savedOwner({ ...owner, lockToken: 'previous' }) },
-    expected: { kind: 'unrecorded' },
+    expected: { kind: 'starting' },
   },
   {
     name: 'a different token with no terminal',
@@ -186,12 +202,36 @@ it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
       ...terminalFacts,
       record: savedOwner({ ...owner, lockToken: 'previous', terminal: null }),
     },
-    expected: { kind: 'unrecorded' },
+    expected: { kind: 'starting' },
   },
   {
     name: 'a different token in another checkout',
     facts: {
       ...terminalFacts,
+      holder: { ...holder, checkout: '/other' },
+      record: savedOwner({ ...owner, lockToken: 'previous' }),
+    },
+    expected: { kind: 'refuse', checkout: '/other' },
+  },
+  {
+    name: 'a kept claim in this checkout',
+    facts: {
+      ...terminalFacts,
+      keptClaim: true,
+      record: savedOwner({ ...owner, lockToken: 'previous' }),
+    },
+    expected: { kind: 'keptClaim' },
+  },
+  {
+    name: 'a kept claim whose record names the holder',
+    facts: { ...terminalFacts, keptClaim: true },
+    expected: { kind: 'lookup', terminal: 't-architect' },
+  },
+  {
+    name: 'a kept claim in another checkout',
+    facts: {
+      ...terminalFacts,
+      keptClaim: true,
       holder: { ...holder, checkout: '/other' },
       record: savedOwner({ ...owner, lockToken: 'previous' }),
     },

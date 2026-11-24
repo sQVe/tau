@@ -6,7 +6,7 @@ import type { ExtensionAPI, ToolCallEvent, ToolResultEvent } from '@earendil-wor
 import { appendSystemPrompt } from '../../../instructions/systemPrompt.js';
 import { isRecord } from '../../../schema.js';
 import { isQueuedHandover } from '../queuedHandover.js';
-import { readAskRecordAt, writeAskRecordAt } from '../record.js';
+import { readAskRecordAt, updateHiddenAskRecordAt } from '../record.js';
 import type { AskRecord } from '../record.js';
 
 export const askModePrompt = (record: AskRecord, recordPath: string): string =>
@@ -36,7 +36,11 @@ const handoverFile = (event: ToolResultEvent): string | undefined => {
   return typeof file === 'string' ? file : undefined;
 };
 
-export const registerAskMode = (pi: ExtensionAPI, recordPath: string): void => {
+export const registerAskMode = (
+  pi: ExtensionAPI,
+  checkoutOf: () => string | undefined,
+  recordPath: string,
+): void => {
   pi.on('before_agent_start', async (event) => {
     const record = await readAskRecordAt(recordPath);
 
@@ -76,9 +80,22 @@ export const registerAskMode = (pi: ExtensionAPI, recordPath: string): void => {
       return;
     }
 
+    const checkout = checkoutOf();
+
+    if (checkout === undefined) {
+      return;
+    }
+
     const answer = await readFile(resolve(context.cwd, file), 'utf8');
 
-    await writeAskRecordAt(recordPath, { ...record, status: 'sent', answer });
-    context.shutdown();
+    const change = await updateHiddenAskRecordAt(checkout, recordPath, (current) => ({
+      ...current,
+      status: 'sent',
+      answer,
+    }));
+
+    if (change?.changed === true) {
+      context.shutdown();
+    }
   });
 };

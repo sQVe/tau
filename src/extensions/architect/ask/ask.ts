@@ -1,24 +1,19 @@
-import { randomUUID } from 'node:crypto';
-
 import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
 import { notifyOnce, userConfigPath } from '../../../config/config.js';
 import { readRoleModel } from '../../../config/roleModels.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { get, kill, run, wait } from '../../../hc/hc.js';
+import { get } from '../../../hc/hc.js';
 import type { HcRuntime } from '../../../hc/hc.js';
-import { piArguments } from '../../../piStart/piArguments.js';
 import type { LiveAskResult, StartLiveAsk } from '../liveAsk.js';
 import { architectLockPath } from '../lock.js';
-import {
-  askRecordPath,
-  readArchitectRecord,
-  readAskRecord,
-  readAskRecords,
-  writeAskRecord,
-} from '../record.js';
+import type { ArchitectClaimOptions } from '../lock.js';
+import { readArchitectRecord, readAskRecords, updateHiddenAskRecord } from '../record.js';
 import type { AskRecordGap, HiddenAskRecord, SavedArchitectRecord } from '../record.js';
-import { askOutcome, askRoute } from './askDecision.js';
+import { acquireStartFence, startFenceBlockerMessage } from '../startFence/startFence.js';
+import type { StartFenceBlocker } from '../startFence/startFence.js';
+import { askRoute, askStartingReason, staleAskRepair } from './askDecision.js';
 import type { ArchitectPublication } from './askDecision.js';
+import { startHiddenAskRun } from './askHiddenRun.js';
 
 export interface AskRequest {
   root: string;
@@ -38,9 +33,10 @@ export type AskResult =
   | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
 
-export const askDeadlineSeconds = 900;
-
-const millisecondsPerSecond = 1000;
+// Only the ask path dispatches, so the hook stays out of the shared claim options.
+export interface AskClaimOptions extends ArchitectClaimOptions {
+  beforeDispatch?: () => Promise<void>;
+}
 
 const reportAskGaps = (ui: ConfigWarnings, gaps: AskRecordGap[]): void => {
   for (const gap of gaps) {
@@ -65,7 +61,32 @@ const liveRunningAsk = async (
 
   const terminal = await get(hc, newest.terminal).catch(() => undefined);
 
-  return terminal?.state === 'live' ? newest : undefined;
+  if (terminal === undefined) {
+    return undefined;
+  }
+
+  const terminalState = terminal.state === 'live' ? 'live' : 'ended';
+
+  if (terminalState === 'live') {
+    return newest;
+  }
+
+  await updateHiddenAskRecord(root, newest.askId, (current) =>
+    staleAskRepair({
+      status: current.status,
+      terminalState,
+      recordTerminal: current.terminal,
+      endedTerminal: terminal.address,
+    }) === 'repair'
+      ? {
+          ...current,
+          status: 'failed',
+          detail: 'The ask terminal ended without settling the ask.',
+        }
+      : undefined,
+  );
+
+  return undefined;
 };
 
 const requireModel = (request: AskRequest): string => {
@@ -82,101 +103,37 @@ const requireModel = (request: AskRequest): string => {
 
 const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason });
 
-const askHiddenArchitect = async (request: AskRequest, sessionFile: string): Promise<AskResult> => {
+const blockedStartReason = (blocker: StartFenceBlocker): string =>
+  startFenceBlockerMessage(blocker) ?? askStartingReason;
+
+const askHiddenArchitect = async (
+  request: AskRequest,
+  sessionFile: string,
+  claimOptions: AskClaimOptions,
+): Promise<AskResult> => {
   const model = requireModel(request);
-  const askId = randomUUID();
-  const recordPath = askRecordPath(request.root, askId);
+  const acquisition = await acquireStartFence(request.root, claimOptions);
 
-  const initial: HiddenAskRecord = {
-    version: 3,
-    route: 'hidden',
-    askId,
-    createdAt: new Date().toISOString(),
-    question: request.question,
-    sessionFile,
-    terminal: null,
-    leadTerminal: request.leadTerminal,
-    deadline: Date.now() + askDeadlineSeconds * millisecondsPerSecond,
-    status: 'running',
-    detail: null,
-    answer: null,
-    gateRecord: request.gateRecord,
-  };
-
-  await writeAskRecord(request.root, initial);
-
-  const terminal = await run(request.hc, {
-    argv: piArguments({
-      model,
-      session: sessionFile,
-      environment: {
-        TAU_ROLE: 'architect',
-        TAU_ARCHITECT_ASK: recordPath,
-        TAU_LEAD_TERMINAL: request.leadTerminal,
-      },
-      message: request.question,
-    }),
-    cwd: request.root,
-    background: true,
-    noParent: true,
-    notify: false,
-    labels: { 'tau.architect.ask': askId },
-  });
-
-  const started: HiddenAskRecord = { ...initial, terminal: terminal.address };
-
-  await writeAskRecord(request.root, started);
-
-  const waited = await wait(request.hc, terminal.address, { timeout: askDeadlineSeconds });
-
-  if (!waited.ended) {
-    await kill(request.hc, terminal.address);
-
-    await writeAskRecord(request.root, {
-      ...started,
-      status: 'timeout',
-      detail: 'The ask reached its deadline before the architect answered.',
-    });
-
-    return needsOpen('The ask reached its deadline. Call architect open to talk to the architect.');
+  if (acquisition.kind === 'refused') {
+    return needsOpen(askStartingReason);
   }
 
-  const recorded = await readAskRecord(request.root, askId);
-  const latest: HiddenAskRecord = recorded?.route === 'hidden' ? recorded : started;
-
-  const outcome = askOutcome({
-    status: latest.status,
-    ended: waited.ended,
-    exitCode: waited.exit_code ?? null,
-  });
-
-  if (outcome === 'answered' && latest.answer !== null) {
-    return { status: 'ended', askId, answer: latest.answer };
+  if (acquisition.kind === 'blocked') {
+    return needsOpen(blockedStartReason(acquisition.blocker));
   }
 
-  if (outcome === 'needsOpen') {
-    await writeAskRecord(request.root, {
-      ...latest,
-      status: 'failed',
-      detail: 'The ask ended without sending an answer.',
-    });
+  const fence = acquisition.fence;
+  const run = startHiddenAskRun(request, fence);
 
-    return needsOpen(
-      'The architect ended without sending an answer. Call architect open to talk to it.',
-    );
+  try {
+    await fence.createTicket();
+
+    await claimOptions.beforeDispatch?.();
+
+    return await run.start(sessionFile, model);
+  } finally {
+    await run.settle();
   }
-
-  await writeAskRecord(request.root, {
-    ...latest,
-    status: 'failed',
-    detail: 'The ask terminal failed before the architect answered.',
-  });
-
-  return {
-    status: 'failed',
-    askId,
-    reason: 'The ask terminal failed before the architect answered. Call architect open instead.',
-  };
 };
 
 const architectPublication = (
@@ -193,7 +150,10 @@ const architectPublication = (
   return architect.owner === null ? { kind: 'none' } : { kind: 'owner', owner: architect.owner };
 };
 
-export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
+export const askArchitect = async (
+  request: AskRequest,
+  claimOptions: AskClaimOptions = {},
+): Promise<AskResult> => {
   const running = await liveRunningAsk(request.root, request.hc, request.ui);
 
   if (running !== undefined) {
@@ -223,5 +183,5 @@ export const askArchitect = async (request: AskRequest): Promise<AskResult> => {
     return request.liveAsk(request, route);
   }
 
-  return askHiddenArchitect(request, route.sessionFile);
+  return askHiddenArchitect(request, route.sessionFile, claimOptions);
 };

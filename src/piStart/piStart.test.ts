@@ -8,7 +8,12 @@ import {
 } from '../../tests/gitRepository.js';
 import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { startPiSession, startPiSessionRightOf } from './piStart.js';
+import {
+  launchPiSession,
+  launchPiSessionRightOf,
+  startPiSession,
+  startPiSessionRightOf,
+} from './piStart.js';
 
 it('a space start opens one tab with the argv as JSON', async () => {
   const fake = createHerdrAppFake();
@@ -52,6 +57,54 @@ it('a space start opens one tab with the argv as JSON', async () => {
       signal: undefined,
     },
   ]);
+});
+
+it('a space start returns the terminal from its reply', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  fake.overrideOutput('space.new', '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}');
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { name: 'ticket-1' },
+      tabName: 'architect',
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      bareRoot: false,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({
+    reply: '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}',
+    terminal: 't-space',
+  });
+});
+
+it('a space start without a terminal in its reply returns no terminal', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    {
+      folder: root,
+      target: { name: 'ticket-1' },
+      tabName: 'architect',
+      task: 'Next steps\n',
+      model: undefined,
+      session: undefined,
+      bareRoot: false,
+      environment: undefined,
+    },
+  );
+
+  expect(result).toEqual({ reply: '{"ok":true}' });
+  expect(result.terminal).toBeUndefined();
 });
 
 it('a space start names its first tab', async () => {
@@ -167,7 +220,10 @@ it('a pane start splits to the right of the requested pane once', async () => {
     },
   );
 
-  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+  expect(result).toEqual({
+    reply: '{"pane":"p-new","terminal":"t-new"}',
+    terminal: 't-new',
+  });
 
   expect(fake.calls).toHaveLength(1);
   expect(fake.calls[0]?.command).toBe('herdr-app');
@@ -301,7 +357,11 @@ it('a split Herdr reports successful stays successful when the signal aborts dur
     paneRequest(root),
   );
 
-  expect(result).toEqual({ reply: '{"pane":"p-new","terminal":"t-new"}' });
+  expect(result).toEqual({
+    reply: '{"pane":"p-new","terminal":"t-new"}',
+    terminal: 't-new',
+  });
+
   expect(fake.calls).toHaveLength(1);
 });
 
@@ -332,4 +392,106 @@ it('a right-of start with an aborted signal runs no command', async () => {
   ).rejects.toThrow('cancelled before start');
 
   expect(fake.calls).toEqual([]);
+});
+
+const launchRequest = (root: string): Parameters<typeof launchPiSession>[1] => ({
+  folder: root,
+  target: { name: 'ticket-1' },
+  tabName: 'architect',
+  task: 'Next steps\n',
+  model: undefined,
+  session: undefined,
+  bareRoot: false,
+  environment: undefined,
+});
+
+it('bounds the launch call with the launch timeout', async () => {
+  let launchTimeout: number | undefined;
+
+  const fake = createExecFake<'start'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'start' : undefined),
+    handlerFor: () => (_commandArguments, options) => {
+      launchTimeout = options?.timeout;
+
+      return succeededResult('{"space":"sp-1","tab":"tb-1","terminal":"t-space"}');
+    },
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await launchPiSession({ exec: fake.exec, cwd: root }, launchRequest(root));
+
+  expect(result.terminal).toBe('t-space');
+  expect(result.error).toBeUndefined();
+  expect(launchTimeout).toBe(30_000);
+});
+
+it('a launch in a folder that is not a Git checkout runs no command', async () => {
+  const fake = createExecFake<'start'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'start' : undefined),
+    handlerFor: () => () => succeededResult('{"space":"sp-1","tab":"tb-1","terminal":"t-space"}'),
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const folder = temporaryDirectory(onTestFinished, 'tau-pi-launch-');
+
+  await expect(
+    launchPiSession({ exec: fake.exec, cwd: root }, { ...launchRequest(root), folder }),
+  ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('a right-of launch in a folder that is not a Git checkout runs no command', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+  const folder = temporaryDirectory(onTestFinished, 'tau-pi-launch-');
+
+  await expect(
+    launchPiSessionRightOf({ exec: fake.exec, cwd: root }, { ...paneRequest(root), folder }),
+  ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('a nonzero launch exit returns no terminal and the launcher error', async () => {
+  const fake = createExecFake<'start'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'start' : undefined),
+    handlerFor: () => () => ({
+      code: 1,
+      killed: false,
+      truncated: false,
+      stdout: '',
+      stderr: '  the command exited 1  ',
+    }),
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const result = await launchPiSession({ exec: fake.exec, cwd: root }, launchRequest(root));
+
+  expect(result.terminal).toBeUndefined();
+  expect(result.error).toBeInstanceOf(Error);
+  expect((result.error as Error).message).toBe('herdr-app do failed: the command exited 1');
+});
+
+it('a killed launch returns no terminal and the launcher error', async () => {
+  const fake = createExecFake<'start'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'start' : undefined),
+    handlerFor: () => () => ({
+      code: 1,
+      killed: true,
+      truncated: false,
+      stdout: '',
+      stderr: 'the launch was killed',
+    }),
+  });
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const result = await launchPiSession({ exec: fake.exec, cwd: root }, launchRequest(root));
+
+  expect(result.terminal).toBeUndefined();
+  expect(result.killed).toBe(true);
+  expect(result.error).toBeInstanceOf(Error);
+  expect((result.error as Error).message).toContain('herdr-app do failed');
+  expect((result.error as Error).message).toContain('the launch was killed');
 });

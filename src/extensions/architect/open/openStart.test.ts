@@ -1,19 +1,16 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { installCommandShim, logCommandCalls } from '../../../../tests/commandShimFake.js';
 import { argumentAfter } from '../../../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
   createTemporaryRepository,
 } from '../../../../tests/gitRepository.js';
 import { temporaryTauConfig } from '../../../../tests/tauConfigHarness.js';
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
-import { appCommands, architectArgv, openTool } from '../fixtures/openHarness.js';
+import { isBareRootWithoutGitEntry } from '../../../git.js';
+import { appCommands, architectArgv, openTool, requestFor } from '../fixtures/openHarness.js';
 import { openArchitect } from './open.js';
-import type { OpenRequest } from './open.js';
+
+vi.mock(import('../../../git.js'), { spy: true });
 
 const locationFor = (cleanup: (cleanup: () => void) => void) => {
   const config = temporaryTauConfig(cleanup, 'tau-architect-open-');
@@ -23,24 +20,13 @@ const locationFor = (cleanup: (cleanup: () => void) => void) => {
   return config.location;
 };
 
-const requestFor = (
-  root: string,
-  location: OpenRequest['location'],
-  hc: OpenRequest['hc'],
-): OpenRequest => ({
-  root,
-  leadTerminal: 't-lead',
-  request: 'Start ME-1611',
-  location,
-  ui: { notify: vi.fn<() => void>() },
-  hc,
-});
-
 it('opens the architect in one split to the right of the lead from a bare repository', async () => {
   const root = await createTemporaryBareRepository(onTestFinished);
   const { app, runtime } = openTool(root);
 
-  const result = await openArchitect(requestFor(root, locationFor(onTestFinished), runtime));
+  const result = await openArchitect(
+    requestFor(root, locationFor(onTestFinished), runtime, 'Start ME-1611'),
+  );
 
   expect(result).toEqual({ status: 'opened', sessionFile: null });
 
@@ -56,15 +42,17 @@ it('opens the architect in one split to the right of the lead from a bare reposi
   expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });
 
-it('starts from a repository with a .git entry without asking Git whether it is bare', async () => {
+it('starts from a repository with a .git entry without a bare-root probe', async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const { runtime } = openTool(root);
-  const logPath = join(temporaryDirectory(onTestFinished, 'tau-architect-git-calls-'), 'calls.log');
+  const { app, runtime } = openTool(root);
 
-  await writeFile(logPath, '');
-  await installCommandShim('git', { otherCalls: 'real', overrides: [logCommandCalls(logPath)] });
+  vi.mocked(isBareRootWithoutGitEntry).mockClear();
 
-  await openArchitect(requestFor(root, locationFor(onTestFinished), runtime));
+  const result = await openArchitect(
+    requestFor(root, locationFor(onTestFinished), runtime, 'Start ME-1611'),
+  );
 
-  expect(await readFile(logPath, 'utf8')).toBe('');
+  expect(result).toEqual({ status: 'opened', sessionFile: null });
+  expect(vi.mocked(isBareRootWithoutGitEntry)).toHaveBeenCalledWith(root);
+  expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });

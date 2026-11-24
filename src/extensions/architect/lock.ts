@@ -10,21 +10,66 @@ export interface ArchitectLock {
   token: string;
 }
 
+export type ArchitectClaim =
+  | { kind: 'claimed'; release: () => Promise<void>; token: string }
+  | { kind: 'refused' };
+
+export interface ArchitectClaimOptions {
+  beforeLink?: () => Promise<void>;
+}
+
 export const architectLockPath = (root: string): string => join(root, '.tau', 'architect', 'lock');
 
-export const holdArchitectLock = async (root: string): Promise<ArchitectLock> => {
+const ensureArchitectLockPath = async (root: string): Promise<string> => {
   const directory = await ensureTauDirectory(root, 'architect');
+
+  return join(directory, 'lock');
+};
+
+// Reserves the lock before the caller starts Pi. The started Pi adopts this token, so the claim
+// names no terminal of its own.
+export const claimArchitectLock = async (
+  root: string,
+  options: ArchitectClaimOptions = {},
+): Promise<ArchitectClaim> => {
   const token = randomUUID();
 
   const held = await holdFileLock({
-    lockPath: join(directory, 'lock'),
+    lockPath: await ensureArchitectLockPath(root),
     checkout: root,
-    terminal: currentTerminalAddress(),
+    terminal: undefined,
     token,
+    ...(options.beforeLink === undefined ? {} : { beforeLink: options.beforeLink }),
   });
 
   if (held.kind === 'refused') {
-    throw new Error('The architect is already running in another session.');
+    return { kind: 'refused' };
+  }
+
+  return { kind: 'claimed', release: held.release, token };
+};
+
+export const holdArchitectLock = async (
+  root: string,
+  adoptToken?: string,
+): Promise<ArchitectLock> => {
+  const token = randomUUID();
+
+  const held = await holdFileLock({
+    lockPath: await ensureArchitectLockPath(root),
+    checkout: root,
+    terminal: currentTerminalAddress(),
+    token,
+    ...(adoptToken === undefined ? {} : { adopt: adoptToken }),
+  });
+
+  if (held.kind === 'refused') {
+    const message =
+      held.reason === 'claimGone'
+        ? 'The architect claim was released before it could be adopted. Call architect open again.'
+        : 'The architect is already running in another session.';
+
+    throw new Error(message);
   }
 
   return { release: held.release, token };

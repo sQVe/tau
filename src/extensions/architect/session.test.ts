@@ -13,10 +13,11 @@ import {
   startHandoverReceiver,
 } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { readLiveLockHolder, withFileLock } from '../../fileLock/fileLock.js';
+import { readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
+import { hiddenAsk, hiddenIds } from './fixtures/hiddenAsk.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
-import { readArchitectOwner } from './fixtures/toolHarness.js';
+import { holdAskLock, readArchitectOwner } from './fixtures/toolHarness.js';
 import {
   endOptions,
   hcRuntime,
@@ -24,7 +25,7 @@ import {
   stubArchitect,
   visibleArchitect,
 } from './fixtures/visibleSession.js';
-import { architectLockPath } from './lock.js';
+import { architectLockPath, claimArchitectLock } from './lock.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import {
   askRecordDirectory,
@@ -33,7 +34,7 @@ import {
   readAskRecord,
   writeAskRecord,
 } from './record.js';
-import type { HiddenAskRecord, LiveAskRecord } from './record.js';
+import type { LiveAskRecord } from './record.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
 import type { ArchitectSession } from './session.js';
 
@@ -98,6 +99,117 @@ it('a released lock starts the architect and writes its record', async ({ onTest
   );
 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('an architect session adopts the claim its environment names', async ({ onTestFinished }) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context, notify, shutdown } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  onTestFinished(claim.release);
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session).toBeDefined();
+  expect(notify).not.toHaveBeenCalled();
+  expect(shutdown).not.toHaveBeenCalled();
+
+  const holder = await readLiveLockHolder(architectLockPath(root));
+  const owner = await readArchitectOwner(root);
+
+  expect(holder?.token).toBe(owner?.lockToken);
+  expect(holder?.token).not.toBe(claim.token);
+  expect(holder?.terminal).toBe('t-architect');
+
+  const lockFiles = (await readdir(dirname(architectLockPath(root)))).filter((name) =>
+    name.startsWith('lock.'),
+  );
+
+  expect(lockFiles).toEqual(['lock.2']);
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+});
+
+it('renames the started marker to an adopted one and keeps it at a clean shutdown', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  onTestFinished(claim.release);
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  const directory = join(root, '.tau', 'architect', 'start');
+  const adoptedName = `${claim.token}.lead.${process.pid}.adopted.${process.pid}`;
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${claim.token}.lead.${process.pid}.started.${process.pid}`), '');
+
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  expect(session).toBeDefined();
+  expect(await readdir(directory)).toEqual([adoptedName]);
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+
+  expect(await readdir(directory)).toEqual([adoptedName]);
+});
+
+it('an architect session shuts down when its claim is no longer the live holder', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context, notify, shutdown } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  await claim.release();
+
+  const newer = await claimArchitectLock(root);
+
+  if (newer.kind !== 'claimed') {
+    throw new Error('The newer claim was refused.');
+  }
+
+  onTestFinished(newer.release);
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  expect(await startArchitectSession(context, createHeldLockToken())).toBeUndefined();
+
+  expect(notify).toHaveBeenCalledWith(
+    'The architect claim was released before it could be adopted. Call architect open again.',
+    'error',
+  );
+
+  expect(shutdown).toHaveBeenCalledTimes(1);
+  await expect(readArchitectRecord(root)).resolves.toBeUndefined();
 });
 
 it('an ask session records ask mode', async ({ onTestFinished }) => {
@@ -174,30 +286,6 @@ it('an ask session with a lead terminal builds no end note route', async ({ onTe
   expect(session?.endNote).toBeUndefined();
 });
 
-const hiddenIds = {
-  running: '0190c1d2-0000-7000-8000-000000000301',
-  sent: '0190c1d2-0000-7000-8000-000000000302',
-} as const;
-
-const hiddenAsk = (
-  name: keyof typeof hiddenIds,
-  status: HiddenAskRecord['status'],
-): HiddenAskRecord => ({
-  version: 3,
-  route: 'hidden',
-  askId: hiddenIds[name],
-  createdAt: '2026-11-17T10:00:00.000Z',
-  question: 'Which flag name?',
-  sessionFile: '/sessions/architect.jsonl',
-  terminal: 't-ask',
-  leadTerminal: 't-lead',
-  deadline: 1900000000000,
-  status,
-  detail: null,
-  answer: null,
-  gateRecord: null,
-});
-
 const liveIds = {
   live: '0190c1d2-0000-7000-8000-000000000303',
   open: '0190c1d2-0000-7000-8000-000000000304',
@@ -232,6 +320,39 @@ const hiddenSession = (
   held: createHeldLockToken(),
 });
 
+it('clears the held token and releases the lock when the deadline stop fails', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const notify = vi.fn<(message: string, level?: string) => void>();
+  const release = vi.fn<() => Promise<void>>(() => Promise.resolve());
+  const held = createHeldLockToken();
+
+  held.set('claim');
+
+  const session: ArchitectSession = {
+    root,
+    release,
+    ui: { notify },
+    owner: { lockToken: 'claim', mode: 'ask', terminal: 't-ask', sessionId: 'session-architect' },
+    held,
+    deadline: {
+      whenSettled: () => Promise.resolve(),
+      stop: () => Promise.reject(new Error('The deadline could not be stopped.')),
+    },
+  };
+
+  await endArchitectSession(session, hcRuntime(createHcFake()), endOptions());
+
+  expect(held.current()).toBeUndefined();
+  expect(release).toHaveBeenCalledTimes(1);
+
+  expect(notify).toHaveBeenCalledWith(
+    'The ask deadline could not be stopped: The deadline could not be stopped.',
+    'warning',
+  );
+});
+
 it('ending fails only running hidden asks', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
 
@@ -246,6 +367,33 @@ it('ending fails only running hidden asks', async ({ onTestFinished }) => {
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
   expect(await readAskRecord(root, hiddenIds.sent)).toMatchObject({ status: 'sent' });
   expect(await readAskRecord(root, liveIds.live)).toMatchObject({ status: 'sending' });
+});
+
+const newerHiddenId = '0190c1d2-0000-7000-8000-000000000307';
+
+it('ending keeps a newer ask running when it is published after the claim is released', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const notify = vi.fn<(message: string, level?: string) => void>();
+
+  const newer = {
+    ...hiddenAsk('running', 'running'),
+    askId: newerHiddenId,
+    createdAt: '2026-11-17T10:00:01.000Z',
+  };
+
+  await writeAskRecord(root, hiddenAsk('running', 'running'));
+
+  const session: ArchitectSession = {
+    ...hiddenSession(root, notify),
+    release: () => writeAskRecord(root, newer),
+  };
+
+  await endArchitectSession(session, hcRuntime(createHcFake()), endOptions());
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
+  expect(await readAskRecord(root, newerHiddenId)).toMatchObject({ status: 'running' });
 });
 
 it('ending reports a bad ask file and still fails the running ask', async ({ onTestFinished }) => {
@@ -393,44 +541,6 @@ it('ending a visible architect does not note an ask that is already closed', asy
   expect(lead.savedRecords()).toEqual([]);
   expect(await readAskRecord(root, liveIds.answered)).toMatchObject({ status: 'answered' });
 });
-
-const holdAskLock = async (
-  cleanup: (cleanup: () => Promise<void> | void) => void,
-  root: string,
-  askId: string,
-) => {
-  const held = Promise.withResolvers<undefined>();
-  const release = Promise.withResolvers<undefined>();
-
-  const holding = withFileLock(
-    {
-      lockPath: `${askRecordPath(root, askId)}.lock`,
-      checkout: root,
-      signal: undefined,
-      pollMilliseconds: 10,
-      cancelled: () => new Error('Waiting for the ask lock was cancelled.'),
-      onWaiting: () => undefined,
-    },
-    async () => {
-      held.resolve(undefined);
-      await release.promise;
-    },
-  );
-
-  await held.promise;
-
-  cleanup(async () => {
-    release.resolve(undefined);
-    await holding;
-  });
-
-  return {
-    release: () => {
-      release.resolve(undefined);
-    },
-    holding,
-  };
-};
 
 it('ending does not note an ask that closes after the scan', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
@@ -640,4 +750,64 @@ it('ending reports every failed ask settlement in one error', async ({ onTestFin
   await expect(closing).rejects.toThrow(
     /The record write \d failed\.\nThe record write \d failed\./u,
   );
+});
+
+it('shuts down without a record when its claim token names a released claim', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context, notify, shutdown } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  await claim.release();
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  expect(await startArchitectSession(context, createHeldLockToken())).toBeUndefined();
+
+  expect(notify).toHaveBeenCalled();
+  expect(shutdown).toHaveBeenCalledTimes(1);
+  await expect(readArchitectRecord(root)).resolves.toBeUndefined();
+});
+
+it('clears an adopted claim token so a later start takes the lock normally', async ({
+  onTestFinished,
+}) => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const claim = await claimArchitectLock(root);
+
+  if (claim.kind !== 'claimed') {
+    throw new Error('The claim was refused.');
+  }
+
+  onTestFinished(claim.release);
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', claim.token);
+
+  const first = await startArchitectSession(context, createHeldLockToken());
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions());
+
+  const second = await startArchitectSession(context, createHeldLockToken());
+
+  if (second === undefined) {
+    throw new Error('The second architect did not start.');
+  }
+
+  expect((await readArchitectOwner(root))?.lockToken).toBe(
+    (await readLiveLockHolder(architectLockPath(root)))?.token,
+  );
+
+  await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
 });

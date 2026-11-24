@@ -1,6 +1,12 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
-import { errorMessage, hasErrorCode, isMissingFile, toError } from './errors.js';
+import {
+  errorMessage,
+  failureWithRelease,
+  hasErrorCode,
+  isMissingFile,
+  toError,
+} from './errors.js';
 
 const withCode = (code: string) => Object.assign(new Error('failed'), { code });
 
@@ -42,4 +48,40 @@ it('keeps an Error as it is', () => {
 
 it('wraps a thrown value that is not an Error', () => {
   expect(toError('plain')).toStrictEqual(new Error('plain'));
+});
+
+it('returns the first failure when the release succeeds', async () => {
+  const failure = new Error('The lock could not be written.');
+  const release = vi.fn<() => Promise<void>>(() => Promise.resolve());
+
+  const reported = await failureWithRelease(failure, release, {
+    failure: 'The claim failed',
+    release: 'releasing it failed',
+  });
+
+  expect(reported).toBe(failure);
+  expect(release).toHaveBeenCalledTimes(1);
+});
+
+it.for<[string, () => Promise<void>]>([
+  [
+    'a synchronous throw',
+    () => {
+      throw new Error('The release failed.');
+    },
+  ],
+  ['a rejected promise', () => Promise.reject(new Error('The release failed.'))],
+])('returns the first failure and %s release failure together', async ([, release]) => {
+  const failure = new Error('The lock could not be written.');
+
+  const reported = await failureWithRelease(failure, release, {
+    failure: 'The claim failed',
+    release: 'releasing it failed',
+  });
+
+  const message = (reported as Error).message;
+
+  expect(message).toContain('The claim failed: The lock could not be written.');
+  expect(message).toContain('releasing it failed: The release failed.');
+  expect((reported as Error).cause).toBe(failure);
 });

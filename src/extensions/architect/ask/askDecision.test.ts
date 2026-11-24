@@ -1,42 +1,43 @@
 import { expect, it } from 'vitest';
 
 import type { ArchitectOwner } from '../record.js';
-import { askOutcome, askRoute } from './askDecision.js';
+import {
+  askDeadlineAction,
+  askRecordOutcome,
+  askRoute,
+  askTransition,
+  staleAskRepair,
+} from './askDecision.js';
 import type { AskRouteFacts } from './askDecision.js';
 
 it.each([
   {
     name: 'a sent answer is answered',
-    facts: { status: 'sent', ended: true, exitCode: 0 },
+    facts: { status: 'sent', answer: 'Use --quick.' },
     expected: 'answered',
   },
   {
-    name: 'a deadline is needsOpen',
-    facts: { status: 'timeout', ended: false, exitCode: null },
-    expected: 'needsOpen',
+    name: 'a sent record without an answer is unreadable',
+    facts: { status: 'sent', answer: null },
+    expected: 'unreadable',
   },
   {
-    name: 'a running ask that has not ended is needsOpen',
-    facts: { status: 'running', ended: false, exitCode: null },
-    expected: 'needsOpen',
-  },
-  {
-    name: 'an ask that ended without sending is needsOpen',
-    facts: { status: 'running', ended: true, exitCode: 0 },
-    expected: 'needsOpen',
+    name: 'a deadline is a deadline outcome',
+    facts: { status: 'timeout', answer: null },
+    expected: 'deadline',
   },
   {
     name: 'a failed ask is failed',
-    facts: { status: 'failed', ended: true, exitCode: 1 },
+    facts: { status: 'failed', answer: null },
     expected: 'failed',
   },
   {
-    name: 'an ask that ended on a failure is failed',
-    facts: { status: 'running', ended: true, exitCode: 1 },
-    expected: 'failed',
+    name: 'a running ask is kept',
+    facts: { status: 'running', answer: null },
+    expected: 'kept',
   },
 ] as const)('$name', ({ facts, expected }) => {
-  expect(askOutcome(facts)).toBe(expected);
+  expect(askRecordOutcome(facts)).toBe(expected);
 });
 
 const owner = (overrides: Partial<ArchitectOwner> = {}): ArchitectOwner => ({
@@ -249,4 +250,88 @@ it.each<{ name: string; facts: AskRouteFacts; expected: Record<string, unknown> 
   },
 ])('$name', ({ facts, expected }) => {
   expect(askRoute(facts)).toMatchObject(expected);
+});
+
+it.each([
+  {
+    name: 'an ask before its deadline waits',
+    facts: { now: 1000, deadline: 2000 },
+    expected: 'wait',
+  },
+  {
+    name: 'an ask at its deadline expires',
+    facts: { now: 2000, deadline: 2000 },
+    expected: 'expire',
+  },
+  {
+    name: 'an ask after its deadline expires',
+    facts: { now: 3000, deadline: 2000 },
+    expected: 'expire',
+  },
+] as const)('ask deadline: $name', ({ facts, expected }) => {
+  expect(askDeadlineAction(facts)).toBe(expected);
+});
+
+it.each([
+  {
+    name: 'a running ask whose recorded terminal ended repairs',
+    facts: {
+      status: 'running',
+      terminalState: 'ended',
+      recordTerminal: 't-ask',
+      endedTerminal: 't-ask',
+    },
+    expected: 'repair',
+  },
+  {
+    name: 'a running ask whose terminal is live leaves it',
+    facts: {
+      status: 'running',
+      terminalState: 'live',
+      recordTerminal: 't-ask',
+      endedTerminal: 't-ask',
+    },
+    expected: 'leave',
+  },
+  {
+    name: 'a running ask whose recorded terminal changed leaves it',
+    facts: {
+      status: 'running',
+      terminalState: 'ended',
+      recordTerminal: 't-old',
+      endedTerminal: 't-new',
+    },
+    expected: 'leave',
+  },
+  {
+    name: 'a running ask without a recorded terminal leaves it',
+    facts: {
+      status: 'running',
+      terminalState: 'ended',
+      recordTerminal: null,
+      endedTerminal: 't-ask',
+    },
+    expected: 'leave',
+  },
+  {
+    name: 'a sent ask whose terminal ended leaves it',
+    facts: {
+      status: 'sent',
+      terminalState: 'ended',
+      recordTerminal: 't-ask',
+      endedTerminal: 't-ask',
+    },
+    expected: 'leave',
+  },
+] as const)('stale ask repair: $name', ({ facts, expected }) => {
+  expect(staleAskRepair(facts)).toBe(expected);
+});
+
+it.each([
+  { name: 'a running ask changes', current: 'running', expected: 'allowed' },
+  { name: 'a sent ask is final', current: 'sent', expected: 'refused' },
+  { name: 'a timeout ask is final', current: 'timeout', expected: 'refused' },
+  { name: 'a failed ask is final', current: 'failed', expected: 'refused' },
+] as const)('ask transition: $name', ({ current, expected }) => {
+  expect(askTransition(current)).toBe(expected);
 });

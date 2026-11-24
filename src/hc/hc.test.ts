@@ -207,6 +207,18 @@ it('passes --all only when all terminals are requested', async () => {
   ]);
 });
 
+it('passes the run timeout to the exec options only when one is requested', async () => {
+  const fake = createHcFake();
+
+  fake.reply('run', JSON.stringify({ address: 't7', state: 'live' }));
+
+  await run(runtimeOf(fake), { argv: ['pi'], execTimeoutMilliseconds: 30_000 });
+  await run(runtimeOf(fake), { argv: ['pi'] });
+
+  expect(fake.calls[0]?.timeout).toBe(30_000);
+  expect(fake.calls[1]).not.toHaveProperty('timeout');
+});
+
 it('separates a get terminal that starts with a dash from the flags', async () => {
   const fake = createHcFake();
 
