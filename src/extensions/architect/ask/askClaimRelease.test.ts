@@ -575,6 +575,7 @@ it('releases its claim and fails the record when an adopted child stopped before
   const waitFailure = new Error('The wait failed.');
   let markerSurvivedSweep = false;
   let taken = false;
+  let newerAcquired: boolean | undefined;
 
   await recordSession(root);
 
@@ -586,15 +587,15 @@ it('releases its claim and fails the record when an adopted child stopped before
 
       const newer = await acquireStartFence(root);
 
-      if (newer.kind !== 'acquired') {
-        throw new Error('The later caller did not acquire the fence.');
+      newerAcquired = newer.kind === 'acquired';
+
+      if (newer.kind === 'acquired') {
+        const names = await readdir(startDirectory(root));
+
+        markerSurvivedSweep = names.some((name) => name.includes('.adopted.'));
+
+        await newer.fence.finish({ adopted: false, stopAttempted: false });
       }
-
-      const names = await readdir(startDirectory(root));
-
-      markerSurvivedSweep = names.some((name) => name.includes('.adopted.'));
-
-      await newer.fence.finish({ adopted: false, stopAttempted: false });
 
       return succeededResult(JSON.stringify({ address: 't-ask', state: 'live' }));
     }
@@ -605,6 +606,7 @@ it('releases its claim and fails the record when an adopted child stopped before
   const failure = await ask({ ...rejected, exec }, root).catch((error: unknown) => error);
 
   expect(taken).toBe(true);
+  expect(newerAcquired).toBe(true);
   expect(markerSurvivedSweep).toBe(true);
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain('The wait failed.');
@@ -624,6 +626,7 @@ it('keeps the newer claim live when the cached adopted child is gone before the 
   const child = useFakeStartProcess(cleanup, 'running');
   const waitFailure = new Error('The wait failed.');
   let taken = false;
+  let newerAcquired: boolean | undefined;
   let newerToken: string | undefined;
 
   await recordSession(root);
@@ -640,11 +643,11 @@ it('keeps the newer claim live when the cached adopted child is gone before the 
 
       const newer = await acquireStartFence(root);
 
-      if (newer.kind !== 'acquired') {
-        throw new Error('The newer caller did not acquire the fence.');
-      }
+      newerAcquired = newer.kind === 'acquired';
 
-      newerToken = (await readLiveLockHolder(architectLockPath(root)))?.token;
+      if (newerAcquired) {
+        newerToken = (await readLiveLockHolder(architectLockPath(root)))?.token;
+      }
 
       throw waitFailure;
     }
@@ -655,6 +658,7 @@ it('keeps the newer claim live when the cached adopted child is gone before the 
   const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
 
   expect(taken).toBe(true);
+  expect(newerAcquired).toBe(true);
   expect(failure).toBeInstanceOf(Error);
   expect(await statuses(root)).toEqual(['failed']);
   expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
