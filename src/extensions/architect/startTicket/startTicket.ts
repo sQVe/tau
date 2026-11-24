@@ -52,8 +52,10 @@ const leadSegment = '.lead.';
 const wrapperScript = 'mv -- "$1" "$1.started.$$" 2>/dev/null || exit 75; shift; exec "$@"';
 const wrapperName = 'tau-architect-start';
 
+export const startDirectoryName = 'architect/start';
+
 const startDirectory = (root: string): Promise<string> =>
-  ensureTauDirectory(root, 'architect/start');
+  ensureTauDirectory(root, startDirectoryName);
 
 export const startHeldByProcessReason = (processId: number): string =>
   `The architect in this checkout is starting under process ${processId}. Wait for that process to end or stop it, then try again.`;

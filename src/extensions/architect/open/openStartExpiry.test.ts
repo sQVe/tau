@@ -2,7 +2,8 @@ import type { setTimeout as promiseDelay } from 'node:timers/promises';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { argumentAfter, succeededResult } from '../../../../tests/execFake.js';
+import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
+import { writeNextLockOwnerRecordSync } from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeStartProcessId,
   takeStartTicket,
@@ -24,8 +25,10 @@ import {
   openArchitect,
   openKeptClaimMessage,
   startingError,
+  takeoverAdoptedChildEndedError,
   takeoverChildGoneError,
   takeoverExpiryError,
+  takeoverSeconds,
 } from './open.js';
 
 const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
@@ -57,6 +60,42 @@ const startFakeTimers = (): void => {
   });
 };
 
+const takeoverMilliseconds = takeoverSeconds * 1_000;
+
+// The stop probes the lock holder after the deadline. The child takes the claim on the second
+// probe, so the first read sees no adoption and the stop must read the lock again before it
+// signals the child.
+const adoptOnSecondHolderProbeAfter = (
+  cleanup: (callback: () => void) => void,
+  root: string,
+  deadline: number,
+): void => {
+  const previousKill = vi.mocked(process.kill).getMockImplementation();
+  let probesAfterDeadline = 0;
+
+  const spy = vi.spyOn(process, 'kill').mockImplementation((processId, signal) => {
+    if (processId === process.pid && signal === 0 && Date.now() >= deadline) {
+      probesAfterDeadline += 1;
+
+      if (probesAfterDeadline === 2) {
+        writeNextLockOwnerRecordSync(architectLockPath(root), {
+          checkout: root,
+          pid: fakeStartProcessId,
+          token: 'adopted',
+        });
+
+        return true;
+      }
+    }
+
+    return previousKill?.(processId, signal) ?? true;
+  });
+
+  cleanup(() => {
+    spy.mockImplementation(previousKill ?? (() => true));
+  });
+};
+
 // The stop checks its deadline after each adoption probe, so the fake clock must stand still while
 // the real filesystem probe runs. Only a real delay lets that probe finish.
 const waitForStopSignals = async (
@@ -83,7 +122,7 @@ it('stops the pane child by process id at the deadline, releases after it is gon
   const opening = open(tool, root, { request: openRequest }).catch((error: unknown) => error);
 
   await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(60_300);
+  await vi.advanceTimersByTimeAsync(takeoverMilliseconds + 300);
 
   const failure = await opening;
 
@@ -175,6 +214,76 @@ it('fails at once when the launched child dies before it takes the lock', async 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
+it('returns the takeover result when the child adopts after the wait expires', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+
+  const processControl = useFakeStartProcess(cleanup, 'running');
+  const sessionFile = await recordSession(root);
+
+  startFakeTimers();
+
+  const deadline = Date.now() + takeoverMilliseconds;
+
+  adoptOnSecondHolderProbeAfter(cleanup, root, deadline);
+
+  const opening = openArchitect(requestFor(root, config.location, runtime));
+
+  await poll.started.promise;
+  await vi.advanceTimersByTimeAsync(takeoverMilliseconds + 300);
+  await processControl.nextSignal(1);
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  const result = await opening;
+
+  expect(result).toEqual({ status: 'resumed', sessionFile });
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({
+    pid: fakeStartProcessId,
+  });
+});
+
+it('throws when the child is gone after the wait saw its adoption', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const child = useFakeStartProcess(cleanup, 'running');
+
+  await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      const holder = await readLiveLockHolder(architectLockPath(root));
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      await takeStartTicket(argv);
+
+      const release = await adoptClaim(root, holder?.token ?? '', 'adopted', fakeStartProcessId);
+
+      if (release !== undefined) {
+        cleanup(release);
+      }
+
+      child.state = 'gone';
+
+      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+    }
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const failure = await openArchitect(
+    requestFor(root, config.location, { ...runtime, exec }),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe(takeoverAdoptedChildEndedError().message);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
 it('keeps a paused child fence until its process is gone and then a retry starts one Pi', async ({
   onTestFinished: cleanup,
 }) => {
@@ -230,6 +339,45 @@ it('keeps a paused child fence until its process is gone and then a retry starts
   const retrySplits = appCommands(retry.app).filter((name) => name === 'pane.split');
 
   expect(retrySplits).toHaveLength(1);
+});
+
+it('reports the kept claim when a lost launch leaves a child that never adopted', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const child = useFakeStartProcess(cleanup, 'running');
+
+  await recordSession(root);
+  startFakeTimers();
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      await takeStartTicket(argv);
+
+      return failedResult('the launch reply failed');
+    }
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const opening = openArchitect(requestFor(root, config.location, { ...runtime, exec })).catch(
+    (error: unknown) => error,
+  );
+
+  await poll.started.promise;
+  await vi.advanceTimersByTimeAsync(5_000);
+  await child.nextSignal(2);
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  const failure = await opening;
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain(openKeptClaimMessage(root));
+  expect(child.signals).toEqual(['SIGTERM', 'SIGKILL']);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });
 
 it('fails a space reply without a terminal and releases when the child is gone', async ({
@@ -484,6 +632,8 @@ it('keeps a successful result when a split adopts the claim', async ({
   const { root, config } = await setup(cleanup);
   const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
   const sessionFile = await recordSession(root);
+
+  useFakeStartProcess(cleanup, 'running');
 
   const exec: typeof runtime.exec = async (command, commandArguments, options) => {
     if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {

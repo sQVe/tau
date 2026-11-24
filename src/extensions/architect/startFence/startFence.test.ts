@@ -5,19 +5,15 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
-import {
-  fakeStartProcessId,
-  takeStartTicket,
-  useFakeStartProcess,
-} from '../../../../tests/startTicketFake.js';
+import { takenFence } from '../../../../tests/startFenceHarness.js';
+import { fakeStartProcessId, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
 import {
   malformedStartMarkerReason,
   startHeldByProcessReason,
 } from '../startTicket/startTicket.js';
-import { acquireStartFence, startFenceBlockerMessage } from './startFence.js';
-import type { StartFence } from './startFence.js';
+import { startFenceBlockerMessage } from './startFence.js';
 
 const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
 
@@ -65,26 +61,12 @@ const adoptTakenTicket = async (root: string): Promise<void> => {
   );
 };
 
-const acquiredFence = async (root: string): Promise<StartFence> => {
-  const acquisition = await acquireStartFence(root);
-
-  if (acquisition.kind !== 'acquired') {
-    throw new Error('The start fence was not acquired.');
-  }
-
-  return acquisition.fence;
-};
-
-it('keeps the adopted child after the adopter releases its lock and never signals it', async ({
+it('reports adoption without signalling a child that adopted and released its lock', async ({
   onTestFinished,
 }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const processControl = useFakeStartProcess(onTestFinished, 'running');
-  const fence = await acquiredFence(root);
-
-  await fence.createTicket();
-
-  expect(await takeStartTicket(fence.wrapArgv(['true']))).toBe(true);
+  const fence = await takenFence(root);
 
   const adopted = await holdArchitectLock(root, fence.token);
 
@@ -92,37 +74,118 @@ it('keeps the adopted child after the adopter releases its lock and never signal
   await adopted.release();
 
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  expect(await fence.abandon()).toEqual({ adopted: true });
-  expect(await fence.abandon()).toEqual({ adopted: true });
-
-  const finished = await fence.finish({ adopted: true, stopAttempted: true });
-
-  expect(finished).toEqual({ kept: false });
+  expect(await fence.complete()).toEqual({ outcome: 'adopted', claim: 'released' });
   expect(processControl.signals).toEqual([]);
 });
 
-it('sends no second signal when the child adopts during the stop', async ({ onTestFinished }) => {
+it('reports adoption when the child adopts during the stop and sends no second signal', async ({
+  onTestFinished,
+}) => {
   const root = await createTemporaryRepository(onTestFinished);
   const processControl = useFakeStartProcess(onTestFinished, 'running');
-  const fence = await acquiredFence(root);
+  const fence = await takenFence(root);
 
-  await fence.createTicket();
-
-  expect(await takeStartTicket(fence.wrapArgv(['true']))).toBe(true);
   await fence.recordStarted();
-
   startFakeTimers();
 
-  const finishing = fence.finish({ adopted: false, stopAttempted: false });
+  const completing = fence.complete();
 
   await poll.started.promise;
   await adoptTakenTicket(root);
   await vi.advanceTimersByTimeAsync(10_000);
 
-  const finished = await finishing;
-
-  expect(finished).toEqual({ kept: false });
+  expect(await completing).toEqual({ outcome: 'adopted', claim: 'released' });
   expect(processControl.signals).toEqual(['SIGTERM']);
+});
+
+it('keeps a lock-only adoption cached after the lock is gone', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  useFakeStartProcess(onTestFinished, 'running');
+  const fence = await takenFence(root);
+
+  await fence.recordStarted();
+
+  const adopted = await holdArchitectLock(root, fence.token);
+
+  await replaceCurrentLockOwnerPid(architectLockPath(root), fakeStartProcessId);
+
+  expect(await fence.waitForTakeover(Date.now() + 1_000)).toBe('adopted');
+
+  await adopted.release();
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await fence.complete()).toEqual({ outcome: 'adopted', claim: 'released' });
+});
+
+it('stops a child that never adopted, releases the claim, and deletes its marker', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const processControl = useFakeStartProcess(onTestFinished, 'running', true);
+  const fence = await takenFence(root);
+
+  await fence.recordStarted();
+
+  expect(await fence.complete()).toEqual({ outcome: 'gone', claim: 'released' });
+  expect(processControl.signals).toEqual(['SIGTERM']);
+  expect(await readdir(startDirectory(root))).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('keeps the claim when the child neither ends nor adopts', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const processControl = useFakeStartProcess(onTestFinished, 'running');
+  const fence = await takenFence(root);
+
+  await fence.recordStarted();
+  startFakeTimers();
+
+  const completing = fence.complete();
+
+  await poll.started.promise;
+  await vi.advanceTimersByTimeAsync(5_000);
+  await processControl.nextSignal(1);
+  await processControl.nextSignal(2);
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  expect(await completing).toEqual({ outcome: 'unresolved', claim: 'kept' });
+  expect(processControl.signals).toEqual(['SIGTERM', 'SIGKILL']);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+
+  const names = await readdir(startDirectory(root));
+
+  expect(names.some((name) => name.includes('.started.'))).toBe(true);
+});
+
+it('returns one memoized completion', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  useFakeStartProcess(onTestFinished, 'running');
+  const fence = await takenFence(root);
+
+  const adopted = await holdArchitectLock(root, fence.token);
+
+  await replaceCurrentLockOwnerPid(architectLockPath(root), fakeStartProcessId);
+
+  const completion = await fence.complete();
+
+  expect(completion).toEqual({ outcome: 'adopted', claim: 'released' });
+
+  await adopted.release();
+
+  expect(await fence.complete()).toBe(completion);
+});
+
+it('reports a gone child whose marker is gone', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const processControl = useFakeStartProcess(onTestFinished, 'running');
+  const fence = await takenFence(root);
+
+  await fence.recordStarted();
+
+  processControl.state = 'gone';
+  await rm(startDirectory(root), { recursive: true, force: true });
+
+  expect(await fence.complete()).toEqual({ outcome: 'gone', claim: 'released' });
 });
 
 it.each([
@@ -139,49 +202,4 @@ it.each([
   },
 ])('names the message for $name', ({ blocker, expected }) => {
   expect(startFenceBlockerMessage(blocker)).toBe(expected);
-});
-
-it('re-probes the child when its marker is gone', async ({ onTestFinished }) => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const processControl = useFakeStartProcess(onTestFinished, 'running');
-  const fence = await acquiredFence(root);
-
-  await fence.createTicket();
-
-  expect(await takeStartTicket(fence.wrapArgv(['true']))).toBe(true);
-  await fence.recordStarted();
-
-  processControl.state = 'gone';
-  await rm(startDirectory(root), { recursive: true, force: true });
-
-  expect(await fence.refreshChild()).toBe('gone');
-});
-
-it('keeps a lock-only adoption cached after the lock is gone', async ({ onTestFinished }) => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const processControl = useFakeStartProcess(onTestFinished, 'running');
-  const fence = await acquiredFence(root);
-
-  await fence.createTicket();
-
-  expect(await takeStartTicket(fence.wrapArgv(['true']))).toBe(true);
-
-  await fence.recordStarted();
-
-  const holder = await holdArchitectLock(root, fence.token);
-
-  expect(await fence.childAdopted()).toBe(false);
-
-  await replaceCurrentLockOwnerPid(architectLockPath(root), fakeStartProcessId);
-
-  expect(await fence.childAdopted()).toBe(true);
-
-  await holder.release();
-
-  expect(await fence.childAdopted()).toBe(true);
-
-  const finished = await fence.finish({ adopted: false, stopAttempted: false });
-
-  expect(finished).toEqual({ kept: false });
-  expect(processControl.signals).toEqual([]);
 });

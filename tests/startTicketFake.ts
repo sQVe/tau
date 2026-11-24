@@ -16,10 +16,12 @@ export interface FakeStartProcess {
   state: 'running' | 'gone' | 'unknown';
   signals: NodeJS.Signals[];
   signalTimes: number[];
+  nextSignal: (count: number) => Promise<void>;
 }
 
 interface FakeStartProcessControl extends FakeStartProcess {
   stopOnSignal: boolean;
+  signalWaiters: { count: number; resolve: () => void }[];
 }
 
 interface FakeStartProcesses {
@@ -69,10 +71,53 @@ const installFakeProcesses = (): FakeStartProcesses => {
       control.state = 'gone';
     }
 
+    control.signalWaiters = control.signalWaiters.filter((waiter) => {
+      if (control.signals.length < waiter.count) {
+        return true;
+      }
+
+      waiter.resolve();
+
+      return false;
+    });
+
     return true;
   });
 
   return { spy, states };
+};
+
+const signalTimeoutMilliseconds = 2_000;
+
+const waitForSignal = (control: FakeStartProcessControl, count: number): Promise<void> => {
+  if (control.signals.length >= count) {
+    return Promise.resolve();
+  }
+
+  const timeout = AbortSignal.timeout(signalTimeoutMilliseconds);
+
+  return new Promise((resolve, reject) => {
+    const waiter: { count: number; resolve: () => void } = { count, resolve: () => undefined };
+
+    const onTimeout = (): void => {
+      control.signalWaiters = control.signalWaiters.filter((pending) => pending !== waiter);
+
+      reject(
+        new Error(
+          `The fake start process received ${control.signals.length} signals, but the test waited for ${count}.`,
+        ),
+      );
+    };
+
+    waiter.resolve = (): void => {
+      timeout.removeEventListener('abort', onTimeout);
+      resolve();
+    };
+
+    control.signalWaiters.push(waiter);
+
+    timeout.addEventListener('abort', onTimeout, { once: true });
+  });
 };
 
 export const useFakeStartProcess = (
@@ -88,6 +133,8 @@ export const useFakeStartProcess = (
     signals: [],
     signalTimes: [],
     stopOnSignal,
+    signalWaiters: [],
+    nextSignal: (count) => waitForSignal(control, count),
   };
 
   fakeProcesses.states.set(processId, control);

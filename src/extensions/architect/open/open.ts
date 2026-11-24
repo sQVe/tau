@@ -1,11 +1,10 @@
 import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
 import { userConfigPath } from '../../../config/config.js';
 import { readRoleModel } from '../../../config/roleModels.js';
-import { errorMessage, isMissingFile } from '../../../errors.js';
+import { errorMessage, isMissingFile, toError } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../../fileLock/fileLock.js';
 import { isBareRootWithoutGitEntry } from '../../../git.js';
@@ -14,7 +13,6 @@ import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
 import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
 import type { PiLaunchResult } from '../../../piStart/piStart.js';
-import { processState } from '../../../process/process.js';
 import { tabName } from '../../../tabName.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import { architectLockPath } from '../lock.js';
@@ -25,7 +23,6 @@ import { acquireStartFence, startFenceBlockerMessage } from '../startFence/start
 import type { StartFence, StartFenceBlocker } from '../startFence/startFence.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
-import { openStartProgress } from './openStartClaimDecision.js';
 
 export interface OpenRequest {
   root: string;
@@ -61,8 +58,7 @@ interface KeptClaim {
 
 const askLabel = 'tau.architect.ask';
 
-const takeoverSeconds = 60;
-const takeoverPollMilliseconds = 250;
+export const takeoverSeconds = 60;
 const millisecondsPerSecond = 1000;
 
 const fileExists = (path: string): Promise<boolean> =>
@@ -297,11 +293,10 @@ export const takeoverChildGoneError = (): Error =>
     'The architect launch ended before it took the checkout lock. Call architect open again.',
   );
 
-const childGone = (fence: StartFence): boolean => {
-  const childPid = fence.childProcessId();
-
-  return childPid !== undefined && processState(childPid) === 'gone';
-};
+export const takeoverAdoptedChildEndedError = (): Error =>
+  new Error(
+    'The architect took the checkout lock but its process ended before it could answer. Call architect open again.',
+  );
 
 const cancelledOpenError = (signal: AbortSignal | undefined): Error => {
   const reason: unknown = signal?.reason;
@@ -320,46 +315,18 @@ const waitForTakeover = async (
   signal: AbortSignal | undefined,
 ): Promise<void> => {
   const deadline = Date.now() + takeoverSeconds * millisecondsPerSecond;
+  const takeover = await fence.waitForTakeover(deadline, signal);
 
-  for (;;) {
-    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
-    const adopted = await fence.childAdopted();
+  if (takeover === 'cancelled') {
+    throw cancelledOpenError(signal);
+  }
 
-    const progress = openStartProgress({
-      adopted,
-      now: Date.now(),
-      deadline,
-      cancelled: signal?.aborted === true,
-    });
+  if (takeover === 'expired') {
+    throw takeoverExpiryError();
+  }
 
-    if (progress === 'taken') {
-      return;
-    }
-
-    if (progress === 'cancelled') {
-      throw cancelledOpenError(signal);
-    }
-
-    if (progress === 'expired') {
-      throw takeoverExpiryError();
-    }
-
-    if (childGone(fence)) {
-      throw takeoverChildGoneError();
-    }
-
-    const sleepOptions = signal === undefined ? {} : { signal };
-
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
-      await sleep(takeoverPollMilliseconds, undefined, sleepOptions);
-    } catch (error) {
-      if (signal?.aborted === true) {
-        throw cancelledOpenError(signal);
-      }
-
-      throw error;
-    }
+  if (takeover === 'gone') {
+    throw takeoverChildGoneError();
   }
 };
 
@@ -415,27 +382,57 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
+const settleLaunch = async (
+  request: OpenRequest,
+  fence: StartFence,
+  failure: Error,
+): Promise<void> => {
+  const completion = await fence.complete();
+
+  throwIfOpenCancelled(request.hc.signal);
+
+  if (completion.outcome === 'adopted') {
+    return;
+  }
+
+  if (completion.outcome === 'unresolved' || completion.claim === 'kept') {
+    throw openKeptClaimError(request.root, completion.failure);
+  }
+
+  throw failure;
+};
+
+const adoptionReadError = (error: unknown): Error =>
+  new Error(`The child adoption could not be read: ${errorMessage(error)}`, { cause: error });
+
 const applyLaunchOutcome = async (
   request: OpenRequest,
   fence: StartFence,
   started: PiLaunchResult,
 ): Promise<void> => {
   if (launchOutcomeDecision(launchFacts(started)) === 'notCreated') {
-    const abandoned = await fence.abandon();
-
-    throwIfOpenCancelled(request.hc.signal);
-
-    if (!abandoned.adopted) {
-      throw launchFailure(started);
-    }
+    await settleLaunch(request, fence, launchFailure(started));
 
     return;
   }
 
-  await fence.recordStarted();
-  await waitForTakeover(fence, request.hc.signal);
+  let waitFailure: Error | undefined;
 
-  throwIfOpenCancelled(request.hc.signal);
+  try {
+    await fence.recordStarted();
+  } catch (error) {
+    waitFailure = adoptionReadError(error);
+  }
+
+  if (waitFailure === undefined) {
+    try {
+      await waitForTakeover(fence, request.hc.signal);
+    } catch (error) {
+      waitFailure = toError(error);
+    }
+  }
+
+  await settleLaunch(request, fence, waitFailure ?? takeoverAdoptedChildEndedError());
 };
 
 export const openArchitect = async (
@@ -479,23 +476,19 @@ export const openArchitect = async (
 
     const result = launchResult(prepared);
 
-    // applyLaunchOutcome returns only after the child adopted the claim or another holder took it.
-    await fence.finish({ adopted: true, stopAttempted: false });
     keptClaims.delete(request.root);
 
     return result;
   } catch (error) {
-    const abandoned = await fence.abandon().catch(() => ({ adopted: false }));
+    const completion = await fence.complete();
 
-    const finished = await fence.finish({ adopted: abandoned.adopted, stopAttempted: false });
-
-    if (finished.kept) {
+    if (completion.claim === 'kept') {
       keptClaims.set(request.root, {
         token: fence.token,
-        ...(finished.failure === undefined ? {} : { failure: finished.failure }),
+        ...(completion.failure === undefined ? {} : { failure: completion.failure }),
       });
 
-      throw openKeptClaimError(request.root, finished.failure);
+      throw openKeptClaimError(request.root, completion.failure);
     }
 
     throw error;
