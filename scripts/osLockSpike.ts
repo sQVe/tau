@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import type { ChildProcess, StdioOptions } from 'node:child_process';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -20,6 +20,7 @@ export type SpikeObservation =
   | {
       readonly case: 'detachedChild';
       readonly parentExitCode: number | null;
+      readonly stateBeforeParentExit: OsLockState;
       readonly state: OsLockState;
     }
   | {
@@ -38,17 +39,30 @@ interface ParentHolder {
   holderPid: number;
 }
 
+interface StartOptions {
+  detached?: boolean;
+  stdio?: StdioOptions;
+}
+
+type CommandOutcome =
+  | { readonly kind: 'exit'; readonly code: number | null }
+  | { readonly kind: 'startFailed'; readonly error: Error };
+
 // flock reports a taken lock with -E, and reports its own failures with <sysexits.h> codes. Once
 // the command runs, its exit code replaces flock's.
 export const osLockConflictExitCode = 75;
 
+export const osLockParentFixturePath = new URL('fixtures/osLockParent.ts', import.meta.url)
+  .pathname;
+
 const probePollMilliseconds = 20;
 const probeTimeoutMilliseconds = 10_000;
 const holderSeconds = '60';
+const holderReadyScript = 'printf ready > "$1" || exit 75; shift; exec "$@"';
 
-export const osLockWrapperArgv = (lockPath: string, commandArgv: readonly string[]): string[] => [
+const flockArgv = (lockPath: string, commandArgv: readonly string[], noFork: boolean): string[] => [
   'flock',
-  '-F',
+  ...(noFork ? ['-F'] : []),
   '-n',
   '-E',
   String(osLockConflictExitCode),
@@ -56,33 +70,74 @@ export const osLockWrapperArgv = (lockPath: string, commandArgv: readonly string
   ...commandArgv,
 ];
 
-const startCommand = (argv: readonly string[], detached = false): ChildProcess => {
+export const osLockWrapperArgv = (lockPath: string, commandArgv: readonly string[]): string[] =>
+  flockArgv(lockPath, commandArgv, true);
+
+// The marker is written after flock has taken the lock, so a probe that runs once the marker
+// exists cannot win the lock from the holder.
+export const osLockHolderArgv = (markerPath: string, commandArgv: readonly string[]): string[] => [
+  'sh',
+  '-c',
+  holderReadyScript,
+  'tau-os-lock-holder',
+  markerPath,
+  ...commandArgv,
+];
+
+const commandOutcomes = new WeakMap<ChildProcess, Promise<CommandOutcome>>();
+
+const startCommand = (argv: readonly string[], options: StartOptions = {}): ChildProcess => {
   const [command, ...commandArguments] = argv;
 
   if (command === undefined) {
     throw new Error('A spike command needs a program to run.');
   }
 
-  return spawn(command, commandArguments, { detached, stdio: 'ignore' });
+  const child = spawn(command, commandArguments, {
+    detached: options.detached ?? false,
+    stdio: options.stdio ?? 'ignore',
+  });
+
+  const outcome = new Promise<CommandOutcome>((resolve) => {
+    child.once('error', (error) => {
+      resolve({ kind: 'startFailed', error });
+    });
+
+    child.once('exit', (code) => {
+      resolve({ code, kind: 'exit' });
+    });
+  });
+
+  commandOutcomes.set(child, outcome);
+
+  return child;
+};
+
+const outcomeOf = (child: ChildProcess): Promise<CommandOutcome> => {
+  const outcome = commandOutcomes.get(child);
+
+  if (outcome === undefined) {
+    throw new Error('A spike command must be started before it is watched.');
+  }
+
+  return outcome;
 };
 
 const hasExited = (child: ChildProcess): boolean =>
-  child.exitCode !== null || child.signalCode !== null;
+  child.pid === undefined || child.exitCode !== null || child.signalCode !== null;
 
-const waitForExit = (child: ChildProcess): Promise<number | null> =>
-  new Promise((resolve, reject) => {
-    if (hasExited(child)) {
-      resolve(child.exitCode);
+const waitForExit = async (child: ChildProcess): Promise<number | null> => {
+  const outcome = await outcomeOf(child);
 
-      return;
-    }
+  if (outcome.kind === 'startFailed') {
+    throw outcome.error;
+  }
 
-    child.once('error', reject);
+  return outcome.code;
+};
 
-    child.once('exit', (code) => {
-      resolve(code);
-    });
-  });
+export const runSpikeCommand = (argv: readonly string[]): Promise<number | null> =>
+  waitForExit(startCommand(argv));
 
 const stopCommand = async (child: ChildProcess): Promise<void> => {
   if (!hasExited(child)) {
@@ -92,16 +147,48 @@ const stopCommand = async (child: ChildProcess): Promise<void> => {
   await waitForExit(child).catch(() => undefined);
 };
 
-const runCommand = (argv: readonly string[]): Promise<number | null> =>
-  waitForExit(startCommand(argv));
+const markerExists = async (markerPath: string): Promise<boolean> => {
+  try {
+    await access(markerPath);
 
-const startHolder = (lockPath: string): ChildProcess =>
-  startCommand(osLockWrapperArgv(lockPath, ['sleep', holderSeconds]));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const waitForHolderReady = async (markerPath: string, watched: ChildProcess): Promise<void> => {
+  const deadline = Date.now() + probeTimeoutMilliseconds;
+
+  while (Date.now() < deadline) {
+    // oxlint-disable-next-line no-await-in-loop -- Each wait reads what the last one left.
+    const ready = await markerExists(markerPath);
+
+    if (ready) {
+      return;
+    }
+
+    if (hasExited(watched)) {
+      // oxlint-disable-next-line no-await-in-loop -- Each wait reads what the last one left.
+      const exitCode = await waitForExit(watched);
+
+      throw new Error(`The watched process exited ${String(exitCode)} before the lock was taken.`);
+    }
+
+    // oxlint-disable-next-line no-await-in-loop -- Each wait reads what the last one left.
+    await sleep(probePollMilliseconds);
+  }
+
+  throw new Error(`The lock holder did not write its readiness marker at ${markerPath}.`);
+};
+
+const startHolder = (lockPath: string, markerPath: string): ChildProcess =>
+  startCommand(osLockWrapperArgv(lockPath, osLockHolderArgv(markerPath, ['sleep', holderSeconds])));
 
 // A probe takes the lock and lets go of it at once. It is therefore not read-only: a launch that
 // races the probe sees the conflict code.
 export const readOsLockState = async (lockPath: string): Promise<OsLockState> => {
-  const exitCode = await runCommand(osLockWrapperArgv(lockPath, ['true']));
+  const exitCode = await runSpikeCommand(osLockWrapperArgv(lockPath, ['true']));
 
   if (exitCode === osLockConflictExitCode) {
     return 'held';
@@ -111,7 +198,7 @@ export const readOsLockState = async (lockPath: string): Promise<OsLockState> =>
     return 'free';
   }
 
-  throw new Error(`The lock probe on ${lockPath} exited ${String(exitCode)}.`);
+  throw new Error(`The flock probe on ${lockPath} exited ${String(exitCode)}.`);
 };
 
 export const waitForOsLockState = async (
@@ -131,48 +218,90 @@ export const waitForOsLockState = async (
   return state;
 };
 
-export const secondHolderRefused = async (lockPath: string): Promise<number | null> => {
-  const holder = startHolder(lockPath);
+export const secondHolderRefused = async (
+  lockPath: string,
+  markerPath: string,
+): Promise<number | null> => {
+  const holder = startHolder(lockPath, markerPath);
 
   try {
-    await waitForOsLockState(lockPath, 'held');
+    await waitForHolderReady(markerPath, holder);
 
-    return await runCommand(osLockWrapperArgv(lockPath, ['true']));
+    return await runSpikeCommand(osLockWrapperArgv(lockPath, ['true']));
   } finally {
     await stopCommand(holder);
   }
 };
 
-const parentFixturePath = new URL('fixtures/osLockParent.ts', import.meta.url).pathname;
+const parseProcessId = (text: string): number => {
+  const newline = text.indexOf('\n');
+  const line = newline === -1 ? text : text.slice(0, newline);
+  const value = Number(line);
+
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`The parent printed no usable process ID: ${JSON.stringify(text)}.`);
+  }
+
+  return value;
+};
 
 const readProcessId = (child: ChildProcess): Promise<number> =>
   new Promise((resolve, reject) => {
     let text = '';
+    let settled = false;
 
-    child.once('error', reject);
+    const settle = (): void => {
+      if (settled || !text.includes('\n')) {
+        return;
+      }
+
+      settled = true;
+
+      try {
+        resolve(parseProcessId(text));
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error(String(error));
+
+        reject(failure);
+      }
+    };
+
+    child.once('error', (error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+
+    child.once('exit', () => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('The parent exited before it printed its holder process ID.'));
+      }
+    });
 
     child.stdout?.on('data', (chunk: Buffer) => {
       text += chunk.toString('utf8');
-
-      const newline = text.indexOf('\n');
-
-      if (newline !== -1) {
-        resolve(Number(text.slice(0, newline)));
-      }
+      settle();
     });
   });
 
 const startParentWithHolder = async (
   mode: 'exit' | 'wait',
   lockPath: string,
+  markerPath: string,
 ): Promise<ParentHolder> => {
-  const parent = spawn(
-    process.execPath,
-    [parentFixturePath, mode, ...osLockWrapperArgv(lockPath, ['sleep', holderSeconds])],
-    { stdio: ['ignore', 'pipe', 'ignore'] },
+  const holderArgv = osLockWrapperArgv(
+    lockPath,
+    osLockHolderArgv(markerPath, ['sleep', holderSeconds]),
   );
 
-  return { parent, holderPid: await readProcessId(parent) };
+  const parent = startCommand(
+    [process.execPath, osLockParentFixturePath, mode, markerPath, ...holderArgv],
+    { stdio: ['pipe', 'pipe', 'ignore'] },
+  );
+
+  return { holderPid: await readProcessId(parent), parent };
 };
 
 // A signal aimed at no process would reach the caller's own process group.
@@ -196,11 +325,12 @@ const stopGroup = (groupId: number | undefined, signal: NodeJS.Signals): void =>
 
 export const holderOutlivesKilledParent = async (
   lockPath: string,
+  markerPath: string,
 ): Promise<{ holderAlive: boolean; state: OsLockState }> => {
-  const { parent, holderPid } = await startParentWithHolder('wait', lockPath);
+  const { parent, holderPid } = await startParentWithHolder('wait', lockPath, markerPath);
 
   try {
-    await waitForOsLockState(lockPath, 'held');
+    await waitForHolderReady(markerPath, parent);
 
     stopProcess(parent.pid, 'SIGKILL');
     await waitForExit(parent).catch(() => undefined);
@@ -211,21 +341,25 @@ export const holderOutlivesKilledParent = async (
     };
   } finally {
     stopProcess(holderPid, 'SIGKILL');
+    stopProcess(parent.pid, 'SIGKILL');
     await waitForOsLockState(lockPath, 'free');
   }
 };
 
 export const lockFreesWhenEveryHolderIsGone = async (
   lockPath: string,
+  markerPath: string,
 ): Promise<{ before: OsLockState; after: OsLockState }> => {
-  const holder = startHolder(lockPath);
+  const holder = startHolder(lockPath, markerPath);
 
   try {
-    const before = await waitForOsLockState(lockPath, 'held');
+    await waitForHolderReady(markerPath, holder);
+
+    const before = await readOsLockState(lockPath);
 
     await stopCommand(holder);
 
-    return { before, after: await waitForOsLockState(lockPath, 'free') };
+    return { after: await waitForOsLockState(lockPath, 'free'), before };
   } finally {
     await stopCommand(holder);
   }
@@ -233,28 +367,41 @@ export const lockFreesWhenEveryHolderIsGone = async (
 
 export const detachedChildKeepsLockAfterParentExit = async (
   lockPath: string,
-): Promise<{ parentExitCode: number | null; state: OsLockState }> => {
-  const { parent, holderPid } = await startParentWithHolder('exit', lockPath);
+  markerPath: string,
+): Promise<{
+  parentExitCode: number | null;
+  stateBeforeParentExit: OsLockState;
+  state: OsLockState;
+}> => {
+  const { parent, holderPid } = await startParentWithHolder('exit', lockPath, markerPath);
 
   try {
+    await waitForHolderReady(markerPath, parent);
+
+    const stateBeforeParentExit = await readOsLockState(lockPath);
+
+    parent.stdin?.end();
+
     const parentExitCode = await waitForExit(parent);
 
-    return { parentExitCode, state: await readOsLockState(lockPath) };
+    return { parentExitCode, state: await readOsLockState(lockPath), stateBeforeParentExit };
   } finally {
     stopProcess(holderPid, 'SIGKILL');
+    stopProcess(parent.pid, 'SIGKILL');
     await waitForOsLockState(lockPath, 'free');
   }
 };
 
 export const wrapperHoldsLockAcrossExec = async (
   lockPath: string,
+  markerPath: string,
 ): Promise<{ secondExitCode: number | null; stateAfterKillingHolder: OsLockState }> => {
-  const wrapper = startHolder(lockPath);
+  const wrapper = startHolder(lockPath, markerPath);
 
   try {
-    await waitForOsLockState(lockPath, 'held');
+    await waitForHolderReady(markerPath, wrapper);
 
-    const secondExitCode = await runCommand(osLockWrapperArgv(lockPath, ['true']));
+    const secondExitCode = await runSpikeCommand(osLockWrapperArgv(lockPath, ['true']));
 
     await stopCommand(wrapper);
 
@@ -269,14 +416,15 @@ export const wrapperHoldsLockAcrossExec = async (
 
 export const supervisorWithoutFork = async (
   lockPath: string,
+  markerPath: string,
 ): Promise<{ stateAfterSupervisorKilled: OsLockState; stateAfterGroupKilled: OsLockState }> => {
   const supervisor = startCommand(
-    ['flock', '-n', '-E', String(osLockConflictExitCode), lockPath, 'sleep', holderSeconds],
-    true,
+    flockArgv(lockPath, osLockHolderArgv(markerPath, ['sleep', holderSeconds]), false),
+    { detached: true },
   );
 
   try {
-    await waitForOsLockState(lockPath, 'held');
+    await waitForHolderReady(markerPath, supervisor);
 
     stopProcess(supervisor.pid, 'SIGKILL');
     await waitForExit(supervisor).catch(() => undefined);
@@ -286,8 +434,8 @@ export const supervisorWithoutFork = async (
     stopGroup(supervisor.pid, 'SIGKILL');
 
     return {
-      stateAfterSupervisorKilled,
       stateAfterGroupKilled: await waitForOsLockState(lockPath, 'free'),
+      stateAfterSupervisorKilled,
     };
   } finally {
     stopGroup(supervisor.pid, 'SIGKILL');
@@ -296,14 +444,38 @@ export const supervisorWithoutFork = async (
 };
 
 export const runSpike = async (directory: string): Promise<SpikeObservation[]> => {
-  const lockPathOf = (name: string): string => `${directory}/${name}`;
+  const lockPathOf = (name: string): string => join(directory, `${name}.lock`);
+  const markerPathOf = (name: string): string => join(directory, `${name}.ready`);
 
-  const secondExitCode = await secondHolderRefused(lockPathOf('second-holder'));
-  const outlivedParent = await holderOutlivesKilledParent(lockPathOf('killed-parent'));
-  const everyHolderGone = await lockFreesWhenEveryHolderIsGone(lockPathOf('every-holder-gone'));
-  const detachedChild = await detachedChildKeepsLockAfterParentExit(lockPathOf('detached-child'));
-  const acrossExec = await wrapperHoldsLockAcrossExec(lockPathOf('wrapper-exec'));
-  const supervisor = await supervisorWithoutFork(lockPathOf('supervisor'));
+  const secondExitCode = await secondHolderRefused(
+    lockPathOf('second-holder'),
+    markerPathOf('second-holder'),
+  );
+
+  const outlivedParent = await holderOutlivesKilledParent(
+    lockPathOf('killed-parent'),
+    markerPathOf('killed-parent'),
+  );
+
+  const everyHolderGone = await lockFreesWhenEveryHolderIsGone(
+    lockPathOf('every-holder-gone'),
+    markerPathOf('every-holder-gone'),
+  );
+
+  const detachedChild = await detachedChildKeepsLockAfterParentExit(
+    lockPathOf('detached-child'),
+    markerPathOf('detached-child'),
+  );
+
+  const acrossExec = await wrapperHoldsLockAcrossExec(
+    lockPathOf('wrapper-exec'),
+    markerPathOf('wrapper-exec'),
+  );
+
+  const supervisor = await supervisorWithoutFork(
+    lockPathOf('supervisor'),
+    markerPathOf('supervisor'),
+  );
 
   return [
     { case: 'secondHolder', secondExitCode },
