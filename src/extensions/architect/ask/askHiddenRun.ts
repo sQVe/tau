@@ -52,9 +52,6 @@ export const askUnreadableAnswerReason =
 export const askUnconfirmedStopDetail =
   'The ask terminal did not confirm that it stopped. The ask ends at its deadline.';
 
-export const askUnconfirmedStopReason =
-  'The ask still runs because its terminal did not confirm that it stopped. The ask ends at its deadline.';
-
 export const askTimeoutStopDetail =
   'The ask reached its deadline, and its terminal did not confirm that it stopped. The record stays running until another ask repairs it.';
 
