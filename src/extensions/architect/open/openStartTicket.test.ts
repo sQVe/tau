@@ -6,6 +6,7 @@ import { expect, it, vi } from 'vitest';
 
 import { argumentAfter, failedResult } from '../../../../tests/execFake.js';
 import {
+  fakeRunningStartProcessId,
   fakeStartProcessId,
   runLaunchArgv,
   takeStartTicket,
@@ -196,15 +197,14 @@ it('deletes a started marker whose process is gone and then starts', async ({
   expect(existsSync(marker)).toBe(false);
 });
 
-it('starts and leaves an adopted marker whose process runs', async ({
+it('starts and leaves an adopted marker whose child runs and whose lead is gone', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
   const { runtime } = openTool(root);
 
-  useFakeStartProcess(cleanup, 'running');
   await recordSession(root);
-  const marker = await adoptedMarker(root, 'gone', fakeStartProcessId);
+  const marker = await adoptedMarker(root, 'gone', fakeRunningStartProcessId);
 
   const result = await openArchitect(requestFor(root, config.location, runtime));
 
