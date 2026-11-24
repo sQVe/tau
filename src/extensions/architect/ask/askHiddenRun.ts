@@ -73,12 +73,12 @@ export const askAdoptedChildStoppedDetail =
 const askDeadlineReason =
   'The ask reached its deadline. Call architect open to talk to the architect.';
 
-const askEndedReason =
+export const askEndedReason =
   'The architect ended without sending an answer. Call architect open to talk to it.';
 
-const askEndedDetail = 'The ask ended without sending an answer.';
+export const askEndedDetail = 'The ask ended without sending an answer.';
 
-const askEndedFailureDetail = 'The ask terminal failed before the architect answered.';
+export const askEndedFailureDetail = 'The ask terminal failed before the architect answered.';
 
 export const askFailedReason =
   'The ask terminal failed before the architect answered. Call architect open instead.';
@@ -366,7 +366,7 @@ const settleEnded = async (
   exitCode: number | null,
   options: ChangeAskOptions,
 ): Promise<AskResult> => {
-  const failed = exitCode !== 0;
+  const failed = exitCode !== null && exitCode !== 0;
   const detail = failed ? askEndedFailureDetail : askEndedDetail;
 
   const changed = await updateHiddenAskRecord(

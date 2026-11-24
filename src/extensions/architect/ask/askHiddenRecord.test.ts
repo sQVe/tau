@@ -11,6 +11,10 @@ import { acquireStartFence } from '../startFence/startFence.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
 import {
+  askEndedDetail,
+  askEndedFailureDetail,
+  askEndedReason,
+  askFailedReason,
   askKeptClaimMessage,
   askMissingRecordReason,
   askUnreadableAnswerReason,
@@ -29,13 +33,36 @@ it('returns the failed result when the child exits nonzero before settling', asy
 
   const result = await ask(hc, root);
 
-  expect(result).toMatchObject({ details: { status: 'failed' } });
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
 
   const { records } = await readAskRecords(root);
 
-  expect(records[0]).toMatchObject({ status: 'failed' });
+  expect(records[0]).toMatchObject({ status: 'failed', detail: askEndedFailureDetail });
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
+
+it.each([0, null])(
+  'returns the clean-end outcome when the wait ends with exit code %s',
+  async (exitCode) => {
+    const { root } = await setup(onTestFinished);
+    const hc = startFake();
+
+    await recordSession(root);
+    hc.reply('wait', endedWait('t-ask', true, exitCode));
+
+    const result = await ask(hc, root);
+
+    expect(result).toMatchObject({
+      details: { status: 'needsOpen', reason: askEndedReason },
+    });
+
+    const { records } = await readAskRecords(root);
+
+    expect(records[0]).toMatchObject({ status: 'failed', detail: askEndedDetail });
+    expect(records[0]).not.toMatchObject({ status: 'running' });
+    expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  },
+);
 
 it('returns the deadline outcome and writes nothing after a child timeout ends the wait', async ({
   onTestFinished: cleanup,
