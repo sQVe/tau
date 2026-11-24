@@ -1,6 +1,7 @@
 import { readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readdir, rename } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import type { setTimeout as promiseDelay } from 'node:timers/promises';
 
 import { expect, it, vi, afterEach, beforeEach } from 'vitest';
 
@@ -837,4 +838,57 @@ it('waits on an adopted child after an address-less launch and settles its runni
   expect(child.signals).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(await readdir(startDirectory(root))).toEqual([]);
+});
+
+it('ends the adopted-child wait on abort without signalling the child', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+  const child = useFakeStartProcess(cleanup, 'running');
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled while waiting for the adopted child');
+  let taken = false;
+
+  await recordSession(root);
+  startFakeTimers();
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await adoptAsChild(root, commandArguments);
+
+      return { code: 1, killed: false, truncated: false, stdout: '', stderr: 'launch failed' };
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    gateRecord: null,
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root, exec, signal: controller.signal },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  const asking = askArchitect(request).catch((error: unknown) => error);
+
+  await poll.started.promise;
+  controller.abort(cancellation);
+
+  const actual = await vi.importActual<{ setTimeout: typeof promiseDelay }>('node:timers/promises');
+
+  const stillWaiting = actual.setTimeout(500).then(() => 'still-waiting' as const);
+  const settled = await Promise.race([asking, stillWaiting]);
+
+  expect(taken).toBe(true);
+  expect(settled).toBe(cancellation);
+  expect(child.signals).toEqual([]);
+  expect(await statuses(root)).toEqual(['running']);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });

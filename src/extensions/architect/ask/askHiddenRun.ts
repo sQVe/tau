@@ -253,9 +253,18 @@ const settleTimeout = async (
   return resultFromRecord(request.root, started.askId, record);
 };
 
+const adoptedChildPoll = async (signal: AbortSignal | undefined): Promise<void> => {
+  const options = signal === undefined ? {} : { signal };
+
+  await sleep(adoptedChildPollMilliseconds, undefined, options).catch(() => undefined);
+};
+
+const signalAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
+
 const waitForAdoptedChild = async (
   started: HiddenAskRecord,
   fence: StartFence,
+  signal: AbortSignal | undefined,
 ): Promise<boolean> => {
   const childPid = fence.childProcessId();
 
@@ -265,9 +274,9 @@ const waitForAdoptedChild = async (
 
   let state = processState(childPid);
 
-  while (state !== 'gone' && Date.now() < started.deadline) {
+  while (state !== 'gone' && Date.now() < started.deadline && !signalAborted(signal)) {
     // oxlint-disable-next-line no-await-in-loop -- Each poll waits for the child to change state.
-    await sleep(adoptedChildPollMilliseconds);
+    await adoptedChildPoll(signal);
 
     state = processState(childPid);
   }
@@ -384,13 +393,15 @@ const runHiddenAsk = async (
   const launched = await launchHiddenRecord(request, initial, recordPath, model, fence, stop);
 
   if (launched.kind === 'adopted') {
-    const childGone = await waitForAdoptedChild(launched.started, fence);
+    const childGone = await waitForAdoptedChild(launched.started, fence, request.hc.signal);
 
     const changed = await updateHiddenAskRecord(request.root, askId, (current) =>
       childGone
         ? { ...current, status: 'failed', detail: askAdoptedChildStoppedDetail }
         : undefined,
     );
+
+    request.hc.signal?.throwIfAborted();
 
     return resultFromRecord(request.root, askId, changed?.record);
   }
