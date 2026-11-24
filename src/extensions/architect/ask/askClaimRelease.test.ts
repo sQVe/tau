@@ -1,13 +1,15 @@
-import { readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readdir, rename } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { setTimeout as promiseDelay } from 'node:timers/promises';
 
 import { expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
-import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
+import {
+  replaceCurrentLockOwnerPid,
+  writeNextLockOwnerRecordSync,
+} from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeStartProcessId,
   takeStartTicket,
@@ -78,28 +80,7 @@ const childClaimToken = (commandArguments: readonly string[]): string | undefine
 
 // The child wins the claim without awaiting anything, so a probe can trigger the takeover.
 const adoptLockSync = (root: string, token: string): void => {
-  const lockPath = architectLockPath(root);
-  const prefix = `${basename(lockPath)}.`;
-
-  const generations = readdirSync(dirname(lockPath))
-    .filter((name) => name.startsWith(prefix) && /^\d+$/u.test(name.slice(prefix.length)))
-    .map((name) => Number(name.slice(prefix.length)));
-
-  const next = Math.max(0, ...generations) + 1;
-
-  writeFileSync(
-    `${lockPath}.${next}`,
-    JSON.stringify({
-      pid: fakeStartProcessId,
-      checkout: root,
-      startedAt: new Date().toISOString(),
-      token,
-    }),
-  );
-
-  for (const generation of generations) {
-    rmSync(`${lockPath}.${generation}`, { force: true });
-  }
+  writeNextLockOwnerRecordSync(architectLockPath(root), { pid: fakeStartProcessId, token });
 };
 
 // The real child takes the ticket, adopts the claim, and renames its marker before it runs Pi. A

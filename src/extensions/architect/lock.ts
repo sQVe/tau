@@ -65,7 +65,12 @@ export const holdArchitectLock = async (
   });
 
   if (held.kind === 'refused') {
-    throw new Error('The architect is already running in another session.');
+    const message =
+      held.reason === 'claimGone'
+        ? 'The architect claim was released before it could be adopted. Call architect open again.'
+        : 'The architect is already running in another session.';
+
+    throw new Error(message);
   }
 
   return { release: held.release, token };

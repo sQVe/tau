@@ -57,7 +57,7 @@ export interface HoldFileLockOptions {
 
 export type HeldFileLock =
   | { kind: 'held'; release: () => Promise<void> }
-  | { kind: 'refused'; holder: LiveLockHolder | undefined };
+  | { kind: 'refused'; reason: 'held' | 'claimGone'; holder: LiveLockHolder | undefined };
 
 type LockClaim = Omit<LockOwner, 'startedAt'>;
 
@@ -153,7 +153,7 @@ const waitForNextPoll = async (
   }
 };
 
-const listGenerations = async (lockPath: string): Promise<number[]> => {
+export const listGenerations = async (lockPath: string): Promise<number[]> => {
   const prefix = `${basename(lockPath)}.`;
   const names = await readdir(dirname(lockPath));
 
@@ -176,8 +176,9 @@ const readHolderFacts = async (holder: LockOwner | undefined): Promise<LockHolde
 };
 
 // The lock is the file of the highest generation. A new owner takes the next generation with an
-// atomic link, so two sessions that both see a dead holder cannot both win, and no one ever
-// removes the file of an owner that is still live. Files of older generations are garbage.
+// atomic link, so two sessions that both see a dead holder cannot both win. Files of older
+// generations are garbage. A takeover of a live claim removes that holder's file too, so the
+// displaced claim can no longer rewrite or release its own record.
 const removeOlderGenerations = async (lockPath: string, generation: number): Promise<void> => {
   const generations = await listGenerations(lockPath);
   const older = generations.filter((candidate) => candidate < generation);
@@ -335,17 +336,10 @@ const claimGeneration = async (
 };
 
 const canTakeOver = (
-  highest: number | undefined,
   facts: LockHolderFacts,
   holder: LockOwner | undefined,
   adopt: string | undefined,
-): boolean => {
-  if (highest === undefined) {
-    return adopt === undefined || adopt === '';
-  }
-
-  return holderIsTakeable({ facts, holderToken: holder?.token, adoptToken: adopt });
-};
+): boolean => holderIsTakeable({ facts, holderToken: holder?.token, adoptToken: adopt });
 
 // Polls until this process owns the lock and returns the path and owner record of its file. Each
 // poll depends on the one before, so the loop awaits.
@@ -364,7 +358,7 @@ const acquireLock = async (
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
     const { highest, holder, facts } = await findCurrentHolder(lockPath);
 
-    if (canTakeOver(highest, facts, holder, options.adopt)) {
+    if (canTakeOver(facts, holder, options.adopt)) {
       const next = (highest ?? 0) + 1;
       const path = generationPath(lockPath, next);
 
@@ -483,8 +477,10 @@ export const holdFileLock = async (options: HoldFileLockOptions): Promise<HeldFi
 
   if (refusal !== undefined) {
     const holder = refusal.holder === undefined ? undefined : toLiveHolder(refusal.holder);
+    const adopting = adopt !== undefined && adopt !== '';
+    const reason = adopting ? 'claimGone' : 'held';
 
-    return { kind: 'refused', holder };
+    return { kind: 'refused', reason, holder };
   }
 
   if (acquired.kind === 'failed') {

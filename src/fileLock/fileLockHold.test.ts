@@ -34,6 +34,7 @@ it('refuses while a live holder has the lock and names its terminal', async ({
 
   expect(second).toEqual({
     kind: 'refused',
+    reason: 'held',
     holder: {
       pid: process.pid,
       checkout,

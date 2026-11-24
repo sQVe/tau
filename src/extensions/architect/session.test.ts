@@ -204,7 +204,7 @@ it('an architect session shuts down when its claim is no longer the live holder'
   expect(await startArchitectSession(context, createHeldLockToken())).toBeUndefined();
 
   expect(notify).toHaveBeenCalledWith(
-    'The architect is already running in another session.',
+    'The architect claim was released before it could be adopted. Call architect open again.',
     'error',
   );
 

@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
 
+import { exitedPid } from '../../tests/exitedPid.js';
+import { readLockOwnerRecord, writeLockOwnerRecord } from '../../tests/lockOwnerRecord.js';
 import { holdFileLock, readLiveLockHolder } from './fileLock.js';
 import type { HeldFileLock } from './fileLock.js';
 import { fixture } from './fixtures/fileLockHarness.js';
@@ -25,7 +27,13 @@ it('refuses a plain hold while a live claim holds the lock', async ({ onTestFini
 
   const plain = await holdFileLock({ lockPath, checkout, terminal: 't2' });
 
-  expect(plain).toMatchObject({ kind: 'refused', holder: { token: 'claim', terminal: undefined } });
+  expect(plain).toMatchObject({
+    kind: 'refused',
+    reason: 'held',
+    holder: { token: 'claim', terminal: undefined },
+  });
+
+  expect(await readLiveLockHolder(lockPath)).toMatchObject({ token: 'claim' });
 });
 
 it('admits the holder whose token names the claim', async ({ onTestFinished }) => {
@@ -52,13 +60,12 @@ it('admits the holder whose token names the claim', async ({ onTestFinished }) =
   expect(await readLiveLockHolder(lockPath)).toMatchObject({ token: 'pi', terminal: 't-pi' });
 });
 
-it('refuses a holder whose token does not name the claim', async ({ onTestFinished }) => {
+it('refuses a holder whose token does not name the claim', async () => {
   const { lockPath } = fixture();
-  const held = await claim(lockPath);
 
-  onTestFinished(async () => {
-    await release(held);
-  });
+  // The holder is gone, so a plain hold would take the lock over. Only the adopt token explains
+  // the refusal.
+  await writeLockOwnerRecord(lockPath, { pid: await exitedPid(), token: 'claim' });
 
   const other = await holdFileLock({
     lockPath,
@@ -68,7 +75,13 @@ it('refuses a holder whose token does not name the claim', async ({ onTestFinish
     adopt: 'other',
   });
 
-  expect(other).toMatchObject({ kind: 'refused', holder: { token: 'claim' } });
+  expect(other).toMatchObject({
+    kind: 'refused',
+    reason: 'claimGone',
+    holder: { token: 'claim' },
+  });
+
+  expect(await readLockOwnerRecord(lockPath)).toMatchObject({ token: 'claim' });
 });
 
 it('leaves the new holder live when the claim releases after the takeover', async ({
@@ -116,7 +129,8 @@ it('refuses an adopt token for a released claim', async ({ onTestFinished }) => 
     adopt: 'claim',
   });
 
-  expect(adopter.kind).toBe('refused');
+  expect(adopter).toMatchObject({ kind: 'refused', reason: 'claimGone' });
+  expect(await readLockOwnerRecord(lockPath)).toMatchObject({ token: 'claim', released: true });
 });
 
 it('refuses an adopt token when the lock is missing', async () => {
@@ -130,24 +144,14 @@ it('refuses an adopt token when the lock is missing', async () => {
     adopt: 'claim',
   });
 
-  expect(adopter.kind).toBe('refused');
+  expect(adopter).toMatchObject({ kind: 'refused', reason: 'claimGone' });
+  expect(await readLockOwnerRecord(lockPath)).toBeUndefined();
 });
 
-it('refuses an adopt token for a replaced generation', async ({ onTestFinished }) => {
+it('refuses an adopt token for a replaced generation', async () => {
   const { lockPath } = fixture();
-  const held = await claim(lockPath);
 
-  onTestFinished(async () => {
-    await release(held);
-  });
-
-  await release(held);
-
-  const replacement = await holdFileLock({ lockPath, checkout, terminal: 't-new', token: 'new' });
-
-  onTestFinished(async () => {
-    await release(replacement);
-  });
+  await writeLockOwnerRecord(lockPath, { pid: await exitedPid(), token: 'new' });
 
   const adopter = await holdFileLock({
     lockPath,
@@ -157,5 +161,6 @@ it('refuses an adopt token for a replaced generation', async ({ onTestFinished }
     adopt: 'claim',
   });
 
-  expect(adopter.kind).toBe('refused');
+  expect(adopter).toMatchObject({ kind: 'refused', reason: 'claimGone', holder: { token: 'new' } });
+  expect(await readLockOwnerRecord(lockPath)).toMatchObject({ token: 'new' });
 });
