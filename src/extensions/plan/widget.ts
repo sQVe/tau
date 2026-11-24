@@ -18,16 +18,19 @@ const statusMarks = {
 } satisfies Record<PlanStep['status'], { mark: string; color: ThemeColor }>;
 
 const planLabel = 'Plan';
+const labelPrefix = '── ';
+const markIndent = ' ';
 
 const markWidths = Object.values(statusMarks).map(({ mark }) => visibleWidth(mark));
 const markWidth = Math.max(...markWidths);
-const stepPrefixWidth = markWidth + 1;
+
+// The step text and the label share this column.
+export const planLabelColumn = visibleWidth(labelPrefix);
 
 const borderLine = (width: number, theme: Pick<Theme, 'fg'>): string => {
-  const labelEnd = stepPrefixWidth + visibleWidth(planLabel) + 1;
-  const ruleWidth = Math.max(0, width - labelEnd);
-  const head = `${theme.fg('border', '─')}${' '.repeat(stepPrefixWidth - 1)}`;
-  const line = `${head}${theme.fg('muted', planLabel)} ${theme.fg('border', '─'.repeat(ruleWidth))}`;
+  const labelWidth = visibleWidth(planLabel);
+  const ruleWidth = Math.max(0, width - visibleWidth(labelPrefix) - labelWidth - 1);
+  const line = `${theme.fg('border', labelPrefix)}${theme.fg('muted', planLabel)} ${theme.fg('border', '─'.repeat(ruleWidth))}`;
 
   return truncateToWidth(line, width, '');
 };
@@ -42,11 +45,13 @@ const drawMark = (status: PlanStep['status'], theme: Pick<Theme, 'fg'>): string 
 
 const planLine = (step: PlanStep, width: number, theme: Pick<Theme, 'fg'>): string => {
   const text = sanitizeSingleLine(step.text);
-  const textWidth = Math.max(0, width - stepPrefixWidth);
+  const textWidth = Math.max(0, width - planLabelColumn);
   const fittedText = stripVTControlCharacters(truncateToWidth(text, textWidth));
   const drawnText = step.status === 'completed' ? theme.fg('dim', fittedText) : fittedText;
+  const markGap = ' '.repeat(Math.max(0, planLabelColumn - visibleWidth(markIndent) - markWidth));
+  const prefix = `${markIndent}${drawMark(step.status, theme)}${markGap}`;
 
-  return truncateToWidth(`${drawMark(step.status, theme)} ${drawnText}`, width, '');
+  return truncateToWidth(`${prefix}${drawnText}`, width, '');
 };
 
 export const planLines = (

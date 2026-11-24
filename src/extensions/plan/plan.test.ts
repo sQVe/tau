@@ -135,10 +135,10 @@ it('an accepted call appends one record, returns the summary, and shows the step
   expect(widgets.map(({ key }) => key)).toEqual([planWidgetKey]);
 
   expect(renderedLines(widgets.at(-1)?.content)).toEqual([
-    `─ Plan ${'─'.repeat(73)}`,
-    '\u{F192} Brief worker for ME-123',
-    '\u{F10C} Review worker change for ME-123',
-    '\u{F058} Open the PR',
+    `── Plan ${'─'.repeat(72)}`,
+    ' \u{F192} Brief worker for ME-123',
+    ' \u{F10C} Review worker change for ME-123',
+    ' \u{F058} Open the PR',
   ]);
 });
 
@@ -199,7 +199,7 @@ it.each(['session_start', 'session_tree'] as const)(
 
     const { widgets } = replayBranch(eventName, branch);
 
-    expect(restoredSteps(widgets.at(-1)?.content)).toEqual(['\u{F10C} Second', '\u{F058} Third']);
+    expect(restoredSteps(widgets.at(-1)?.content)).toEqual([' \u{F10C} Second', ' \u{F058} Third']);
   },
 );
 
@@ -222,7 +222,7 @@ it.each(['session_start', 'session_tree'] as const)(
 
     const { widgets, notify } = replayBranch(eventName, branch);
 
-    expect(restoredSteps(widgets.at(-1)?.content)).toEqual(['\u{F10C} Kept']);
+    expect(restoredSteps(widgets.at(-1)?.content)).toEqual([' \u{F10C} Kept']);
 
     expect(notify).toHaveBeenCalledExactlyOnceWith(
       'Skipped a plan entry from newer version 2.',
@@ -241,7 +241,7 @@ it.each(['session_start', 'session_tree'] as const)(
 
     const { widgets, notify } = replayBranch(eventName, branch);
 
-    expect(restoredSteps(widgets.at(-1)?.content)).toEqual(['\u{F10C} Kept']);
+    expect(restoredSteps(widgets.at(-1)?.content)).toEqual([' \u{F10C} Kept']);
 
     expect(notify).toHaveBeenCalledExactlyOnceWith('Skipped a malformed plan entry.', 'warning');
   },
