@@ -364,10 +364,10 @@ const settleEnded = async (
   request: AskRequest,
   askId: string,
   exitCode: number | null,
-  signal: number | null,
+  exitSignal: number | null,
   options: ChangeAskOptions,
 ): Promise<AskResult> => {
-  const stoppedBySignal = signal !== null;
+  const stoppedBySignal = exitSignal !== null;
   const nonZeroExit = exitCode !== null && exitCode !== 0;
   const failed = stoppedBySignal || nonZeroExit;
   const detail = failed ? askEndedFailureDetail : askEndedDetail;
