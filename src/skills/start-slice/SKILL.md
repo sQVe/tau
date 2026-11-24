@@ -172,6 +172,7 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     - Delegate each agent ticket to a worker with its body file path, such as
       `$slicedir/agent-1.md`. Copy its `## Acceptance` items word for word, in order, into
       `acceptance`. Tell each worker that the slice manager runs the mutation check.
+    - Keep one `plan` step `in_progress`, and mark a step `completed` as its agent ticket finishes.
     - Do not review a finished agent ticket. When a later ticket in the slice builds on a contract
       it changes, such as a type, tool schema, or file format, run one fast review of it before the
       dependent ticket starts.
