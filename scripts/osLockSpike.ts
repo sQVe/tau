@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { isMissingFile } from '../src/errors.ts';
 import { processState, signalGroup, stopGroup } from '../src/process/process.ts';
 import { parseProcessId, probeTimeoutMilliseconds, readProcessId } from './osLockProcessId.ts';
 
@@ -268,19 +267,12 @@ const stopProcess = (processId: number | undefined, signal: NodeJS.Signals): voi
 };
 
 const readHolderPid = async (holderPidPath: string): Promise<number | undefined> => {
-  let text: string;
-
   try {
-    text = await readFile(holderPidPath, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
+    return parseProcessId(await readFile(holderPidPath, 'utf8'));
+  } catch {
+    // The cleanup reports the failure that started it, so a missing or broken file adds nothing.
+    return undefined;
   }
-
-  return parseProcessId(text);
 };
 
 const stopHolderFromFile = async (holderPidPath: string): Promise<void> => {

@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import { access, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+import { errorMessage } from '../src/errors.ts';
+
 const usage =
   'Usage: node osLockParentHarness.ts <abandon|exit|wait> <marker> <holder-pid-file> <command> [arguments...]';
 
@@ -21,9 +23,6 @@ const refuseHolder: (problem: string) => never = (problem) => {
   process.exit(holderFailureExitCode);
 };
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 if (command === undefined || holderPidPath === undefined || markerPath === undefined) {
   refuseUsage('A parent needs a marker path, a holder process ID file, and a command to start.');
 }
@@ -40,14 +39,11 @@ const holder = spawn(command, commandArguments, {
 
 holder.unref();
 
-holder.once('error', (error) => {
-  refuseHolder(`The holder could not start: ${error.message}`);
-});
-
 const holderPid = holder.pid;
 
+// A program that spawn cannot find has no process ID, so a missing ID also reports a failed start.
 if (holderPid === undefined) {
-  refuseHolder('The holder started without a process ID.');
+  refuseHolder(`The holder could not start: ${command}`);
 }
 
 // The file reaches the caller before the printed ID does, so a caller that never reads the print
@@ -58,7 +54,7 @@ try {
   holder.kill('SIGKILL');
 
   refuseHolder(
-    `The holder process ID could not be recorded at ${holderPidPath}: ${messageOf(error)}`,
+    `The holder process ID could not be recorded at ${holderPidPath}: ${errorMessage(error)}`,
   );
 }
 

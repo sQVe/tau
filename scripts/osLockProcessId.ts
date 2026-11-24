@@ -26,7 +26,6 @@ export const readProcessId = (child: ChildProcess): Promise<number> =>
 
       settled = true;
       clearTimeout(timer);
-      child.off('error', listeners.error);
       child.off('close', listeners.close);
       child.stdout?.off('data', listeners.data);
 
@@ -72,7 +71,9 @@ export const readProcessId = (child: ChildProcess): Promise<number> =>
 
     const timer = setTimeout(listeners.timeout, probeTimeoutMilliseconds);
 
-    child.once('error', listeners.error);
+    // A child that emits 'error' with no listener throws, so this one stays after settlement and
+    // absorbs a late failure.
+    child.on('error', listeners.error);
     child.once('close', listeners.close);
     child.stdout?.on('data', listeners.data);
   });

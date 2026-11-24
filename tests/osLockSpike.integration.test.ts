@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { parseProcessId } from '../scripts/osLockProcessId.js';
 import {
   detachedChildKeepsLockAfterParentExit,
   holderOutlivesKilledParent,
@@ -50,16 +51,8 @@ const waitForProcessGone = async (processId: number): Promise<ProcessState> => {
   return state;
 };
 
-const readHolderPid = async (path: string): Promise<number> => {
-  const text = await readFile(path, 'utf8');
-  const value = Number(text.trim());
-
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`Expected a process ID in ${path}, found ${JSON.stringify(text)}.`);
-  }
-
-  return value;
-};
+const readHolderPid = async (path: string): Promise<number> =>
+  parseProcessId(await readFile(path, 'utf8'));
 
 let directory: string;
 let lockPath: string;
@@ -88,7 +81,7 @@ it('spawns the parent fixture from the resolved path', () => {
   expect(result.stderr).toContain('Usage: node osLockParentHarness.ts');
 });
 
-it('refuses to start a holder it has no process ID for', () => {
+it('refuses to start a holder program it cannot start', () => {
   const result = spawnSync(
     process.execPath,
     [
@@ -103,7 +96,7 @@ it('refuses to start a holder it has no process ID for', () => {
 
   expect(result.status).toBe(70);
   expect(result.stdout).toBe('');
-  expect(result.stderr).toContain('without a process ID');
+  expect(result.stderr).toContain('The holder could not start');
 });
 
 it('refuses to start a holder it cannot record', () => {
@@ -114,16 +107,30 @@ it('refuses to start a holder it cannot record', () => {
       'wait',
       markerPath,
       join(directory, 'missing', 'holder.pid'),
-      'sleep',
-      '60',
+      process.execPath,
+      '-e',
+      'setTimeout(() => undefined, 60_000)',
     ],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', timeout: processTimeoutMilliseconds },
   );
 
   expect(result.status).toBe(70);
   expect(result.stdout).toBe('');
   expect(result.stderr).toContain('could not be recorded');
 });
+
+it.skipIf(!flockAvailable)(
+  'reports the failed read when the holder-pid file is unreadable',
+  async () => {
+    await mkdir(holderPidPathFrom(markerPath));
+
+    await expect(startParentWithHolder('wait', lockPath, markerPath)).rejects.toThrow(
+      'exited before it printed its holder process ID',
+    );
+
+    expect(await waitForOsLockState(lockPath, 'free')).toBe('free');
+  },
+);
 
 it.skipIf(!flockAvailable)('stops a detached holder when the process ID read fails', async () => {
   await expect(startParentWithHolder('abandon', lockPath, markerPath)).rejects.toThrow(

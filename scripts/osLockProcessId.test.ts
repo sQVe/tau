@@ -116,7 +116,7 @@ it('rejects after the probe deadline when the parent has no output stream', asyn
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it('detaches its listeners once it reads the process ID', async () => {
+it('detaches its output listeners once it reads the process ID', async () => {
   vi.useFakeTimers();
   const { child, stdout } = fakeChild();
   const reading = readProcessId(child);
@@ -126,5 +126,19 @@ it('detaches its listeners once it reads the process ID', async () => {
   await expect(reading).resolves.toBe(123);
   expect(stdout.listenerCount('data')).toBe(0);
   expect(child.listenerCount('close')).toBe(0);
-  expect(child.listenerCount('error')).toBe(0);
+  expect(() => child.emit('error', new Error('a late start failure'))).not.toThrow();
+  await expect(reading).resolves.toBe(123);
+});
+
+it('absorbs a start failure that arrives after the read rejects', async () => {
+  vi.useFakeTimers();
+  const { child } = fakeChild();
+  const reading = readProcessId(child);
+
+  child.emit('error', new Error('spawn tau-os-lock-parent ENOENT'));
+
+  await expect(reading).rejects.toThrow('ENOENT');
+  expect(child.listenerCount('error')).toBe(1);
+  expect(() => child.emit('error', new Error('a second start failure'))).not.toThrow();
+  await expect(reading).rejects.toThrow('ENOENT');
 });
