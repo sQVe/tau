@@ -1,3 +1,5 @@
+import type { setTimeout as promiseDelay } from 'node:timers/promises';
+
 import { expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
@@ -163,6 +165,48 @@ it('an ask session writes nothing at the deadline for an already settled record'
 
   expect(await readAskRecord(root, hiddenIds.sent)).toMatchObject({ status: 'sent' });
   expect(shutdown).not.toHaveBeenCalled();
+});
+
+it('an ask session ends without the ask lock for an already settled record', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const deadline = Date.now();
+
+  await writeAskRecord(root, { ...hiddenAsk('sent', 'sent'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', askRecordPath(root, hiddenIds.sent));
+
+  const held = await holdAskLock(onTestFinished, root, hiddenIds.sent);
+  const { context, shutdown } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  const actual = await vi.importActual<{ setTimeout: typeof promiseDelay }>('node:timers/promises');
+
+  const stillWaiting = actual.setTimeout(3000).then(() => 'still-waiting' as const);
+
+  const ending = endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  ).then(() => 'ended' as const);
+
+  expect(await Promise.race([ending, stillWaiting])).toBe('ended');
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(await readAskRecord(root, hiddenIds.sent)).toMatchObject({ status: 'sent' });
+
+  held.release();
 });
 
 it('an ask session shutdown during a clock change leaves no deadline timer armed', async ({

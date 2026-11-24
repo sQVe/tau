@@ -76,7 +76,11 @@ export const startAskDeadline = async (
           return;
         }
 
-        if (current.status === 'running' && Date.now() < current.deadline) {
+        if (current.status !== 'running') {
+          return;
+        }
+
+        if (Date.now() < current.deadline) {
           schedule(current.deadline);
 
           return;
