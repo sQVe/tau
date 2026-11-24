@@ -222,6 +222,19 @@ const settleAdoptedChild = async (
   return changed;
 };
 
+const failureBeside = (message: string, failure: Error | undefined): string =>
+  failure === undefined ? message : `${message} ${failure.message}`;
+
+const launchError = (error: unknown, failure: Error | undefined): Error => {
+  if (failure === undefined) {
+    return error instanceof Error ? error : new Error(errorMessage(error));
+  }
+
+  const message = `${errorMessage(error)} ${failure.message}`;
+
+  return new Error(message, { cause: error });
+};
+
 const launchHiddenRecord = async (
   request: AskRequest,
   initial: HiddenAskRecord,
@@ -232,9 +245,9 @@ const launchHiddenRecord = async (
 ): Promise<HiddenAskLaunchResult> => {
   const launched = await hiddenAskLaunch(request, initial, recordPath, model, fence);
 
-  await fence.recordStarted();
-
   if (launched.outcome === 'created' && launched.terminal !== undefined) {
+    await fence.recordStarted();
+
     const started: HiddenAskRecord = { ...initial, terminal: launched.terminal };
 
     await updateHiddenAskRecord(request.root, initial.askId, (current) => ({
@@ -257,28 +270,41 @@ const launchHiddenRecord = async (
   }
 
   if (completion.outcome === 'unresolved') {
-    await updateHiddenAskRecord(
+    const changed = await updateHiddenAskRecord(
       request.root,
       initial.askId,
       (current) => ({ ...current, status: 'running', detail: askUnconfirmedStopDetail }),
       options,
     );
 
+    const record = changed?.record;
+
+    if (record?.status === 'running') {
+      return {
+        kind: 'settled',
+        result: needsOpen(askKeptClaimMessage(request.root, completion.failure)),
+      };
+    }
+
     return {
       kind: 'settled',
-      result: needsOpen(askKeptClaimMessage(request.root, completion.failure)),
+      result: resultFromRecord(request.root, initial.askId, record),
     };
   }
 
   const changed = await updateHiddenAskRecord(
     request.root,
     initial.askId,
-    (current) => ({ ...current, status: 'failed', detail: askLaunchFailureDetail }),
+    (current) => ({
+      ...current,
+      status: 'failed',
+      detail: failureBeside(askLaunchFailureDetail, completion.failure),
+    }),
     options,
   );
 
   if (completion.outcome === 'cancelled') {
-    throw launched.error;
+    throw launchError(launched.error, completion.failure);
   }
 
   return {

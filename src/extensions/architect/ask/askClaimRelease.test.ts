@@ -334,6 +334,37 @@ it('stops the hidden ask by process id when the wait and the kill both fail', as
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
+it('stops a successful addressable kill by process id when its PID stays running', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const processControl = useFakeStartProcess(cleanup, 'running');
+
+  await recordSession(root);
+  startFakeTimers();
+
+  const asking = ask(failFirstWait(hc, new Error('The wait failed.')), root).catch(
+    (error: unknown) => error,
+  );
+
+  await poll.started.promise;
+  await vi.advanceTimersByTimeAsync(5_000);
+  await processControl.nextSignal(1);
+  await processControl.nextSignal(2);
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  const failure = await asking;
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain(askKeptClaimMessage(root));
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toHaveLength(1);
+  expect(processControl.signals).toEqual(['SIGTERM', 'SIGKILL']);
+  expect(await statuses(root)).toEqual(['running']);
+  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
 it('resolves an unused ticket when a valid reply arrives before the rename and a retry starts', async ({
   onTestFinished: cleanup,
 }) => {
@@ -435,6 +466,42 @@ it('keeps the claim when an address-less launch child state is unknown', async (
   }));
 
   expect(answered?.record).toMatchObject({ status: 'sent', answer: 'Use --quick.' });
+});
+
+it('returns a sent answer when an address-less launch child stays unresolved', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  useFakeStartProcess(cleanup, 'unknown');
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      await takeStartTicket(commandArguments);
+
+      const { records } = await readAskRecords(root);
+      const askId = records[0]?.askId;
+
+      if (askId !== undefined) {
+        await updateHiddenAskRecord(root, askId, (current) => ({
+          ...current,
+          status: 'sent',
+          answer: 'Use --quick.',
+        }));
+      }
+
+      return { code: 0, killed: true, truncated: false, stdout: '', stderr: '' };
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = await ask({ ...hc, exec }, root);
+
+  expect(result).toMatchObject({ details: { status: 'ended', answer: 'Use --quick.' } });
+  expect(await statuses(root)).toEqual(['sent']);
 });
 
 it('releases the claim and deletes the marker when an address-less launch child is gone', async ({
@@ -553,7 +620,6 @@ it('keeps a child that adopts during the stop and returns the answer it sent', a
   let adoptOnProbe = false;
   let childState: 'running' | 'gone' = 'running';
   let taken = false;
-  let askId: string | undefined;
 
   await recordSession(root);
 
@@ -603,26 +669,36 @@ it('keeps a child that adopts during the stop and returns the answer it sent', a
     (error: unknown) => ({ kind: 'error' as const, error }),
   );
 
-  const first = await Promise.race([
-    asking,
-    poll.started.promise.then(() => ({ kind: 'waiting' as const })),
-  ]);
+  await poll.started.promise;
 
-  if (first.kind === 'waiting') {
-    const { records } = await readAskRecords(root);
+  const { records } = await readAskRecords(root);
 
-    askId = records[0]?.askId;
+  const askId = records[0]?.askId;
 
-    const record = askId === undefined ? undefined : await readAskRecord(root, askId);
-
-    if (record?.route === 'hidden') {
-      await writeAskRecord(root, { ...record, status: 'sent', answer: 'Use --quick.' });
-    }
-
-    childState = 'gone';
+  if (askId === undefined) {
+    throw new Error('The ask record was not written.');
   }
 
-  const settled = first.kind === 'waiting' ? await asking : first;
+  const record = await readAskRecord(root, askId);
+
+  if (record?.route !== 'hidden') {
+    throw new Error('The ask record was not hidden.');
+  }
+
+  const updated = await updateHiddenAskRecord(root, askId, (current) => ({
+    ...current,
+    status: 'sent',
+    answer: 'Use --quick.',
+  }));
+
+  expect(childState).toBe('running');
+  expect((await readLiveLockHolder(architectLockPath(root)))?.pid).toBe(fakeStartProcessId);
+  expect(updated?.changed).toBe(true);
+  expect(updated?.record).toMatchObject({ status: 'sent', answer: 'Use --quick.' });
+
+  childState = 'gone';
+
+  const settled = await asking;
 
   expect(settled.kind).toBe('result');
 

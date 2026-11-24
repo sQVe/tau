@@ -1,10 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
+import { useFakeStartProcess, takeStartTicket } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
-import { askKeptClaimMessage } from './askHiddenRun.js';
+import { askFailedReason, askKeptClaimMessage } from './askHiddenRun.js';
 import { ask, details, failFirstWait, startFake, statuses } from './fixtures/askHarness.js';
 
 const faults = vi.hoisted(() => ({ failClaimRelease: false }));
@@ -69,5 +69,73 @@ it('reports the claim release failure in the kept-claim message', async ({
 
   expect(await statuses(root)).toEqual(['failed']);
   expect((await details(root))[0]).toContain(waitFailure.message);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
+it('reports the release failure beside a cancelled lost reply', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      return { code: 0, killed: false, truncated: false, stdout: '', stderr: '' };
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  faults.failClaimRelease = true;
+
+  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('hc run printed');
+
+  expect((failure as Error).message).toContain(
+    'The claim could not be released: The lock could not be truncated.',
+  );
+
+  expect(await statuses(root)).toEqual(['failed']);
+
+  expect((await details(root))[0]).toContain(
+    'The claim could not be released: The lock could not be truncated.',
+  );
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
+it('reports the release failure beside a gone child on a lost reply', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  useFakeStartProcess(cleanup, 'gone');
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      await takeStartTicket(commandArguments);
+
+      return { code: 0, killed: false, truncated: false, stdout: '', stderr: '' };
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  faults.failClaimRelease = true;
+
+  const result = await ask({ ...hc, exec }, root);
+
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
+
+  expect((await details(root))[0]).toContain(
+    'The claim could not be released: The lock could not be truncated.',
+  );
+
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });
