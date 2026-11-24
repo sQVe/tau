@@ -428,7 +428,6 @@ it('keeps the claim when an address-less launch child state is unknown', async (
     throw new Error('The ask record was not written.');
   }
 
-  // The child may still adopt and answer, because the record is not final.
   const answered = await updateHiddenAskRecord(root, askId, (current) => ({
     ...current,
     status: 'sent',
@@ -609,7 +608,6 @@ it('keeps a child that adopts during the stop and returns the answer it sent', a
     poll.started.promise.then(() => ({ kind: 'waiting' as const })),
   ]);
 
-  // The child adopted during the stop. It answers before its process ends.
   if (first.kind === 'waiting') {
     const { records } = await readAskRecords(root);
 

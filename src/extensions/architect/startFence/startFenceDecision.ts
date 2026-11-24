@@ -47,8 +47,6 @@ const childOutcome = (facts: StartFenceCompletionFacts): StartFenceOutcome => {
   return facts.adopted ? 'adopted' : 'unresolved';
 };
 
-// A child the kernel reads as gone cannot answer, so gone wins over adoption and the caller reports
-// from the record its locked read returns.
 export const startFenceCompletionDecision = (
   facts: StartFenceCompletionFacts,
 ): StartFenceCompletionPlan => {
@@ -69,7 +67,6 @@ export const startFenceCompletionDecision = (
   return { outcome, claim: released ? 'release' : 'keep', marker };
 };
 
-// Adoption by this caller's child is a takeover, even when the call was also cancelled.
 export const startFenceTakeoverDecision = (
   facts: StartFenceTakeoverFacts,
 ): StartFenceTakeoverProgress => {

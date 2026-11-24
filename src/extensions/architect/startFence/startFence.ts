@@ -39,7 +39,6 @@ export type StartFenceAcquisition =
 export interface StartFenceCompletion {
   outcome: StartFenceOutcome;
   claim: 'released' | 'kept';
-  // A release or read failure, kept apart from the outcome.
   failure?: Error;
 }
 
@@ -59,7 +58,6 @@ interface FenceState {
   childPid: number | undefined;
   child: ProcessState;
   adoptedSeen: boolean;
-  // Memoizes the one completion so a caller that settles twice reports the same result.
   completion: StartFenceCompletion | undefined;
 }
 
