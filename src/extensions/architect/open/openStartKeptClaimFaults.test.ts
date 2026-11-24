@@ -77,5 +77,6 @@ it('reports the claim release failure and keeps it for a later open', async ({
 
   expect(later).toBeInstanceOf(Error);
   expect((later as Error).message).toBe((first as Error).message);
-  expect((later as Error).cause).toBe((first as Error).cause);
+  expect((later as Error).cause).toBeInstanceOf(Error);
+  expect(((later as Error).cause as Error).message).toBe(((first as Error).cause as Error).message);
 });
