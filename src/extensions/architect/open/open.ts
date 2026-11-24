@@ -14,6 +14,7 @@ import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
 import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
 import type { PiLaunchResult } from '../../../piStart/piStart.js';
+import { processState } from '../../../process/process.js';
 import { tabName } from '../../../tabName.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import { architectLockPath } from '../lock.js';
@@ -288,6 +289,17 @@ export const takeoverExpiryError = (): Error =>
     `The architect did not take the checkout lock within ${takeoverSeconds} seconds. Call architect open again.`,
   );
 
+export const takeoverChildGoneError = (): Error =>
+  new Error(
+    'The architect launch ended before it took the checkout lock. Call architect open again.',
+  );
+
+const childGone = (fence: StartFence): boolean => {
+  const childPid = fence.childProcessId();
+
+  return childPid !== undefined && processState(childPid) === 'gone';
+};
+
 const waitForTakeover = async (
   fence: StartFence,
   signal: AbortSignal | undefined,
@@ -317,6 +329,10 @@ const waitForTakeover = async (
 
     if (progress === 'expired') {
       throw takeoverExpiryError();
+    }
+
+    if (childGone(fence)) {
+      throw takeoverChildGoneError();
     }
 
     const sleepOptions = signal === undefined ? {} : { signal };

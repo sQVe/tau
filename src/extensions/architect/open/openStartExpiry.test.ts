@@ -13,7 +13,13 @@ import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { adoptClaim, appCommands, open, openRequest, openTool } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
-import { openArchitect, openKeptClaimMessage, startingError, takeoverExpiryError } from './open.js';
+import {
+  openArchitect,
+  openKeptClaimMessage,
+  startingError,
+  takeoverChildGoneError,
+  takeoverExpiryError,
+} from './open.js';
 import type { OpenRequest } from './open.js';
 
 const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
@@ -156,6 +162,25 @@ it('keeps the claim when the child never goes away and finishes within one recov
   expect((finishedAt as number) - stopStartedAt).toBeLessThanOrEqual(10_000);
   expect((finishedAt as number) - stopStartedAt).toBeGreaterThanOrEqual(10_000);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
+it('fails at once when the launched child dies before it takes the lock', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+
+  useFakeStartProcess(cleanup, 'gone');
+  await recordSession(root);
+  startFakeTimers();
+
+  const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
+    (error: unknown) => error,
+  );
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe(takeoverChildGoneError().message);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('keeps a paused child fence until its process is gone and then a retry starts one Pi', async ({
