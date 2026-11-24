@@ -353,7 +353,7 @@ it('reports the kept claim when a lost launch leaves a child that never adopted'
 
   await poll.started.promise;
   await vi.advanceTimersByTimeAsync(5_000);
-  await waitForStopSignals(child, 2);
+  await child.nextSignal(2);
   await vi.advanceTimersByTimeAsync(5_000);
 
   const failure = await opening;

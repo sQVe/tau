@@ -408,11 +408,10 @@ const applyLaunchOutcome = async (
     return;
   }
 
-  await fence.recordStarted();
-
   let waitFailure: Error | undefined;
 
   try {
+    await fence.recordStarted();
     await waitForTakeover(fence, request.hc.signal);
   } catch (error) {
     waitFailure = toError(error);

@@ -11,6 +11,7 @@ const faults = vi.hoisted(() => ({
   failStartSweep: false,
   failLockRead: false,
   failMarkerRead: false,
+  failNextMarkerRead: false,
   failClaimRelease: false,
 }));
 
@@ -23,9 +24,12 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const faultyReaddir = (async (
     ...readArguments: Parameters<typeof original.readdir>
   ): Promise<unknown> => {
-    const startFolderRead = faults.failStartSweep || faults.failMarkerRead;
+    const startFolderRead =
+      faults.failStartSweep || faults.failMarkerRead || faults.failNextMarkerRead;
 
     if (startFolderRead && namedPath(readArguments[0], '/start')) {
+      faults.failNextMarkerRead = false;
+
       throw Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
     }
 
@@ -75,6 +79,7 @@ const resetFaults = (): void => {
   faults.failStartSweep = false;
   faults.failLockRead = false;
   faults.failMarkerRead = false;
+  faults.failNextMarkerRead = false;
   faults.failClaimRelease = false;
 };
 
@@ -155,6 +160,24 @@ it('keeps the claim and reports the marker read failure', async ({ onTestFinishe
   expect(completion.failure?.message).toBe('The child adoption could not be read: EIO: i/o error');
   expect(completion.failure?.cause).toMatchObject({ code: 'EIO' });
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
+it('stops a running child after a one-time marker read failure and releases the claim', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const processControl = useFakeStartProcess(onTestFinished, 'running', true);
+  const fence = await takenFence(root);
+
+  faults.failNextMarkerRead = true;
+
+  const completion = await fence.complete();
+
+  expect(completion.outcome).toBe('gone');
+  expect(completion.claim).toBe('released');
+  expect(completion.failure?.message).toBe('The child adoption could not be read: EIO: i/o error');
+  expect(processControl.signals).toEqual(['SIGTERM']);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('keeps the claim and reports the lock read failure during the stop', async ({

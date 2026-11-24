@@ -215,6 +215,12 @@ const startFence = (
     }
   };
 
+  const refreshChildFacts = async (): Promise<void> => {
+    // The cancellation's read failure is the one reported, so a failed retry can only leave the
+    // child unknown.
+    await readOwnMarker().catch(() => undefined);
+  };
+
   const readCompletionFacts = async (): Promise<Error | undefined> => {
     try {
       await childAdopted();
@@ -252,6 +258,13 @@ const startFence = (
     }
 
     const cancelled = await cancelTicket();
+
+    // The cancellation reads the marker to name the child. A failed read leaves it unknown, so read
+    // again before the stop decides, or a running child would never be stopped.
+    if (cancelled.failure !== undefined) {
+      await refreshChildFacts();
+    }
+
     const stopFailure = await stopTakenChild(cancelled.ticket);
     const readFailure = await readCompletionFacts();
 
