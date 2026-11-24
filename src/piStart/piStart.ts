@@ -255,25 +255,31 @@ const splitTerminal = (
   }
 };
 
-export const launchPiSession = (
+export const launchPiSession = async (
   runtime: CommandRuntime,
   request: PiStartRequest,
-): Promise<PiLaunchResult> =>
-  launch(runtime, 'herdr-app', startArguments(request), 'herdr-app do', (reply) =>
+): Promise<PiLaunchResult> => {
+  await requireCheckout(runtime, request.folder, request.bareRoot);
+
+  return launch(runtime, 'herdr-app', startArguments(request), 'herdr-app do', (reply) =>
     spaceTerminal('herdr-app do', reply),
   );
+};
 
-export const launchPiSessionRightOf = (
+export const launchPiSessionRightOf = async (
   runtime: CommandRuntime,
   request: PiStartRightOfRequest,
-): Promise<PiLaunchResult> =>
-  launch(
+): Promise<PiLaunchResult> => {
+  await requireCheckout(runtime, request.folder, request.bareRoot);
+
+  return launch(
     runtime,
     'herdr-app',
     splitArguments(request, request.pane),
     'herdr-app do pane.split',
     (reply) => splitTerminal('herdr-app do pane.split', reply),
   );
+};
 
 export const startPiSession = async (
   runtime: CommandRuntime,
