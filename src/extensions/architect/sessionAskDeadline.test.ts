@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import { hiddenAsk, hiddenIds } from './fixtures/hiddenAsk.js';
 import { holdAskLock } from './fixtures/toolHarness.js';
@@ -392,6 +392,63 @@ it('an ask session rearms at zero delay when the clock recrosses the deadline af
   expect(shutdown).toHaveBeenCalledTimes(1);
 
   nowSpy.mockRestore();
+
+  await endArchitectSession(
+    session as NonNullable<typeof session>,
+    hcRuntime(createHcFake()),
+    endOptions(),
+  );
+});
+
+it('an ask session retries the deadline after a guard refusal', async ({ onTestFinished }) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const deadline = Date.now() + 1000;
+  const path = askRecordPath(root, hiddenIds.running);
+
+  await writeAskRecord(root, { ...hiddenAsk('running', 'running'), deadline });
+  vi.stubEnv('TAU_ARCHITECT_ASK', path);
+
+  const refused = Promise.withResolvers<undefined>();
+  const { context, notify, shutdown } = sessionContext(root);
+
+  notify.mockImplementation(() => {
+    refused.resolve(undefined);
+  });
+
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  await git(root, 'add', '--force', '--', path);
+  await vi.advanceTimersByTimeAsync(1000);
+  await refused.promise;
+
+  expect(notify).toHaveBeenCalledWith(
+    expect.stringContaining('Git tracks files in .tau/lead/ask'),
+    'error',
+  );
+
+  expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
+
+  await git(root, 'rm', '--cached', '--', path);
+  await vi.advanceTimersByTimeAsync(5000);
+
+  await vi.waitFor(
+    async () => {
+      expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'timeout' });
+    },
+    { timeout: 10_000, interval: 10 },
+  );
+
+  expect(shutdown).toHaveBeenCalledTimes(1);
 
   await endArchitectSession(
     session as NonNullable<typeof session>,

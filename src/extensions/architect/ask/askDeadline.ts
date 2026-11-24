@@ -9,6 +9,10 @@ export interface AskDeadline {
   stop: () => Promise<void>;
 }
 
+// A refusal from the directory guard can clear, so a failed expiry keeps a timer instead of
+// leaving the running ask to end without one.
+const deadlineRetryMilliseconds = 5000;
+
 // Returns the deadline to rearm for any unchanged running record, including one already due.
 const expireAskRecord = async (
   checkout: string,
@@ -85,6 +89,7 @@ export const startAskDeadline = async (
         }
       })().catch((error: unknown) => {
         notifyOnce(context.ui, path, 'ask-deadline', errorMessage(error), 'error');
+        schedule(Date.now() + deadlineRetryMilliseconds);
       });
     }, delay);
   };
