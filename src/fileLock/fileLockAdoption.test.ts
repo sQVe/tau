@@ -1,7 +1,11 @@
 import { expect, it } from 'vitest';
 
 import { exitedPid } from '../../tests/exitedPid.js';
-import { readLockOwnerRecord, writeLockOwnerRecord } from '../../tests/lockOwnerRecord.js';
+import {
+  readLockOwnerRecord,
+  writeLockOwnerRecord,
+  writeNextLockOwnerRecordSync,
+} from '../../tests/lockOwnerRecord.js';
 import { holdFileLock, readLiveLockHolder } from './fileLock.js';
 import type { HeldFileLock } from './fileLock.js';
 import { fixture } from './fixtures/fileLockHarness.js';
@@ -150,8 +154,10 @@ it('refuses an adopt token when the lock is missing', async () => {
 
 it('refuses an adopt token for a replaced generation', async () => {
   const { lockPath } = fixture();
+  const deadPid = await exitedPid();
 
-  await writeLockOwnerRecord(lockPath, { pid: await exitedPid(), token: 'new' });
+  await writeLockOwnerRecord(lockPath, { checkout, pid: deadPid, token: 'claim' });
+  writeNextLockOwnerRecordSync(lockPath, { checkout, pid: deadPid, token: 'new' });
 
   const adopter = await holdFileLock({
     lockPath,
