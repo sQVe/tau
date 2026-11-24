@@ -279,6 +279,10 @@ export const openKeptClaimMessage = (root: string): string =>
 
 const openKeptClaimError = (root: string): Error => new Error(openKeptClaimMessage(root));
 
+// A kept claim names the token this process reserved and never released. The lead keeps it until
+// its session ends, so a later open reports the reservation instead of an in-flight start.
+const keptClaims = new Map<string, string>();
+
 export const takeoverExpiryError = (): Error =>
   new Error(
     `The architect did not take the checkout lock within ${takeoverSeconds} seconds. Call architect open again.`,
@@ -336,6 +340,8 @@ const runningTerminal = async (
   const holder = await readLiveLockHolder(lockPath);
 
   if (holder === undefined) {
+    keptClaims.delete(request.root);
+
     return undefined;
   }
 
@@ -343,10 +349,15 @@ const runningTerminal = async (
     root: request.root,
     holder,
     record,
+    keptClaim: keptClaims.get(request.root) === holder.token,
   });
 
   if (selection.kind === 'refuse') {
     throw refusal(selection.checkout);
+  }
+
+  if (selection.kind === 'keptClaim') {
+    throw openKeptClaimError(request.root);
   }
 
   if (selection.kind === 'starting') {
@@ -443,6 +454,7 @@ export const openArchitect = async (
 
     // applyLaunchOutcome returns only after the child adopted the claim or another holder took it.
     await fence.finish({ adopted: true, stopAttempted: false });
+    keptClaims.delete(request.root);
 
     return result;
   } catch (error) {
@@ -451,6 +463,8 @@ export const openArchitect = async (
     const finished = await fence.finish({ adopted: abandoned.adopted, stopAttempted: false });
 
     if (finished.kept) {
+      keptClaims.set(request.root, fence.token);
+
       throw openKeptClaimError(request.root);
     }
 

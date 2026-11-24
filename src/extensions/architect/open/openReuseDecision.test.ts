@@ -111,6 +111,7 @@ const absentRecordFacts: OpenTerminalFacts = {
   root: '/checkout',
   holder,
   record: undefined,
+  keptClaim: false,
 };
 
 const updatedAt = '2026-01-01T00:00:00.000Z';
@@ -142,6 +143,7 @@ const terminalFacts: OpenTerminalFacts = {
   root: '/checkout',
   holder,
   record: savedOwner(owner),
+  keptClaim: false,
 };
 
 it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
@@ -206,6 +208,30 @@ it.each<{ name: string; facts: OpenTerminalFacts; expected: OpenTerminal }>([
     name: 'a different token in another checkout',
     facts: {
       ...terminalFacts,
+      holder: { ...holder, checkout: '/other' },
+      record: savedOwner({ ...owner, lockToken: 'previous' }),
+    },
+    expected: { kind: 'refuse', checkout: '/other' },
+  },
+  {
+    name: 'a kept claim in this checkout',
+    facts: {
+      ...terminalFacts,
+      keptClaim: true,
+      record: savedOwner({ ...owner, lockToken: 'previous' }),
+    },
+    expected: { kind: 'keptClaim' },
+  },
+  {
+    name: 'a kept claim whose record names the holder',
+    facts: { ...terminalFacts, keptClaim: true },
+    expected: { kind: 'lookup', terminal: 't-architect' },
+  },
+  {
+    name: 'a kept claim in another checkout',
+    facts: {
+      ...terminalFacts,
+      keptClaim: true,
       holder: { ...holder, checkout: '/other' },
       record: savedOwner({ ...owner, lockToken: 'previous' }),
     },

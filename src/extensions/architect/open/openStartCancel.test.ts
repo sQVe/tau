@@ -113,6 +113,38 @@ it('an abort during the poll keeps the claim and throws the kept-claim message w
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });
 
+it('a later open reports the kept claim instead of an in-flight start', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { app, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+
+  useFakeStartProcess(cleanup, 'unknown');
+  await recordSession(root);
+
+  const opening = openArchitect(
+    requestFor(root, config.location, { ...runtime, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  await vi.waitFor(() => {
+    expect(appCommands(app)).toContain('pane.split');
+  });
+
+  controller.abort(new Error('cancelled during the poll'));
+
+  const failure = await opening;
+
+  expect((failure as Error).message).toBe(openKeptClaimMessage(root));
+
+  const later = await openArchitect(requestFor(root, config.location, runtime)).catch(
+    (error: unknown) => error,
+  );
+
+  expect(later).toBeInstanceOf(Error);
+  expect((later as Error).message).toBe(openKeptClaimMessage(root));
+});
+
 it('resolves an unused ticket when a valid reply arrives before the rename and a retry starts', async ({
   onTestFinished: cleanup,
 }) => {

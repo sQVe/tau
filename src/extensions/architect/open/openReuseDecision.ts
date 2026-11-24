@@ -37,11 +37,13 @@ export interface OpenTerminalFacts {
   root: string;
   holder: OpenLockHolder;
   record: SavedArchitectRecord | undefined;
+  keptClaim: boolean;
 }
 
 export type OpenTerminal =
   | { kind: 'lookup'; terminal: string }
   | { kind: 'refuse'; checkout: string }
+  | { kind: 'keptClaim' }
   | { kind: 'starting' };
 
 const isSameHolder = (first: OpenLockHolder, second: OpenLockHolder): boolean =>
@@ -110,6 +112,10 @@ export const openTerminal = (facts: OpenTerminalFacts): OpenTerminal => {
 
   if (holder.checkout !== root) {
     return { kind: 'refuse', checkout: holder.checkout };
+  }
+
+  if (facts.keptClaim) {
+    return { kind: 'keptClaim' };
   }
 
   return { kind: 'starting' };
