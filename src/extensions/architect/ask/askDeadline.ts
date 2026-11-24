@@ -6,6 +6,8 @@ import { readAskRecordAt, updateHiddenAskRecordAt } from '../record.js';
 import { askDeadlineAction } from './askDecision.js';
 
 export interface AskDeadline {
+  // Resolves after the expiry attempt in progress finishes, including any rearm it schedules.
+  whenSettled: () => Promise<void>;
   stop: () => Promise<void>;
 }
 
@@ -101,6 +103,9 @@ export const startAskDeadline = async (
   schedule(record.deadline);
 
   return {
+    whenSettled: async () => {
+      await running;
+    },
     stop: async () => {
       stopped = true;
 

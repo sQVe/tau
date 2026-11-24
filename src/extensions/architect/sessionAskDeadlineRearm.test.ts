@@ -7,14 +7,18 @@ import type * as FileLockModule from '../../fileLock/fileLock.js';
 import { hiddenAsk, hiddenIds } from './fixtures/hiddenAsk.js';
 import { endOptions, hcRuntime, sessionContext, stubArchitect } from './fixtures/visibleSession.js';
 import { askRecordPath, readAskRecord, writeAskRecord } from './record.js';
+import type { ArchitectSession } from './session.js';
 import { createHeldLockToken, endArchitectSession, startArchitectSession } from './session.js';
 
 vi.mock(import('../../fileLock/fileLock.js'), { spy: true });
 
-const flushMacrotask = (): Promise<void> =>
-  new Promise((resolve) => {
-    setImmediate(resolve);
-  });
+const waitForDeadlineSettled = async (session: ArchitectSession | undefined): Promise<void> => {
+  if (session?.deadline === undefined) {
+    throw new Error('The ask session has no deadline.');
+  }
+
+  await session.deadline.whenSettled();
+};
 
 it('an ask session shutdown during a clock change leaves no deadline timer armed', async ({
   onTestFinished,
@@ -105,10 +109,7 @@ it('an ask session rearms the deadline when the timer fires before the saved dea
   vi.setSystemTime(now - 5000);
 
   await vi.advanceTimersByTimeAsync(1000);
-
-  for (let attempt = 0; attempt < 100 && vi.getTimerCount() === 0; attempt += 1) {
-    await flushMacrotask();
-  }
+  await waitForDeadlineSettled(session);
 
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
   expect(shutdown).not.toHaveBeenCalled();
@@ -165,10 +166,7 @@ it('an ask session rearms the deadline when the clock rolls back before the lock
   });
 
   await vi.advanceTimersByTimeAsync(1000);
-
-  for (let attempt = 0; attempt < 1000 && vi.getTimerCount() === 0; attempt += 1) {
-    await flushMacrotask();
-  }
+  await waitForDeadlineSettled(session);
 
   expect(vi.getTimerCount()).toBeGreaterThan(0);
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
@@ -240,10 +238,7 @@ it('an ask session rearms at zero delay when the clock recrosses the deadline af
   vi.setSystemTime(deadline);
   await vi.advanceTimersByTimeAsync(1000);
   await locked.promise;
-
-  for (let attempt = 0; attempt < 1000 && vi.getTimerCount() === 0; attempt += 1) {
-    await flushMacrotask();
-  }
+  await waitForDeadlineSettled(session);
 
   expect(askLockCalls()).toBe(1);
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'running' });
