@@ -80,7 +80,11 @@ const childClaimToken = (commandArguments: readonly string[]): string | undefine
 
 // The child wins the claim without awaiting anything, so a probe can trigger the takeover.
 const adoptLockSync = (root: string, token: string): void => {
-  writeNextLockOwnerRecordSync(architectLockPath(root), { pid: fakeStartProcessId, token });
+  writeNextLockOwnerRecordSync(architectLockPath(root), {
+    checkout: root,
+    pid: fakeStartProcessId,
+    token,
+  });
 };
 
 // The real child takes the ticket, adopts the claim, and renames its marker before it runs Pi. A

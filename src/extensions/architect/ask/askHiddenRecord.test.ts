@@ -126,6 +126,7 @@ it('returns a distinct reason when the settled ask record is missing', async ({
     details: { status: 'needsOpen', reason: askMissingRecordReason },
   });
 
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(result).not.toMatchObject({ details: { reason: askKeptClaimMessage(root) } });
 });
 
@@ -134,31 +135,15 @@ it('returns a distinct reason for a sent record without an answer', async ({
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
-  let askId: string | undefined;
 
   await recordSession(root);
   hc.reply('wait', endedWait('t-ask', true));
 
-  const exec: typeof hc.exec = async (command, commandArguments, options) => {
-    if (command === 'hc' && commandArguments[0] === 'run') {
-      const result = await hc.exec(command, commandArguments, options);
-      const { records } = await readAskRecords(root);
-
-      askId = records[0]?.askId;
-
-      return result;
-    }
-
-    if (command === 'hc' && commandArguments[0] === 'wait' && askId !== undefined) {
-      const record = await readAskRecord(root, askId);
-
-      if (record?.route === 'hidden') {
-        await writeAskRecord(root, { ...record, status: 'sent', answer: null });
-      }
-    }
-
-    return hc.exec(command, commandArguments, options);
-  };
+  const exec = endedWithRecord(hc, root, (record) => ({
+    ...record,
+    status: 'sent',
+    answer: null,
+  }));
 
   const result = await ask({ ...hc, exec }, root);
 
@@ -166,6 +151,10 @@ it('returns a distinct reason for a sent record without an answer', async ({
     details: { status: 'needsOpen', reason: askUnreadableAnswerReason },
   });
 
+  const { records } = await readAskRecords(root);
+
+  expect(records[0]).toMatchObject({ status: 'sent', answer: null });
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(result).not.toMatchObject({ details: { reason: askKeptClaimMessage(root) } });
 });
 
