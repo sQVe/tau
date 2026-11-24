@@ -23,10 +23,11 @@ waits on the child's process ID instead of abandoning it, then reports from its 
 
 A sweep deletes a started marker whose process is gone, even when its finished terminal was removed,
 and otherwise refuses with the process ID. A `.started` name without a valid process ID refuses with
-the marker path. An adopted marker never refuses a later start. The sweep leaves it while its child
-or its lead is running or unknown, and deletes it only when the kernel reads both as gone. The lead
-deletes its own markers once its child is gone, so it always settles a hidden ask whose Pi stopped
-without its shutdown handler. Hidden ask records change only while they are `running`, under the
-per-ask lock, so `sent`, `timeout`, and `failed` are final. The lead reports `timeout` and `sent`
-from the locked record after its wait. A hidden ask enforces its own deadline, and a reader repairs
-a running ask whose recorded terminal has ended.
+the marker path. An adopted marker refuses a later start until the kernel reads its child as gone.
+Once the child is gone, a live lead keeps the marker as its evidence. The sweep leaves the marker
+while its child or its lead is running or unknown, and deletes it only when the kernel reads both as
+gone. The lead deletes its own markers once its child is gone, so it always settles a hidden ask
+whose Pi stopped without its shutdown handler. Hidden ask records change only while they are
+`running`, under the per-ask lock, so `sent`, `timeout`, and `failed` are final. The lead reports
+`timeout` and `sent` from the locked record after its wait. A hidden ask enforces its own deadline,
+and a reader repairs a running ask whose recorded terminal has ended.

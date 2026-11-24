@@ -97,9 +97,7 @@ const handoffFacts = (): { claimToken: string | undefined; handoffRoot: string |
 
 const askRecordPathFromEnvironment = (): string | undefined => {
   // oxlint-disable-next-line node/no-process-env -- The ask terminal receives its record path in its environment.
-  const path = process.env.TAU_ARCHITECT_ASK;
-
-  return path === undefined || path === '' ? undefined : path;
+  return environmentValue(process.env.TAU_ARCHITECT_ASK);
 };
 
 // The old checkout goes first, so a refused new start never leaves it locked. If the old lock cannot

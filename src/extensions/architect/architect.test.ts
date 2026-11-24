@@ -66,6 +66,8 @@ const runHandlers = async (
 const startRegisteredArchitect = async (cleanup: typeof onTestFinished) => {
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
   vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+  vi.stubEnv('TAU_ARCHITECT_CLAIM', '');
+  vi.stubEnv('TAU_ARCHITECT_HANDOFF_ROOT', '');
 
   const root = await createTemporaryRepository(cleanup);
   const hc = createHcFake();
@@ -172,10 +174,6 @@ it('a visible architect sends no end note on reload but keeps its lock for the n
 }) => {
   const { root, lead, fake, context } = await startRegisteredArchitect(onTestFinished);
   const before = await readLiveLockHolder(architectLockPath(root));
-
-  onTestFinished(() => {
-    delete process.env['TAU_ARCHITECT_CLAIM'];
-  });
 
   await writeAskRecord(root, openAsk);
 
