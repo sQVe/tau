@@ -259,8 +259,6 @@ const startFence = (
 
     const cancelled = await cancelTicket();
 
-    // The cancellation reads the marker to name the child. A failed read leaves it unknown, so read
-    // again before the stop decides, or a running child would never be stopped.
     if (cancelled.failure !== undefined) {
       await refreshChildFacts();
     }
