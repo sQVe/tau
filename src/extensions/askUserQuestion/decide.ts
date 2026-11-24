@@ -9,7 +9,6 @@ import {
   decideCall,
   decideDeadlineMilliseconds,
   decideEligibility,
-  mapNonEmpty,
   writeDecisionRecord,
 } from '../../questionGate/questionGate.js';
 import type {
@@ -29,6 +28,7 @@ import { readAllowedGateConfig } from './readAllowedGateConfig.js';
 
 export interface DecidePorts {
   now: () => number;
+  random: () => number;
   findSharedRoot: (cwd: string, signal: AbortSignal) => Promise<string>;
   readConfig: (location: ConfigLocation, ui: ConfigWarnings) => QuestionGateConfig | undefined;
   requireModel: (reference: string, location: ConfigLocation) => void;
@@ -65,6 +65,10 @@ type EligibleAskedQuestion = EligibleQuestion<AskedQuestion>;
 type JudgedAskedQuestion = EligibleAskedQuestion & { verdict: JudgeVerdict };
 type DecidedAskedQuestion = JudgedAskedQuestion & { confidence: number };
 
+// The gate sends this share of would-be decisions to the dialog, so the shadow records keep
+// measuring calls the gate would have answered.
+const decideAuditRate = 0.2;
+
 const readBranch = async (cwd: string): Promise<{ branch: string | null; head: string | null }> => {
   const branch = await readGitUnlessMissing(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
   const head = await readGitUnlessMissing(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']);
@@ -74,6 +78,7 @@ const readBranch = async (cwd: string): Promise<{ branch: string | null; head: s
 
 const defaultDecidePorts: DecidePorts = {
   now: () => Date.now(),
+  random: Math.random,
   findSharedRoot: (cwd, signal) => findSharedRepositoryRoot(cwd, { signal }),
   readConfig: readQuestionGateConfig,
   requireModel: requireAllowedModel,
@@ -85,13 +90,13 @@ const defaultDecidePorts: DecidePorts = {
 
 const isCancelled = (request: DecideRequest): boolean => request.signal?.aborted === true;
 
-const judgeAll = async (
+const judge = async (
   judges: PreparedJudges,
   variant: ShadowVariant,
-  rows: readonly [EligibleAskedQuestion, ...EligibleAskedQuestion[]],
+  row: EligibleAskedQuestion,
   controller: AbortController,
   signal: AbortSignal | undefined,
-): Promise<[JudgedAskedQuestion, ...JudgedAskedQuestion[]]> => {
+): Promise<JudgedAskedQuestion> => {
   const deadline = Promise.withResolvers<JudgeVerdict>();
 
   const cancel = () => {
@@ -108,18 +113,14 @@ const judgeAll = async (
       cancel();
     }
 
-    return await Promise.all(
-      mapNonEmpty(rows, async (row) => {
-        const question = judgeQuestionOf(row.question);
+    const question = judgeQuestionOf(row.question);
 
-        const verdict = await Promise.race([
-          judges.judge(variant, question, row.question.confidence, controller.signal),
-          deadline.promise,
-        ]);
+    const verdict = await Promise.race([
+      judges.judge(variant, question, row.question.confidence, controller.signal),
+      deadline.promise,
+    ]);
 
-        return { ...row, verdict };
-      }),
-    );
+    return { ...row, verdict };
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', cancel);
@@ -130,7 +131,7 @@ const buildRecord = (
   ports: DecidePorts,
   config: FrozenConfig,
   sessionId: string,
-  rows: readonly [DecidedAskedQuestion, ...DecidedAskedQuestion[]],
+  row: DecidedAskedQuestion,
   branch: string | null,
   head: string | null,
 ): DecisionRecord => ({
@@ -143,12 +144,14 @@ const buildRecord = (
   cohort: shadowCohort(config),
   variant: config.shadow.variant,
   cutoff: config.shadow.cutoff,
-  decisions: rows.map(({ question, recommended, confidence }) => ({
-    question: judgeQuestionOf(question),
-    choice: recommended.label,
-    reason: recommended.description,
-    confidence,
-  })),
+  decisions: [
+    {
+      question: judgeQuestionOf(row.question),
+      choice: row.recommended.label,
+      reason: row.recommended.description,
+      confidence: row.confidence,
+    },
+  ],
 });
 
 const noticeLines = (record: DecisionRecord): string[] =>
@@ -183,7 +186,7 @@ const runDecision = async (
   request: DecideRequest,
   config: FrozenConfig,
   sessionId: string,
-  rows: readonly [EligibleAskedQuestion, ...EligibleAskedQuestion[]],
+  row: EligibleAskedQuestion,
 ): Promise<DecideOutcome> => {
   const controller = new AbortController();
 
@@ -201,22 +204,13 @@ const runDecision = async (
     const sharedRoot = await ports.findSharedRoot(request.cwd, controller.signal);
     const judges = ports.prepareJudges(request.registry, config);
 
-    const judgedRows = await judgeAll(
-      judges,
-      config.shadow.variant,
-      rows,
-      controller,
-      request.signal,
-    );
+    const judged = await judge(judges, config.shadow.variant, row, controller, request.signal);
 
     if (isCancelled(request)) {
       return { kind: 'cancelled' };
     }
 
-    const call = decideCall<JudgedAskedQuestion>({
-      rows: judgedRows,
-      cutoff: config.shadow.cutoff,
-    });
+    const call = decideCall<JudgedAskedQuestion>({ row: judged, cutoff: config.shadow.cutoff });
 
     if (call.kind === 'ask') {
       return { kind: 'ask' };
@@ -226,8 +220,12 @@ const runDecision = async (
       return { kind: 'cancelled' };
     }
 
+    if (ports.random() < decideAuditRate) {
+      return { kind: 'ask' };
+    }
+
     const { branch, head } = await ports.readBranch(request.cwd);
-    const record = buildRecord(ports, config, sessionId, call.rows, branch, head);
+    const record = buildRecord(ports, config, sessionId, call.row, branch, head);
     const notice = noticeLines(record).join('\n');
 
     if (isCancelled(request)) {
@@ -279,7 +277,7 @@ export const createDecider = (overrides: Partial<DecidePorts> = {}): Decider => 
         return undefined;
       }
 
-      return runDecision(ports, request, config, sessionId, eligibility.rows);
+      return runDecision(ports, request, config, sessionId, eligibility.row);
     },
   };
 };

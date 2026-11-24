@@ -19,7 +19,6 @@ import { createDecider } from './decide.js';
 import type { DecidePorts } from './decide.js';
 import type { DialogResult } from './dialog.js';
 import { prepareJudges } from './judges.js';
-import type { PreparedJudges } from './judges.js';
 
 interface HarnessOptions {
   config?: QuestionGateConfig | undefined;
@@ -36,6 +35,7 @@ interface HarnessOptions {
   requireModel?: DecidePorts['requireModel'];
   ensureDirectory?: DecidePorts['ensureDirectory'];
   now?: DecidePorts['now'];
+  random?: DecidePorts['random'];
   readConfig?: DecidePorts['readConfig'];
 }
 
@@ -60,6 +60,8 @@ const eligibleQuestion = {
 };
 
 const shadow: ShadowConfig = { variant: 'agent', cutoff: 0.9, examples: [] };
+
+const neverAudit = () => 1;
 
 const decideConfig = (
   overrides: Partial<QuestionGateConfig> = {},
@@ -101,6 +103,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 
   const ports: DecidePorts = {
     now: options.now ?? (() => 1_760_000_000_000),
+    random: options.random ?? neverAudit,
     findSharedRoot: async () => '/shared-root',
     readConfig: options.readConfig ?? (() => options.config ?? decideConfig()),
     requireModel: options.requireModel ?? (() => undefined),
@@ -494,70 +497,33 @@ const multiQuestion = (
   ],
 });
 
-it('keeps answers and saved rows in input order when judges finish out of order', async () => {
+it('asks a batch of eligible questions instead of deciding it', async () => {
   const questions = [
     multiQuestion('Which layout should the dashboard use?', 'Layout', 0.8, 'Split'),
     multiQuestion('Which font should the report use?', 'Font', 0.9, 'Serif'),
-    multiQuestion('Which theme should the preview use?', 'Theme', 0.95, 'Dark'),
   ];
 
-  const judgesStarted = Promise.withResolvers<undefined>();
-  const verdicts = new Map<string, PromiseWithResolvers<JudgeVerdict>>();
+  const harness = createHarness();
 
-  const judge: PreparedJudges['judge'] = async (_variant, question) => {
-    const deferred = Promise.withResolvers<JudgeVerdict>();
+  const result = await harness.run(questions);
 
-    verdicts.set(question.question, deferred);
+  expect(result.details).toEqual(answeredDetails);
+  expect(harness.judge).not.toHaveBeenCalled();
+  expect(harness.custom).toHaveBeenCalledTimes(1);
+  expect(harness.notices).toEqual([]);
+  expect(harness.writes).toEqual([]);
+});
 
-    if (verdicts.size === questions.length) {
-      judgesStarted.resolve(undefined);
-    }
+it('asks an audited decision without a notice or a decision record', async () => {
+  const harness = createHarness({ random: () => 0.1 });
 
-    return deferred.promise;
-  };
+  const result = await harness.run([eligibleQuestion]);
 
-  const harness = createHarness({ prepareJudges: () => ({ judge }) });
-
-  const pending = harness.run(questions);
-
-  await judgesStarted.promise;
-
-  expect(verdicts.size).toBe(questions.length);
-
-  const third = verdicts.get(questions[2]?.question ?? '');
-  const first = verdicts.get(questions[0]?.question ?? '');
-  const second = verdicts.get(questions[1]?.question ?? '');
-
-  third?.resolve({ kind: 'answered', confidence: 0.99 });
-  first?.resolve({ kind: 'answered', confidence: 0.95 });
-  second?.resolve({ kind: 'answered', confidence: 0.97 });
-
-  const result = await pending;
-
-  expect(result.details).toMatchObject({
-    kind: 'decided',
-    answers: questions.map((question) => ({
-      question: question.question,
-      selected: [question.options[1]?.label],
-      typed: false,
-    })),
-  });
-
-  const decisions = questions.map((question, index) => ({
-    question: { question: question.question },
-    choice: question.options[1]?.label,
-    confidence: [0.95, 0.97, 0.99][index],
-  }));
-
-  expect(harness.writes[0]?.record).toMatchObject({ decisions });
-
-  const lines = noticeLines(harness.notices);
-
-  expect(lines).toHaveLength(questions.length);
-
-  questions.forEach((question, index) => {
-    expect(lines[index]).toContain(question.options[1]?.label);
-  });
+  expect(result.details).toEqual(answeredDetails);
+  expect(harness.judge).toHaveBeenCalledTimes(1);
+  expect(harness.custom).toHaveBeenCalledTimes(1);
+  expect(harness.notices).toEqual([]);
+  expect(harness.writes).toEqual([]);
 });
 
 it('cancels before the notice without a notice, record, or dialog', async () => {
