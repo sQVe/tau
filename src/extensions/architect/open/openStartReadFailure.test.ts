@@ -1,3 +1,5 @@
+import { basename } from 'node:path';
+
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { argumentAfter, succeededResult } from '../../../../tests/execFake.js';
@@ -10,12 +12,13 @@ import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { adoptClaim, openTool, requestFor } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
+import { startDirectoryName } from '../startTicket/startTicket.js';
 import { openArchitect, openKeptClaimMessage } from './open.js';
 
 const faults = vi.hoisted(() => ({ failMarkerRead: false, failNextMarkerRead: false }));
 
-const namedPath = (path: unknown, name: string): boolean =>
-  typeof path === 'string' && path.includes(name);
+const isStartDirectory = (path: unknown): boolean =>
+  typeof path === 'string' && basename(path) === basename(startDirectoryName);
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const original = await importOriginal();
@@ -23,7 +26,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const faultyReaddir = (async (
     ...readArguments: Parameters<typeof original.readdir>
   ): Promise<unknown> => {
-    const markerPath = namedPath(readArguments[0], '/start');
+    const markerPath = isStartDirectory(readArguments[0]);
     const markerReadFailure = faults.failMarkerRead || faults.failNextMarkerRead;
 
     if (markerPath && markerReadFailure) {
@@ -76,7 +79,7 @@ it('reports a marker read failure from the completion and keeps the claim', asyn
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
 });
 
-it('returns the takeover result when a one-time marker read fails before the child adopts', async ({
+it('returns the takeover result when the first marker read fails after the child adopted', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
@@ -139,8 +142,14 @@ it('stops a running child and releases the claim after a one-time marker read fa
   ).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain('EIO: i/o error');
+
+  expect((failure as Error).message).toContain(
+    'The child adoption could not be read: EIO: i/o error',
+  );
+
+  expect((failure as Error).cause).toMatchObject({ code: 'EIO' });
   expect((failure as Error).message).not.toContain(openKeptClaimMessage(root));
+
   expect(processControl.signals).toEqual(['SIGTERM']);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });

@@ -58,7 +58,7 @@ interface KeptClaim {
 
 const askLabel = 'tau.architect.ask';
 
-const takeoverSeconds = 60;
+export const takeoverSeconds = 60;
 const millisecondsPerSecond = 1000;
 
 const fileExists = (path: string): Promise<boolean> =>
@@ -293,6 +293,11 @@ export const takeoverChildGoneError = (): Error =>
     'The architect launch ended before it took the checkout lock. Call architect open again.',
   );
 
+export const takeoverAdoptedChildEndedError = (): Error =>
+  new Error(
+    'The architect took the checkout lock but its process ended before it could answer. Call architect open again.',
+  );
+
 const cancelledOpenError = (signal: AbortSignal | undefined): Error => {
   const reason: unknown = signal?.reason;
 
@@ -397,6 +402,9 @@ const settleLaunch = async (
   throw failure;
 };
 
+const adoptionReadError = (error: unknown): Error =>
+  new Error(`The child adoption could not be read: ${errorMessage(error)}`, { cause: error });
+
 const applyLaunchOutcome = async (
   request: OpenRequest,
   fence: StartFence,
@@ -412,12 +420,19 @@ const applyLaunchOutcome = async (
 
   try {
     await fence.recordStarted();
-    await waitForTakeover(fence, request.hc.signal);
   } catch (error) {
-    waitFailure = toError(error);
+    waitFailure = adoptionReadError(error);
   }
 
-  await settleLaunch(request, fence, waitFailure ?? takeoverChildGoneError());
+  if (waitFailure === undefined) {
+    try {
+      await waitForTakeover(fence, request.hc.signal);
+    } catch (error) {
+      waitFailure = toError(error);
+    }
+  }
+
+  await settleLaunch(request, fence, waitFailure ?? takeoverAdoptedChildEndedError());
 };
 
 export const openArchitect = async (

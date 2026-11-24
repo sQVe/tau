@@ -25,8 +25,10 @@ import {
   openArchitect,
   openKeptClaimMessage,
   startingError,
+  takeoverAdoptedChildEndedError,
   takeoverChildGoneError,
   takeoverExpiryError,
+  takeoverSeconds,
 } from './open.js';
 
 const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
@@ -58,6 +60,42 @@ const startFakeTimers = (): void => {
   });
 };
 
+const takeoverMilliseconds = takeoverSeconds * 1_000;
+
+// The stop probes the lock holder after the deadline. The child takes the claim on the second
+// probe, so the first read sees no adoption and the stop must read the lock again before it
+// signals the child.
+const adoptOnSecondHolderProbeAfter = (
+  cleanup: (callback: () => void) => void,
+  root: string,
+  deadline: number,
+): void => {
+  const previousKill = vi.mocked(process.kill).getMockImplementation();
+  let probesAfterDeadline = 0;
+
+  const spy = vi.spyOn(process, 'kill').mockImplementation((processId, signal) => {
+    if (processId === process.pid && signal === 0 && Date.now() >= deadline) {
+      probesAfterDeadline += 1;
+
+      if (probesAfterDeadline === 2) {
+        writeNextLockOwnerRecordSync(architectLockPath(root), {
+          checkout: root,
+          pid: fakeStartProcessId,
+          token: 'adopted',
+        });
+
+        return true;
+      }
+    }
+
+    return previousKill?.(processId, signal) ?? true;
+  });
+
+  cleanup(() => {
+    spy.mockImplementation(previousKill ?? (() => true));
+  });
+};
+
 // The stop checks its deadline after each adoption probe, so the fake clock must stand still while
 // the real filesystem probe runs. Only a real delay lets that probe finish.
 const waitForStopSignals = async (
@@ -84,7 +122,7 @@ it('stops the pane child by process id at the deadline, releases after it is gon
   const opening = open(tool, root, { request: openRequest }).catch((error: unknown) => error);
 
   await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(60_300);
+  await vi.advanceTimersByTimeAsync(takeoverMilliseconds + 300);
 
   const failure = await opening;
 
@@ -187,36 +225,14 @@ it('returns the takeover result when the child adopts after the wait expires', a
 
   startFakeTimers();
 
-  const deadline = Date.now() + 60_000;
-  const previousKill = vi.mocked(process.kill).getMockImplementation();
-  let probesAfterDeadline = 0;
+  const deadline = Date.now() + takeoverMilliseconds;
 
-  const spy = vi.spyOn(process, 'kill').mockImplementation((processId, signal) => {
-    if (processId === process.pid && signal === 0 && Date.now() >= deadline) {
-      probesAfterDeadline += 1;
-
-      if (probesAfterDeadline === 2) {
-        writeNextLockOwnerRecordSync(architectLockPath(root), {
-          checkout: root,
-          pid: fakeStartProcessId,
-          token: 'adopted',
-        });
-
-        return true;
-      }
-    }
-
-    return previousKill?.(processId, signal) ?? true;
-  });
-
-  cleanup(() => {
-    spy.mockImplementation(previousKill ?? (() => true));
-  });
+  adoptOnSecondHolderProbeAfter(cleanup, root, deadline);
 
   const opening = openArchitect(requestFor(root, config.location, runtime));
 
   await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(60_300);
+  await vi.advanceTimersByTimeAsync(takeoverMilliseconds + 300);
   await processControl.nextSignal(1);
   await vi.advanceTimersByTimeAsync(5_000);
 
@@ -264,7 +280,7 @@ it('throws when the child is gone after the wait saw its adoption', async ({
   ).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe(takeoverChildGoneError().message);
+  expect((failure as Error).message).toBe(takeoverAdoptedChildEndedError().message);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
