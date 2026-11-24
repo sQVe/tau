@@ -9,7 +9,8 @@ const parameters = Type.Object({ steps: Type.Array(planStepSchema) });
 
 export const planToolGuidelines = [
   'Call `plan` when a request needs three or more of your own steps, such as briefing a worker, reviewing its change, and committing.',
-  'Send the whole list on each `plan` call, with at most one step `in_progress`.',
+  'Send the whole list on each `plan` call; it replaces the saved plan.',
+  'Mark at most one step `in_progress`.',
   'Mark a step `completed` in `plan` as soon as it is done.',
   'Name a ticket in a `plan` step by its identifier. Never copy its state, acceptance, or design into the plan.',
   'Send `plan` an empty list when the user drops the work.',

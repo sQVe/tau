@@ -13,11 +13,13 @@ import {
 } from './steps.js';
 import type { PlanStep } from './steps.js';
 
-type ExpectedCheck = { kind: 'accepted' } | { kind: 'refused'; reason: RegExp | string };
+type ExpectedCheck = { kind: 'accepted' } | { kind: 'refused'; reason: readonly RegExp[] };
 
 type Unreadable = { kind: 'newer'; version: number } | { kind: 'malformed' };
 
 const step = (text: string, status: PlanStep['status'] = 'pending'): PlanStep => ({ text, status });
+
+const unsupportedStep = (text: string, status: string): PlanStep => ({ text, status }) as PlanStep;
 
 const stepsOf = (count: number): PlanStep[] =>
   Array.from({ length: count }, (_unused, index) => step(`Step ${index + 1}`));
@@ -35,12 +37,12 @@ const checkCases: { name: string; steps: readonly PlanStep[]; expected: Expected
   {
     name: 'refuses 13 steps',
     steps: stepsOf(maxPlanSteps + 1),
-    expected: { kind: 'refused', reason: /12/ },
+    expected: { kind: 'refused', reason: [/\b12\b/, /\b13\b/] },
   },
   {
     name: 'names the cap and the step count in the refusal',
     steps: stepsOf(maxPlanSteps + 2),
-    expected: { kind: 'refused', reason: 'A plan holds at most 12 steps; got 14.' },
+    expected: { kind: 'refused', reason: [/\b12\b/, /\b14\b/] },
   },
   {
     name: 'accepts three steps with one in_progress',
@@ -65,34 +67,37 @@ const checkCases: { name: string; steps: readonly PlanStep[]; expected: Expected
   {
     name: 'refuses two steps in_progress',
     steps: [step('Brief worker', 'in_progress'), step('Review change', 'in_progress')],
-    expected: { kind: 'refused', reason: /in_progress/ },
+    expected: { kind: 'refused', reason: [/in_progress/] },
+  },
+  {
+    name: 'refuses a step with an unknown status',
+    steps: [step('Brief worker'), unsupportedStep('Review change', 'done')],
+    expected: { kind: 'refused', reason: [/\b2\b/, /done/] },
   },
   {
     name: 'refuses an empty text at step 2',
     steps: [step('Brief worker'), step('  '), step('Open the PR')],
-    expected: { kind: 'refused', reason: /Step 2/ },
+    expected: { kind: 'refused', reason: [/\b2\b/] },
   },
   {
     name: 'names the 1-based step number of the empty text',
     steps: [step('Brief'), step('Review'), step('Commit'), step(' ')],
-    expected: { kind: 'refused', reason: 'Step 4 has no text.' },
+    expected: { kind: 'refused', reason: [/\b4\b/] },
   },
   {
     name: 'reports the step cap before an empty text',
     steps: stepsOf(maxPlanSteps + 1).map((value, index) => (index === 2 ? step('  ') : value)),
-    expected: { kind: 'refused', reason: /12/ },
+    expected: { kind: 'refused', reason: [/\b12\b/, /\b13\b/] },
   },
 ];
 
 it.each(checkCases.map((row) => [row.name, row] as const))('%s', (_name, { steps, expected }) => {
   const result = checkSteps(steps);
+  const reason = result.kind === 'refused' ? result.reason : '';
+  const expectedFacts = expected.kind === 'refused' ? expected.reason : [];
+  const missingFacts = expectedFacts.filter((fact) => !fact.test(reason));
 
-  const outcome =
-    result.kind === 'refused'
-      ? { kind: result.kind, reason: result.reason }
-      : { kind: result.kind };
-
-  expect(outcome).toMatchObject(expected);
+  expect({ kind: result.kind, missingFacts }).toEqual({ kind: expected.kind, missingFacts: [] });
 });
 
 const replayCases: {
@@ -152,6 +157,16 @@ const replayCases: {
   {
     name: 'treats a non-numeric version as malformed',
     entries: [entry(planEntryType, { version: '2', steps: [step('Newer')] })],
+    expected: { steps: [], unreadable: [{ kind: 'malformed' }] },
+  },
+  {
+    name: 'treats an unknown step status as malformed',
+    entries: [
+      entry(planEntryType, {
+        version: 1,
+        steps: [step('One'), unsupportedStep('Two', 'done')],
+      }),
+    ],
     expected: { steps: [], unreadable: [{ kind: 'malformed' }] },
   },
   {

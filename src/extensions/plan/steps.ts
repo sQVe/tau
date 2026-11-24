@@ -10,10 +10,12 @@ type UnreadablePlan = { kind: 'newer'; version: number } | { kind: 'malformed' }
 
 type PlanEntryData = { kind: 'plan'; steps: readonly PlanStep[] } | UnreadablePlan;
 
+const planStatuses = ['pending', 'in_progress', 'completed', 'blocked'] as const;
+
 export const planStepSchema = Type.Object(
   {
     text: Type.String(),
-    status: stringEnum(['pending', 'in_progress', 'completed', 'blocked']),
+    status: stringEnum(planStatuses),
   },
   { additionalProperties: false },
 );
@@ -49,6 +51,19 @@ export const checkSteps = (steps: readonly PlanStep[]): CheckedSteps => {
 
   if (emptyIndex !== -1) {
     return { kind: 'refused', reason: `Step ${emptyIndex + 1} has no text.` };
+  }
+
+  const unsupportedIndex = steps.findIndex(
+    (step) => !planStatuses.some((status) => status === step.status),
+  );
+
+  if (unsupportedIndex !== -1) {
+    const status: unknown = steps[unsupportedIndex]?.status;
+
+    return {
+      kind: 'refused',
+      reason: `Step ${unsupportedIndex + 1} has unknown status "${String(status)}".`,
+    };
   }
 
   const inProgress = steps.filter((step) => step.status === 'in_progress').length;
