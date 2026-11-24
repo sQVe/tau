@@ -28,7 +28,8 @@ By hand, because it needs live Opus and DeepSeek sessions and Linear.
    The lead calls `plan` with three or more steps, at most one `in_progress`. A list above the
    lead's editor shows the steps with their status marks.
 3. Let a worker report and the lead accept it.
-   The lead calls `plan` again. The finished step shows `[x]` and the next step `[>]`.
+   The lead calls `plan` again. The finished step shows a circle with a check mark and gray text,
+   and the next step shows a circle with a dot.
 4. Before the fresh lead session of the later step, let the original lead finish its plan.
    The list disappears from the original lead. The chat shows the last `plan` result, such as
    `Plan: 5 of 5 completed.`

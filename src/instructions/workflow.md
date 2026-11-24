@@ -58,6 +58,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 - When a check fails, fix its cause, or file a bug ticket when you cannot fix it now. Never skip the
   check or cap its resources, such as memory or a mutant count, to hide the cause.
 - Continue the work unless it needs user input.
+- As lead, keep your plan current with `plan` while the work has steps, and clear it with an empty
+  list when the user drops the work.
 - Do not end a turn that waits for the user without stating the question.
 - While you follow a skill, ask the user only with `ask_user_question`, never in prose.
 - As manager, start a new session when a batch is finished and no workers run. Carry state in
