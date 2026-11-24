@@ -57,7 +57,9 @@ const markPrefix = (
     return drawnMark;
   }
 
-  return `${markIndent}${drawnMark}${markGap}`;
+  const gap = width >= stepPrefixWidth ? markGap : '';
+
+  return `${markIndent}${drawnMark}${gap}`;
 };
 
 const planLine = (step: PlanStep, width: number, theme: Pick<Theme, 'fg'>): string => {
