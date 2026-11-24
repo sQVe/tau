@@ -46,8 +46,6 @@ const probePollMilliseconds = 20;
 const probeTimeoutMilliseconds = 10_000;
 const holderSeconds = '60';
 
-// -F replaces flock with the command, so the command's own process holds the lock and no wrapper
-// process has to stay alive for it.
 export const osLockWrapperArgv = (lockPath: string, commandArgv: readonly string[]): string[] => [
   'flock',
   '-F',
@@ -258,8 +256,6 @@ export const wrapperHoldsLockAcrossExec = async (
 
     const secondExitCode = await runCommand(osLockWrapperArgv(lockPath, ['true']));
 
-    // The spawned pid is the child itself because flock execs it, so killing that pid frees the
-    // lock. A forked wrapper would leave the child holding it.
     await stopCommand(wrapper);
 
     return {
@@ -271,8 +267,6 @@ export const wrapperHoldsLockAcrossExec = async (
   }
 };
 
-// Without -F, flock forks and the command inherits the locked descriptor. The lock then outlives
-// the supervisor, and only the command's own group ends it.
 export const supervisorWithoutFork = async (
   lockPath: string,
 ): Promise<{ stateAfterSupervisorKilled: OsLockState; stateAfterGroupKilled: OsLockState }> => {

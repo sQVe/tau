@@ -28,7 +28,6 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-// flock parses this argv, so its shape is a protocol between Tau and the kernel helper.
 it('wraps a command so the command itself holds the lock', () => {
   expect(
     osLockWrapperArgv('/checkout/.tau/architect/lock', ['env', 'TAU_ROLE=architect', 'pi']),

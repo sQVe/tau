@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 
-// argv: <exit|wait> <command> [arguments...]
 const [mode, command, ...commandArguments] = process.argv.slice(2);
 
 const refuseUsage: (problem: string) => never = (problem) => {
@@ -19,9 +18,6 @@ if (mode !== 'exit' && mode !== 'wait') {
   refuseUsage('A parent runs in exit or wait mode.');
 }
 
-// A detached holder leaves the parent's process group, so the parent's exit cannot take it down.
-// A waiting parent keeps its holder in the same group, so a signal aimed at the parent is the only
-// thing that could end it.
 const holder = spawn(command, commandArguments, {
   detached: mode === 'exit',
   stdio: 'ignore',
