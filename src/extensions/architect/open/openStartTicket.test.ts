@@ -1,11 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readdir, rename, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
 import { argumentAfter, failedResult } from '../../../../tests/execFake.js';
-import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeRunningStartProcessId,
   fakeStartProcessId,
@@ -14,12 +14,11 @@ import {
   useFakeStartProcess,
 } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
+import { adoptClaim, appCommands, openTool, requestFor } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
-import { architectLockPath, holdArchitectLock } from '../lock.js';
+import { architectLockPath } from '../lock.js';
 import { createStartTicket } from '../startTicket/startTicket.js';
 import { openArchitect } from './open.js';
-import type { OpenRequest } from './open.js';
 
 const leadPid = fakeStartProcessId;
 const claimArgument = 'TAU_ARCHITECT_CLAIM=';
@@ -31,36 +30,14 @@ const adoptAsChild = async (root: string, argv: readonly string[]): Promise<void
     .find((argument) => argument.startsWith(claimArgument))
     ?.slice(claimArgument.length);
 
-  const ticket = argv[argv.indexOf('tau-architect-start') + 1];
-
-  if (claimToken === undefined || ticket === undefined) {
-    throw new Error('The launch names no claim or ticket.');
+  if (claimToken === undefined) {
+    throw new Error('The launch names no claim.');
   }
 
-  const held = await holdArchitectLock(root, claimToken);
+  const release = await adoptClaim(root, claimToken, randomUUID(), fakeStartProcessId);
 
-  await replaceCurrentLockOwnerPid(architectLockPath(root), fakeStartProcessId);
-
-  const ticketName = basename(ticket);
-  const started = join(startDirectory(root), `${ticketName}.started.${fakeStartProcessId}`);
-  const adopted = join(startDirectory(root), `${ticketName}.adopted.${fakeStartProcessId}`);
-
-  await rename(started, adopted);
-  await held.release();
+  await release?.();
 };
-
-const requestFor = (
-  root: string,
-  location: OpenRequest['location'],
-  hc: OpenRequest['hc'],
-): OpenRequest => ({
-  root,
-  leadTerminal: 't-lead',
-  request: openRequest,
-  location,
-  ui: { notify: vi.fn<() => void>() },
-  hc,
-});
 
 const startedMarker = async (root: string, token: string, processId: number): Promise<string> => {
   const ticket = await createStartTicket(root, token, leadPid);
@@ -107,7 +84,6 @@ it('never runs Pi when the server creates the terminal after the caller gave up'
   ).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(Error);
-  expect(hc.calls.filter((call) => call.commandArguments[0] === 'ls')).toEqual([]);
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 

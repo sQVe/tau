@@ -6,11 +6,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { succeededResult } from '../../../../tests/execFake.js';
 import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { appCommands, open, openRequest, openTool } from '../fixtures/openHarness.js';
+import { appCommands, open, openRequest, openTool, requestFor } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { openArchitect, openKeptClaimMessage } from './open.js';
-import type { OpenRequest } from './open.js';
 
 const sleepEntered = vi.hoisted(() => ({ current: Promise.withResolvers<undefined>() }));
 
@@ -34,26 +33,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
 });
-
-const requestFor = (
-  root: string,
-  location: OpenRequest['location'],
-  hc: OpenRequest['hc'],
-): OpenRequest => ({
-  root,
-  leadTerminal: 't-lead',
-  request: openRequest,
-  location,
-  ui: { notify: vi.fn<() => void>() },
-  hc,
-});
-
-const endedWait = (terminal: string, ended: boolean): string => {
-  const reason = ended ? 'ended' : 'timeout';
-  const exitCode = ended ? 0 : null;
-
-  return JSON.stringify({ terminal, ended, reason, turn: 1, children: [], exit_code: exitCode });
-};
 
 it('an abort during the poll stops the terminal, releases the claim, and rejects', async ({
   onTestFinished: cleanup,
@@ -261,19 +240,21 @@ it('an abort while the takeover sleep waits rejects without the sleep timer', as
   });
 
   const { root, config } = await setup(cleanup);
-  const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
   const controller = new AbortController();
   const cancellation = new Error('cancelled in the sleep');
 
+  const child = useFakeStartProcess(cleanup, 'running');
   await recordSession(root);
-  hc.reply('kill', JSON.stringify({ address: 't-architect', state: 'finished' }));
-  hc.reply('wait', endedWait('t-architect', true));
 
   const opening = openArchitect(
     requestFor(root, config.location, { ...runtime, signal: controller.signal }),
   ).catch((error: unknown) => error);
 
   await sleepEntered.current.promise;
+
+  child.state = 'gone';
+
   controller.abort(cancellation);
 
   await expect(opening).resolves.toBe(cancellation);

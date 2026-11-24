@@ -2,13 +2,12 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { openTool } from '../fixtures/openHarness.js';
+import { openTool, requestFor } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { acquireStartFence } from '../startFence/startFence.js';
 import type * as StartFenceModule from '../startFence/startFence.js';
 import { openArchitect, takeoverExpiryError } from './open.js';
-import type { OpenRequest } from './open.js';
 
 const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
 
@@ -35,27 +34,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const requestFor = (
-  root: string,
-  location: OpenRequest['location'],
-  hc: OpenRequest['hc'],
-): OpenRequest => ({
-  root,
-  leadTerminal: 't-lead',
-  request: 'Start ME-1611',
-  location,
-  ui: { notify: vi.fn<() => void>() },
-  hc,
-});
-
-it('releases the claim and rethrows the launch error when the fence abandon fails', async ({
+it('releases the claim and rethrows the open error when the fence abandon fails', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
   const { runtime } = openTool(root, undefined, undefined, { takeover: false });
   const abandonFailure = new Error('The start folder could not be read.');
 
-  useFakeStartProcess(cleanup, 'gone');
+  const child = useFakeStartProcess(cleanup, 'running');
   await recordSession(root);
 
   const actual = await vi.importActual<typeof StartFenceModule>('../startFence/startFence.js');
@@ -79,11 +65,14 @@ it('releases the claim and rethrows the launch error when the fence abandon fail
     toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
   });
 
-  const opening = openArchitect(requestFor(root, config.location, runtime)).catch(
+  const opening = openArchitect(requestFor(root, config.location, runtime, 'Start ME-1611')).catch(
     (error: unknown) => error,
   );
 
   await poll.started.promise;
+
+  child.state = 'gone';
+
   await vi.advanceTimersByTimeAsync(60_300);
 
   const failure = await opening;

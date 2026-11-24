@@ -1,9 +1,8 @@
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
-import { appCommands, openRequest, openTool } from '../fixtures/openHarness.js';
+import { appCommands, openTool, requestFor } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { startingError, openArchitect } from './open.js';
-import type { OpenRequest } from './open.js';
 
 const barrier = (): (() => Promise<void>) => {
   let arrivals = 0;
@@ -19,19 +18,6 @@ const barrier = (): (() => Promise<void>) => {
     await bothArrived.promise;
   };
 };
-
-const requestFor = (
-  root: string,
-  location: OpenRequest['location'],
-  hc: OpenRequest['hc'],
-): OpenRequest => ({
-  root,
-  leadTerminal: 't-lead',
-  request: openRequest,
-  location,
-  ui: { notify: vi.fn<() => void>() },
-  hc,
-});
 
 it('two opens started together start one architect', async ({ onTestFinished: cleanup }) => {
   const { root, config } = await setup(cleanup);

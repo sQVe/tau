@@ -1,4 +1,4 @@
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
 import { argumentAfter } from '../../../../tests/execFake.js';
 import {
@@ -6,9 +6,8 @@ import {
   createTemporaryRepository,
 } from '../../../../tests/gitRepository.js';
 import { temporaryTauConfig } from '../../../../tests/tauConfigHarness.js';
-import { appCommands, architectArgv, openTool } from '../fixtures/openHarness.js';
+import { appCommands, architectArgv, openTool, requestFor } from '../fixtures/openHarness.js';
 import { openArchitect } from './open.js';
-import type { OpenRequest } from './open.js';
 
 const locationFor = (cleanup: (cleanup: () => void) => void) => {
   const config = temporaryTauConfig(cleanup, 'tau-architect-open-');
@@ -18,24 +17,13 @@ const locationFor = (cleanup: (cleanup: () => void) => void) => {
   return config.location;
 };
 
-const requestFor = (
-  root: string,
-  location: OpenRequest['location'],
-  hc: OpenRequest['hc'],
-): OpenRequest => ({
-  root,
-  leadTerminal: 't-lead',
-  request: 'Start ME-1611',
-  location,
-  ui: { notify: vi.fn<() => void>() },
-  hc,
-});
-
 it('opens the architect in one split to the right of the lead from a bare repository', async () => {
   const root = await createTemporaryBareRepository(onTestFinished);
   const { app, runtime } = openTool(root);
 
-  const result = await openArchitect(requestFor(root, locationFor(onTestFinished), runtime));
+  const result = await openArchitect(
+    requestFor(root, locationFor(onTestFinished), runtime, 'Start ME-1611'),
+  );
 
   expect(result).toEqual({ status: 'opened', sessionFile: null });
 
@@ -51,11 +39,22 @@ it('opens the architect in one split to the right of the lead from a bare reposi
   expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });
 
-it('starts from a repository with a .git entry', async () => {
+it('starts from a repository with a .git entry without a Git call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const { runtime } = openTool(root);
+  const { app, runtime } = openTool(root);
+  const commands: string[] = [];
 
-  const result = await openArchitect(requestFor(root, locationFor(onTestFinished), runtime));
+  const exec: typeof runtime.exec = (command, commandArguments, options) => {
+    commands.push(command);
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const result = await openArchitect(
+    requestFor(root, locationFor(onTestFinished), { ...runtime, exec }, 'Start ME-1611'),
+  );
 
   expect(result).toEqual({ status: 'opened', sessionFile: null });
+  expect(commands).not.toContain('git');
+  expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { onTestFinished } from 'vitest';
+import { onTestFinished, vi } from 'vitest';
 
 import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
 import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
@@ -22,6 +22,7 @@ import type { Exec } from '../../../command.js';
 import { holdFileLock } from '../../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { architectLockPath } from '../lock.js';
+import type { OpenRequest } from '../open/open.js';
 import { architectRecordPath, writeArchitectRecord, writeAskRecord } from '../record.js';
 import { adoptStartMarker } from '../startTicket/startTicket.js';
 import { createArchitectTool } from '../tool.js';
@@ -213,6 +214,20 @@ const withTakeover = (
 });
 
 export const openRequest = 'Start ME-1540';
+
+export const requestFor = (
+  root: string,
+  location: OpenRequest['location'],
+  hc: OpenRequest['hc'],
+  request: string = openRequest,
+): OpenRequest => ({
+  root,
+  leadTerminal: 't-lead',
+  request,
+  location,
+  ui: { notify: vi.fn<() => void>() },
+  hc,
+});
 
 export const openTool = (
   root: string,
