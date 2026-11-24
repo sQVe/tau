@@ -33,11 +33,20 @@ export const details = async (root: string): Promise<(string | null)[]> => {
 export const endedWait = (
   terminal: string,
   ended: boolean,
-  exitCode = ended ? 0 : null,
+  exitCode: number | null = ended ? 0 : null,
+  signal: number | null = null,
 ): string => {
   const reason = ended ? 'ended' : 'timeout';
 
-  return JSON.stringify({ terminal, ended, reason, turn: 1, children: [], exit_code: exitCode });
+  return JSON.stringify({
+    terminal,
+    ended,
+    reason,
+    turn: 1,
+    children: [],
+    exit_code: exitCode,
+    signal,
+  });
 };
 
 export const startFake = (): HcFake => {

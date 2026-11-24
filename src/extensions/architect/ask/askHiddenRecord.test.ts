@@ -59,10 +59,26 @@ it.each([0, null])(
     const { records } = await readAskRecords(root);
 
     expect(records[0]).toMatchObject({ status: 'failed', detail: askEndedDetail });
-    expect(records[0]).not.toMatchObject({ status: 'running' });
     expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   },
 );
+
+it('returns the failed result when a signal ends the wait', async ({ onTestFinished: cleanup }) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+
+  await recordSession(root);
+  hc.reply('wait', endedWait('t-ask', true, null, 9));
+
+  const result = await ask(hc, root);
+
+  expect(result).toMatchObject({ details: { status: 'failed', reason: askFailedReason } });
+
+  const { records } = await readAskRecords(root);
+
+  expect(records[0]).toMatchObject({ status: 'failed', detail: askEndedFailureDetail });
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
 
 it('returns the deadline outcome and writes nothing after a child timeout ends the wait', async ({
   onTestFinished: cleanup,

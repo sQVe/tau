@@ -364,9 +364,12 @@ const settleEnded = async (
   request: AskRequest,
   askId: string,
   exitCode: number | null,
+  signal: number | null,
   options: ChangeAskOptions,
 ): Promise<AskResult> => {
-  const failed = exitCode !== null && exitCode !== 0;
+  const stoppedBySignal = signal !== null;
+  const nonZeroExit = exitCode !== null && exitCode !== 0;
+  const failed = stoppedBySignal || nonZeroExit;
   const detail = failed ? askEndedFailureDetail : askEndedDetail;
 
   const changed = await updateHiddenAskRecord(
@@ -466,7 +469,7 @@ const runHiddenAsk = async (
   await fence.refreshChild();
   stop.stopAttempted = true;
 
-  return settleEnded(request, askId, waited.exit_code ?? null, options);
+  return settleEnded(request, askId, waited.exit_code ?? null, waited.signal ?? null, options);
 };
 
 export const startHiddenAskRun = (
