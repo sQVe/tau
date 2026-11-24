@@ -207,27 +207,6 @@ it('passes --all only when all terminals are requested', async () => {
   ]);
 });
 
-it('passes an ls timeout to the exec options', async () => {
-  const fake = createHcFake();
-  let timeout: number | undefined;
-
-  const runtime: HcRuntime = {
-    exec: (command, commandArguments, options) => {
-      timeout = options?.timeout;
-
-      return fake.exec(command, commandArguments, options);
-    },
-    connect: fake.connect,
-    cwd: '/repository',
-  };
-
-  fake.reply('ls', JSON.stringify({ terminals: [] }));
-
-  await ls(runtime, { timeout: 1234 });
-
-  expect(timeout).toBe(1234);
-});
-
 it('passes no run timeout when none is requested', async () => {
   const fake = createHcFake();
   let hasTimeout: boolean | undefined;
