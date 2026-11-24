@@ -23,8 +23,9 @@ const markGap = ' ';
 
 const markWidths = Object.values(statusMarks).map(({ mark }) => visibleWidth(mark));
 const markWidth = Math.max(...markWidths);
+const markIndentWidth = visibleWidth(markIndent);
 
-const stepPrefixWidth = visibleWidth(markIndent) + markWidth + visibleWidth(markGap);
+const stepPrefixWidth = markIndentWidth + markWidth + visibleWidth(markGap);
 const labelPrefix = `${'─'.repeat(stepPrefixWidth - 1)} `;
 
 export const planLabelColumn = stepPrefixWidth;
@@ -52,7 +53,7 @@ const markPrefix = (
 ): string => {
   const drawnMark = drawMark(status, theme);
 
-  if (width <= markWidth) {
+  if (width < markIndentWidth + markWidth) {
     return drawnMark;
   }
 
