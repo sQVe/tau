@@ -55,11 +55,14 @@ Consequences, and Alternatives considered.
 
 ### The index
 
-The index in the ADR folder's `README.md` groups current ADRs by area. Each entry is one line,
-`- [NNNN: Title](./NNNN-title.md)`, whose label repeats the ADR's first heading. The index ends with
-a Retired table that gives each retired ADR's number, title, replacement, and last commit. Numbers
-are never reused. Git keeps the history, and `git show <commit>:<folder>/<file>` prints a retired
-ADR. `stomme check` checks the index against the files.
+The index in the ADR folder's `README.md` groups current ADRs by area. Each entry is one line in
+the `- [NNNN: Title](./NNNN-slug.md)` form, whose label repeats the ADR's first heading. A `*` or
+`+` bullet works in place of `-`, and an entry may be indented as a nested list item. An ADR file
+is named `NNNN-slug.md` with a non-empty slug, and its first heading is `# ADR NNNN: Title` with at
+most 3 leading spaces, so Markdown reads it as a heading rather than a code block. The index ends
+with a Retired table that gives each retired ADR's number, title, replacement, and last commit.
+Numbers are never reused. Git keeps the history, and `git show <commit>:<folder>/<file>` prints a
+retired ADR. `stomme check` checks the index against the files.
 
 ## Consequences
 

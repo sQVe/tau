@@ -1,0 +1,14 @@
+name: OCR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: sQVe/stomme/.github/workflows/ocr-review.yml@9c3b27b3045ee81dc734087e3944b8e85ee95a27 # v0.2.4
+    secrets:
+      model-token: ${{ secrets.MORPH_API_KEY }}
