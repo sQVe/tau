@@ -259,3 +259,33 @@ it('an abort while the takeover sleep waits rejects without the sleep timer', as
 
   await expect(opening).resolves.toBe(cancellation);
 });
+
+it('an abort with a non-Error reason while the takeover sleep waits rejects with an Error', async ({
+  onTestFinished: cleanup,
+}) => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+
+  const child = useFakeStartProcess(cleanup, 'running');
+  await recordSession(root);
+
+  const opening = openArchitect(
+    requestFor(root, config.location, { ...runtime, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  await sleepEntered.current.promise;
+
+  child.state = 'gone';
+
+  controller.abort('cancelled in the sleep');
+
+  const failure = await opening;
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe('The open was cancelled.');
+});

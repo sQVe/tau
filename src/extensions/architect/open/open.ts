@@ -352,7 +352,9 @@ const waitForTakeover = async (
       // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
       await sleep(takeoverPollMilliseconds, undefined, sleepOptions);
     } catch (error) {
-      throwIfOpenCancelled(signal);
+      if (signal?.aborted === true) {
+        throw cancelledOpenError(signal);
+      }
 
       throw error;
     }
