@@ -25,11 +25,13 @@ interface StoppedChild {
   failure?: Error;
 }
 
-const releaseFailure = (error: unknown): Error =>
-  new Error(`The claim could not be released: ${errorMessage(error)}`, { cause: error });
+const contextualFailure =
+  (label: string) =>
+  (error: unknown): Error =>
+    new Error(`${label}: ${errorMessage(error)}`, { cause: error });
 
-const stopFailure = (error: unknown): Error =>
-  new Error(`The child could not be stopped: ${errorMessage(error)}`, { cause: error });
+const releaseFailure = contextualFailure('The claim could not be released');
+const stopFailure = contextualFailure('The child adoption could not be read');
 
 const stopChild = async (
   request: ClaimReleaseRequest,

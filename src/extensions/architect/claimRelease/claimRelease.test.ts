@@ -30,6 +30,11 @@ it('keeps the claim and reports the cause when the adoption read fails', async (
   );
 
   expect(result).toMatchObject({ kept: true, child: 'unknown' });
+
+  expect(result.failure?.message).toBe(
+    'The child adoption could not be read: The lock could not be read.',
+  );
+
   expect(result.failure?.cause).toBe(readFailure);
   expect(release).not.toHaveBeenCalled();
   expect(processControl.signals).toEqual([]);
@@ -65,6 +70,21 @@ it('keeps the claim without a failure when the decision is keep', async () => {
 
   expect(result).toEqual({ kept: true, child: 'unknown' });
   expect(release).not.toHaveBeenCalled();
+});
+
+it('keeps the claim without a failure when the stopped child state stays unknown', async ({
+  onTestFinished,
+}) => {
+  const processControl = useFakeStartProcess(onTestFinished, 'unknown');
+  const release = vi.fn<() => Promise<void>>();
+
+  const result = await releaseClaim(
+    request({ claim: { release }, child: 'running', processId: fakeStartProcessId }),
+  );
+
+  expect(result).toEqual({ kept: true, child: 'unknown' });
+  expect(release).not.toHaveBeenCalled();
+  expect(processControl.signals).toEqual([]);
 });
 
 it('releases the claim after a stop that finds the child adopted', async ({ onTestFinished }) => {
