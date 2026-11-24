@@ -269,7 +269,7 @@ it('returns only the reply when a real-shaped space reply contains a terminal', 
 
   const result = await startHandover(
     runtimeOf(fake, root),
-    requestFor(root, file, { name: 'ticket-1' }),
+    requestFor(root, file, { name: 'ticket-1' }, 'ticket-1'),
   );
 
   expect(result).toEqual({ reply });
