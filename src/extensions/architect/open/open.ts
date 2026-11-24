@@ -306,7 +306,7 @@ const childGone = (fence: StartFence): boolean => {
 const cancelledOpenError = (signal: AbortSignal | undefined): Error => {
   const reason: unknown = signal?.reason;
 
-  return reason instanceof Error ? reason : new Error('The open was cancelled.');
+  return reason instanceof Error ? reason : new Error('The open was cancelled.', { cause: reason });
 };
 
 const throwIfOpenCancelled = (signal: AbortSignal | undefined): void => {

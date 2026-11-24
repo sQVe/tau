@@ -211,6 +211,7 @@ const expectCancelled = (failure: unknown, reason: unknown): void => {
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toBe('The open was cancelled.');
+  expect((failure as Error).cause).toBe(reason);
 };
 
 it.each([
