@@ -153,7 +153,7 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
 
   holdWithdrawal = true;
 
-  const inboxDone = Promise.resolve(inboxShutdown.handler({} as never, context));
+  const inboxDone = Promise.resolve(inboxShutdown.handler({ reason: 'quit' } as never, context));
 
   const outcome = await Promise.race([
     withdrawalStarted.promise.then(() => 'withdrawal'),
@@ -170,7 +170,7 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   expect(existsSync(socketPath)).toBe(false);
   expect(await readLiveLockHolder(lockPath)).toBeDefined();
 
-  await architectShutdown.handler({} as never, context);
+  await architectShutdown.handler({ reason: 'quit' } as never, context);
 
   expect(existsSync(socketPath)).toBe(false);
   expect(await readLiveLockHolder(lockPath)).toBeUndefined();

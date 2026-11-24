@@ -404,8 +404,8 @@ const sweepFactsOf = (
 
 // Every other ticket belongs to a claim that is gone. A started marker is cleared only when the
 // kernel reports its process gone, so a child paused before its exec keeps the fence. An adopted
-// marker's process passed that fence, so it never refuses, and it is deleted only after the kernel
-// reads both its child and its lead as gone.
+// marker's child refuses a start while it runs or cannot be read. Its marker is deleted only after
+// the kernel reads both its child and its lead as gone.
 export const sweepStartFolder = async (request: StartSweepRequest): Promise<StartSweepResult> => {
   const stateOf = request.stateOf ?? processState;
   const entries = await readStartEntries(request.root);

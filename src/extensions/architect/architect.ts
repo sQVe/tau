@@ -90,6 +90,7 @@ export default function architectExtension(pi: ExtensionAPI): void {
       await endArchitectSession(ending, hc, {
         answers,
         admissions,
+        reason: event.reason,
         sendEndNote: endsArchitect(event.reason),
       });
     }

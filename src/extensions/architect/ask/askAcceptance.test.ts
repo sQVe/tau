@@ -146,6 +146,7 @@ const closingSetup = async (cleanup: Cleanup, stallPoint: StallPoint = 'commit')
         {
           answers: createAnswerTracker(),
           admissions,
+          reason: 'quit',
           sendEndNote: true,
         },
       ),

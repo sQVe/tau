@@ -1,7 +1,7 @@
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
@@ -12,11 +12,14 @@ import {
   savedTexts,
   startHandoverReceiver,
 } from '../../../tests/inboxReceiverHarness.js';
+import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { readLiveLockHolder } from '../../fileLock/fileLock.js';
+import { listGenerations, readLiveLockHolder } from '../../fileLock/fileLock.js';
 import { ownerJson } from '../../fileLock/fixtures/fileLockHarness.js';
+import { askArchitect } from './ask/ask.js';
 import { hiddenAsk, hiddenIds } from './fixtures/hiddenAsk.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
+import { appCommands, openTool, requestFor, terminalState } from './fixtures/openHarness.js';
 import { holdAskLock, readArchitectOwner } from './fixtures/toolHarness.js';
 import {
   endOptions,
@@ -25,13 +28,16 @@ import {
   stubArchitect,
   visibleArchitect,
 } from './fixtures/visibleSession.js';
+import type { StartLiveAsk } from './liveAsk.js';
 import { architectLockPath, claimArchitectLock } from './lock.js';
+import { openArchitect } from './open/open.js';
 import { failOpenLiveAsks } from './open/openLiveAsks.js';
 import {
   askRecordDirectory,
   askRecordPath,
   readArchitectRecord,
   readAskRecord,
+  readAskRecords,
   writeAskRecord,
 } from './record.js';
 import type { LiveAskRecord } from './record.js';
@@ -45,7 +51,18 @@ const holdLock = async (root: string, released: boolean): Promise<void> => {
   await writeFile(path, ownerJson('holder', released));
 };
 
-it('a held lock notifies and shuts the architect down', async ({ onTestFinished }) => {
+const replaceHighestLockToken = async (root: string, token: string): Promise<void> => {
+  const lockPath = architectLockPath(root);
+  const highest = (await listGenerations(lockPath)).at(-1);
+
+  if (highest === undefined) {
+    throw new Error('The lock has no generation.');
+  }
+
+  await writeFile(`${lockPath}.${highest}`, ownerJson(token));
+};
+
+it('a held lock notifies and shuts the architect down', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -63,7 +80,7 @@ it('a held lock notifies and shuts the architect down', async ({ onTestFinished 
   expect(shutdown).toHaveBeenCalledTimes(1);
 });
 
-it('a released lock starts the architect and writes its record', async ({ onTestFinished }) => {
+it('a released lock starts the architect and writes its record', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -101,7 +118,7 @@ it('a released lock starts the architect and writes its record', async ({ onTest
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('an architect session adopts the claim its environment names', async ({ onTestFinished }) => {
+it('an architect session adopts the claim its environment names', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -141,9 +158,7 @@ it('an architect session adopts the claim its environment names', async ({ onTes
   );
 });
 
-it('renames the started marker to an adopted one and keeps it at a clean shutdown', async ({
-  onTestFinished,
-}) => {
+it('renames the started marker to an adopted one and keeps it at a clean shutdown', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -177,9 +192,7 @@ it('renames the started marker to an adopted one and keeps it at a clean shutdow
   expect(await readdir(directory)).toEqual([adoptedName]);
 });
 
-it('an architect session shuts down when its claim is no longer the live holder', async ({
-  onTestFinished,
-}) => {
+it('an architect session shuts down when its claim is no longer the live holder', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -212,7 +225,7 @@ it('an architect session shuts down when its claim is no longer the live holder'
   await expect(readArchitectRecord(root)).resolves.toBeUndefined();
 });
 
-it('an ask session records ask mode', async ({ onTestFinished }) => {
+it('an ask session records ask mode', async () => {
   stubArchitect(onTestFinished);
   vi.stubEnv('TAU_ARCHITECT_ASK', '/sessions/ask.json');
 
@@ -229,7 +242,7 @@ it('an ask session records ask mode', async ({ onTestFinished }) => {
   );
 });
 
-it('an empty ask path records visible mode', async ({ onTestFinished }) => {
+it('an empty ask path records visible mode', async () => {
   stubArchitect(onTestFinished);
   vi.stubEnv('TAU_ARCHITECT_ASK', '');
 
@@ -246,9 +259,7 @@ it('an empty ask path records visible mode', async ({ onTestFinished }) => {
   );
 });
 
-it('a visible architect with an unset or empty lead terminal builds no end note route', async ({
-  onTestFinished,
-}) => {
+it('a visible architect with an unset or empty lead terminal builds no end note route', async () => {
   for (const leadTerminal of [undefined, '']) {
     stubArchitect(onTestFinished);
     vi.stubEnv('TAU_LEAD_TERMINAL', leadTerminal);
@@ -267,7 +278,7 @@ it('a visible architect with an unset or empty lead terminal builds no end note 
   }
 });
 
-it('an ask session with a lead terminal builds no end note route', async ({ onTestFinished }) => {
+it('an ask session with a lead terminal builds no end note route', async () => {
   stubArchitect(onTestFinished);
   vi.stubEnv('TAU_ARCHITECT_ASK', '/sessions/ask.json');
   vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
@@ -320,9 +331,7 @@ const hiddenSession = (
   held: createHeldLockToken(),
 });
 
-it('clears the held token and releases the lock when the deadline stop fails', async ({
-  onTestFinished,
-}) => {
+it('clears the held token and releases the lock when the deadline stop fails', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const notify = vi.fn<(message: string, level?: string) => void>();
   const release = vi.fn<() => Promise<void>>(() => Promise.resolve());
@@ -353,7 +362,7 @@ it('clears the held token and releases the lock when the deadline stop fails', a
   );
 });
 
-it('ending fails only running hidden asks', async ({ onTestFinished }) => {
+it('ending fails only running hidden asks', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
   await writeAskRecord(root, hiddenAsk('running', 'running'));
@@ -371,9 +380,7 @@ it('ending fails only running hidden asks', async ({ onTestFinished }) => {
 
 const newerHiddenId = '0190c1d2-0000-7000-8000-000000000307';
 
-it('ending keeps a newer ask running when it is published after the claim is released', async ({
-  onTestFinished,
-}) => {
+it('ending keeps a newer ask running when it is published after the claim is released', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const notify = vi.fn<(message: string, level?: string) => void>();
 
@@ -396,7 +403,7 @@ it('ending keeps a newer ask running when it is published after the claim is rel
   expect(await readAskRecord(root, newerHiddenId)).toMatchObject({ status: 'running' });
 });
 
-it('ending reports a bad ask file and still fails the running ask', async ({ onTestFinished }) => {
+it('ending reports a bad ask file and still fails the running ask', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const notify = vi.fn<(message: string, level?: string) => void>();
 
@@ -410,7 +417,7 @@ it('ending reports a bad ask file and still fails the running ask', async ({ onT
   expect(await readAskRecord(root, hiddenIds.running)).toMatchObject({ status: 'failed' });
 });
 
-it('a non-architect session takes no lock', async ({ onTestFinished }) => {
+it('a non-architect session takes no lock', async () => {
   vi.stubEnv('TAU_ROLE', 'lead');
 
   onTestFinished(() => {
@@ -424,9 +431,7 @@ it('a non-architect session takes no lock', async ({ onTestFinished }) => {
   expect(await readArchitectRecord(root)).toBeUndefined();
 });
 
-it('ending a visible architect fails its open live ask and tells the lead to ask again', async ({
-  onTestFinished,
-}) => {
+it('ending a visible architect fails its open live ask and tells the lead to ask again', async () => {
   const { root, session } = await visibleArchitect(onTestFinished);
   const hc = createHcFake();
   const lead = await startLeadInbox(onTestFinished, hc);
@@ -451,9 +456,7 @@ it('ending a visible architect fails its open live ask and tells the lead to ask
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('ending a visible architect releases its lock when the close note cannot be sent', async ({
-  onTestFinished,
-}) => {
+it('ending a visible architect releases its lock when the close note cannot be sent', async () => {
   const { root, session } = await visibleArchitect(onTestFinished);
   const hc = createHcFake();
 
@@ -472,9 +475,7 @@ it('ending a visible architect releases its lock when the close note cannot be s
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('holds the lock token from the lock, before the record and startup return', async ({
-  onTestFinished,
-}) => {
+it('holds the lock token from the lock, before the record and startup return', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -508,7 +509,7 @@ it('holds the lock token from the lock, before the record and startup return', a
   expect(held.current()).toBeUndefined();
 });
 
-it('clears the held token when startup fails after the lock', async ({ onTestFinished }) => {
+it('clears the held token when startup fails after the lock', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -524,9 +525,7 @@ it('clears the held token when startup fails after the lock', async ({ onTestFin
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('ending a visible architect does not note an ask that is already closed', async ({
-  onTestFinished,
-}) => {
+it('ending a visible architect does not note an ask that is already closed', async () => {
   const { root, session } = await visibleArchitect(onTestFinished);
   const hc = createHcFake();
   const lead = await startLeadInbox(onTestFinished, hc);
@@ -542,7 +541,7 @@ it('ending a visible architect does not note an ask that is already closed', asy
   expect(await readAskRecord(root, liveIds.answered)).toMatchObject({ status: 'answered' });
 });
 
-it('ending does not note an ask that closes after the scan', async ({ onTestFinished }) => {
+it('ending does not note an ask that closes after the scan', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const hc = createHcFake();
 
@@ -586,7 +585,7 @@ it('ending does not note an ask that closes after the scan', async ({ onTestFini
   expect(await readAskRecord(root, liveIds.open)).toMatchObject({ status: 'answered' });
 });
 
-it('ending does not note an ask that disappears after the scan', async ({ onTestFinished }) => {
+it('ending does not note an ask that disappears after the scan', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const hc = createHcFake();
 
@@ -637,9 +636,7 @@ const flushMacrotask = (): Promise<void> =>
 
 const secondLiveId = '0190c1d2-0000-7000-8000-000000000306';
 
-it('ending waits for a held close note after another ask settlement fails', async ({
-  onTestFinished,
-}) => {
+it('ending waits for a held close note after another ask settlement fails', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const hc = createHcFake();
   const noteHeld = Promise.withResolvers<undefined>();
@@ -722,7 +719,7 @@ it('ending waits for a held close note after another ask settlement fails', asyn
   expect(warnings).toEqual([]);
 });
 
-it('ending reports every failed ask settlement in one error', async ({ onTestFinished }) => {
+it('ending reports every failed ask settlement in one error', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const hc = createHcFake();
   let reads = 0;
@@ -752,9 +749,7 @@ it('ending reports every failed ask settlement in one error', async ({ onTestFin
   );
 });
 
-it('shuts down without a record when its claim token names a released claim', async ({
-  onTestFinished,
-}) => {
+it('shuts down without a record when its claim token names a released claim', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -775,9 +770,7 @@ it('shuts down without a record when its claim token names a released claim', as
   await expect(readArchitectRecord(root)).resolves.toBeUndefined();
 });
 
-it('clears an adopted claim token so a later start takes the lock normally', async ({
-  onTestFinished,
-}) => {
+it('clears an adopted claim token so a later start takes the lock normally', async () => {
   stubArchitect(onTestFinished);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -810,4 +803,270 @@ it('clears an adopted claim token so a later start takes the lock normally', asy
   );
 
   await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+});
+
+it('keeps the lock across a reload and adopts it at the next start', async () => {
+  stubArchitect(onTestFinished);
+
+  const config = temporaryTauConfig(onTestFinished, 'tau-architect-reload-');
+
+  config.writeUser({ roles: { architect: { model: 'a/architect' } } });
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const held = createHeldLockToken();
+  const first = await startArchitectSession(context, held);
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  const oldToken = first.owner.lockToken;
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions('reload'));
+
+  const holderAfterReload = await readLiveLockHolder(architectLockPath(root));
+
+  expect(holderAfterReload?.token).toBe(oldToken);
+  expect(holderAfterReload?.pid).toBe(process.pid);
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBe(oldToken);
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBe(root);
+
+  const barrier = Promise.withResolvers<undefined>();
+
+  const starting = (async () => {
+    await barrier.promise;
+
+    return startArchitectSession(context, held);
+  })();
+
+  const { app, runtime, terminals } = openTool(root);
+
+  terminals.set('t-architect', terminalState('live'));
+
+  const opened = await openArchitect(requestFor(root, config.location, runtime));
+
+  const launches = appCommands(app).filter((name) => name === 'pane.split' || name === 'space.new');
+
+  expect(opened).toEqual({ status: 'running', terminal: 't-architect' });
+  expect(launches).toEqual([]);
+
+  const askHc = createHcFake();
+
+  const liveAskStub = vi.fn<StartLiveAsk>(() =>
+    Promise.resolve({ status: 'needsOpen', reason: 'The live architect takes the question.' }),
+  );
+
+  const asked = await askArchitect({
+    root,
+    question: 'Which flag name?',
+    gateRecord: null,
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...askHc, cwd: root },
+    liveAsk: liveAskStub,
+  });
+
+  expect(asked).toEqual({
+    status: 'needsOpen',
+    reason: 'The live architect takes the question.',
+  });
+
+  expect(liveAskStub).toHaveBeenCalledTimes(1);
+  expect(askHc.calls.filter((call) => call.commandArguments[0] === 'run')).toEqual([]);
+  expect((await readAskRecords(root)).records).toEqual([]);
+
+  barrier.resolve(undefined);
+
+  const second = await starting;
+
+  if (second === undefined) {
+    throw new Error('The architect did not start again.');
+  }
+
+  const holderAfterStart = await readLiveLockHolder(architectLockPath(root));
+  const owner = await readArchitectOwner(root);
+
+  expect(holderAfterStart?.token).not.toBe(oldToken);
+  expect(holderAfterStart?.pid).toBe(process.pid);
+  expect(owner?.lockToken).toBe(holderAfterStart?.token);
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+
+  await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+});
+
+it.each(['new', 'resume', 'fork'] as const)(
+  'keeps the lock across a %s shutdown and adopts it at the next start',
+  async (reason) => {
+    stubArchitect(onTestFinished);
+
+    const root = await createTemporaryRepository(onTestFinished);
+    const { context } = sessionContext(root);
+    const first = await startArchitectSession(context, createHeldLockToken());
+
+    if (first === undefined) {
+      throw new Error('The architect did not start.');
+    }
+
+    const oldToken = first.owner.lockToken;
+
+    await endArchitectSession(first, hcRuntime(createHcFake()), endOptions(reason));
+
+    const holderAfterEnd = await readLiveLockHolder(architectLockPath(root));
+
+    expect(holderAfterEnd?.token).toBe(oldToken);
+    expect(holderAfterEnd?.pid).toBe(process.pid);
+    expect(process.env['TAU_ARCHITECT_CLAIM']).toBe(oldToken);
+    expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBe(root);
+
+    const second = await startArchitectSession(context, createHeldLockToken());
+
+    if (second === undefined) {
+      throw new Error('The architect did not start again.');
+    }
+
+    const holderAfterStart = await readLiveLockHolder(architectLockPath(root));
+
+    expect(holderAfterStart?.token).not.toBe(oldToken);
+    expect(holderAfterStart?.pid).toBe(process.pid);
+    expect((await readArchitectOwner(root))?.lockToken).toBe(holderAfterStart?.token);
+    expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+    expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+
+    await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+  },
+);
+
+it('warns and takes the new checkout lock when the old checkout lock cannot be adopted', async () => {
+  stubArchitect(onTestFinished);
+
+  const firstRoot = await createTemporaryRepository(onTestFinished);
+  const secondRoot = await createTemporaryRepository(onTestFinished);
+  const { context: firstContext } = sessionContext(firstRoot);
+  const first = await startArchitectSession(firstContext, createHeldLockToken());
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions('resume'));
+  await replaceHighestLockToken(firstRoot, 'other-token');
+
+  const { context, notify, shutdown } = sessionContext(secondRoot);
+  const second = await startArchitectSession(context, createHeldLockToken());
+
+  expect(second).toBeDefined();
+  expect(shutdown).not.toHaveBeenCalled();
+
+  expect(notify).toHaveBeenCalledWith(
+    expect.stringContaining(`The architect could not release its lock in ${firstRoot}:`),
+    'warning',
+  );
+
+  expect((await readLiveLockHolder(architectLockPath(firstRoot)))?.token).toBe('other-token');
+  expect((await readLiveLockHolder(architectLockPath(secondRoot)))?.pid).toBe(process.pid);
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+
+  if (second === undefined) {
+    throw new Error('The architect did not start in the second checkout.');
+  }
+
+  await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+});
+
+it('releases the old checkout lock and starts in another checkout after a resume', async () => {
+  stubArchitect(onTestFinished);
+
+  const firstRoot = await createTemporaryRepository(onTestFinished);
+  const secondRoot = await createTemporaryRepository(onTestFinished);
+  const { context: firstContext } = sessionContext(firstRoot);
+  const first = await startArchitectSession(firstContext, createHeldLockToken());
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  const oldToken = first.owner.lockToken;
+  const startDirectory = join(firstRoot, '.tau', 'architect', 'start');
+  const startedName = `${oldToken}.lead.${process.pid}.started.${process.pid}`;
+
+  await mkdir(startDirectory, { recursive: true });
+  await writeFile(join(startDirectory, startedName), '');
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions('resume'));
+
+  const { context: secondContext, shutdown } = sessionContext(secondRoot);
+  const second = await startArchitectSession(secondContext, createHeldLockToken());
+
+  expect(second).toBeDefined();
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(await readLiveLockHolder(architectLockPath(firstRoot))).toBeUndefined();
+
+  const holder = await readLiveLockHolder(architectLockPath(secondRoot));
+
+  expect(holder?.pid).toBe(process.pid);
+  expect(holder?.token).not.toBe(oldToken);
+  expect(holder?.token).toBe((await readArchitectOwner(secondRoot))?.lockToken);
+  expect(await readdir(startDirectory)).toEqual([startedName]);
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+
+  if (second === undefined) {
+    throw new Error('The architect did not start in the second checkout.');
+  }
+
+  await endArchitectSession(second, hcRuntime(createHcFake()), endOptions());
+});
+
+it('shuts down in another checkout whose lock is held and leaves the old checkout lock released', async () => {
+  stubArchitect(onTestFinished);
+
+  const firstRoot = await createTemporaryRepository(onTestFinished);
+  const secondRoot = await createTemporaryRepository(onTestFinished);
+  const { context: firstContext } = sessionContext(firstRoot);
+  const first = await startArchitectSession(firstContext, createHeldLockToken());
+
+  if (first === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  await endArchitectSession(first, hcRuntime(createHcFake()), endOptions('resume'));
+  await holdLock(secondRoot, false);
+
+  const { context, notify, shutdown } = sessionContext(secondRoot);
+
+  expect(await startArchitectSession(context, createHeldLockToken())).toBeUndefined();
+
+  expect(notify).toHaveBeenCalledWith(
+    'The architect is already running in another session.',
+    'error',
+  );
+
+  expect(shutdown).toHaveBeenCalledTimes(1);
+  expect(await readLiveLockHolder(architectLockPath(firstRoot))).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
+});
+
+it('releases the lock and sets no claim on a quit shutdown', async () => {
+  stubArchitect(onTestFinished);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  const { context } = sessionContext(root);
+  const session = await startArchitectSession(context, createHeldLockToken());
+
+  if (session === undefined) {
+    throw new Error('The architect did not start.');
+  }
+
+  await endArchitectSession(session, hcRuntime(createHcFake()), endOptions('quit'));
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_CLAIM']).toBeUndefined();
+  expect(process.env['TAU_ARCHITECT_HANDOFF_ROOT']).toBeUndefined();
 });
