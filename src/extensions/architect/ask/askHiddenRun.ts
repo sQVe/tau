@@ -492,7 +492,9 @@ export const startHiddenAskRun = (
     });
 
     if (finished.kept) {
-      stop.failure = finished.failure;
+      if (finished.failure !== undefined) {
+        stop.failure = finished.failure;
+      }
 
       return 'kept';
     }
