@@ -1,5 +1,5 @@
 import type { HerdrSpace } from '../src/piStart/herdrPane.js';
-import { argumentAfter, createExecFake, succeededResult } from './execFake.js';
+import { argumentAfter, createExecFake, isCommandOf, succeededResult } from './execFake.js';
 import type { ExecCall, ExecFake } from './execFake.js';
 
 export type HerdrAppCommand = 'ls' | 'pane.split' | 'space.new' | 'tab.new';
@@ -25,11 +25,6 @@ const launchReply = (space: string): string =>
 
 const defaultLaunch = launchReply('sp-new');
 const defaultSplit = JSON.stringify({ pane: 'p-new', terminal: 't-new' });
-
-const isCommandOf = <Command extends string>(
-  commandSet: ReadonlySet<Command>,
-  value: string | undefined,
-): value is Command => value !== undefined && commandSet.has(value as Command);
 
 const commands = new Set<HerdrAppCommand>(['ls', 'pane.split', 'space.new', 'tab.new']);
 

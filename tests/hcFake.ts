@@ -1,7 +1,7 @@
 import type { Exec } from '../src/command.js';
 import type { Connect } from '../src/hc/connect.js';
 import type { HcEvent, SubscribeEvents, SubscribeHandlers } from '../src/hc/events.js';
-import { createExecFake, failedResult, succeededResult } from './execFake.js';
+import { createExecFake, failedResult, isCommandOf, succeededResult } from './execFake.js';
 import type { ExecCall } from './execFake.js';
 
 type HcCommand = 'run' | 'get' | 'ls' | 'wait' | 'kill' | 'rm' | 'label';
@@ -45,8 +45,7 @@ export interface HcFake {
 
 const commands = new Set<HcCommand>(['run', 'get', 'ls', 'wait', 'kill', 'rm', 'label']);
 
-const isCommand = (value: string | undefined): value is HcCommand =>
-  value !== undefined && commands.has(value as HcCommand);
+const isCommand = (value: string | undefined): value is HcCommand => isCommandOf(commands, value);
 
 const connectProblem = (
   call: readonly HcRequestMessage[],

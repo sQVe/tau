@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { argumentAfter, createExecFake } from './execFake.js';
+import { argumentAfter, createExecFake, isCommandOf } from './execFake.js';
 
 type Key = 'greet' | 'write';
 
@@ -32,6 +32,16 @@ const setUp = () => {
 
   return { fake, writes };
 };
+
+it.each([
+  { name: 'a member', value: 'write', expected: true },
+  { name: 'a value outside the set', value: 'other', expected: false },
+  { name: 'no value', value: undefined, expected: false },
+])('accepts $name only when the set holds it', ({ value, expected }) => {
+  const commands = new Set<Key>(['greet', 'write']);
+
+  expect(isCommandOf(commands, value)).toBe(expected);
+});
 
 it('fails a command the fake was not set up for', async () => {
   const { fake } = setUp();
