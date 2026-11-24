@@ -446,7 +446,7 @@ export const openArchitect = async (
 
     return result;
   } catch (error) {
-    const abandoned = await fence.abandon();
+    const abandoned = await fence.abandon().catch(() => ({ adopted: false }));
 
     const finished = await fence.finish({ adopted: abandoned.adopted, stopAttempted: false });
 
