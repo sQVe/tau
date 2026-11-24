@@ -289,7 +289,11 @@ const launchHiddenRecord = async (
     return { kind: 'adopted', started: initial };
   }
 
-  await fence.abandon();
+  const abandoned = await fence.abandon();
+
+  if (abandoned.adopted) {
+    return { kind: 'adopted', started: initial };
+  }
 
   await updateHiddenAskRecord(request.root, initial.askId, (current) => ({
     ...current,

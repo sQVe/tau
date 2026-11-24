@@ -1,5 +1,6 @@
+import { readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join, basename } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { expect, it, vi, afterEach, beforeEach } from 'vitest';
 
@@ -84,6 +85,32 @@ const renameLockHolder = async (root: string, processId: number): Promise<void> 
   const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
 
   await writeFile(path, JSON.stringify({ ...owner, pid: processId }));
+};
+
+// The child wins the claim without awaiting anything, so a probe can trigger the takeover.
+const adoptLockSync = (root: string, token: string): void => {
+  const lockPath = architectLockPath(root);
+  const prefix = `${basename(lockPath)}.`;
+
+  const generations = readdirSync(dirname(lockPath))
+    .filter((name) => name.startsWith(prefix) && /^\d+$/u.test(name.slice(prefix.length)))
+    .map((name) => Number(name.slice(prefix.length)));
+
+  const next = Math.max(0, ...generations) + 1;
+
+  writeFileSync(
+    `${lockPath}.${next}`,
+    JSON.stringify({
+      pid: fakeStartProcessId,
+      checkout: root,
+      startedAt: new Date().toISOString(),
+      token,
+    }),
+  );
+
+  for (const generation of generations) {
+    rmSync(`${lockPath}.${generation}`, { force: true });
+  }
 };
 
 // The real child takes the ticket, adopts the claim, and renames its marker before it runs Pi. A
@@ -481,6 +508,92 @@ it('records a real cancellation from the call signal as cancelled', async ({
   expect((await details(root))[0]).toBe(askWaitFailureDetail(true, failure));
   expect((await details(root))[0]).not.toBe(askWaitFailureDetail(false, failure));
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('waits on a child that adopts during abandonment instead of failing the launch', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const signals: NodeJS.Signals[] = [];
+  const realKill = process.kill.bind(process);
+  let claimToken = '';
+  let adoptOnProbe = false;
+  let childState: 'running' | 'gone' = 'running';
+  let taken = false;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      taken = await takeStartTicket(commandArguments);
+      claimToken = childClaimToken(commandArguments) ?? '';
+      adoptOnProbe = true;
+
+      return { code: 1, killed: false, truncated: false, stdout: '', stderr: 'launch failed' };
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const spy = vi.spyOn(process, 'kill').mockImplementation((processId, signal) => {
+    if (adoptOnProbe && processId === process.pid && signal === 0) {
+      adoptOnProbe = false;
+      adoptLockSync(root, claimToken);
+
+      return true;
+    }
+
+    if (processId !== fakeStartProcessId) {
+      return realKill(processId, signal);
+    }
+
+    if (signal === 0) {
+      if (childState === 'gone') {
+        throw Object.assign(new Error('No such process'), { code: 'ESRCH' });
+      }
+
+      return true;
+    }
+
+    signals.push(signal as NodeJS.Signals);
+
+    return true;
+  });
+
+  cleanup(() => {
+    spy.mockRestore();
+  });
+
+  const asking = ask({ ...hc, exec }, root).then(
+    (value) => ({ kind: 'result' as const, value }),
+    (error: unknown) => ({ kind: 'error' as const, error }),
+  );
+
+  const first = await Promise.race([
+    asking,
+    poll.started.promise.then(() => ({ kind: 'waiting' as const })),
+  ]);
+
+  if (first.kind === 'waiting') {
+    childState = 'gone';
+  }
+
+  const settled = first.kind === 'waiting' ? await asking : first;
+
+  expect(settled.kind).toBe('result');
+
+  if (settled.kind !== 'result') {
+    throw new Error('The ask failed instead of waiting for the adopted child.');
+  }
+
+  expect(taken).toBe(true);
+  expect(settled.value.details).toMatchObject({ status: 'failed', reason: askFailedReason });
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askAdoptedChildStoppedDetail);
+  expect(signals).toEqual([]);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await readdir(startDirectory(root))).toEqual([]);
 });
 
 it('releases its claim and fails the record when an adopted child stopped before the launch reply and a later caller swept', async ({
