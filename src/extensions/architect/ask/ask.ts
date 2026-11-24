@@ -33,6 +33,11 @@ export type AskResult =
   | { status: 'ended'; askId: string; answer: string }
   | { status: 'failed'; askId: string; reason: string };
 
+// Only the ask path dispatches, so the hook stays out of the shared claim options.
+export interface AskClaimOptions extends ArchitectClaimOptions {
+  beforeDispatch?: () => Promise<void>;
+}
+
 const reportAskGaps = (ui: ConfigWarnings, gaps: AskRecordGap[]): void => {
   for (const gap of gaps) {
     notifyOnce(ui, gap.path, 'ask-record', gap.reason, 'warning');
@@ -104,7 +109,7 @@ const blockedStartReason = (blocker: StartFenceBlocker): string =>
 const askHiddenArchitect = async (
   request: AskRequest,
   sessionFile: string,
-  claimOptions: ArchitectClaimOptions,
+  claimOptions: AskClaimOptions,
 ): Promise<AskResult> => {
   const model = requireModel(request);
   const acquisition = await acquireStartFence(request.root, claimOptions);
@@ -147,7 +152,7 @@ const architectPublication = (
 
 export const askArchitect = async (
   request: AskRequest,
-  claimOptions: ArchitectClaimOptions = {},
+  claimOptions: AskClaimOptions = {},
 ): Promise<AskResult> => {
   const running = await liveRunningAsk(request.root, request.hc, request.ui);
 

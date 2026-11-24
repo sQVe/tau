@@ -16,7 +16,6 @@ export type ArchitectClaim =
 
 export interface ArchitectClaimOptions {
   beforeLink?: () => Promise<void>;
-  beforeDispatch?: () => Promise<void>;
 }
 
 export const architectLockPath = (root: string): string => join(root, '.tau', 'architect', 'lock');

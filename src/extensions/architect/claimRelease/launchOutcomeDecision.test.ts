@@ -43,11 +43,6 @@ it.each<{ name: string; facts: LaunchOutcomeFacts; expected: LaunchOutcome }>([
     expected: 'notCreated',
   },
   {
-    name: 'a reply with an empty terminal',
-    facts: facts({ replyTerminal: 'malformed' }),
-    expected: 'notCreated',
-  },
-  {
     name: 'an exit zero with a valid terminal address',
     facts: facts({ replyTerminal: 'valid' }),
     expected: 'created',

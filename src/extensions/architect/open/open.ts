@@ -292,6 +292,16 @@ const childGone = (fence: StartFence): boolean => {
   return childPid !== undefined && processState(childPid) === 'gone';
 };
 
+const throwIfOpenCancelled = (signal: AbortSignal | undefined): void => {
+  signal?.throwIfAborted();
+};
+
+const cancelledOpenError = (signal: AbortSignal | undefined): Error => {
+  const reason: unknown = signal?.reason;
+
+  return reason instanceof Error ? reason : new Error('The open was cancelled.');
+};
+
 const waitForTakeover = async (
   fence: StartFence,
   signal: AbortSignal | undefined,
@@ -314,9 +324,7 @@ const waitForTakeover = async (
     }
 
     if (progress === 'cancelled') {
-      signal?.throwIfAborted();
-
-      throw new Error('The open was cancelled.');
+      throw cancelledOpenError(signal);
     }
 
     if (progress === 'expired') {
@@ -332,10 +340,10 @@ const waitForTakeover = async (
     try {
       // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
       await sleep(takeoverPollMilliseconds, undefined, sleepOptions);
-    } catch {
-      signal?.throwIfAborted();
+    } catch (error) {
+      throwIfOpenCancelled(signal);
 
-      throw new Error('The open was cancelled.');
+      throw error;
     }
   }
 };
@@ -400,9 +408,7 @@ const applyLaunchOutcome = async (
   if (launchOutcomeDecision(launchFacts(started)) === 'notCreated') {
     const abandoned = await fence.abandon();
 
-    if (request.hc.signal?.aborted === true) {
-      request.hc.signal.throwIfAborted();
-    }
+    throwIfOpenCancelled(request.hc.signal);
 
     if (!abandoned.adopted) {
       throw launchFailure(started);
@@ -414,9 +420,7 @@ const applyLaunchOutcome = async (
   await fence.recordStarted();
   await waitForTakeover(fence, request.hc.signal);
 
-  if (request.hc.signal?.aborted === true) {
-    request.hc.signal.throwIfAborted();
-  }
+  throwIfOpenCancelled(request.hc.signal);
 };
 
 export const openArchitect = async (
