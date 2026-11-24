@@ -4,8 +4,10 @@ import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 
-import { processState } from '../src/process/process.ts';
+import { processState, signalGroup } from '../src/process/process.ts';
+import { readProcessId } from './osLockProcessId.ts';
 
 export type OsLockState = 'free' | 'held';
 
@@ -51,14 +53,19 @@ type CommandOutcome =
 // flock reports a taken lock with -E, and reports its own failures with <sysexits.h> codes. Once
 // the command runs, its exit code replaces flock's.
 export const osLockConflictExitCode = 75;
+export const osLockMarkerWriteExitCode = 74;
 
-export const osLockParentFixturePath = new URL('fixtures/osLockParent.ts', import.meta.url)
-  .pathname;
+export const osLockParentFixturePathFrom = (moduleUrl: URL): string =>
+  fileURLToPath(new URL('fixtures/osLockParent.ts', moduleUrl));
+
+export const osLockParentFixturePath = fileURLToPath(
+  new URL('fixtures/osLockParent.ts', import.meta.url),
+);
 
 const probePollMilliseconds = 20;
 const probeTimeoutMilliseconds = 10_000;
 const holderSeconds = '60';
-const holderReadyScript = 'printf ready > "$1" || exit 75; shift; exec "$@"';
+const holderReadyScript = `printf ready > "$1" || exit ${String(osLockMarkerWriteExitCode)}; shift; exec "$@"`;
 
 const flockArgv = (lockPath: string, commandArgv: readonly string[], noFork: boolean): string[] => [
   'flock',
@@ -83,6 +90,9 @@ export const osLockHolderArgv = (markerPath: string, commandArgv: readonly strin
   markerPath,
   ...commandArgv,
 ];
+
+const sleepHolderArgv = (lockPath: string, markerPath: string, noFork: boolean): string[] =>
+  flockArgv(lockPath, osLockHolderArgv(markerPath, ['sleep', holderSeconds]), noFork);
 
 const commandOutcomes = new WeakMap<ChildProcess, Promise<CommandOutcome>>();
 
@@ -172,6 +182,14 @@ const waitForHolderReady = async (markerPath: string, watched: ChildProcess): Pr
       // oxlint-disable-next-line no-await-in-loop -- Each wait reads what the last one left.
       const exitCode = await waitForExit(watched);
 
+      if (exitCode === osLockMarkerWriteExitCode) {
+        throw new Error(`The lock holder could not write its readiness marker at ${markerPath}.`);
+      }
+
+      if (exitCode === osLockConflictExitCode) {
+        throw new Error('The lock holder found the lock already held.');
+      }
+
       throw new Error(`The watched process exited ${String(exitCode)} before the lock was taken.`);
     }
 
@@ -183,7 +201,7 @@ const waitForHolderReady = async (markerPath: string, watched: ChildProcess): Pr
 };
 
 const startHolder = (lockPath: string, markerPath: string): ChildProcess =>
-  startCommand(osLockWrapperArgv(lockPath, osLockHolderArgv(markerPath, ['sleep', holderSeconds])));
+  startCommand(sleepHolderArgv(lockPath, markerPath, true));
 
 // A probe takes the lock and lets go of it at once. It is therefore not read-only: a launch that
 // races the probe sees the conflict code.
@@ -233,68 +251,12 @@ export const secondHolderRefused = async (
   }
 };
 
-const parseProcessId = (text: string): number => {
-  const newline = text.indexOf('\n');
-  const line = newline === -1 ? text : text.slice(0, newline);
-  const value = Number(line);
-
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`The parent printed no usable process ID: ${JSON.stringify(text)}.`);
-  }
-
-  return value;
-};
-
-const readProcessId = (child: ChildProcess): Promise<number> =>
-  new Promise((resolve, reject) => {
-    let text = '';
-    let settled = false;
-
-    const settle = (): void => {
-      if (settled || !text.includes('\n')) {
-        return;
-      }
-
-      settled = true;
-
-      try {
-        resolve(parseProcessId(text));
-      } catch (error) {
-        const failure = error instanceof Error ? error : new Error(String(error));
-
-        reject(failure);
-      }
-    };
-
-    child.once('error', (error) => {
-      if (!settled) {
-        settled = true;
-        reject(error);
-      }
-    });
-
-    child.once('exit', () => {
-      if (!settled) {
-        settled = true;
-        reject(new Error('The parent exited before it printed its holder process ID.'));
-      }
-    });
-
-    child.stdout?.on('data', (chunk: Buffer) => {
-      text += chunk.toString('utf8');
-      settle();
-    });
-  });
-
 const startParentWithHolder = async (
   mode: 'exit' | 'wait',
   lockPath: string,
   markerPath: string,
 ): Promise<ParentHolder> => {
-  const holderArgv = osLockWrapperArgv(
-    lockPath,
-    osLockHolderArgv(markerPath, ['sleep', holderSeconds]),
-  );
+  const holderArgv = sleepHolderArgv(lockPath, markerPath, true);
 
   const parent = startCommand(
     [process.execPath, osLockParentFixturePath, mode, markerPath, ...holderArgv],
@@ -315,12 +277,6 @@ const stopProcess = (processId: number | undefined, signal: NodeJS.Signals): voi
   } catch {
     // A process that is already gone needs no signal.
   }
-};
-
-const stopGroup = (groupId: number | undefined, signal: NodeJS.Signals): void => {
-  const negatedGroupId = groupId === undefined ? undefined : -groupId;
-
-  stopProcess(negatedGroupId, signal);
 };
 
 export const holderOutlivesKilledParent = async (
@@ -418,10 +374,9 @@ export const supervisorWithoutFork = async (
   lockPath: string,
   markerPath: string,
 ): Promise<{ stateAfterSupervisorKilled: OsLockState; stateAfterGroupKilled: OsLockState }> => {
-  const supervisor = startCommand(
-    flockArgv(lockPath, osLockHolderArgv(markerPath, ['sleep', holderSeconds]), false),
-    { detached: true },
-  );
+  const supervisor = startCommand(sleepHolderArgv(lockPath, markerPath, false), {
+    detached: true,
+  });
 
   try {
     await waitForHolderReady(markerPath, supervisor);
@@ -431,14 +386,14 @@ export const supervisorWithoutFork = async (
 
     const stateAfterSupervisorKilled = await readOsLockState(lockPath);
 
-    stopGroup(supervisor.pid, 'SIGKILL');
+    signalGroup(supervisor, 'SIGKILL');
 
     return {
       stateAfterGroupKilled: await waitForOsLockState(lockPath, 'free'),
       stateAfterSupervisorKilled,
     };
   } finally {
-    stopGroup(supervisor.pid, 'SIGKILL');
+    signalGroup(supervisor, 'SIGKILL');
     await stopCommand(supervisor);
   }
 };
