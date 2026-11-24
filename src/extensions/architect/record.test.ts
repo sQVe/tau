@@ -869,3 +869,23 @@ it('refuses a path-based hidden ask update when Git tracks a file in the ask dir
 
   expect(await snapshotDirectory(askRecordDirectory(root))).toEqual(before);
 });
+
+it('refuses a path-based hidden ask update outside the ask directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const askId = '0190c1d2-0000-7000-8000-000000000710';
+  const path = join(root, 'tracked', `${askId}.json`);
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeAskRecordAt(path, { ...askRecordV2Hidden, askId });
+  await git(root, 'add', '--', path);
+
+  const before = await readFile(path, 'utf8');
+
+  await expect(
+    updateHiddenAskRecordAt(root, path, (current) => ({ ...current, status: 'failed' })),
+  ).rejects.toThrow('outside .tau/lead/ask');
+
+  expect(await readFile(path, 'utf8')).toBe(before);
+  expect(await readdir(dirname(path))).toEqual([`${askId}.json`]);
+  expect(await git(root, 'diff', '--name-only')).toBe('');
+});

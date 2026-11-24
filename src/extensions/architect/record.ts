@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readdir, realpath } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -416,6 +416,14 @@ export const writeAskRecord = async (root: string, record: AskRecord): Promise<v
 
 const askLockPath = (path: string): string => `${path}.lock`;
 
+const requireAskRecordPath = (checkout: string, path: string): void => {
+  const directory = askRecordDirectory(checkout);
+
+  if (dirname(resolve(path)) !== resolve(directory)) {
+    throw new Error(`Refusing to update an ask record outside .tau/lead/ask: ${path}`);
+  }
+};
+
 // One ask changes under its own cross-process lock, so a writer never reopens a record that
 // another process answered or failed after this writer read it.
 const changeAskRecordAt = async (
@@ -473,6 +481,8 @@ export const updateHiddenAskRecordAt = async (
   update: (current: HiddenAskRecord) => HiddenAskRecord | undefined,
   options: ChangeAskOptions = {},
 ): Promise<HiddenAskRecordChange | undefined> => {
+  requireAskRecordPath(checkout, path);
+
   await ensureTauDirectory(checkout, 'lead/ask');
 
   const change = await changeAskRecordAt(
