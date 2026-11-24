@@ -8,7 +8,7 @@ import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
 import { processState } from '../../../process/process.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import type { LaunchOutcome } from '../claimRelease/launchOutcomeDecision.js';
-import { askRecordPath, readAskRecord, updateHiddenAskRecord, writeAskRecord } from '../record.js';
+import { askRecordPath, updateHiddenAskRecord, writeAskRecord } from '../record.js';
 import type { HiddenAskRecord } from '../record.js';
 import type { StartFence } from '../startFence/startFence.js';
 import type { AskRequest, AskResult } from './ask.js';
@@ -48,6 +48,9 @@ export const askLaunchFailureDetail = 'The ask terminal could not be started.';
 
 export const askWaitFailureDetail = (cancelled: boolean, error: unknown): string =>
   `The ask wait was ${cancelled ? 'cancelled' : 'failed'}: ${errorMessage(error)}`;
+
+export const askAdoptedChildStoppedDetail =
+  'The ask wait ended when its adopted child stopped before the architect answered.';
 
 const askDeadlineReason =
   'The ask reached its deadline. Call architect open to talk to the architect.';
@@ -235,17 +238,26 @@ const settleTimeout = async (
   return resultFromRecord(request.root, started.askId, record);
 };
 
-const waitForAdoptedChild = async (started: HiddenAskRecord, fence: StartFence): Promise<void> => {
+const waitForAdoptedChild = async (
+  started: HiddenAskRecord,
+  fence: StartFence,
+): Promise<boolean> => {
   const childPid = fence.childProcessId();
 
   if (childPid === undefined) {
-    return;
+    return false;
   }
 
-  while (processState(childPid) !== 'gone' && Date.now() < started.deadline) {
+  let state = processState(childPid);
+
+  while (state !== 'gone' && Date.now() < started.deadline) {
     // oxlint-disable-next-line no-await-in-loop -- Each poll waits for the child to change state.
     await sleep(adoptedChildPollMilliseconds);
+
+    state = processState(childPid);
   }
+
+  return state === 'gone';
 };
 
 const launchHiddenRecord = async (
@@ -352,12 +364,15 @@ const runHiddenAsk = async (
   const launched = await launchHiddenRecord(request, initial, recordPath, model, fence, stop);
 
   if (launched.kind === 'adopted') {
-    await waitForAdoptedChild(launched.started, fence);
+    const childGone = await waitForAdoptedChild(launched.started, fence);
 
-    const record = await readAskRecord(request.root, askId);
-    const hidden = record?.route === 'hidden' ? record : undefined;
+    const changed = await updateHiddenAskRecord(request.root, askId, (current) =>
+      childGone
+        ? { ...current, status: 'failed', detail: askAdoptedChildStoppedDetail }
+        : undefined,
+    );
 
-    return resultFromRecord(request.root, askId, hidden);
+    return resultFromRecord(request.root, askId, changed?.record);
   }
 
   const { started, terminal } = launched;

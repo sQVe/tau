@@ -1,7 +1,7 @@
 import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, basename } from 'node:path';
 
-import { expect, it, vi } from 'vitest';
+import { expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import { succeededResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
@@ -13,11 +13,11 @@ import {
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
-import { readAskRecords, writeAskRecord } from '../record.js';
 import { acquireStartFence } from '../startFence/startFence.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
 import {
+  askAdoptedChildStoppedDetail,
   askFailedReason,
   askKeptClaimMessage,
   askLaunchFailureDetail,
@@ -34,6 +34,35 @@ import {
 } from './fixtures/askHarness.js';
 
 const claimArgument = 'TAU_ARCHITECT_CLAIM=';
+
+const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
+
+vi.mock(import('node:timers/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+  const { globalTimerDelay } = await import('../../../../tests/timerFake.js');
+
+  const delay = (<T>(milliseconds?: number, value?: T, options?: { signal?: AbortSignal }) => {
+    poll.started.resolve(undefined);
+
+    return globalTimerDelay(milliseconds, value, options);
+  }) as typeof original.setTimeout;
+
+  return { ...original, setTimeout: delay };
+});
+
+beforeEach(() => {
+  poll.started = Promise.withResolvers<undefined>();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+const startFakeTimers = (): void => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+};
 
 const startDirectory = (root: string): string => join(root, '.tau', 'architect', 'start');
 
@@ -634,7 +663,7 @@ it('fails its own record and releases the claim after a real-shaped nonzero laun
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('waits on an adopted child after an address-less launch and reports from its record', async ({
+it('waits on an adopted child after an address-less launch and settles its running record', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
@@ -643,25 +672,11 @@ it('waits on an adopted child after an address-less launch and reports from its 
   let taken = false;
 
   await recordSession(root);
+  startFakeTimers();
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'run') {
       taken = await adoptAsChild(root, commandArguments);
-
-      const { records } = await readAskRecords(root);
-      const record = records[0];
-
-      if (record?.route === 'hidden') {
-        await writeAskRecord(root, {
-          ...record,
-          status: 'failed',
-          detail: 'The adopted child stopped.',
-        });
-      }
-
-      setTimeout(() => {
-        child.state = 'gone';
-      }, 20);
 
       return { code: 1, killed: false, truncated: false, stdout: '', stderr: 'launch failed' };
     }
@@ -669,10 +684,20 @@ it('waits on an adopted child after an address-less launch and reports from its 
     return hc.exec(command, commandArguments, options);
   };
 
-  const result = await ask({ ...hc, exec }, root);
+  const asking = ask({ ...hc, exec }, root);
+
+  await poll.started.promise;
+
+  child.state = 'gone';
+
+  await vi.advanceTimersByTimeAsync(1_000);
+
+  const result = await asking;
 
   expect(taken).toBe(true);
   expect(result.details).toMatchObject({ status: 'failed', reason: askFailedReason });
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askAdoptedChildStoppedDetail);
   expect(child.signals).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(await readdir(startDirectory(root))).toEqual([]);
