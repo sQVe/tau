@@ -1,7 +1,7 @@
 import { argumentAfter, createExecFake, succeededResult } from './execFake.js';
 import type { ExecFake } from './execFake.js';
 
-export type HerdrAppCommand = 'ls' | 'pane.split' | 'pane.swap' | 'space.new' | 'tab.new';
+export type HerdrAppCommand = 'ls' | 'pane.split' | 'space.new' | 'tab.new';
 
 export interface HerdrAppFakeOptions {
   beforeReply?: (key: HerdrAppCommand) => void;
@@ -11,13 +11,7 @@ export interface HerdrAppFakeOptions {
 const defaultLaunch = JSON.stringify({ space: 'sp-new', tab: 'tb-new', terminal: 't-new' });
 const defaultSplit = JSON.stringify({ pane: 'p-new', terminal: 't-new' });
 
-const commands = new Set<HerdrAppCommand>([
-  'ls',
-  'pane.split',
-  'pane.swap',
-  'space.new',
-  'tab.new',
-]);
+const commands = new Set<HerdrAppCommand>(['ls', 'pane.split', 'space.new', 'tab.new']);
 
 const isHerdrAppCommand = (value: string | undefined): value is HerdrAppCommand =>
   value !== undefined && commands.has(value as HerdrAppCommand);
@@ -43,33 +37,41 @@ const commandOf = (
   return isHerdrAppCommand(name) ? name : undefined;
 };
 
+const listedSpaces = (spaces: HerdrAppFakeOptions['spaces']) =>
+  (spaces ?? []).map((space) => ({
+    id: space.id,
+    name: space.name,
+    folder: space.folder,
+    machine: space.machine ?? null,
+  }));
+
+const tabReply = (commandArguments: readonly string[]): string => {
+  const space = argumentAfter(commandArguments, '--space');
+
+  if (space === undefined) {
+    throw new Error('tab.new needs --space');
+  }
+
+  return JSON.stringify({ space, tab: 'tb-new', terminal: 't-new' });
+};
+
 const replyFor = (
   key: HerdrAppCommand,
   commandArguments: readonly string[],
   spaces: HerdrAppFakeOptions['spaces'],
 ): string => {
-  if (key === 'ls') {
-    const listed = (spaces ?? []).map((space) => ({
-      id: space.id,
-      name: space.name,
-      folder: space.folder,
-      machine: space.machine ?? null,
-    }));
-
-    return JSON.stringify({ spaces: listed });
+  switch (key) {
+    case 'ls':
+      return JSON.stringify({ spaces: listedSpaces(spaces) });
+    case 'pane.split':
+      return defaultSplit;
+    case 'space.new':
+      return defaultLaunch;
+    case 'tab.new':
+      return tabReply(commandArguments);
+    default:
+      throw new Error(`no fake reply for ${String(key)}`);
   }
-
-  if (key === 'pane.split') {
-    return defaultSplit;
-  }
-
-  if (key === 'tab.new') {
-    const space = argumentAfter(commandArguments, '--space') ?? 'sp-new';
-
-    return JSON.stringify({ space, tab: 'tb-new', terminal: 't-new' });
-  }
-
-  return defaultLaunch;
 };
 
 export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<HerdrAppCommand> =>
