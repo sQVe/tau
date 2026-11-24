@@ -87,7 +87,6 @@ const installFakeProcesses = (): FakeStartProcesses => {
   return { spy, states };
 };
 
-// A signal that never arrives must fail its assertion before the runner's own test timeout.
 const signalTimeoutMilliseconds = 2_000;
 
 const waitForSignal = (control: FakeStartProcessControl, count: number): Promise<void> => {
