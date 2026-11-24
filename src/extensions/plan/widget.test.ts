@@ -15,12 +15,15 @@ const borderLine = (width: number): string => `─ Plan ${'─'.repeat(width - 7
 
 const codes = { border: '90', muted: '2', accent: '36', dim: '35', warning: '33' } as const;
 
+const isStyledColor = (color: ThemeColor): color is keyof typeof codes =>
+  Object.hasOwn(codes, color);
+
 const styled = (color: ThemeColor, text: string) => {
-  if (!(color in codes)) {
+  if (!isStyledColor(color)) {
     throw new Error(`The test theme does not style the ${color} color.`);
   }
 
-  return `\u001B[${codes[color as keyof typeof codes]}m${text}\u001B[0m`;
+  return `\u001B[${codes[color]}m${text}\u001B[0m`;
 };
 
 const styledTheme = {
