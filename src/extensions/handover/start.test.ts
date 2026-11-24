@@ -6,7 +6,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { argumentAfter } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { createHerdrAppFake } from '../../../tests/herdrAppFake.js';
+import { createHerdrAppFake, launchesOf } from '../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { tabName } from '../../tabName.js';
@@ -47,9 +47,6 @@ const requestFor = (
 
 const commandsOf = (fake: ExecFake<HerdrAppCommand>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
-
-const launchesOf = (fake: ExecFake<HerdrAppCommand>) =>
-  commandsOf(fake).filter(({ commandArguments }) => commandArguments[0] === 'do');
 
 const tabCommand = (root: string, argv: string, task: string, title: string) => ({
   command: 'herdr-app',
@@ -292,7 +289,8 @@ it('returns the reply and the parsed launch fields', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const reply = '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}';
+
+  const reply = '{"space":"sp-1","tab":"tb-1","terminal":"t-space","extra":"not declared"}';
 
   fake.overrideOutput('space.new', reply);
 
@@ -308,4 +306,61 @@ it('returns the reply and the parsed launch fields', async () => {
     terminal: 't-space',
     spaceStatus: 'created',
   });
+});
+
+it('rejects malformed launch output after exactly one launch', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  fake.overrideOutput('tab.new', '{"space":"space-1","tab":"tb-new"}');
+
+  await expect(
+    startHandover(
+      runtimeOf(fake, root),
+      requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+    ),
+  ).rejects.toThrow('herdr-app do printed unexpected output');
+
+  expect(launchesOf(fake)).toHaveLength(1);
+});
+
+it.each([
+  { label: 'space', reply: '{"space":"","tab":"tb-new","terminal":"t-new"}' },
+  { label: 'tab', reply: '{"space":"space-1","tab":"","terminal":"t-new"}' },
+  { label: 'terminal', reply: '{"space":"space-1","tab":"tb-new","terminal":""}' },
+])('rejects an empty $label in the launch reply after exactly one launch', async ({ reply }) => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  fake.overrideOutput('tab.new', reply);
+
+  await expect(
+    startHandover(
+      runtimeOf(fake, root),
+      requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+    ),
+  ).rejects.toThrow('herdr-app do printed unexpected output');
+
+  expect(launchesOf(fake)).toHaveLength(1);
+});
+
+it('refuses a listed space without a folder before any launch', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  fake.overrideOutput(
+    'ls',
+    JSON.stringify({
+      spaces: [{ id: 'sp-1', name: 'platform', machine: null }],
+    }),
+  );
+
+  await expect(
+    startHandover(runtimeOf(fake, root), requestFor(root, file, { kind: 'decide' }, 'ticket-1')),
+  ).rejects.toThrow('herdr-app ls printed unexpected output');
+
+  expect(launchesOf(fake)).toEqual([]);
 });

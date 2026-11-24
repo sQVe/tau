@@ -38,16 +38,19 @@ export interface StartHandoverResult {
 }
 
 const launchReplySchema = Type.Object({
-  space: Type.String(),
-  tab: Type.String(),
-  terminal: Type.String(),
+  space: Type.String({ minLength: 1 }),
+  tab: Type.String({ minLength: 1 }),
+  terminal: Type.String({ minLength: 1 }),
 });
 
-const realFolder = async (folder: string): Promise<string> => {
+const resolvedFolder = async (
+  folder: string,
+  rethrow: (error: unknown) => boolean,
+): Promise<string> => {
   try {
     return await realpath(folder);
   } catch (error) {
-    if (!isMissingFile(error)) {
+    if (rethrow(error)) {
       throw error;
     }
 
@@ -55,14 +58,11 @@ const realFolder = async (folder: string): Promise<string> => {
   }
 };
 
+const realFolder = (folder: string): Promise<string> =>
+  resolvedFolder(folder, (error) => !isMissingFile(error));
+
 // A listed space may be unreadable or on another machine, so its path must never abort the start.
-const listedSpaceFolder = async (folder: string): Promise<string> => {
-  try {
-    return await realpath(folder);
-  } catch {
-    return resolve(folder);
-  }
-};
+const listedSpaceFolder = (folder: string): Promise<string> => resolvedFolder(folder, () => false);
 
 const placementFor = async (runtime: CommandRuntime, request: StartHandoverRequest) => {
   const spaces = request.spaceChoice.kind === 'decide' ? await listSpaces(runtime) : [];

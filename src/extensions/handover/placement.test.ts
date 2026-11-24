@@ -2,11 +2,9 @@ import { expect, it } from 'vitest';
 
 import type { PiStartTarget } from '../../piStart/piStart.js';
 import { startPlacement } from './placement.js';
-import type { StartPlacement, StartPlacementFacts } from './placement.js';
+import type { StartPlacementFacts } from './placement.js';
 
-type Expected =
-  | { kind: 'launch'; target: PiStartTarget }
-  | { kind: 'refuse'; mentions: readonly string[] };
+type Expected = { kind: 'launch'; target: PiStartTarget } | { kind: 'refuse'; message: string };
 
 const listedSpace = (id: string, name: string, folder: string, machine: string | null = null) => ({
   id,
@@ -15,16 +13,19 @@ const listedSpace = (id: string, name: string, folder: string, machine: string |
   machine,
 });
 
+const folderRefusal = (listed: string): string =>
+  `folder already has a space: ${listed}. Pass space to reuse it, or newSpace: true to create another.`;
+
 const table: { name: string; facts: StartPlacementFacts; expected: Expected }[] = [
   {
     name: 'reuses the space the caller names',
     facts: {
       folder: '/work/repo',
       spaces: [listedSpace('sp-1', 'platform', '/work/repo')],
-      spaceChoice: { kind: 'reuse', space: 'sp-9' },
+      spaceChoice: { kind: 'reuse', space: 'sp-1' },
       title: 'next step',
     },
-    expected: { kind: 'launch', target: { space: 'sp-9' } },
+    expected: { kind: 'launch', target: { space: 'sp-1' } },
   },
   {
     name: 'refuses one space in the start folder',
@@ -34,10 +35,7 @@ const table: { name: string; facts: StartPlacementFacts; expected: Expected }[] 
       spaceChoice: { kind: 'decide' },
       title: 'next step',
     },
-    expected: {
-      kind: 'refuse',
-      mentions: ['folder already has a space', 'sp-1', 'platform'],
-    },
+    expected: { kind: 'refuse', message: folderRefusal('sp-1 "platform"') },
   },
   {
     name: 'refuses two spaces in the start folder and names both',
@@ -50,7 +48,7 @@ const table: { name: string; facts: StartPlacementFacts; expected: Expected }[] 
       spaceChoice: { kind: 'decide' },
       title: 'next step',
     },
-    expected: { kind: 'refuse', mentions: ['sp-1', 'platform', 'sp-2', 'second'] },
+    expected: { kind: 'refuse', message: folderRefusal('sp-1 "platform", sp-2 "second"') },
   },
   {
     name: 'creates when only another folder has a space',
@@ -104,20 +102,6 @@ const table: { name: string; facts: StartPlacementFacts; expected: Expected }[] 
   },
 ];
 
-const outcomeOf = (placement: StartPlacement, expected: Expected) => {
-  if (expected.kind !== 'refuse') {
-    return placement;
-  }
-
-  const message = placement.kind === 'refuse' ? placement.message : '';
-  const missing = expected.mentions.filter((mention) => !message.includes(mention));
-
-  return { kind: placement.kind, missing };
-};
-
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { facts, expected }) => {
-  const outcome = outcomeOf(startPlacement(facts), expected);
-  const wanted = expected.kind === 'refuse' ? { kind: 'refuse', missing: [] } : expected;
-
-  expect(outcome).toEqual(wanted);
+  expect(startPlacement(facts)).toEqual(expected);
 });

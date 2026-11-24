@@ -132,10 +132,6 @@ const sendRequest = (context: ExtensionToolContext, input: HandoverInput): SendH
 };
 
 const spaceChoiceOf = (input: HandoverInput): SpaceChoice => {
-  if (input.space !== undefined && input.newSpace === true) {
-    throw new Error('space and newSpace cannot be used together: pass one of them.');
-  }
-
   if (input.space !== undefined) {
     return { kind: 'reuse', space: input.space };
   }
@@ -184,11 +180,7 @@ const startRequest = (
   };
 };
 
-const runAction = async (
-  hc: HcRuntime,
-  context: ExtensionToolContext,
-  input: HandoverInput,
-): Promise<HandoverDetails> => {
+const rejectMisplacedOptions = (input: HandoverInput): void => {
   if (input.action !== 'start' && input.model !== undefined) {
     throw new Error('model is only for action start.');
   }
@@ -204,6 +196,18 @@ const runAction = async (
   if (input.action !== 'start' && input.space !== undefined) {
     throw new Error('space is only for action start.');
   }
+
+  if (input.space !== undefined && input.newSpace === true) {
+    throw new Error('space and newSpace cannot be used together: pass one of them.');
+  }
+};
+
+const runAction = async (
+  hc: HcRuntime,
+  context: ExtensionToolContext,
+  input: HandoverInput,
+): Promise<HandoverDetails> => {
+  rejectMisplacedOptions(input);
 
   if (input.action === 'prepare') {
     return prepare(context.cwd);
@@ -233,7 +237,7 @@ export const createHandoverTool = (
   - queued: saved and shown once. Never resend it.
   - unknown: it may be saved; see note. Retry with the same file, messageId, and sessionId.
   - An error ending "Nothing was queued." is a refusal.
-- action start: starts Pi with the file's text as its task. Needs file, folder, and name. Without space or newSpace: true, it lists herdr-app's spaces and refuses when the folder already has one on this computer, naming each. Pass model as provider/model-id to run the new Pi on another model. Returns {space, tab, terminal, spaceStatus}, where spaceStatus is created or reused.`,
+- action start: starts Pi with the file's text as its task. Needs file, folder, and name. Without space or newSpace: true, it lists herdr-app's spaces and refuses when the folder already has one on this computer, naming each. Pass model as provider/model-id to run the new Pi on another model. Returns {space, tab, terminal, spaceStatus, reply}, where spaceStatus is created or reused and reply is herdr-app's output.`,
     promptSnippet: 'Prepare, send, and start handover messages.',
     parameters,
     executionMode: 'sequential',
