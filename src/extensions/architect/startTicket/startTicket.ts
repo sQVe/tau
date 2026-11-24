@@ -216,6 +216,19 @@ const entryOf = (directory: string, name: string): StartEntry | undefined => {
   return { kind: 'marker', token, ticket, marker };
 };
 
+// A malformed name for a token must be reported even when another marker for the same token
+// parses, so the sweep never starts past it.
+const isMalformedMarker = (entry: StartEntry): boolean =>
+  entry.kind === 'marker' && entry.marker.kind === 'malformed';
+
+const preferredEntry = (current: StartEntry | undefined, entry: StartEntry): StartEntry => {
+  if (current === undefined || current.kind === 'unused') {
+    return entry;
+  }
+
+  return isMalformedMarker(entry) && !isMalformedMarker(current) ? entry : current;
+};
+
 export const readStartEntries = async (root: string): Promise<StartEntry[]> => {
   const directory = await startDirectory(root);
   const names = await readNames(directory);
@@ -228,11 +241,7 @@ export const readStartEntries = async (root: string): Promise<StartEntry[]> => {
       continue;
     }
 
-    const current = entries.get(entry.token);
-
-    if (current === undefined || current.kind === 'unused') {
-      entries.set(entry.token, entry);
-    }
+    entries.set(entry.token, preferredEntry(entries.get(entry.token), entry));
   }
 
   return [...entries.values()];

@@ -371,3 +371,26 @@ it.each([
   expect(outcome).toEqual({ kind: 'refuseMalformed', path: marker });
   expect(existsSync(marker)).toBe(true);
 });
+
+it('refuses a malformed marker when a valid marker exists for the same token', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const adopted = await startFile(root, 'old-token.adopted.4100');
+  const malformed = await startFile(root, 'old-token.started.bad');
+  const names = await markerNames(root);
+
+  expect(names.indexOf('old-token.adopted.4100')).toBeLessThan(
+    names.indexOf('old-token.started.bad'),
+  );
+
+  const outcome = await sweepStartFolder({
+    root,
+    currentToken: 'current',
+    stateOf: () => 'gone',
+  });
+
+  expect(outcome).toEqual({ kind: 'refuseMalformed', path: malformed });
+  expect(existsSync(adopted)).toBe(true);
+  expect(existsSync(malformed)).toBe(true);
+});
