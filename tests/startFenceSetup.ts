@@ -2,18 +2,14 @@ import { acquireStartFence } from '../src/extensions/architect/startFence/startF
 import type { StartFence } from '../src/extensions/architect/startFence/startFence.js';
 import { takeStartTicket } from './startTicketFake.js';
 
-export const acquiredFence = async (root: string): Promise<StartFence> => {
+export const takenFence = async (root: string): Promise<StartFence> => {
   const acquisition = await acquireStartFence(root);
 
   if (acquisition.kind !== 'acquired') {
     throw new Error('The start fence was not acquired.');
   }
 
-  return acquisition.fence;
-};
-
-export const takenFence = async (root: string): Promise<StartFence> => {
-  const fence = await acquiredFence(root);
+  const fence = acquisition.fence;
 
   await fence.createTicket();
 
