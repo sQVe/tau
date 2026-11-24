@@ -3,6 +3,7 @@ import type { setTimeout as promiseDelay } from 'node:timers/promises';
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
+import { writeNextLockOwnerRecordSync } from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeStartProcessId,
   takeStartTicket,
@@ -169,6 +170,98 @@ it('fails at once when the launched child dies before it takes the lock', async 
   const failure = await openArchitect(requestFor(root, config.location, runtime)).catch(
     (error: unknown) => error,
   );
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe(takeoverChildGoneError().message);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+});
+
+it('returns the takeover result when the child adopts after the wait expires', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+
+  const processControl = useFakeStartProcess(cleanup, 'running');
+  const sessionFile = await recordSession(root);
+
+  startFakeTimers();
+
+  const deadline = Date.now() + 60_000;
+  const previousKill = vi.mocked(process.kill).getMockImplementation();
+  let probesAfterDeadline = 0;
+
+  const spy = vi.spyOn(process, 'kill').mockImplementation((processId, signal) => {
+    if (processId === process.pid && signal === 0 && Date.now() >= deadline) {
+      probesAfterDeadline += 1;
+
+      if (probesAfterDeadline === 2) {
+        writeNextLockOwnerRecordSync(architectLockPath(root), {
+          checkout: root,
+          pid: fakeStartProcessId,
+          token: 'adopted',
+        });
+
+        return true;
+      }
+    }
+
+    return previousKill?.(processId, signal) ?? true;
+  });
+
+  cleanup(() => {
+    spy.mockImplementation(previousKill ?? (() => true));
+  });
+
+  const opening = openArchitect(requestFor(root, config.location, runtime));
+
+  await poll.started.promise;
+  await vi.advanceTimersByTimeAsync(60_300);
+  await processControl.nextSignal(1);
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  const result = await opening;
+
+  expect(result).toEqual({ status: 'resumed', sessionFile });
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({
+    pid: fakeStartProcessId,
+  });
+});
+
+it('throws when the child is gone after the wait saw its adoption', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const child = useFakeStartProcess(cleanup, 'running');
+
+  await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      const holder = await readLiveLockHolder(architectLockPath(root));
+      const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+
+      await takeStartTicket(argv);
+
+      const release = await adoptClaim(root, holder?.token ?? '', 'adopted', fakeStartProcessId);
+
+      if (release !== undefined) {
+        cleanup(release);
+      }
+
+      child.state = 'gone';
+
+      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+    }
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const failure = await openArchitect(
+    requestFor(root, config.location, { ...runtime, exec }),
+  ).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toBe(takeoverChildGoneError().message);
@@ -523,6 +616,8 @@ it('keeps a successful result when a split adopts the claim', async ({
   const { root, config } = await setup(cleanup);
   const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
   const sessionFile = await recordSession(root);
+
+  useFakeStartProcess(cleanup, 'running');
 
   const exec: typeof runtime.exec = async (command, commandArguments, options) => {
     if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {

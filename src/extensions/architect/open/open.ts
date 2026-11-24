@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
 import { userConfigPath } from '../../../config/config.js';
 import { readRoleModel } from '../../../config/roleModels.js';
-import { errorMessage, isMissingFile } from '../../../errors.js';
+import { errorMessage, isMissingFile, toError } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../../fileLock/fileLock.js';
 import { isBareRootWithoutGitEntry } from '../../../git.js';
@@ -377,31 +377,48 @@ const runningTerminal = async (
   return reuse.kind === 'reuse' ? reuse.terminal : undefined;
 };
 
+const settleLaunch = async (
+  request: OpenRequest,
+  fence: StartFence,
+  failure: Error,
+): Promise<void> => {
+  const completion = await fence.complete();
+
+  throwIfOpenCancelled(request.hc.signal);
+
+  if (completion.outcome === 'adopted') {
+    return;
+  }
+
+  if (completion.outcome === 'unresolved' || completion.claim === 'kept') {
+    throw openKeptClaimError(request.root, completion.failure);
+  }
+
+  throw failure;
+};
+
 const applyLaunchOutcome = async (
   request: OpenRequest,
   fence: StartFence,
   started: PiLaunchResult,
 ): Promise<void> => {
   if (launchOutcomeDecision(launchFacts(started)) === 'notCreated') {
-    const completion = await fence.complete();
+    await settleLaunch(request, fence, launchFailure(started));
 
-    throwIfOpenCancelled(request.hc.signal);
-
-    if (completion.outcome === 'adopted') {
-      return;
-    }
-
-    if (completion.claim === 'kept') {
-      throw openKeptClaimError(request.root, completion.failure);
-    }
-
-    throw launchFailure(started);
+    return;
   }
 
   await fence.recordStarted();
-  await waitForTakeover(fence, request.hc.signal);
 
-  throwIfOpenCancelled(request.hc.signal);
+  let waitFailure: Error | undefined;
+
+  try {
+    await waitForTakeover(fence, request.hc.signal);
+  } catch (error) {
+    waitFailure = toError(error);
+  }
+
+  await settleLaunch(request, fence, waitFailure ?? takeoverChildGoneError());
 };
 
 export const openArchitect = async (
@@ -445,8 +462,6 @@ export const openArchitect = async (
 
     const result = launchResult(prepared);
 
-    // applyLaunchOutcome returns only after the child adopted the claim or another holder took it.
-    await fence.complete();
     keptClaims.delete(request.root);
 
     return result;
