@@ -1,7 +1,7 @@
 import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import {
@@ -12,6 +12,35 @@ import {
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
 import { acquireStartFence } from './startFence.js';
+
+const poll = vi.hoisted(() => ({ started: Promise.withResolvers<undefined>() }));
+
+vi.mock(import('node:timers/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+  const { globalTimerDelay } = await import('../../../../tests/timerFake.js');
+
+  const delay = (<T>(milliseconds?: number, value?: T, options?: { signal?: AbortSignal }) => {
+    poll.started.resolve(undefined);
+
+    return globalTimerDelay(milliseconds, value, options);
+  }) as typeof original.setTimeout;
+
+  return { ...original, setTimeout: delay };
+});
+
+beforeEach(() => {
+  poll.started = Promise.withResolvers<undefined>();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+const startFakeTimers = (): void => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+};
 
 const startDirectory = (root: string): string => join(root, '.tau', 'architect', 'start');
 
@@ -84,6 +113,36 @@ it('keeps the adopted child after the adopter releases its lock and never signal
 
   expect(finished).toEqual({ kept: false });
   expect(processControl.signals).toEqual([]);
+});
+
+it('sends no second signal when the child adopts during the stop', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const processControl = useFakeStartProcess(onTestFinished, 'running');
+  const acquisition = await acquireStartFence(root);
+
+  if (acquisition.kind !== 'acquired') {
+    throw new Error('The start fence was not acquired.');
+  }
+
+  const { fence } = acquisition;
+
+  await fence.createTicket();
+
+  expect(await takeStartTicket(fence.wrapArgv(['true']))).toBe(true);
+  await fence.recordStarted();
+
+  startFakeTimers();
+
+  const finishing = fence.finish({ adopted: false, stopAttempted: false });
+
+  await poll.started.promise;
+  await adoptTakenTicket(root);
+  await vi.advanceTimersByTimeAsync(10_000);
+
+  const finished = await finishing;
+
+  expect(finished).toEqual({ kept: false });
+  expect(processControl.signals).toEqual(['SIGTERM']);
 });
 
 it('counts a lock holder with the child process id as adopted when its rename failed', async ({

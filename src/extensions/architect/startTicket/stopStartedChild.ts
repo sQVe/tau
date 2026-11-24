@@ -4,11 +4,15 @@ import { processState } from '../../../process/process.js';
 import type { ProcessState } from '../../../process/process.js';
 
 export interface StopStartedChildOptions {
-  stateOf: (processId: number) => ProcessState;
-  signal: (processId: number, signal: NodeJS.Signals) => void;
-  now: () => number;
-  sleep: (milliseconds: number) => Promise<void>;
+  stateOf?: (processId: number) => ProcessState;
+  signal?: (processId: number, signal: NodeJS.Signals) => void;
+  now?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
+  // Asked before each signal. A child that adopted is no longer this caller's to stop.
+  adopted?: () => Promise<boolean>;
 }
+
+type StopOptions = Required<StopStartedChildOptions>;
 
 const stopWindowMilliseconds = 10_000;
 const termWindowMilliseconds = 5_000;
@@ -22,17 +26,18 @@ const signalProcess = (processId: number, signal: NodeJS.Signals): void => {
   }
 };
 
-const defaultOptions: StopStartedChildOptions = {
+const defaultOptions: StopOptions = {
   stateOf: processState,
   signal: signalProcess,
   now: () => Date.now(),
   sleep: (milliseconds) => sleep(milliseconds),
+  adopted: () => Promise.resolve(false),
 };
 
 const waitForStop = async (
   processId: number,
   limit: number,
-  options: StopStartedChildOptions,
+  options: StopOptions,
 ): Promise<ProcessState> => {
   for (;;) {
     const state = options.stateOf(processId);
@@ -53,29 +58,36 @@ const waitForStop = async (
 };
 
 // Stops the process that took a start ticket. One absolute deadline covers both signals.
-export const stopStartedChild = (
+export const stopStartedChild = async (
   processId: number,
-  options: StopStartedChildOptions = defaultOptions,
+  requested: StopStartedChildOptions = {},
 ): Promise<ProcessState> => {
+  const options: StopOptions = { ...defaultOptions, ...requested };
   const deadline = options.now() + stopWindowMilliseconds;
   const initial = options.stateOf(processId);
 
   if (initial !== 'running') {
-    return Promise.resolve(initial);
+    return initial;
+  }
+
+  if (await options.adopted()) {
+    return initial;
   }
 
   options.signal(processId, 'SIGTERM');
 
-  return (async (): Promise<ProcessState> => {
-    const termDeadline = Math.min(options.now() + termWindowMilliseconds, deadline);
-    const afterTerm = await waitForStop(processId, termDeadline, options);
+  const termDeadline = Math.min(options.now() + termWindowMilliseconds, deadline);
+  const afterTerm = await waitForStop(processId, termDeadline, options);
 
-    if (afterTerm !== 'running' || options.now() >= deadline) {
-      return afterTerm;
-    }
+  if (afterTerm !== 'running' || options.now() >= deadline) {
+    return afterTerm;
+  }
 
-    options.signal(processId, 'SIGKILL');
+  if (await options.adopted()) {
+    return afterTerm;
+  }
 
-    return waitForStop(processId, deadline, options);
-  })();
+  options.signal(processId, 'SIGKILL');
+
+  return waitForStop(processId, deadline, options);
 };

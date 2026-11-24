@@ -8,6 +8,7 @@ export interface ClaimReleaseRequest {
   adopted: boolean;
   child: ClaimReleaseFacts['child'];
   processId: number | undefined;
+  childAdopted: () => Promise<boolean>;
   stopAttempted?: boolean;
 }
 
@@ -19,15 +20,16 @@ export interface ClaimReleaseResult {
 // Releases the claim only when the process that took the ticket is gone. A running or unknown
 // child keeps the claim and the marker.
 export const releaseClaim = async (request: ClaimReleaseRequest): Promise<ClaimReleaseResult> => {
-  const decide = (child: ClaimReleaseFacts['child'], stopAttempted: boolean) =>
+  const decide = (child: ClaimReleaseFacts['child'], stopAttempted: boolean, adopted: boolean) =>
     claimReleaseDecision({
       ticket: request.ticket,
-      adopted: request.adopted,
+      adopted,
       child,
       stopAttempted,
     });
 
-  const first = decide(request.child, request.stopAttempted ?? false);
+  let adopted = request.adopted;
+  const first = decide(request.child, request.stopAttempted ?? false, adopted);
 
   if (first === 'release') {
     await request.claim.release();
@@ -40,9 +42,19 @@ export const releaseClaim = async (request: ClaimReleaseRequest): Promise<ClaimR
   }
 
   const child =
-    request.processId === undefined ? 'unknown' : await stopStartedChild(request.processId);
+    request.processId === undefined
+      ? 'unknown'
+      : await stopStartedChild(request.processId, {
+          adopted: async () => {
+            if (!adopted) {
+              adopted = await request.childAdopted();
+            }
 
-  const second = decide(child, true);
+            return adopted;
+          },
+        });
+
+  const second = decide(child, true, adopted);
 
   if (second === 'release') {
     await request.claim.release();

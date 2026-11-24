@@ -195,6 +195,7 @@ const startFence = (
       adopted,
       child: state.child,
       processId: state.childPid,
+      childAdopted,
       stopAttempted: request.stopAttempted,
     });
 

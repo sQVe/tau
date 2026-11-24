@@ -56,6 +56,24 @@ it('sends no SIGKILL when the process is gone after SIGTERM', async () => {
   expect(signals).toEqual(['SIGTERM']);
 });
 
+it('sends no SIGKILL when the child adopts after SIGTERM', async () => {
+  const clock = clockOf(0);
+  const signals: NodeJS.Signals[] = [];
+  let adopted = false;
+
+  const state = await stopStartedChild(4005, {
+    ...optionsOf(clock, () => 'running', signals),
+    signal: (_processId, signal) => {
+      signals.push(signal);
+      adopted = signal === 'SIGTERM';
+    },
+    adopted: () => Promise.resolve(adopted),
+  });
+
+  expect(state).toBe('running');
+  expect(signals).toEqual(['SIGTERM']);
+});
+
 it('returns gone when the process ends after SIGKILL', async () => {
   const clock = clockOf(0);
   const signals: NodeJS.Signals[] = [];

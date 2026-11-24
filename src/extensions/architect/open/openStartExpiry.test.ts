@@ -124,7 +124,7 @@ it('keeps the claim when the child never goes away and finishes within one recov
     });
 
   await poll.started.promise;
-  await vi.advanceTimersByTimeAsync(10_100);
+  await vi.advanceTimersByTimeAsync(10_000);
 
   const failure = await opening;
 
