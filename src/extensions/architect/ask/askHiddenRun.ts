@@ -116,7 +116,7 @@ const hiddenAskLaunch = async (
       noParent: true,
       notify: false,
       labels: { 'tau.architect.ask': initial.askId },
-      timeout: launchTimeoutMilliseconds,
+      execTimeoutMilliseconds: launchTimeoutMilliseconds,
     });
 
     const replyTerminal = terminal.address === '' ? 'malformed' : 'valid';

@@ -99,7 +99,7 @@ export const createHcFake = (): HcFake => {
 
       return isCommand(first) ? first : undefined;
     },
-    handlerFor: (key) => async (commandArguments) => {
+    handlerFor: (key) => (commandArguments) => {
       const failure = failures.get(key);
 
       if (failure !== undefined) {
@@ -115,10 +115,7 @@ export const createHcFake = (): HcFake => {
         return failedResult(terminalFailure);
       }
 
-      const result =
-        reply === undefined ? failedResult(`unknown command: ${key}`) : succeededResult(reply);
-
-      return result;
+      return reply === undefined ? failedResult(`unknown command: ${key}`) : succeededResult(reply);
     },
   });
 

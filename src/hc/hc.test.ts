@@ -207,46 +207,16 @@ it('passes --all only when all terminals are requested', async () => {
   ]);
 });
 
-it('passes no run timeout when none is requested', async () => {
+it('passes the run timeout to the exec options only when one is requested', async () => {
   const fake = createHcFake();
-  let hasTimeout: boolean | undefined;
-
-  const runtime: HcRuntime = {
-    exec: (command, commandArguments, options) => {
-      hasTimeout = options !== undefined && 'timeout' in options;
-
-      return fake.exec(command, commandArguments, options);
-    },
-    connect: fake.connect,
-    cwd: '/repository',
-  };
 
   fake.reply('run', JSON.stringify({ address: 't7', state: 'live' }));
 
-  await run(runtime, { argv: ['pi'] });
+  await run(runtimeOf(fake), { argv: ['pi'], execTimeoutMilliseconds: 30_000 });
+  await run(runtimeOf(fake), { argv: ['pi'] });
 
-  expect(hasTimeout).toBe(false);
-});
-
-it('passes a run timeout to the exec options', async () => {
-  const fake = createHcFake();
-  let timeout: number | undefined;
-
-  const runtime: HcRuntime = {
-    exec: (command, commandArguments, options) => {
-      timeout = options?.timeout;
-
-      return fake.exec(command, commandArguments, options);
-    },
-    connect: fake.connect,
-    cwd: '/repository',
-  };
-
-  fake.reply('run', JSON.stringify({ address: 't7', state: 'live' }));
-
-  await run(runtime, { argv: ['pi'], timeout: 30_000 });
-
-  expect(timeout).toBe(30_000);
+  expect(fake.calls[0]?.timeout).toBe(30_000);
+  expect(fake.calls[1]).not.toHaveProperty('timeout');
 });
 
 it('separates a get terminal that starts with a dash from the flags', async () => {

@@ -8,6 +8,8 @@ export interface ExecCall {
   command: string;
   commandArguments: string[];
   signal: AbortSignal | undefined;
+  // Present only when the caller set a timeout, so a test can tell absent from undefined.
+  timeout?: number | undefined;
 }
 
 export type ExecHandler = (
@@ -67,6 +69,7 @@ export const createExecFake = <Key extends string>(setup: ExecFakeSetup<Key>): E
       command,
       commandArguments: [...commandArguments],
       signal: options?.signal,
+      ...(options?.timeout === undefined ? {} : { timeout: options.timeout }),
     });
 
     const key = setup.keyOf(command, commandArguments);

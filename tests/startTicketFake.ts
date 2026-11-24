@@ -113,9 +113,14 @@ const startTicketOf = (
   processId: number,
 ): StartTicketPaths | undefined => {
   const index = argv.indexOf(wrapperName);
+
+  if (index === -1) {
+    return undefined;
+  }
+
   const ticket = argv[index + 1];
 
-  if (index === -1 || ticket === undefined) {
+  if (ticket === undefined) {
     return undefined;
   }
 

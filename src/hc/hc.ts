@@ -23,7 +23,7 @@ export interface RunRequest {
   noParent?: boolean | undefined;
   background?: boolean | undefined;
   notify?: boolean | undefined;
-  timeout?: number | undefined;
+  execTimeoutMilliseconds?: number | undefined;
 }
 
 export interface LsRequest {
@@ -102,7 +102,7 @@ export const run = (runtime: HcRuntime, request: RunRequest): Promise<HcTerminal
     'run',
     ['run', '--json', ...flags, ...labelFlags(request.labels), '--', ...request.argv],
     'hc run',
-    { timeout: request.timeout },
+    { timeout: request.execTimeoutMilliseconds },
   );
 };
 

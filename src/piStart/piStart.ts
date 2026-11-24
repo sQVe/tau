@@ -2,6 +2,7 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
+import type { TSchema } from 'typebox';
 
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
@@ -47,6 +48,20 @@ export interface PiLaunchResult {
   terminal: string | undefined;
   error: unknown;
 }
+
+interface LaunchCommand {
+  command: string;
+  commandArguments: string[];
+  label: string;
+}
+
+type TerminalReply = (
+  label: string,
+  reply: string,
+) => {
+  terminal: string | undefined;
+  error: unknown;
+};
 
 export const launchTimeoutMilliseconds = 30_000;
 
@@ -198,20 +213,18 @@ const replyTerminal = (reply: string): string | undefined => {
 
 const launch = async (
   runtime: CommandRuntime,
-  command: string,
-  commandArguments: string[],
-  label: string,
-  terminalOf: (reply: string) => { terminal: string | undefined; error: unknown },
+  command: LaunchCommand,
+  terminalOf: TerminalReply,
 ): Promise<PiLaunchResult> => {
   try {
-    const result = await runtime.exec(command, commandArguments, {
+    const result = await runtime.exec(command.command, command.commandArguments, {
       cwd: runtime.cwd,
       timeout: launchTimeoutMilliseconds,
     });
 
-    const { terminal, error } = terminalOf(result.stdout);
+    const { terminal, error } = terminalOf(command.label, result.stdout);
 
-    return launchResult(runtime, result, terminal, commandError(label, result) ?? error);
+    return launchResult(runtime, result, terminal, commandError(command.label, result) ?? error);
   } catch (error) {
     return {
       exitCode: null,
@@ -225,35 +238,27 @@ const launch = async (
   }
 };
 
-const spaceTerminal = (
+const terminalFromReply = (
+  schema: TSchema,
   label: string,
   reply: string,
 ): { terminal: string | undefined; error: unknown } => {
   try {
     const created = parseJson(label, reply);
 
-    checkOutput(label, terminalReplySchema, created);
+    checkOutput(label, schema, created);
 
-    return { terminal: created.terminal, error: undefined };
+    return { terminal: replyTerminal(reply), error: undefined };
   } catch (error) {
     return { terminal: undefined, error };
   }
 };
 
-const splitTerminal = (
-  label: string,
-  reply: string,
-): { terminal: string | undefined; error: unknown } => {
-  try {
-    const created = parseJson(label, reply);
+const spaceTerminal: TerminalReply = (label, reply) =>
+  terminalFromReply(terminalReplySchema, label, reply);
 
-    checkOutput(label, splitReplySchema, created);
-
-    return { terminal: created.terminal, error: undefined };
-  } catch (error) {
-    return { terminal: undefined, error };
-  }
-};
+const splitTerminal: TerminalReply = (label, reply) =>
+  terminalFromReply(splitReplySchema, label, reply);
 
 export const launchPiSession = async (
   runtime: CommandRuntime,
@@ -261,8 +266,14 @@ export const launchPiSession = async (
 ): Promise<PiLaunchResult> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
-  return launch(runtime, 'herdr-app', startArguments(request), 'herdr-app do', (reply) =>
-    spaceTerminal('herdr-app do', reply),
+  return launch(
+    runtime,
+    {
+      command: 'herdr-app',
+      commandArguments: startArguments(request),
+      label: 'herdr-app do',
+    },
+    spaceTerminal,
   );
 };
 
@@ -274,10 +285,12 @@ export const launchPiSessionRightOf = async (
 
   return launch(
     runtime,
-    'herdr-app',
-    splitArguments(request, request.pane),
-    'herdr-app do pane.split',
-    (reply) => splitTerminal('herdr-app do pane.split', reply),
+    {
+      command: 'herdr-app',
+      commandArguments: splitArguments(request, request.pane),
+      label: 'herdr-app do pane.split',
+    },
+    splitTerminal,
   );
 };
 
