@@ -11,9 +11,9 @@ import { senderOf } from '../../handoverSender.js';
 import type { HandoverSender } from '../../handoverSender.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import type { PiStartTarget } from '../../piStart/piStart.js';
 import { currentRole } from '../../role/role.js';
 import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
+import type { SpaceChoice } from './placement.js';
 import { sendHandover } from './send.js';
 import type { SendHandoverRequest, SendHandoverResult } from './send.js';
 import { startHandover } from './start.js';
@@ -45,13 +45,19 @@ const parameters = Type.Object({
   ),
   space: Type.Optional(
     Type.String({
-      description: 'start: herdr-app space ID where the new Pi runs. Omit it to use name.',
+      description: 'start: space ID to reuse. Opens a tab there and leaves its panes alone.',
+    }),
+  ),
+  newSpace: Type.Optional(
+    Type.Boolean({
+      description:
+        'start: true creates another space even when the folder has one. Not with space.',
     }),
   ),
   name: Type.Optional(
     Type.String({
       description:
-        'start: short title of the work, about 40 characters. Names the tab as lead: <name>, and names a new space when space is omitted.',
+        'start: short title of the work, about 40 characters. Names the tab as lead: <name> and any space it creates.',
     }),
   ),
   model: Type.Optional(
@@ -125,12 +131,16 @@ const sendRequest = (context: ExtensionToolContext, input: HandoverInput): SendH
   };
 };
 
-const startTarget = (input: HandoverInput, name: string): PiStartTarget => {
+const spaceChoiceOf = (input: HandoverInput): SpaceChoice => {
   if (input.space !== undefined) {
-    return { space: input.space };
+    return { kind: 'reuse', space: input.space };
   }
 
-  return { name };
+  if (input.newSpace === true) {
+    return { kind: 'create' };
+  }
+
+  return { kind: 'decide' };
 };
 
 const startRequest = (
@@ -163,18 +173,14 @@ const startRequest = (
     cwd: context.cwd,
     file: input.file,
     folder: input.folder,
-    target: startTarget(input, name),
+    spaceChoice: spaceChoiceOf(input),
     title: name,
     model: input.model,
     sender: currentSender(context),
   };
 };
 
-const runAction = async (
-  hc: HcRuntime,
-  context: ExtensionToolContext,
-  input: HandoverInput,
-): Promise<HandoverDetails> => {
+const rejectMisplacedOptions = (input: HandoverInput): void => {
   if (input.action !== 'start' && input.model !== undefined) {
     throw new Error('model is only for action start.');
   }
@@ -182,6 +188,29 @@ const runAction = async (
   if (input.action !== 'send' && input.final !== undefined) {
     throw new Error('final is only for action send.');
   }
+
+  if (input.action !== 'start' && input.newSpace !== undefined) {
+    throw new Error('newSpace is only for action start.');
+  }
+
+  if (input.action !== 'start' && input.space !== undefined) {
+    throw new Error('space is only for action start.');
+  }
+};
+
+const rejectExclusiveSpaceOptions = (input: HandoverInput): void => {
+  if (input.space !== undefined && input.newSpace === true) {
+    throw new Error('space and newSpace cannot be used together: pass one of them.');
+  }
+};
+
+const runAction = async (
+  hc: HcRuntime,
+  context: ExtensionToolContext,
+  input: HandoverInput,
+): Promise<HandoverDetails> => {
+  rejectMisplacedOptions(input);
+  rejectExclusiveSpaceOptions(input);
 
   if (input.action === 'prepare') {
     return prepare(context.cwd);
@@ -211,7 +240,7 @@ export const createHandoverTool = (
   - queued: saved and shown once. Never resend it.
   - unknown: it may be saved; see note. Retry with the same file, messageId, and sessionId.
   - An error ending "Nothing was queued." is a refusal.
-- action start: starts Pi with the file's text as its task. Needs file, folder, and name (a short title of the work, used in the tab name); space reuses a space, else name names a new one. Pass model as provider/model-id to run the new Pi on another model. Returns {reply}, herdr-app's output.`,
+- action start: starts Pi with the file's text as its task. Needs file, folder, and name. Without space or newSpace: true, it lists herdr-app's spaces and refuses when the folder already has one on this computer, naming each. Pass model as provider/model-id to run the new Pi on another model. Returns {space, tab, terminal, spaceStatus, reply}, where spaceStatus is created or reused and reply is herdr-app's output.`,
     promptSnippet: 'Prepare, send, and start handover messages.',
     parameters,
     executionMode: 'sequential',

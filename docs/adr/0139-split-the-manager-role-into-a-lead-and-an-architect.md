@@ -211,11 +211,14 @@ The lead's tab holds only the lead on the left and the architect on the right. W
 `<lead tab>-workers`, and `draft_review` opens tuicr in `<caller tab>-review`. For other terminals
 that agents start, the rule is to open a new tab with `tab.new`.
 
-The exception is `handover start` when no workspace exists for the checkout. It creates the
-workspace with Pi and its task in the first tab. The operation that starts Pi also creates the
-workspace so the user sees the task in the first tab instead of an empty shell. In an existing
-workspace, `handover start` uses `tab.new` and leaves existing panes alone. Each handover tab is
-named `lead: <name>`, after the short title of its work.
+By default, `handover start` creates a workspace for the checkout on this computer only when the
+folder has none. It creates the workspace with Pi and its task in the first tab, so the user sees
+the task instead of an empty shell. When a workspace for the folder exists and the caller names no
+space, `handover start` refuses and names each matching workspace. A second workspace for one
+checkout splits its work, and two leads can then edit the same checkout. The caller passes `space`
+to open a `tab.new` tab in that workspace and leave its panes alone. The caller passes
+`newSpace: true` to create another workspace on purpose. The two cannot be combined. Each handover
+tab is named `lead: <name>`, after the short title of its work.
 
 ### Models
 

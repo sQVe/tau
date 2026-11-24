@@ -12,6 +12,8 @@ import { piArguments } from './piArguments.js';
 
 export type PiStartTarget = { space: string } | { name: string };
 
+type PiStartTargetResolver = () => Promise<PiStartTarget>;
+
 interface PiSessionRequest {
   folder: string;
   task: string;
@@ -21,10 +23,17 @@ interface PiSessionRequest {
   argvWrapper?: ((argv: string[]) => string[]) | undefined;
 }
 
-export interface PiStartRequest extends PiSessionRequest {
-  target: PiStartTarget;
+interface PiStartBaseRequest extends PiSessionRequest {
   bareRoot: boolean;
   tabName: string;
+}
+
+interface PiLaunchRequest extends PiStartBaseRequest {
+  target: PiStartTarget;
+}
+
+export interface PiStartRequest extends PiStartBaseRequest {
+  target: PiStartTarget | PiStartTargetResolver;
 }
 
 export interface PiStartRightOfRequest extends PiSessionRequest {
@@ -100,7 +109,7 @@ const placementOf = (target: PiStartTarget): LaunchPlacement =>
         tabNameFlag: '--tab',
       };
 
-const launchArguments = (request: PiStartRequest, placement: LaunchPlacement): string[] => [
+const launchArguments = (request: PiStartBaseRequest, placement: LaunchPlacement): string[] => [
   'do',
   placement.command,
   placement.destinationFlag,
@@ -128,8 +137,8 @@ const splitArguments = (request: PiSessionRequest, pane: string): string[] => [
   JSON.stringify(['env', '-C', request.folder, ...argvOf(request, request.task)]),
 ];
 
-const startArguments = (request: PiStartRequest): string[] =>
-  launchArguments(request, placementOf(request.target));
+const startArguments = (request: PiStartBaseRequest, target: PiStartTarget): string[] =>
+  launchArguments(request, placementOf(target));
 
 const isDirectory = (path: string): Promise<boolean> =>
   stat(path).then(
@@ -262,9 +271,13 @@ const spaceTerminal: TerminalReply = (label, reply) =>
 const splitTerminal: TerminalReply = (label, reply) =>
   terminalFromReply(splitReplySchema, label, reply);
 
+const isTargetResolver = (
+  target: PiStartTarget | PiStartTargetResolver,
+): target is PiStartTargetResolver => typeof target === 'function';
+
 export const launchPiSession = async (
   runtime: CommandRuntime,
-  request: PiStartRequest,
+  request: PiLaunchRequest,
 ): Promise<PiLaunchResult> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
@@ -272,7 +285,7 @@ export const launchPiSession = async (
     runtime,
     {
       command: 'herdr-app',
-      commandArguments: startArguments(request),
+      commandArguments: startArguments(request, request.target),
       label: 'herdr-app do',
     },
     spaceTerminal,
@@ -299,13 +312,24 @@ export const launchPiSessionRightOf = async (
 export const startPiSession = async (
   runtime: CommandRuntime,
   request: PiStartRequest,
-): Promise<{ reply: string; terminal?: string }> => {
+): Promise<{ reply: string; target: PiStartTarget; terminal?: string }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
-  const reply = await runCommand(runtime, 'herdr-app', startArguments(request), 'herdr-app do');
+  const target = isTargetResolver(request.target) ? await request.target() : request.target;
+
+  // The resolver awaits, so the signal can abort after the checkout check above.
+  runtime.signal?.throwIfAborted();
+
+  const reply = await runCommand(
+    runtime,
+    'herdr-app',
+    startArguments(request, target),
+    'herdr-app do',
+  );
+
   const terminal = replyTerminal(reply);
 
-  return terminal === undefined ? { reply } : { reply, terminal };
+  return terminal === undefined ? { reply, target } : { reply, target, terminal };
 };
 
 export const startPiSessionRightOf = async (

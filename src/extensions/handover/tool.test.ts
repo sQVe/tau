@@ -22,7 +22,6 @@ import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { tabName } from '../../tabName.js';
 import { readHandoverText } from './handoverFile.js';
 import { createHandoverTool } from './tool.js';
 
@@ -536,55 +535,6 @@ it('refuses an already-aborted send before any hc call', async () => {
   expect(fake.calls).toEqual([]);
 });
 
-it('starts a tab in a space and returns the herdr-app reply', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-  const app = createHerdrAppFake();
-
-  const result = await createStartTool(app).execute(
-    'call',
-    { action: 'start', file, folder: root, space: 'space-1', name: 'Next steps' },
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
-
-  expect(result.details).toEqual({ reply: '{"ok":true}' });
-  expect(app.calls).toHaveLength(1);
-
-  const [launch] = app.calls;
-
-  expect(argumentAfter(launch?.commandArguments ?? [], '--space')).toBe('space-1');
-  expect(argumentAfter(launch?.commandArguments ?? [], '--folder')).toBe(root);
-
-  expect(argumentAfter(launch?.commandArguments ?? [], '--name')).toBe(
-    tabName('lead', 'Next steps'),
-  );
-});
-
-it('starts a new space named after the handover title', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-  const app = createHerdrAppFake();
-
-  const result = await createStartTool(app).execute(
-    'call',
-    { action: 'start', file, folder: root, name: 'ticket-1' },
-    undefined,
-    undefined,
-    noUiContext(root),
-  );
-
-  expect(result.details).toEqual({ reply: '{"ok":true}' });
-
-  const [launch] = app.calls;
-
-  expect(launch?.commandArguments[1]).toBe('space.new');
-  expect(argumentAfter(launch?.commandArguments ?? [], '--name')).toBe('ticket-1');
-
-  expect(argumentAfter(launch?.commandArguments ?? [], '--tab')).toBe(tabName('lead', 'ticket-1'));
-});
-
 it('starts an architect tab without a sender', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
@@ -620,7 +570,14 @@ it('starts a tab from a real bare repository root', async () => {
     noUiContext(root),
   );
 
-  expect(result.details).toEqual({ reply: '{"ok":true}' });
+  expect(result.details).toEqual({
+    reply: '{"space":"space-1","tab":"tb-new","terminal":"t-new"}',
+    space: 'space-1',
+    tab: 'tb-new',
+    terminal: 't-new',
+    spaceStatus: 'reused',
+  });
+
   expect(app.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
 });
 
@@ -864,6 +821,92 @@ it('refuses final outside send', async () => {
   await expect(execution).rejects.toThrow('final is only for action send.');
 
   expect(existsSync(join(root, '.tau'))).toBe(false);
+});
+
+it('refuses space with prepare and creates no directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const execution = createTool().execute(
+    'call',
+    { action: 'prepare', space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('space is only for action start.');
+
+  expect(existsSync(join(root, '.tau'))).toBe(false);
+});
+
+it('refuses space with send before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+
+  const execution = createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('space is only for action start.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses newSpace with prepare and creates no directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const execution = createTool().execute(
+    'call',
+    { action: 'prepare', newSpace: true },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('newSpace is only for action start.');
+
+  expect(existsSync(join(root, '.tau'))).toBe(false);
+});
+
+it('refuses newSpace with send before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+
+  const execution = createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', newSpace: true },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('newSpace is only for action start.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses space together with newSpace before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createHerdrAppFake();
+
+  const execution = createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, name: 'next step', space: 'space-1', newSpace: true },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow(
+    'space and newSpace cannot be used together: pass one of them.',
+  );
+
+  expect(app.calls).toEqual([]);
 });
 
 it('refuses an already-aborted start before any herdr-app call', async () => {

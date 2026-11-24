@@ -59,6 +59,11 @@ export const argumentAfter = (
   return index === -1 ? undefined : commandArguments[index + 1];
 };
 
+export const isCommandOf = <Command extends string>(
+  commandSet: ReadonlySet<Command>,
+  value: string | undefined,
+): value is Command => value !== undefined && commandSet.has(value as Command);
+
 export const createExecFake = <Key extends string>(setup: ExecFakeSetup<Key>): ExecFake<Key> => {
   const calls: ExecCall[] = [];
   const overrides = new Map<Key, string>();
