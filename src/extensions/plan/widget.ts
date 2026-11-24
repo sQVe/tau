@@ -18,13 +18,16 @@ const statusMarks = {
 } satisfies Record<PlanStep['status'], { mark: string; color: ThemeColor }>;
 
 const planLabel = 'Plan';
-const labelPrefix = '── ';
 const markIndent = ' ';
+const markGap = ' ';
 
 const markWidths = Object.values(statusMarks).map(({ mark }) => visibleWidth(mark));
 const markWidth = Math.max(...markWidths);
 
-export const planLabelColumn = visibleWidth(labelPrefix);
+const stepPrefixWidth = visibleWidth(markIndent) + markWidth + visibleWidth(markGap);
+const labelPrefix = `${'─'.repeat(stepPrefixWidth - 1)} `;
+
+export const planLabelColumn = stepPrefixWidth;
 
 const borderLine = (width: number, theme: Pick<Theme, 'fg'>): string => {
   const labelWidth = visibleWidth(planLabel);
@@ -52,8 +55,6 @@ const markPrefix = (
   if (width <= markWidth) {
     return drawnMark;
   }
-
-  const markGap = ' '.repeat(Math.max(0, planLabelColumn - visibleWidth(markIndent) - markWidth));
 
   return `${markIndent}${drawnMark}${markGap}`;
 };
