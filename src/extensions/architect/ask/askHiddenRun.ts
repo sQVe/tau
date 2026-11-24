@@ -369,7 +369,8 @@ const settleWaitFailure = async (
           options,
         );
 
-  const record = changed?.record ?? (await readAskRecord(request.root, started.askId));
+  const locked = await readAskRecord(request.root, started.askId);
+  const record = changed?.record ?? (locked?.route === 'hidden' ? locked : undefined);
 
   if (completion.claim === 'kept' && record?.status === 'running') {
     throw new Error(askKeptClaimMessage(request.root, completion.failure));
