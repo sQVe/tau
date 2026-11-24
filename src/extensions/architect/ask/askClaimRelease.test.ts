@@ -54,7 +54,8 @@ const renameLockHolder = async (root: string, processId: number): Promise<void> 
   await writeFile(path, JSON.stringify({ ...owner, pid: processId }));
 };
 
-// The real child takes the ticket, adopts the claim, then renames its marker before it runs Pi.
+// The real child takes the ticket, adopts the claim, and renames its marker before it runs Pi. A
+// reload or a shutdown can release the lock while Pi still runs.
 const adoptAsChild = async (
   root: string,
   commandArguments: readonly string[],
@@ -71,13 +72,15 @@ const adoptAsChild = async (
     return false;
   }
 
-  await holdArchitectLock(root, claimToken);
+  const adopted = await holdArchitectLock(root, claimToken);
+
   await renameLockHolder(root, fakeStartProcessId);
 
   const started = `${claimToken}.started.${fakeStartProcessId}`;
-  const adopted = `${claimToken}.adopted.${fakeStartProcessId}`;
+  const adoptedMarker = `${claimToken}.adopted.${fakeStartProcessId}`;
 
-  await rename(join(startDirectory(root), started), join(startDirectory(root), adopted));
+  await rename(join(startDirectory(root), started), join(startDirectory(root), adoptedMarker));
+  await adopted.release();
 
   return true;
 };
@@ -471,15 +474,16 @@ it('releases its claim and fails the record when an adopted child stopped hard',
   expect(await readdir(startDirectory(root))).toEqual([]);
 });
 
-it('keeps the claim and the unconfirmed-stop detail when an adopted child still runs', async ({
+it('stops an adopted child that still runs when the terminal stop is not confirmed', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
   const hc = startFake();
-  const child = useFakeStartProcess(cleanup, 'running');
+  const child = useFakeStartProcess(cleanup, 'running', true);
   let taken = false;
 
   await recordSession(root);
+  hc.reply('kill', JSON.stringify({ address: 't-ask', state: 'live' }));
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'run') {
@@ -489,17 +493,16 @@ it('keeps the claim and the unconfirmed-stop detail when an adopted child still 
     return hc.exec(command, commandArguments, options);
   };
 
-  await expect(ask({ ...hc, exec }, root)).rejects.toThrow(askKeptClaimMessage(root));
+  const failure = await ask({ ...hc, exec }, root).catch((error: unknown) => error);
 
   expect(taken).toBe(true);
-  expect(await statuses(root)).toEqual(['running']);
-  expect(await details(root)).toEqual([askUnconfirmedStopDetail]);
-  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
-  expect(child.signals).toEqual([]);
-
-  expect((await readdir(startDirectory(root))).some((name) => name.includes('.adopted.'))).toBe(
-    true,
-  );
+  expect(failure).toBeInstanceOf(Error);
+  expect(child.signals).toEqual(['SIGTERM']);
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toBe(askWaitFailureDetail(false, failure));
+  expect((await details(root))[0]).not.toBe(askUnconfirmedStopDetail);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
+  expect(await readdir(startDirectory(root))).toEqual([]);
 });
 
 it('fails its own record and releases the claim after a real-shaped nonzero launch exit', async ({
