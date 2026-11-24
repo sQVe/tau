@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
+import {
+  armFileSystemFault,
+  pathNamed,
+  resetFileSystemFaults,
+} from '../../../../tests/fileSystemFaults.js';
 import { takeStartTicket, useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
@@ -7,21 +12,17 @@ import { architectLockPath } from '../lock.js';
 import { askFailedReason, askKeptClaimMessage, askUnconfirmedStopDetail } from './askHiddenRun.js';
 import { ask, details, startFake, statuses } from './fixtures/askHarness.js';
 
-const faults = vi.hoisted(() => ({ failMarkerRead: false }));
-
-const namedPath = (path: unknown, name: string): boolean =>
-  typeof path === 'string' && path.includes(name);
-
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const original = await importOriginal();
+  const { takeFileSystemFault } = await import('../../../../tests/fileSystemFaults.js');
 
   const faultyReaddir = (async (
     ...readArguments: Parameters<typeof original.readdir>
   ): Promise<unknown> => {
-    if (faults.failMarkerRead && namedPath(readArguments[0], '/start')) {
-      faults.failMarkerRead = false;
+    const fault = takeFileSystemFault('readdir', readArguments[0]);
 
-      throw Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
+    if (fault !== undefined) {
+      throw fault;
     }
 
     return original.readdir(...readArguments);
@@ -30,9 +31,16 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   return { ...original, readdir: faultyReaddir };
 });
 
-afterEach(() => {
-  faults.failMarkerRead = false;
-});
+afterEach(resetFileSystemFaults);
+
+const armMarkerReadFault = (): void => {
+  armFileSystemFault({
+    operation: 'readdir',
+    matches: pathNamed('/start'),
+    once: true,
+    error: () => Object.assign(new Error('EIO: i/o error'), { code: 'EIO' }),
+  });
+};
 
 it('settles a lost reply after a failed first marker read and a confirmed exit', async ({
   onTestFinished: cleanup,
@@ -46,8 +54,7 @@ it('settles a lost reply after a failed first marker read and a confirmed exit',
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'run') {
       await takeStartTicket(commandArguments);
-
-      faults.failMarkerRead = true;
+      armMarkerReadFault();
 
       return { code: 0, killed: false, truncated: false, stdout: '', stderr: '' };
     }
@@ -79,8 +86,7 @@ it('reports the read failure with the kept claim when the child stays unresolved
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
     if (command === 'hc' && commandArguments[0] === 'run') {
       await takeStartTicket(commandArguments);
-
-      faults.failMarkerRead = true;
+      armMarkerReadFault();
 
       return { code: 0, killed: false, truncated: false, stdout: '', stderr: '' };
     }

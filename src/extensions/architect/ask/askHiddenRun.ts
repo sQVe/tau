@@ -8,7 +8,7 @@ import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
 import { processState } from '../../../process/process.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import type { LaunchOutcome } from '../claimRelease/launchOutcomeDecision.js';
-import { askRecordPath, updateHiddenAskRecord, writeAskRecord } from '../record.js';
+import { askRecordPath, readAskRecord, updateHiddenAskRecord, writeAskRecord } from '../record.js';
 import type { ChangeAskOptions, HiddenAskRecord, HiddenAskRecordChange } from '../record.js';
 import type { StartFence, StartFenceCompletion } from '../startFence/startFence.js';
 import type { AskRequest, AskResult } from './ask.js';
@@ -235,6 +235,82 @@ const launchError = (error: unknown, failure: Error | undefined): Error => {
   return new Error(message, { cause: error });
 };
 
+const keptClaimResult = (
+  request: AskRequest,
+  completion: StartFenceCompletion,
+): HiddenAskLaunchResult => ({
+  kind: 'settled',
+  result: needsOpen(askKeptClaimMessage(request.root, completion.failure)),
+});
+
+const launchFailureResult = async (
+  request: AskRequest,
+  initial: HiddenAskRecord,
+  launched: HiddenAskLaunch,
+  completion: StartFenceCompletion,
+  fence: StartFence,
+  options: ChangeAskOptions,
+): Promise<HiddenAskLaunchResult> => {
+  if (completion.outcome === 'adopted') {
+    if (completion.claim === 'kept') {
+      return keptClaimResult(request, completion);
+    }
+
+    const changed = await settleAdoptedChild(request, initial, fence, options);
+
+    return {
+      kind: 'settled',
+      result: resultFromRecord(request.root, initial.askId, changed?.record),
+    };
+  }
+
+  if (completion.outcome === 'unresolved') {
+    const changed = await updateHiddenAskRecord(
+      request.root,
+      initial.askId,
+      (current) => ({ ...current, status: 'running', detail: askUnconfirmedStopDetail }),
+      options,
+    );
+
+    const record = changed?.record;
+
+    if (record?.status === 'running') {
+      return keptClaimResult(request, completion);
+    }
+
+    return {
+      kind: 'settled',
+      result: resultFromRecord(request.root, initial.askId, record),
+    };
+  }
+
+  const changed = await updateHiddenAskRecord(
+    request.root,
+    initial.askId,
+    (current) => ({
+      ...current,
+      status: 'failed',
+      detail: failureBeside(askLaunchFailureDetail, completion.failure),
+    }),
+    options,
+  );
+
+  if (completion.outcome === 'cancelled') {
+    throw completion.claim === 'kept'
+      ? new Error(askKeptClaimMessage(request.root, completion.failure))
+      : launchError(launched.error, completion.failure);
+  }
+
+  if (completion.claim === 'kept') {
+    return keptClaimResult(request, completion);
+  }
+
+  return {
+    kind: 'settled',
+    result: resultFromRecord(request.root, initial.askId, changed?.record),
+  };
+};
+
 const launchHiddenRecord = async (
   request: AskRequest,
   initial: HiddenAskRecord,
@@ -260,57 +336,7 @@ const launchHiddenRecord = async (
 
   const completion = await fence.complete();
 
-  if (completion.outcome === 'adopted') {
-    const changed = await settleAdoptedChild(request, initial, fence, options);
-
-    return {
-      kind: 'settled',
-      result: resultFromRecord(request.root, initial.askId, changed?.record),
-    };
-  }
-
-  if (completion.outcome === 'unresolved') {
-    const changed = await updateHiddenAskRecord(
-      request.root,
-      initial.askId,
-      (current) => ({ ...current, status: 'running', detail: askUnconfirmedStopDetail }),
-      options,
-    );
-
-    const record = changed?.record;
-
-    if (record?.status === 'running') {
-      return {
-        kind: 'settled',
-        result: needsOpen(askKeptClaimMessage(request.root, completion.failure)),
-      };
-    }
-
-    return {
-      kind: 'settled',
-      result: resultFromRecord(request.root, initial.askId, record),
-    };
-  }
-
-  const changed = await updateHiddenAskRecord(
-    request.root,
-    initial.askId,
-    (current) => ({
-      ...current,
-      status: 'failed',
-      detail: failureBeside(askLaunchFailureDetail, completion.failure),
-    }),
-    options,
-  );
-
-  if (completion.outcome === 'cancelled') {
-    throw launchError(launched.error, completion.failure);
-  }
-
-  return {
-    kind: 'settled',
-    result: resultFromRecord(request.root, initial.askId, changed?.record),
-  };
+  return launchFailureResult(request, initial, launched, completion, fence, options);
 };
 
 const settleWaitFailure = async (
@@ -327,6 +353,7 @@ const settleWaitFailure = async (
   await stopAskTerminal(request, terminal);
 
   const completion = await settle();
+  const unresolved = completion.outcome === 'unresolved';
 
   const changed =
     completion.outcome === 'adopted'
@@ -336,18 +363,15 @@ const settleWaitFailure = async (
           started.askId,
           (current) => ({
             ...current,
-            status: completion.outcome === 'unresolved' ? 'running' : 'failed',
-            detail:
-              completion.outcome === 'unresolved'
-                ? askUnconfirmedStopDetail
-                : askWaitFailureDetail(cancelled, error),
+            status: unresolved ? 'running' : 'failed',
+            detail: unresolved ? askUnconfirmedStopDetail : askWaitFailureDetail(cancelled, error),
           }),
           options,
         );
 
-  const record = changed?.record;
+  const record = changed?.record ?? (await readAskRecord(request.root, started.askId));
 
-  if (completion.claim === 'kept') {
+  if (completion.claim === 'kept' && record?.status === 'running') {
     throw new Error(askKeptClaimMessage(request.root, completion.failure));
   }
 
@@ -369,7 +393,11 @@ const settleTimeout = async (
 
   const completion = await settle();
 
-  const unconfirmed = completion.outcome === 'adopted' || completion.outcome === 'unresolved';
+  const unconfirmed =
+    completion.claim === 'kept' ||
+    completion.outcome === 'adopted' ||
+    completion.outcome === 'unresolved';
+
   const status = unconfirmed ? 'running' : 'timeout';
   const detail = unconfirmed ? askTimeoutStopDetail : askDeadlineDetail;
 

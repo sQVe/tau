@@ -20,6 +20,7 @@ import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath, holdArchitectLock } from '../lock.js';
 import { readAskRecord, readAskRecords, updateHiddenAskRecord, writeAskRecord } from '../record.js';
 import { acquireStartFence } from '../startFence/startFence.js';
+import type { StartFence } from '../startFence/startFence.js';
 import { askArchitect } from './ask.js';
 import type { AskRequest } from './ask.js';
 import {
@@ -223,6 +224,99 @@ it('returns an answer the child saved before the wait failed', async ({
 
   expect(result).toMatchObject({ details: { status: 'ended', answer: 'Use --quick.' } });
   expect(await statuses(root)).toEqual(['sent']);
+});
+
+it('returns a sent answer over a kept claim when the child state stays unknown', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const waitFailure = new Error('The wait failed.');
+  let askId: string | undefined;
+
+  useFakeStartProcess(cleanup, 'unknown');
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      const result = await hc.exec(command, commandArguments, options);
+      const { records } = await readAskRecords(root);
+
+      askId = records[0]?.askId;
+
+      return result;
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'wait' && askId !== undefined) {
+      const record = await readAskRecord(root, askId);
+
+      if (record?.route === 'hidden') {
+        await writeAskRecord(root, { ...record, status: 'sent', answer: 'Use --quick.' });
+      }
+
+      throw waitFailure;
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = await ask({ ...hc, exec }, root);
+
+  expect(result).toMatchObject({ details: { status: 'ended', answer: 'Use --quick.' } });
+  expect(await statuses(root)).toEqual(['sent']);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+});
+
+it('surfaces a kept claim when the launch adopts and the claim release fails', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+  const sessionFile = await recordSession(root);
+
+  const releaseFailure = new Error(
+    'The claim could not be released: The lock could not be truncated.',
+  );
+
+  const fence: StartFence = {
+    token: 'lead-claim',
+    createTicket: () => Promise.resolve(),
+    wrapArgv: (argv) => argv,
+    recordStarted: () => Promise.resolve(),
+    childProcessId: () => undefined,
+    waitForTakeover: () => Promise.resolve('adopted'),
+    complete: () => Promise.resolve({ outcome: 'adopted', claim: 'kept', failure: releaseFailure }),
+  };
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'run') {
+      return { code: 0, killed: false, truncated: false, stdout: '', stderr: '' };
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    gateRecord: null,
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root, exec },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  const result = await startHiddenAskRun(request, fence).start(sessionFile, 'a/architect');
+
+  expect(result).toMatchObject({
+    status: 'needsOpen',
+    reason: `${askKeptClaimMessage(root)} ${releaseFailure.message}`,
+  });
+
+  expect(await statuses(root)).toEqual(['running']);
 });
 
 it('keeps the record running and the claim live when a rejected wait leaves an unconfirmed child', async ({
@@ -609,7 +703,7 @@ it('records a real cancellation from the call signal as cancelled', async ({
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
-it('keeps a child that adopts during the stop and returns the answer it sent', async ({
+it('returns the answer after signalling a child whose adoption the fence read too late', async ({
   onTestFinished: cleanup,
 }) => {
   const { root } = await setup(cleanup);
