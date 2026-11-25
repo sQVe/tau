@@ -20,16 +20,6 @@ interface ProseSegment {
   line: number;
 }
 
-interface ProseBlock {
-  startLine: number;
-  tokens: readonly MarkedToken[];
-}
-
-interface SentenceSpan {
-  text: string;
-  start: number;
-}
-
 const ruleOrder: readonly ProseRule[] = ['longSentence', 'emDash', 'curlyQuote'];
 const curlyQuotes = ['\u2018', '\u2019', '\u201C', '\u201D'];
 const emDash = '\u2014';
@@ -39,7 +29,7 @@ const maxQuoteDepth = 8;
 const sentenceEnd = /[.!?](?=\s|$)/g;
 const quoteMarkers = /^(?:[ \t]*>)+/;
 const longQuoteRun = />{9,}/g;
-const entityReference = /&#?[\da-z]+;/gi;
+const entityReference = /&(?:#\d+|#x[\da-f]+|[a-z]+);/gi;
 const decimalRadix = 10;
 const hexadecimalRadix = 16;
 const decimalPrefixLength = 2;
@@ -152,105 +142,99 @@ const segmentsOf = (tokens: readonly MarkedToken[], startLine: number): ProseSeg
   return segments;
 };
 
-const tableCells = (
-  table: Tokens.Table,
-  line: number,
-): { rowLine: number; cell: Tokens.TableCell }[] =>
-  [table.header, ...table.rows].flatMap((row, rowIndex) => {
-    const rowLine = rowIndex === 0 ? line : line + rowIndex + 1;
-
-    return row.map((cell) => ({ rowLine, cell }));
-  });
-
-const collectBlocks = (
-  tokens: readonly MarkedToken[],
-  startLine: number,
-  blocks: ProseBlock[],
-): void => {
-  let line = startLine;
-
-  for (const token of tokens) {
-    if (token.type === 'paragraph' || token.type === 'heading' || token.type === 'text') {
-      blocks.push({ startLine: line, tokens: childTokens(token) });
-    } else if (token.type === 'table') {
-      for (const { rowLine, cell } of tableCells(token, line)) {
-        blocks.push({ startLine: rowLine, tokens: childTokens(cell) });
-      }
-    } else if (token.type === 'list') {
-      collectBlocks(token.items, line, blocks);
-    } else if (token.type === 'list_item') {
-      collectBlocks(childTokens(token), line, blocks);
-    }
-
-    line += newlineCount(token.raw);
-  }
-};
-
-const lineAt = (segments: readonly ProseSegment[], start: number, blockLine: number): number => {
-  let position = 0;
-
-  for (const segment of segments) {
-    if (start < position + segment.text.length) {
-      return segment.line;
-    }
-
-    position += segment.text.length;
-  }
-
-  return blockLine;
-};
-
 const firstNonWhitespace = (text: string, from: number, end: number): number => {
   const offset = text.slice(from, end).search(/\S/);
 
   return offset === -1 ? end : from + offset;
 };
 
-const pushSpan = (spans: SentenceSpan[], text: string, start: number, end: number): void => {
-  const sentence = text.slice(start, end).trim();
-
-  if (sentence !== '') {
-    spans.push({ text: sentence, start });
-  }
-};
-
-const sentenceSpans = (text: string): SentenceSpan[] => {
-  const spans: SentenceSpan[] = [];
+const emitSentences = (
+  tokens: readonly MarkedToken[],
+  startLine: number,
+  sentences: ProseSentence[],
+): void => {
+  const segments = segmentsOf(tokens, startLine);
+  const text = segments.map((segment) => segment.text).join('');
+  let segmentIndex = 0;
+  let segmentStart = 0;
   let from = 0;
+
+  const emit = (start: number, end: number): void => {
+    const sentence = text.slice(start, end).trim();
+
+    if (sentence === '') {
+      return;
+    }
+
+    while (segmentIndex < segments.length) {
+      const segment = segments.at(segmentIndex);
+
+      if (segment === undefined || start < segmentStart + segment.text.length) {
+        break;
+      }
+
+      segmentStart += segment.text.length;
+      segmentIndex += 1;
+    }
+
+    const line = segments.at(segmentIndex)?.line ?? startLine;
+
+    sentences.push({ text: sentence, line, words: countWords(sentence) });
+  };
 
   for (const match of text.matchAll(sentenceEnd)) {
     const end = match.index + 1;
 
-    pushSpan(spans, text, firstNonWhitespace(text, from, end), end);
+    emit(firstNonWhitespace(text, from, end), end);
     from = end;
   }
 
-  pushSpan(spans, text, firstNonWhitespace(text, from, text.length), text.length);
-
-  return spans;
+  emit(firstNonWhitespace(text, from, text.length), text.length);
 };
 
-const sentencesOfBlock = (block: ProseBlock): ProseSentence[] => {
-  const segments = segmentsOf(block.tokens, block.startLine);
-  const text = segments.map((segment) => segment.text).join('');
-  const spans = sentenceSpans(text);
+const emitTable = (table: Tokens.Table, line: number, sentences: ProseSentence[]): void => {
+  const rows = [table.header, ...table.rows];
 
-  return spans.map((span) => ({
-    text: span.text,
-    line: lineAt(segments, span.start, block.startLine),
-    words: countWords(span.text),
-  }));
+  for (const [rowIndex, row] of rows.entries()) {
+    const rowLine = rowIndex === 0 ? line : line + rowIndex + 1;
+
+    for (const cell of row) {
+      emitSentences(childTokens(cell), rowLine, sentences);
+    }
+  }
+};
+
+const collectSentences = (
+  tokens: readonly MarkedToken[],
+  startLine: number,
+  sentences: ProseSentence[],
+): void => {
+  let line = startLine;
+
+  for (const token of tokens) {
+    if (token.type === 'paragraph' || token.type === 'heading' || token.type === 'text') {
+      emitSentences(childTokens(token), line, sentences);
+    } else if (token.type === 'table') {
+      emitTable(token, line, sentences);
+    } else if (token.type === 'list') {
+      collectSentences(token.items, line, sentences);
+    } else if (token.type === 'list_item') {
+      collectSentences(childTokens(token), line, sentences);
+    }
+
+    line += newlineCount(token.raw);
+  }
 };
 
 export const proseSentences = (markdown: string): ProseSentence[] => {
-  const blocks: ProseBlock[] = [];
+  const sentences: ProseSentence[] = [];
   const normalized = markdown.replaceAll('\r\n', '\n');
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The default marked lexer emits marked token shapes.
   const tokens = lexer.lexer(boundedQuotes(normalized)) as readonly MarkedToken[];
 
-  collectBlocks(tokens, 1, blocks);
+  collectSentences(tokens, 1, sentences);
 
-  return blocks.flatMap(sentencesOfBlock);
+  return sentences;
 };
 
 const findingsOf = (sentence: ProseSentence): ProseFinding[] => {

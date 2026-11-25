@@ -202,6 +202,11 @@ const table: {
     expected: [{ rule: 'emDash', line: 1, excerpt: 'A pause—then more.' }],
   },
   {
+    name: 'keeps a malformed numeric entity literal',
+    markdown: 'A pause&#x2014ZZ;then more.',
+    expected: [],
+  },
+  {
     name: 'returns no findings for empty text',
     markdown: '',
     expected: [],
@@ -325,6 +330,11 @@ const sentenceTable: {
     name: 'decodes the last code point',
     markdown: 'A &#x10FFFF; here.',
     expected: [{ text: `A ${String.fromCodePoint(0x10ffff)} here.`, line: 1, words: 3 }],
+  },
+  {
+    name: 'keeps a malformed numeric entity in the sentence text',
+    markdown: 'A pause&#x2014ZZ;then more.',
+    expected: [{ text: 'A pause&#x2014ZZ;then more.', line: 1, words: 3 }],
   },
 ];
 
