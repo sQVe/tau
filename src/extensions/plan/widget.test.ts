@@ -36,7 +36,7 @@ const isStyledColor = (color: unknown): color is keyof typeof codes =>
 
 const styled = (color: ThemeColor, text: string) => {
   if (!isStyledColor(color)) {
-    throw new Error(`The test theme does not style the ${color} color.`);
+    throw new Error(`The recording theme does not style the ${color} color.`);
   }
 
   return `\u001B[${codes[color]}m${text}\u001B[0m`;
@@ -64,7 +64,7 @@ const styleCode = (options: ThemeStyle): string => {
 
   if (color !== undefined) {
     if (!isStyledColor(color)) {
-      throw new Error(`The test theme does not style the ${JSON.stringify(color)} color.`);
+      throw new Error(`The recording theme does not style the ${JSON.stringify(color)} color.`);
     }
 
     parts.push(codes[color]);
