@@ -173,7 +173,7 @@ it('keeps a snapshot for a day after the follow-up that reused it ends', async (
 
   await stale.called;
 
-  const contenderRead = signalActiveGenerationRead(agentDirectory);
+  const contenderRead = signalActiveGenerationRead(agentDirectory, 1);
 
   const launchSweep = sweepWorkerFolders(hc, agentDirectory, () => startedAt, [followUp]);
 
@@ -221,7 +221,7 @@ it('starts the unused window after a sweep waits for the lock', async () => {
 
   onTestFinished(() => held.release());
 
-  const contenderRead = signalActiveGenerationRead(agentDirectory);
+  const contenderRead = signalActiveGenerationRead(agentDirectory, 1);
   const sweep = sweepWorkerFolders(hc, agentDirectory, () => now, []);
 
   await contenderRead;
