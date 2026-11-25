@@ -28,6 +28,9 @@ not replace this assessment.
 
 ## Reply
 
+The findings table is for `report.md` and Linear, never for GitHub comments, which follow
+[review comments](../shared/review-comments.md).
+
 - Header: the target, mode, elapsed time when you observed it, freshness (fresh, stale, or unknown),
   and a link to `report.md`. For a fast review, add the unread files, or "None". Say once how
   findings were checked: fast has one self-checking reviewer; deep adds a fresh checker.

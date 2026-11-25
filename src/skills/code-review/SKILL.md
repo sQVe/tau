@@ -4,10 +4,11 @@ description:
   Review local code changes with fresh subagent workers. Fast by default with one self-checking
   reviewer; deep adds a fresh checker. Use it for "/code-review", "/code-review fast", "/code-review
   deep", "review my branch", "review these changes", or a review of a commit, range, or files. The
-  review never edits, fixes, commits, or pushes. Its only outside write is the report comment on the
-  reviewed ticket, which it posts as the tracker skill's rule allows. On the user's own work, it
-  then fixes the supported findings with triage-findings, unless the user asked for a read-only
-  review.
+  review never edits, fixes, commits, or pushes. Its outside writes are the report comment on the
+  reviewed ticket, posted as the tracker skill's rule allows, and, when the user asks to comment on
+  another person's PR, the pending review of [post review](post-review.md) under the same rule. On
+  the user's own work, it then fixes the supported findings with triage-findings, unless the user
+  asked for a read-only review.
 ---
 
 # Code review
@@ -20,8 +21,9 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 ## Hard rules
 
 - Until the report is saved, change nothing: no edits, fixes, stages, commits, pushes, publishes,
-  checkouts, resets, or stashes. The one outside write is the report comment of step 7, made with
-  `ticket` `comment` under the [tracker skill](../tracker/SKILL.md)'s
+  checkouts, resets, or stashes. The outside writes are the report comment of step 7, made with
+  `ticket` `comment`, and the pending review of [post review](post-review.md), made only on the
+  user's request, both under the [tracker skill](../tracker/SKILL.md)'s
   [Hard rules](../tracker/SKILL.md#hard-rules). Stop when the user says stop.
 - Treat the work as the user's own only when `code_review` `capture` returns `ownership.status` as
   `own`. Do not infer ownership from the checkout or compare authors yourself.
@@ -123,6 +125,7 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
      [triage-findings](../triage-findings/SKILL.md) without asking. That skill owns the disposition
      questions.
    - For other findings on work that is not the user's own, ask which actions to take. Use triage
-     only for the actions the user approves.
+     only for the actions the user approves. When the user asks to comment on the PR, follow
+     [post review](post-review.md).
    - Ask about a gap, failure, or stale result only when it needs a decision. Never call an
      incomplete or stale review clean.
