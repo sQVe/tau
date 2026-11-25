@@ -42,7 +42,7 @@ export const customContext = (
     mode: 'tui',
     hasUI: true,
     ui: { custom },
-    sessionManager: { getSessionName: () => 'session' },
+    sessionManager: { getBranch: () => [], getSessionName: () => 'session' },
     programStatusReports,
   } as unknown as ExtensionToolContext & { programStatusReports: ProgramStatus[] };
 };

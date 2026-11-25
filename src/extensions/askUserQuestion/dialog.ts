@@ -10,6 +10,7 @@ import {
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
 import { isBottom, isDown, isTop, isUp } from '../../dialog/keys.js';
+import type { AskKind } from '../../schema.ts';
 import { fullPreviewLayout, isCompact, optionLayout } from './layout.js';
 import type { HeaderPlan, PreviewPlan } from './layout.js';
 import {
@@ -40,7 +41,7 @@ export interface DialogQuestion extends QuestionFacts {
 }
 
 export type AskedQuestion = DialogQuestion & {
-  kind?: 'choice' | 'approval' | undefined;
+  kind?: AskKind | undefined;
   confidence?: number | undefined;
 };
 

@@ -1,4 +1,4 @@
-import { isRecord } from '../schema.ts';
+import { isRecord, text } from '../schema.ts';
 
 export interface WorkerTask {
   taskId: string;
@@ -8,8 +8,6 @@ export interface WorkerTask {
   createdAt: number;
   sessionFile: string | undefined;
 }
-
-const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
 const isOptionalText = (value: unknown) => value === undefined || typeof value === 'string';
 

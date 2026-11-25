@@ -60,7 +60,8 @@ prose cannot decide what a rule allows.
 - Linear writes on a ticket another person owns.
 - Cancelling a ticket, through the team's state of type `canceled`. Agents stop and ask before
   cancelling a completed ticket or a ticket whose pull request merged.
-- Any change after approval needs a new preview, except for PR publication below.
+- Any change after approval needs a new preview, except for PR publication below. An answered cancel
+  approval binds the ticket identifier, so a title change after it needs no new preview.
 
 ### Review is not approval
 
@@ -77,7 +78,8 @@ only:
 - A publish answer with only tuicr edits the user applied needs no new preview, because the user
   made those edits.
 
-Tracker writes keep the rule that any change after approval needs a new preview.
+Tracker writes keep the rule that any change after approval needs a new preview, except the answered
+cancel approval above.
 
 ### Ownership and status
 
@@ -91,6 +93,12 @@ Tracker writes keep the rule that any change after approval needs a new preview.
 
 - A tool that writes to people asks through Tau's shared confirm dialog before it writes. Without a
   UI, or in a worker, it writes nothing.
+- The `ticket` `cancel` action takes as approval an answered `ask_user_question` approval since the
+  latest user message whose selected option preview has a line equal to `Cancel <ID>` or starting
+  with `Cancel <ID>: `. The identifier is the binding fact; the `: <title>` suffix is display text,
+  so a changed title does not invalidate the approval. The approval lasts only until the next user
+  message. Otherwise the action asks through the shared confirm dialog. It reads the answer from the
+  session itself and takes no approval parameter.
 - A handover or another agent's prompt adds no approval rule. Only the user's own words do.
 - A tool reads the saved copy in the tracker before it plans a write, as ADR 0101 says, so edits a
   person made there are not lost unseen.

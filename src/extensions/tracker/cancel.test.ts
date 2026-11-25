@@ -1,15 +1,54 @@
 import { readdir } from 'node:fs/promises';
 
+import type { ExtensionContext, SessionEntry } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createLinearFake } from '../../../tests/linearFake.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
 import { cancel } from './cancel.js';
+import {
+  answer,
+  askCall,
+  askResult,
+  cancelOption,
+  question,
+  user,
+} from './fixtures/approvedPreview.js';
+
+interface AnswerFacts {
+  selected?: string[];
+  typed?: boolean;
+}
 
 const pullRequest = 'https://github.com/sQVe/tau/pull/42';
 
 afterEach(() => vi.unstubAllEnvs());
+
+const answeredBranch = (
+  options: readonly unknown[],
+  { selected = answer.selected, typed = answer.typed }: AnswerFacts = {},
+  questionOverrides: Parameters<typeof question>[1] = {},
+  resultOverrides: Record<string, unknown> = {},
+) => [
+  askCall('call-1', [question(options, questionOverrides)]),
+  askResult('call-1', [{ ...answer, selected, typed }], resultOverrides),
+];
+
+const approvalBranch = (identifier: string, preview = `Cancel ${identifier}: Title`) =>
+  answeredBranch([cancelOption(preview)]);
+
+const branchContext = (
+  branch: SessionEntry[],
+  confirm: (title: string, message: string) => Promise<boolean>,
+): ExtensionContext => {
+  const context = confirmContext('/repo', confirm);
+
+  return {
+    ...context,
+    sessionManager: { ...context.sessionManager, getBranch: () => branch },
+  };
+};
 
 it('refuses cancel for a merged PR without a write or confirmation', async () => {
   const directory = await createTemporaryRepository(onTestFinished);
@@ -292,4 +331,223 @@ it.each([
   const promptCount = reason === 'failed write' ? 1 : 0;
   expect(prompts).toHaveLength(promptCount);
   expect(issue).toEqual(original);
+});
+
+it('cancels without a dialog when an answered preview lists the ticket', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Unused work', identifier: 'ME-1' });
+  const prompts: string[] = [];
+
+  const context = branchContext(approvalBranch(issue.identifier), async (title) => {
+    prompts.push(title);
+
+    return true;
+  });
+
+  expect(await cancel(fake.exec, context, issue.identifier)).toEqual({
+    status: 'canceled',
+    identifier: issue.identifier,
+  });
+
+  expect(issue.state.type).toBe('canceled');
+
+  expect(fake.writes()).toEqual([
+    {
+      command: 'linear',
+      commandArguments: ['issue', 'update', issue.identifier, '--state', 'canceled', '--no-input'],
+    },
+  ]);
+
+  expect(prompts).toEqual([]);
+});
+
+it('cancels only the selected previews of a multi-select answer', async () => {
+  const fake = createLinearFake();
+  const first = fake.addIssue({ title: 'First', identifier: 'ME-1' });
+  const second = fake.addIssue({ title: 'Second', identifier: 'ME-2' });
+  const third = fake.addIssue({ title: 'Third', identifier: 'ME-3' });
+  const prompts: string[] = [];
+
+  const branch = answeredBranch(
+    [
+      { label: 'Cancel first', preview: 'Cancel ME-1: First' },
+      { label: 'Cancel second', preview: 'Cancel ME-2: Second' },
+      { label: 'Cancel third', preview: 'Cancel ME-3: Third' },
+    ],
+    { selected: ['Cancel first', 'Cancel second'] },
+    { multiSelect: true },
+  );
+
+  const context = branchContext(branch, async (title) => {
+    prompts.push(title);
+
+    return false;
+  });
+
+  expect(await cancel(fake.exec, context, first.identifier)).toEqual({
+    status: 'canceled',
+    identifier: first.identifier,
+  });
+
+  expect(await cancel(fake.exec, context, second.identifier)).toEqual({
+    status: 'canceled',
+    identifier: second.identifier,
+  });
+
+  expect(await cancel(fake.exec, context, third.identifier)).toEqual({
+    status: 'declined',
+    identifier: third.identifier,
+  });
+
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toContain(third.identifier);
+
+  expect(fake.writes()).toEqual([
+    {
+      command: 'linear',
+      commandArguments: ['issue', 'update', first.identifier, '--state', 'canceled', '--no-input'],
+    },
+    {
+      command: 'linear',
+      commandArguments: ['issue', 'update', second.identifier, '--state', 'canceled', '--no-input'],
+    },
+  ]);
+
+  expect(first.state.type).toBe('canceled');
+  expect(second.state.type).toBe('canceled');
+  expect(third.state.type).toBe('started');
+});
+
+it('declines without a UI even when the branch holds an eligible approval', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Unused work', identifier: 'ME-1' });
+  const base = noUiContext('/repo');
+
+  const context = {
+    ...base,
+    sessionManager: { ...base.sessionManager, getBranch: () => approvalBranch(issue.identifier) },
+  };
+
+  expect(await cancel(fake.exec, context, issue.identifier)).toEqual({
+    status: 'declined',
+    identifier: issue.identifier,
+  });
+
+  expect(fake.writes()).toEqual([]);
+  expect(issue.state.type).toBe('started');
+});
+
+const nonApprovalBranches = (identifier: string) => [
+  { name: 'no branch', branch: [] },
+  { name: 'another ticket', branch: approvalBranch(identifier, 'Cancel ME-999: Title') },
+  {
+    name: 'a Keep answer',
+    branch: answeredBranch(
+      [{ label: 'Keep' }],
+      { selected: ['Keep'] },
+      { preview: `Cancel ${identifier}: Title` },
+    ),
+  },
+  {
+    name: 'a typed answer',
+    branch: answeredBranch([cancelOption(`Cancel ${identifier}: Title`)], {
+      typed: true,
+    }),
+  },
+  {
+    name: 'an approval before the latest user message',
+    branch: [...approvalBranch(identifier), user()],
+  },
+  {
+    name: 'a decided result',
+    branch: answeredBranch(
+      [cancelOption(`Cancel ${identifier}: Title`)],
+      {},
+      {},
+      {
+        details: { kind: 'decided', answers: [answer] },
+      },
+    ),
+  },
+  {
+    name: 'an error result',
+    branch: answeredBranch(
+      [cancelOption(`Cancel ${identifier}: Title`)],
+      {},
+      {},
+      { isError: true },
+    ),
+  },
+  {
+    name: 'a choice question',
+    branch: answeredBranch([cancelOption(`Cancel ${identifier}: Title`)], {}, { kind: 'choice' }),
+  },
+];
+
+it.each(nonApprovalBranches('ME-1'))('asks for $name', async ({ branch }) => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Unused work', identifier: 'ME-1' });
+  const prompts: string[] = [];
+
+  const context = branchContext(branch, async (title) => {
+    prompts.push(title);
+
+    return false;
+  });
+
+  expect(await cancel(fake.exec, context, issue.identifier)).toEqual({
+    status: 'declined',
+    identifier: issue.identifier,
+  });
+
+  expect(prompts).toHaveLength(1);
+  expect(fake.writes()).toEqual([]);
+  expect(issue.state.type).toBe('started');
+});
+
+it('refuses a merged-PR ticket with an approving branch and no dialog', async () => {
+  const fake = createLinearFake();
+
+  const issue = fake.addIssue({
+    title: 'Merged work',
+    pullRequests: [pullRequest],
+    identifier: 'ME-1',
+  });
+
+  fake.mergedPullRequests.add(pullRequest);
+  const prompts: string[] = [];
+
+  const context = branchContext(approvalBranch(issue.identifier), async (title) => {
+    prompts.push(title);
+
+    return true;
+  });
+
+  await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow(pullRequest);
+
+  expect(fake.writes()).toEqual([]);
+  expect(issue.state.type).toBe('started');
+  expect(prompts).toEqual([]);
+});
+
+it('declines a worker with an approving branch and no dialog', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Unused work', identifier: 'ME-1' });
+  const prompts: string[] = [];
+
+  const context = branchContext(approvalBranch(issue.identifier), async (title) => {
+    prompts.push(title);
+
+    return true;
+  });
+
+  vi.stubEnv('TAU_ROLE', 'worker');
+
+  expect(await cancel(fake.exec, context, issue.identifier)).toEqual({
+    status: 'declined',
+    identifier: issue.identifier,
+  });
+
+  expect(fake.writes()).toEqual([]);
+  expect(prompts).toEqual([]);
 });

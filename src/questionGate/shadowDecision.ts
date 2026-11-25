@@ -1,5 +1,7 @@
+import type { AskKind } from '../schema.ts';
+
 export interface ShadowQuestionFacts {
-  kind?: 'choice' | 'approval' | undefined;
+  kind?: AskKind | undefined;
   multiSelect: boolean;
   preview?: string | undefined;
   options: readonly {

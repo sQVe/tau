@@ -1,17 +1,12 @@
-import {
-  assistantCalls,
-  copyKey,
-  parseEntries,
-  text,
-  toolResult,
-} from '../../src/improvement/transcript.ts';
+import { copyKey, parseEntries, toolResult } from '../../src/improvement/transcript.ts';
 import type { CallResult, Entry } from '../../src/improvement/transcript.ts';
 import type {
   JudgeOption,
   JudgeQuestion,
   PastOutcome,
 } from '../../src/questionGate/questionGate.ts';
-import { isRecord } from '../../src/schema.ts';
+import { isRecord, text } from '../../src/schema.ts';
+import { assistantCalls } from '../../src/sessionMessage/sessionMessage.ts';
 
 export interface SessionLog {
   path: string;

@@ -1,7 +1,8 @@
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { isRecord } from '../schema.ts';
+import { isRecord, text } from '../schema.ts';
+import { assistantCalls } from '../sessionMessage/sessionMessage.ts';
 
 export type Entry = Record<string, unknown>;
 
@@ -10,16 +11,6 @@ export type Transcript =
   | { status: 'malformed'; cwd: string | undefined; calls: ToolCall[]; reason: string }
   | { status: 'missing' }
   | { status: 'unreadable'; reason: string };
-
-interface DroppedCall {
-  callId: string | undefined;
-  tool: string | undefined;
-}
-
-interface AssistantCalls {
-  calls: CalledTool[];
-  dropped: DroppedCall[];
-}
 
 interface EntryUpdate {
   malformedLines: number;
@@ -40,8 +31,6 @@ const calledToolProperties = {
 };
 
 const callResultSchema = Type.Object(callResultProperties, { additionalProperties: false });
-
-const calledToolSchema = Type.Object(calledToolProperties, { additionalProperties: false });
 
 const nestedCallSchema = Type.Object(
   { ...calledToolProperties, result: Type.Optional(callResultSchema) },
@@ -72,16 +61,11 @@ export const transcriptStateSchema = Type.Object(
 
 export type CallResult = Static<typeof callResultSchema>;
 
-type CalledTool = Static<typeof calledToolSchema>;
-
 export type NestedCall = Static<typeof nestedCallSchema>;
 
 export type ToolCall = Static<typeof toolCallSchema>;
 
 export type TranscriptState = Static<typeof transcriptStateSchema>;
-
-export const text = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
 
 // Forks and follow-ups copy entries with their IDs and timestamps, so a copy shares its original's key.
 export const copyKey = (entry: Entry): string =>
@@ -121,30 +105,6 @@ const resultText = (content: unknown) => {
     .filter((part) => part.type === 'text')
     .map((part) => text(part.text) ?? '')
     .join('\n');
-};
-
-export const assistantCalls = (message: Entry): AssistantCalls => {
-  const parts = Array.isArray(message.content) ? message.content.filter(isRecord) : [];
-  const found: AssistantCalls = { calls: [], dropped: [] };
-
-  for (const part of parts.filter((candidate) => candidate.type === 'toolCall')) {
-    const tool = text(part.name);
-    const callId = text(part.id);
-
-    if (tool === undefined || callId === undefined) {
-      found.dropped.push({ callId, tool });
-    } else {
-      const parameters = isRecord(part.arguments) ? part.arguments : undefined;
-
-      found.calls.push({
-        callId,
-        tool,
-        ...(parameters === undefined ? {} : { arguments: parameters }),
-      });
-    }
-  }
-
-  return found;
 };
 
 export const toolResult = (message: Entry): { callId: string; result: CallResult } => {
