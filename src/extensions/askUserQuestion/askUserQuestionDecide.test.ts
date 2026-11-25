@@ -224,6 +224,7 @@ it('answers an eligible call after showing the notice and saving the record', as
   const save = Promise.withResolvers<undefined>();
 
   const harness = createHarness({
+    verdict: { kind: 'answered', confidence: 0.97 },
     writeRecord: () => {
       writeStarted.resolve(undefined);
 
@@ -305,6 +306,7 @@ it('answers an eligible call after showing the notice and saving the record', as
     head: 'abc1234',
     variant: 'agent',
     cutoff: 0.9,
+    decisions: [{ confidence: 0.97 }],
   });
 });
 
@@ -624,6 +626,7 @@ it('reads an attached, a detached, and an unborn HEAD through the default Git ad
 
   const decider = createDecider({
     now: () => 1_760_000_000_000,
+    random: neverAudit,
     findSharedRoot: async () => '/shared-root',
     readConfig: () => decideConfig(),
     requireModel: () => undefined,
