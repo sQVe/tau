@@ -4,10 +4,12 @@ import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { scanTranscriptLines } from '../src/improvement/transcript.ts';
+import type { Entry } from '../src/improvement/transcript.ts';
 import { isRecord } from '../src/schema.ts';
 import { formatProseSummary, summarizeProse } from './proseReport/proseReportSummary.ts';
 import type { ProseReply, ProseText } from './proseReport/proseReportSummary.ts';
-import { readInTurn } from './tokenUsage.ts';
+import { readInTurn } from './readInTurn.ts';
 
 export interface ProseReportOptions {
   sessions: string;
@@ -150,9 +152,9 @@ const contentTexts = (content: unknown): string[] => {
 };
 
 const replyOf = (
-  entry: unknown,
+  entry: Entry,
 ): { text: string; model: string; timestamp: number | undefined } | undefined => {
-  if (!isRecord(entry) || entry.type !== 'message' || !isRecord(entry.message)) {
+  if (entry.type !== 'message' || !isRecord(entry.message)) {
     return undefined;
   }
 
@@ -185,26 +187,22 @@ const parseReplies = (
   const replies: ReplyCandidate[] = [];
   let malformed = 0;
 
-  for (const [index, line] of text.split('\n').entries()) {
-    if (line.trim() === '') {
-      continue;
-    }
-
-    let entry: unknown;
-
-    try {
-      entry = JSON.parse(line);
-    } catch {
+  for (const line of scanTranscriptLines(text)) {
+    if (line.status === 'malformed') {
       malformed += 1;
-      warn(`Skipped malformed line ${path}:${index + 1}`);
+      warn(`Skipped malformed line ${path}:${line.line}`);
 
       continue;
     }
 
-    const reply = replyOf(entry);
+    if (line.status === 'other') {
+      continue;
+    }
+
+    const reply = replyOf(line.entry);
 
     if (reply !== undefined) {
-      replies.push({ ...reply, source: basename(path), line: index + 1 });
+      replies.push({ ...reply, source: basename(path), line: line.line });
     }
   }
 
@@ -218,12 +216,21 @@ const byRecency = (left: ReplyCandidate, right: ReplyCandidate): number => {
   return rightTime - leftTime || left.source.localeCompare(right.source) || left.line - right.line;
 };
 
-const readText = async (path: string): Promise<string | undefined> => {
+const readReplies = async (
+  path: string,
+  warn: (message: string) => void,
+): Promise<{ replies: ReplyCandidate[]; malformed: number }> => {
+  let text: string;
+
   try {
-    return await readFile(path, 'utf8');
+    text = await readFile(path, 'utf8');
   } catch {
-    return undefined;
+    warn(`Skipped unreadable file ${path}`);
+
+    return { replies: [], malformed: 1 };
   }
+
+  return parseReplies(path, text, warn);
 };
 
 const collectReplies = async (
@@ -233,25 +240,13 @@ const collectReplies = async (
   const roots = await sessionRoots(options.sessions, options.project);
   const discovered = await jsonlFiles(roots);
   const newest = await newestFiles(discovered, options.files, warn);
-  const reads = await readInTurn(newest.files, readText);
-  const replies: ReplyCandidate[] = [];
-  let skippedLines = newest.unreadable;
+  const parsed = await readInTurn(newest.files, (path) => readReplies(path, warn));
+  const replies = parsed.flatMap((result) => result.replies);
 
-  for (const [index, path] of newest.files.entries()) {
-    const text = reads[index];
-
-    if (text === undefined) {
-      skippedLines += 1;
-      warn(`Skipped unreadable file ${path}`);
-
-      continue;
-    }
-
-    const parsed = parseReplies(path, text, warn);
-
-    replies.push(...parsed.replies);
-    skippedLines += parsed.malformed;
-  }
+  const skippedLines = parsed.reduce(
+    (total, result) => total + result.malformed,
+    newest.unreadable,
+  );
 
   const newestReplies = replies
     .toSorted(byRecency)

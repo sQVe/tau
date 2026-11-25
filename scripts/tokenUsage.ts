@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import { findSessionFiles, readWorkerRecord } from '../src/improvement/improvement.ts';
 import { ownsSession } from '../src/improvement/workerRecord.ts';
 import type { WorkerTask } from '../src/improvement/workerRecord.ts';
+import { readInTurn } from './readInTurn.ts';
 import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.ts';
 import type { SessionFile, Side, SkippedRecords } from './tokenUsageReport.ts';
 
@@ -17,21 +18,6 @@ interface UsageRecords {
 const usage = `Usage: node scripts/tokenUsage.ts [--since 7d] [--until <time>] [--top 10]
 
 --since and --until take an ISO date or time, or an age such as 12h or 3d.`;
-
-// Reads started together would open more files than the process may hold.
-export const readInTurn = async <Item, Result>(
-  items: Item[],
-  read: (item: Item) => Promise<Result>,
-): Promise<Result[]> => {
-  const results: Result[] = [];
-
-  for (const item of items) {
-    // oxlint-disable-next-line no-await-in-loop -- One open file at a time.
-    results.push(await read(item));
-  }
-
-  return results;
-};
 
 const firstLineChunkBytes = 65_536;
 

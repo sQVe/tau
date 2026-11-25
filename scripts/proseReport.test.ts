@@ -21,6 +21,8 @@ const replyLine = (text: string, timestamp = '2026-01-01T00:00:00Z', model = 'fi
     message: { role: 'assistant', model, content: [{ type: 'text', text }] },
   });
 
+const longSentence = `${Array.from({ length: 41 }, () => 'word').join(' ')}.`;
+
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'tau-prose-report-'));
 });
@@ -59,13 +61,17 @@ it('skips a malformed session line', async () => {
 
   const file = join(project, 'session.jsonl');
 
-  await writeFile(file, `${replyLine('A pause—then more.')}\n{"type":`);
+  await writeFile(file, ['', '[1]', '{"type":', replyLine('A pause—then more.')].join('\n'));
 
   const result = run(['--sessions', sessions]);
 
   expect(result.status).toBe(0);
+  expect(result.stdout).toContain('Replies checked: 1');
   expect(result.stdout).toContain('Skipped lines: 1');
-  expect(result.stderr).toContain(`Skipped malformed line ${file}:2`);
+  expect(result.stdout).toContain('| emDash | 1 | 1 |');
+  expect(result.stdout).toContain('session.jsonl:4');
+  expect(result.stdout).toContain('A pause—then more.');
+  expect(result.stderr).toContain(`Skipped malformed line ${file}:3`);
 });
 
 it('reports an unreadable text file', async () => {
@@ -89,13 +95,17 @@ it('ranks replies by timestamp', async () => {
   await writeFile(
     join(project, 'session.jsonl'),
     [
-      replyLine('An old pause—then more.', '2026-01-01T00:00:00Z'),
-      replyLine('A new pause then more.', '2026-01-02T00:00:00Z'),
+      replyLine('A new pause—then more.', '2026-01-02T00:00:00Z'),
+      replyLine(longSentence, '2026-01-01T00:00:00Z'),
     ].join('\n'),
   );
 
   const result = run(['--sessions', sessions, '--replies', '1']);
 
   expect(result.status).toBe(0);
-  expect(result.stdout).toContain('| emDash | 0 | 0 |');
+  expect(result.stdout).toContain('Replies checked: 1');
+  expect(result.stdout).toContain('session.jsonl:1');
+  expect(result.stdout).toContain('A new pause—then more.');
+  expect(result.stdout).toContain('| longSentence | 0 | 0 |');
+  expect(result.stdout).not.toContain('word word');
 });

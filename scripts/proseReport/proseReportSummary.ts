@@ -1,5 +1,5 @@
 import { checkProse, proseSentences } from '../../src/prose.ts';
-import type { ProseFinding } from '../../src/prose.ts';
+import type { ProseFinding, ProseSentence } from '../../src/prose.ts';
 
 type ProseRule = ProseFinding['rule'];
 
@@ -62,18 +62,24 @@ interface RuleTally {
   repliesWithFinding: number;
   findings: number;
   models: Map<string, number>;
+  sample: ProseSample[];
 }
 
-interface LocatedFinding extends ProseFinding {
-  source: string;
-  model: string;
-}
-
+// One parse feeds both the rule counts and the band, so these rules mirror src/prose.ts.
 const ruleOrder: readonly ProseRule[] = ['longSentence', 'emDash', 'curlyQuote'];
 const bandMinimumWords = 25;
 const bandMaximumWords = 39;
+const longestSentenceWords = 40;
+const excerptLength = 100;
+const emDash = '\u2014';
+const curlyQuotes = ['\u2018', '\u2019', '\u201C', '\u201D'];
 
-const emptyTally = (): RuleTally => ({ repliesWithFinding: 0, findings: 0, models: new Map() });
+const emptyTally = (): RuleTally => ({
+  repliesWithFinding: 0,
+  findings: 0,
+  models: new Map(),
+  sample: [],
+});
 
 const createTallies = (): Record<ProseRule, RuleTally> => ({
   longSentence: emptyTally(),
@@ -81,30 +87,67 @@ const createTallies = (): Record<ProseRule, RuleTally> => ({
   curlyQuote: emptyTally(),
 });
 
-const countReply = (tallies: Record<ProseRule, RuleTally>, reply: ProseReply): LocatedFinding[] => {
-  const found = checkProse(reply.text);
+const rulesOf = (sentence: ProseSentence): ProseRule[] => {
+  const rules: ProseRule[] = [];
 
-  for (const rule of ruleOrder) {
-    const count = found.filter((finding) => finding.rule === rule).length;
+  if (sentence.words > longestSentenceWords) {
+    rules.push('longSentence');
+  }
 
-    if (count === 0) {
-      continue;
+  if (sentence.text.includes(emDash)) {
+    rules.push('emDash');
+  }
+
+  if (curlyQuotes.some((quote) => sentence.text.includes(quote))) {
+    rules.push('curlyQuote');
+  }
+
+  return rules;
+};
+
+const excerptOf = (sentence: ProseSentence): string =>
+  sentence.text.length > excerptLength
+    ? `${sentence.text.slice(0, excerptLength)}...`
+    : sentence.text;
+
+const accumulateReply = (
+  tallies: Record<ProseRule, RuleTally>,
+  band: ProseSample[],
+  reply: ProseReply,
+): void => {
+  const found = new Set<ProseRule>();
+
+  for (const sentence of proseSentences(reply.text)) {
+    for (const rule of rulesOf(sentence)) {
+      const tally = tallies[rule];
+
+      tally.findings += 1;
+      found.add(rule);
+
+      tally.sample.push({
+        source: reply.source,
+        line: reply.line,
+        model: reply.model,
+        excerpt: excerptOf(sentence),
+      });
     }
 
+    if (sentence.words >= bandMinimumWords && sentence.words <= bandMaximumWords) {
+      band.push({
+        source: reply.source,
+        line: reply.line,
+        model: reply.model,
+        excerpt: sentence.text,
+      });
+    }
+  }
+
+  for (const rule of found) {
     const tally = tallies[rule];
 
     tally.repliesWithFinding += 1;
-    tally.findings += count;
     tally.models.set(reply.model, (tally.models.get(reply.model) ?? 0) + 1);
   }
-
-  return found.map((finding) => ({
-    rule: finding.rule,
-    excerpt: finding.excerpt,
-    source: reply.source,
-    line: reply.line,
-    model: reply.model,
-  }));
 };
 
 const modelCounts = (models: Map<string, number>): ProseModelCount[] =>
@@ -113,20 +156,6 @@ const modelCounts = (models: Map<string, number>): ProseModelCount[] =>
     .toSorted(
       (left, right) => right.replies - left.replies || left.model.localeCompare(right.model),
     );
-
-const bandSentences = (replies: ProseReply[]): ProseSample[] =>
-  replies.flatMap((reply) =>
-    proseSentences(reply.text)
-      .filter(
-        (sentence) => sentence.words >= bandMinimumWords && sentence.words <= bandMaximumWords,
-      )
-      .map((sentence) => ({
-        source: reply.source,
-        line: reply.line,
-        model: reply.model,
-        excerpt: sentence.text,
-      })),
-  );
 
 const bySourceThenLine = (
   left: { source: string; line: number },
@@ -173,8 +202,11 @@ export const summarizeProse = (
   skippedLines: number,
 ): ProseSummary => {
   const tallies = createTallies();
-  const findings = replies.flatMap((reply) => countReply(tallies, reply));
-  const sentences = bandSentences(replies);
+  const band: ProseSample[] = [];
+
+  for (const reply of replies) {
+    accumulateReply(tallies, band, reply);
+  }
 
   return {
     repliesChecked: replies.length,
@@ -184,12 +216,9 @@ export const summarizeProse = (
       repliesWithFinding: tallies[rule].repliesWithFinding,
       findings: tallies[rule].findings,
       models: modelCounts(tallies[rule].models),
-      sample: sampleOf(
-        findings.filter((finding) => finding.rule === rule),
-        sampleSize,
-      ),
+      sample: sampleOf(tallies[rule].sample, sampleSize),
     })),
-    band: { sentences: sentences.length, sample: sampleOf(sentences, sampleSize) },
+    band: { sentences: band.length, sample: sampleOf(band, sampleSize) },
     texts: texts.map(textSummary),
   };
 };

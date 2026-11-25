@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseTranscript } from './transcript.ts';
+import { parseTranscript, scanTranscriptLines } from './transcript.ts';
 
 const normal = readFileSync(
   new URL('./fixtures/withoutPublication.jsonl', import.meta.url),
@@ -24,6 +24,34 @@ const toolResult = (id: string, fields: Record<string, unknown>) =>
   message(`result-${id}`, { role: 'toolResult', toolCallId: id, ...fields });
 
 const lines = (...entries: string[]) => `${entries.join('\n')}\n`;
+
+describe('scanTranscriptLines', () => {
+  it('keeps physical lines and separates malformed, other, and entry lines', () => {
+    const entry = message('m', { role: 'user', content: 'hi' });
+
+    const source = ['', header, '[1]', '{"type":', entry].join('\n');
+
+    expect(scanTranscriptLines(source)).toEqual([
+      {
+        status: 'entry',
+        line: 2,
+        entry: { type: 'session', id: 's', timestamp: 't0', cwd: '/work/me-1' },
+      },
+      { status: 'other', line: 3 },
+      { status: 'malformed', line: 4 },
+      {
+        status: 'entry',
+        line: 5,
+        entry: {
+          type: 'message',
+          id: 'm',
+          timestamp: 'm-time',
+          message: { role: 'user', content: 'hi' },
+        },
+      },
+    ]);
+  });
+});
 
 describe('parseTranscript', () => {
   it('reads the cwd and the tool calls of a normal transcript in order', () => {

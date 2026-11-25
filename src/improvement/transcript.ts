@@ -6,6 +6,11 @@ import { assistantCalls } from '../sessionMessage/sessionMessage.ts';
 
 export type Entry = Record<string, unknown>;
 
+export type TranscriptLine =
+  | { status: 'entry'; line: number; entry: Entry }
+  | { status: 'other'; line: number }
+  | { status: 'malformed'; line: number };
+
 export type Transcript =
   | { status: 'read'; cwd: string; calls: ToolCall[] }
   | { status: 'malformed'; cwd: string | undefined; calls: ToolCall[]; reason: string }
@@ -81,17 +86,43 @@ const parseEntry = (source: string): Entry | undefined => {
   }
 };
 
+export const scanTranscriptLines = (source: string): TranscriptLine[] => {
+  const lines: TranscriptLine[] = [];
+
+  for (const [index, line] of source.split('\n').entries()) {
+    if (line.trim() === '') {
+      continue;
+    }
+
+    let value: unknown;
+
+    try {
+      value = JSON.parse(line);
+    } catch {
+      lines.push({ status: 'malformed', line: index + 1 });
+
+      continue;
+    }
+
+    const scanned: TranscriptLine = isRecord(value)
+      ? { status: 'entry', line: index + 1, entry: value }
+      : { status: 'other', line: index + 1 };
+
+    lines.push(scanned);
+  }
+
+  return lines;
+};
+
 export const parseEntries = (source: string): { entries: Entry[]; malformedLines: number } => {
   const entries: Entry[] = [];
   let malformedLines = 0;
 
-  for (const line of source.split('\n').filter((candidate) => candidate.trim() !== '')) {
-    const entry = parseEntry(line);
-
-    if (entry === undefined) {
-      malformedLines += 1;
+  for (const line of scanTranscriptLines(source)) {
+    if (line.status === 'entry') {
+      entries.push(line.entry);
     } else {
-      entries.push(entry);
+      malformedLines += 1;
     }
   }
 
