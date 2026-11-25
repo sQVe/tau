@@ -1,15 +1,15 @@
 # Post a review
 
-Run this only when the user asks to comment on the destination pull request, whichever ownership the
-review's capture reports. Use the destination pull request's ownership for the tracker skill's
-approval rule.
+Run this only when the user asks to comment on another person's pull request. Judge ownership from
+the destination pull request, not from the review's capture. Use the destination pull request's
+ownership for the tracker skill's approval rule.
 
-Before step 1, resolve the PR's host, owner, name, and number. Pin the reviewed diff to the endpoint
-the capture's target kind gives. Use the target `to` for a range, and the capture `head` for a
-working tree. Read the PR diff at that endpoint and check that the reviewed content comes from it.
-When the reviewed content is not in that diff, stop and require a fresh review of the PR diff. When
-the remote head differs from that endpoint, stop and offer the user a fresh review of the new head.
-Never post drafts made against an older endpoint.
+Before step 1, resolve the PR's host, owner, name, and number. Pin the reviewed endpoint from the
+capture target: the target `to` for a range, and the capture `head` for every other kind. Read the
+PR diff at that endpoint and check that the reviewed content comes from it. When the reviewed
+content is not in that diff, stop and require a fresh review of the PR diff. When the remote head
+differs from that endpoint, stop and offer the user a fresh review of the new head. Never post
+drafts made against an older endpoint.
 
 1. Filter the findings with one `checker` worker.
    - Take the reviewer's model from the reviewer's launch result.

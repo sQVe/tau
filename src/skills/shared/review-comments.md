@@ -59,9 +59,9 @@ One line and two unanchored findings:
 Looks good overall. Two things I could not pin to a line:
 
 - The migration and the model change are separate commits, so reverting the migration alone leaves
-  the code writing to a dropped column. Revert only that commit and the order path fails on the
-  next save. Is that what we want?
-- The new flag is on for existing accounts, so every current account starts sending a daily
-  digest. Open the settings of an account created before this change and the toggle already reads
-  on. Maybe default it to off and let people opt in?
+  the code writing to a dropped column (`src/orders/save.ts:58`). Revert only that commit and the
+  order path fails on the next save. Is that what we want?
+- The new flag is on for existing accounts, so every current account starts sending a daily digest
+  (`src/digest/send.ts:24`). Open the settings of an account created before this change and the
+  toggle already reads on. Maybe default it to off and let people opt in?
 ```

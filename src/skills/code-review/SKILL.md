@@ -6,9 +6,10 @@ description:
   deep", "review my branch", "review these changes", or a review of a commit, range, or files. The
   review never edits, fixes, commits, or pushes. Its outside writes are the report comment on the
   reviewed ticket, posted as the tracker skill's rule allows, and, when the user asks to comment on
-  the destination pull request, the pending review of [post review](post-review.md) under the same
-  rule. On the user's own work, it then fixes the supported findings with triage-findings, unless
-  the user asked for a read-only review.
+  another person's pull request, the pending review of [post review](post-review.md) under the same
+  rule. Judge ownership from the destination pull request, not from the review's capture. On the
+  user's own work, it then fixes the supported findings with triage-findings, unless the user asked
+  for a read-only review.
 ---
 
 # Code review
@@ -115,6 +116,9 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
      the user approves changing that scope.
    - When the lead will batch first-review fixes under its worker-run guideline, return the findings
      to the lead for that batch instead of starting triage here.
+   - When the user asks to comment on another person's pull request, follow
+     [post review](post-review.md). Judge ownership from the destination pull request, not from the
+     capture. This route takes precedence over the other actions in this step.
    - After the lead's one fix review, start [triage-findings](../triage-findings/SKILL.md) once in
      its post-fix phase. Give it the new findings and the first-review findings that the batch did
      not settle. Include their report references. Do this even if the fix review has no findings.
@@ -124,8 +128,6 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
    - For findings on the user's own work in other reviews, continue with
      [triage-findings](../triage-findings/SKILL.md) without asking. That skill owns the disposition
      questions.
-   - When the user asks to comment on the destination pull request, follow
-     [post review](post-review.md), whichever ownership the capture reports.
    - For other findings on work that is not the user's own, ask which actions to take. Use triage
      only for the actions the user approves.
    - Ask about a gap, failure, or stale result only when it needs a decision. Never call an
