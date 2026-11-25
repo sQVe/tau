@@ -342,7 +342,6 @@ class ShellParser {
     this.finishWord(state);
     rejectPendingHeredoc(state);
 
-    // A newline after a list or pipeline operator continues the same unit.
     if (continuesListOnNewline(character, state.continuesList)) {
       this.position += 1;
 
