@@ -13,7 +13,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { guidelineLines } from '../../instructions/systemPrompt.js';
-import planExtension from './plan.js';
+import planExtension, { currentRolePlanReportText } from './plan.js';
+import { planUpdateLine } from './prompt.js';
 import type { PlanStep } from './steps.js';
 import { planEntryType } from './steps.js';
 import { planToolGuidelines } from './tool.js';
@@ -265,6 +266,21 @@ it.each(['architect', 'worker'] as const)(
     expect([...fake.handlers.keys()]).toEqual([]);
   },
 );
+
+it.each([
+  {
+    name: 'a lead',
+    role: 'lead',
+    expected: `\n\nCurrent plan:\n[in_progress] Brief worker\n\n${planUpdateLine}`,
+  },
+  { name: 'an architect', role: 'architect', expected: '' },
+] as const)('adds the report suffix for $name', ({ role, expected }) => {
+  vi.stubEnv('TAU_ROLE', role);
+
+  const branch = [savedEntry({ version: 1, steps: [step('Brief worker', 'in_progress')] })];
+
+  expect(currentRolePlanReportText(branch)).toBe(expected);
+});
 
 it.each([
   { name: 'no plan', branch: [] as unknown[], planBlock: '' },

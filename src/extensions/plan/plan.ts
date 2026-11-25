@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { appendSystemPrompt, appendToolGuidelines } from '../../instructions/systemPrompt.js';
 import { currentRole } from '../../role/role.js';
 import { roleRegistersTool } from '../../role/roleTools.js';
-import { planPromptText } from './prompt.js';
+import { planPromptText, planReportText } from './prompt.js';
 import { replayPlan } from './steps.js';
 import { createPlanTool, planToolGuidelines } from './tool.js';
 import { drawPlan } from './widget.js';
@@ -23,7 +23,8 @@ const drawSavedPlan = (context: ExtensionContext): void => {
   }
 };
 
-export { planReportText } from './prompt.js';
+export const currentRolePlanReportText = (entries: readonly unknown[]): string =>
+  roleRegistersTool(currentRole(), 'plan') ? planReportText(entries) : '';
 
 export default function planExtension(pi: ExtensionAPI): void {
   if (!roleRegistersTool(currentRole(), 'plan')) {
