@@ -142,6 +142,26 @@ it('reports a deadline failure and still sweeps', async () => {
   expect(hcFake.calls.filter((call) => call.commandArguments[0] === 'ls')).toHaveLength(2);
 });
 
+it('reports nothing when the deadline step fails after clear', async () => {
+  const { hcFake, hc } = hcFor();
+  const steps = createSteps();
+
+  const scanner = scanFor(hc, steps.delivery, {
+    apply: () => {
+      scanner.clear();
+
+      return Promise.reject(new Error('boom'));
+    },
+    clear: () => undefined,
+  });
+
+  await scanner.scan(steps.context);
+
+  expect(steps.order).toEqual(['deliver']);
+  expect(steps.notifications).toEqual([]);
+  expect(hcFake.calls.filter((call) => call.commandArguments[0] === 'ls')).toHaveLength(1);
+});
+
 it('reports an hc ls failure through both notices and runs neither step', async () => {
   const { hcFake, hc } = hcFor();
   const steps = createSteps();
@@ -343,6 +363,54 @@ it('skips a scan queued before clear', async () => {
   expect(steps.notifications).toEqual([]);
 });
 
+it('runs a scan queued while the cancelled run settles', async () => {
+  const { hcFake, hc } = hcFor();
+  const steps = createSteps();
+  const realExec = hcFake.exec;
+  const entered = deferred();
+  const release = deferred();
+  let listCalls = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] !== 'ls') {
+      return realExec(command, commandArguments, options);
+    }
+
+    listCalls += 1;
+
+    if (listCalls === 1) {
+      entered.resolve();
+
+      await release.promise;
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  const scanner = scanFor(hc, steps.delivery, steps.deadline);
+
+  const cancelled = scanner.scan(steps.context);
+
+  await entered.promise;
+
+  scanner.clear();
+
+  const queued = scanner.scan(steps.context);
+
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(listCalls).toBe(1);
+  expect(steps.order).toEqual([]);
+
+  release.resolve();
+  await cancelled;
+  await queued;
+
+  expect(steps.order).toEqual(['deliver', 'deadline']);
+});
+
 it('reports nothing when a child read is cancelled at clear', async () => {
   const { hcFake, hc } = hcFor();
   const steps = createSteps();
@@ -496,6 +564,75 @@ it('stops a deadline action read that never settles when the scan is cleared', a
 
   expect(steps.order).toEqual(['deliver']);
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it('reports no read failure and retries nothing when only the scan clear cancels the deadline read', async () => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-scan-');
+  const { hcFake, hc } = hcFor();
+  const steps = createSteps();
+  const realExec = hcFake.exec;
+  const entered = deferred();
+  const assignmentPath = '/agent/missing.json';
+  let getCalls = 0;
+
+  hcFake.reply(
+    'get',
+    JSON.stringify({
+      address: 't-child',
+      state: 'live',
+      parent: manager,
+      labels: { 'tau.assignment': assignmentPath },
+    }),
+  );
+
+  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
+  hcFake.reply('label', JSON.stringify({ address: 't-child', state: 'live' }));
+
+  hc.exec = (command, commandArguments, options) => {
+    if (commandArguments[0] !== 'get') {
+      return realExec(command, commandArguments, options);
+    }
+
+    getCalls += 1;
+
+    if (getCalls !== 2) {
+      return realExec(command, commandArguments, options);
+    }
+
+    return new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener(
+        'abort',
+        () => {
+          reject(abortError());
+        },
+        { once: true },
+      );
+
+      entered.resolve();
+    });
+  };
+
+  const watchdog = createDeadlineWatchdog(hc, steps.delivery);
+  const scanner = createWorkerScan(hc, steps.delivery, watchdog, agentDirectory);
+
+  const scanning = scanner.scan(steps.context);
+
+  await entered.promise;
+
+  scanner.clear();
+
+  await scanner.drain();
+  await scanning;
+
+  expect(steps.order).toEqual(['deliver']);
+
+  expect(steps.notifications).toEqual([[`Missing assignment file: ${assignmentPath}.`, 'error']]);
+
+  expect(vi.getTimerCount()).toBe(0);
+
+  await vi.advanceTimersByTimeAsync(60_000);
+
+  expect(getCalls).toBe(2);
 });
 
 it('uses the hc exec in place when a scan runs', async () => {
@@ -806,6 +943,37 @@ it('sweeps after a scan', async () => {
 
   expect(existsSync(folder)).toBe(false);
   expect(steps.notifications).toEqual([]);
+});
+
+it('leaves the worker folder untouched when the run is cancelled before the sweep', async () => {
+  const { agentDirectory, hcFake, hc, steps, scratchRoot } = sweepSetup();
+  const folder = join(scratchRoot, assignmentShortId('assignment-a'));
+  const snapshot = join(agentDirectory, 'tmp', 'tau-worker-packages', 'snapshot-a');
+
+  mkdirSync(folder, { recursive: true });
+  mkdirSync(snapshot, { recursive: true });
+  vi.setSystemTime(statSync(folder).birthtimeMs + 120_000);
+  hcFake.reply('ls', JSON.stringify({ terminals: [] }));
+
+  const scanner = createWorkerScan(
+    hc,
+    steps.delivery,
+    {
+      apply: () => {
+        scanner.clear();
+
+        return Promise.resolve();
+      },
+      clear: () => undefined,
+    },
+    agentDirectory,
+  );
+
+  await scanner.scan(steps.context);
+
+  expect(existsSync(folder)).toBe(true);
+  expect(existsSync(snapshot)).toBe(true);
+  expect(existsSync(join(snapshot, '.tau-unused-since'))).toBe(false);
 });
 
 it('reports each sweep removal error', async () => {

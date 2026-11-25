@@ -83,6 +83,8 @@ const isLiveTarget = (
   terminal.labels?.['tau.assignment'] === target.assignmentPath &&
   terminal.state === 'live';
 
+const isRunAborted = (runtime: HcRuntime): boolean => runtime.signal?.aborted === true;
+
 export const createDeadlineWatchdog = (
   hc: HcRuntime,
   delivery: WorkerDelivery,
@@ -91,6 +93,8 @@ export const createDeadlineWatchdog = (
   let stopped = false;
 
   const isStopped = (): boolean => stopped;
+
+  const isCancelled = (runtime: HcRuntime): boolean => isStopped() || isRunAborted(runtime);
 
   const clearAddress = (address: string): void => {
     const entry = armed.get(address);
@@ -177,7 +181,7 @@ export const createDeadlineWatchdog = (
   const markEndedAtDeadline = async (
     context: DeadlineWatchdogContext,
     target: DeadlineTimer | DeadlineKill,
-    runtime: HcRuntime = hc,
+    runtime: HcRuntime,
   ): Promise<void> => {
     try {
       await label(runtime, target.address, { [deadlineEndLabel.key]: deadlineEndLabel.value });
@@ -220,11 +224,52 @@ export const createDeadlineWatchdog = (
     });
   };
 
+  const killTarget = async (
+    context: DeadlineWatchdogContext,
+    target: DeadlineTimer | DeadlineKill,
+    runtime: HcRuntime,
+  ): Promise<boolean> => {
+    if (isCancelled(runtime)) {
+      return false;
+    }
+
+    setKillPending(target, true);
+
+    try {
+      await kill(runtime, target.address);
+    } catch (error) {
+      if (isRunAborted(runtime)) {
+        return false;
+      }
+
+      reportKillProblem(
+        context,
+        `kill:${target.address}`,
+        `Ending ${target.address} failed:`,
+        error,
+      );
+
+      setKillPending(target, false);
+
+      return true;
+    }
+
+    if (isCancelled(runtime)) {
+      return false;
+    }
+
+    showEndedNotice(context, target);
+
+    await markEndedAtDeadline(context, target, runtime);
+
+    return false;
+  };
+
   const killAtDeadline = async (
     context: DeadlineWatchdogContext,
     target: DeadlineTimer | DeadlineKill,
+    runtime: HcRuntime,
     attempt = 0,
-    runtime: HcRuntime = hc,
   ): Promise<void> => {
     if (isStopped()) {
       return;
@@ -243,6 +288,10 @@ export const createDeadlineWatchdog = (
     try {
       terminal = await get(runtime, target.address);
     } catch (error) {
+      if (isRunAborted(runtime)) {
+        return;
+      }
+
       reportKillProblem(
         context,
         `get:${target.address}`,
@@ -250,12 +299,14 @@ export const createDeadlineWatchdog = (
         error,
       );
 
-      scheduleRetry(context, target, attempt, () => killAtDeadline(context, target, attempt + 1));
+      scheduleRetry(context, target, attempt, () =>
+        killAtDeadline(context, target, hc, attempt + 1),
+      );
 
       return;
     }
 
-    if (isStopped() || !isLiveTarget(terminal, managerTerminal, target)) {
+    if (!isLiveTarget(terminal, managerTerminal, target)) {
       return;
     }
 
@@ -263,36 +314,13 @@ export const createDeadlineWatchdog = (
       return;
     }
 
-    if (isStopped()) {
+    const retry = await killTarget(context, target, runtime);
+
+    if (!retry) {
       return;
     }
 
-    setKillPending(target, true);
-
-    try {
-      await kill(runtime, target.address);
-    } catch (error) {
-      reportKillProblem(
-        context,
-        `kill:${target.address}`,
-        `Ending ${target.address} failed:`,
-        error,
-      );
-
-      setKillPending(target, false);
-
-      scheduleRetry(context, target, attempt, () => killAtDeadline(context, target, attempt + 1));
-
-      return;
-    }
-
-    if (isStopped()) {
-      return;
-    }
-
-    showEndedNotice(context, target);
-
-    await markEndedAtDeadline(context, target, runtime);
+    scheduleRetry(context, target, attempt, () => killAtDeadline(context, target, hc, attempt + 1));
   };
 
   const arm = (context: DeadlineWatchdogContext, timer: DeadlineTimer): void => {
@@ -302,7 +330,7 @@ export const createDeadlineWatchdog = (
 
     const killTimer = setTimeout(
       () => {
-        killAtDeadline(context, timer).catch((error: unknown) => {
+        killAtDeadline(context, timer, hc).catch((error: unknown) => {
           if (isStopped()) {
             return;
           }
@@ -378,7 +406,7 @@ export const createDeadlineWatchdog = (
       }
     }
 
-    await Promise.all(plan.kills.map((target) => killAtDeadline(context, target, 0, runtime)));
+    await Promise.all(plan.kills.map((target) => killAtDeadline(context, target, runtime)));
   };
 
   return {

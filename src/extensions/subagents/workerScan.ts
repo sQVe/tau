@@ -20,6 +20,8 @@ export interface WorkerScan {
   drain: () => Promise<void>;
 }
 
+const isAborted = (signal: AbortSignal): boolean => signal.aborted;
+
 const notifyFailure = (context: WorkerScanContext, message: string): void => {
   try {
     context.ui.notify(message, 'error');
@@ -95,13 +97,61 @@ export const createWorkerScan = (
       messages = [errorMessage(error)];
     }
 
-    if (signal.aborted) {
+    if (isAborted(signal)) {
       return;
     }
 
     for (const message of messages) {
       notifyFailure(context, `Worker folder sweep failed: ${message}`);
     }
+  };
+
+  const scanSteps = async (
+    context: WorkerScanContext,
+    managerTerminal: string,
+    runtime: HcRuntime,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    let children: WorkerChildRead[];
+
+    try {
+      children = await readWorkerChildren(runtime, managerTerminal);
+    } catch (error) {
+      if (isAborted(signal)) {
+        return false;
+      }
+
+      const message = errorMessage(error);
+
+      notifyFailure(context, `Worker delivery failed: ${message}`);
+      notifyFailure(context, `Deadline scan failed: ${message}`);
+
+      return true;
+    }
+
+    if (isAborted(signal)) {
+      return false;
+    }
+
+    attempt = 0;
+
+    deliverChildren(context, children);
+
+    try {
+      await deadline.apply(context, managerTerminal, children, runtime);
+    } catch (error) {
+      if (!isAborted(signal)) {
+        notifyFailure(context, `Deadline scan failed: ${errorMessage(error)}`);
+      }
+    }
+
+    if (isAborted(signal)) {
+      return false;
+    }
+
+    await sweepFolders(context, runtime, signal);
+
+    return false;
   };
 
   const runScan = async (context: WorkerScanContext): Promise<boolean> => {
@@ -117,40 +167,7 @@ export const createWorkerScan = (
     active = controller;
 
     try {
-      let children: WorkerChildRead[];
-
-      try {
-        children = await readWorkerChildren(runtime, managerTerminal);
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return false;
-        }
-
-        const message = errorMessage(error);
-
-        notifyFailure(context, `Worker delivery failed: ${message}`);
-        notifyFailure(context, `Deadline scan failed: ${message}`);
-
-        return true;
-      }
-
-      if (controller.signal.aborted) {
-        return false;
-      }
-
-      attempt = 0;
-
-      deliverChildren(context, children);
-
-      try {
-        await deadline.apply(context, managerTerminal, children, runtime);
-      } catch (error) {
-        notifyFailure(context, `Deadline scan failed: ${errorMessage(error)}`);
-      }
-
-      await sweepFolders(context, runtime, controller.signal);
-
-      return false;
+      return await scanSteps(context, managerTerminal, runtime, controller.signal);
     } finally {
       active = undefined;
     }

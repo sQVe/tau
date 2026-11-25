@@ -699,6 +699,153 @@ it('runs the deadline action calls on the runtime it is given', async () => {
   expect(hcFake.calls.every((call) => call.signal === controller.signal)).toBe(true);
 });
 
+it('runs the deadline timer calls on the watchdog runtime', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-deadline-');
+  const deadline = now + 120_000;
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+
+  const path = await savedAssignment(directory, deadline);
+  const hcFake = createHcFake();
+  const timerCalls: string[] = [];
+
+  hcFake.reply('ls', JSON.stringify({ terminals: [childRow] }));
+  hcFake.reply('get', JSON.stringify(terminal(path, deadline)));
+  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
+  hcFake.reply('label', JSON.stringify(terminal(path, deadline)));
+
+  const hc: HcRuntime = { exec: hcFake.exec, connect: hcFake.connect, cwd: process.cwd() };
+
+  const watchdogRuntime: HcRuntime = {
+    exec: (command, commandArguments, options) => {
+      timerCalls.push(commandArguments[0] ?? '');
+
+      return hc.exec(command, commandArguments, options);
+    },
+    connect: hc.connect,
+    cwd: hc.cwd,
+  };
+
+  const delivery: WorkerDelivery = {
+    deliver: () => undefined,
+    showEnded: () => undefined,
+    markDeadlinePending: () => undefined,
+    clearDeadlinePending: () => undefined,
+  };
+
+  const context = {
+    sessionManager: { getEntries: () => [] },
+    ui: { notify: () => undefined },
+  } as unknown as DeadlineWatchdogContext;
+
+  const watchdog = createDeadlineWatchdog(watchdogRuntime, delivery);
+
+  const scanner = createWorkerScan(
+    hc,
+    delivery,
+    watchdog,
+    temporaryDirectory(onTestFinished, 'tau-sweep-'),
+  );
+
+  await scanner.scan(context);
+
+  timerCalls.length = 0;
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(timerCalls).toEqual(['get', 'kill', 'label']);
+  });
+});
+
+it('skips the kill when the scan is cleared while the deadline read settles', async () => {
+  const { context, scanner, hc, hcFake, commands, notifications } = await setup({ deadline: now });
+  const realExec = hcFake.exec;
+  let getCalls = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    const result = await realExec(command, commandArguments, options);
+
+    if (commandArguments[0] === 'get') {
+      getCalls += 1;
+
+      if (getCalls === 2) {
+        scanner.clear();
+      }
+    }
+
+    return result;
+  };
+
+  await scanner.scan(context);
+
+  expect(getCalls).toBe(2);
+  expect(commands('kill')).toHaveLength(0);
+  expect(commands('label')).toHaveLength(0);
+  expect(notifications).toEqual([]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('skips the ended notice and label when the scan is cleared while the kill settles', async () => {
+  const { context, scanner, hc, hcFake, commands, ended } = await setup({ deadline: now });
+  const realExec = hcFake.exec;
+
+  hc.exec = async (command, commandArguments, options) => {
+    const result = await realExec(command, commandArguments, options);
+
+    if (commandArguments[0] === 'kill') {
+      scanner.clear();
+    }
+
+    return result;
+  };
+
+  await scanner.scan(context);
+
+  expect(commands('kill')).toHaveLength(1);
+  expect(commands('label')).toHaveLength(0);
+  expect(ended).toEqual([]);
+});
+
+it('reports no kill failure and retries nothing when the scan is cleared during the kill', async () => {
+  const { context, scanner, hc, hcFake, commands, notifications } = await setup({ deadline: now });
+  const entered = deferred();
+  let killCalls = 0;
+
+  hc.exec = (command, commandArguments, options) => {
+    if (commandArguments[0] !== 'kill') {
+      return hcFake.exec(command, commandArguments, options);
+    }
+
+    killCalls += 1;
+
+    return new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener(
+        'abort',
+        () => {
+          reject(new Error('The operation was aborted'));
+        },
+        { once: true },
+      );
+
+      entered.resolve();
+    });
+  };
+
+  const scanning = scanner.scan(context);
+
+  await entered.promise;
+
+  scanner.clear();
+
+  await scanning;
+
+  expect(killCalls).toBe(1);
+  expect(commands('label')).toHaveLength(0);
+  expect(notifications).toEqual([]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it('kills at once when the assignment file is malformed', async () => {
   const hcFake = createHcFake();
   const directory = temporaryDirectory(onTestFinished, 'tau-deadline-');
