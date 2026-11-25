@@ -2,32 +2,11 @@ import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import { array, assert, constantFrom, property } from 'fast-check';
 import { expect, it } from 'vitest';
 
+import { resolvePropertySeed } from '../../../tests/propertySeedHarness.ts';
 import { approvedPreviewLines } from './approvedPreview.js';
 import { answer, askCall, askResult, cancelOption, question } from './fixtures/approvedPreview.js';
 
 type OrderKind = 'first call' | 'second call' | 'result';
-
-const fixedSeed = 15;
-
-const resolveSeed = (): number => {
-  const value = process.env.TAU_PROPERTY_SEED;
-
-  if (value === undefined) {
-    return fixedSeed;
-  }
-
-  if (value === 'random') {
-    return Math.floor(Math.random() * 2 ** 31);
-  }
-
-  const seed = Number(value);
-
-  if (!Number.isInteger(seed)) {
-    throw new TypeError(`TAU_PROPERTY_SEED must be an integer or random, got ${value}`);
-  }
-
-  return seed;
-};
 
 const orderKind = constantFrom<OrderKind>('first call', 'second call', 'result');
 
@@ -65,7 +44,7 @@ const expectedLines = (order: readonly OrderKind[]): string[] => {
 };
 
 it('gives the lines of the only call before a result and none after a duplicate call', () => {
-  const seed = resolveSeed();
+  const seed = resolvePropertySeed();
 
   process.stdout.write(`TAU_PROPERTY_SEED=${seed}\n`);
 

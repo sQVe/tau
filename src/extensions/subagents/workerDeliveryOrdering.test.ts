@@ -13,6 +13,7 @@ import {
 import type { Command } from 'fast-check';
 import { expect, it } from 'vitest';
 
+import { resolvePropertySeed } from '../../../tests/propertySeedHarness.ts';
 import { isRecord } from '../../schema.js';
 import type { Assignment, SavedQuestion } from './assignment.js';
 import {
@@ -54,8 +55,6 @@ interface Notice {
   session: string;
 }
 
-const fixedSeed = 15;
-
 const executedSteps = new Set<string>();
 
 const expectedSteps = [
@@ -76,26 +75,6 @@ const expectedSteps = [
 
 const recordStep = (step: string): void => {
   executedSteps.add(step);
-};
-
-const resolveSeed = (): number => {
-  const value = process.env.TAU_PROPERTY_SEED;
-
-  if (value === undefined) {
-    return fixedSeed;
-  }
-
-  if (value === 'random') {
-    return Math.floor(Math.random() * 2 ** 31);
-  }
-
-  const seed = Number(value);
-
-  if (!Number.isInteger(seed)) {
-    throw new TypeError(`TAU_PROPERTY_SEED must be an integer or random, got ${value}`);
-  }
-
-  return seed;
 };
 
 const assignmentState = (
@@ -556,7 +535,7 @@ const commandArbitrary = oneof(
 );
 
 it('keeps one report notice and at most one final notice per worker', () => {
-  const seed = resolveSeed();
+  const seed = resolvePropertySeed();
 
   process.stdout.write(`TAU_PROPERTY_SEED=${seed}\n`);
 
