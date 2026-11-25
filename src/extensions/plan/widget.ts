@@ -19,7 +19,7 @@ const statusMarks = {
 
 const planLabel = 'Plan';
 const markIndent = ' ';
-const markGap = ' ';
+const markGap = '  ';
 
 const markWidths = Object.values(statusMarks).map(({ mark }) => visibleWidth(mark));
 const markWidth = Math.max(...markWidths);

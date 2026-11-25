@@ -48,7 +48,7 @@ const steps: PlanStep[] = [
 it('draws a labeled border above the steps', () => {
   const [border] = planLines(steps, 80, theme);
 
-  expect(border).toBe(`── Plan ${'─'.repeat(72)}`);
+  expect(border).toBe(`─── Plan ${'─'.repeat(71)}`);
   expect(visibleWidth(border ?? '')).toBe(80);
 });
 
@@ -62,13 +62,15 @@ it('starts the label in the step text column', () => {
 it.each([
   [1, '─'],
   [2, '──'],
-  [3, '── '],
-  [4, '── P'],
-  [6, '── Pla'],
-  [7, '── Plan'],
-  [8, '── Plan '],
-  [9, '── Plan ─'],
-  [10, '── Plan ──'],
+  [3, '───'],
+  [4, '─── '],
+  [5, '─── P'],
+  [6, '─── Pl'],
+  [7, '─── Pla'],
+  [8, '─── Plan'],
+  [9, '─── Plan '],
+  [10, '─── Plan ─'],
+  [11, '─── Plan ──'],
 ])('cuts the border line to width %i', (width, expected) => {
   const [border] = planLines(steps, width, theme);
 
@@ -85,8 +87,9 @@ it('fills every width from one column up', () => {
 it.each([
   [1, '\u{F10C}'],
   [2, ' \u{F10C}'],
-  [3, ' \u{F10C} '],
-  [4, ' \u{F10C} .'],
+  [3, ' \u{F10C}'],
+  [4, ' \u{F10C}  '],
+  [12, ' \u{F10C}  Brief...'],
 ])('keeps the status mark at width %i', (width, expected) => {
   const line = planLines([{ text: 'Brief worker', status: 'pending' }], width, theme)[1] ?? '';
 
@@ -103,13 +106,13 @@ it('keeps the step text aligned when a mark draws narrower', () => {
   const textColumns = steps.map(({ text }, index) => columnOf(stepLines[index] ?? '', text));
 
   expect(columnOf(border ?? '', 'Plan')).toBe(planLabelColumn);
-  expect(textColumns).toEqual([3, 3, 3, 3]);
+  expect(textColumns).toEqual([4, 4, 4, 4]);
 });
 
 it('keeps each line within the width', () => {
   const widths = planLines(steps, 20, theme).map((line) => visibleWidth(line));
 
-  expect(widths).toEqual([20, 20, 20, 14, 20]);
+  expect(widths).toEqual([20, 20, 20, 15, 20]);
 });
 
 it('shows a Nerd Font mark for each status', () => {
@@ -124,25 +127,26 @@ it('colors each mark and dims a completed step', () => {
   const lines = planLines(steps, 80, styledTheme);
 
   expect(lines).toEqual([
-    `${styled('border', '── ')}${styled('muted', 'Plan')} ${styled('border', '─'.repeat(72))}`,
-    ` ${styled('muted', '\u{F10C}')} Brief worker for ME-123`,
-    ` ${styled('accent', '\u{F192}')} Review worker change`,
-    ` ${styled('dim', '\u{F058}')} ${styled('dim', 'Open the PR')}`,
-    ` ${styled('warning', '\u{F06A}')} Wait for the review`,
+    `${styled('border', '─── ')}${styled('muted', 'Plan')} ${styled('border', '─'.repeat(71))}`,
+    ` ${styled('muted', '\u{F10C}')}  Brief worker for ME-123`,
+    ` ${styled('accent', '\u{F192}')}  Review worker change`,
+    ` ${styled('dim', '\u{F058}')}  ${styled('dim', 'Open the PR')}`,
+    ` ${styled('warning', '\u{F06A}')}  Wait for the review`,
   ]);
 });
 
 it.each([
-  [5, '..'],
-  [6, '...'],
+  [5, '.'],
+  [6, '..'],
+  [7, '...'],
 ])('dims the clipped text of a completed step at width %i', (width, expected) => {
   const lines = planLines([{ text: 'Open the PR', status: 'completed' }], width, styledTheme);
 
-  expect(lines[1]).toBe(` ${styled('dim', '\u{F058}')} ${styled('dim', expected)}`);
+  expect(lines[1]).toBe(` ${styled('dim', '\u{F058}')}  ${styled('dim', expected)}`);
 });
 
 it('renders a line break and an escape sequence as one line', () => {
   const lines = planLines([{ text: 'First\nSecond\u001B[31m', status: 'pending' }], 80, theme);
 
-  expect(lines.slice(1)).toEqual([' \u{F10C} First Second']);
+  expect(lines.slice(1)).toEqual([' \u{F10C}  First Second']);
 });
