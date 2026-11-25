@@ -42,7 +42,23 @@ const styled = (color: ThemeColor, text: string) => {
   return `\u001B[${codes[color]}m${text}\u001B[0m`;
 };
 
+const supportedStyleFields: ReadonlySet<string> = new Set(['fg', 'bold', 'strikethrough']);
+
+const isSetStyleField = (value: unknown): boolean => value !== undefined && value !== false;
+
+const rejectUnsupportedStyleField = (options: ThemeStyle): void => {
+  const suppliedFields = Object.entries(options as Record<string, unknown>);
+
+  for (const [field, value] of suppliedFields) {
+    if (isSetStyleField(value) && !supportedStyleFields.has(field)) {
+      throw new Error(`The test theme does not style the ${field} field.`);
+    }
+  }
+};
+
 const styleCode = (options: ThemeStyle): string => {
+  rejectUnsupportedStyleField(options);
+
   const parts: string[] = [];
   const color = options.fg;
 
@@ -203,6 +219,21 @@ it('styles each status mark and step text', () => {
     ` ${styled('muted', '\u{F10C}')}  ${styledText('Open the PR', { fg: 'muted' })}`,
     ` ${styled('warning', '\u{F06A}')}  ${styledText('Fix the lint warning', { fg: 'warning' })}`,
   ]);
+});
+
+it('rejects a style field the recording theme does not draw', () => {
+  const unsupportedStyles = [
+    { field: 'bg', options: { bg: 'selectedBg' } },
+    { field: 'dim', options: { dim: true } },
+    { field: 'italic', options: { italic: true } },
+    { field: 'underline', options: { underline: true } },
+    { field: 'inverse', options: { inverse: true } },
+    { field: 'blink', options: { blink: true } as unknown as ThemeStyle },
+  ] satisfies { field: string; options: ThemeStyle }[];
+
+  for (const { field, options } of unsupportedStyles) {
+    expect(() => styleCode(options)).toThrow(field);
+  }
 });
 
 it('keeps the step text aligned when a mark draws narrower', () => {

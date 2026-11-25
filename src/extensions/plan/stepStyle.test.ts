@@ -1,12 +1,12 @@
-import type { ThemeColor, ThemeStyle } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
 import type { PlanStep } from './steps.js';
 import { stepStyle } from './stepStyle.js';
+import type { StepStyle } from './stepStyle.js';
 
 const table: {
   status: PlanStep['status'];
-  expected: { mark: string; markColor: ThemeColor; textStyle: ThemeStyle };
+  expected: StepStyle;
 }[] = [
   {
     status: 'pending',

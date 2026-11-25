@@ -32,15 +32,14 @@ const headerLine = (steps: readonly PlanStep[], width: number, theme: PlanTheme)
   const counterPart = ` · ${completed}/${steps.length}`;
   const labelWidth = visibleWidth(labelPrefix) + visibleWidth(planLabel);
   const layout = headerLayout(width, labelWidth, visibleWidth(counterPart));
+  const labelMarkup = `${theme.fg('border', labelPrefix)}${theme.fg('muted', planLabel)}`;
 
   if (layout.kind === 'labelOnly') {
-    const labelOnly = `${theme.fg('border', labelPrefix)}${theme.fg('muted', planLabel)}`;
-
-    return truncateToWidth(labelOnly, width, '');
+    return truncateToWidth(labelMarkup, width, '');
   }
 
   const rule = theme.fg('border', '─'.repeat(layout.ruleWidth));
-  const line = `${theme.fg('border', labelPrefix)}${theme.fg('muted', planLabel)}${theme.fg('muted', counterPart)} ${rule}`;
+  const line = `${labelMarkup}${theme.fg('muted', counterPart)} ${rule}`;
 
   return truncateToWidth(line, width, '');
 };
