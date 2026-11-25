@@ -132,7 +132,11 @@ const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: ()
 
 const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
   ({
-    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSessionFile },
+    sessionManager: {
+      getEntries: () => entries,
+      getBranch: () => [],
+      getSessionFile: () => managerSessionFile,
+    },
     ui: { notify: () => undefined },
     isIdle: () => true,
     signal: undefined,
