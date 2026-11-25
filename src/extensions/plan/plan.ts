@@ -1,8 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { appendToolGuidelines } from '../../instructions/systemPrompt.js';
+import { appendSystemPrompt, appendToolGuidelines } from '../../instructions/systemPrompt.js';
 import { currentRole } from '../../role/role.js';
 import { roleRegistersTool } from '../../role/roleTools.js';
+import { planPromptText } from './prompt.js';
 import { replayPlan } from './steps.js';
 import { createPlanTool, planToolGuidelines } from './tool.js';
 import { drawPlan } from './widget.js';
@@ -36,4 +37,12 @@ export default function planExtension(pi: ExtensionAPI): void {
 
   pi.on('session_start', handler);
   pi.on('session_tree', handler);
+
+  pi.on('before_agent_start', (event, context) => {
+    const text = planPromptText(replayPlan(context.sessionManager.getBranch()).steps);
+
+    if (text !== undefined) {
+      appendSystemPrompt(event, text);
+    }
+  });
 }

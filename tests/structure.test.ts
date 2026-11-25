@@ -115,6 +115,7 @@ const pureModules = [
   'src/extensions/modelFallback/fallbackRoute.ts',
   'src/extensions/piResume/sessionDecision.ts',
   'src/extensions/plan/headerLayout.ts',
+  'src/extensions/plan/prompt.ts',
   'src/extensions/plan/stepStyle.ts',
   'src/extensions/plan/steps.ts',
   'src/extensions/pr/evidenceDecisions.ts',
