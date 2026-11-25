@@ -186,6 +186,7 @@ it('refuses a question this session never received', async () => {
 
   expect(result.isError).toBe(true);
   expect(result.details).toMatchObject({ status: 'refused', questionId });
+  expect(reason).toContain('never received');
   expect(reason).toContain(questionId);
   expect(frames).toBe(0);
   expect(savedFiles(asker)).toEqual([]);

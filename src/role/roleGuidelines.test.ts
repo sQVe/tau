@@ -89,8 +89,8 @@ it('names the approval-only and other-question handover rules with their tools',
     approvalGuideline.indexOf('`handover_answer`'),
   );
 
-  expect(otherGuideline).toContain('Answer any other handover question');
-  expect(otherGuideline).toContain('`handover_answer`');
+  expect(otherGuideline).toContain('directly with `handover_answer`');
+  expect(otherGuideline).not.toContain('`ask_user_question`');
 });
 
 it('keeps every lead-only guideline out of the architect set', () => {

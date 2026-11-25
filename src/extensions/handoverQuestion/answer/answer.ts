@@ -51,6 +51,9 @@ const unknownNote = (sent: InboxSendResult): string => {
   return `${reason} Delivery is uncertain. A retry with the same answer and question ID is safe.`;
 };
 
+const refused = (questionId: string, reason: string): AgentToolResult<AnswerOutcome> =>
+  toolResult(reason, { status: 'refused', questionId, reason }, { isError: true });
+
 export const answerQuestion = async (
   target: AnswerTarget,
   input: AnswerInput,
@@ -59,17 +62,12 @@ export const answerQuestion = async (
 
   const received = receivedQuestion(target.entries, input.questionId, target.leadSession);
 
-  if (received.kind !== 'received') {
-    const reason =
-      received.kind === 'conflict'
-        ? conflictingReceiptsReason(input.questionId)
-        : notReceivedReason(input.questionId);
+  if (received.kind === 'conflict') {
+    return refused(input.questionId, conflictingReceiptsReason(input.questionId));
+  }
 
-    return toolResult(
-      reason,
-      { status: 'refused', questionId: input.questionId, reason },
-      { isError: true },
-    );
+  if (received.kind === 'not-received') {
+    return refused(input.questionId, notReceivedReason(input.questionId));
   }
 
   try {
@@ -102,12 +100,6 @@ export const answerQuestion = async (
   } catch (error) {
     target.hc.signal?.throwIfAborted();
 
-    const reason = errorMessage(error);
-
-    return toolResult(
-      reason,
-      { status: 'refused', questionId: input.questionId, reason },
-      { isError: true },
-    );
+    return refused(input.questionId, errorMessage(error));
   }
 };

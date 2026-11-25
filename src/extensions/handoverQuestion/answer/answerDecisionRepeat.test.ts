@@ -88,6 +88,7 @@ it('always refuses a different answer on an answered record', () => {
       const reason = decision.kind === 'refuse' ? decision.reason : '';
 
       expect(reason).toContain(fields.questionId);
+      expect(reason).toContain('a different answer');
     }),
     { seed, numRuns: 100 },
   );

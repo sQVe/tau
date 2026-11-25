@@ -189,7 +189,7 @@ const queuedAnswerReply: MessageReply = {
   sessionId: answerAskerSession,
 };
 
-it('reads the session cwd instead of the process cwd', async () => {
+const startAnswerSession = async () => {
   vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
@@ -213,16 +213,38 @@ it('reads the session cwd instead of the process cwd', async () => {
     throw new Error('The extension registered no handover-answer check.');
   }
 
+  const startSession = async (reason: 'startup' | 'resume', cwd: string): Promise<void> => {
+    await fake.handler('session_start')(
+      { type: 'session_start', reason },
+      context({ cwd, sessionId: answerAskerSession }),
+    );
+  };
+
+  const shutdown = async (): Promise<void> => {
+    const handlers = fake.handlers.get('session_shutdown') ?? [];
+
+    expect(handlers).not.toHaveLength(0);
+
+    for (const handler of handlers) {
+      await handler(
+        { type: 'session_shutdown', reason: 'quit' } as never,
+        context({ cwd: root, sessionId: answerAskerSession }),
+      );
+    }
+  };
+
+  return { root, check, startSession, shutdown };
+};
+
+it('reads the session cwd instead of the process cwd', async () => {
+  const { root, check, startSession } = await startAnswerSession();
+
   expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toBe(
     'This session has not started, so it cannot accept a handover answer.',
   );
 
   await writeQuestionRecord(root, openAnswerRecord());
-
-  await fake.handler('session_start')(
-    { type: 'session_start', reason: 'startup' },
-    context({ cwd: root, sessionId: answerAskerSession }),
-  );
+  await startSession('startup', root);
 
   const inboxRoot = temporaryDirectory(onTestFinished, 'tau-answer-inbox-');
 
@@ -238,17 +260,19 @@ it('reads the session cwd instead of the process cwd', async () => {
   });
 
   expect(await receiver.accept(answerRequest())).toEqual(queuedAnswerReply);
+});
 
-  const shutdownHandlers = fake.handlers.get('session_shutdown') ?? [];
+it('forgets the session cwd on shutdown', async () => {
+  const { root, check, startSession, shutdown } = await startAnswerSession();
 
-  expect(shutdownHandlers).not.toHaveLength(0);
+  await writeQuestionRecord(root, openAnswerRecord());
+  await startSession('startup', root);
 
-  for (const handler of shutdownHandlers) {
-    await handler(
-      { type: 'session_shutdown', reason: 'quit' } as never,
-      context({ cwd: root, sessionId: answerAskerSession }),
-    );
-  }
+  expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toEqual(
+    queuedAnswerReply,
+  );
+
+  await shutdown();
 
   const save = vi.fn<() => Promise<MessageReply>>(async () => queuedAnswerReply);
 

@@ -74,7 +74,7 @@ export type InboxReceipt =
 
 export const inboxMessageType = 'tau-inbox-message';
 
-export const carriedQuestionId = (carrier: QuestionCarrier): string | undefined => {
+const carriedQuestionId = (carrier: QuestionCarrier): string | undefined => {
   if (carrier.family === 'handover') {
     return undefined;
   }
