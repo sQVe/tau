@@ -1,3 +1,4 @@
+import { marked } from 'marked';
 import { expect, it } from 'vitest';
 
 import {
@@ -63,6 +64,13 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
     name: 'settles for a choice asked through a request',
     facts: leadTurn({
       finalText: 'Could you tell me which layout you want, the table or the cards?',
+    }),
+    expected: settle('no-hand-back'),
+  },
+  {
+    name: 'settles for a named choice after a colon',
+    facts: leadTurn({
+      finalText: 'Which format should I use for reports: the table or the cards?',
     }),
     expected: settle('no-hand-back'),
   },
@@ -190,6 +198,66 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
     expected: remind,
   },
   {
+    name: 'reminds for a status request with an or',
+    facts: leadTurn({ finalText: 'Could you tell me what passed or failed?' }),
+    expected: remind,
+  },
+  {
+    name: 'reminds for a request before a comma choice',
+    facts: leadTurn({
+      finalText: 'Please run the checker, would you prefer JSON or YAML?',
+    }),
+    expected: remind,
+  },
+  {
+    name: 'reminds for a request after a choice with a bare comma',
+    facts: leadTurn({
+      finalText: 'Would you prefer JSON or YAML, could you run the checker?',
+    }),
+    expected: remind,
+  },
+  {
+    name: 'settles for a soft-wrapped choice',
+    facts: leadTurn({ finalText: 'Would you like the table\nor the cards?' }),
+    expected: settle('no-hand-back'),
+  },
+  {
+    name: 'reminds for a soft-wrapped request',
+    facts: leadTurn({ finalText: 'Please\nrun the checker.' }),
+    expected: remind,
+  },
+  {
+    name: 'settles for a choice with a purpose clause',
+    facts: leadTurn({ finalText: 'Would you like me to use the table or the cards?' }),
+    expected: settle('no-hand-back'),
+  },
+  {
+    name: 'settles for a choice with parallel modifiers',
+    facts: leadTurn({
+      finalText: 'Would you like the table for reports or the cards for reports?',
+    }),
+    expected: settle('no-hand-back'),
+  },
+  {
+    name: 'reminds for an obligation to run',
+    facts: leadTurn({ finalText: 'You will need to run the checker.' }),
+    expected: remind,
+  },
+  {
+    name: 'settles for a code span request in a table cell',
+    facts: leadTurn({
+      finalText: ['| Output |', '| --- |', '| `Please run the checker.` |'].join('\n'),
+    }),
+    expected: settle('no-hand-back'),
+  },
+  {
+    name: 'reminds for prose in a table cell',
+    facts: leadTurn({
+      finalText: ['| Next step |', '| --- |', '| Please run the checker. |'].join('\n'),
+    }),
+    expected: remind,
+  },
+  {
     name: 'settles for a plain report',
     facts: leadTurn(),
     expected: settle('no-hand-back'),
@@ -258,4 +326,23 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, row) => {
   expect(decideHandBack(row.facts)).toEqual(row.expected);
+});
+
+it('keeps the decision stable when marked options change', () => {
+  const defaults = { ...marked.defaults };
+  const branch = leadTurn({ finalText: '~~Should I delete the branch?~~' });
+  const fence = leadTurn({ finalText: '```sh\nPlease run the checker.\n' });
+
+  expect(decideHandBack(branch)).toEqual(remind);
+  expect(decideHandBack(fence)).toEqual(settle('no-text'));
+
+  try {
+    marked.setOptions({ gfm: false });
+    expect(decideHandBack(branch)).toEqual(remind);
+
+    marked.setOptions({ pedantic: true });
+    expect(decideHandBack(fence)).toEqual(settle('no-text'));
+  } finally {
+    marked.setOptions(defaults);
+  }
 });

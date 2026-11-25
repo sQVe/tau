@@ -1,4 +1,4 @@
-import { lexer } from 'marked';
+import { Marked } from 'marked';
 import type { Tokens } from 'marked';
 
 import type { RoleKind } from '../../role/role.js';
@@ -28,11 +28,35 @@ const actionVerb =
 const decisionPhrase =
   /\b(?:should|shall|may|can|could|would) i\b|\bdo you want\b|\bwould you (?:like|prefer)\b|\bdo you approve\b|\bis it (?:ok|okay|fine)\b|\bare you (?:ok|okay) with\b|\b(?:which|what)\b/i;
 
-const phraseBreak =
-  /\b(?:for|to|who|that|which|whether|because|so|with|without|in|on|at|from|by|about|if|when|while|after|before|per|via)\b/i;
+const phraseBreak = /\b(?:who|that|which|whether|because|so|if|when|while|after|before)\b/i;
 
-const clauseBoundary = /(?:[,;]\s+(?:and|but|so|then)\b|[;]\s|\s-\s)/gi;
-const choiceBoundary = /,?\s+(?:and|but|so|then)\b|[;]\s|\s-\s/i;
+const determiners = new Set(['the', 'a', 'an', 'this', 'that', 'these', 'those']);
+
+const alternativeWordCount = 4;
+const previousWordOffset = 2;
+
+const prepositions = new Set([
+  'on',
+  'in',
+  'at',
+  'for',
+  'to',
+  'with',
+  'without',
+  'from',
+  'by',
+  'about',
+  'if',
+  'when',
+  'while',
+  'after',
+  'before',
+  'per',
+  'via',
+]);
+
+const clauseBoundary = /(?:[,;]\s+(?:and|but|so|then)\b|[;]\s|\s-\s|,\s*)/gi;
+const choiceBoundary = /,?\s+(?:and|but|so|then)\b|[;]\s|\s-\s|,\s*/i;
 const sentenceBoundary = /(?<=[.!?])\s+/;
 const questionPattern = /(?:^|(?<=[.!?])\s+)([^?\n]*\?)/g;
 
@@ -43,7 +67,7 @@ const secondPersonQuestion = /\b(?:can|could|would|will) you\b/i;
 
 const userAction = new RegExp(
   [
-    String.raw`\byou (?:should|need to|must)\b[^.!?\n]*\b${actionVerb}\b`,
+    String.raw`\byou (?:should|need to|will need to|must)\b[^.!?\n]*\b${actionVerb}\b`,
     String.raw`\b(?:please|kindly)\b[^.!?\n]*\b${actionVerb}\b`,
     String.raw`\b(?:reply|respond) (?:here|with|to this)\b`,
     String.raw`\b${actionVerb}\b[^.!?\n]*\byourself\b`,
@@ -66,7 +90,7 @@ const inlineText = (token: Tokens.Generic): string => {
   }
 
   if (typeof token.text === 'string') {
-    return token.text;
+    return token.text.replaceAll('\n', ' ');
   }
 
   return token.raw;
@@ -82,6 +106,19 @@ const isListStart = (start: unknown): start is number | '' =>
 
 const isList = (token: Tokens.Generic): token is Tokens.List =>
   token.type === 'list' && hasListItems(token) && isListStart(token.start);
+
+const hasTableCells = (token: Tokens.Generic): boolean =>
+  Array.isArray(token.align) && Array.isArray(token.header) && Array.isArray(token.rows);
+
+const isTable = (token: Tokens.Generic): token is Tokens.Table =>
+  token.type === 'table' && hasTableCells(token);
+
+const tableText = (table: Tokens.Table): string => {
+  const cells = [...table.header, ...table.rows.flat()];
+  const text = cells.map((cell) => cell.tokens.map(inlineText).join('')).join(' ');
+
+  return `${text}\n`;
+};
 
 const blockText = (token: Tokens.Generic): string => {
   if (token.type === 'code' || token.type === 'blockquote') {
@@ -103,6 +140,10 @@ const blockText = (token: Tokens.Generic): string => {
     return `${items.join('\n')}\n`;
   }
 
+  if (isTable(token)) {
+    return tableText(token);
+  }
+
   if (token.tokens !== undefined) {
     return `${token.tokens.map(inlineText).join('')}\n`;
   }
@@ -110,7 +151,9 @@ const blockText = (token: Tokens.Generic): string => {
   return `${inlineText(token)}\n`;
 };
 
-const visibleText = (text: string): string => lexer(text).map(blockText).join('');
+const markdown = new Marked({ gfm: true, pedantic: false });
+
+const visibleText = (text: string): string => markdown.lexer(text).map(blockText).join('');
 
 const choiceStart = (question: string, phraseIndex: number): number => {
   let start = 0;
@@ -124,6 +167,32 @@ const choiceStart = (question: string, phraseIndex: number): number => {
   }
 
   return start;
+};
+
+const words = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== '');
+
+const parallelAlternatives = (
+  leftWords: readonly string[],
+  rightWords: readonly string[],
+): boolean => {
+  const firstRight = rightWords[0];
+
+  if (firstRight === undefined) {
+    return false;
+  }
+
+  if (determiners.has(firstRight)) {
+    return leftWords.some((word) => determiners.has(word));
+  }
+
+  const leftLast = leftWords.at(-1);
+  const leftPrevious = leftWords.at(-previousWordOffset);
+
+  return leftLast !== undefined && !prepositions.has(leftPrevious ?? '');
 };
 
 const choiceSpan = (question: string): ChoiceSpan | undefined => {
@@ -141,15 +210,29 @@ const choiceSpan = (question: string): ChoiceSpan | undefined => {
   }
 
   const scope = afterPhrase.slice(0, alternative.index);
+  const phraseText = phrase[0].toLowerCase();
+  const namedForm = phraseText === 'which' || phraseText === 'what';
+  const namedSeparator = scope.includes(',') || scope.includes(':');
+
+  if (namedForm && !namedSeparator) {
+    return undefined;
+  }
 
   if (phraseBreak.test(scope)) {
     return undefined;
   }
 
-  const orEnd = phrase.index + phrase[0].length + alternative.index + alternative[0].length;
+  const orStart = phrase.index + phrase[0].length + alternative.index;
+  const orEnd = orStart + alternative[0].length;
   const afterAlternative = question.slice(orEnd);
   const boundary = choiceBoundary.exec(afterAlternative);
   const end = boundary === null ? question.length : orEnd + boundary.index;
+  const leftWords = words(question.slice(0, orStart)).slice(-alternativeWordCount);
+  const rightWords = words(question.slice(orEnd, end));
+
+  if (!parallelAlternatives(leftWords, rightWords)) {
+    return undefined;
+  }
 
   return { start: choiceStart(question, phrase.index), end };
 };
