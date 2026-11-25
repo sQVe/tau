@@ -58,7 +58,10 @@ One line and two unanchored findings:
 ```text
 Looks good overall. Two things I could not pin to a line:
 
-- The migration and the model change are separate commits, so rolling back one leaves the other in
-  place. Is that what we want?
-- The new flag is on for existing users. Maybe default it to off and let people opt in?
+- The migration and the model change are separate commits, so reverting the migration alone leaves
+  the code writing to a dropped column. Revert only that commit and the order path fails on the
+  next save. Is that what we want?
+- The new flag is on for existing accounts, so every current account starts sending a daily
+  digest. Open the settings of an account created before this change and the toggle already reads
+  on. Maybe default it to off and let people opt in?
 ```
