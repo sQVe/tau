@@ -217,6 +217,25 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
     expected: remind,
   },
   {
+    name: 'reminds for a request in a preceding sentence',
+    facts: leadTurn({
+      finalText: 'Please run the checker. Would you prefer JSON or YAML?',
+    }),
+    expected: remind,
+  },
+  {
+    name: 'reminds for a request in another table cell',
+    facts: leadTurn({
+      finalText: [
+        '| Next step |',
+        '| --- |',
+        '| Please run the checker. |',
+        '| Would you prefer JSON or YAML? |',
+      ].join('\n'),
+    }),
+    expected: remind,
+  },
+  {
     name: 'settles for a soft-wrapped choice',
     facts: leadTurn({ finalText: 'Would you like the table\nor the cards?' }),
     expected: settle('no-hand-back'),

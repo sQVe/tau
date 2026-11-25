@@ -55,7 +55,8 @@ const prepositions = new Set([
   'via',
 ]);
 
-const clauseBoundary = /(?:[,;]\s+(?:and|but|so|then)\b|[;]\s|\s-\s|,\s*)/gi;
+const clauseBoundary = /(?:[,;]\s+(?:and|but|so|then)\b|[;]\s|\s-\s|,\s*|(?<=[.!?])\s+)/gi;
+
 const choiceBoundary = /,?\s+(?:and|but|so|then)\b|[;]\s|\s-\s|,\s*/i;
 const sentenceBoundary = /(?<=[.!?])\s+/;
 const questionPattern = /(?:^|(?<=[.!?])\s+)([^?\n]*\?)/g;
@@ -115,7 +116,7 @@ const isTable = (token: Tokens.Generic): token is Tokens.Table =>
 
 const tableText = (table: Tokens.Table): string => {
   const cells = [...table.header, ...table.rows.flat()];
-  const text = cells.map((cell) => cell.tokens.map(inlineText).join('')).join(' ');
+  const text = cells.map((cell) => cell.tokens.map(inlineText).join('')).join('\n');
 
   return `${text}\n`;
 };
