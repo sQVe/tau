@@ -189,7 +189,7 @@ const queuedAnswerReply: MessageReply = {
   sessionId: answerAskerSession,
 };
 
-const startAnswerSession = async () => {
+const answerSessionFixture = async () => {
   vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
@@ -237,7 +237,7 @@ const startAnswerSession = async () => {
 };
 
 it('reads the session cwd instead of the process cwd', async () => {
-  const { root, check, startSession } = await startAnswerSession();
+  const { root, check, startSession } = await answerSessionFixture();
 
   expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toBe(
     'This session has not started, so it cannot accept a handover answer.',
@@ -263,7 +263,7 @@ it('reads the session cwd instead of the process cwd', async () => {
 });
 
 it('forgets the session cwd on shutdown', async () => {
-  const { root, check, startSession, shutdown } = await startAnswerSession();
+  const { root, check, startSession, shutdown } = await answerSessionFixture();
 
   await writeQuestionRecord(root, openAnswerRecord());
   await startSession('startup', root);
@@ -281,45 +281,17 @@ it('forgets the session cwd on shutdown', async () => {
 });
 
 it('reads the checkout of the next session start', async () => {
-  vi.stubEnv('TAU_ROLE', '');
-  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
-  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
-
-  const firstRoot = await createTemporaryRepository(onTestFinished);
+  const { root: firstRoot, check, startSession } = await answerSessionFixture();
   const secondRoot = await createTemporaryRepository(onTestFinished);
-  const processDirectory = temporaryDirectory(onTestFinished, 'tau-outside-repository-');
-  const processCwd = vi.spyOn(process, 'cwd').mockReturnValue(processDirectory);
-
-  onTestFinished(() => {
-    processCwd.mockRestore();
-    forgetAcceptCheck('handover-answer');
-  });
-
-  const fake = fakeExtensionApi();
-
-  handoverQuestionExtension(fake.pi);
-
-  const check = acceptChecks()['handover-answer'];
-
-  if (check === undefined) {
-    throw new Error('The extension registered no handover-answer check.');
-  }
 
   await writeQuestionRecord(firstRoot, openAnswerRecord());
-
-  await fake.handler('session_start')(
-    { type: 'session_start', reason: 'startup' },
-    context({ cwd: firstRoot, sessionId: answerAskerSession }),
-  );
+  await startSession('startup', firstRoot);
 
   expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toEqual(
     queuedAnswerReply,
   );
 
-  await fake.handler('session_start')(
-    { type: 'session_start', reason: 'resume' },
-    context({ cwd: secondRoot, sessionId: answerAskerSession }),
-  );
+  await startSession('resume', secondRoot);
 
   expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toBe(
     `This session asked no handover question ${answerQuestionId}.`,
