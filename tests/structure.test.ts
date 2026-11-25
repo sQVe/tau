@@ -228,6 +228,7 @@ const pureModules = [
   'src/linear/descriptionMatch.ts',
   'src/linear/ownership.ts',
   'src/process/stateDecision.ts',
+  'src/prose.ts',
   'src/questionGate/decideDecision.ts',
   'src/questionGate/decision/decision.ts',
   'src/questionGate/examples.ts',
@@ -323,6 +324,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/instructions/markdownLinks.ts': ['marked'],
   'src/instructions/stommeGuides/stommeGuidesDecision.ts': ['node:path', 'smol-toml'],
   'src/instructions/syncRecord.ts': ['smol-toml'],
+  'src/prose.ts': ['marked'],
   'src/schema.ts': ['typebox', 'typebox/value'],
   'tests/hcIsolationHarness.ts': ['node:path'],
 };
