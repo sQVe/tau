@@ -8,7 +8,7 @@ export type Entry = Record<string, unknown>;
 
 export type TranscriptLine =
   | { status: 'entry'; line: number; entry: Entry }
-  | { status: 'other'; line: number }
+  | { status: 'notARecord'; line: number }
   | { status: 'malformed'; line: number };
 
 export type Transcript =
@@ -76,14 +76,24 @@ export type TranscriptState = Static<typeof transcriptStateSchema>;
 export const copyKey = (entry: Entry): string =>
   `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
 
-const parseEntry = (source: string): Entry | undefined => {
-  try {
-    const value: unknown = JSON.parse(source);
+const classifyTranscriptLine = (line: string, number: number): TranscriptLine => {
+  let value: unknown;
 
-    return isRecord(value) ? value : undefined;
+  try {
+    value = JSON.parse(line);
   } catch {
-    return undefined;
+    return { status: 'malformed', line: number };
   }
+
+  return isRecord(value)
+    ? { status: 'entry', line: number, entry: value }
+    : { status: 'notARecord', line: number };
+};
+
+const parseEntry = (source: string): Entry | undefined => {
+  const line = classifyTranscriptLine(source, 1);
+
+  return line.status === 'entry' ? line.entry : undefined;
 };
 
 export const scanTranscriptLines = (source: string): TranscriptLine[] => {
@@ -94,21 +104,7 @@ export const scanTranscriptLines = (source: string): TranscriptLine[] => {
       continue;
     }
 
-    let value: unknown;
-
-    try {
-      value = JSON.parse(line);
-    } catch {
-      lines.push({ status: 'malformed', line: index + 1 });
-
-      continue;
-    }
-
-    const scanned: TranscriptLine = isRecord(value)
-      ? { status: 'entry', line: index + 1, entry: value }
-      : { status: 'other', line: index + 1 };
-
-    lines.push(scanned);
+    lines.push(classifyTranscriptLine(line, index + 1));
   }
 
   return lines;
