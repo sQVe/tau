@@ -15,6 +15,7 @@ import { blockerKinds, decideIncompleteReport } from '../incompleteReport.js';
 import { shortenSummary, summaryLengthLimit } from '../summaryLength.js';
 import { checkReport } from './reportChecks.js';
 import type { ReportCheckFacts } from './reportChecks.js';
+import { handoverSectionNames, summaryHasHeading } from './reportSections.js';
 
 export interface ReportRefusalState {
   incompleteRefused: boolean;
@@ -32,11 +33,6 @@ export interface ReportTarget {
 
 const millisecondsPerSecond = 1000;
 const millisecondsPerMinute = 60_000;
-
-export const handoverSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
-
-const summaryHasHeading = (summary: string, name: string): boolean =>
-  new RegExp(`^[\\s#*>-]*${name}\\**\\s*(?::|\\(|$)`, 'im').test(summary);
 
 const summaryLengthLimitText = summaryLengthLimit.toLocaleString('en-US');
 
@@ -199,6 +195,9 @@ export const reportToParent = async (
     if (handover.outcome === 'success') {
       const decision = await checkReport({
         role: assignment.loadout.role,
+        profile: assignment.loadout.profile,
+        task: assignment.task,
+        assignmentDirectory: dirname(target.assignmentPath),
         root: check.root,
         argv: check.argv,
         fullCheck: assignment.fullCheck,

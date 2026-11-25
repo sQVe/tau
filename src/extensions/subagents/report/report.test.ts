@@ -337,3 +337,84 @@ it('keeps the deadline warning when the report is refused', async () => {
 
   expect(deadlineWarning.clears).toBe(0);
 });
+
+const qaAssignment = (target: ReportTarget, task: string): void => {
+  target.assignment.profile = 'qa';
+
+  target.assignment.loadout = {
+    ...target.assignment.loadout,
+    profile: 'qa',
+    role: 'investigation',
+  };
+
+  target.assignment.task = task;
+};
+
+it('refuses a qa success report without a page inventory and saves nothing', async () => {
+  const { deadlineWarning, fake, report, target } = await setup();
+
+  qaAssignment(target, 'Check the team overview.\n\nApp URL: http://localhost:3000');
+  await writeAssignment(target.assignment);
+
+  await expect(reportToParent(target, report, deadlineWarning, checkFacts(target))).rejects.toThrow(
+    'Report refused: no page-inventory.md in the assignment directory.',
+  );
+
+  expect((await readAssignment(target.assignmentPath))?.report).toBeNull();
+  expect(fake.calls).toEqual([]);
+  expect(deadlineWarning.clears).toBe(0);
+});
+
+it('accepts a qa success report with a cited page inventory in the assignment directory', async () => {
+  const { deadlineWarning, report, target } = await setup();
+  const inventoryPath = join(dirname(target.assignmentPath), 'page-inventory.md');
+
+  qaAssignment(target, 'Check the team overview.\n\nApp URL: http://localhost:3000');
+  await writeAssignment(target.assignment);
+
+  await writeFile(
+    inventoryPath,
+    ['https://app.test/teams', '- Team list: visible: matches'].join('\n'),
+  );
+
+  await reportToParent(
+    target,
+    { ...report, evidence: [inventoryPath] },
+    deadlineWarning,
+    checkFacts(target),
+  );
+
+  expect((await readAssignment(target.assignmentPath))?.report).toEqual({
+    outcome: 'success',
+    summary: report.summary,
+    evidence: [inventoryPath],
+  });
+});
+
+it('accepts a qa success report when the task has no app URL line', async () => {
+  const { deadlineWarning, report, target } = await setup();
+
+  qaAssignment(target, 'Check the team overview.');
+  await writeAssignment(target.assignment);
+
+  await reportToParent(target, report, deadlineWarning, checkFacts(target));
+
+  expect((await readAssignment(target.assignmentPath))?.report?.outcome).toBe('success');
+});
+
+it('accepts a qa failure report with an app URL line and no page inventory', async () => {
+  const { deadlineWarning, target } = await setup();
+
+  qaAssignment(target, 'Check the team overview.\n\nApp URL: http://localhost:3000');
+  await writeAssignment(target.assignment);
+
+  const failure: ReportInput = {
+    outcome: 'failure',
+    summary: 'Stopped.\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None',
+    evidence: [],
+  };
+
+  await reportToParent(target, failure, deadlineWarning, checkFacts(target));
+
+  expect((await readAssignment(target.assignmentPath))?.report?.outcome).toBe('failure');
+});

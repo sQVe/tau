@@ -1,7 +1,71 @@
+import { Lexer } from 'marked';
 import { expect, it } from 'vitest';
 
 import type { Destination } from './markdownLinks.js';
-import { readDestination, readMarkdownLinks } from './markdownLinks.js';
+import {
+  markdownTokenText,
+  readDestination,
+  readMarkdownLinks,
+  walkMarkdownTokens,
+} from './markdownLinks.js';
+
+it('renders a line break as a newline', () => {
+  expect(markdownTokenText(Lexer.lexInline('a  \nb'))).toBe('a\nb');
+});
+
+it('walks list items', () => {
+  const types: string[] = [];
+
+  walkMarkdownTokens(Lexer.lex('- item'), (token) => {
+    types.push(token.type);
+  });
+
+  expect(types).toContain('list_item');
+  expect(types).toContain('text');
+});
+
+it('walks table cells', () => {
+  const text: string[] = [];
+
+  walkMarkdownTokens(Lexer.lex('| A |\n| --- |\n| B |'), (token) => {
+    if (token.type !== 'text') {
+      return;
+    }
+
+    const value: unknown = token.text;
+
+    if (typeof value === 'string') {
+      text.push(value);
+    }
+  });
+
+  expect(text).toContain('A');
+  expect(text).toContain('B');
+});
+
+it('skips children when the visit returns false', () => {
+  const types: string[] = [];
+
+  walkMarkdownTokens(Lexer.lex('> - item'), (token) => {
+    types.push(token.type);
+
+    return false;
+  });
+
+  expect(types).toEqual(['blockquote']);
+});
+
+it('skips code and html tokens', () => {
+  const types: string[] = [];
+
+  walkMarkdownTokens(Lexer.lex('```\ncode\n```\n\n<div>html</div>\n\nparagraph'), (token) => {
+    types.push(token.type);
+  });
+
+  expect(types).toContain('paragraph');
+  expect(types).not.toContain('code');
+  expect(types).not.toContain('html');
+});
 
 const targetTable: { name: string; markdown: string; expected: readonly string[] }[] = [
   {

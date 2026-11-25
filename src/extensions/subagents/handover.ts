@@ -1,4 +1,4 @@
-import { handoverSectionNames } from './report/report.js';
+import { handoverSectionNames } from './report/reportSections.js';
 
 const assignmentContract = [
   'Own the assigned outcome through to completion: acceptance criteria, exploration, design, implementation, tests, and debugging.',

@@ -17,6 +17,21 @@ import { modelRefusal } from './modelRefusal.js';
 import { applyQaSettings } from './qaLaunch.js';
 import { textLimit } from './types.js';
 
+// A blank url is absent for every profile that accepts one; qa may fill it from urlCommand.
+const normalizeUrl = (parameters: LaunchParameters): LaunchParameters => {
+  const { url, ...rest } = parameters;
+
+  if (url === undefined || !checksLaunchEnvironment(parameters.profile)) {
+    return parameters;
+  }
+
+  const trimmed = url.trim();
+
+  return trimmed === '' ? rest : { ...rest, url: trimmed };
+};
+
+const blankUrlRefusal = 'Launch refused: the url is blank. Pass an http or https URL.';
+
 // Resolves the launch with the QA settings applied, and refuses it when the environment fails.
 export const checkLaunchEnvironment = async (
   requested: LaunchParameters,
@@ -30,7 +45,12 @@ export const checkLaunchEnvironment = async (
     throw new Error(modelRefused);
   }
 
-  const parameters = await applyQaSettings(requested, signal, context, exec);
+  const parameters = await applyQaSettings(normalizeUrl(requested), signal, context, exec);
+
+  if (requested.url !== undefined && parameters.url === undefined) {
+    throw new Error(blankUrlRefusal);
+  }
+
   const urlRefusal = appUrlRefusal(parameters.profile, parameters.url);
 
   if (urlRefusal !== undefined) {
