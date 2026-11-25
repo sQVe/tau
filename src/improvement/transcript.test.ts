@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseTranscript, scanTranscriptLines } from './transcript.ts';
+import { parseEntries, parseTranscript, scanTranscriptLines } from './transcript.ts';
 
 const normal = readFileSync(
   new URL('./fixtures/withoutPublication.jsonl', import.meta.url),
@@ -50,6 +50,26 @@ describe('scanTranscriptLines', () => {
         },
       },
     ]);
+  });
+});
+
+describe('parseEntries', () => {
+  it('collects entries and counts every other line as malformed', () => {
+    const entry = message('m', { role: 'user', content: 'hi' });
+    const source = [header, '[1]', '{"type":', entry].join('\n');
+
+    expect(parseEntries(source)).toEqual({
+      entries: [
+        { type: 'session', id: 's', timestamp: 't0', cwd: '/work/me-1' },
+        {
+          type: 'message',
+          id: 'm',
+          timestamp: 'm-time',
+          message: { role: 'user', content: 'hi' },
+        },
+      ],
+      malformedLines: 2,
+    });
   });
 });
 

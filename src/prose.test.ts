@@ -26,6 +26,11 @@ const table: {
     expected: [{ rule: 'emDash', line: 1, excerpt: 'A pause—then more.' }],
   },
   {
+    name: 'trims a trailing space from the excerpt',
+    markdown: 'A pause—then more&nbsp;',
+    expected: [{ rule: 'emDash', line: 1, excerpt: 'A pause—then more' }],
+  },
+  {
     name: 'flags the left single curly quote',
     markdown: 'A \u2018quote.',
     expected: [{ rule: 'curlyQuote', line: 1, excerpt: 'A \u2018quote.' }],
@@ -281,6 +286,15 @@ const sentenceTable: {
     expected: [
       { text: 'First.', line: 1, words: 1 },
       { text: 'Second—third.', line: 2, words: 1 },
+    ],
+  },
+  {
+    name: 'reads the line of a sentence between two soft line breaks',
+    markdown: 'First.\nSecond.\nThird—fourth.',
+    expected: [
+      { text: 'First.', line: 1, words: 1 },
+      { text: 'Second.', line: 2, words: 1 },
+      { text: 'Third—fourth.', line: 3, words: 1 },
     ],
   },
   {
