@@ -1,0 +1,188 @@
+import { parseShellCommands } from '../../shell.js';
+import type { ShellCommand } from '../../shell.js';
+
+export interface DetachedOutputFacts {
+  toolName: string;
+  command: unknown;
+}
+
+interface BlockedDetachedOutput {
+  block: true;
+  reason: string;
+}
+
+export type DetachedOutputDecision = BlockedDetachedOutput | undefined;
+
+type StreamTarget = { kind: 'file'; path: string } | { kind: 'closed' } | { kind: 'unknown' };
+
+interface Streams {
+  stdout: StreamTarget | undefined;
+  stderr: StreamTarget | undefined;
+}
+
+const shellNames = new Set(['sh', 'bash', 'dash', 'zsh']);
+const devNull = '/dev/null';
+
+const isDescriptor = (target: string): boolean => /^\d+$/u.test(target) || target === '-';
+
+const setStream = (
+  streams: Streams,
+  fileDescriptor: number | undefined,
+  target: StreamTarget,
+): void => {
+  if (fileDescriptor === 2) {
+    streams.stderr = target;
+  } else if (fileDescriptor === undefined || fileDescriptor === 1) {
+    streams.stdout = target;
+  }
+};
+
+const duplicatedTarget = (streams: Streams, target: string): StreamTarget => {
+  if (target === '-') {
+    return { kind: 'closed' };
+  }
+
+  if (target === '1') {
+    return streams.stdout ?? { kind: 'unknown' };
+  }
+
+  if (target === '2') {
+    return streams.stderr ?? { kind: 'unknown' };
+  }
+
+  return { kind: 'unknown' };
+};
+
+// `>&word` redirects both streams when word is a file, and duplicates one descriptor when word is a
+// number or `-`.
+const applyAmpersand = (
+  streams: Streams,
+  fileDescriptor: number | undefined,
+  target: string,
+): void => {
+  if (isDescriptor(target)) {
+    setStream(streams, fileDescriptor, duplicatedTarget(streams, target));
+
+    return;
+  }
+
+  const file: StreamTarget = { kind: 'file', path: target };
+
+  if (fileDescriptor === undefined) {
+    streams.stdout = file;
+    streams.stderr = file;
+
+    return;
+  }
+
+  // Bash refuses a numbered `>&` to a file, so this stream is neither a log nor a discard.
+  setStream(streams, fileDescriptor, { kind: 'unknown' });
+};
+
+const applyRedirection = (
+  streams: Streams,
+  redirection: ShellCommand['redirections'][number],
+): void => {
+  const target = redirection.target;
+
+  if (target === undefined) {
+    return;
+  }
+
+  const { fileDescriptor, operator } = redirection;
+
+  if (operator === '&>' || operator === '&>>') {
+    streams.stdout = { kind: 'file', path: target };
+    streams.stderr = { kind: 'file', path: target };
+  } else if (['>', '>>', '>|'].includes(operator)) {
+    setStream(streams, fileDescriptor, { kind: 'file', path: target });
+  } else if (operator === '>&') {
+    applyAmpersand(streams, fileDescriptor, target);
+  }
+};
+
+const streamsOf = (command: ShellCommand): Streams => {
+  const streams: Streams = { stdout: undefined, stderr: undefined };
+
+  for (const redirection of command.redirections) {
+    applyRedirection(streams, redirection);
+  }
+
+  return streams;
+};
+
+const discardsStderr = (command: ShellCommand): boolean => {
+  const stderr = streamsOf(command).stderr;
+
+  if (stderr === undefined) {
+    return false;
+  }
+
+  const writesDevNull = stderr.kind === 'file' && stderr.path === devNull;
+
+  return stderr.kind === 'closed' || writesDevNull;
+};
+
+// Only a resolved file target keeps the output where a later read can see it.
+const logsStderr = (command: ShellCommand): boolean => {
+  const stderr = streamsOf(command).stderr;
+
+  return stderr?.kind === 'file' && stderr.path !== devNull;
+};
+
+const shellNameOf = (argument: string): string => argument.slice(argument.lastIndexOf('/') + 1);
+
+const scriptOf = (command: ShellCommand): string | undefined => {
+  const shellIndex = command.arguments.findIndex((argument) =>
+    shellNames.has(shellNameOf(argument)),
+  );
+
+  if (shellIndex === -1) {
+    return undefined;
+  }
+
+  const commandFlagIndex = command.arguments.indexOf('-c', shellIndex + 1);
+
+  return commandFlagIndex === -1 ? undefined : command.arguments[commandFlagIndex + 1];
+};
+
+// The outer redirection hides the script's own stderr. A script keeps it when its last command
+// writes stderr to a file and no command sends stderr to /dev/null.
+const scriptKeepsStderr = (script: string): boolean => {
+  const commands = parseShellCommands(script);
+  const nonEmpty = (commands ?? []).filter((command) => command.arguments.length > 0);
+  const last = nonEmpty.at(-1);
+
+  if (last === undefined || !logsStderr(last)) {
+    return false;
+  }
+
+  return nonEmpty.every((command) => !discardsStderr(command));
+};
+
+const hidesFailure = (command: ShellCommand): boolean => {
+  if (!command.background || !discardsStderr(command)) {
+    return false;
+  }
+
+  const script = scriptOf(command);
+
+  return script === undefined || !scriptKeepsStderr(script);
+};
+
+const blockReason =
+  'This bash command detaches a process and sends its stderr to /dev/null, so a failure would be hidden. Write the output to a log file, such as `> /tmp/<name>.log 2>&1`, then read the log and the exit status before reporting the effect.';
+
+export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutputDecision => {
+  if (facts.toolName !== 'bash' || typeof facts.command !== 'string') {
+    return undefined;
+  }
+
+  const commands = parseShellCommands(facts.command);
+
+  if (commands === undefined) {
+    return undefined;
+  }
+
+  return commands.some(hidesFailure) ? { block: true, reason: blockReason } : undefined;
+};

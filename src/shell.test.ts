@@ -12,10 +12,10 @@ const argumentsOf = (source: string) =>
     ?.map(({ arguments: commandArguments }) => commandArguments)
     .filter((commandArguments) => commandArguments.length > 0);
 
-const inputsOf = (source: string) =>
+const backgroundsOf = (source: string): boolean[] | undefined =>
   parseShellCommands(source)
-    ?.filter(({ words }) => words.length > 0)
-    .map(({ inputs }) => inputs);
+    ?.filter(({ arguments: commandArguments }) => commandArguments.length > 0)
+    .map(({ background }) => background);
 
 describe('parseShellCommands', () => {
   it.each([
@@ -31,6 +31,82 @@ describe('parseShellCommands', () => {
     ['a&&b', [['a'], ['b']]],
   ])('splits redirections from words: %s', (source, expected) => {
     expect(wordsOf(source)).toEqual(expected);
+  });
+
+  it('records a background command and its redirections', () => {
+    expect(parseShellCommands('cmd 2>/dev/null &')?.[0]).toMatchObject({
+      background: true,
+      redirections: [{ fileDescriptor: 2, operator: '>', target: '/dev/null' }],
+    });
+
+    expect(parseShellCommands('cmd > /tmp/x.log 2>&1 &')?.[0]).toMatchObject({
+      background: true,
+      redirections: [
+        { fileDescriptor: undefined, operator: '>', target: '/tmp/x.log' },
+        { fileDescriptor: 2, operator: '>&', target: '1' },
+      ],
+    });
+
+    expect(parseShellCommands('cmd &>/dev/null &')?.[0]).toMatchObject({
+      background: true,
+      redirections: [{ fileDescriptor: undefined, operator: '&>', target: '/dev/null' }],
+    });
+  });
+
+  it('does not mark an and-list as background', () => {
+    const commands = parseShellCommands('cmd && other')?.filter(
+      ({ arguments: commandArguments }) => commandArguments.length > 0,
+    );
+
+    expect(commands?.map(({ background }) => background)).toEqual([false, false]);
+  });
+
+  it('marks every command in a background pipeline or list unit', () => {
+    expect(backgroundsOf('cmd 2>/dev/null | cat &')).toEqual([true, true]);
+    expect(backgroundsOf('cmd 2>/dev/null & cat')).toEqual([true, false]);
+    expect(backgroundsOf('cmd && other &')).toEqual([true, true]);
+    expect(backgroundsOf('cmd; other &')).toEqual([false, true]);
+  });
+
+  it.each([
+    ['a pipeline with |&', 'printf example 2>/dev/null |& cat', [false, false]],
+    ['a pipeline with |& and a trailing ampersand', 'cmd 2>/dev/null |& cat &', [true, true]],
+    [
+      'a pipeline broken across a newline with a trailing ampersand',
+      'nohup cmd 2>/dev/null |\n  cat &',
+      [true, true],
+    ],
+    [
+      'an outer command before a substitution with an inner ampersand',
+      'printf example 2>/dev/null; printf "%s" "$(true &)"',
+      [false, false, true],
+    ],
+    [
+      'an and-list broken across a newline with a trailing ampersand',
+      'nohup cmd 2>/dev/null &&\n  other &',
+      [true, true],
+    ],
+    [
+      'an or-list broken across a newline with a trailing ampersand',
+      'nohup cmd 2>/dev/null ||\n  other &',
+      [true, true],
+    ],
+    [
+      'an and-list broken across a newline without a trailing ampersand',
+      'cmd 2>/dev/null &&\n  other',
+      [false, false],
+    ],
+  ])(
+    'marks background inside the unit that ends with an ampersand: %s',
+    (_name, source, expected) => {
+      expect(backgroundsOf(source)).toEqual(expected);
+    },
+  );
+
+  it('splits an append of both streams', () => {
+    expect(parseShellCommands('cmd &>>/tmp/x.log')?.[0]).toMatchObject({
+      redirections: [{ fileDescriptor: undefined, operator: '&>>', target: '/tmp/x.log' }],
+    });
   });
 
   it.each([
@@ -55,95 +131,6 @@ describe('parseShellCommands', () => {
     ],
   ])('keeps only the arguments bash passes: %s', (source, expected) => {
     expect(argumentsOf(source)).toEqual(expected);
-  });
-
-  it.each([
-    ['sh < commit.sh', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
-    ['sh 0< commit.sh', [[{ descriptor: '0', kind: 'file', target: 'commit.sh' }]]],
-    ['sh 00< commit.sh', [[{ descriptor: '00', kind: 'file', target: 'commit.sh' }]]],
-    ['sh 3< commit.sh', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
-    ['sh <commit.sh > build.log', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
-    ['sh <> commit.sh', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
-    ['sh 3<> commit.sh', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
-    ['sh <&3', [[{ descriptor: undefined, kind: 'duplicate', target: '3' }]]],
-    ['sh 2<&1', [[{ descriptor: '2', kind: 'duplicate', target: '1' }]]],
-    [
-      'sh 3< commit.sh <&3',
-      [
-        [
-          { descriptor: '3', kind: 'file', target: 'commit.sh' },
-          { descriptor: undefined, kind: 'duplicate', target: '3' },
-        ],
-      ],
-    ],
-    ['sh > build.log', [[]]],
-    ['sh >> build.log', [[]]],
-    ['sh >&2', [[]]],
-    ['sh &> build.log', [[]]],
-    ["cat <<'EOF'\nbody\nEOF", [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
-    ["cat <<-'EOF'\n\tbody\n\tEOF", [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
-    ['cat <<< word', [[{ descriptor: undefined, kind: 'hereString', target: 'word' }]]],
-    [
-      'sh 3<<EOF < commit.sh\nbody\nEOF',
-      [
-        [
-          { descriptor: '3', kind: 'heredoc', target: '' },
-          { descriptor: undefined, kind: 'file', target: 'commit.sh' },
-        ],
-      ],
-    ],
-    [
-      'sh <2<script.sh',
-      [
-        [
-          { descriptor: undefined, kind: 'file', target: '2' },
-          { descriptor: undefined, kind: 'file', target: 'script.sh' },
-        ],
-      ],
-    ],
-    ['sh >&1<script.sh', [[{ descriptor: undefined, kind: 'file', target: 'script.sh' }]]],
-    [
-      'sh 3< commit.sh 0>&3',
-      [
-        [
-          { descriptor: '3', kind: 'file', target: 'commit.sh' },
-          { descriptor: '0', kind: 'duplicate', target: '3' },
-        ],
-      ],
-    ],
-    [
-      'sh 3< commit.sh 2>&3',
-      [
-        [
-          { descriptor: '3', kind: 'file', target: 'commit.sh' },
-          { descriptor: '2', kind: 'duplicate', target: '3' },
-        ],
-      ],
-    ],
-    [
-      'sh 3< commit.sh 2>&3 <&2',
-      [
-        [
-          { descriptor: '3', kind: 'file', target: 'commit.sh' },
-          { descriptor: '2', kind: 'duplicate', target: '3' },
-          { descriptor: undefined, kind: 'duplicate', target: '2' },
-        ],
-      ],
-    ],
-    ['sh 3< commit.sh >&2', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
-    ['sh 0< >&1', [[]]],
-    ['sh 0< <<EOF\nbody\nEOF', [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
-    [
-      'sh <&3<&4',
-      [
-        [
-          { descriptor: undefined, kind: 'duplicate', target: '3' },
-          { descriptor: undefined, kind: 'duplicate', target: '4' },
-        ],
-      ],
-    ],
-  ])('records the redirections that feed standard input: %s', (source, expected) => {
-    expect(inputsOf(source)).toEqual(expected);
   });
 
   it.each([
@@ -310,73 +297,20 @@ describe('parseShellCommands', () => {
       {
         words: ['cat'],
         arguments: ['cat'],
-        inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
-        heredocs: [{ body: 'body\n', scope: '0' }],
-        depth: 0,
-        scope: '',
+        heredocs: ['body\n'],
+        background: false,
+        redirections: [],
       },
-      {
-        words: ['next'],
-        arguments: ['next'],
-        inputs: [],
-        heredocs: [],
-        depth: 0,
-        scope: '',
-      },
+      { words: ['next'], arguments: ['next'], heredocs: [], background: false, redirections: [] },
     ]);
   });
 
   it('strips leading tabs from the delimiter line only for <<-', () => {
     expect(parseShellCommands('cat <<-EOF\n\tbody\n\tEOF\nnext')?.[0]?.heredocs).toEqual([
-      { body: '\tbody\n', scope: '0' },
+      '\tbody\n',
     ]);
 
-    expect(parseShellCommands('cat <<EOF\n\tEOF\nEOF\nnext')?.[0]?.heredocs).toEqual([
-      { body: '\tEOF\n', scope: '0' },
-    ]);
-  });
-
-  it.each([
-    ['(a)', [['a', 1]]],
-    ['((a))', [['a', 2]]],
-    [
-      '(a) (b)',
-      [
-        ['a', 1],
-        ['b', 1],
-      ],
-    ],
-    [
-      '(a; b) c',
-      [
-        ['a', 1],
-        ['b', 1],
-        ['c', 0],
-      ],
-    ],
-  ])('records the parenthesis depth: %s', (source, expected) => {
-    const depths = parseShellCommands(source)
-      ?.filter(({ words }) => words.length > 0)
-      .map(({ words, depth }) => [words[0], depth]);
-
-    expect(depths).toEqual(expected);
-  });
-
-  it('records the scope of each expanding heredoc body on its owner', () => {
-    const commands = parseShellCommands(
-      "cd sub <<EOF\n$(a)\nEOF\ncat <<'E2'\nx\nE2\ncat <<E3\n$(b)\nE3\n",
-    );
-
-    const owners = commands?.map(({ words, heredocs, scope }) => [words, heredocs, scope]);
-
-    expect(owners).toEqual([
-      [['cd', 'sub'], [{ body: '$(a)\n', scope: '0' }], ''],
-      [['cat'], [{ body: 'x\n', scope: undefined }], ''],
-      [['a'], [], '0.0'],
-      [['cat'], [{ body: '$(b)\n', scope: '1' }], ''],
-      [[], [], ''],
-      [['b'], [], '1.0'],
-    ]);
+    expect(parseShellCommands('cat <<EOF\n\tEOF\nEOF\nnext')?.[0]?.heredocs).toEqual(['\tEOF\n']);
   });
 
   it('does not treat <<< as a heredoc', () => {
@@ -384,19 +318,11 @@ describe('parseShellCommands', () => {
       {
         words: ['cat', 'word'],
         arguments: ['cat'],
-        inputs: [{ descriptor: undefined, kind: 'hereString', target: 'word' }],
         heredocs: [],
-        depth: 0,
-        scope: '',
+        background: false,
+        redirections: [{ fileDescriptor: undefined, operator: '<<<', target: 'word' }],
       },
-      {
-        words: ['next'],
-        arguments: ['next'],
-        inputs: [],
-        heredocs: [],
-        depth: 0,
-        scope: '',
-      },
+      { words: ['next'], arguments: ['next'], heredocs: [], background: false, redirections: [] },
     ]);
   });
 
@@ -449,44 +375,20 @@ describe('parseShellCommands', () => {
 
   it('reads an empty heredoc when the source ends after the operator', () => {
     expect(parseShellCommands('cat <<EOF')).toEqual([
-      {
-        words: ['cat'],
-        arguments: ['cat'],
-        inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
-        heredocs: [{ body: '', scope: '0' }],
-        depth: 0,
-        scope: '',
-      },
+      { words: ['cat'], arguments: ['cat'], heredocs: [''], background: false, redirections: [] },
     ]);
-  });
-
-  it.each([
-    ['a; b', ['', '']],
-    ['a; $(b); c', ['', '', '0', '']],
-    ['$( $(x) )', ['', '0', '0.1']],
-    ['`a`', ['', '0']],
-    ['cat <<EOF\n$(x)\nEOF', ['', '', '0.0']],
-    ["cat <<'EOF'\nx\nEOF", ['', '']],
-  ])('gives each substitution its own scope: %s', (source, expected) => {
-    const scopes = parseShellCommands(source)?.map(({ scope }) => scope);
-
-    expect(scopes).toEqual(expected);
   });
 
   it('keeps the heredoc body free of a phantom line at the end of the source', () => {
-    expect(parseShellCommands('cat <<EOF\nbody\n')?.[0]?.heredocs).toEqual([
-      { body: 'body\n', scope: '0' },
-    ]);
+    expect(parseShellCommands('cat <<EOF\nbody\n')?.[0]?.heredocs).toEqual(['body\n']);
   });
 
   it('strips every leading tab, and only leading tabs, before comparing the delimiter', () => {
-    expect(parseShellCommands('cat <<-ab\na\tb\nab\nnext')?.[0]?.heredocs).toEqual([
-      { body: 'a\tb\n', scope: '0' },
-    ]);
+    expect(parseShellCommands('cat <<-ab\na\tb\nab\nnext')?.[0]?.heredocs).toEqual(['a\tb\n']);
 
     const commands = parseShellCommands('cat <<-EOF\n\t\tEOF\nnext');
 
-    expect(commands?.[0]?.heredocs).toEqual([{ body: '', scope: '0' }]);
+    expect(commands?.[0]?.heredocs).toEqual(['']);
     expect(commands?.map(({ words }) => words)).toContainEqual(['next']);
   });
 
