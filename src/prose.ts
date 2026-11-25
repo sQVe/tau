@@ -263,5 +263,12 @@ const findingsOf = (sentence: ProseSentence): ProseFinding[] => {
 const byLineThenRule = (left: ProseFinding, right: ProseFinding): number =>
   left.line - right.line || ruleOrder.indexOf(left.rule) - ruleOrder.indexOf(right.rule);
 
-export const checkProse = (markdown: string): ProseFinding[] =>
-  proseSentences(markdown).flatMap(findingsOf).toSorted(byLineThenRule);
+export const analyzeProse = (
+  markdown: string,
+): { sentences: ProseSentence[]; findings: ProseFinding[] } => {
+  const sentences = proseSentences(markdown);
+
+  return { sentences, findings: sentences.flatMap(findingsOf).toSorted(byLineThenRule) };
+};
+
+export const checkProse = (markdown: string): ProseFinding[] => analyzeProse(markdown).findings;

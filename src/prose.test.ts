@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { checkProse, proseSentences } from './prose.js';
+import { analyzeProse, checkProse, proseSentences } from './prose.js';
 import type { ProseFinding } from './prose.js';
 
 const words = (count: number, end = ''): string =>
@@ -215,6 +215,15 @@ const table: {
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, row) => {
   expect(checkProse(row.markdown)).toEqual(row.expected);
+});
+
+it('returns the sentences and findings of one walk', () => {
+  const markdown = `A pause—then more.\n\n${words(41, '.')}`;
+
+  const analysis = analyzeProse(markdown);
+
+  expect(analysis.sentences).toEqual(proseSentences(markdown));
+  expect(analysis.findings).toEqual(checkProse(markdown));
 });
 
 const sentenceTable: {

@@ -1,5 +1,5 @@
-import { checkProse, proseSentences } from '../../src/prose.ts';
-import type { ProseFinding, ProseSentence } from '../../src/prose.ts';
+import { analyzeProse, checkProse } from '../../src/prose.ts';
+import type { ProseFinding } from '../../src/prose.ts';
 
 type ProseRule = ProseFinding['rule'];
 
@@ -65,14 +65,10 @@ interface RuleTally {
   sample: ProseSample[];
 }
 
-// One parse feeds both the rule counts and the band, so these rules mirror src/prose.ts.
+// The report's rule order and its report-only 25 to 39 word band.
 const ruleOrder: readonly ProseRule[] = ['longSentence', 'emDash', 'curlyQuote'];
 const bandMinimumWords = 25;
 const bandMaximumWords = 39;
-const longestSentenceWords = 40;
-const excerptLength = 100;
-const emDash = '\u2014';
-const curlyQuotes = ['\u2018', '\u2019', '\u201C', '\u201D'];
 
 const emptyTally = (): RuleTally => ({
   repliesWithFinding: 0,
@@ -87,51 +83,29 @@ const createTallies = (): Record<ProseRule, RuleTally> => ({
   curlyQuote: emptyTally(),
 });
 
-const rulesOf = (sentence: ProseSentence): ProseRule[] => {
-  const rules: ProseRule[] = [];
-
-  if (sentence.words > longestSentenceWords) {
-    rules.push('longSentence');
-  }
-
-  if (sentence.text.includes(emDash)) {
-    rules.push('emDash');
-  }
-
-  if (curlyQuotes.some((quote) => sentence.text.includes(quote))) {
-    rules.push('curlyQuote');
-  }
-
-  return rules;
-};
-
-const excerptOf = (sentence: ProseSentence): string =>
-  sentence.text.length > excerptLength
-    ? `${sentence.text.slice(0, excerptLength)}...`
-    : sentence.text;
-
 const accumulateReply = (
   tallies: Record<ProseRule, RuleTally>,
   band: ProseSample[],
   reply: ProseReply,
 ): void => {
+  const analysis = analyzeProse(reply.text);
   const found = new Set<ProseRule>();
 
-  for (const sentence of proseSentences(reply.text)) {
-    for (const rule of rulesOf(sentence)) {
-      const tally = tallies[rule];
+  for (const finding of analysis.findings) {
+    const tally = tallies[finding.rule];
 
-      tally.findings += 1;
-      found.add(rule);
+    tally.findings += 1;
+    found.add(finding.rule);
 
-      tally.sample.push({
-        source: reply.source,
-        line: reply.line,
-        model: reply.model,
-        excerpt: excerptOf(sentence),
-      });
-    }
+    tally.sample.push({
+      source: reply.source,
+      line: reply.line,
+      model: reply.model,
+      excerpt: finding.excerpt,
+    });
+  }
 
+  for (const sentence of analysis.sentences) {
     if (sentence.words >= bandMinimumWords && sentence.words <= bandMaximumWords) {
       band.push({
         source: reply.source,
