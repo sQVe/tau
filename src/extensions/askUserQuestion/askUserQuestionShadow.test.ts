@@ -83,6 +83,7 @@ interface HarnessOptions {
   dialogResult?: Deferred<DialogResult | undefined>;
   projectTrusted?: boolean;
   decideReadConfig?: DecidePorts['readConfig'];
+  decideRandom?: DecidePorts['random'];
   // Prepares the repository and returns the checkout the tool runs in.
   prepareRepository?: (repository: string) => Promise<string>;
 }
@@ -310,9 +311,10 @@ const createHarness = async (
   const notify = vi.fn<ConfigWarnings['notify']>();
 
   askUserQuestionExtension(fake.pi, {
-    ...(options.decideReadConfig === undefined
-      ? {}
-      : { decide: { readConfig: options.decideReadConfig } }),
+    decide: {
+      random: options.decideRandom ?? (() => 1),
+      ...(options.decideReadConfig === undefined ? {} : { readConfig: options.decideReadConfig }),
+    },
     shadow: {
       now: options.now ?? (() => clock.now),
       schedule: (work) => {
@@ -975,6 +977,54 @@ it('uses the supplied confidence for the agent verdict', async ({ onTestFinished
   expect(recordOf(harness)).toMatchObject({
     confidence: 0.7,
     judges: { agent: { verdict: { kind: 'answered', confidence: 0.7 }, milliseconds: 0 } },
+  });
+});
+
+it('records the shadow sample when the audit sends a would-be decision to the dialog', async ({
+  onTestFinished,
+}) => {
+  const harness = await createHarness(onTestFinished, {
+    config: { questionGate: { ...frozenConfig(), decide: true } },
+    decideRandom: () => 0.1,
+  });
+
+  const question = { ...eligibleQuestion, confidence: 0.7 };
+  const pending = harness.run([question]);
+
+  await waitFor(() => {
+    expect(harness.registry.classify).toHaveBeenCalledTimes(1);
+  });
+
+  harness.registry.judgeGate.resolve(undefined);
+
+  await waitFor(() => {
+    expect(harness.dialogs).toHaveLength(1);
+  });
+
+  harness.latest().handleInput('\r');
+  await pending;
+
+  const shadowDone = harness.start();
+
+  await waitFor(() => {
+    expect(harness.registry.complete).toHaveBeenCalledTimes(6);
+  });
+
+  harness.saveGate.resolve(undefined);
+  await shadowDone;
+
+  expect(harness.notify).not.toHaveBeenCalled();
+
+  expect(recordOf(harness)).toMatchObject({
+    kind: 'shadow',
+    confidence: 0.7,
+    judges: {
+      classifier: { verdict: { kind: 'answered', confidence: 0.9 } },
+      classifierExamples: { verdict: { kind: 'answered', confidence: 0.9 } },
+      panel: { verdict: { kind: 'answered', confidence: 1 } },
+      panelExamples: { verdict: { kind: 'answered', confidence: 1 } },
+      agent: { verdict: { kind: 'answered', confidence: 0.7 }, milliseconds: 0 },
+    },
   });
 });
 

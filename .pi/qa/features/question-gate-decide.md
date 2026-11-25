@@ -2,14 +2,16 @@
 
 Target: pi-session
 
-Only the manager runs this feature's session. The first session answers without a dialog, and the
-second needs a person at the terminal to close its dialog. A `qa` worker cannot type into either.
+Only the manager runs this feature's session. The first session answers without a dialog unless the
+gate audits the call, and the second needs a person at the terminal to close its dialog. A `qa`
+worker cannot type into either.
 
 ## Entry points
 
 `pi --no-extensions --extension "$checkout/src/tau.ts"`, run in a scratch Git repository with an
 isolated `PI_CODING_AGENT_DIR`. The manager calls `ask_user_question` in two sessions. The first call
-is eligible and the gate answers it. The second is an approval and opens the dialog.
+is eligible, and the gate answers it unless its audit sends the call to the dialog. The second is an
+approval and opens the dialog.
 
 ## Driving steps
 
@@ -72,8 +74,12 @@ This is a manager-run check with a user at the terminal. Call the tool ask_user_
 PROMPT
 ```
 
-5. Start the first session from the scratch repository. The gate answers, so no dialog opens. Start
-   the second session in a terminal where the user can close its dialog with Escape.
+5. Start the first session from the scratch repository, in a terminal where the user can close a
+   dialog. The gate answers four calls in five. When its audit sends the call to the dialog, the
+   user closes that dialog with Escape, the result is `declined`, and the manager starts another
+   session in a new directory, such as `$agent/sessions-one-2`, until one answers. Set `sessions_one`
+   to the answering attempt's directory. Then start the second session in the same terminal, where
+   the user closes its dialog with Escape.
 
 ```sh
 cd "$scratch"
@@ -98,7 +104,7 @@ pi --version > "$evidence/pi-version.txt"
    with no model reply leaves the item open, because no assistant text proves the model answered.
 
 ```sh
-log_one=$(find "$agent/sessions-one" -name '*.jsonl' -type f | head -n 1)
+log_one=$(find "$sessions_one" -name '*.jsonl' -type f | head -n 1)
 jq -r 'select(.message.role == "assistant") | .message.content[]?
   | select(.type == "text") | .text' "$log_one" > "$evidence/model-reply.txt"
 test -s "$evidence/model-reply.txt" \
@@ -166,8 +172,9 @@ printf '%s\n' "$log_two" > "$evidence/session-log-two.txt"
 ## End state
 
 The evidence directory holds the source, the probe outputs, the auth probe, both session logs, the
-two inputs and results, the first result text, and the one decision record. The item stays open when
-the first session has no model reply, when the first result is not `decided`, or when the second call
+two inputs and results, the first result text, and the one decision record. The first session log is
+the one that answered; a log from an audited attempt is not used. The item stays open when the first
+session has no model reply, when the recorded first result is not `decided`, or when the second call
 wrote another record.
 
 ## Gotchas
@@ -181,3 +188,7 @@ wrote another record.
 - Decide mode is off by default. A missing `decide: true` opens both dialogs.
 - A reused branch name can list older decision records. Match the record's `time` and `head` before
   using it as evidence.
+- The audit sends one eligible call in five to the dialog. An audited first session opens a dialog
+  and writes no decision record, so plan for a person at the terminal and repeat until a session
+  answers. An audited attempt also starts the shadow job, which makes model calls when the classifier
+  and panel models are allowed.
