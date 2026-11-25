@@ -46,10 +46,6 @@ if [ ! -d "$HC_FAKE_REPLIES" ]; then
   printf '%s\\n' "hc fake: HC_FAKE_REPLIES is not a directory: $HC_FAKE_REPLIES" >&2
   exit 70
 fi
-if ! ( : >> "$HC_FAKE_LOG" ) 2>/dev/null; then
-  printf '%s\\n' "hc fake: HC_FAKE_LOG is not writable: $HC_FAKE_LOG" >&2
-  exit 70
-fi
 if [ -z "\${HC_SESSION:-}" ]; then
   append_log '${emptySessionRefusal}'
   exit 64
