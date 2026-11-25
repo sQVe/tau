@@ -8,6 +8,7 @@ import {
   manager,
   managerSession,
   otherSession,
+  planEntry,
   savedAssignment,
   savedQuestion,
   savedReport,
@@ -330,7 +331,7 @@ it('shows one ended message for a finished worker without a report', async () =>
 it('restores the ended message from the saved session', async () => {
   const { managerState, hc, assignmentId } = await finishedWorker();
 
-  managerState.entries.push({
+  managerState.pushEntry({
     type: 'custom_message',
     customType: 'tau-worker-ended',
     details: { assignmentId },
@@ -357,7 +358,7 @@ it('does not show an ended message twice while its message is still queued', asy
 it('does not show an ended message when the deadline message was shown', async () => {
   const { managerState, hc, assignmentId } = await finishedWorker();
 
-  managerState.entries.push({
+  managerState.pushEntry({
     type: 'custom_message',
     customType: 'tau-worker-deadline',
     details: { assignmentId },
@@ -452,16 +453,16 @@ it('keeps a queued report out of the saved session until its message is saved', 
   await deliver(managerState.context);
 
   expect(managerState.messages).toHaveLength(1);
-  expect(managerState.entries).toEqual([]);
+  expect(managerState.entriesOf(managerSession)).toEqual([]);
 
   await deliver(managerState.context);
 
   expect(managerState.messages).toHaveLength(1);
-  expect(managerState.entries).toEqual([]);
+  expect(managerState.entriesOf(managerSession)).toEqual([]);
 
   managerState.flush();
 
-  expect(managerState.entries).toEqual([
+  expect(managerState.entriesOf(managerSession)).toEqual([
     {
       type: 'custom_message',
       customType: 'tau-worker-report',
@@ -477,17 +478,24 @@ it('keeps a queued report out of the saved session until its message is saved', 
 it('shows a new report once and records it as a report message', async () => {
   const { managerState, deliver, assignmentId } = await reportDelivery(noSuffix);
 
-  managerState.entries.push(
-    { type: 'custom_message', customType: 'other-extension', details: { assignmentId: 'other' } },
-    { type: 'custom_message', customType: 'tau-worker-report', details: {} },
-  );
+  managerState.pushEntry({
+    type: 'custom_message',
+    customType: 'other-extension',
+    details: { assignmentId: 'other' },
+  });
+
+  managerState.pushEntry({
+    type: 'custom_message',
+    customType: 'tau-worker-report',
+    details: {},
+  });
 
   await deliver(managerState.context);
   await deliver(managerState.context);
 
   expect(managerState.messages).toHaveLength(1);
 
-  expect(managerState.entries).toEqual([
+  expect(managerState.entriesOf(managerSession)).toEqual([
     { type: 'custom_message', customType: 'other-extension', details: { assignmentId: 'other' } },
     { type: 'custom_message', customType: 'tau-worker-report', details: {} },
     {
@@ -501,7 +509,7 @@ it('shows a new report once and records it as a report message', async () => {
 it('restores the shown state from a saved report message for a fresh delivery', async () => {
   const { managerState, deliver, assignmentId } = await reportDelivery(noSuffix);
 
-  managerState.entries.push({
+  managerState.pushEntry({
     type: 'custom_message',
     customType: 'tau-worker-report',
     details: { assignmentId, outcome: 'success' },
@@ -510,7 +518,7 @@ it('restores the shown state from a saved report message for a fresh delivery', 
   await deliver(managerState.context);
 
   expect(managerState.messages).toEqual([]);
-  expect(managerState.entries).toHaveLength(1);
+  expect(managerState.entriesOf(managerSession)).toHaveLength(1);
 });
 
 it('wakes an idle manager with a report', async () => {
@@ -587,13 +595,8 @@ it.each(['success', 'failure'] as const)(
 );
 
 it('appends the plan suffix to a report for a lead with a plan', async () => {
-  const branchEntry = { type: 'custom', customType: 'tau-plan', data: { version: 1, steps: [] } };
-
-  const siblingEntry = {
-    type: 'custom',
-    customType: 'tau-plan',
-    data: { version: 1, steps: [{ text: 'Sibling step', status: 'pending' }] },
-  };
+  const branchEntry = planEntry([]);
+  const siblingEntry = planEntry([{ text: 'Sibling step', status: 'pending' }]);
 
   const received: (readonly unknown[])[] = [];
 
@@ -605,8 +608,8 @@ it('appends the plan suffix to a report for a lead with a plan', async () => {
 
   const { managerState, deliver } = await reportDelivery(suffix);
 
-  managerState.entries.push(siblingEntry);
-  managerState.branchEntries.push(branchEntry);
+  managerState.pushEntry(siblingEntry);
+  managerState.pushBranchEntry(branchEntry);
 
   await deliver(managerState.context);
 
@@ -731,7 +734,7 @@ it('shows a pending question once and records it as a question message', async (
 
   expect(managerState.messages).toHaveLength(1);
 
-  expect(managerState.entries).toEqual([
+  expect(managerState.entriesOf(managerSession)).toEqual([
     {
       type: 'custom_message',
       customType: 'tau-worker-question',
@@ -744,7 +747,7 @@ it('shows a question again when another extension message carries its IDs', asyn
   const question = savedQuestion();
   const { managerState, deliver, assignmentId } = await reportDelivery(noSuffix, null, [question]);
 
-  managerState.entries.push({
+  managerState.pushEntry({
     type: 'custom_message',
     customType: 'other-extension',
     details: { assignmentId, questionId: question.questionId },
@@ -759,7 +762,7 @@ it('does not show a saved question again for a fresh delivery over its message',
   const question = savedQuestion();
   const { managerState, hc, assignmentId } = await reportDelivery(noSuffix, null, [question]);
 
-  managerState.entries.push({
+  managerState.pushEntry({
     type: 'custom_message',
     customType: 'tau-worker-question',
     details: { assignmentId, questionId: question.questionId },
@@ -768,7 +771,7 @@ it('does not show a saved question again for a fresh delivery over its message',
   await deliverPending(createWorkerDelivery(managerState.pi, noSuffix), hc, managerState.context);
 
   expect(managerState.messages).toEqual([]);
-  expect(managerState.entries).toHaveLength(1);
+  expect(managerState.entriesOf(managerSession)).toHaveLength(1);
 });
 
 it('does not show a queued question twice while its message is still queued', async () => {

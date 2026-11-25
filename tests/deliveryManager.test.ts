@@ -1,12 +1,12 @@
 import { expect, it } from 'vitest';
 
-import { createManager, managerSession, otherSession } from './deliveryManager.js';
+import { createManager, managerSession, otherSession, planEntry } from './deliveryManager.js';
 
 it('returns the branch entries of the current session', () => {
   const managerState = createManager();
-  const entry = { type: 'custom', customType: 'tau-plan', data: { version: 1, steps: [] } };
+  const entry = planEntry([]);
 
-  managerState.branchEntries.push(entry);
+  managerState.pushBranchEntry(entry);
 
   expect(managerState.context.sessionManager.getBranch()).toEqual([entry]);
 
@@ -22,12 +22,24 @@ it('returns the branch entries of the current session', () => {
 
 it('includes the branch entries in the all-entry list', () => {
   const managerState = createManager();
-  const sibling = { type: 'custom', customType: 'tau-plan', data: { version: 1, steps: [] } };
-  const branch = { type: 'custom', customType: 'tau-plan', data: { version: 1, steps: [] } };
+  const sibling = planEntry([{ text: 'Sibling step', status: 'pending' }]);
+  const branch = planEntry([]);
 
-  managerState.entries.push(sibling);
-  managerState.branchEntries.push(branch);
+  managerState.pushEntry(sibling);
+  managerState.pushBranchEntry(branch);
 
   expect(managerState.context.sessionManager.getEntries()).toEqual([sibling, branch]);
+  expect(managerState.context.sessionManager.getBranch()).toEqual([branch]);
+});
+
+it('keeps a branch entry before a later sibling entry in the all-entry list', () => {
+  const managerState = createManager();
+  const branch = planEntry([]);
+  const sibling = planEntry([{ text: 'Sibling step', status: 'pending' }]);
+
+  managerState.pushBranchEntry(branch);
+  managerState.pushEntry(sibling);
+
+  expect(managerState.context.sessionManager.getEntries()).toEqual([branch, sibling]);
   expect(managerState.context.sessionManager.getBranch()).toEqual([branch]);
 });

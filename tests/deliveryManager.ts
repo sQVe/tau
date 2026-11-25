@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import { planEntryType, planRecord } from '../src/extensions/plan/steps.js';
+import type { PlanStep } from '../src/extensions/plan/steps.js';
 import type { Assignment, SavedQuestion } from '../src/extensions/subagents/assignment.js';
 import { assignmentDirectory } from '../src/extensions/subagents/assignment.js';
 import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
@@ -24,7 +26,7 @@ interface SessionEntryLike {
 
 interface SessionEntries {
   entries: SessionEntryLike[];
-  branchEntries: SessionEntryLike[];
+  branchEntries: Set<SessionEntryLike>;
 }
 
 interface Manager {
@@ -32,8 +34,8 @@ interface Manager {
   context: DeliveryContext;
   messages: SentMessage[];
   sendOptions: unknown[];
-  entries: SessionEntryLike[];
-  branchEntries: SessionEntryLike[];
+  pushEntry: (entry: SessionEntryLike) => void;
+  pushBranchEntry: (entry: SessionEntryLike) => void;
   branchReads: string[];
   notifications: [string, string | undefined][];
   entriesOf: (sessionFile: string) => SessionEntryLike[];
@@ -52,13 +54,19 @@ const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
   details: message.details,
 });
 
+export const planEntry = (steps: readonly PlanStep[]): SessionEntryLike => ({
+  type: 'custom',
+  customType: planEntryType,
+  data: planRecord(steps),
+});
+
+const emptySession = (): SessionEntries => ({ entries: [], branchEntries: new Set() });
+
 export const createManager = (options: { idle?: boolean; running?: boolean } = {}): Manager => {
   const messages: SentMessage[] = [];
   const sendOptions: unknown[] = [];
 
-  const sessions = new Map<string, SessionEntries>([
-    [managerSession, { entries: [], branchEntries: [] }],
-  ]);
+  const sessions = new Map<string, SessionEntries>([[managerSession, emptySession()]]);
 
   const queued: SentMessage[] = [];
   const branchReads: string[] = [];
@@ -73,7 +81,7 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
       return existing;
     }
 
-    const created = { entries: [], branchEntries: [] };
+    const created = emptySession();
 
     sessions.set(sessionFile, created);
 
@@ -82,8 +90,11 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
 
   const entriesOf = (sessionFile: string): SessionEntryLike[] => sessionOf(sessionFile).entries;
 
-  const branchOf = (sessionFile: string): SessionEntryLike[] =>
-    sessionOf(sessionFile).branchEntries;
+  const branchOf = (sessionFile: string): SessionEntryLike[] => {
+    const session = sessionOf(sessionFile);
+
+    return session.entries.filter((entry) => session.branchEntries.has(entry));
+  };
 
   const pi = {
     on: () => undefined,
@@ -101,7 +112,7 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
 
   const context = {
     sessionManager: {
-      getEntries: () => [...entriesOf(currentSession), ...branchOf(currentSession)],
+      getEntries: () => entriesOf(currentSession),
       getBranch: () => {
         branchReads.push(currentSession);
 
@@ -121,14 +132,17 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
     context,
     messages,
     sendOptions,
-    entries: entriesOf(managerSession),
-    branchEntries: branchOf(managerSession),
+    pushEntry: (entry) => {
+      entriesOf(currentSession).push(entry);
+    },
+    pushBranchEntry: (entry) => {
+      entriesOf(currentSession).push(entry);
+      sessionOf(currentSession).branchEntries.add(entry);
+    },
     branchReads,
     notifications,
     entriesOf,
     switchSession: (sessionFile: string) => {
-      sessionOf(sessionFile);
-
       currentSession = sessionFile;
     },
     setStreaming: (value: boolean) => {
