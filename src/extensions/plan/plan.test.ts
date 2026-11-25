@@ -5,6 +5,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   Theme,
+  ThemeStyle,
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
 import type { TUI } from '@earendil-works/pi-tui';
@@ -62,7 +63,10 @@ const planContext = (options: { mode?: ExtensionContext['mode']; branch?: unknow
 const runIn = (tool: ToolDefinition, steps: PlanStep[], context: ExtensionContext) =>
   tool.execute('call', { steps }, undefined, undefined, context as Parameters<Execute>[4]);
 
-const widgetTheme = { fg: (_color: string, text: string) => text } as unknown as Theme;
+const widgetTheme = {
+  fg: (_color: string, text: string) => text,
+  style: (text: string, _options: ThemeStyle) => text,
+} as unknown as Theme;
 
 const renderedLines = (content: WidgetContent): readonly string[] => {
   if (content === undefined) {
@@ -137,7 +141,7 @@ it('an accepted call appends one record, returns the summary, and shows the step
   expect(widgets.map(({ key }) => key)).toEqual([planWidgetKey]);
 
   expect(renderedLines(widgets.at(-1)?.content)).toEqual([
-    `─── Plan ${'─'.repeat(71)}`,
+    `─── Plan · 1/3 ${'─'.repeat(65)}`,
     ' \u{F192}  Brief worker for ME-123',
     ' \u{F10C}  Review worker change for ME-123',
     ' \u{F058}  Open the PR',

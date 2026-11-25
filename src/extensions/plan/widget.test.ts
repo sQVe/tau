@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from 'node:util';
 
-import type { Theme, ThemeColor } from '@earendil-works/pi-coding-agent';
+import type { Theme, ThemeColor, ThemeStyle } from '@earendil-works/pi-coding-agent';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { expect, it } from 'vitest';
 
@@ -9,7 +9,8 @@ import { planLabelColumn, planLines } from './widget.js';
 
 const theme = {
   fg: (_color: ThemeColor, text: string) => text,
-} satisfies Pick<Theme, 'fg'>;
+  style: (text: string, _options: ThemeStyle) => text,
+} satisfies Pick<Theme, 'fg' | 'style'>;
 
 const columnOf = (line: string, text: string): number => {
   const index = line.indexOf(text);
@@ -21,22 +22,72 @@ const columnOf = (line: string, text: string): number => {
   return visibleWidth(line.slice(0, index));
 };
 
-const codes = { border: '90', muted: '2', accent: '36', dim: '35', warning: '33' } as const;
+const codes = {
+  border: '90',
+  muted: '2',
+  accent: '36',
+  dim: '35',
+  warning: '33',
+  success: '32',
+} as const;
 
-const isStyledColor = (color: ThemeColor): color is keyof typeof codes =>
-  Object.hasOwn(codes, color);
+const isStyledColor = (color: unknown): color is keyof typeof codes =>
+  typeof color === 'string' && Object.hasOwn(codes, color);
 
 const styled = (color: ThemeColor, text: string) => {
   if (!isStyledColor(color)) {
-    throw new Error(`The test theme does not style the ${color} color.`);
+    throw new Error(`The recording theme does not style the ${color} color.`);
   }
 
   return `\u001B[${codes[color]}m${text}\u001B[0m`;
 };
 
+const supportedStyleFields: ReadonlySet<string> = new Set(['fg', 'bold', 'strikethrough']);
+
+const isSetStyleField = (value: unknown): boolean => value !== undefined && value !== false;
+
+const rejectUnsupportedStyleField = (options: ThemeStyle): void => {
+  const suppliedFields = Object.entries(options as Record<string, unknown>);
+
+  for (const [field, value] of suppliedFields) {
+    if (isSetStyleField(value) && !supportedStyleFields.has(field)) {
+      throw new Error(`The recording theme does not style the ${field} field.`);
+    }
+  }
+};
+
+const styleCode = (options: ThemeStyle): string => {
+  rejectUnsupportedStyleField(options);
+
+  const parts: string[] = [];
+  const color = options.fg;
+
+  if (color !== undefined) {
+    if (!isStyledColor(color)) {
+      throw new Error(`The recording theme does not style the ${JSON.stringify(color)} color.`);
+    }
+
+    parts.push(codes[color]);
+  }
+
+  if (options.bold === true) {
+    parts.push('1');
+  }
+
+  if (options.strikethrough === true) {
+    parts.push('9');
+  }
+
+  return parts.join(';');
+};
+
+const styledText = (text: string, options: ThemeStyle) =>
+  `\u001B[${styleCode(options)}m${text}\u001B[0m`;
+
 const styledTheme = {
   fg: (color: ThemeColor, text: string) => styled(color, text),
-} satisfies Pick<Theme, 'fg'>;
+  style: (text: string, options: ThemeStyle) => styledText(text, options),
+} satisfies Pick<Theme, 'fg' | 'style'>;
 
 const steps: PlanStep[] = [
   { text: 'Brief worker for ME-123', status: 'pending' },
@@ -45,15 +96,34 @@ const steps: PlanStep[] = [
   { text: 'Wait for the review', status: 'blocked' },
 ];
 
-it('draws a labeled border above the steps', () => {
-  const [border] = planLines(steps, 80, theme);
+const fiveSteps: PlanStep[] = [
+  { text: 'Brief the worker', status: 'completed' },
+  { text: 'Review its change', status: 'completed' },
+  { text: 'Commit the slice', status: 'in_progress' },
+  { text: 'Open the PR', status: 'pending' },
+  { text: 'Fix the lint warning', status: 'blocked' },
+];
 
-  expect(border).toBe(`─── Plan ${'─'.repeat(71)}`);
-  expect(visibleWidth(border ?? '')).toBe(80);
+const labelEnd = planLabelColumn + visibleWidth('Plan');
+const counterEnd = labelEnd + visibleWidth(' · 2/5');
+
+it('shows the completed count in the header', () => {
+  const [header] = planLines(fiveSteps, 80, theme);
+
+  expect(header).toBe(`─── Plan · 2/5 ${'─'.repeat(65)}`);
+  expect(visibleWidth(header ?? '')).toBe(80);
 });
 
-it('starts the label in the step text column', () => {
-  const lines = planLines([{ text: 'Brief worker', status: 'pending' }], 80, theme);
+it('colors the header border, label, and counter', () => {
+  const [header] = planLines(fiveSteps, 80, styledTheme);
+
+  expect(header).toBe(
+    `${styled('border', '─── ')}${styled('muted', 'Plan')}${styled('muted', ' · 2/5')} ${styled('border', '─'.repeat(65))}`,
+  );
+});
+
+it.each([14, 80])('starts the label and step text in the same column at width %i', (width) => {
+  const lines = planLines([{ text: 'Brief worker', status: 'pending' }], width, theme);
 
   expect(columnOf(lines[0] ?? '', 'Plan')).toBe(planLabelColumn);
   expect(columnOf(lines[1] ?? '', 'Brief')).toBe(planLabelColumn);
@@ -68,20 +138,41 @@ it.each([
   [6, '─── Pl'],
   [7, '─── Pla'],
   [8, '─── Plan'],
-  [9, '─── Plan '],
-  [10, '─── Plan ─'],
-  [11, '─── Plan ──'],
-])('cuts the border line to width %i', (width, expected) => {
-  const [border] = planLines(steps, width, theme);
+])('cuts the header to width %i', (width, expected) => {
+  const [header] = planLines(fiveSteps, width, theme);
 
-  expect(stripVTControlCharacters(border ?? '')).toBe(expected);
+  expect(stripVTControlCharacters(header ?? '')).toBe(expected);
 });
 
-it('fills every width from one column up', () => {
-  const widths = Array.from({ length: 40 }, (_value, index) => index + 1);
-  const drawn = widths.map((width) => visibleWidth(planLines(steps, width, theme)[0] ?? ''));
+it.each([
+  [16, '─── Plan · 2/5 ─'],
+  [15, '─── Plan · 2/5 '],
+  [14, '─── Plan · 2/5'],
+  [13, '─── Plan'],
+])('drops the header rule and then the counter at width %i', (width, expected) => {
+  const [header] = planLines(fiveSteps, width, theme);
 
-  expect(drawn).toEqual(widths);
+  expect(stripVTControlCharacters(header ?? '')).toBe(expected);
+});
+
+const headerWidthAt = (width: number): number => {
+  if (width < labelEnd) {
+    return width;
+  }
+
+  if (width < counterEnd) {
+    return labelEnd;
+  }
+
+  return width;
+};
+
+it('fills the width with the header while it fits', () => {
+  const widths = Array.from({ length: 40 }, (_value, index) => index + 1);
+
+  const drawn = widths.map((width) => visibleWidth(planLines(fiveSteps, width, theme)[0] ?? ''));
+
+  expect(drawn).toEqual(widths.map(headerWidthAt));
 });
 
 it.each([
@@ -89,31 +180,25 @@ it.each([
   [2, ' \u{F10C}'],
   [3, ' \u{F10C}'],
   [4, ' \u{F10C}  '],
-  [5, ' \u{F10C}  .'],
-  [12, ' \u{F10C}  Brief...'],
-])('keeps the status mark at width %i', (width, expected) => {
+  [5, ' \u{F10C}  …'],
+  [12, ' \u{F10C}  Brief w…'],
+])('keeps the status mark and gap at width %i', (width, expected) => {
   const line = planLines([{ text: 'Brief worker', status: 'pending' }], width, theme)[1] ?? '';
 
   expect(stripVTControlCharacters(line)).toBe(expected);
   expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 });
 
-it('keeps the step text aligned when a mark draws narrower', () => {
-  const narrowMarkTheme = {
-    fg: (_color: ThemeColor, text: string) => (text === '\u{F192}' ? '' : text),
-  } satisfies Pick<Theme, 'fg'>;
+it.each([
+  [5, '…'],
+  [6, 'O…'],
+  [7, 'Op…'],
+])('clips a completed step text with an ellipsis at width %i', (width, expected) => {
+  const lines = planLines([{ text: 'Open the PR', status: 'completed' }], width, styledTheme);
 
-  const [border, ...stepLines] = planLines(steps, 80, narrowMarkTheme);
-  const textColumns = steps.map(({ text }, index) => columnOf(stepLines[index] ?? '', text));
-
-  expect(columnOf(border ?? '', 'Plan')).toBe(planLabelColumn);
-  expect(textColumns).toEqual([4, 4, 4, 4]);
-});
-
-it('keeps each line within the width', () => {
-  const widths = planLines(steps, 20, theme).map((line) => visibleWidth(line));
-
-  expect(widths).toEqual([20, 20, 20, 15, 20]);
+  expect(lines[1]).toBe(
+    ` ${styled('success', '\u{F058}')}  ${styledText(expected, { fg: 'dim', strikethrough: true })}`,
+  );
 });
 
 it('shows a Nerd Font mark for each status', () => {
@@ -124,26 +209,50 @@ it('shows a Nerd Font mark for each status', () => {
   expect(marks).toEqual(['\u{F10C}', '\u{F192}', '\u{F058}', '\u{F06A}']);
 });
 
-it('colors each mark and dims a completed step', () => {
-  const lines = planLines(steps, 80, styledTheme);
+it('styles each status mark and step text', () => {
+  const [, ...stepLines] = planLines(fiveSteps, 80, styledTheme);
 
-  expect(lines).toEqual([
-    `${styled('border', '─── ')}${styled('muted', 'Plan')} ${styled('border', '─'.repeat(71))}`,
-    ` ${styled('muted', '\u{F10C}')}  Brief worker for ME-123`,
-    ` ${styled('accent', '\u{F192}')}  Review worker change`,
-    ` ${styled('dim', '\u{F058}')}  ${styled('dim', 'Open the PR')}`,
-    ` ${styled('warning', '\u{F06A}')}  Wait for the review`,
+  expect(stepLines).toEqual([
+    ` ${styled('success', '\u{F058}')}  ${styledText('Brief the worker', { fg: 'dim', strikethrough: true })}`,
+    ` ${styled('success', '\u{F058}')}  ${styledText('Review its change', { fg: 'dim', strikethrough: true })}`,
+    ` ${styled('accent', '\u{F192}')}  ${styledText('Commit the slice', { bold: true })}`,
+    ` ${styled('muted', '\u{F10C}')}  ${styledText('Open the PR', { fg: 'muted' })}`,
+    ` ${styled('warning', '\u{F06A}')}  ${styledText('Fix the lint warning', { fg: 'warning' })}`,
   ]);
 });
 
-it.each([
-  [5, '.'],
-  [6, '..'],
-  [7, '...'],
-])('dims the clipped text of a completed step at width %i', (width, expected) => {
-  const lines = planLines([{ text: 'Open the PR', status: 'completed' }], width, styledTheme);
+it('rejects a style field the recording theme does not draw', () => {
+  const unsupportedStyles = [
+    { field: 'bg', options: { bg: 'selectedBg' } },
+    { field: 'dim', options: { dim: true } },
+    { field: 'italic', options: { italic: true } },
+    { field: 'underline', options: { underline: true } },
+    { field: 'inverse', options: { inverse: true } },
+    { field: 'blink', options: { blink: true } as unknown as ThemeStyle },
+  ] satisfies { field: string; options: ThemeStyle }[];
 
-  expect(lines[1]).toBe(` ${styled('dim', '\u{F058}')}  ${styled('dim', expected)}`);
+  for (const { field, options } of unsupportedStyles) {
+    expect(() => styleCode(options)).toThrow(field);
+  }
+});
+
+it('keeps the step text aligned when a mark draws narrower', () => {
+  const narrowMarkTheme = {
+    fg: (_color: ThemeColor, text: string) => (text === '\u{F192}' ? '' : text),
+    style: (text: string, _options: ThemeStyle) => text,
+  } satisfies Pick<Theme, 'fg' | 'style'>;
+
+  const [header, ...stepLines] = planLines(steps, 80, narrowMarkTheme);
+  const textColumns = steps.map(({ text }, index) => columnOf(stepLines[index] ?? '', text));
+
+  expect(columnOf(header ?? '', 'Plan')).toBe(planLabelColumn);
+  expect(textColumns).toEqual([4, 4, 4, 4]);
+});
+
+it('keeps each line within the width', () => {
+  const widths = planLines(steps, 20, theme).map((line) => visibleWidth(line));
+
+  expect(widths).toEqual([20, 20, 20, 15, 20]);
 });
 
 it('renders a line break and an escape sequence as one line', () => {
