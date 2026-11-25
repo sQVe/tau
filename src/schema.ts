@@ -32,6 +32,39 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
   return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
 };
 
+// Adds additionalProperties: false to every object schema, so Pi refuses an argument the tool does
+// not declare. A map schema keeps its additionalProperties schema, which constrains every key.
+const strictSchemaValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(strictSchemaValue);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const clone: Record<PropertyKey, unknown> = { ...value };
+
+  for (const key of Object.keys(value)) {
+    clone[key] = strictSchemaValue(value[key]);
+  }
+
+  if (value['type'] === 'object') {
+    const additionalProperties = value['additionalProperties'];
+
+    if (additionalProperties === undefined || additionalProperties === true) {
+      clone['additionalProperties'] = false;
+    }
+  }
+
+  return clone;
+};
+
+export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Schema => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the clone keeps every schema field and only adds additionalProperties to object nodes.
+  return strictSchemaValue(schema) as Schema;
+};
+
 export const stringEnum = <const Values extends readonly string[]>(
   values: Values,
   options: { description?: string } = {},
