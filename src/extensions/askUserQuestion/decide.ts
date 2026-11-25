@@ -6,6 +6,7 @@ import { readQuestionGateConfig, shadowCohort } from '../../config/questionGateM
 import type { QuestionGateConfig, ShadowConfig } from '../../config/questionGateModels.js';
 import { readGitUnlessMissing } from '../../git.js';
 import {
+  decideAuditPicks,
   decideCall,
   decideDeadlineMilliseconds,
   decideEligibility,
@@ -64,8 +65,6 @@ type FrozenConfig = QuestionGateConfig & { shadow: ShadowConfig };
 type EligibleAskedQuestion = EligibleQuestion<AskedQuestion>;
 type JudgedAskedQuestion = EligibleAskedQuestion & { verdict: JudgeVerdict };
 type DecidedAskedQuestion = JudgedAskedQuestion & { confidence: number };
-
-const decideAuditRate = 0.2;
 
 const readBranch = async (cwd: string): Promise<{ branch: string | null; head: string | null }> => {
   const branch = await readGitUnlessMissing(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
@@ -218,7 +217,7 @@ const runDecision = async (
       return { kind: 'cancelled' };
     }
 
-    if (ports.random() < decideAuditRate) {
+    if (decideAuditPicks(ports.random())) {
       return { kind: 'ask' };
     }
 

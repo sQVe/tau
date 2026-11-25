@@ -46,7 +46,13 @@ export { readDecisionRecords, writeDecisionRecord } from './decision/decisionRec
 
 export type { QuestionGateDecision } from './decision/decision.ts';
 
-export { decideCall, decideDeadlineMilliseconds, decideEligibility } from './decideDecision.ts';
+export {
+  decideAuditPicks,
+  decideAuditRate,
+  decideCall,
+  decideDeadlineMilliseconds,
+  decideEligibility,
+} from './decideDecision.ts';
 
 export type {
   DecideCall,

@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { decideCall, decideEligibility } from './decideDecision.ts';
+import {
+  decideAuditPicks,
+  decideAuditRate,
+  decideCall,
+  decideEligibility,
+} from './decideDecision.ts';
 import type { DecideCall, DecideEligibility, EligibleQuestion } from './decideDecision.ts';
 import type { JudgeVerdict } from './questionGate.ts';
 import type { ShadowQuestionFacts } from './shadowDecision.ts';
@@ -208,4 +213,34 @@ const decideOutcome = (
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, row) => {
   expect(decideOutcome(row)).toEqual(row.expected);
+});
+
+it.each([
+  {
+    name: 'audits a draw below the audit rate',
+    random: decideAuditRate - 0.01,
+    expected: true,
+  },
+  {
+    name: 'does not audit a draw equal to the audit rate',
+    random: decideAuditRate,
+    expected: false,
+  },
+  {
+    name: 'does not audit a draw above the audit rate',
+    random: decideAuditRate + 0.01,
+    expected: false,
+  },
+  {
+    name: 'audits a zero draw',
+    random: 0,
+    expected: true,
+  },
+  {
+    name: 'does not audit the highest draw below one',
+    random: 0.999,
+    expected: false,
+  },
+] as const)('$name', ({ random, expected }) => {
+  expect(decideAuditPicks(random)).toBe(expected);
 });

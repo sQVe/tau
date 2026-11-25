@@ -24,6 +24,10 @@ export type DecideCall<Row> =
 
 export const decideDeadlineMilliseconds = 5_000;
 
+export const decideAuditRate = 0.2;
+
+export const decideAuditPicks = (random: number): boolean => random < decideAuditRate;
+
 export const decideEligibility = <Question extends ShadowQuestionFacts>(
   questions: readonly [Question, ...Question[]],
 ): DecideEligibility<Question> => {
