@@ -5,15 +5,15 @@ import { expect, it, vi } from 'vitest';
 import { sweepLockPath } from '../src/extensions/subagents/workerFolderSweep.js';
 import { generationPath } from '../src/fileLock/fileLock.js';
 import { signalActiveGenerationRead } from './sweepLockRead.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 vi.mock(import('node:fs/promises'), { spy: true });
-
-const agentDirectory = '/agent';
 
 const readFileQuietly = (path: string): Promise<unknown> =>
   fsPromises.readFile(path).catch(() => undefined);
 
-it('resolves only on the read of the generation its caller names', async () => {
+it('resolves only on the read of the generation its caller names', async ({ onTestFinished }) => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-sweep-lock-read-');
   const watching = signalActiveGenerationRead(agentDirectory, 2);
   let resolved = false;
 
