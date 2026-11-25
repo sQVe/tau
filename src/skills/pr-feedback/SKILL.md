@@ -151,6 +151,8 @@ metadata:
    - Give a declined thread's reason in one or two sentences, with the source that settles it. For a
      tracked finding, say `Tracked in <issue>.` A thread needing nothing gets a short
      acknowledgement or no reply.
+   - Write a reply that gives a reason or answers a question as
+     [review comments](../shared/review-comments.md) says. The rules above win for short replies.
    - Write commits as full 40-character SHAs in plain text, never backticks, so GitHub links them.
      Post only after the commit is on GitHub. Use `owner/repo@sha` only for another repository.
    - Author mode, review summaries and conversation comments: post one PR comment only for what a

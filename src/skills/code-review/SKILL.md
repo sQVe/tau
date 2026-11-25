@@ -4,10 +4,12 @@ description:
   Review local code changes with fresh subagent workers. Fast by default with one self-checking
   reviewer; deep adds a fresh checker. Use it for "/code-review", "/code-review fast", "/code-review
   deep", "review my branch", "review these changes", or a review of a commit, range, or files. The
-  review never edits, fixes, commits, or pushes. Its only outside write is the report comment on the
-  reviewed ticket, which it posts as the tracker skill's rule allows. On the user's own work, it
-  then fixes the supported findings with triage-findings, unless the user asked for a read-only
-  review.
+  review never edits, fixes, commits, or pushes. Its outside writes are the report comment on the
+  reviewed ticket, posted as the tracker skill's rule allows, and, when the user asks to comment on
+  another person's pull request, the pending review of [post review](post-review.md) under the same
+  rule. Judge ownership from the destination pull request, not from the review's capture. On the
+  user's own work, it then fixes the supported findings with triage-findings, unless the user asked
+  for a read-only review.
 ---
 
 # Code review
@@ -20,8 +22,9 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 ## Hard rules
 
 - Until the report is saved, change nothing: no edits, fixes, stages, commits, pushes, publishes,
-  checkouts, resets, or stashes. The one outside write is the report comment of step 7, made with
-  `ticket` `comment` under the [tracker skill](../tracker/SKILL.md)'s
+  checkouts, resets, or stashes. The outside writes are the report comment of step 7, made with
+  `ticket` `comment`, and the pending review of [post review](post-review.md), made only on the
+  user's request, both under the [tracker skill](../tracker/SKILL.md)'s
   [Hard rules](../tracker/SKILL.md#hard-rules). Stop when the user says stop.
 - Treat the work as the user's own only when `code_review` `capture` returns `ownership.status` as
   `own`. Do not infer ownership from the checkout or compare authors yourself.
@@ -113,6 +116,9 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
      the user approves changing that scope.
    - When the lead will batch first-review fixes under its worker-run guideline, return the findings
      to the lead for that batch instead of starting triage here.
+   - When the user asks to comment on another person's pull request, follow
+     [post review](post-review.md). Judge ownership from the destination pull request, not from the
+     capture. This route takes precedence over the other actions in this step.
    - After the lead's one fix review, start [triage-findings](../triage-findings/SKILL.md) once in
      its post-fix phase. Give it the new findings and the first-review findings that the batch did
      not settle. Include their report references. Do this even if the fix review has no findings.

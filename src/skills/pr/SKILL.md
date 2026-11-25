@@ -291,7 +291,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - Self-review comments: optional, usually none. Comment only on a deliberate hunk that looks
      wrong or a likely alternative rejected for a reason the diff cannot show. Never narrate the
      diff, explain routine code, or post fix receipts. Many comments suggest code comments or a
-     smaller PR.
+     smaller PR. Write each comment and the body as [review comments](../shared/review-comments.md)
+     says.
    - Self-test: can a reviewer without the ticket explain the purpose, changes, limits, and
      evidence? Remove unfamiliar internal terms. Weaken or cut claims without test or diff backing.
 
