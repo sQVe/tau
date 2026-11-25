@@ -1,33 +1,27 @@
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type {
+  AgentSession,
+  CustomMessageEntry,
+  SessionEntry,
+} from '@earendil-works/pi-coding-agent';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import type { Exec } from '../src/command.js';
-import { planReportText } from '../src/extensions/plan/plan.js';
 import type { PlanStep } from '../src/extensions/plan/steps.js';
 import { assignmentPath, writeAssignment } from '../src/extensions/subagents/assignment.js';
-import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
 import {
   manager,
   savedAssignment,
   savedReport,
 } from '../src/extensions/subagents/fixtures/deliveryManager.js';
-import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
-import type { WorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
-import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
-import type { HcRuntime, HcTerminal } from '../src/hc/hc.js';
+import { reportMessageType } from '../src/extensions/subagents/workerMessage.js';
+import type { HcTerminal } from '../src/hc/hc.js';
 import tauRegistration from '../src/tau/tau.js';
 import { installHcCommand } from './hcCommandHarness.js';
 import { createBoundSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
-
-interface RecordingDelivery {
-  delivery: WorkerDelivery;
-  messages: { customType?: unknown; content?: unknown; details?: unknown }[];
-}
 
 const mixedPlan: PlanStep[] = [
   { text: 'Brief worker', status: 'completed' },
@@ -38,84 +32,23 @@ const mixedPlan: PlanStep[] = [
 const planSuffix =
   '\n\nCurrent plan:\n[completed] Brief worker\n[in_progress] Review change\n[pending] Open the PR\n\nUpdate `plan` if this report finishes or blocks a step.';
 
-const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: () => undefined };
-
 const bundledWebAccessExtensionPath = resolve(
   import.meta.dirname,
   '../node_modules/pi-web-access/dist/index.js',
 );
 
-const succeeded = (value: unknown) => ({
-  code: 0,
-  killed: false,
-  truncated: false,
-  stdout: JSON.stringify(value),
-  stderr: '',
-});
-
-const createHc = (terminals: HcTerminal[]): HcRuntime => {
-  const exec: Exec = (command, commandArguments) => {
-    if (command !== 'hc') {
-      return Promise.resolve({
-        code: 1,
-        killed: false,
-        truncated: false,
-        stdout: '',
-        stderr: 'unexpected',
-      });
-    }
-
-    if (commandArguments[0] === 'ls') {
-      return Promise.resolve(
-        succeeded({
-          terminals: terminals.map((terminal) => ({ ...terminal, labels: undefined })),
-        }),
-      );
-    }
-
-    if (commandArguments[0] === 'get') {
-      const address = commandArguments.at(-1);
-      const terminal = terminals.find((candidate) => candidate.address === address);
-
-      const reply =
-        terminal === undefined
-          ? { code: 1, killed: false, truncated: false, stdout: '', stderr: 'not_found' }
-          : succeeded(terminal);
-
-      return Promise.resolve(reply);
-    }
-
-    return Promise.resolve({
-      code: 1,
-      killed: false,
-      truncated: false,
-      stdout: '',
-      stderr: 'unexpected',
-    });
-  };
-
-  return { exec, connect: () => Promise.reject(new Error('not used')), cwd: process.cwd() };
-};
-
-const recordingDelivery = (): RecordingDelivery => {
-  const messages: RecordingDelivery['messages'] = [];
-
-  const pi = {
-    on: () => undefined,
-    sendMessage: (message: RecordingDelivery['messages'][number]) => {
-      messages.push(message);
-    },
-  } as unknown as ExtensionAPI;
-
-  return { delivery: createWorkerDelivery(pi, planReportText), messages };
-};
-
 const reportText = (assignmentId: string): string =>
   `Worker report ${assignmentId}: success\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None\n\nEvidence:\n- a reference`;
 
+const isReportEntry = (entry: SessionEntry): entry is CustomMessageEntry =>
+  entry.type === 'custom_message' && entry.customType === reportMessageType;
+
+const reportEntries = (session: AgentSession) =>
+  session.sessionManager.getEntries().filter(isReportEntry);
+
 const setup = async (plan: PlanStep[] | undefined) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-plan-report-');
-  const { bin, log } = installHcCommand(directory);
+  const { bin, log, reply, replyGet } = installHcCommand(directory);
 
   vi.stubEnv('TAU_ROLE', 'lead');
   vi.stubEnv('HC_TERMINAL_ID', manager);
@@ -171,55 +104,53 @@ const setup = async (plan: PlanStep[] | undefined) => {
 
   await writeAssignment(saved);
 
-  const hc = createHc([
-    {
-      address: 't-child',
-      state: 'live',
-      parent: manager,
-      labels: { 'tau.assignment': assignmentPath(saved.assignmentId) },
+  const terminal: HcTerminal = {
+    address: 't-child',
+    state: 'live',
+    parent: manager,
+    labels: { 'tau.assignment': assignmentPath(saved.assignmentId) },
+  };
+
+  reply(
+    'ls',
+    JSON.stringify({
+      terminals: [{ address: terminal.address, state: terminal.state, parent: terminal.parent }],
+    }),
+  );
+
+  replyGet(terminal.address, JSON.stringify(terminal));
+
+  provider.setResponses([fauxAssistantMessage('Noted.')]);
+
+  // Tau's own registered scan runs on session_start, so the delivered report proves the wiring
+  // from the package root through the plan suffix and into the scan.
+  await session.extensionRunner.emit({ type: 'session_start', reason: 'reload' });
+
+  await vi.waitFor(
+    () => {
+      expect(reportEntries(session)).toHaveLength(1);
     },
-  ]);
+    { timeout: 10_000 },
+  );
 
-  const { delivery, messages } = recordingDelivery();
-  const notices: string[] = [];
-
-  const context = {
-    sessionManager: session.sessionManager,
-    ui: { notify: (message: string) => notices.push(message) },
-    isIdle: () => true,
-    signal: undefined,
-  } as unknown as Parameters<WorkerDelivery['deliver']>[0];
-
-  await createWorkerScan(
-    hc,
-    delivery,
-    noDeadline,
-    temporaryDirectory(onTestFinished, 'tau-sweep-'),
-  ).scan(context);
-
-  return { messages, notices, assignmentId: saved.assignmentId };
+  return { entries: reportEntries(session), assignmentId: saved.assignmentId };
 };
 
 it('ends a report to a lead with a plan with the plan and the update line', async () => {
-  const { messages, notices, assignmentId } = await setup(mixedPlan);
+  const { entries, assignmentId } = await setup(mixedPlan);
 
-  expect(notices).toEqual([]);
-  expect(messages).toHaveLength(1);
+  expect(entries).toHaveLength(1);
 
-  const message = messages[0] as { customType: string; content: string; details: unknown };
+  const entry = entries[0];
 
-  expect(message.customType).toBe('tau-worker-report');
-  expect(message.details).toEqual({ assignmentId, outcome: 'success' });
-  expect(message.content).toBe(`${reportText(assignmentId)}${planSuffix}`);
+  expect(entry?.details).toEqual({ assignmentId, outcome: 'success' });
+  expect(entry?.content).toBe(`${reportText(assignmentId)}${planSuffix}`);
 });
 
 it('leaves a report to a lead without a plan unchanged', async () => {
-  const { messages, notices, assignmentId } = await setup(undefined);
+  const { entries, assignmentId } = await setup(undefined);
 
-  expect(notices).toEqual([]);
-  expect(messages).toHaveLength(1);
+  expect(entries).toHaveLength(1);
 
-  const message = messages[0] as { content: string };
-
-  expect(message.content).toBe(reportText(assignmentId));
+  expect(entries[0]?.content).toBe(reportText(assignmentId));
 });
