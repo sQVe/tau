@@ -24,7 +24,7 @@ export interface ProseReportOptions {
 interface ReplyCandidate extends ProseReply {
   path: string;
   timestamp: number | undefined;
-  key: string;
+  copyId: string | undefined;
 }
 
 interface DiscoveredFile {
@@ -196,6 +196,19 @@ const replyOf = (
   };
 };
 
+const nonEmptyString = (value: unknown): value is string =>
+  typeof value === 'string' && value !== '';
+
+const completeCopyId = (entry: Entry): string | undefined => {
+  const { id, timestamp } = entry;
+
+  if (!nonEmptyString(id) || !nonEmptyString(timestamp)) {
+    return undefined;
+  }
+
+  return copyKey(entry);
+};
+
 const parseReplies = (
   path: string,
   text: string,
@@ -224,7 +237,7 @@ const parseReplies = (
         path,
         source: basename(path),
         line: line.line,
-        key: copyKey(line.entry),
+        copyId: completeCopyId(line.entry),
       });
     }
   }
@@ -237,6 +250,27 @@ const byRecency = (left: ReplyCandidate, right: ReplyCandidate): number => {
   const rightTime = right.timestamp ?? Number.NEGATIVE_INFINITY;
 
   return rightTime - leftTime || left.path.localeCompare(right.path) || left.line - right.line;
+};
+
+const representatives = (replies: ReplyCandidate[]): ReplyCandidate[] => {
+  const copies = new Map<string, ReplyCandidate>();
+  const distinct: ReplyCandidate[] = [];
+
+  for (const reply of replies) {
+    if (reply.copyId === undefined) {
+      distinct.push(reply);
+
+      continue;
+    }
+
+    const current = copies.get(reply.copyId);
+
+    if (current === undefined || byRecency(reply, current) < 0) {
+      copies.set(reply.copyId, reply);
+    }
+  }
+
+  return [...distinct, ...copies.values()];
 };
 
 const readReplies = async (
@@ -264,17 +298,7 @@ const collectReplies = async (
   const discovered = await jsonlFiles(roots, warn);
   const newest = await newestFiles(discovered, options.files, warn);
   const parsed = await readInTurn(newest.files, (path) => readReplies(path, warn));
-  const seen = new Set<string>();
-
-  const replies = parsed
-    .flatMap((result) => result.replies)
-    .filter((reply) => {
-      const copy = seen.has(reply.key);
-
-      seen.add(reply.key);
-
-      return !copy;
-    });
+  const replies = representatives(parsed.flatMap((result) => result.replies));
 
   const skippedFiles =
     newest.unreadable + parsed.reduce((total, result) => total + result.unreadable, 0);
