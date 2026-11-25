@@ -253,24 +253,23 @@ const byRecency = (left: ReplyCandidate, right: ReplyCandidate): number => {
 };
 
 const representatives = (replies: ReplyCandidate[]): ReplyCandidate[] => {
-  const copies = new Map<string, ReplyCandidate>();
-  const distinct: ReplyCandidate[] = [];
+  const winners = new Map<string, ReplyCandidate>();
 
   for (const reply of replies) {
     if (reply.copyId === undefined) {
-      distinct.push(reply);
-
       continue;
     }
 
-    const current = copies.get(reply.copyId);
+    const current = winners.get(reply.copyId);
 
     if (current === undefined || byRecency(reply, current) < 0) {
-      copies.set(reply.copyId, reply);
+      winners.set(reply.copyId, reply);
     }
   }
 
-  return [...distinct, ...copies.values()];
+  return replies.filter(
+    (reply) => reply.copyId === undefined || winners.get(reply.copyId) === reply,
+  );
 };
 
 const readReplies = async (
