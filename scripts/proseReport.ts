@@ -9,7 +9,7 @@ import { copyKey, scanTranscriptLines } from '../src/improvement/transcript.ts';
 import type { Entry } from '../src/improvement/transcript.ts';
 import { isRecord } from '../src/schema.ts';
 import { formatProseSummary, summarizeProse } from './proseReport/proseReportSummary.ts';
-import type { ProseReply, ProseText } from './proseReport/proseReportSummary.ts';
+import type { ProseReply, ProseSkipped, ProseText } from './proseReport/proseReportSummary.ts';
 import { readInTurn } from './readInTurn.ts';
 
 export interface ProseReportOptions {
@@ -292,7 +292,7 @@ const readReplies = async (
 const collectReplies = async (
   options: ProseReportOptions,
   warn: (message: string) => void,
-): Promise<{ replies: ProseReply[]; skippedFiles: number; skippedLines: number }> => {
+): Promise<{ replies: ProseReply[]; skipped: ProseSkipped }> => {
   const roots = await sessionRoots(options.sessions, options.project);
   const discovered = await jsonlFiles(roots, warn);
   const newest = await newestFiles(discovered, options.files, warn);
@@ -314,7 +314,10 @@ const collectReplies = async (
       text: reply.text,
     }));
 
-  return { replies: newestReplies, skippedFiles, skippedLines };
+  return {
+    replies: newestReplies,
+    skipped: { directories: 0, files: skippedFiles, lines: skippedLines },
+  };
 };
 
 const readTextFile = async (path: string): Promise<ProseText> => {
@@ -329,9 +332,9 @@ const warn = (message: string) => process.stderr.write(`${message}\n`);
 
 const main = async () => {
   const options = parseProseReportArguments(process.argv.slice(2));
-  const { replies, skippedFiles, skippedLines } = await collectReplies(options, warn);
+  const { replies, skipped } = await collectReplies(options, warn);
   const texts = await readInTurn(options.texts, readTextFile);
-  const summary = summarizeProse(replies, texts, options.sample, skippedFiles, skippedLines);
+  const summary = summarizeProse(replies, texts, options.sample, skipped);
 
   process.stdout.write(formatProseSummary(summary));
 };

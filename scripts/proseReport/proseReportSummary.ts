@@ -13,6 +13,12 @@ export interface ProseText {
   text: string;
 }
 
+export interface ProseSkipped {
+  directories: number;
+  files: number;
+  lines: number;
+}
+
 interface ProseSample {
   source: string;
   line: number;
@@ -50,8 +56,7 @@ interface ProseTextSummary {
 
 export interface ProseSummary {
   repliesChecked: number;
-  skippedFiles: number;
-  skippedLines: number;
+  skipped: ProseSkipped;
   rules: ProseRuleSummary[];
   band: ProseBandSummary;
   texts: ProseTextSummary[];
@@ -170,8 +175,7 @@ export const summarizeProse = (
   replies: ProseReply[],
   texts: ProseText[],
   sampleSize: number,
-  skippedFiles: number,
-  skippedLines: number,
+  skipped: ProseSkipped,
 ): ProseSummary => {
   const tallies = createTallies();
   const band: ProseSample[] = [];
@@ -182,8 +186,7 @@ export const summarizeProse = (
 
   return {
     repliesChecked: replies.length,
-    skippedFiles,
-    skippedLines,
+    skipped,
     rules: ruleOrder.map((rule) => ({
       rule,
       repliesWithFinding: tallies[rule].repliesWithFinding,
@@ -266,8 +269,9 @@ export const formatProseSummary = (summary: ProseSummary): string => {
     '',
     `Replies checked: ${summary.repliesChecked}`,
     `Text files: ${summary.texts.length}`,
-    `Skipped files: ${summary.skippedFiles}`,
-    `Skipped lines: ${summary.skippedLines}`,
+    `Skipped directories: ${summary.skipped.directories}`,
+    `Skipped files: ${summary.skipped.files}`,
+    `Skipped lines: ${summary.skipped.lines}`,
     '',
     'Findings by rule',
     '',
