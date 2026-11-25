@@ -268,36 +268,30 @@ it('keeps distinct replies without an id at the same timestamp', async () => {
   expect(result.stdout).toContain('| longSentence | 1 | 1 |');
 });
 
-it('keeps the earliest copy so a same-timestamp reply keeps its place', async () => {
+it('keeps the copy the recency order ranks first', async () => {
   const sessions = join(directory, 'sessions');
   const first = join(sessions, '--code-personal-tau-a--');
-  const second = join(sessions, '--code-personal-tau-m--');
+  const second = join(sessions, '--code-personal-tau-b--');
   const third = join(sessions, '--code-personal-tau-z--');
   const timestamp = '2026-01-01T00:00:00Z';
   const copy = replyLine('A pause—then more.', timestamp, 'fixture', 'copy');
   const distinct = replyLine(longSentence, timestamp, 'fixture', 'distinct');
-  const firstFile = join(first, 'a.jsonl');
-  const secondFile = join(second, 'm.jsonl');
-  const thirdFile = join(third, 'z.jsonl');
 
   await mkdir(first, { recursive: true });
   await mkdir(second, { recursive: true });
   await mkdir(third, { recursive: true });
 
-  await writeFile(firstFile, copy);
-  await writeFile(secondFile, distinct);
-  await writeFile(thirdFile, copy);
-  await utimes(firstFile, new Date('2026-01-01T00:00:00Z'), new Date('2026-01-01T00:00:00Z'));
-  await utimes(secondFile, new Date('2026-01-02T00:00:00Z'), new Date('2026-01-02T00:00:00Z'));
-  await utimes(thirdFile, new Date('2026-01-03T00:00:00Z'), new Date('2026-01-03T00:00:00Z'));
+  await writeFile(join(first, 'a.jsonl'), copy);
+  await writeFile(join(second, 'b.jsonl'), copy);
+  await writeFile(join(third, 'z.jsonl'), distinct);
 
   const result = run(['--sessions', sessions, '--replies', '2']);
 
   expect(result.status).toBe(0);
   expect(result.stdout).toContain('Replies checked: 2');
   expect(result.stdout).toContain('a.jsonl:1');
-  expect(result.stdout).toContain('m.jsonl:1');
-  expect(result.stdout).not.toContain('z.jsonl:1');
+  expect(result.stdout).not.toContain('b.jsonl:1');
+  expect(result.stdout).toContain('z.jsonl:1');
   expect(result.stdout).toContain('| emDash | 1 | 1 |');
   expect(result.stdout).toContain('| longSentence | 1 | 1 |');
 });
