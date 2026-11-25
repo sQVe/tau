@@ -53,6 +53,13 @@ describe('parseShellCommands', () => {
     });
   });
 
+  it('records the implicit stderr duplication of a pipe-and after its own redirections', () => {
+    expect(parseShellCommands('cmd 2>/dev/null |& cat &')?.[0]?.redirections).toEqual([
+      { fileDescriptor: 2, operator: '>', target: '/dev/null' },
+      { fileDescriptor: 2, operator: '>&', target: '1' },
+    ]);
+  });
+
   it('does not mark an and-list as background', () => {
     const commands = parseShellCommands('cmd && other')?.filter(
       ({ arguments: commandArguments }) => commandArguments.length > 0,

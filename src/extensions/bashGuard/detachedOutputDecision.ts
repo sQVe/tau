@@ -160,12 +160,19 @@ const scriptKeepsStderr = (script: string): boolean => {
   return nonEmpty.every((command) => !discardsStderr(command));
 };
 
+const scriptDiscardsStderr = (script: string | undefined): boolean =>
+  (parseShellCommands(script ?? '') ?? []).some(discardsStderr);
+
 const hidesFailure = (command: ShellCommand): boolean => {
-  if (!command.background || !discardsStderr(command)) {
+  if (!command.background) {
     return false;
   }
 
   const script = scriptOf(command);
+
+  if (!discardsStderr(command)) {
+    return scriptDiscardsStderr(script);
+  }
 
   return script === undefined || !scriptKeepsStderr(script);
 };

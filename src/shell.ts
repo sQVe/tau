@@ -353,6 +353,11 @@ class ShellParser {
     const operator = this.source.slice(this.position, this.position + length);
     const isBackground = isBackgroundSeparator(character, length);
 
+    // Bash applies `|&` as `2>&1` after the command's own redirections.
+    if (operator === '|&') {
+      state.command.redirections.push({ fileDescriptor: 2, operator: '>&', target: '1' });
+    }
+
     if (isBackground) {
       this.backgroundUnit(state);
     }

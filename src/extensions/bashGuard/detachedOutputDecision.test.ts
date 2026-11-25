@@ -111,8 +111,18 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: false,
   },
   {
-    name: 'a detached pipeline that merges stderr and whose first command discards stderr',
+    name: 'a |& pipeline discarding stderr',
     command: 'cmd 2>/dev/null |& cat &',
+    blocked: false,
+  },
+  {
+    name: 'a shell discarding inner stderr',
+    command: `sh -c 'sh -c "printf hidden >&2; exit 17" 2>/dev/null' &`,
+    blocked: true,
+  },
+  {
+    name: 'a shell with a later inner discard',
+    command: `sh -c 'true; cmd 2>/dev/null' &`,
     blocked: true,
   },
   {
