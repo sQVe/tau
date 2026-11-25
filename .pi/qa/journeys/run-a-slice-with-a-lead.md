@@ -26,10 +26,11 @@ By hand, because it needs live Opus and DeepSeek sessions and Linear.
 2. Let the original lead continue the started slice from the handover. Do not ask it to start the
    slice again.
    The lead calls `plan` with three or more steps, at most one `in_progress`. A list above the
-   lead's editor shows the steps with their status marks.
+   lead's editor shows the steps with their status marks and a header counter such as
+   `─── Plan · 1/3 ───`.
 3. Let a worker report and the lead accept it.
-   The lead calls `plan` again. The finished step shows a circle with a check mark and gray text,
-   and the next step shows a circle with a dot.
+   The lead calls `plan` again. The finished step shows a green check mark with dim struck-through
+   text, and the next step shows an accent dot with bold text. The header counter rises.
 4. Before the fresh lead session of the later step, let the original lead finish its plan.
    The list disappears from the original lead. The chat shows the last `plan` result, such as
    `Plan: 5 of 5 completed.`
