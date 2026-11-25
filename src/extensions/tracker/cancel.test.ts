@@ -7,7 +7,14 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createLinearFake } from '../../../tests/linearFake.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
 import { cancel } from './cancel.js';
-import { answer, cancelOption } from './fixtures/approvedPreview.js';
+import {
+  answer,
+  askCall,
+  askResult,
+  cancelOption,
+  question,
+  user,
+} from './fixtures/approvedPreview.js';
 
 interface AnswerFacts {
   selected?: string[];
@@ -18,45 +25,18 @@ const pullRequest = 'https://github.com/sQVe/tau/pull/42';
 
 afterEach(() => vi.unstubAllEnvs());
 
-const branchEntry = (message: unknown) => ({ type: 'message', message }) as unknown as SessionEntry;
-
-const userEntry = () =>
-  branchEntry({ role: 'user', content: [{ type: 'text', text: 'Continue.' }] });
-
-const questionEntry = (options: readonly unknown[], overrides: Record<string, unknown> = {}) =>
-  branchEntry({
-    role: 'assistant',
-    content: [
-      {
-        type: 'toolCall',
-        id: 'call-1',
-        name: 'ask_user_question',
-        arguments: {
-          questions: [{ question: 'Cancel the ticket?', kind: 'approval', options, ...overrides }],
-        },
-      },
-    ],
-  });
-
 const answeredBranch = (
   options: readonly unknown[],
-  { selected = ['Cancel it'], typed = false }: AnswerFacts = {},
-  questionOverrides: Record<string, unknown> = {},
+  { selected = answer.selected, typed = answer.typed }: AnswerFacts = {},
+  questionOverrides: Parameters<typeof question>[1] = {},
   resultOverrides: Record<string, unknown> = {},
 ) => [
-  questionEntry(options, questionOverrides),
-  branchEntry({
-    role: 'toolResult',
-    toolName: 'ask_user_question',
-    toolCallId: 'call-1',
-    isError: false,
-    details: { kind: 'answered', answers: [{ question: 'Cancel the ticket?', selected, typed }] },
-    ...resultOverrides,
-  }),
+  askCall('call-1', [question(options, questionOverrides)]),
+  askResult('call-1', [{ ...answer, selected, typed }], resultOverrides),
 ];
 
 const approvalBranch = (identifier: string, preview = `Cancel ${identifier}: Title`) =>
-  answeredBranch([{ label: 'Cancel it', preview }]);
+  answeredBranch([cancelOption(preview)]);
 
 const branchContext = (
   branch: SessionEntry[],
@@ -470,13 +450,13 @@ const nonApprovalBranches = (identifier: string) => [
   },
   {
     name: 'a typed answer',
-    branch: answeredBranch([{ label: 'Cancel it', preview: `Cancel ${identifier}: Title` }], {
+    branch: answeredBranch([cancelOption(`Cancel ${identifier}: Title`)], {
       typed: true,
     }),
   },
   {
     name: 'an approval before the latest user message',
-    branch: [...approvalBranch(identifier), userEntry()],
+    branch: [...approvalBranch(identifier), user()],
   },
   {
     name: 'a decided result',
