@@ -128,22 +128,37 @@ const withRoleEnvironment = async <T>(
   }
 };
 
-const loadTools = async (
+const withRegisteredSession = async <T>(
   role: RoleKind,
   agentDirectory: string,
+  action: (fake: ReturnType<typeof fakeExtensionApi>) => Promise<T>,
   registerExtensions: (pi: ExtensionAPI) => Promise<void> = tauRegistration,
-) =>
+): Promise<T> =>
   withRoleEnvironment(role, agentDirectory, async () => {
     const fake = fakeExtensionApi();
 
     await registerExtensions(fake.pi);
 
-    if (role === 'worker') {
-      workerExtension(fake.pi);
-    }
-
-    return fake;
+    return action(fake);
   });
+
+const loadTools = async (
+  role: RoleKind,
+  agentDirectory: string,
+  registerExtensions: (pi: ExtensionAPI) => Promise<void> = tauRegistration,
+) =>
+  withRegisteredSession(
+    role,
+    agentDirectory,
+    async (fake) => {
+      if (role === 'worker') {
+        workerExtension(fake.pi);
+      }
+
+      return fake;
+    },
+    registerExtensions,
+  );
 
 const failRegistration = async (): Promise<void> => {
   throw new Error('registration failed');
@@ -156,11 +171,7 @@ const roleOptions = {
 };
 
 const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) =>
-  withRoleEnvironment(role, agentDirectory, async () => {
-    const fake = fakeExtensionApi();
-
-    await tauRegistration(fake.pi);
-
+  withRegisteredSession(role, agentDirectory, async (fake) => {
     const event = {
       systemPromptOptions: { appendSystemPrompt: '', selectedTools: [...fake.tools.keys()] },
     };
@@ -516,11 +527,7 @@ describe('prompt budget', () => {
   });
 
   it('keeps the question tool within its budget for a lead with a handover sender', async () => {
-    const questionTool = await withRoleEnvironment('lead', directory, async () => {
-      const fake = fakeExtensionApi();
-
-      await tauRegistration(fake.pi);
-
+    const questionTool = await withRegisteredSession('lead', directory, async (fake) => {
       const context = {
         cwd: directory,
         sessionManager: {
@@ -632,6 +639,8 @@ describe('prompt budget', () => {
       PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
       TAU_ROLE: process.env.TAU_ROLE,
       TAU_WORKER_RECORD: process.env.TAU_WORKER_RECORD,
+      TAU_HANDOVER_SENDER_TERMINAL: process.env.TAU_HANDOVER_SENDER_TERMINAL,
+      TAU_HANDOVER_SENDER_SESSION: process.env.TAU_HANDOVER_SENDER_SESSION,
     };
 
     await expect(loadTools('worker', directory, failRegistration)).rejects.toThrow(
@@ -643,6 +652,8 @@ describe('prompt budget', () => {
       PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
       TAU_ROLE: process.env.TAU_ROLE,
       TAU_WORKER_RECORD: process.env.TAU_WORKER_RECORD,
+      TAU_HANDOVER_SENDER_TERMINAL: process.env.TAU_HANDOVER_SENDER_TERMINAL,
+      TAU_HANDOVER_SENDER_SESSION: process.env.TAU_HANDOVER_SENDER_SESSION,
     }).toEqual(before);
   });
 });

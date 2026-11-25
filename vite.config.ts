@@ -106,6 +106,8 @@ export const testManagedEnvironment = [
   'TAU_FAKE_API_KEY',
   'TAU_ROLE',
   'TAU_WORKER_RECORD',
+  'TAU_HANDOVER_SENDER_TERMINAL',
+  'TAU_HANDOVER_SENDER_SESSION',
   'HC_SESSION',
   'HC_TERMINAL_ID',
 ];
