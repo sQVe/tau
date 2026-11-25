@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
@@ -7,6 +8,7 @@ import { failedResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { holdFileLock } from '../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { createDeadlineWatchdog } from './deadlineWatchdog.js';
 import type { DeadlineWatchdog, DeadlineWatchdogContext } from './deadlineWatchdog.js';
@@ -14,9 +16,14 @@ import { registerWorkerScan } from './subagents.js';
 import type { WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
 import { assignmentShortId } from './workerName.js';
 import { createWorkerScan } from './workerScan.js';
+import type { WorkerScanContext } from './workerScan.js';
 import { scratchRootFor } from './workerScratch.js';
 
 const manager = 't-manager';
+
+vi.mock(import('node:fs/promises'), { spy: true });
+
+const actualFsPromises = await vi.importActual<typeof fsPromises>('node:fs/promises');
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
@@ -95,6 +102,19 @@ const deferred = () => {
 
 const abortError = (): Error =>
   Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+
+const holdUntilAborted = (entered: () => void, signal: AbortSignal | undefined): Promise<never> =>
+  new Promise((_resolve, reject) => {
+    signal?.addEventListener(
+      'abort',
+      () => {
+        reject(abortError());
+      },
+      { once: true },
+    );
+
+    entered();
+  });
 
 it('delivers the children before the deadline step runs on the same read', async () => {
   const { hc } = hcFor();
@@ -282,17 +302,7 @@ it('stops a child read that never settles when the scan is cleared', async () =>
 
     heldSignal = options?.signal;
 
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(abortError());
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
+    return holdUntilAborted(entered.resolve, options?.signal);
   };
 
   const scanner = scanFor(hc, steps.delivery, steps.deadline);
@@ -331,17 +341,7 @@ it('skips a scan queued before clear', async () => {
       return realExec(command, commandArguments, options);
     }
 
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(abortError());
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
+    return holdUntilAborted(entered.resolve, options?.signal);
   };
 
   const scanner = scanFor(hc, steps.delivery, steps.deadline);
@@ -422,17 +422,7 @@ it('reports nothing when a child read is cancelled at clear', async () => {
       return realExec(command, commandArguments, options);
     }
 
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(abortError());
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
+    return holdUntilAborted(entered.resolve, options?.signal);
   };
 
   const scanner = scanFor(hc, steps.delivery, steps.deadline);
@@ -468,17 +458,7 @@ it('reports nothing when a sweep read is cancelled at clear', async () => {
       return realExec(command, commandArguments, options);
     }
 
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(abortError());
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
+    return holdUntilAborted(entered.resolve, options?.signal);
   };
 
   const scanner = scanFor(hc, steps.delivery, steps.deadline);
@@ -516,9 +496,6 @@ it('stops a deadline action read that never settles when the scan is cleared', a
     }),
   );
 
-  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
-  hcFake.reply('label', JSON.stringify({ address: 't-child', state: 'live' }));
-
   hc.exec = (command, commandArguments, options) => {
     if (commandArguments[0] !== 'get') {
       return realExec(command, commandArguments, options);
@@ -532,17 +509,7 @@ it('stops a deadline action read that never settles when the scan is cleared', a
 
     heldSignal = options?.signal;
 
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(abortError());
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
+    return holdUntilAborted(entered.resolve, options?.signal);
   };
 
   const watchdog = createDeadlineWatchdog(hc, steps.delivery);
@@ -551,8 +518,6 @@ it('stops a deadline action read that never settles when the scan is cleared', a
   const scanning = scanner.scan(steps.context);
 
   await entered.promise;
-
-  hcFake.reply('ls', JSON.stringify({ terminals: [] }));
 
   watchdog.clear();
   scanner.clear();
@@ -563,6 +528,7 @@ it('stops a deadline action read that never settles when the scan is cleared', a
   await scanning;
 
   expect(steps.order).toEqual(['deliver']);
+  expect(steps.notifications).toEqual([[`Missing assignment file: ${assignmentPath}.`, 'error']]);
   expect(vi.getTimerCount()).toBe(0);
 });
 
@@ -585,9 +551,6 @@ it('reports no read failure and retries nothing when only the scan clear cancels
     }),
   );
 
-  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
-  hcFake.reply('label', JSON.stringify({ address: 't-child', state: 'live' }));
-
   hc.exec = (command, commandArguments, options) => {
     if (commandArguments[0] !== 'get') {
       return realExec(command, commandArguments, options);
@@ -599,17 +562,7 @@ it('reports no read failure and retries nothing when only the scan clear cancels
       return realExec(command, commandArguments, options);
     }
 
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(abortError());
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
+    return holdUntilAborted(entered.resolve, options?.signal);
   };
 
   const watchdog = createDeadlineWatchdog(hc, steps.delivery);
@@ -672,17 +625,7 @@ it('runs a scan started after clear on a fresh signal', async () => {
 
     heldSignal = options?.signal;
 
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(abortError());
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
+    return holdUntilAborted(entered.resolve, options?.signal);
   };
 
   const scanner = scanFor(hc, steps.delivery, steps.deadline);
@@ -906,6 +849,28 @@ const sweepSetup = () => {
   return { agentDirectory, hcFake, hc, steps, scratchRoot: scratchRootFor(agentDirectory) };
 };
 
+// Resolves on the waiting scan's read of the lock generation its holder published.
+const signalSweepLockWait = (agentDirectory: string): Promise<void> => {
+  const path = `${join(agentDirectory, '.tau-worker-folder-sweep.lock')}.1`;
+  const { promise, resolve } = Promise.withResolvers<undefined>();
+  const readFile = vi.mocked(fsPromises.readFile);
+  const original = readFile.getMockImplementation() ?? actualFsPromises.readFile;
+
+  readFile.mockImplementation(((target: string, ...rest: never[]) => {
+    if (target === path) {
+      resolve(undefined);
+    }
+
+    return original(target, ...rest);
+  }) as typeof fsPromises.readFile);
+
+  onTestFinished(() => {
+    readFile.mockImplementation(original);
+  });
+
+  return promise;
+};
+
 const scratchLabel = (agentDirectory: string, assignmentId: string) => ({
   'tau.assignment': join(
     agentDirectory,
@@ -974,6 +939,101 @@ it('leaves the worker folder untouched when the run is cancelled before the swee
   expect(existsSync(folder)).toBe(true);
   expect(existsSync(snapshot)).toBe(true);
   expect(existsSync(join(snapshot, '.tau-unused-since'))).toBe(false);
+});
+
+it('stops reporting sweep failures once the run is cleared', async () => {
+  const { agentDirectory, hcFake, hc, steps } = sweepSetup();
+
+  hcFake.reply(
+    'ls',
+    JSON.stringify({
+      terminals: [
+        { address: 't-one', state: 'live' },
+        { address: 't-two', state: 'live' },
+      ],
+    }),
+  );
+
+  hcFake.failGet('t-one', 'boom');
+  hcFake.failGet('t-two', 'boom');
+
+  const scanner = createWorkerScan(hc, steps.delivery, steps.deadline, agentDirectory);
+
+  const context = {
+    ...steps.context,
+    ui: {
+      notify: (message: string, kind: 'error' | 'info' | 'warning' | undefined) => {
+        steps.context.ui.notify(message, kind);
+        scanner.clear();
+      },
+    },
+  } as unknown as WorkerScanContext;
+
+  await scanner.scan(context);
+
+  expect(steps.notifications).toEqual([
+    [
+      'Worker folder sweep failed: Reading terminal t-one failed: hc get t-one failed: boom. Kept its folders.',
+      'error',
+    ],
+  ]);
+});
+
+it('stops waiting for the sweep lock when the scan is cleared', async () => {
+  const { agentDirectory, hcFake, hc, steps, scratchRoot } = sweepSetup();
+  const folder = join(scratchRoot, assignmentShortId('assignment-a'));
+
+  const held = await holdFileLock({
+    lockPath: join(agentDirectory, '.tau-worker-folder-sweep.lock'),
+    checkout: agentDirectory,
+    terminal: undefined,
+  });
+
+  if (held.kind !== 'held') {
+    throw new Error('The sweep lock was not free.');
+  }
+
+  onTestFinished(async () => {
+    await held.release();
+  });
+
+  mkdirSync(folder, { recursive: true });
+  vi.setSystemTime(statSync(folder).birthtimeMs + 120_000);
+  hcFake.reply('ls', JSON.stringify({ terminals: [] }));
+
+  const lockWait = signalSweepLockWait(agentDirectory);
+
+  const scanner = createWorkerScan(
+    hc,
+    steps.delivery,
+    { apply: () => Promise.resolve(), clear: () => undefined },
+    agentDirectory,
+  );
+
+  const scanning = scanner.scan(steps.context);
+
+  await lockWait;
+
+  let drained = false;
+
+  const settling = scanner.drain().then(() => {
+    drained = true;
+
+    return undefined;
+  });
+
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(drained).toBe(false);
+
+  scanner.clear();
+  await settling;
+  await scanning;
+
+  expect(existsSync(folder)).toBe(true);
+  expect(steps.notifications).toEqual([]);
 });
 
 it('reports each sweep removal error', async () => {

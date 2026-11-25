@@ -319,6 +319,6 @@ export const sweepWorkerFolders = async (
   readNow: () => number,
   starting: readonly StartingWorker[],
 ): Promise<WorkerFolderSweep> =>
-  withFolderSweepLock(agentDirectory, undefined, () =>
+  withFolderSweepLock(agentDirectory, hc.signal, () =>
     sweepUnderLock(hc, agentDirectory, readNow, starting),
   );

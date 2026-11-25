@@ -17,6 +17,8 @@ export type WorkerScanContext = Pick<
 export interface WorkerScan {
   scan: (context: WorkerScanContext) => Promise<void>;
   clear: () => void;
+  // Joins the runs queued so far. A retry that a timer scheduled is not part of the join, so a
+  // caller clears first to cancel it.
   drain: () => Promise<void>;
 }
 
@@ -82,27 +84,46 @@ export const createWorkerScan = (
     }
   };
 
+  const readSweepMessages = async (runtime: HcRuntime): Promise<string[]> => {
+    try {
+      const sweep = await sweepWorkerFolders(runtime, agentDirectory, Date.now, []);
+
+      return sweep.errors;
+    } catch (error) {
+      return [errorMessage(error)];
+    }
+  };
+
   const sweepFolders = async (
     context: WorkerScanContext,
     runtime: HcRuntime,
     signal: AbortSignal,
   ): Promise<void> => {
-    let messages: string[];
-
-    try {
-      const sweep = await sweepWorkerFolders(runtime, agentDirectory, Date.now, []);
-
-      messages = sweep.errors;
-    } catch (error) {
-      messages = [errorMessage(error)];
-    }
-
-    if (isAborted(signal)) {
-      return;
-    }
+    const messages = await readSweepMessages(runtime);
 
     for (const message of messages) {
+      // A notification can shut the session down, which clears the run and its remaining messages.
+      if (isAborted(signal)) {
+        return;
+      }
+
       notifyFailure(context, `Worker folder sweep failed: ${message}`);
+    }
+  };
+
+  const runDeadlineStep = async (
+    context: WorkerScanContext,
+    managerTerminal: string,
+    children: readonly WorkerChildRead[],
+    runtime: HcRuntime,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    try {
+      await deadline.apply(context, managerTerminal, children, runtime);
+    } catch (error) {
+      if (!isAborted(signal)) {
+        notifyFailure(context, `Deadline scan failed: ${errorMessage(error)}`);
+      }
     }
   };
 
@@ -137,13 +158,7 @@ export const createWorkerScan = (
 
     deliverChildren(context, children);
 
-    try {
-      await deadline.apply(context, managerTerminal, children, runtime);
-    } catch (error) {
-      if (!isAborted(signal)) {
-        notifyFailure(context, `Deadline scan failed: ${errorMessage(error)}`);
-      }
-    }
+    await runDeadlineStep(context, managerTerminal, children, runtime, signal);
 
     if (isAborted(signal)) {
       return false;

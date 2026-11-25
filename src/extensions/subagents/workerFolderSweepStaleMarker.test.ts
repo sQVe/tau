@@ -198,6 +198,7 @@ it('keeps a snapshot for a day after the follow-up that reused it ends', async (
   await stale.called;
 
   const contenderRead = signalActiveGenerationRead(agentDirectory);
+
   const launchSweep = sweepWorkerFolders(hc, agentDirectory, () => startedAt, [followUp]);
 
   pending.push(launchSweep);
