@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 
 import {
+  errorCode,
   errorMessage,
   failureWithRelease,
   hasErrorCode,
@@ -9,6 +10,20 @@ import {
 } from './errors.js';
 
 const withCode = (code: string) => Object.assign(new Error('failed'), { code });
+
+it('reads a string code from an Error', () => {
+  expect(errorCode(withCode('ENOENT'))).toBe('ENOENT');
+});
+
+it.for<[string, unknown]>([
+  ['an Error without a code', new Error('failed')],
+  ['an Error with a non-string code', Object.assign(new Error('failed'), { code: 1 })],
+  ['a plain object with the code', { code: 'ENOENT' }],
+  ['a string', 'ENOENT'],
+  ['null', null],
+])('reads no code from %s', ([, error]) => {
+  expect(errorCode(error)).toBeUndefined();
+});
 
 it('matches an Error that has the exact code', () => {
   expect(hasErrorCode(withCode('ENOENT'), 'ENOENT')).toBe(true);

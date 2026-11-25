@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { isMissingFile } from '../src/errors.ts';
+import { errorCode, isMissingFile } from '../src/errors.ts';
 import { copyKey, scanTranscriptLines } from '../src/improvement/transcript.ts';
 import type { Entry } from '../src/improvement/transcript.ts';
 import { isRecord } from '../src/schema.ts';
@@ -96,7 +96,7 @@ const sessionRoots = async (sessions: string, project: string): Promise<string[]
       throw new Error(`Session directory not found: ${sessions}`, { cause: error });
     }
 
-    const code = isRecord(error) && typeof error.code === 'string' ? error.code : String(error);
+    const code = errorCode(error) ?? String(error);
 
     throw new Error(`Cannot read session directory ${sessions}: ${code}`, { cause: error });
   }
