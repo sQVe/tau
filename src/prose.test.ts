@@ -154,9 +154,34 @@ const table: {
     expected: [{ rule: 'curlyQuote', line: 1, excerpt: 'A ’quote.' }],
   },
   {
+    name: 'decodes the open curly quote alias',
+    markdown: 'A &OpenCurlyQuote;quote.',
+    expected: [{ rule: 'curlyQuote', line: 1, excerpt: 'A \u2018quote.' }],
+  },
+  {
+    name: 'decodes the close curly quote alias',
+    markdown: 'A &CloseCurlyQuote;quote.',
+    expected: [{ rule: 'curlyQuote', line: 1, excerpt: 'A \u2019quote.' }],
+  },
+  {
+    name: 'decodes the open curly double quote alias',
+    markdown: 'A &OpenCurlyDoubleQuote;quote.',
+    expected: [{ rule: 'curlyQuote', line: 1, excerpt: 'A \u201Cquote.' }],
+  },
+  {
+    name: 'decodes the close curly double quote alias',
+    markdown: 'A &CloseCurlyDoubleQuote;quote.',
+    expected: [{ rule: 'curlyQuote', line: 1, excerpt: 'A \u201Dquote.' }],
+  },
+  {
     name: 'counts an encoded non-breaking space as a word break',
     markdown: `${words(39)} word&nbsp;word.`,
     expected: [{ rule: 'longSentence', line: 1, excerpt: cut(`${words(39)} word\u00A0word.`) }],
+  },
+  {
+    name: 'decodes the non-breaking space alias as a word break',
+    markdown: `${words(40)}&NonBreakingSpace;word.`,
+    expected: [{ rule: 'longSentence', line: 1, excerpt: cut(`${words(40)}\u00A0word.`) }],
   },
   {
     name: 'skips encoded entities in fenced code',

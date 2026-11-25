@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -108,4 +108,95 @@ it('ranks replies by timestamp', async () => {
   expect(result.stdout).toContain('A new pause—then more.');
   expect(result.stdout).toContain('| longSentence | 0 | 0 |');
   expect(result.stdout).not.toContain('word word');
+});
+
+it('ranks replies by full path at equal timestamps', async () => {
+  const sessions = join(directory, 'sessions');
+  const first = join(sessions, '--code-personal-tau-a--');
+  const second = join(sessions, '--code-personal-tau-z--');
+
+  await mkdir(first, { recursive: true });
+  await mkdir(second, { recursive: true });
+
+  await writeFile(join(first, 'z.jsonl'), replyLine('A pause—then more.'));
+  await writeFile(join(second, 'a.jsonl'), replyLine(longSentence));
+
+  const result = run(['--sessions', sessions, '--replies', '1']);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('Replies checked: 1');
+  expect(result.stdout).toContain('| emDash | 1 | 1 |');
+  expect(result.stdout).toContain('| longSentence | 0 | 0 |');
+});
+
+it('ranks a reply without a timestamp last', async () => {
+  const sessions = join(directory, 'sessions');
+  const project = join(sessions, '--code-personal-tau--');
+
+  await mkdir(project, { recursive: true });
+
+  const undated = JSON.stringify({
+    type: 'message',
+    message: {
+      role: 'assistant',
+      model: 'fixture',
+      content: [{ type: 'text', text: 'A pause—then more.' }],
+    },
+  });
+
+  await writeFile(
+    join(project, 'session.jsonl'),
+    [undated, replyLine(longSentence, '1900-01-01T00:00:00Z')].join('\n'),
+  );
+
+  const result = run(['--sessions', sessions, '--replies', '1']);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('Replies checked: 1');
+  expect(result.stdout).toContain('| longSentence | 1 | 1 |');
+  expect(result.stdout).toContain('| emDash | 0 | 0 |');
+});
+
+it('skips an unreadable session file', async () => {
+  const sessions = join(directory, 'sessions');
+  const project = join(sessions, '--code-personal-tau--');
+
+  await mkdir(project, { recursive: true });
+
+  const file = join(project, 'session.jsonl');
+
+  await writeFile(file, replyLine('A pause—then more.'));
+  await chmod(file, 0o000);
+
+  const result = run(['--sessions', sessions]);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('Replies checked: 0');
+  expect(result.stdout).toContain('Skipped lines: 1');
+  expect(result.stderr).toContain(`Skipped unreadable file ${file}`);
+});
+
+it('reads only JSONL files under matching project directories', async () => {
+  const sessions = join(directory, 'sessions');
+  const matching = join(sessions, '--code-personal-tau--');
+  const nested = join(matching, 'nested');
+  const other = join(sessions, '--other-project--');
+
+  await mkdir(nested, { recursive: true });
+  await mkdir(other, { recursive: true });
+  await mkdir(join(matching, 'folder.jsonl'), { recursive: true });
+
+  await writeFile(join(nested, 'session.jsonl'), replyLine('A pause—then more.'));
+  await writeFile(join(other, 'session.jsonl'), replyLine(longSentence));
+  await writeFile(join(matching, 'notes.txt'), replyLine(longSentence));
+  await writeFile(join(sessions, 'top.jsonl'), replyLine(longSentence));
+
+  const result = run(['--sessions', sessions]);
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('Replies checked: 1');
+  expect(result.stdout).toContain('Skipped lines: 0');
+  expect(result.stdout).toContain('| emDash | 1 | 1 |');
+  expect(result.stdout).toContain('| longSentence | 0 | 0 |');
+  expect(result.stderr).not.toContain(join(matching, 'folder.jsonl'));
 });

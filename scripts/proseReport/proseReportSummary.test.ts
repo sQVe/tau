@@ -109,3 +109,33 @@ it('gives text files counts without excerpts', () => {
   expect(output).not.toContain('A pause');
   expect(output).not.toContain('He said');
 });
+
+it('keeps a sample with a newline entity on one line', () => {
+  const output = formatProseSummary(summarizeProse([reply('Alpha&#10;beta—gamma.')], [], 20, 0));
+
+  const sample = output.split('\n').find((line) => line.startsWith('- ')) ?? '';
+
+  expect(sample).toContain('Alpha beta—gamma.');
+  expect(sample).toContain('Judgment:');
+});
+
+it('sorts samples by source and line', () => {
+  const summary = summarizeProse(
+    [
+      reply('A—b.', 'fixture', 1, 'b.jsonl'),
+      reply('C—d.', 'fixture', 9, 'a.jsonl'),
+      reply('E—f.', 'fixture', 2, 'a.jsonl'),
+    ],
+    [],
+    20,
+    0,
+  );
+
+  const sample = summary.rules.find((rule) => rule.rule === 'emDash')?.sample ?? [];
+
+  expect(sample.map((item) => `${item.source}:${item.line}`)).toEqual([
+    'a.jsonl:2',
+    'a.jsonl:9',
+    'b.jsonl:1',
+  ]);
+});

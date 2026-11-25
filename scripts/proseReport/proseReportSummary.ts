@@ -1,7 +1,5 @@
 import { analyzeProse, checkProse } from '../../src/prose.ts';
-import type { ProseFinding } from '../../src/prose.ts';
-
-type ProseRule = ProseFinding['rule'];
+import type { ProseRule } from '../../src/prose.ts';
 
 export interface ProseReply {
   source: string;
@@ -196,7 +194,9 @@ export const summarizeProse = (
   };
 };
 
-const inlineCode = (text: string): string => `\`${text.replaceAll('`', "'")}\``;
+const oneLine = (text: string): string => text.replaceAll(/[\r\n]+/g, ' ');
+
+const inlineCode = (text: string): string => `\`${oneLine(text.replaceAll('`', "'"))}\``;
 
 const table = (headings: string[], rows: string[][]): string[] => {
   const alignment = headings.map((_, index) => (index === 0 ? '---' : '---:'));
@@ -204,7 +204,7 @@ const table = (headings: string[], rows: string[][]): string[] => {
   return [
     `| ${headings.join(' | ')} |`,
     `| ${alignment.join(' | ')} |`,
-    ...rows.map((row) => `| ${row.join(' | ')} |`),
+    ...rows.map((row) => `| ${row.map(oneLine).join(' | ')} |`),
   ];
 };
 

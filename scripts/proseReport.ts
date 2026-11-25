@@ -21,6 +21,7 @@ export interface ProseReportOptions {
 }
 
 interface ReplyCandidate extends ProseReply {
+  path: string;
   timestamp: number | undefined;
 }
 
@@ -202,7 +203,7 @@ const parseReplies = (
     const reply = replyOf(line.entry);
 
     if (reply !== undefined) {
-      replies.push({ ...reply, source: basename(path), line: line.line });
+      replies.push({ ...reply, path, source: basename(path), line: line.line });
     }
   }
 
@@ -213,7 +214,7 @@ const byRecency = (left: ReplyCandidate, right: ReplyCandidate): number => {
   const leftTime = left.timestamp ?? Number.NEGATIVE_INFINITY;
   const rightTime = right.timestamp ?? Number.NEGATIVE_INFINITY;
 
-  return rightTime - leftTime || left.source.localeCompare(right.source) || left.line - right.line;
+  return rightTime - leftTime || left.path.localeCompare(right.path) || left.line - right.line;
 };
 
 const readReplies = async (
