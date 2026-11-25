@@ -51,7 +51,7 @@ const rejectUnsupportedStyleField = (options: ThemeStyle): void => {
 
   for (const [field, value] of suppliedFields) {
     if (isSetStyleField(value) && !supportedStyleFields.has(field)) {
-      throw new Error(`The test theme does not style the ${field} field.`);
+      throw new Error(`The recording theme does not style the ${field} field.`);
     }
   }
 };
