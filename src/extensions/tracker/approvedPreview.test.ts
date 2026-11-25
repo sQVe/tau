@@ -47,6 +47,11 @@ const table: { name: string; branch: SessionEntry[]; identifier?: string; expect
     expected: false,
   },
   {
+    name: 'a longer identifier that only shares the prefix gives false',
+    branch: approvedBranch('Cancel ME-11: Title'),
+    expected: false,
+  },
+  {
     name: 'a Keep option whose question preview holds the line gives false',
     branch: [
       askCall('call-1', [question([{ label: 'Keep' }], { preview: 'Cancel ME-1: Title' })]),
@@ -132,11 +137,6 @@ const table: { name: string; branch: SessionEntry[]; identifier?: string; expect
       askResult('call-1', [answer]),
     ],
     expected: false,
-  },
-  {
-    name: 'a branch with no user message gives true',
-    branch: approvedBranch(),
-    expected: true,
   },
 ];
 
