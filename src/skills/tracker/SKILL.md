@@ -101,7 +101,13 @@ This list is the one approval rule; other skills link here.
    - In Progress: the [start-slice skill](../start-slice/SKILL.md) uses `start_slice` `apply` to
      move the slice. It skips `In Progress`; every other state, `In Review` included, moves. Stop
      and ask if the team lacks that state.
-   - Cancel: call `ticket` `cancel`. Its confirm supplies approval. Report the returned status.
+   - Cancel: reuse an answered `ask_user_question` approval since the latest user message when its
+     selected option's own `preview` has a `Cancel <ID>: <title>` line, and call `ticket` `cancel`
+     for each listed ticket directly, with no user message in between. Otherwise ask with
+     `ask_user_question`, `kind: approval`. Put one `Cancel <ID>: <title>` line per ticket in the
+     approve option's own `preview`. The keep option has no such preview. Then call `ticket`
+     `cancel` for each listed ticket, with no user message in between. Without that answer, `cancel`
+     asks itself. Report the returned status. On Keep or a dismissed dialog, cancel nothing.
 
 7. Link the ticket from the PR. Write `Fixes <id>` only for the ticket the PR completes, such as the
    slice, and `Related to <id>` for the rest. Never list an agent ticket or a container as fixed.

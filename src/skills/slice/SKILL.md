@@ -156,8 +156,13 @@ design it follows in its Design section. The container has one sub-ticket per sl
      not list them.
 
 8. Ask with `ask_user_question` which `dropped` slices that are not merged or completed to cancel,
-   by identifier and title. A dropped slice stays in Linear until it is cancelled. Cancel the chosen
-   ones with the [tracker skill](../tracker/SKILL.md), and report which were cancelled and which
-   were kept. This selection follows the approval rule in the tracker skill's
+   by identifier and title. This question is the approval. Ask with `kind: approval` and
+   `multiSelect: true`, and give one option per dropped slice whose own `preview` is
+   `Cancel <ID>: <title>`. A question takes two to four options: for a single dropped slice, add a
+   Keep option; for more than four, ask in batches of at most four options, and add a Keep option to
+   a batch that would otherwise hold one slice. A dropped slice stays in Linear until it is
+   cancelled, and an unselected slice is not cancelled. Cancel the chosen ones with the
+   [tracker skill](../tracker/SKILL.md), and report which were cancelled and which were kept. This
+   selection follows the approval rule in the tracker skill's
    [Procedure](../tracker/SKILL.md#procedure) step 5 over `plan.md`. When the comments or edits
    change the plan, return to step 6 to apply it before you cancel.

@@ -108,8 +108,10 @@ Writes:
 - [ ] A tool asks with `confirmWithUser` in `src/dialog/dialog.ts` before a write outside the
       worktree that the tracker skill's [Hard rules](../src/skills/tracker/SKILL.md#hard-rules) list
       says needs approval. That confirm is the approval the list asks for, so the calling skill does
-      not ask again. It refuses in a worker, even one with UI, because the user does not watch the
-      worker's pane.
+      not ask again. A tool may instead accept an answered `ask_user_question` approval it reads
+      from the session, as `ticket` `cancel` does, and ask with `confirmWithUser` when there is
+      none. It refuses in a worker, even one with UI, because the user does not watch the worker's
+      pane.
 - [ ] The confirm shows the exact writes the tool will make, so the user sees what they approve.
 - [ ] When a call has a write that needs a confirm, the tool writes nothing if the user declines or
       the session is a worker or has no UI.
