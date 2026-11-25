@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 
+import { ruleOrder } from '../../src/prose.ts';
 import { formatProseSummary, summarizeProse } from './proseReportSummary.js';
 import type { ProseReply, ProseSummary } from './proseReportSummary.js';
 
@@ -67,7 +68,7 @@ it('counts replies per rule and model', () => {
   ];
 
   for (const row of cases) {
-    const summary = summarizeProse(row.replies, [], 20, 0);
+    const summary = summarizeProse(row.replies, [], 20, 0, 0);
 
     expect(ruleCounts(summary), row.name).toEqual(row.counts);
     expect(modelCounts(summary), row.name).toEqual(row.models);
@@ -76,7 +77,7 @@ it('counts replies per rule and model', () => {
 
 it('samples evenly', () => {
   const paragraphs = Array.from({ length: 40 }, (_, index) => `Pause—number ${index}.`);
-  const summary = summarizeProse([reply(paragraphs.join('\n\n'), 'fixture', 7)], [], 20, 0);
+  const summary = summarizeProse([reply(paragraphs.join('\n\n'), 'fixture', 7)], [], 20, 0, 0);
 
   const sample = summary.rules.find((rule) => rule.rule === 'emDash')?.sample ?? [];
 
@@ -91,7 +92,7 @@ it('samples evenly', () => {
 
 it('counts the 25 to 39 word band', () => {
   const text = [24, 25, 39, 40].map(sentenceOf).join('\n\n');
-  const summary = summarizeProse([reply(text)], [], 20, 0);
+  const summary = summarizeProse([reply(text)], [], 20, 0, 0);
 
   expect(summary.band.sentences).toBe(2);
 
@@ -101,7 +102,7 @@ it('counts the 25 to 39 word band', () => {
 it('gives text files counts without excerpts', () => {
   const text = 'A pause—then more.\n\nHe said “hi”.';
 
-  const output = formatProseSummary(summarizeProse([], [{ name: 'review.md', text }], 20, 0));
+  const output = formatProseSummary(summarizeProse([], [{ name: 'review.md', text }], 20, 0, 0));
 
   expect(output).toContain('review.md');
   expect(output).toContain('| emDash | 1 |');
@@ -111,7 +112,7 @@ it('gives text files counts without excerpts', () => {
 });
 
 it('keeps a sample with a newline entity on one line', () => {
-  const output = formatProseSummary(summarizeProse([reply('Alpha&#10;beta—gamma.')], [], 20, 0));
+  const output = formatProseSummary(summarizeProse([reply('Alpha&#10;beta—gamma.')], [], 20, 0, 0));
 
   const sample = output.split('\n').find((line) => line.startsWith('- ')) ?? '';
 
@@ -129,6 +130,7 @@ it('sorts samples by source and line', () => {
     [],
     20,
     0,
+    0,
   );
 
   const sample = summary.rules.find((rule) => rule.rule === 'emDash')?.sample ?? [];
@@ -138,4 +140,18 @@ it('sorts samples by source and line', () => {
     'a.jsonl:9',
     'b.jsonl:1',
   ]);
+});
+
+it('prints skipped files and skipped lines as separate counts', () => {
+  const output = formatProseSummary(summarizeProse([], [], 20, 2, 3));
+
+  expect(output).toContain('Skipped files: 2');
+  expect(output).toContain('Skipped lines: 3');
+});
+
+it.each(ruleOrder.map((rule) => [rule] as const))('reports a row for the %s rule', (rule) => {
+  const summary = summarizeProse([], [], 20, 0, 0);
+
+  expect(summary.rules.map((row) => row.rule)).toEqual([...ruleOrder]);
+  expect(summary.rules.map((row) => row.rule)).toContain(rule);
 });

@@ -4,7 +4,8 @@ import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { scanTranscriptLines } from '../src/improvement/transcript.ts';
+import { isMissingFile } from '../src/errors.ts';
+import { copyKey, scanTranscriptLines } from '../src/improvement/transcript.ts';
 import type { Entry } from '../src/improvement/transcript.ts';
 import { isRecord } from '../src/schema.ts';
 import { formatProseSummary, summarizeProse } from './proseReport/proseReportSummary.ts';
@@ -23,6 +24,7 @@ export interface ProseReportOptions {
 interface ReplyCandidate extends ProseReply {
   path: string;
   timestamp: number | undefined;
+  key: string;
 }
 
 interface DiscoveredFile {
@@ -89,8 +91,14 @@ const sessionRoots = async (sessions: string, project: string): Promise<string[]
 
   try {
     entries = await readdir(sessions, { withFileTypes: true });
-  } catch {
-    throw new Error(`Session directory not found: ${sessions}`);
+  } catch (error) {
+    if (isMissingFile(error)) {
+      throw new Error(`Session directory not found: ${sessions}`, { cause: error });
+    }
+
+    const code = isRecord(error) && typeof error.code === 'string' ? error.code : String(error);
+
+    throw new Error(`Cannot read session directory ${sessions}: ${code}`, { cause: error });
   }
 
   return entries
@@ -100,10 +108,18 @@ const sessionRoots = async (sessions: string, project: string): Promise<string[]
 
 const isJsonlFile = (entry: Dirent) => entry.isFile() && entry.name.endsWith('.jsonl');
 
-const jsonlFiles = async (roots: string[]): Promise<string[]> => {
-  const listings = await Promise.all(
-    roots.map((root) => readdir(root, { recursive: true, withFileTypes: true })),
-  );
+const listingOf = async (root: string, warn: (message: string) => void): Promise<Dirent[]> => {
+  try {
+    return await readdir(root, { recursive: true, withFileTypes: true });
+  } catch {
+    warn(`Skipped unreadable directory ${root}`);
+
+    return [];
+  }
+};
+
+const jsonlFiles = async (roots: string[], warn: (message: string) => void): Promise<string[]> => {
+  const listings = await readInTurn(roots, (root) => listingOf(root, warn));
 
   return listings.flatMap((entries) =>
     entries.flatMap((entry) => (isJsonlFile(entry) ? [join(entry.parentPath, entry.name)] : [])),
@@ -196,14 +212,20 @@ const parseReplies = (
       continue;
     }
 
-    if (line.status === 'other') {
+    if (line.status === 'notARecord') {
       continue;
     }
 
     const reply = replyOf(line.entry);
 
     if (reply !== undefined) {
-      replies.push({ ...reply, path, source: basename(path), line: line.line });
+      replies.push({
+        ...reply,
+        path,
+        source: basename(path),
+        line: line.line,
+        key: copyKey(line.entry),
+      });
     }
   }
 
@@ -220,7 +242,7 @@ const byRecency = (left: ReplyCandidate, right: ReplyCandidate): number => {
 const readReplies = async (
   path: string,
   warn: (message: string) => void,
-): Promise<{ replies: ReplyCandidate[]; malformed: number }> => {
+): Promise<{ replies: ReplyCandidate[]; malformed: number; unreadable: number }> => {
   let text: string;
 
   try {
@@ -228,26 +250,36 @@ const readReplies = async (
   } catch {
     warn(`Skipped unreadable file ${path}`);
 
-    return { replies: [], malformed: 1 };
+    return { replies: [], malformed: 0, unreadable: 1 };
   }
 
-  return parseReplies(path, text, warn);
+  return { ...parseReplies(path, text, warn), unreadable: 0 };
 };
 
 const collectReplies = async (
   options: ProseReportOptions,
   warn: (message: string) => void,
-): Promise<{ replies: ProseReply[]; skippedLines: number }> => {
+): Promise<{ replies: ProseReply[]; skippedFiles: number; skippedLines: number }> => {
   const roots = await sessionRoots(options.sessions, options.project);
-  const discovered = await jsonlFiles(roots);
+  const discovered = await jsonlFiles(roots, warn);
   const newest = await newestFiles(discovered, options.files, warn);
   const parsed = await readInTurn(newest.files, (path) => readReplies(path, warn));
-  const replies = parsed.flatMap((result) => result.replies);
+  const seen = new Set<string>();
 
-  const skippedLines = parsed.reduce(
-    (total, result) => total + result.malformed,
-    newest.unreadable,
-  );
+  const replies = parsed
+    .flatMap((result) => result.replies)
+    .filter((reply) => {
+      const copy = seen.has(reply.key);
+
+      seen.add(reply.key);
+
+      return !copy;
+    });
+
+  const skippedFiles =
+    newest.unreadable + parsed.reduce((total, result) => total + result.unreadable, 0);
+
+  const skippedLines = parsed.reduce((total, result) => total + result.malformed, 0);
 
   const newestReplies = replies
     .toSorted(byRecency)
@@ -259,7 +291,7 @@ const collectReplies = async (
       text: reply.text,
     }));
 
-  return { replies: newestReplies, skippedLines };
+  return { replies: newestReplies, skippedFiles, skippedLines };
 };
 
 const readTextFile = async (path: string): Promise<ProseText> => {
@@ -274,9 +306,9 @@ const warn = (message: string) => process.stderr.write(`${message}\n`);
 
 const main = async () => {
   const options = parseProseReportArguments(process.argv.slice(2));
-  const { replies, skippedLines } = await collectReplies(options, warn);
+  const { replies, skippedFiles, skippedLines } = await collectReplies(options, warn);
   const texts = await readInTurn(options.texts, readTextFile);
-  const summary = summarizeProse(replies, texts, options.sample, skippedLines);
+  const summary = summarizeProse(replies, texts, options.sample, skippedFiles, skippedLines);
 
   process.stdout.write(formatProseSummary(summary));
 };

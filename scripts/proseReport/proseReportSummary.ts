@@ -1,4 +1,4 @@
-import { analyzeProse, checkProse } from '../../src/prose.ts';
+import { analyzeProse, checkProse, ruleOrder } from '../../src/prose.ts';
 import type { ProseRule } from '../../src/prose.ts';
 
 export interface ProseReply {
@@ -50,6 +50,7 @@ interface ProseTextSummary {
 
 export interface ProseSummary {
   repliesChecked: number;
+  skippedFiles: number;
   skippedLines: number;
   rules: ProseRuleSummary[];
   band: ProseBandSummary;
@@ -63,7 +64,6 @@ interface RuleTally {
   sample: ProseSample[];
 }
 
-const ruleOrder: readonly ProseRule[] = ['longSentence', 'emDash', 'curlyQuote'];
 const bandMinimumWords = 25;
 const bandMaximumWords = 39;
 
@@ -170,6 +170,7 @@ export const summarizeProse = (
   replies: ProseReply[],
   texts: ProseText[],
   sampleSize: number,
+  skippedFiles: number,
   skippedLines: number,
 ): ProseSummary => {
   const tallies = createTallies();
@@ -181,6 +182,7 @@ export const summarizeProse = (
 
   return {
     repliesChecked: replies.length,
+    skippedFiles,
     skippedLines,
     rules: ruleOrder.map((rule) => ({
       rule,
@@ -264,6 +266,7 @@ export const formatProseSummary = (summary: ProseSummary): string => {
     '',
     `Replies checked: ${summary.repliesChecked}`,
     `Text files: ${summary.texts.length}`,
+    `Skipped files: ${summary.skippedFiles}`,
     `Skipped lines: ${summary.skippedLines}`,
     '',
     'Findings by rule',
