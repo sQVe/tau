@@ -215,6 +215,11 @@ const questionTable: {
     expected: [{ question: 'Cancel the ticket?', kind: undefined, options: undefined }],
   },
   {
+    name: 'an unknown kind is undefined',
+    parameters: { questions: [{ question: 'Cancel the ticket?', kind: 'other' }] },
+    expected: [{ question: 'Cancel the ticket?', kind: undefined, options: undefined }],
+  },
+  {
     name: 'missing questions give no questions',
     parameters: {},
     expected: [],

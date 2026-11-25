@@ -1,4 +1,5 @@
 import { isRecord } from '../schema.ts';
+import { text } from './sessionMessage.ts';
 
 export interface AskAnswer {
   question: string | undefined;
@@ -12,14 +13,24 @@ export type AskResult =
   | { kind: 'answered'; callId: string | undefined; answers: AskAnswer[] }
   | { kind: 'other' };
 
-export interface AskQuestion {
-  question: string;
-  kind: string | undefined;
-  options: { label: string; preview: string | undefined }[] | undefined;
+interface AskOption {
+  label: string;
+  preview: string | undefined;
 }
 
-const text = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
+export interface AskQuestion {
+  question: string;
+  kind: 'choice' | 'approval' | undefined;
+  options: AskOption[] | undefined;
+}
+
+const kindOf = (value: unknown): AskQuestion['kind'] => {
+  if (value === 'choice' || value === 'approval') {
+    return value;
+  }
+
+  return undefined;
+};
 
 const selectedOf = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value) || !value.every((label) => typeof label === 'string')) {
@@ -35,15 +46,9 @@ const answerOf = (value: Record<string, unknown>): AskAnswer => ({
   typed: typeof value.typed === 'boolean' ? value.typed : undefined,
 });
 
-const answersOf = (value: unknown): AskAnswer[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+const answersOf = (value: unknown[]): AskAnswer[] => value.filter(isRecord).map(answerOf);
 
-  return value.filter(isRecord).map(answerOf);
-};
-
-const optionOf = (value: unknown): { label: string; preview: string | undefined } | undefined => {
+const optionOf = (value: unknown): AskOption | undefined => {
   if (!isRecord(value) || typeof value.label !== 'string') {
     return undefined;
   }
@@ -51,9 +56,7 @@ const optionOf = (value: unknown): { label: string; preview: string | undefined 
   return { label: value.label, preview: text(value.preview) };
 };
 
-const optionsOf = (
-  value: unknown,
-): { label: string; preview: string | undefined }[] | undefined => {
+const optionsOf = (value: unknown): AskOption[] | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
   }
@@ -70,7 +73,7 @@ const questionOf = (value: unknown): AskQuestion | undefined => {
     return undefined;
   }
 
-  return { question: value.question, kind: text(value.kind), options: optionsOf(value.options) };
+  return { question: value.question, kind: kindOf(value.kind), options: optionsOf(value.options) };
 };
 
 export const askResultOf = (message: Record<string, unknown>): AskResult | undefined => {

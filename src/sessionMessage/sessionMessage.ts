@@ -18,7 +18,7 @@ export interface AssistantCalls {
   dropped: DroppedCall[];
 }
 
-const text = (value: unknown): string | undefined =>
+export const text = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
 export const entryMessage = (entry: SessionEntry): Record<string, unknown> | undefined => {
