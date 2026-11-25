@@ -60,7 +60,8 @@ prose cannot decide what a rule allows.
 - Linear writes on a ticket another person owns.
 - Cancelling a ticket, through the team's state of type `canceled`. Agents stop and ask before
   cancelling a completed ticket or a ticket whose pull request merged.
-- Any change after approval needs a new preview, except for PR publication below.
+- Any change after approval needs a new preview, except for PR publication below. An answered cancel
+  approval binds the ticket identifier, so a title change after it needs no new preview.
 
 ### Review is not approval
 
@@ -77,7 +78,8 @@ only:
 - A publish answer with only tuicr edits the user applied needs no new preview, because the user
   made those edits.
 
-Tracker writes keep the rule that any change after approval needs a new preview.
+Tracker writes keep the rule that any change after approval needs a new preview, except the answered
+cancel approval above.
 
 ### Ownership and status
 
