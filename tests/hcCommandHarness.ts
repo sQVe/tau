@@ -13,7 +13,7 @@ export const emptySessionRefusal = 'refused hc with an empty HC_SESSION';
 
 // The package starts hc as a child process, so the fake is a script on PATH rather than an
 // in-process fake. It refuses a command with no HC_SESSION, so no test can reach the user's core,
-// and it refuses to run without its log or replies directory. The reply lookup tries
+// and it refuses to run without a log it can write or a replies directory. The reply lookup tries
 // `<subcommand>-<last argument>`, then `<subcommand>`, then the empty terminal list. The
 // subcommand is the first argument that does not start with `-`, and the address is the last
 // argument, so a reply key depends on the subcommand followed by flags and then the address.
@@ -28,6 +28,12 @@ export const installHcCommand = (directory: string): HcCommandFiles => {
   writeFileSync(
     join(bin, 'hc'),
     `#!/bin/sh
+append_log() {
+  if ! printf '%s\\n' "$1" >> "$HC_FAKE_LOG" 2>/dev/null; then
+    printf '%s\\n' "hc fake: HC_FAKE_LOG is not writable: $HC_FAKE_LOG" >&2
+    exit 70
+  fi
+}
 if [ -z "\${HC_FAKE_LOG:-}" ]; then
   printf '%s\\n' 'hc fake: HC_FAKE_LOG is unset' >&2
   exit 70
@@ -36,11 +42,19 @@ if [ -z "\${HC_FAKE_REPLIES:-}" ]; then
   printf '%s\\n' 'hc fake: HC_FAKE_REPLIES is unset' >&2
   exit 70
 fi
+if [ ! -d "$HC_FAKE_REPLIES" ]; then
+  printf '%s\\n' "hc fake: HC_FAKE_REPLIES is not a directory: $HC_FAKE_REPLIES" >&2
+  exit 70
+fi
+if ! ( : >> "$HC_FAKE_LOG" ) 2>/dev/null; then
+  printf '%s\\n' "hc fake: HC_FAKE_LOG is not writable: $HC_FAKE_LOG" >&2
+  exit 70
+fi
 if [ -z "\${HC_SESSION:-}" ]; then
-  printf '%s\\n' '${emptySessionRefusal}' >> "$HC_FAKE_LOG"
+  append_log '${emptySessionRefusal}'
   exit 64
 fi
-printf '%s\\n' "$*" >> "$HC_FAKE_LOG"
+append_log "$*"
 last=''
 subcommand=''
 for argument in "$@"; do
