@@ -89,6 +89,7 @@ it.each([
   [2, ' \u{F10C}'],
   [3, ' \u{F10C}'],
   [4, ' \u{F10C}  '],
+  [5, ' \u{F10C}  .'],
   [12, ' \u{F10C}  Brief...'],
 ])('keeps the status mark at width %i', (width, expected) => {
   const line = planLines([{ text: 'Brief worker', status: 'pending' }], width, theme)[1] ?? '';
