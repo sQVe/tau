@@ -297,6 +297,7 @@ it('keeps the copy the recency order ranks first', async () => {
   expect(result.stdout).toContain('| longSentence | 1 | 1 |');
 });
 
+// macOS compares filenames normalization-insensitively, so these é names are not distinct.
 it.skipIf(process.platform === 'darwin')(
   'keeps the base reply when normalized paths tie at the limit',
   async () => {

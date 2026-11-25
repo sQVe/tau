@@ -91,6 +91,8 @@ export const parseProseReportArguments = (argv: string[]): ProseReportOptions =>
   };
 };
 
+const failureText = (error: unknown): string => errorCode(error) ?? String(error);
+
 const sessionRoots = async (sessions: string, project: string): Promise<string[]> => {
   let entries: Dirent[];
 
@@ -101,9 +103,9 @@ const sessionRoots = async (sessions: string, project: string): Promise<string[]
       throw new Error(`Session directory not found: ${sessions}`, { cause: error });
     }
 
-    const code = errorCode(error) ?? String(error);
-
-    throw new Error(`Cannot read session directory ${sessions}: ${code}`, { cause: error });
+    throw new Error(`Cannot read session directory ${sessions}: ${failureText(error)}`, {
+      cause: error,
+    });
   }
 
   return entries
@@ -119,9 +121,7 @@ const listingOf = async (root: string, warn: (message: string) => void): Promise
 
     return { entries, skippedDirectories: 0 };
   } catch (error) {
-    const code = errorCode(error) ?? String(error);
-
-    warn(`Skipped unreadable directory ${root}: ${code}`);
+    warn(`Skipped unreadable directory ${root}: ${failureText(error)}`);
 
     return { entries: [], skippedDirectories: 1 };
   }
