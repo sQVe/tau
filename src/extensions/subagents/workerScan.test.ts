@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
-import * as fsPromises from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
@@ -7,6 +6,7 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { failedResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createHcFake } from '../../../tests/hcFake.js';
+import { signalActiveGenerationRead } from '../../../tests/sweepLockRead.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { holdFileLock } from '../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../hc/hc.js';
@@ -14,6 +14,7 @@ import { createDeadlineWatchdog } from './deadlineWatchdog.js';
 import type { DeadlineWatchdog, DeadlineWatchdogContext } from './deadlineWatchdog.js';
 import { registerWorkerScan } from './subagents.js';
 import type { WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
+import { sweepLockPath } from './workerFolderSweep.js';
 import { assignmentShortId } from './workerName.js';
 import { createWorkerScan } from './workerScan.js';
 import type { WorkerScanContext } from './workerScan.js';
@@ -21,9 +22,12 @@ import { scratchRootFor } from './workerScratch.js';
 
 const manager = 't-manager';
 
-vi.mock(import('node:fs/promises'), { spy: true });
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const actual = await importOriginal();
+  const readFile = vi.fn<typeof actual.readFile>(actual.readFile);
 
-const actualFsPromises = await vi.importActual<typeof fsPromises>('node:fs/promises');
+  return { ...actual, readFile: readFile as typeof actual.readFile };
+});
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
@@ -105,7 +109,14 @@ const abortError = (): Error =>
 
 const holdUntilAborted = (entered: () => void, signal: AbortSignal | undefined): Promise<never> =>
   new Promise((_resolve, reject) => {
-    signal?.addEventListener(
+    if (signal === undefined || signal.aborted) {
+      entered();
+      reject(abortError());
+
+      return;
+    }
+
+    signal.addEventListener(
       'abort',
       () => {
         reject(abortError());
@@ -115,6 +126,18 @@ const holdUntilAborted = (entered: () => void, signal: AbortSignal | undefined):
 
     entered();
   });
+
+it('rejects a held call at once without a usable signal', async () => {
+  const entered = vi.fn<() => void>();
+  const controller = new AbortController();
+
+  controller.abort();
+
+  await expect(holdUntilAborted(entered, undefined)).rejects.toThrow('aborted');
+  await expect(holdUntilAborted(entered, controller.signal)).rejects.toThrow('aborted');
+
+  expect(entered).toHaveBeenCalledTimes(2);
+});
 
 it('delivers the children before the deadline step runs on the same read', async () => {
   const { hc } = hcFor();
@@ -849,28 +872,6 @@ const sweepSetup = () => {
   return { agentDirectory, hcFake, hc, steps, scratchRoot: scratchRootFor(agentDirectory) };
 };
 
-// Resolves on the waiting scan's read of the lock generation its holder published.
-const signalSweepLockWait = (agentDirectory: string): Promise<void> => {
-  const path = `${join(agentDirectory, '.tau-worker-folder-sweep.lock')}.1`;
-  const { promise, resolve } = Promise.withResolvers<undefined>();
-  const readFile = vi.mocked(fsPromises.readFile);
-  const original = readFile.getMockImplementation() ?? actualFsPromises.readFile;
-
-  readFile.mockImplementation(((target: string, ...rest: never[]) => {
-    if (target === path) {
-      resolve(undefined);
-    }
-
-    return original(target, ...rest);
-  }) as typeof fsPromises.readFile);
-
-  onTestFinished(() => {
-    readFile.mockImplementation(original);
-  });
-
-  return promise;
-};
-
 const scratchLabel = (agentDirectory: string, assignmentId: string) => ({
   'tau.assignment': join(
     agentDirectory,
@@ -984,7 +985,7 @@ it('stops waiting for the sweep lock when the scan is cleared', async () => {
   const folder = join(scratchRoot, assignmentShortId('assignment-a'));
 
   const held = await holdFileLock({
-    lockPath: join(agentDirectory, '.tau-worker-folder-sweep.lock'),
+    lockPath: sweepLockPath(agentDirectory),
     checkout: agentDirectory,
     terminal: undefined,
   });
@@ -1001,7 +1002,7 @@ it('stops waiting for the sweep lock when the scan is cleared', async () => {
   vi.setSystemTime(statSync(folder).birthtimeMs + 120_000);
   hcFake.reply('ls', JSON.stringify({ terminals: [] }));
 
-  const lockWait = signalSweepLockWait(agentDirectory);
+  const lockWait = signalActiveGenerationRead(agentDirectory);
 
   const scanner = createWorkerScan(
     hc,

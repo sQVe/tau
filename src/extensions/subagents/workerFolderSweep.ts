@@ -46,7 +46,7 @@ interface TerminalFacts {
 
 const terminalReadTimeout = 10_000;
 
-const sweepLockPath = (agentDirectory: string): string =>
+export const sweepLockPath = (agentDirectory: string): string =>
   join(agentDirectory, '.tau-worker-folder-sweep.lock');
 
 const readBornAt = async (path: string): Promise<number | undefined> => {

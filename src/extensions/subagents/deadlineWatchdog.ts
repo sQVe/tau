@@ -186,6 +186,10 @@ export const createDeadlineWatchdog = (
     try {
       await label(runtime, target.address, { [deadlineEndLabel.key]: deadlineEndLabel.value });
     } catch (error) {
+      if (isRunAborted(runtime)) {
+        return;
+      }
+
       reportKillProblem(
         context,
         `label:${target.address}`,
@@ -239,6 +243,8 @@ export const createDeadlineWatchdog = (
       await kill(runtime, target.address);
     } catch (error) {
       if (isRunAborted(runtime)) {
+        setKillPending(target, false);
+
         return false;
       }
 
@@ -300,7 +306,7 @@ export const createDeadlineWatchdog = (
       );
 
       scheduleRetry(context, target, attempt, () =>
-        killAtDeadline(context, target, hc, attempt + 1),
+        killAtDeadline(context, target, runtime, attempt + 1),
       );
 
       return;
@@ -320,7 +326,9 @@ export const createDeadlineWatchdog = (
       return;
     }
 
-    scheduleRetry(context, target, attempt, () => killAtDeadline(context, target, hc, attempt + 1));
+    scheduleRetry(context, target, attempt, () =>
+      killAtDeadline(context, target, runtime, attempt + 1),
+    );
   };
 
   const arm = (context: DeadlineWatchdogContext, timer: DeadlineTimer): void => {

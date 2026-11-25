@@ -22,7 +22,11 @@ export interface WorkerScan {
   drain: () => Promise<void>;
 }
 
+type ScanOutcome = 'retry' | 'done';
+
 const isAborted = (signal: AbortSignal): boolean => signal.aborted;
+
+const isRunAborted = (runtime: HcRuntime): boolean => runtime.signal?.aborted === true;
 
 const notifyFailure = (context: WorkerScanContext, message: string): void => {
   try {
@@ -116,12 +120,11 @@ export const createWorkerScan = (
     managerTerminal: string,
     children: readonly WorkerChildRead[],
     runtime: HcRuntime,
-    signal: AbortSignal,
   ): Promise<void> => {
     try {
       await deadline.apply(context, managerTerminal, children, runtime);
     } catch (error) {
-      if (!isAborted(signal)) {
+      if (!isRunAborted(runtime)) {
         notifyFailure(context, `Deadline scan failed: ${errorMessage(error)}`);
       }
     }
@@ -132,14 +135,14 @@ export const createWorkerScan = (
     managerTerminal: string,
     runtime: HcRuntime,
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<ScanOutcome> => {
     let children: WorkerChildRead[];
 
     try {
       children = await readWorkerChildren(runtime, managerTerminal);
     } catch (error) {
       if (isAborted(signal)) {
-        return false;
+        return 'done';
       }
 
       const message = errorMessage(error);
@@ -147,33 +150,33 @@ export const createWorkerScan = (
       notifyFailure(context, `Worker delivery failed: ${message}`);
       notifyFailure(context, `Deadline scan failed: ${message}`);
 
-      return true;
+      return 'retry';
     }
 
     if (isAborted(signal)) {
-      return false;
+      return 'done';
     }
 
     attempt = 0;
 
     deliverChildren(context, children);
 
-    await runDeadlineStep(context, managerTerminal, children, runtime, signal);
+    await runDeadlineStep(context, managerTerminal, children, runtime);
 
     if (isAborted(signal)) {
-      return false;
+      return 'done';
     }
 
     await sweepFolders(context, runtime, signal);
 
-    return false;
+    return 'done';
   };
 
-  const runScan = async (context: WorkerScanContext): Promise<boolean> => {
+  const runScan = async (context: WorkerScanContext): Promise<ScanOutcome> => {
     const managerTerminal = currentTerminalAddress();
 
     if (managerTerminal === undefined) {
-      return false;
+      return 'done';
     }
 
     const controller = new AbortController();
@@ -196,9 +199,9 @@ export const createWorkerScan = (
         return undefined;
       }
 
-      const failed = await runScan(context);
+      const outcome = await runScan(context);
 
-      if (failed) {
+      if (outcome === 'retry') {
         scheduleRetry(() => enqueue(context));
       }
 
