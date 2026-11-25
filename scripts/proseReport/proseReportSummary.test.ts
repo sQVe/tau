@@ -1,6 +1,5 @@
 import { expect, it } from 'vitest';
 
-import { ruleOrder } from '../../src/prose.ts';
 import { formatProseSummary, summarizeProse } from './proseReportSummary.js';
 import type { ProseReply, ProseSummary } from './proseReportSummary.js';
 
@@ -149,9 +148,8 @@ it('prints skipped files and skipped lines as separate counts', () => {
   expect(output).toContain('Skipped lines: 3');
 });
 
-it.each(ruleOrder.map((rule) => [rule] as const))('reports a row for the %s rule', (rule) => {
+it('reports a row for every rule in a fixed order', () => {
   const summary = summarizeProse([], [], 20, 0, 0);
 
-  expect(summary.rules.map((row) => row.rule)).toEqual([...ruleOrder]);
-  expect(summary.rules.map((row) => row.rule)).toContain(rule);
+  expect(summary.rules.map((row) => row.rule)).toEqual(['longSentence', 'emDash', 'curlyQuote']);
 });
