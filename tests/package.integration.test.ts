@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -14,6 +15,7 @@ import type {
   NormalizedBuildSystemPromptOptions,
 } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
+import type { TestContext } from 'vitest';
 
 import manifest from '../package.json' with { type: 'json' };
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
@@ -23,6 +25,42 @@ import { emptySessionRefusal, installHcCommand } from './hcCommandHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+
+interface FakeCommandOptions {
+  session?: string;
+  log?: string | null;
+  replies?: string | null;
+}
+
+const installFakeHcCommand = (
+  onTestFinished: TestContext['onTestFinished'],
+  prefix = 'tau-hc-command-',
+) => {
+  const directory = temporaryDirectory(onTestFinished, prefix);
+  const files = installHcCommand(directory);
+
+  const run = (args: string[], options: FakeCommandOptions = {}) => {
+    const log = options.log === undefined ? files.log : options.log;
+    const replies = options.replies === undefined ? files.replies : options.replies;
+
+    const env: NodeJS.ProcessEnv = {
+      HC_SESSION: options.session ?? 'tau-hc-command',
+      PATH: process.env.PATH ?? '',
+    };
+
+    if (log !== null) {
+      env.HC_FAKE_LOG = log;
+    }
+
+    if (replies !== null) {
+      env.HC_FAKE_REPLIES = replies;
+    }
+
+    return spawnSync(join(files.bin, 'hc'), args, { env, encoding: 'utf8' });
+  };
+
+  return { ...files, run };
+};
 
 it('ships Safety Net as a runtime dependency and explicit extension', () => {
   expect(manifest.dependencies).toHaveProperty('cc-safety-net', '2.4.1');
@@ -335,3 +373,74 @@ it('loads Tau as a Pi package without extension warnings', async ({ onTestFinish
   expect(errors).toEqual([]);
   expect(warnings).toEqual([]);
 }, 30_000);
+
+it('answers an empty terminal list without a reply from the hc fake', ({ onTestFinished }) => {
+  const { run } = installFakeHcCommand(onTestFinished);
+
+  expect(run(['ls', '--json', '--all']).stdout).toBe('{"terminals":[]}\n');
+});
+
+it('answers a command with its reply from the hc fake', ({ onTestFinished }) => {
+  const { reply, run } = installFakeHcCommand(onTestFinished);
+
+  reply('ls', '{"terminals":[{"address":"t-child"}]}');
+
+  expect(run(['ls', '--json', '--all']).stdout).toBe('{"terminals":[{"address":"t-child"}]}\n');
+});
+
+it('answers a command from a reply directory whose path holds a space and an apostrophe', ({
+  onTestFinished,
+}) => {
+  const { reply, run } = installFakeHcCommand(onTestFinished, "tau hc command's-");
+
+  reply('ls', '{"terminals":[{"address":"t-child"}]}');
+
+  expect(run(['ls', '--json', '--all']).stdout).toBe('{"terminals":[{"address":"t-child"}]}\n');
+});
+
+it('answers a terminal lookup with its own reply before the command reply', ({
+  onTestFinished,
+}) => {
+  const { reply, replyGet, run } = installFakeHcCommand(onTestFinished);
+
+  reply('get', '{"address":"shared"}');
+  replyGet('t-child', '{"address":"t-child"}');
+
+  expect(run(['get', '--json', '--', 't-child']).stdout).toBe('{"address":"t-child"}\n');
+  expect(run(['get', '--json', '--', 't-other']).stdout).toBe('{"address":"shared"}\n');
+});
+
+it('finds the hc subcommand after a leading flag', ({ onTestFinished }) => {
+  const { reply, run } = installFakeHcCommand(onTestFinished);
+
+  reply('ls', '{"terminals":[{"address":"t-child"}]}');
+
+  expect(run(['--json', 'ls']).stdout).toBe('{"terminals":[{"address":"t-child"}]}\n');
+});
+
+it('refuses a command with no HC_SESSION in the hc fake', ({ onTestFinished }) => {
+  const { log, run } = installFakeHcCommand(onTestFinished);
+
+  const result = run(['ls', '--json', '--all'], { session: '' });
+
+  expect(result.status).toBe(64);
+  expect(readFileSync(log, 'utf8')).toBe(`${emptySessionRefusal}\n`);
+});
+
+it('fails the hc fake with a clear message when HC_FAKE_LOG is unset', ({ onTestFinished }) => {
+  const { run } = installFakeHcCommand(onTestFinished);
+
+  const result = run(['ls'], { log: null });
+
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain('HC_FAKE_LOG');
+});
+
+it('fails the hc fake with a clear message when HC_FAKE_REPLIES is unset', ({ onTestFinished }) => {
+  const { run } = installFakeHcCommand(onTestFinished);
+
+  const result = run(['ls'], { replies: null });
+
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain('HC_FAKE_REPLIES');
+});

@@ -12,8 +12,11 @@ export interface HcCommandFiles {
 export const emptySessionRefusal = 'refused hc with an empty HC_SESSION';
 
 // The package starts hc as a child process, so the fake is a script on PATH rather than an
-// in-process fake. It refuses a command with no HC_SESSION, so no test can reach the user's core.
-// A reply file named after the command, or after `get` and its address, overrides the empty list.
+// in-process fake. It refuses a command with no HC_SESSION, so no test can reach the user's core,
+// and it refuses to run without its log or replies directory. The reply lookup tries
+// `<subcommand>-<last argument>`, then `<subcommand>`, then the empty terminal list. The
+// subcommand is the first argument that does not start with `-`, and the address is the last
+// argument, so a reply key depends on the subcommand followed by flags and then the address.
 export const installHcCommand = (directory: string): HcCommandFiles => {
   const bin = join(directory, 'bin');
   const log = join(directory, 'hc.log');
@@ -25,18 +28,33 @@ export const installHcCommand = (directory: string): HcCommandFiles => {
   writeFileSync(
     join(bin, 'hc'),
     `#!/bin/sh
+if [ -z "\${HC_FAKE_LOG:-}" ]; then
+  printf '%s\\n' 'hc fake: HC_FAKE_LOG is unset' >&2
+  exit 70
+fi
+if [ -z "\${HC_FAKE_REPLIES:-}" ]; then
+  printf '%s\\n' 'hc fake: HC_FAKE_REPLIES is unset' >&2
+  exit 70
+fi
 if [ -z "\${HC_SESSION:-}" ]; then
   printf '%s\\n' '${emptySessionRefusal}' >> "$HC_FAKE_LOG"
   exit 64
 fi
 printf '%s\\n' "$*" >> "$HC_FAKE_LOG"
 last=''
+subcommand=''
 for argument in "$@"; do
   last="$argument"
+  if [ -z "$subcommand" ]; then
+    case "$argument" in
+      -*) ;;
+      *) subcommand="$argument" ;;
+    esac
+  fi
 done
-reply="\${HC_FAKE_REPLIES}/$1-$last"
+reply="\${HC_FAKE_REPLIES}/\${subcommand}-$last"
 if [ ! -f "$reply" ]; then
-  reply="\${HC_FAKE_REPLIES}/$1"
+  reply="\${HC_FAKE_REPLIES}/$subcommand"
 fi
 if [ -f "$reply" ]; then
   cat "$reply"
