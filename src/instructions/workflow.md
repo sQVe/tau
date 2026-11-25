@@ -111,6 +111,7 @@ when you stop. Follow explicit user instructions and repository conventions over
 
 The prose above is authoritative. Rules without a check are owned by the human reviewer.
 
-| Rule                  | Enforced by                              |
-| --------------------- | ---------------------------------------- |
-| Shared workflow rules | [stomme](https://github.com/sQVe/stomme) |
+| Rule                                  | Enforced by                                                                                                                                                                         |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared workflow rules                 | [stomme](https://github.com/sQVe/stomme)                                                                                                                                            |
+| Verify a tool's capability and effect | [tool schemas](../../tests/toolParameters.test.ts), [started-model readback](../piStart/piStart.test.ts), [detached output](../extensions/bashGuard/detachedOutputDecision.test.ts) |
