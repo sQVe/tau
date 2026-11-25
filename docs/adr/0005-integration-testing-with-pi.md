@@ -40,8 +40,10 @@ configuration loading and initial catalog refresh are disabled. Resource discove
 change a result.
 
 One exception: a test may use a disk-backed `SessionManager.create()` when the saved session file is
-the behavior under test. Only `tests/toolResultRedaction.integration.test.ts` does this. It reads
-the saved file to check that no secret reaches disk, and its session directory is a temporary
+the behavior under test, or when the test must give its path to another program. Two tests do this.
+`tests/toolResultRedaction.integration.test.ts` reads the saved file to check that no secret reaches
+disk. `tests/planReport.integration.test.ts` gives the saved file to a worker assignment as its
+`parentSession`, because delivery matches that path. Each session directory is a temporary
 directory.
 
 ### Dependency versions

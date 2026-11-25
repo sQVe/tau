@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -7,7 +5,6 @@ import {
   getCurrentSystemPrompt,
 } from '@earendil-works/pi-ai';
 import type { FauxResponseStep, TranscriptContext } from '@earendil-works/pi-ai';
-import { SessionManager } from '@earendil-works/pi-coding-agent';
 import type {
   ExtensionAPI,
   NormalizedBuildSystemPromptOptions,
@@ -73,7 +70,6 @@ const setup = async () => {
       providers: [provider],
       tools: ['plan'],
       settings: { compaction: { enabled: false, keepRecentTokens: 12 }, retry: { enabled: false } },
-      sessionManager: SessionManager.create(directory, join(directory, 'sessions')),
       extensionFactories: [planExtension, bridge],
     },
     { onError: (error) => errors.push(error) },

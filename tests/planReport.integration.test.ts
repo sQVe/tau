@@ -65,6 +65,8 @@ const setup = async (plan: PlanStep[] | undefined) => {
     expect(errors).toEqual([]);
   });
 
+  // Delivery matches a report only when its assignment names this session's file, so this test
+  // needs a saved session rather than an in-memory one.
   const sessionManager = SessionManager.create(directory, join(directory, 'sessions'));
 
   const { session } = await createBoundSession(

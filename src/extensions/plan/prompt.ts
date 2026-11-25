@@ -1,9 +1,11 @@
+import { sanitizeSingleLine } from '../../terminalText.js';
 import type { PlanStep } from './steps.js';
 import { replayPlan, showsPlan } from './steps.js';
 
 export const planUpdateLine = 'Update `plan` if this report finishes or blocks a step.';
 
-const singleLine = (text: string): string => text.replace(/[\r\n\u2028\u2029]+/g, ' ');
+const singleLine = (text: string): string =>
+  sanitizeSingleLine(text.replace(/[\r\n\u2028\u2029]+/g, ' '));
 
 export const planPromptText = (steps: readonly PlanStep[]): string | undefined => {
   if (!showsPlan(steps)) {

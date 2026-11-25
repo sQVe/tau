@@ -256,6 +256,7 @@ const pureModules = [
   'src/sessionMessage/sessionMessage.ts',
   'src/shell.ts',
   'src/tabName.ts',
+  'src/terminalText.ts',
   'src/verification/freshness.ts',
   'src/verification/selection.ts',
   'src/wake/deliveryStep.ts',
@@ -325,6 +326,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/instructions/stommeGuides/stommeGuidesDecision.ts': ['node:path', 'smol-toml'],
   'src/instructions/syncRecord.ts': ['smol-toml'],
   'src/schema.ts': ['typebox', 'typebox/value'],
+  'src/terminalText.ts': ['node:util'],
   'tests/hcIsolationHarness.ts': ['node:path'],
 };
 

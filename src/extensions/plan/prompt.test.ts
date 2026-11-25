@@ -45,6 +45,11 @@ const promptTable: { name: string; steps: PlanStep[]; expected: string | undefin
     steps: [step('Draft\n\nthe  plan')],
     expected: ['Current plan:', '[pending] Draft the  plan'].join('\n'),
   },
+  {
+    name: 'step text with terminal controls',
+    steps: [step('Read \u001B[1mthe notes\u0007 now')],
+    expected: ['Current plan:', '[pending] Read the notes  now'].join('\n'),
+  },
 ];
 
 it.each(promptTable)('builds the prompt block for $name', ({ steps, expected }) => {
@@ -75,6 +80,13 @@ const reportTable: { name: string; entries: unknown[]; expected: string }[] = [
     name: 'two plan entries',
     entries: [savedPlan([step('Old step')]), savedPlan([step('New step')])],
     expected: ['', '', 'Current plan:', '[pending] New step', '', planUpdateLine].join('\n'),
+  },
+  {
+    name: 'a plan whose step text holds terminal controls',
+    entries: [savedPlan([step('Read \u001B[1mthe notes\u0007 now')])],
+    expected: ['', '', 'Current plan:', '[pending] Read the notes  now', '', planUpdateLine].join(
+      '\n',
+    ),
   },
   {
     name: 'a malformed entry after a valid plan',
