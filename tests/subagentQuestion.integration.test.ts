@@ -135,7 +135,7 @@ const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
   ({
     sessionManager: {
       getEntries: () => entries,
-      getBranch: () => [],
+      getBranch: () => entries,
       getSessionFile: () => managerSessionFile,
     },
     ui: { notify: () => undefined },

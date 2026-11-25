@@ -6,8 +6,9 @@ import type { EventWatch } from './eventWatch.js';
 import { registerWorkerScan } from './subagents.js';
 import type { WorkerScan, WorkerScanContext } from './workerScan.js';
 
-const createScan = () => {
+const createScan = (drain: () => Promise<void> = () => Promise.resolve()) => {
   const calls: WorkerScanContext[] = [];
+  const drainSpy = vi.fn<() => Promise<void>>(drain);
 
   const scan: WorkerScan = {
     scan: (context) => {
@@ -16,10 +17,10 @@ const createScan = () => {
       return Promise.resolve();
     },
     clear: vi.fn<() => void>(),
-    drain: () => Promise.resolve(),
+    drain: drainSpy,
   };
 
-  return { scan, calls };
+  return { scan, calls, drain: drainSpy };
 };
 
 const createEvents = () => {
@@ -75,11 +76,9 @@ it('clears the scan and stops the event watch at session shutdown', () => {
 
 it('waits for the scan drain before the shutdown handler resolves', async () => {
   const fake = fakeExtensionApi();
-  const { scan } = createScan();
   const events = createEvents();
   const draining = Promise.withResolvers<undefined>();
-
-  scan.drain = () => draining.promise;
+  const { scan, drain } = createScan(() => draining.promise);
 
   registerWorkerScan(fake.pi, scan, events.events);
 
@@ -100,6 +99,7 @@ it('waits for the scan drain before the shutdown handler resolves', async () => 
 
   expect(resolved).toBe(false);
   expect(scan.clear).toHaveBeenCalledTimes(1);
+  expect(drain).toHaveBeenCalledTimes(1);
   expect(events.stop).toHaveBeenCalledTimes(1);
 
   draining.resolve(undefined);

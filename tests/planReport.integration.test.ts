@@ -84,12 +84,6 @@ const setup = async (plan: PlanStep[] | undefined) => {
     { onError: (error) => errors.push(error) },
   );
 
-  // The awaited emit joins the worker scan. A scan left running writes into the temporary
-  // directory after its removal starts, which fails the removal with ENOTEMPTY.
-  onTestFinished(async () => {
-    await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' });
-  });
-
   if (plan !== undefined) {
     provider.setResponses([
       fauxAssistantMessage([fauxToolCall('plan', { steps: plan })]),
