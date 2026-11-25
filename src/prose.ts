@@ -170,7 +170,6 @@ const collectBlocks = (
   let line = startLine;
 
   for (const token of tokens) {
-    // A tight list item holds its paragraph as one text token.
     if (token.type === 'paragraph' || token.type === 'heading' || token.type === 'text') {
       blocks.push({ startLine: line, tokens: childTokens(token) });
     } else if (token.type === 'table') {
