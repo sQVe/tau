@@ -537,8 +537,6 @@ const commandArbitrary = oneof(
 it('keeps one report notice and at most one final notice per worker', () => {
   const seed = resolvePropertySeed();
 
-  process.stdout.write(`TAU_PROPERTY_SEED=${seed}\n`);
-
   executedSteps.clear();
 
   assert(

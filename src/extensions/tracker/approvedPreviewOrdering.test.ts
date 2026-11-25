@@ -46,8 +46,6 @@ const expectedLines = (order: readonly OrderKind[]): string[] => {
 it('gives the lines of the only call before a result and none after a duplicate call', () => {
   const seed = resolvePropertySeed();
 
-  process.stdout.write(`TAU_PROPERTY_SEED=${seed}\n`);
-
   assert(
     property(array(orderKind, { minLength: 3, maxLength: 6 }), (order) => {
       const branch = order.map(entryOf);
