@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { isRecord } from '../schema.ts';
+import { isRecord, text } from '../schema.ts';
 import { assistantCalls } from '../sessionMessage/sessionMessage.ts';
 
 export type Entry = Record<string, unknown>;
@@ -66,9 +66,6 @@ export type NestedCall = Static<typeof nestedCallSchema>;
 export type ToolCall = Static<typeof toolCallSchema>;
 
 export type TranscriptState = Static<typeof transcriptStateSchema>;
-
-export const text = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
 
 // Forks and follow-ups copy entries with their IDs and timestamps, so a copy shares its original's key.
 export const copyKey = (entry: Entry): string =>

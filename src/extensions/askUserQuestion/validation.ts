@@ -1,9 +1,11 @@
+import type { AskKind } from '../../schema.ts';
+
 export interface QuestionInput {
   question: string;
   problem: string;
   impact: string;
   preview?: string;
-  kind?: 'choice' | 'approval' | undefined;
+  kind?: AskKind | undefined;
   confidence?: number | undefined;
   options: readonly { label: string; recommended?: boolean; preview?: string }[];
 }

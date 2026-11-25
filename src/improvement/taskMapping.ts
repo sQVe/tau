@@ -1,6 +1,7 @@
 import { basename } from 'node:path';
 
 import type { MergedPullRequest } from '../github/mergedPullRequest.js';
+import { text } from '../schema.ts';
 import {
   countTaskFacts,
   extractTaskEvidence,
@@ -8,7 +9,6 @@ import {
   publicationOf,
 } from './taskFacts.ts';
 import type { MissingEvidence, TaskCounts, TaskFact } from './taskFacts.ts';
-import { text } from './transcript.ts';
 import type { ToolCall, Transcript } from './transcript.ts';
 
 export type { MergedPullRequest } from '../github/mergedPullRequest.js';

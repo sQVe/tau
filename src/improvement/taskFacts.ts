@@ -1,7 +1,6 @@
 import { basename, dirname } from 'node:path';
 
-import { isRecord } from '../schema.ts';
-import { text } from './transcript.ts';
+import { isRecord, text } from '../schema.ts';
 import type { CallResult, ToolCall } from './transcript.ts';
 
 interface FactPlace {

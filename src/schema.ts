@@ -9,8 +9,13 @@ export interface KnownKeys {
   readonly [key: string]: KnownKeys | true;
 }
 
+export type AskKind = 'choice' | 'approval';
+
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const text = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
 
 export const newerRecordVersion = (
   value: unknown,

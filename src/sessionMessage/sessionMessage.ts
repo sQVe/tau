@@ -1,6 +1,6 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
-import { isRecord } from '../schema.ts';
+import { isRecord, text } from '../schema.ts';
 
 export interface CalledTool {
   callId: string;
@@ -17,9 +17,6 @@ export interface AssistantCalls {
   calls: CalledTool[];
   dropped: DroppedCall[];
 }
-
-export const text = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
 
 export const entryMessage = (entry: SessionEntry): Record<string, unknown> | undefined => {
   if (entry.type !== 'message') {

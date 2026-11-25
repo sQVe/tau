@@ -1,5 +1,5 @@
-import { isRecord } from '../schema.ts';
-import { text } from './sessionMessage.ts';
+import { isRecord, text } from '../schema.ts';
+import type { AskKind } from '../schema.ts';
 
 export interface AskAnswer {
   question: string | undefined;
@@ -20,11 +20,11 @@ interface AskOption {
 
 export interface AskQuestion {
   question: string;
-  kind: 'choice' | 'approval' | undefined;
+  kind: AskKind | undefined;
   options: AskOption[] | undefined;
 }
 
-const kindOf = (value: unknown): AskQuestion['kind'] => {
+const kindOf = (value: unknown): AskKind | undefined => {
   if (value === 'choice' || value === 'approval') {
     return value;
   }

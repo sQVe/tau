@@ -1,6 +1,6 @@
 import { copyKey } from '../src/improvement/transcript.ts';
 import type { WorkerTask } from '../src/improvement/workerRecord.ts';
-import { isRecord } from '../src/schema.ts';
+import { isRecord, text } from '../src/schema.ts';
 
 export type Side = 'parent' | 'worker';
 
@@ -88,8 +88,6 @@ interface CountedFile {
   row: SessionRow;
   firstTurnSeen: boolean;
 }
-
-const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
