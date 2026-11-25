@@ -65,7 +65,6 @@ interface RuleTally {
   sample: ProseSample[];
 }
 
-// The report's rule order and its report-only 25 to 39 word band.
 const ruleOrder: readonly ProseRule[] = ['longSentence', 'emDash', 'curlyQuote'];
 const bandMinimumWords = 25;
 const bandMaximumWords = 39;
