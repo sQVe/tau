@@ -277,7 +277,7 @@ export const createDeadlineWatchdog = (
     runtime: HcRuntime,
     attempt = 0,
   ): Promise<void> => {
-    if (isStopped()) {
+    if (isCancelled(runtime)) {
       return;
     }
 

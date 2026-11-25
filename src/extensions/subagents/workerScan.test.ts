@@ -1002,7 +1002,7 @@ it('stops waiting for the sweep lock when the scan is cleared', async () => {
   vi.setSystemTime(statSync(folder).birthtimeMs + 120_000);
   hcFake.reply('ls', JSON.stringify({ terminals: [] }));
 
-  const lockWait = signalActiveGenerationRead(agentDirectory);
+  const lockWait = signalActiveGenerationRead(agentDirectory, 1);
 
   const scanner = createWorkerScan(
     hc,

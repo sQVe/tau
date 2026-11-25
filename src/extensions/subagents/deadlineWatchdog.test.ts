@@ -188,6 +188,33 @@ const standalone = (hcFake: HcFake) => {
   return harness(hcFake);
 };
 
+const hangingCommand = (hcFake: HcFake, commandName: string) => {
+  const entered = deferred();
+  let calls = 0;
+
+  const exec: HcRuntime['exec'] = (command, commandArguments, options) => {
+    if (commandArguments[0] !== commandName) {
+      return hcFake.exec(command, commandArguments, options);
+    }
+
+    calls += 1;
+
+    return new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener(
+        'abort',
+        () => {
+          reject(new Error('The operation was aborted'));
+        },
+        { once: true },
+      );
+
+      entered.resolve();
+    });
+  };
+
+  return { exec, entered: entered.promise, calls: () => calls };
+};
+
 it('kills at the deadline without sending a warning', async () => {
   const { context, scanner, deadline, ended, commands, path } = await setup({
     deadline: now + 120_000,
@@ -370,15 +397,18 @@ const launchingContext = (parentSession: string) =>
     signal: undefined,
   }) as unknown as DeadlineWatchdogContext;
 
-const parentSessionOf = async (path: string): Promise<string> => {
+const savedAssignmentOf = async (path: string): Promise<Assignment> => {
   const assignment = await readAssignment(path);
 
   if (assignment === undefined) {
     throw new Error('The assignment file is missing.');
   }
 
-  return assignment.parentSession;
+  return assignment;
 };
+
+const parentSessionOf = async (path: string): Promise<string> =>
+  (await savedAssignmentOf(path)).parentSession;
 
 it('shows one deadline message when the worker finishes while its kill is pending', async () => {
   const { path, deadline, hc, hcFake, commands } = await setup();
@@ -787,7 +817,7 @@ it('runs a scheduled deadline retry on the runtime it is given', async () => {
   expect(signals).toEqual([controller.signal, controller.signal]);
 });
 
-it('stops a scheduled deadline retry when its runtime is aborted', async () => {
+it('skips the get and the kill when a scheduled deadline retry runs after its runtime is aborted', async () => {
   const hcFake = createHcFake();
   const path = '/agent/missing.json';
 
@@ -829,7 +859,7 @@ it('stops a scheduled deadline retry when its runtime is aborted', async () => {
 
   await vi.advanceTimersByTimeAsync(5_000);
 
-  expect(getCalls).toBe(2);
+  expect(getCalls).toBe(1);
   expect(hcFake.calls.filter((call) => call.commandArguments[0] === 'kill')).toHaveLength(0);
 });
 
@@ -884,38 +914,19 @@ it('skips the ended notice and label when the scan is cleared while the kill set
 
 it('reports no kill failure and retries nothing when the scan is cleared during the kill', async () => {
   const { context, scanner, hc, hcFake, commands, notifications } = await setup({ deadline: now });
-  const entered = deferred();
-  let killCalls = 0;
+  const hang = hangingCommand(hcFake, 'kill');
 
-  hc.exec = (command, commandArguments, options) => {
-    if (commandArguments[0] !== 'kill') {
-      return hcFake.exec(command, commandArguments, options);
-    }
-
-    killCalls += 1;
-
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(new Error('The operation was aborted'));
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
-  };
+  hc.exec = hang.exec;
 
   const scanning = scanner.scan(context);
 
-  await entered.promise;
+  await hang.entered;
 
   scanner.clear();
 
   await scanning;
 
-  expect(killCalls).toBe(1);
+  expect(hang.calls()).toBe(1);
   expect(commands('label')).toHaveLength(0);
   expect(notifications).toEqual([]);
   expect(vi.getTimerCount()).toBe(0);
@@ -923,70 +934,34 @@ it('reports no kill failure and retries nothing when the scan is cleared during 
 
 it('clears the pending kill marker when the scan is cleared during the kill', async () => {
   const { context, scanner, hc, hcFake, path, pending } = await setup({ deadline: now });
-  const assignment = await readAssignment(path);
-  const entered = deferred();
+  const { assignmentId } = await savedAssignmentOf(path);
+  const hang = hangingCommand(hcFake, 'kill');
 
-  if (assignment === undefined) {
-    throw new Error('The assignment file is missing.');
-  }
-
-  hc.exec = (command, commandArguments, options) => {
-    if (commandArguments[0] !== 'kill') {
-      return hcFake.exec(command, commandArguments, options);
-    }
-
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(new Error('The operation was aborted'));
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
-  };
+  hc.exec = hang.exec;
 
   const scanning = scanner.scan(context);
 
-  await entered.promise;
+  await hang.entered;
 
   scanner.clear();
 
   await scanning;
 
   expect(pending).toEqual([
-    { assignmentId: assignment.assignmentId, pending: true },
-    { assignmentId: assignment.assignmentId, pending: false },
+    { assignmentId, pending: true },
+    { assignmentId, pending: false },
   ]);
 });
 
 it('reports no label failure when the scan is cleared during the label', async () => {
   const { context, scanner, hc, hcFake, commands, notifications } = await setup({ deadline: now });
-  const entered = deferred();
+  const hang = hangingCommand(hcFake, 'label');
 
-  hc.exec = (command, commandArguments, options) => {
-    if (commandArguments[0] !== 'label') {
-      return hcFake.exec(command, commandArguments, options);
-    }
-
-    return new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener(
-        'abort',
-        () => {
-          reject(new Error('The operation was aborted'));
-        },
-        { once: true },
-      );
-
-      entered.resolve();
-    });
-  };
+  hc.exec = hang.exec;
 
   const scanning = scanner.scan(context);
 
-  await entered.promise;
+  await hang.entered;
 
   scanner.clear();
 

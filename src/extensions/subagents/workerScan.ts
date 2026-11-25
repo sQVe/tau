@@ -24,8 +24,6 @@ export interface WorkerScan {
 
 type ScanOutcome = 'retry' | 'done';
 
-const isAborted = (signal: AbortSignal): boolean => signal.aborted;
-
 const isRunAborted = (runtime: HcRuntime): boolean => runtime.signal?.aborted === true;
 
 const notifyFailure = (context: WorkerScanContext, message: string): void => {
@@ -98,16 +96,12 @@ export const createWorkerScan = (
     }
   };
 
-  const sweepFolders = async (
-    context: WorkerScanContext,
-    runtime: HcRuntime,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  const sweepFolders = async (context: WorkerScanContext, runtime: HcRuntime): Promise<void> => {
     const messages = await readSweepMessages(runtime);
 
     for (const message of messages) {
       // A notification can shut the session down, which clears the run and its remaining messages.
-      if (isAborted(signal)) {
+      if (isRunAborted(runtime)) {
         return;
       }
 
@@ -134,14 +128,13 @@ export const createWorkerScan = (
     context: WorkerScanContext,
     managerTerminal: string,
     runtime: HcRuntime,
-    signal: AbortSignal,
   ): Promise<ScanOutcome> => {
     let children: WorkerChildRead[];
 
     try {
       children = await readWorkerChildren(runtime, managerTerminal);
     } catch (error) {
-      if (isAborted(signal)) {
+      if (isRunAborted(runtime)) {
         return 'done';
       }
 
@@ -153,7 +146,7 @@ export const createWorkerScan = (
       return 'retry';
     }
 
-    if (isAborted(signal)) {
+    if (isRunAborted(runtime)) {
       return 'done';
     }
 
@@ -163,11 +156,11 @@ export const createWorkerScan = (
 
     await runDeadlineStep(context, managerTerminal, children, runtime);
 
-    if (isAborted(signal)) {
+    if (isRunAborted(runtime)) {
       return 'done';
     }
 
-    await sweepFolders(context, runtime, signal);
+    await sweepFolders(context, runtime);
 
     return 'done';
   };
@@ -185,7 +178,7 @@ export const createWorkerScan = (
     active = controller;
 
     try {
-      return await scanSteps(context, managerTerminal, runtime, controller.signal);
+      return await scanSteps(context, managerTerminal, runtime);
     } finally {
       active = undefined;
     }
