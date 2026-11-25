@@ -65,8 +65,6 @@ type EligibleAskedQuestion = EligibleQuestion<AskedQuestion>;
 type JudgedAskedQuestion = EligibleAskedQuestion & { verdict: JudgeVerdict };
 type DecidedAskedQuestion = JudgedAskedQuestion & { confidence: number };
 
-// The gate sends this share of would-be decisions to the dialog, so the shadow records keep
-// measuring calls the gate would have answered.
 const decideAuditRate = 0.2;
 
 const readBranch = async (cwd: string): Promise<{ branch: string | null; head: string | null }> => {
