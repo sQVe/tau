@@ -157,6 +157,19 @@ const sentenceTable: {
     markdown: 'Use `a b c` now.',
     expected: [{ text: 'Use code now.', line: 1, words: 3 }],
   },
+  {
+    name: 'joins a soft line break with a space',
+    markdown: 'One\ntwo.',
+    expected: [{ text: 'One two.', line: 1, words: 2 }],
+  },
+  {
+    name: 'reads CRLF lines',
+    markdown: 'One.\r\n\r\nTwo.',
+    expected: [
+      { text: 'One.', line: 1, words: 1 },
+      { text: 'Two.', line: 3, words: 1 },
+    ],
+  },
 ];
 
 it.each(sentenceTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
