@@ -123,6 +123,7 @@ const completionTracked = (scan: WorkerScan) => {
         return last;
       },
       clear: () => undefined,
+      drain: () => scan.drain(),
     },
     settled: () => last,
   };

@@ -17,6 +17,7 @@ export type WorkerScanContext = Pick<
 export interface WorkerScan {
   scan: (context: WorkerScanContext) => Promise<void>;
   clear: () => void;
+  drain: () => Promise<void>;
 }
 
 const notifyFailure = (context: WorkerScanContext, message: string): void => {
@@ -152,5 +153,6 @@ export const createWorkerScan = (
       stopped = true;
       clearRetry();
     },
+    drain: () => tail,
   };
 };

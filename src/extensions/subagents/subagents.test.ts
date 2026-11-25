@@ -16,6 +16,7 @@ const createScan = () => {
       return Promise.resolve();
     },
     clear: vi.fn<() => void>(),
+    drain: () => Promise.resolve(),
   };
 
   return { scan, calls };
@@ -70,6 +71,41 @@ it('clears the scan and stops the event watch at session shutdown', () => {
 
   expect(scan.clear).toHaveBeenCalledTimes(1);
   expect(events.stop).toHaveBeenCalledTimes(1);
+});
+
+it('waits for the scan drain before the shutdown handler resolves', async () => {
+  const fake = fakeExtensionApi();
+  const { scan } = createScan();
+  const events = createEvents();
+  const draining = Promise.withResolvers<undefined>();
+
+  scan.drain = () => draining.promise;
+
+  registerWorkerScan(fake.pi, scan, events.events);
+
+  let resolved = false;
+
+  const handler = fake.handler('session_shutdown');
+  const shutdown = Promise.resolve(handler({ reason: 'quit' }, contextOf()));
+
+  const settled = shutdown.then(() => {
+    resolved = true;
+
+    return undefined;
+  });
+
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(resolved).toBe(false);
+  expect(scan.clear).toHaveBeenCalledTimes(1);
+  expect(events.stop).toHaveBeenCalledTimes(1);
+
+  draining.resolve(undefined);
+  await settled;
+
+  expect(resolved).toBe(true);
 });
 
 it('registers no input handler for the removed note trigger', () => {

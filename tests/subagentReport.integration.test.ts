@@ -227,6 +227,7 @@ it('delivers one worker report through the real hc event watch', async () => {
     clear: () => {
       scan.clear();
     },
+    drain: () => scan.drain(),
   };
 
   const watch = createEventWatch(subscribeEvents, trackedScan);

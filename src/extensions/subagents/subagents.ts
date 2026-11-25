@@ -296,9 +296,11 @@ export const registerWorkerScan = (
   scan: WorkerScan,
   events: EventWatch,
 ): void => {
-  pi.on('session_shutdown', () => {
+  pi.on('session_shutdown', async () => {
     scan.clear();
     events.stop();
+
+    await scan.drain();
   });
 
   pi.on('session_start', (_event, context) => {

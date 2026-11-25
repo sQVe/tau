@@ -148,6 +148,53 @@ it('reads the children once for each scan', async () => {
   expect(steps.order).toEqual(['deliver', 'deadline', 'deliver', 'deadline']);
 });
 
+it('drains only after the queued scan finishes', async () => {
+  const { hcFake, hc } = hcFor();
+  const steps = createSteps();
+  const realExec = hcFake.exec;
+  const entered = deferred();
+  const release = deferred();
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'ls') {
+      entered.resolve();
+
+      await release.promise;
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  const scanner = scanFor(hc, steps.delivery, steps.deadline);
+
+  const firstScan = scanner.scan(steps.context);
+
+  await entered.promise;
+
+  let drained = false;
+
+  const draining = scanner.drain();
+
+  const settled = draining.then(() => {
+    drained = true;
+
+    return undefined;
+  });
+
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(drained).toBe(false);
+
+  release.resolve();
+  await settled;
+  await firstScan;
+
+  expect(drained).toBe(true);
+  expect(steps.order).toEqual(['deliver', 'deadline']);
+});
+
 it('does nothing without a manager terminal', async () => {
   vi.stubEnv('HC_TERMINAL_ID', '');
 

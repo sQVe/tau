@@ -1,4 +1,3 @@
-import { statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
@@ -43,28 +42,6 @@ const isReportEntry = (entry: SessionEntry): entry is CustomMessageEntry =>
 const reportEntries = (session: AgentSession) =>
   session.sessionManager.getEntries().filter(isReportEntry);
 
-const logSize = (path: string): number => statSync(path, { throwIfNoEntry: false })?.size ?? 0;
-
-// The worker scan keeps running `hc` commands after session_shutdown, and each command appends to
-// the log inside the temporary directory. A late append recreates the log inside the half-removed
-// directory, so cleanup waits for the log to stop growing.
-const waitForLogToSettle = async (path: string): Promise<void> => {
-  let previousSize = -1;
-  let unchangedReads = 0;
-
-  await vi.waitFor(
-    () => {
-      const size = logSize(path);
-
-      unchangedReads = size === previousSize ? unchangedReads + 1 : 0;
-      previousSize = size;
-
-      expect(unchangedReads).toBeGreaterThanOrEqual(3);
-    },
-    { timeout: 10_000, interval: 200 },
-  );
-};
-
 const setup = async (plan: PlanStep[] | undefined) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-plan-report-');
   const { bin, log, replies, reply, replyGet } = installHcCommand(directory);
@@ -107,9 +84,10 @@ const setup = async (plan: PlanStep[] | undefined) => {
     { onError: (error) => errors.push(error) },
   );
 
+  // The awaited emit joins the worker scan. A scan left running writes into the temporary
+  // directory after its removal starts, which fails the removal with ENOTEMPTY.
   onTestFinished(async () => {
     await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' });
-    await waitForLogToSettle(log);
   });
 
   if (plan !== undefined) {
