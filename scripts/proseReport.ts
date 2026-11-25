@@ -32,6 +32,11 @@ interface DiscoveredFile {
   mtimeMs: number | undefined;
 }
 
+interface Listing {
+  entries: Dirent[];
+  skippedDirectories: number;
+}
+
 const usage = `Usage: node scripts/proseReport.ts [options]
 
   --sessions <dir>  Session root, default ~/.pi/agent/sessions
@@ -108,22 +113,38 @@ const sessionRoots = async (sessions: string, project: string): Promise<string[]
 
 const isJsonlFile = (entry: Dirent) => entry.isFile() && entry.name.endsWith('.jsonl');
 
-const listingOf = async (root: string, warn: (message: string) => void): Promise<Dirent[]> => {
+const listingOf = async (root: string, warn: (message: string) => void): Promise<Listing> => {
   try {
-    return await readdir(root, { recursive: true, withFileTypes: true });
-  } catch {
-    warn(`Skipped unreadable directory ${root}`);
+    const entries = await readdir(root, { recursive: true, withFileTypes: true });
 
-    return [];
+    return { entries, skippedDirectories: 0 };
+  } catch (error) {
+    const code = errorCode(error) ?? String(error);
+
+    warn(`Skipped unreadable directory ${root}: ${code}`);
+
+    return { entries: [], skippedDirectories: 1 };
   }
 };
 
-const jsonlFiles = async (roots: string[], warn: (message: string) => void): Promise<string[]> => {
+const jsonlFiles = async (
+  roots: string[],
+  warn: (message: string) => void,
+): Promise<{ files: string[]; skippedDirectories: number }> => {
   const listings = await readInTurn(roots, (root) => listingOf(root, warn));
 
-  return listings.flatMap((entries) =>
-    entries.flatMap((entry) => (isJsonlFile(entry) ? [join(entry.parentPath, entry.name)] : [])),
+  const files = listings.flatMap((listing) =>
+    listing.entries.flatMap((entry) =>
+      isJsonlFile(entry) ? [join(entry.parentPath, entry.name)] : [],
+    ),
   );
+
+  const skippedDirectories = listings.reduce(
+    (total, listing) => total + listing.skippedDirectories,
+    0,
+  );
+
+  return { files, skippedDirectories };
 };
 
 const modificationTime = async (path: string): Promise<DiscoveredFile> => {
@@ -295,7 +316,7 @@ const collectReplies = async (
 ): Promise<{ replies: ProseReply[]; skipped: ProseSkipped }> => {
   const roots = await sessionRoots(options.sessions, options.project);
   const discovered = await jsonlFiles(roots, warn);
-  const newest = await newestFiles(discovered, options.files, warn);
+  const newest = await newestFiles(discovered.files, options.files, warn);
   const parsed = await readInTurn(newest.files, (path) => readReplies(path, warn));
   const replies = representatives(parsed.flatMap((result) => result.replies));
 
@@ -316,7 +337,11 @@ const collectReplies = async (
 
   return {
     replies: newestReplies,
-    skipped: { directories: 0, files: skippedFiles, lines: skippedLines },
+    skipped: {
+      directories: discovered.skippedDirectories,
+      files: skippedFiles,
+      lines: skippedLines,
+    },
   };
 };
 

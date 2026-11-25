@@ -200,7 +200,7 @@ it.skipIf(process.getuid?.() === 0)('skips an unreadable session file', async ()
 });
 
 it.skipIf(process.getuid?.() === 0)(
-  'skips an unreadable project directory and keeps the readable replies',
+  'counts an unreadable project directory and keeps the readable replies',
   async () => {
     const sessions = join(directory, 'sessions');
     const unreadable = join(sessions, '--code-personal-tau-a--');
@@ -217,8 +217,9 @@ it.skipIf(process.getuid?.() === 0)(
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Replies checked: 1');
+    expect(result.stdout).toContain('Skipped directories: 1');
     expect(result.stdout).toContain('| emDash | 1 | 1 |');
-    expect(result.stderr).toContain(`Skipped unreadable directory ${unreadable}`);
+    expect(result.stderr).toContain(`Skipped unreadable directory ${unreadable}: EACCES`);
   },
 );
 
