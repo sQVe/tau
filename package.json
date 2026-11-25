@@ -32,6 +32,7 @@
     "style:fix": "stomme-ts-style --fix",
     "prepare": "node scripts/buildTauExtension.ts && node scripts/prepare.ts",
     "question-gate-score": "node scripts/questionGateScore.ts",
+    "prose-report": "node scripts/proseReport.ts",
     "session-health": "node scripts/sessionHealth.ts",
     "test": "vp test",
     "test:changed": "vp test --changed",

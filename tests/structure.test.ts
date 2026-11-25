@@ -57,6 +57,7 @@ const pureModules = [
   'scripts/piSessionRules.ts',
   'scripts/piSmokeChecks.ts',
   'scripts/piVersionDrift.ts',
+  'scripts/proseReport/proseReportSummary.ts',
   'scripts/questionGateScore/questionGateScoreLog.ts',
   'scripts/questionGateScore/questionGateScorePrepare.ts',
   'scripts/questionGateScore/questionGateScoreReport.ts',
