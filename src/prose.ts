@@ -1,8 +1,6 @@
 import { Marked } from 'marked';
 import type { MarkedToken, Token, Tokens } from 'marked';
 
-export type ProseRule = 'longSentence' | 'emDash' | 'curlyQuote';
-
 export interface ProseSentence {
   text: string;
   line: number;
@@ -20,7 +18,10 @@ interface ProseSegment {
   line: number;
 }
 
-const ruleOrder: readonly ProseRule[] = ['longSentence', 'emDash', 'curlyQuote'];
+export const ruleOrder = ['longSentence', 'emDash', 'curlyQuote'] as const;
+
+export type ProseRule = (typeof ruleOrder)[number];
+
 const curlyQuotes = ['\u2018', '\u2019', '\u201C', '\u201D'];
 const emDash = '\u2014';
 const longestSentence = 40;

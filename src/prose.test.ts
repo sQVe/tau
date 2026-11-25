@@ -250,10 +250,16 @@ it.each(table.map((row) => [row.name, row] as const))('%s', (_name, row) => {
 it('returns the sentences and findings of one walk', () => {
   const markdown = `A pause—then more.\n\n${words(41, '.')}`;
 
-  const analysis = analyzeProse(markdown);
-
-  expect(analysis.sentences).toEqual(proseSentences(markdown));
-  expect(analysis.findings).toEqual(checkProse(markdown));
+  expect(analyzeProse(markdown)).toEqual({
+    sentences: [
+      { text: 'A pause—then more.', line: 1, words: 3 },
+      { text: words(41, '.'), line: 3, words: 41 },
+    ],
+    findings: [
+      { rule: 'emDash', line: 1, excerpt: 'A pause—then more.' },
+      { rule: 'longSentence', line: 3, excerpt: cut(words(41, '.')) },
+    ],
+  });
 });
 
 const sentenceTable: {
