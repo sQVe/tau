@@ -3,11 +3,6 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import type { Exec } from '../../command.js';
-import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
-import { assignmentDirectory, writeAssignment } from './assignment.js';
-import type { Assignment, SavedQuestion } from './assignment.js';
 import {
   createManager,
   manager,
@@ -16,8 +11,13 @@ import {
   savedAssignment,
   savedQuestion,
   savedReport,
-} from './fixtures/deliveryManager.js';
-import type { DeliveryContext } from './fixtures/deliveryManager.js';
+} from '../../../tests/deliveryManager.js';
+import type { DeliveryContext } from '../../../tests/deliveryManager.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import type { Exec } from '../../command.js';
+import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
+import { assignmentDirectory, assignmentPath, writeAssignment } from './assignment.js';
+import type { Assignment, SavedQuestion } from './assignment.js';
 import { createWorkerDelivery, readWorkerChildren } from './workerDelivery.js';
 import type { ReportSuffix, WorkerDelivery } from './workerDelivery.js';
 
@@ -588,6 +588,13 @@ it.each(['success', 'failure'] as const)(
 
 it('appends the plan suffix to a report for a lead with a plan', async () => {
   const branchEntry = { type: 'custom', customType: 'tau-plan', data: { version: 1, steps: [] } };
+
+  const siblingEntry = {
+    type: 'custom',
+    customType: 'tau-plan',
+    data: { version: 1, steps: [{ text: 'Sibling step', status: 'pending' }] },
+  };
+
   const received: (readonly unknown[])[] = [];
 
   const suffix: ReportSuffix = (entries) => {
@@ -598,6 +605,7 @@ it('appends the plan suffix to a report for a lead with a plan', async () => {
 
   const { managerState, deliver } = await reportDelivery(suffix);
 
+  managerState.entries.push(siblingEntry);
   managerState.branchEntries.push(branchEntry);
 
   await deliver(managerState.context);
@@ -664,6 +672,54 @@ it('does not add the suffix to a deadline message', async () => {
   const message = managerState.messages[0] as { content: string };
 
   expect(message.content).toBe(`Worker ${assignmentId} was ended at its deadline.`);
+});
+
+it('reads no branch entries for a scan that holds no report', async () => {
+  const directory = stubAgentDirectory();
+  const questionAssignment = savedAssignment(directory, null, [savedQuestion()]);
+  const endedAssignment = savedAssignment(directory, null);
+  const deadlineAssignment = savedAssignment(directory, null);
+
+  await writeAssignment(questionAssignment);
+  await writeAssignment(endedAssignment);
+  await writeAssignment(deadlineAssignment);
+
+  const managerState = createManager();
+
+  const hc = createHc([
+    liveTerminal('t-question', manager, {
+      'tau.assignment': assignmentPath(questionAssignment.assignmentId),
+    }),
+    {
+      address: 't-ended',
+      state: 'finished',
+      parent: manager,
+      labels: { 'tau.assignment': assignmentPath(endedAssignment.assignmentId) },
+    },
+    {
+      address: 't-deadline',
+      state: 'finished',
+      parent: manager,
+      labels: {
+        'tau.assignment': assignmentPath(deadlineAssignment.assignmentId),
+        'tau.ended': 'deadline',
+      },
+    },
+  ]);
+
+  await deliverPending(
+    createWorkerDelivery(managerState.pi, nonEmptySuffix),
+    hc,
+    managerState.context,
+  );
+
+  expect(managerState.messages.map((message) => message.customType)).toEqual([
+    'tau-worker-question',
+    'tau-worker-ended',
+    'tau-worker-deadline',
+  ]);
+
+  expect(managerState.branchReads).toEqual([]);
 });
 
 it('shows a pending question once and records it as a question message', async () => {

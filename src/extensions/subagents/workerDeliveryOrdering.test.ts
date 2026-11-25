@@ -13,9 +13,6 @@ import {
 import type { Command } from 'fast-check';
 import { expect, it } from 'vitest';
 
-import { resolvePropertySeed } from '../../../tests/propertySeedHarness.ts';
-import { isRecord } from '../../schema.js';
-import type { Assignment, SavedQuestion } from './assignment.js';
 import {
   createManager,
   manager,
@@ -24,7 +21,10 @@ import {
   savedAssignment,
   savedQuestion,
   savedReport,
-} from './fixtures/deliveryManager.js';
+} from '../../../tests/deliveryManager.js';
+import { resolvePropertySeed } from '../../../tests/propertySeedHarness.ts';
+import { isRecord } from '../../schema.js';
+import type { Assignment, SavedQuestion } from './assignment.js';
 import { createWorkerDelivery } from './workerDelivery.js';
 import type { WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
 

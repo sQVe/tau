@@ -3,10 +3,10 @@ import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import type { Assignment, SavedQuestion } from '../assignment.js';
-import { assignmentDirectory } from '../assignment.js';
-import type { createWorkerDelivery } from '../workerDelivery.js';
-import { fixtureLoadout } from './loadout.js';
+import type { Assignment, SavedQuestion } from '../src/extensions/subagents/assignment.js';
+import { assignmentDirectory } from '../src/extensions/subagents/assignment.js';
+import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
+import type { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 
 export type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
@@ -34,6 +34,7 @@ interface Manager {
   sendOptions: unknown[];
   entries: SessionEntryLike[];
   branchEntries: SessionEntryLike[];
+  branchReads: string[];
   notifications: [string, string | undefined][];
   entriesOf: (sessionFile: string) => SessionEntryLike[];
   switchSession: (sessionFile: string) => void;
@@ -60,6 +61,7 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
   ]);
 
   const queued: SentMessage[] = [];
+  const branchReads: string[] = [];
   const notifications: [string, string | undefined][] = [];
   let currentSession = managerSession;
   let streaming = false;
@@ -99,8 +101,12 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
 
   const context = {
     sessionManager: {
-      getEntries: () => entriesOf(currentSession),
-      getBranch: () => branchOf(currentSession),
+      getEntries: () => [...entriesOf(currentSession), ...branchOf(currentSession)],
+      getBranch: () => {
+        branchReads.push(currentSession);
+
+        return branchOf(currentSession);
+      },
       getSessionFile: () => currentSession,
     },
     ui: {
@@ -117,6 +123,7 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
     sendOptions,
     entries: entriesOf(managerSession),
     branchEntries: branchOf(managerSession),
+    branchReads,
     notifications,
     entriesOf,
     switchSession: (sessionFile: string) => {

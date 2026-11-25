@@ -7,8 +7,8 @@ import { expect, it, onTestFinished } from 'vitest';
 import { emptySessionRefusal, installHcCommand } from './hcCommandHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
-const setup = () => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-hc-command-');
+const setup = (prefix = 'tau-hc-command-') => {
+  const directory = temporaryDirectory(onTestFinished, prefix);
   const files = installHcCommand(directory);
 
   const run = (args: string[], session = 'tau-hc-command') =>
@@ -16,6 +16,7 @@ const setup = () => {
       env: {
         HC_SESSION: session,
         HC_FAKE_LOG: files.log,
+        HC_FAKE_REPLIES: files.replies,
         PATH: process.env.PATH ?? '',
       },
       encoding: 'utf8',
@@ -32,6 +33,14 @@ it('answers an empty terminal list without a reply', () => {
 
 it('answers a command with its reply', () => {
   const { reply, run } = setup();
+
+  reply('ls', '{"terminals":[{"address":"t-child"}]}');
+
+  expect(run(['ls', '--json', '--all']).stdout).toBe('{"terminals":[{"address":"t-child"}]}\n');
+});
+
+it('answers a command from a reply directory whose path holds an apostrophe', () => {
+  const { reply, run } = setup("tau-hc-command's-");
 
   reply('ls', '{"terminals":[{"address":"t-child"}]}');
 

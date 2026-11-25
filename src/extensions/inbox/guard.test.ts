@@ -23,7 +23,7 @@ const makeReadEvent = (): ToolCallEvent => ({
 
 const installHcOutsideTerminal = () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
-  const { bin, log } = installHcCommand(directory);
+  const { bin, log, replies } = installHcCommand(directory);
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
@@ -31,6 +31,7 @@ const installHcOutsideTerminal = () => {
 
   vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
   vi.stubEnv('HC_FAKE_LOG', log);
+  vi.stubEnv('HC_FAKE_REPLIES', replies);
   vi.stubEnv('HC_SESSION', 'tau-test-inbox-guard');
   vi.stubEnv('HC_TERMINAL_ID', undefined);
 

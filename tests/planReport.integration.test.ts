@@ -11,14 +11,10 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import type { PlanStep } from '../src/extensions/plan/steps.js';
 import { assignmentPath, writeAssignment } from '../src/extensions/subagents/assignment.js';
-import {
-  manager,
-  savedAssignment,
-  savedReport,
-} from '../src/extensions/subagents/fixtures/deliveryManager.js';
 import { reportMessageType } from '../src/extensions/subagents/workerMessage.js';
 import type { HcTerminal } from '../src/hc/hc.js';
 import tauRegistration from '../src/tau/tau.js';
+import { manager, savedAssignment, savedReport } from './deliveryManager.js';
 import { installHcCommand } from './hcCommandHarness.js';
 import { createBoundSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -48,12 +44,13 @@ const reportEntries = (session: AgentSession) =>
 
 const setup = async (plan: PlanStep[] | undefined) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-plan-report-');
-  const { bin, log, reply, replyGet } = installHcCommand(directory);
+  const { bin, log, replies, reply, replyGet } = installHcCommand(directory);
 
   vi.stubEnv('TAU_ROLE', 'lead');
   vi.stubEnv('HC_TERMINAL_ID', manager);
   vi.stubEnv('HC_SESSION', 'tau-plan-report');
   vi.stubEnv('HC_FAKE_LOG', log);
+  vi.stubEnv('HC_FAKE_REPLIES', replies);
   vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
 

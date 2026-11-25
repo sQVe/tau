@@ -8,6 +8,10 @@ import {
 } from '@earendil-works/pi-ai';
 import type { FauxResponseStep, TranscriptContext } from '@earendil-works/pi-ai';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  NormalizedBuildSystemPromptOptions,
+} from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import planExtension from '../src/extensions/plan/plan.js';
@@ -39,6 +43,24 @@ const setup = async () => {
   const provider = fauxProvider({ provider: 'tau-plan-prompt' });
   const errors: unknown[] = [];
 
+  // Pi-claude-bridge keeps this options object at before_agent_start and forwards only its
+  // appendSystemPrompt and context files at agent_start, after every handler has run.
+  const forwarded: NormalizedBuildSystemPromptOptions[] = [];
+
+  const bridge = (pi: ExtensionAPI) => {
+    let options: NormalizedBuildSystemPromptOptions | undefined;
+
+    pi.on('before_agent_start', (event) => {
+      options = event.systemPromptOptions;
+    });
+
+    pi.on('agent_start', () => {
+      if (options !== undefined) {
+        forwarded.push(structuredClone(options));
+      }
+    });
+  };
+
   onTestFinished(() => {
     expect(errors).toEqual([]);
   });
@@ -52,12 +74,12 @@ const setup = async () => {
       tools: ['plan'],
       settings: { compaction: { enabled: false, keepRecentTokens: 12 }, retry: { enabled: false } },
       sessionManager: SessionManager.create(directory, join(directory, 'sessions')),
-      extensionFactories: [planExtension],
+      extensionFactories: [planExtension, bridge],
     },
     { onError: (error) => errors.push(error) },
   );
 
-  return { provider, session };
+  return { provider, session, forwarded };
 };
 
 const capturing =
@@ -106,4 +128,23 @@ it('keeps the lead plan in the system prompt on every run, including after compa
   await session.prompt('Continue.');
 
   expect(prompts.at(-1)).not.toContain('Current plan:');
+});
+
+it('forwards the plan block in the append section the bridge reads', async () => {
+  const { provider, session, forwarded } = await setup();
+
+  provider.setResponses([
+    fauxAssistantMessage([fauxToolCall('plan', { steps: mixedPlan })]),
+    fauxAssistantMessage('Plan saved.'),
+  ]);
+
+  await session.prompt('Save the plan.');
+
+  provider.setResponses([fauxAssistantMessage('Noted.')]);
+  await session.prompt('Continue.');
+
+  expect(forwarded).toHaveLength(2);
+  expect(forwarded[0]?.appendSystemPrompt).not.toContain('Current plan:');
+  expect(forwarded[1]?.appendSystemPrompt).toContain('Current plan:');
+  expect(forwarded[1]?.appendSystemPrompt).toContain('[in_progress] Review change');
 });

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 export interface HcCommandFiles {
   bin: string;
   log: string;
+  replies: string;
   reply: (command: string, stdout: string) => void;
   replyGet: (address: string, stdout: string) => void;
 }
@@ -33,9 +34,9 @@ last=''
 for argument in "$@"; do
   last="$argument"
 done
-reply='${replies}/'"$1-$last"
+reply="\${HC_FAKE_REPLIES}/$1-$last"
 if [ ! -f "$reply" ]; then
-  reply='${replies}/'"$1"
+  reply="\${HC_FAKE_REPLIES}/$1"
 fi
 if [ -f "$reply" ]; then
   cat "$reply"
@@ -54,6 +55,7 @@ fi
   return {
     bin,
     log,
+    replies,
     reply: (command, stdout) => {
       writeReply(command, stdout);
     },
