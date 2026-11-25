@@ -148,6 +148,11 @@ const questionTable: {
     ],
   },
   {
+    name: 'a choice kind is kept',
+    parameters: { questions: [{ question: 'Cancel the ticket?', kind: 'choice' }] },
+    expected: [{ question: 'Cancel the ticket?', kind: 'choice', options: undefined }],
+  },
+  {
     name: 'a question-level preview never appears on an option',
     parameters: {
       questions: [
