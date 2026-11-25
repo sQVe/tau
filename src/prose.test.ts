@@ -119,6 +119,74 @@ const table: {
     expected: [{ rule: 'longSentence', line: 1, excerpt: cut(words(60, '.')) }],
   },
   {
+    name: 'checks prose after deeply nested quotes',
+    markdown: `${'>'.repeat(4096)}\n\n${'> '.repeat(4096)}\n\nOrdinary prose—here.`,
+    expected: [{ rule: 'emDash', line: 5, excerpt: 'Ordinary prose—here.' }],
+  },
+  {
+    name: 'flags a sentence after a soft line break',
+    markdown: 'First.\nSecond—third.',
+    expected: [{ rule: 'emDash', line: 2, excerpt: 'Second—third.' }],
+  },
+  {
+    name: 'flags a sentence after a hard line break',
+    markdown: 'First.  \nSecond—third.',
+    expected: [{ rule: 'emDash', line: 2, excerpt: 'Second—third.' }],
+  },
+  {
+    name: 'decodes an encoded em dash',
+    markdown: 'A pause&mdash;then more.',
+    expected: [{ rule: 'emDash', line: 1, excerpt: 'A pause—then more.' }],
+  },
+  {
+    name: 'decodes a numeric em dash',
+    markdown: 'A pause&#8212;then more.',
+    expected: [{ rule: 'emDash', line: 1, excerpt: 'A pause—then more.' }],
+  },
+  {
+    name: 'decodes an encoded curly quote',
+    markdown: 'A &rsquo;quote.',
+    expected: [{ rule: 'curlyQuote', line: 1, excerpt: 'A ’quote.' }],
+  },
+  {
+    name: 'counts an encoded non-breaking space as a word break',
+    markdown: `${words(39)} word&nbsp;word.`,
+    expected: [{ rule: 'longSentence', line: 1, excerpt: cut(`${words(39)} word\u00A0word.`) }],
+  },
+  {
+    name: 'skips encoded entities in fenced code',
+    markdown: fenced(['A&mdash;B.', '&rsquo;', words(50, '.')]),
+    expected: [],
+  },
+  {
+    name: 'drops an image with prose-like alt text',
+    markdown: 'See ![a—b](image.png) here.',
+    expected: [],
+  },
+  {
+    name: 'drops multiline inline HTML',
+    markdown: 'See <span\n title="a—b">here.',
+    expected: [],
+  },
+  {
+    name: 'orders findings on different lines by line',
+    markdown: `A—b.\n\n${words(41, '.')}`,
+    expected: [
+      { rule: 'emDash', line: 1, excerpt: 'A—b.' },
+      { rule: 'longSentence', line: 3, excerpt: cut(words(41, '.')) },
+    ],
+  },
+  {
+    name: 'keeps text inside emphasis',
+    markdown: 'A **pause—then** more.',
+    expected: [{ rule: 'emDash', line: 1, excerpt: 'A pause—then more.' }],
+  },
+  {
+    name: 'skips a code span inside a tight list item',
+    markdown: '- `a—b` text',
+    expected: [],
+  },
+  {
     name: 'returns no findings for empty text',
     markdown: '',
     expected: [],
@@ -177,6 +245,61 @@ const sentenceTable: {
       { text: 'One.', line: 1, words: 1 },
       { text: 'Two.', line: 3, words: 1 },
     ],
+  },
+  {
+    name: 'reads sentences after a soft line break',
+    markdown: 'First.\nSecond—third.',
+    expected: [
+      { text: 'First.', line: 1, words: 1 },
+      { text: 'Second—third.', line: 2, words: 1 },
+    ],
+  },
+  {
+    name: 'reads sentences after a hard line break',
+    markdown: 'First.  \nSecond—third.',
+    expected: [
+      { text: 'First.', line: 1, words: 1 },
+      { text: 'Second—third.', line: 2, words: 1 },
+    ],
+  },
+  {
+    name: 'splits on exclamation and question marks',
+    markdown: 'Stop! Next? Done.',
+    expected: [
+      { text: 'Stop!', line: 1, words: 1 },
+      { text: 'Next?', line: 1, words: 1 },
+      { text: 'Done.', line: 1, words: 1 },
+    ],
+  },
+  {
+    name: 'keeps an escaped character',
+    markdown: 'Use \\*star\\* now.',
+    expected: [{ text: 'Use *star* now.', line: 1, words: 3 }],
+  },
+  {
+    name: 'reads an email autolink as a URL',
+    markdown: 'Write user@example.com now.',
+    expected: [{ text: 'Write url now.', line: 1, words: 3 }],
+  },
+  {
+    name: 'drops an image alt text',
+    markdown: 'See ![a—b](image.png) here.',
+    expected: [{ text: 'See  here.', line: 1, words: 2 }],
+  },
+  {
+    name: 'reads text without multiline HTML',
+    markdown: 'See <span\n title="a—b">here.',
+    expected: [{ text: 'See here.', line: 1, words: 2 }],
+  },
+  {
+    name: 'keeps an unknown or malformed entity literal',
+    markdown: 'A &unknown; &#xZZ; here.',
+    expected: [{ text: 'A &unknown; &#xZZ; here.', line: 1, words: 4 }],
+  },
+  {
+    name: 'reads a formatted tight list item',
+    markdown: '- `a—b` text',
+    expected: [{ text: 'code text', line: 1, words: 2 }],
   },
 ];
 
