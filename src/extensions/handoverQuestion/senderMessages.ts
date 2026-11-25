@@ -2,22 +2,13 @@ import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
 import { readInboxReceipt } from '../../inbox/receiptDecision.js';
 import { isRecord } from '../../schema.js';
+import { entryMessage } from '../../sessionMessage/sessionMessage.js';
 
 interface InboxMessage {
   customType: string;
   content: unknown;
   details?: unknown;
 }
-
-const messageRecord = (entry: SessionEntry): Record<string, unknown> | undefined => {
-  if (entry.type !== 'message') {
-    return undefined;
-  }
-
-  const message: unknown = entry.message;
-
-  return isRecord(message) ? message : undefined;
-};
 
 const contentText = (content: unknown): string | undefined => {
   if (typeof content === 'string') {
@@ -40,7 +31,7 @@ const contentText = (content: unknown): string | undefined => {
 };
 
 const userMessageText = (entry: SessionEntry): string | undefined => {
-  const message = messageRecord(entry);
+  const message = entryMessage(entry);
 
   return message?.role === 'user' ? contentText(message['content']) : undefined;
 };

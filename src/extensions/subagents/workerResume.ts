@@ -2,6 +2,7 @@ import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
 import { answeredQuestionId } from '../../inbox/receiptDecision.js';
 import { isRecord } from '../../schema.js';
+import { entryMessage } from '../../sessionMessage/sessionMessage.js';
 import type { Assignment } from './assignment.js';
 import { taskPromptHeader } from './workerMessage.js';
 
@@ -12,20 +13,10 @@ export interface WorkerResume {
 
 export type WorkerStart = 'shutdown' | 'sendTask' | 'wait' | 'continue';
 
-const messageRecord = (entry: SessionEntry): Record<string, unknown> | undefined => {
-  if (entry.type !== 'message') {
-    return undefined;
-  }
-
-  const message: unknown = entry.message;
-
-  return isRecord(message) ? message : undefined;
-};
-
-const isUserMessage = (entry: SessionEntry): boolean => messageRecord(entry)?.role === 'user';
+const isUserMessage = (entry: SessionEntry): boolean => entryMessage(entry)?.role === 'user';
 
 const messageText = (entry: SessionEntry): string | undefined => {
-  const message = messageRecord(entry);
+  const message = entryMessage(entry);
 
   if (message?.role !== 'user') {
     return undefined;
@@ -59,7 +50,7 @@ const namesAssignment = (entry: SessionEntry, assignmentId: string): boolean => 
 };
 
 const isQuestionResult = (entry: SessionEntry): boolean => {
-  const message = messageRecord(entry);
+  const message = entryMessage(entry);
 
   return (
     message?.role === 'toolResult' &&
