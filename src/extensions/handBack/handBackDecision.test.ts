@@ -68,6 +68,13 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
     expected: settle('no-hand-back'),
   },
   {
+    name: 'settles for a named choice with a trailing predicate',
+    facts: leadTurn({
+      finalText: 'Could you tell me which layout, the table or the cards, looks better?',
+    }),
+    expected: settle('no-hand-back'),
+  },
+  {
     name: 'settles for a named choice after a colon',
     facts: leadTurn({
       finalText: 'Which format should I use for reports: the table or the cards?',
@@ -224,6 +231,14 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
     expected: remind,
   },
   {
+    name: 'reminds for a request before a choice in the same clause',
+    facts: leadTurn({
+      finalText:
+        'Please run the checker to see which format, the table or the cards, looks better?',
+    }),
+    expected: remind,
+  },
+  {
     name: 'reminds for a request in another table cell',
     facts: leadTurn({
       finalText: [
@@ -238,6 +253,11 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
   {
     name: 'settles for a soft-wrapped choice',
     facts: leadTurn({ finalText: 'Would you like the table\nor the cards?' }),
+    expected: settle('no-hand-back'),
+  },
+  {
+    name: 'settles for a hard-wrapped choice',
+    facts: leadTurn({ finalText: 'Would you like the table  \nor the cards?' }),
     expected: settle('no-hand-back'),
   },
   {
@@ -319,6 +339,11 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
   {
     name: 'settles after an aborted run',
     facts: leadTurn({ outcome: 'aborted', finalText: permissionQuestionText }),
+    expected: settle('run-failed'),
+  },
+  {
+    name: 'settles a failed run with empty text as run-failed',
+    facts: leadTurn({ outcome: 'aborted', finalText: '' }),
     expected: settle('run-failed'),
   },
   {

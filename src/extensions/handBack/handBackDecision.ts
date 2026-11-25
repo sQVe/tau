@@ -25,8 +25,9 @@ interface ChoiceSpan {
 const actionVerb =
   '(?:run|delete|remove|check|open|set|reply|confirm|do|fix|update|add|create|verify|apply|sign|merge|push|close|install|restart|try)';
 
-const decisionPhrase =
-  /\b(?:should|shall|may|can|could|would) i\b|\bdo you want\b|\bwould you (?:like|prefer)\b|\bdo you approve\b|\bis it (?:ok|okay|fine)\b|\bare you (?:ok|okay) with\b|\b(?:which|what)\b/i;
+const permissionPattern = String.raw`\b(?:should|shall|may|can|could|would) i\b|\bdo you want\b|\bwould you (?:like|prefer)\b|\bdo you approve\b|\bis it (?:ok|okay|fine)\b|\bare you (?:ok|okay) with\b`;
+
+const decisionPhrase = new RegExp(`(?:${permissionPattern})|\\b(?:which|what)\\b`, 'i');
 
 const phraseBreak = /\b(?:who|that|which|whether|because|so|if|when|while|after|before)\b/i;
 
@@ -55,16 +56,16 @@ const prepositions = new Set([
   'via',
 ]);
 
-const clauseBoundary = /(?:[,;]\s+(?:and|but|so|then)\b|[;]\s|\s-\s|,\s*|(?<=[.!?])\s+)/gi;
-
 const choiceBoundary = /,?\s+(?:and|but|so|then)\b|[;]\s|\s-\s|,\s*/i;
-const sentenceBoundary = /(?<=[.!?])\s+/;
+const sentenceBoundary = /(?<=[.!?])\s+/g;
 const questionPattern = /(?:^|(?<=[.!?])\s+)([^?\n]*\?)/g;
 
-const permissionQuestion =
-  /\b(?:should|shall|may|can|could|would) i\b|\bdo you want\b|\bwould you like\b|\bdo you approve\b|\bis it (?:ok|okay|fine)\b|\bare you (?:ok|okay) with\b/i;
+const permissionQuestion = new RegExp(permissionPattern, 'i');
 
 const secondPersonQuestion = /\b(?:can|could|would|will) you\b/i;
+
+const prefixAction =
+  /\b(?:can|could|would|will) you\b[^.!?\n]*\b(?:run|delete|remove|check|open|set|do|fix|update|add|create|verify|apply|sign|merge|push|close|install|restart|try)\b/i;
 
 const userAction = new RegExp(
   [
@@ -83,7 +84,7 @@ const inlineText = (token: Tokens.Generic): string => {
   }
 
   if (token.type === 'br') {
-    return '\n';
+    return ' ';
   }
 
   if (token.tokens !== undefined) {
@@ -156,20 +157,6 @@ const markdown = new Marked({ gfm: true, pedantic: false });
 
 const visibleText = (text: string): string => markdown.lexer(text).map(blockText).join('');
 
-const choiceStart = (question: string, phraseIndex: number): number => {
-  let start = 0;
-
-  for (const match of question.matchAll(clauseBoundary)) {
-    const end = match.index + match[0].length;
-
-    if (end <= phraseIndex) {
-      start = end;
-    }
-  }
-
-  return start;
-};
-
 const words = (text: string): string[] =>
   text
     .toLowerCase()
@@ -180,6 +167,9 @@ const parallelAlternatives = (
   leftWords: readonly string[],
   rightWords: readonly string[],
 ): boolean => {
+  // A right alternative starting with a determiner needs one on the left; otherwise the word
+  // before the left alternative must not be a preposition. That separates "the table or the cards"
+  // from "on Safari or Firefox".
   const firstRight = rightWords[0];
 
   if (firstRight === undefined) {
@@ -194,6 +184,16 @@ const parallelAlternatives = (
   const leftPrevious = leftWords.at(-previousWordOffset);
 
   return leftLast !== undefined && !prepositions.has(leftPrevious ?? '');
+};
+
+const sentenceStart = (text: string, phraseIndex: number): number => {
+  let start = 0;
+
+  for (const match of text.slice(0, phraseIndex).matchAll(sentenceBoundary)) {
+    start = match.index + match[0].length;
+  }
+
+  return start;
 };
 
 const choiceSpan = (question: string): ChoiceSpan | undefined => {
@@ -235,7 +235,11 @@ const choiceSpan = (question: string): ChoiceSpan | undefined => {
     return undefined;
   }
 
-  return { start: choiceStart(question, phrase.index), end };
+  const prefixStart = sentenceStart(question, phrase.index);
+  const prefix = question.slice(prefixStart, phrase.index);
+  const start = userAction.test(prefix) || prefixAction.test(prefix) ? phrase.index : prefixStart;
+
+  return { start, end };
 };
 
 const maskChoiceQuestions = (text: string): string =>
@@ -274,18 +278,18 @@ export const decideHandBack = (facts: HandBackFacts): HandBackDecision => {
     return { kind: 'settle', reason: 'not-lead' };
   }
 
-  const text = visibleText(facts.finalText);
-
-  if (text.trim() === '') {
-    return { kind: 'settle', reason: 'no-text' };
-  }
-
   if (facts.outcome !== 'completed') {
     return { kind: 'settle', reason: 'run-failed' };
   }
 
   if (facts.reminded) {
     return { kind: 'settle', reason: 'already-reminded' };
+  }
+
+  const text = visibleText(facts.finalText);
+
+  if (text.trim() === '') {
+    return { kind: 'settle', reason: 'no-text' };
   }
 
   if (!hasHandBack(text)) {
