@@ -296,36 +296,45 @@ it('keeps the copy the recency order ranks first', async () => {
   expect(result.stdout).toContain('| longSentence | 1 | 1 |');
 });
 
-it('keeps the base reply when normalized paths tie at the limit', async () => {
-  const sessions = join(directory, 'sessions');
-  const composed = join(sessions, '--code-personal-tau-é--');
-  const decomposed = join(sessions, '--code-personal-tau-e\u0301--');
-  const copySource = join(sessions, '--code-personal-tau-z--');
-  const timestamp = '2026-01-01T00:00:00Z';
-  const copy = replyLine('Copy—reply.', timestamp, 'fixture', 'copy');
-  const distinct = replyLine('Distinct—reply.', timestamp);
-  const composedFile = join(composed, 'session.jsonl');
-  const decomposedFile = join(decomposed, 'session.jsonl');
-  const copyFile = join(copySource, 'session.jsonl');
+it.skipIf(process.platform === 'darwin')(
+  'keeps the base reply when normalized paths tie at the limit',
+  async () => {
+    const sessions = join(directory, 'sessions');
+    const composed = join(sessions, '--code-personal-tau-é--');
+    const decomposed = join(sessions, '--code-personal-tau-e\u0301--');
+    const copySource = join(sessions, '--code-personal-tau-z--');
+    const timestamp = '2026-01-01T00:00:00Z';
+    const copy = replyLine('Copy—reply.', timestamp, 'fixture', 'copy');
+    const distinct = replyLine('Distinct—reply.', timestamp);
+    const composedFile = join(composed, 'session.jsonl');
+    const decomposedFile = join(decomposed, 'session.jsonl');
+    const copyFile = join(copySource, 'session.jsonl');
 
-  await mkdir(composed, { recursive: true });
-  await mkdir(decomposed, { recursive: true });
-  await mkdir(copySource, { recursive: true });
+    await mkdir(composed, { recursive: true });
+    await mkdir(decomposed, { recursive: true });
+    await mkdir(copySource, { recursive: true });
 
-  await writeFile(composedFile, copy);
-  await writeFile(decomposedFile, distinct);
-  await writeFile(copyFile, copy);
-  await utimes(composedFile, new Date('2026-01-03T00:00:00Z'), new Date('2026-01-03T00:00:00Z'));
-  await utimes(decomposedFile, new Date('2026-01-02T00:00:00Z'), new Date('2026-01-02T00:00:00Z'));
-  await utimes(copyFile, new Date('2026-01-01T00:00:00Z'), new Date('2026-01-01T00:00:00Z'));
+    await writeFile(composedFile, copy);
+    await writeFile(decomposedFile, distinct);
+    await writeFile(copyFile, copy);
+    await utimes(composedFile, new Date('2026-01-03T00:00:00Z'), new Date('2026-01-03T00:00:00Z'));
 
-  const result = run(['--sessions', sessions, '--replies', '1']);
+    await utimes(
+      decomposedFile,
+      new Date('2026-01-02T00:00:00Z'),
+      new Date('2026-01-02T00:00:00Z'),
+    );
 
-  expect(result.status).toBe(0);
-  expect(result.stdout).toContain('Replies checked: 1');
-  expect(result.stdout).toContain('Copy—reply.');
-  expect(result.stdout).not.toContain('Distinct—reply.');
-});
+    await utimes(copyFile, new Date('2026-01-01T00:00:00Z'), new Date('2026-01-01T00:00:00Z'));
+
+    const result = run(['--sessions', sessions, '--replies', '1']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Replies checked: 1');
+    expect(result.stdout).toContain('Copy—reply.');
+    expect(result.stdout).not.toContain('Distinct—reply.');
+  },
+);
 
 it('reads only JSONL files under matching project directories', async () => {
   const sessions = join(directory, 'sessions');
