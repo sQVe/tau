@@ -1,5 +1,13 @@
+import type { CommandRuntime, Exec } from '../src/command.js';
+import { foregroundArgv } from '../src/hc/hc.js';
 import type { HerdrSpace } from '../src/piStart/herdrPane.js';
-import { argumentAfter, createExecFake, isCommandOf, succeededResult } from './execFake.js';
+import {
+  argumentAfter,
+  createExecFake,
+  failedResult,
+  isCommandOf,
+  succeededResult,
+} from './execFake.js';
 import type { ExecCall, ExecFake } from './execFake.js';
 
 export type HerdrAppCommand = 'ls' | 'pane.split' | 'space.new' | 'tab.new';
@@ -12,6 +20,12 @@ export interface HerdrAppFakeOptions {
   beforeReply?: (key: HerdrAppCommand) => void;
   spaces?: readonly HerdrAppSpace[];
 }
+
+// The reader a piStart request takes, so a test never imports the hc module from src/piStart.
+export const foregroundReaderFor =
+  (runtime: CommandRuntime): ((terminal: string) => Promise<readonly string[] | undefined>) =>
+  (terminal) =>
+    foregroundArgv(runtime, terminal);
 
 export const listedSpace = (
   id: string,
@@ -95,8 +109,40 @@ const replyFor = (
   }
 };
 
-export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<HerdrAppCommand> =>
-  createExecFake<HerdrAppCommand>({
+export const terminalFromReply = (stdout: string): string | undefined => {
+  try {
+    const value = JSON.parse(stdout) as { terminal?: unknown };
+
+    return typeof value.terminal === 'string' ? value.terminal : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export const foregroundFromLaunch = (
+  commandArguments: readonly string[],
+): {
+  pid: number;
+  name: string;
+  argv: string[];
+  cwd: string;
+} => {
+  const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
+  const provider = argumentAfter(argv, '--provider');
+  const model = argumentAfter(argv, '--model');
+
+  const modelArguments = [
+    ...(provider === undefined ? [] : ['--provider', provider]),
+    ...(model === undefined ? [] : ['--model', model]),
+  ];
+
+  return { pid: 1, name: 'pi', argv: ['pi', ...modelArguments], cwd: '' };
+};
+
+export const createHerdrAppFake = (
+  options: HerdrAppFakeOptions = {},
+): ExecFake<HerdrAppCommand> => {
+  const execFake = createExecFake<HerdrAppCommand>({
     keyOf: commandOf,
     handlerFor: (key) => (commandArguments) => {
       options.beforeReply?.(key);
@@ -104,6 +150,34 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
       return succeededResult(replyFor(key, commandArguments, options.spaces));
     },
   });
+
+  const startedForegrounds = new Map<string, unknown>();
+
+  const exec: Exec = async (command, commandArguments, execOptions) => {
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      const address = commandArguments.at(-1) ?? '';
+      const foreground = startedForegrounds.get(address);
+
+      return foreground === undefined
+        ? failedResult(`unknown terminal: ${address}`)
+        : succeededResult(JSON.stringify({ address, state: 'live', foreground }));
+    }
+
+    const result = await execFake.exec(command, commandArguments, execOptions);
+
+    if (result.code === 0 && command === 'herdr-app') {
+      const terminal = terminalFromReply(result.stdout);
+
+      if (terminal !== undefined) {
+        startedForegrounds.set(terminal, foregroundFromLaunch(commandArguments));
+      }
+    }
+
+    return result;
+  };
+
+  return { ...execFake, exec };
+};
 
 const launchCommands = new Set<LaunchCommand>(['space.new', 'tab.new']);
 

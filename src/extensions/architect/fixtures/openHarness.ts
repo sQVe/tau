@@ -8,7 +8,11 @@ import { argumentAfter, failedResult, succeededResult } from '../../../../tests/
 import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
-import { createHerdrAppFake } from '../../../../tests/herdrAppFake.js';
+import {
+  createHerdrAppFake,
+  foregroundFromLaunch,
+  terminalFromReply,
+} from '../../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
 import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
 import {
@@ -71,16 +75,53 @@ const appFake = (): ExecFake<HerdrAppCommand> => {
 
 const leadTerminal = 't-lead';
 
-const routedExec =
-  (
-    hc: HcFake,
-    app: ExecFake<HerdrAppCommand>,
-    terminals: Map<string, ExecResult>,
-    afterTerminalLookup: () => Promise<void>,
-  ): Exec =>
-  async (command, commandArguments, options) => {
+export const recordStartedTerminal = (
+  terminals: Map<string, ExecResult>,
+  commandArguments: readonly string[],
+  reply: string,
+): string | undefined => {
+  const terminal = terminalFromReply(reply);
+
+  if (terminal === undefined) {
+    return undefined;
+  }
+
+  terminals.set(
+    terminal,
+    succeededResult(
+      JSON.stringify({
+        address: terminal,
+        state: 'live',
+        foreground: foregroundFromLaunch(commandArguments),
+      }),
+    ),
+  );
+
+  return terminal;
+};
+
+const routedExec = (
+  hc: HcFake,
+  app: ExecFake<HerdrAppCommand>,
+  terminals: Map<string, ExecResult>,
+  afterTerminalLookup: () => Promise<void>,
+): Exec => {
+  const launchedTerminals = new Set<string>();
+
+  return async (command, commandArguments, options) => {
     if (command === 'herdr-app') {
-      return app.exec(command, commandArguments, options);
+      const result = await app.exec(command, commandArguments, options);
+
+      const terminal =
+        result.code === 0
+          ? recordStartedTerminal(terminals, commandArguments, result.stdout)
+          : undefined;
+
+      if (terminal !== undefined) {
+        launchedTerminals.add(terminal);
+      }
+
+      return result;
     }
 
     if (commandArguments[0] !== 'get') {
@@ -91,7 +132,9 @@ const routedExec =
     const terminalReply = terminals.get(address);
 
     if (terminalReply !== undefined) {
-      await afterTerminalLookup();
+      if (!launchedTerminals.has(address)) {
+        await afterTerminalLookup();
+      }
 
       return terminalReply;
     }
@@ -102,6 +145,7 @@ const routedExec =
 
     return failedResult(`no such terminal: ${address}`);
   };
+};
 
 const leadInSpace = (hc: HcFake, space: string | undefined): void => {
   hc.reply(

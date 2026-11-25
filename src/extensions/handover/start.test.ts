@@ -6,6 +6,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { argumentAfter } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createHcFake } from '../../../tests/hcFake.js';
 import {
   commandArgumentsOf,
   createHerdrAppFake,
@@ -104,6 +105,7 @@ it('opens a tab in the space with the file text as its task', async () => {
     space: 'space-1',
     tab: 'tb-new',
     terminal: 't-new',
+    model: 'default',
     spaceStatus: 'reused',
   });
 
@@ -158,6 +160,7 @@ it('opens a new space with Pi in its only tab', async () => {
     space: 'sp-new',
     tab: 'tb-new',
     terminal: 't-new',
+    model: 'default',
     spaceStatus: 'created',
   });
 
@@ -308,6 +311,7 @@ it('returns the reply and the parsed launch fields', async () => {
     space: 'sp-1',
     tab: 'tb-1',
     terminal: 't-space',
+    model: 'default',
     spaceStatus: 'created',
   });
 });
@@ -351,4 +355,46 @@ it('refuses a listed space without a folder before any launch', async () => {
   ).rejects.toThrow('herdr-app ls printed unexpected output');
 
   expect(commandArgumentsOf(fake.calls)).toEqual([['ls']]);
+});
+
+it('fails when the started terminal runs another model', async () => {
+  const app = createHerdrAppFake();
+  const hc = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  hc.replyGet(
+    't-new',
+    JSON.stringify({
+      address: 't-new',
+      state: 'live',
+      foreground: {
+        pid: 1,
+        name: 'pi',
+        argv: ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+        cwd: root,
+      },
+    }),
+  );
+
+  const exec: typeof app.exec = (command, commandArguments, options) =>
+    command === 'hc'
+      ? hc.exec(command, commandArguments, options)
+      : app.exec(command, commandArguments, options);
+
+  const failure = await startHandover(
+    { exec, cwd: root },
+    {
+      ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+      model: 'claude-bridge/claude-opus-5-5',
+    },
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+
+  const message = (failure as Error).message;
+
+  expect(message).toContain('claude-bridge/claude-opus-5-5');
+  expect(message).toContain('morph/morph-dsv41flash-1017');
+  expect(message).toContain('t-new');
 });

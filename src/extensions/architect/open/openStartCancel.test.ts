@@ -6,7 +6,14 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { succeededResult } from '../../../../tests/execFake.js';
 import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { appCommands, open, openRequest, openTool, requestFor } from '../fixtures/openHarness.js';
+import {
+  appCommands,
+  open,
+  openRequest,
+  openTool,
+  recordStartedTerminal,
+  requestFor,
+} from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { openArchitect, openKeptClaimMessage } from './open.js';
@@ -128,7 +135,7 @@ it('resolves an unused ticket when a valid reply arrives before the rename and a
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const { hc, runtime, terminals } = openTool(root, undefined, undefined, { takeover: false });
   const controller = new AbortController();
   const cancellation = new Error('cancelled after the valid reply');
   const replied = Promise.withResolvers<undefined>();
@@ -141,7 +148,11 @@ it('resolves an unused ticket when a valid reply arrives before the rename and a
       replied.resolve(undefined);
       await release.promise;
 
-      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+      const reply = '{"pane":"p-architect","terminal":"t-architect"}';
+
+      recordStartedTerminal(terminals, commandArguments, reply);
+
+      return succeededResult(reply);
     }
 
     return runtime.exec(command, commandArguments, options);

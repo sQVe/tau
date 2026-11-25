@@ -1,13 +1,17 @@
 import { stat } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';
 
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
-import { isMissingFile } from '../errors.js';
+import { parseModelReference } from '../config/models.js';
+import { isMissingFile, toError } from '../errors.js';
 import { isGitRepository } from '../git.js';
 import { piArguments } from './piArguments.js';
+import { decideStartedModel } from './startedModel.js';
+import type { RequestedModel, StartedModelDecision } from './startedModel.js';
 
 export type PiStartTarget = { space: string } | { name: string };
 
@@ -19,6 +23,7 @@ interface PiSessionRequest {
   model: string | undefined;
   session: string | undefined;
   environment: Record<string, string> | undefined;
+  readForegroundArgv: (terminal: string) => Promise<readonly string[] | undefined>;
   argvWrapper?: ((argv: string[]) => string[]) | undefined;
 }
 
@@ -54,6 +59,8 @@ export interface PiLaunchResult {
   aborted: boolean;
   reply: string | undefined;
   terminal: string | undefined;
+  // Undefined means no readback happened, so the started model is unknown.
+  model: string | undefined;
   error: unknown;
 }
 
@@ -73,6 +80,8 @@ type TerminalReply = (
 
 export const launchTimeoutMilliseconds = 30_000;
 
+const readbackIntervalMilliseconds = 100;
+
 const splitReplySchema = Type.Object({
   pane: Type.String(),
   terminal: Type.String({ minLength: 1 }),
@@ -91,6 +100,133 @@ const argvOf = (request: PiSessionRequest, message: string | undefined): string[
   });
 
   return request.argvWrapper === undefined ? argv : request.argvWrapper(argv);
+};
+
+const requestedModelOf = (model: string | undefined): RequestedModel => {
+  if (model === undefined) {
+    return { provider: undefined, id: undefined };
+  }
+
+  return parseModelReference(model) ?? { provider: undefined, id: model };
+};
+
+const unreadableModelError = (terminal: string, cause?: unknown): Error => {
+  const options = cause === undefined ? undefined : { cause };
+
+  return new Error(
+    `The started model on terminal ${terminal} is unknown. It may still be running; check it with hc get ${terminal} before you start another.`,
+    options,
+  );
+};
+
+const mismatchModelError = (
+  terminal: string,
+  decision: Extract<StartedModelDecision, { kind: 'mismatch' }>,
+): Error =>
+  new Error(
+    `The started Pi on terminal ${terminal} runs ${decision.started}, but the request asked for ${decision.requested}. It may still be running; check it with hc get ${terminal} before you start another.`,
+  );
+
+const cancellationError = (signal: AbortSignal | undefined): Error => {
+  const reason: unknown = signal?.reason;
+
+  return reason instanceof Error
+    ? reason
+    : new Error('The started model readback was cancelled.', { cause: reason });
+};
+
+const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined =>
+  argv?.[0] === 'pi' ? argv : undefined;
+
+// Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
+// launch budget.
+const readWithinBudget = (
+  read: () => Promise<readonly string[] | undefined>,
+  remaining: number,
+  signal: AbortSignal | undefined,
+): Promise<readonly string[] | undefined> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      resolve(undefined);
+    }, remaining);
+
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(cancellationError(signal));
+    };
+
+    if (signal?.aborted === true) {
+      onAbort();
+
+      return;
+    }
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    void read().then(
+      (argv) => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(argv);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        reject(toError(error));
+      },
+    );
+  });
+
+const readStartedModel = async (
+  readForegroundArgv: (terminal: string) => Promise<readonly string[] | undefined>,
+  terminal: string,
+  model: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<string> => {
+  const requested = requestedModelOf(model);
+  const deadline = Date.now() + launchTimeoutMilliseconds;
+
+  for (;;) {
+    let argv: readonly string[] | undefined;
+
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- each read must wait for the previous one.
+      argv = await readWithinBudget(
+        () => readForegroundArgv(terminal),
+        deadline - Date.now(),
+        signal,
+      );
+    } catch (error) {
+      if (signal?.aborted === true) {
+        throw cancellationError(signal);
+      }
+
+      throw unreadableModelError(terminal, error);
+    }
+
+    const startedArgv = piArgv(argv);
+
+    if (startedArgv !== undefined) {
+      const decision = decideStartedModel({ requested, argv: startedArgv });
+
+      if (decision.kind === 'match') {
+        return decision.model;
+      }
+
+      if (decision.kind === 'mismatch') {
+        throw mismatchModelError(terminal, decision);
+      }
+
+      throw unreadableModelError(terminal);
+    }
+
+    if (Date.now() >= deadline) {
+      throw unreadableModelError(terminal);
+    }
+
+    // oxlint-disable-next-line no-await-in-loop -- the poll needs a pause between reads.
+    await sleep(readbackIntervalMilliseconds);
+  }
 };
 
 const placementOf = (target: PiStartTarget): LaunchPlacement =>
@@ -183,6 +319,7 @@ const launchResult = (
   aborted: runtime.signal?.aborted === true,
   reply: result.stdout,
   terminal,
+  model: undefined,
   error,
 });
 
@@ -221,7 +358,10 @@ const launch = async (
   runtime: CommandRuntime,
   command: LaunchCommand,
   terminalOf: TerminalReply,
+  request: PiSessionRequest,
 ): Promise<PiLaunchResult> => {
+  let launched: PiLaunchResult;
+
   try {
     const result = await runtime.exec(command.command, command.commandArguments, {
       cwd: runtime.cwd,
@@ -230,7 +370,12 @@ const launch = async (
 
     const { terminal, error } = terminalOf(command.label, result.stdout);
 
-    return launchResult(runtime, result, terminal, commandError(command.label, result) ?? error);
+    launched = launchResult(
+      runtime,
+      result,
+      terminal,
+      commandError(command.label, result) ?? error,
+    );
   } catch (error) {
     return {
       exitCode: null,
@@ -239,9 +384,23 @@ const launch = async (
       aborted: runtime.signal?.aborted === true,
       reply: undefined,
       terminal: undefined,
+      model: undefined,
       error,
     };
   }
+
+  if (launched.terminal === undefined || launched.error !== undefined) {
+    return launched;
+  }
+
+  const model = await readStartedModel(
+    request.readForegroundArgv,
+    launched.terminal,
+    request.model,
+    runtime.signal,
+  );
+
+  return { ...launched, model };
 };
 
 const terminalFromReply = (
@@ -284,6 +443,7 @@ export const launchPiSession = async (
       label: 'herdr-app do',
     },
     spaceTerminal,
+    request,
   );
 };
 
@@ -301,13 +461,14 @@ export const launchPiSessionRightOf = async (
       label: 'herdr-app do pane.split',
     },
     splitTerminal,
+    request,
   );
 };
 
 export const startPiSession = async (
   runtime: CommandRuntime,
   request: PiStartRequest,
-): Promise<{ reply: string; target: PiStartTarget; terminal?: string }> => {
+): Promise<{ reply: string; target: PiStartTarget; terminal?: string; model?: string }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
   const target = isTargetResolver(request.target) ? await request.target() : request.target;
@@ -324,7 +485,18 @@ export const startPiSession = async (
 
   const terminal = replyTerminal(reply);
 
-  return terminal === undefined ? { reply, target } : { reply, target, terminal };
+  if (terminal === undefined) {
+    return { reply, target };
+  }
+
+  const model = await readStartedModel(
+    request.readForegroundArgv,
+    terminal,
+    request.model,
+    runtime.signal,
+  );
+
+  return { reply, target, terminal, model };
 };
 
 export const startPiSessionRightOf = async (

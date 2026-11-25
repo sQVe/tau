@@ -5,6 +5,7 @@ import type { HcFake } from '../../tests/hcFake.js';
 import {
   HcError,
   currentTerminalAddress,
+  foregroundArgv,
   get,
   kill,
   label,
@@ -49,6 +50,28 @@ it('returns the terminal a get command parsed and starts no connection', async (
   expect(result.labels).toEqual({ role: 'worker' });
   expect(fake.calls).toHaveLength(1);
   expect(fake.connectCalls).toHaveLength(0);
+});
+
+it('reads the foreground argv of a terminal', async () => {
+  const fake = createHcFake();
+
+  fake.reply(
+    'get',
+    JSON.stringify({
+      ...terminal,
+      foreground: { pid: 1, name: 'pi', argv: ['pi', '--model', 'a/b'], cwd: '/repository' },
+    }),
+  );
+
+  expect(await foregroundArgv(runtimeOf(fake), 't7')).toEqual(['pi', '--model', 'a/b']);
+});
+
+it('reads no foreground argv from a terminal without a foreground', async () => {
+  const fake = createHcFake();
+
+  fake.reply('get', JSON.stringify({ ...terminal, foreground: null }));
+
+  expect(await foregroundArgv(runtimeOf(fake), 't7')).toBeUndefined();
 });
 
 const abortedExecError = (): Error => {

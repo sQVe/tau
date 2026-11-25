@@ -28,7 +28,7 @@ it('opens the architect in one split to the right of the lead from a bare reposi
     requestFor(root, locationFor(onTestFinished), runtime, 'Start ME-1611'),
   );
 
-  expect(result).toEqual({ status: 'opened', sessionFile: null });
+  expect(result).toEqual({ status: 'opened', sessionFile: null, model: 'a/architect' });
 
   const split = app.calls.find((call) => call.commandArguments[1] === 'pane.split');
   const splitArguments = split?.commandArguments ?? [];
@@ -52,7 +52,7 @@ it('starts from a repository with a .git entry without a bare-root probe', async
     requestFor(root, locationFor(onTestFinished), runtime, 'Start ME-1611'),
   );
 
-  expect(result).toEqual({ status: 'opened', sessionFile: null });
+  expect(result).toEqual({ status: 'opened', sessionFile: null, model: 'a/architect' });
   expect(vi.mocked(isBareRootWithoutGitEntry)).toHaveBeenCalledWith(root);
   expect(appCommands(app)).toEqual(['ls', 'pane.split']);
 });

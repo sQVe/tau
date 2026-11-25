@@ -1,0 +1,57 @@
+import { expect, it } from 'vitest';
+
+import { decideStartedModel } from './startedModel.js';
+import type { StartedModelFacts } from './startedModel.js';
+
+const facts = (overrides: Partial<StartedModelFacts> = {}): StartedModelFacts => ({
+  requested: { provider: 'claude-bridge', id: 'claude-opus-5-5' },
+  argv: ['pi', '--provider', 'claude-bridge', '--model', 'claude-opus-5-5'],
+  ...overrides,
+});
+
+it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
+  {
+    name: 'a requested model that matches the started argv',
+    facts: facts(),
+    expected: { kind: 'match', model: 'claude-bridge/claude-opus-5-5' },
+  },
+  {
+    name: 'a started argv that runs another model',
+    facts: facts({ argv: ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'] }),
+    expected: {
+      kind: 'mismatch',
+      requested: 'claude-bridge/claude-opus-5-5',
+      started: 'morph/morph-dsv41flash-1017',
+    },
+  },
+  {
+    name: 'no requested model and a model in the argv',
+    facts: facts({ requested: { provider: undefined, id: undefined } }),
+    expected: {
+      kind: 'mismatch',
+      requested: 'default',
+      started: 'claude-bridge/claude-opus-5-5',
+    },
+  },
+  {
+    name: 'a requested model and no model in the argv',
+    facts: facts({ argv: ['pi'] }),
+    expected: {
+      kind: 'mismatch',
+      requested: 'claude-bridge/claude-opus-5-5',
+      started: 'default',
+    },
+  },
+  {
+    name: 'no requested model and no model in the argv',
+    facts: facts({ requested: { provider: undefined, id: undefined }, argv: ['pi'] }),
+    expected: { kind: 'match', model: 'default' },
+  },
+  {
+    name: 'an argv that could not be read',
+    facts: facts({ argv: undefined }),
+    expected: { kind: 'unreadable' },
+  },
+])('decides $name', ({ facts: startedFacts, expected }) => {
+  expect(decideStartedModel(startedFacts)).toEqual(expected);
+});

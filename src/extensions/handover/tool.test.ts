@@ -575,6 +575,7 @@ it('starts a tab from a real bare repository root', async () => {
     space: 'space-1',
     tab: 'tb-new',
     terminal: 't-new',
+    model: 'default',
     spaceStatus: 'reused',
   });
 

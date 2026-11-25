@@ -8,7 +8,7 @@ import { errorMessage, isMissingFile, toError } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../../fileLock/fileLock.js';
 import { isBareRootWithoutGitEntry } from '../../../git.js';
-import { get } from '../../../hc/hc.js';
+import { foregroundArgv, get } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
 import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
@@ -34,9 +34,9 @@ export interface OpenRequest {
 }
 
 export type OpenResult =
-  | { status: 'opened'; sessionFile: null }
+  | { status: 'opened'; sessionFile: null; model: string }
   | { status: 'running'; terminal: string }
-  | { status: 'resumed'; sessionFile: string };
+  | { status: 'resumed'; sessionFile: string; model: string };
 
 interface PreparedArchitectStart {
   session: string | undefined;
@@ -218,6 +218,8 @@ const launchArchitect = (
   prepared: PreparedArchitectStart,
   fence: StartFence,
 ): Promise<PiLaunchResult> => {
+  const launchHc = { ...hc, signal: undefined };
+
   const start = {
     folder: request.root,
     task: prepared.task,
@@ -225,17 +227,18 @@ const launchArchitect = (
     session: prepared.session,
     bareRoot: prepared.bareRoot,
     environment: prepared.environment,
+    readForegroundArgv: (terminal: string) => foregroundArgv(hc, terminal),
     argvWrapper: (argv: string[]): string[] => fence.wrapArgv(argv),
   };
 
   if (prepared.pane === undefined) {
     const target = { name: `architect-${basename(request.root)}` };
-    const started = launchPiSession(hc, { ...start, target, tabName: tabName('architect') });
+    const started = launchPiSession(launchHc, { ...start, target, tabName: tabName('architect') });
 
     return started;
   }
 
-  return launchPiSessionRightOf(hc, { ...start, pane: prepared.pane });
+  return launchPiSessionRightOf(launchHc, { ...start, pane: prepared.pane });
 };
 
 const replyTerminalOf = (launch: PiLaunchResult): ReplyTerminal =>
@@ -253,10 +256,10 @@ const launchFailure = (launch: PiLaunchResult): Error =>
     ? launch.error
     : new Error('The architect launch failed before it reported a terminal.');
 
-const launchResult = (prepared: PreparedArchitectStart): OpenResult =>
+const launchResult = (prepared: PreparedArchitectStart, model: string | undefined): OpenResult =>
   prepared.session === undefined
-    ? { status: 'opened', sessionFile: null }
-    : { status: 'resumed', sessionFile: prepared.session };
+    ? { status: 'opened', sessionFile: null, model: model ?? 'unknown' }
+    : { status: 'resumed', sessionFile: prepared.session, model: model ?? 'unknown' };
 
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
@@ -457,7 +460,6 @@ export const openArchitect = async (
   }
 
   const fence = acquisition.fence;
-  const launchHc = { ...request.hc, signal: undefined };
 
   try {
     await fence.createTicket();
@@ -470,11 +472,11 @@ export const openArchitect = async (
 
     throwIfOpenCancelled(request.hc.signal);
 
-    const started = await launchArchitect(launchHc, request, prepared, fence);
+    const started = await launchArchitect(request.hc, request, prepared, fence);
 
     await applyLaunchOutcome(request, fence, started);
 
-    const result = launchResult(prepared);
+    const result = launchResult(prepared, started.model);
 
     keptClaims.delete(request.root);
 

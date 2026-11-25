@@ -8,6 +8,7 @@ import type { CommandRuntime } from '../../command.js';
 import { isMissingFile } from '../../errors.js';
 import type { HandoverSender } from '../../handoverSender.js';
 import { senderEnvironment, senderLine } from '../../handoverSender.js';
+import { foregroundArgv } from '../../hc/hc.js';
 import { listSpaces } from '../../piStart/herdrPane.js';
 import { startPiSession } from '../../piStart/piStart.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
@@ -34,6 +35,7 @@ export interface StartHandoverResult {
   space: string;
   tab: string;
   terminal: string;
+  model: string;
   spaceStatus: SpaceStatus;
 }
 
@@ -115,6 +117,7 @@ export const startHandover = async (
     session: undefined,
     bareRoot: request.bareRoot,
     environment,
+    readForegroundArgv: (terminal) => foregroundArgv(runtime, terminal),
   });
 
   const parsed = parseJson('herdr-app do', started.reply);
@@ -128,6 +131,7 @@ export const startHandover = async (
     space: parsed.space,
     tab: parsed.tab,
     terminal: parsed.terminal,
+    model: started.model ?? 'unknown',
     spaceStatus,
   };
 };

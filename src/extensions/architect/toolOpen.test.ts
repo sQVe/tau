@@ -84,7 +84,12 @@ it('open starts the architect in the pane of the lead terminal', async ({
 
   const result = await open(tool, root, { request: openRequest });
 
-  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+  expect(result.details).toEqual({
+    action: 'open',
+    status: 'opened',
+    sessionFile: null,
+    model: 'a/architect',
+  });
 
   const split = app.calls.find((call) => call.commandArguments[1] === 'pane.split');
 
@@ -144,7 +149,12 @@ it('open resumes the recorded architect session with the request in its task', a
 
   const result = await open(tool, root, { request: openRequest });
 
-  expect(result.details).toEqual({ action: 'open', status: 'resumed', sessionFile });
+  expect(result.details).toEqual({
+    action: 'open',
+    status: 'resumed',
+    sessionFile,
+    model: 'a/architect',
+  });
 
   const argv = architectArgv(app);
 
@@ -171,7 +181,12 @@ it('open starts a fresh session when the recorded session file is gone', async (
 
   const result = await open(tool, root, { request: openRequest });
 
-  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+  expect(result.details).toEqual({
+    action: 'open',
+    status: 'opened',
+    sessionFile: null,
+    model: 'a/architect',
+  });
 
   const argv = architectArgv(app);
 
@@ -351,7 +366,13 @@ it('open splits when no live holder keeps the lock, even if the recorded termina
 
   const result = await open(tool, root, { request: openRequest });
 
-  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+  expect(result.details).toEqual({
+    action: 'open',
+    status: 'opened',
+    sessionFile: null,
+    model: 'a/architect',
+  });
+
   expect(appCommands(app)).toContain('pane.split');
   expect(app.calls).toHaveLength(2);
 });
@@ -368,7 +389,13 @@ it('open starts the architect beside the lead when the lock is released during t
 
   const result = await open(tool, root, { request: openRequest });
 
-  expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+  expect(result.details).toEqual({
+    action: 'open',
+    status: 'opened',
+    sessionFile: null,
+    model: 'a/architect',
+  });
+
   expect(appCommands(app)).toContain('pane.split');
   expect(app.calls).toHaveLength(3);
 });
@@ -487,7 +514,13 @@ it.each([
 
     const result = await open(tool, root, { request: openRequest });
 
-    expect(result.details).toEqual({ action: 'open', status: 'opened', sessionFile: null });
+    expect(result.details).toEqual({
+      action: 'open',
+      status: 'opened',
+      sessionFile: null,
+      model: 'a/architect',
+    });
+
     expect(appCommands(app)).toEqual(['space.new']);
     expect(app.calls).toHaveLength(1);
 

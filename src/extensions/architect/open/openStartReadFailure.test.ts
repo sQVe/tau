@@ -9,7 +9,12 @@ import {
   useFakeStartProcess,
 } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { adoptClaim, openTool, requestFor } from '../fixtures/openHarness.js';
+import {
+  adoptClaim,
+  openTool,
+  recordStartedTerminal,
+  requestFor,
+} from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { startDirectoryName } from '../startTicket/startTicket.js';
@@ -83,7 +88,7 @@ it('returns the takeover result when the first marker read fails after the child
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const { runtime, terminals } = openTool(root, undefined, undefined, { takeover: false });
   const processControl = useFakeStartProcess(cleanup, 'running');
   const sessionFile = await recordSession(root);
 
@@ -102,7 +107,11 @@ it('returns the takeover result when the first marker read fails after the child
 
       faults.failNextMarkerRead = true;
 
-      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+      const reply = '{"pane":"p-architect","terminal":"t-architect"}';
+
+      recordStartedTerminal(terminals, commandArguments, reply);
+
+      return succeededResult(reply);
     }
 
     return runtime.exec(command, commandArguments, options);
@@ -110,7 +119,7 @@ it('returns the takeover result when the first marker read fails after the child
 
   const result = await openArchitect(requestFor(root, config.location, { ...runtime, exec }));
 
-  expect(result).toEqual({ status: 'resumed', sessionFile });
+  expect(result).toEqual({ status: 'resumed', sessionFile, model: 'a/architect' });
   expect(processControl.signals).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({ token: 'adopted' });
 });
@@ -119,7 +128,7 @@ it('stops a running child and releases the claim after a one-time marker read fa
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const { runtime, terminals } = openTool(root, undefined, undefined, { takeover: false });
   const processControl = useFakeStartProcess(cleanup, 'running', true);
 
   await recordSession(root);
@@ -131,7 +140,11 @@ it('stops a running child and releases the claim after a one-time marker read fa
       await takeStartTicket(argv);
       faults.failNextMarkerRead = true;
 
-      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+      const reply = '{"pane":"p-architect","terminal":"t-architect"}';
+
+      recordStartedTerminal(terminals, commandArguments, reply);
+
+      return succeededResult(reply);
     }
 
     return runtime.exec(command, commandArguments, options);

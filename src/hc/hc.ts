@@ -113,6 +113,15 @@ export const get = (
 ): Promise<HcTerminal> =>
   runHc(runtime, 'get', ['get', '--json', '--', terminal], `hc get ${terminal}`, options);
 
+export const foregroundArgv = async (
+  runtime: CommandRuntime,
+  terminal: string,
+): Promise<readonly string[] | undefined> => {
+  const found = await get(runtime, terminal);
+
+  return found.foreground?.argv;
+};
+
 export const ls = (runtime: HcRuntime, request: LsRequest = {}): Promise<HcTerminalList> => {
   const flags = request.all === true ? ['--all'] : [];
 
