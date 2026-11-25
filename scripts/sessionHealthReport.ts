@@ -1,5 +1,4 @@
 import {
-  assistantCalls,
   codemodeCalls,
   copyKey,
   parseEntries,
@@ -8,6 +7,7 @@ import {
 } from '../src/improvement/transcript.ts';
 import type { Entry } from '../src/improvement/transcript.ts';
 import { isRecord } from '../src/schema.ts';
+import { assistantCalls } from '../src/sessionMessage/sessionMessage.ts';
 
 export type Side = 'manager' | 'worker';
 

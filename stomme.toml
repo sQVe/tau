@@ -496,7 +496,17 @@ public = [
   "src/improvement/transcript.ts",
   "src/improvement/workerRecord.ts",
 ]
-imports = ["command", "errors", "fileLock", "git", "github", "record", "schema", "tauDirectory"]
+imports = [
+  "command",
+  "errors",
+  "fileLock",
+  "git",
+  "github",
+  "record",
+  "schema",
+  "sessionMessage",
+  "tauDirectory",
+]
 
 [modules.inbox]
 entry = "src/inbox/inbox.ts"
@@ -562,6 +572,11 @@ imports = ["schema"]
 entry = "src/schema.ts"
 public = []
 imports = []
+
+[modules.sessionMessage]
+entry = "src/sessionMessage/sessionMessage.ts"
+public = ["src/sessionMessage/askResult.ts"]
+imports = ["schema"]
 
 [modules.shell]
 entry = "src/shell.ts"

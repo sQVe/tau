@@ -6,6 +6,7 @@ import { errorMessage } from '../../errors.js';
 import { isPullRequestUrl, readPullRequestState } from '../../github/github.js';
 import { run } from '../../linear/linear.js';
 import { isWorkerProcess } from '../../role/role.js';
+import { approvedPreviewLines, approvesCancel } from './approvedPreview.js';
 import { decideCancel, decideConfirmedCancel } from './cancelDecision.js';
 import type { PullRequestEvidence } from './cancelDecision.js';
 import { readCancellation } from './linear.js';
@@ -61,26 +62,31 @@ export const cancel = async (
     return { status: 'declined', identifier };
   }
 
-  const approved = await confirmWithUser(context, {
-    action: 'Canceling a ticket',
-    title: `Cancel ${identifier} in Linear`,
-    message: `${identifier}: ${issue.title}\nCurrent state: ${issue.state.name}\nNew state: canceled`,
-  });
+  const previewLines = approvedPreviewLines(context.sessionManager.getBranch());
+  const approvedByPreview = approvesCancel(previewLines, identifier);
 
-  if (!approved) {
-    return { status: 'declined', identifier };
-  }
+  if (!approvedByPreview) {
+    const approved = await confirmWithUser(context, {
+      action: 'Canceling a ticket',
+      title: `Cancel ${identifier} in Linear`,
+      message: `${identifier}: ${issue.title}\nCurrent state: ${issue.state.name}\nNew state: canceled`,
+    });
 
-  const current = await readGuardedCancellation(exec, context, ticket);
+    if (!approved) {
+      return { status: 'declined', identifier };
+    }
 
-  if (current.decision.kind === 'unchanged') {
-    return { status: 'unchanged', identifier: current.issue.identifier };
-  }
+    const current = await readGuardedCancellation(exec, context, ticket);
 
-  const confirmed = decideConfirmedCancel(issue, current.issue);
+    if (current.decision.kind === 'unchanged') {
+      return { status: 'unchanged', identifier: current.issue.identifier };
+    }
 
-  if (confirmed.kind === 'refuse') {
-    throw new Error(`Cannot cancel ${identifier}: ${confirmed.reason} Nothing was written.`);
+    const confirmed = decideConfirmedCancel(issue, current.issue);
+
+    if (confirmed.kind === 'refuse') {
+      throw new Error(`Cannot cancel ${identifier}: ${confirmed.reason} Nothing was written.`);
+    }
   }
 
   await run(exec, context.cwd, ['issue', 'update', ticket, '--state', 'canceled', '--no-input']);

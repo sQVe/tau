@@ -157,6 +157,6 @@ it('keeps the module table in stomme.toml equal to the rule module list', () => 
   const table = parseModuleTable(readFileSync(join(root, 'stomme.toml'), 'utf8'));
   const actualRows = table.toSorted((left, right) => left.name.localeCompare(right.name));
 
-  expect(table).toHaveLength(36);
+  expect(table).toHaveLength(37);
   expect(actualRows).toEqual(expectedRows());
 });

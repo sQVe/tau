@@ -1,18 +1,9 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
 import { isRecord } from '../../schema.js';
+import { askResultOf } from '../../sessionMessage/askResult.js';
+import { entryMessage } from '../../sessionMessage/sessionMessage.js';
 import type { BranchFact } from './typedAnswerGuard.js';
-
-// Details without a boolean `typed` count as not typed, so an unreadable result blocks no call.
-const hasTypedAnswer = (details: unknown): boolean => {
-  if (!isRecord(details) || details.kind !== 'answered' || !Array.isArray(details.answers)) {
-    return false;
-  }
-
-  return details.answers.some((answer) => isRecord(answer) && answer.typed === true);
-};
-
-const isDecided = (details: unknown): boolean => isRecord(details) && details.kind === 'decided';
 
 const isVisibleText = (block: unknown): boolean => {
   if (!isRecord(block) || block.type !== 'text') {
@@ -25,26 +16,30 @@ const isVisibleText = (block: unknown): boolean => {
 const hasVisibleText = (content: unknown): boolean =>
   Array.isArray(content) && content.some(isVisibleText);
 
+const askResultFact = (message: Record<string, unknown>): BranchFact[] => {
+  const result = askResultOf(message);
+
+  // A failed or decided call answers nothing.
+  if (result === undefined || result.kind === 'error' || result.kind === 'decided') {
+    return [];
+  }
+
+  if (result.kind === 'answered') {
+    return [{ kind: 'askResult', typed: result.answers.some((answer) => answer.typed === true) }];
+  }
+
+  return [{ kind: 'askResult', typed: false }];
+};
+
 const factsFor = (entry: SessionEntry): BranchFact[] => {
-  if (entry.type !== 'message') {
+  const message = entryMessage(entry);
+
+  if (message === undefined) {
     return [];
   }
 
-  const message: unknown = entry.message;
-
-  if (!isRecord(message)) {
-    return [];
-  }
-
-  // A failed call, such as a refusal by this guard, answers nothing.
-  const answersQuestions = message.toolName === 'ask_user_question' && message.isError !== true;
-
-  if (message.role === 'toolResult' && answersQuestions) {
-    if (isDecided(message.details)) {
-      return [];
-    }
-
-    return [{ kind: 'askResult', typed: hasTypedAnswer(message.details) }];
+  if (message.role === 'toolResult') {
+    return askResultFact(message);
   }
 
   if (message.role === 'assistant' && hasVisibleText(message.content)) {

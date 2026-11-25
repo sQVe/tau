@@ -6,14 +6,18 @@ import { branchFacts } from './branchFacts.js';
 const entry = (message: unknown, type = 'message') =>
   ({ type, message }) as unknown as SessionEntry;
 
-const askResult = (answers: unknown[]) =>
-  entry({
-    role: 'toolResult',
-    toolName: 'ask_user_question',
-    details: { kind: 'answered', answers },
-  });
+const askResultEntry = (details: unknown) =>
+  entry({ role: 'toolResult', toolName: 'ask_user_question', details });
+
+const askResult = (answers: unknown[]) => askResultEntry({ kind: 'answered', answers });
 
 const assistant = (content: unknown) => entry({ role: 'assistant', content });
+
+it('reports a declined result as not typed', () => {
+  expect(branchFacts([askResultEntry({ kind: 'declined' })])).toEqual([
+    { kind: 'askResult', typed: false },
+  ]);
+});
 
 it('reports typed when any answer is typed, mixed with selected ones', () => {
   const selected = { question: 'A?', selected: ['x'], typed: false };
