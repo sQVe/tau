@@ -65,7 +65,7 @@ const entities = new Map<string, string>([
 ]);
 
 const newlineCount = (text: string): number => text.split('\n').length - 1;
-const countWords = (text: string): number => text.split(/\s+/).filter((word) => word !== '').length;
+const countWords = (text: string): number => text.match(/\S+/g)?.length ?? 0;
 
 const decodedEntity = (reference: string): string => {
   if (!reference.startsWith('&#')) {
@@ -79,9 +79,7 @@ const decodedEntity = (reference: string): string => {
   const radix = hexadecimal ? hexadecimalRadix : decimalRadix;
   const code = Number.parseInt(reference.slice(prefixLength, -1), radix);
 
-  return Number.isInteger(code) && code >= 0 && code <= lastCodePoint
-    ? String.fromCodePoint(code)
-    : reference;
+  return code <= lastCodePoint ? String.fromCodePoint(code) : reference;
 };
 
 const decodedText = (text: string): string => text.replaceAll(entityReference, decodedEntity);
@@ -93,7 +91,7 @@ const boundLineQuotes = (line: string): string => {
     return line;
   }
 
-  const depth = markers.match(/>/g)?.length ?? 0;
+  const depth = markers.split('>').length - 1;
 
   if (depth <= maxQuoteDepth) {
     return line;

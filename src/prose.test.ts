@@ -187,6 +187,21 @@ const table: {
     expected: [],
   },
   {
+    name: 'counts repeated whitespace as one word break',
+    markdown: `${Array.from({ length: 40 }, () => 'word').join('  ')}.`,
+    expected: [],
+  },
+  {
+    name: 'skips prose inside deeply nested quotes',
+    markdown: `${'> '.repeat(4096)}A—b.\n\nOrdinary prose—here.`,
+    expected: [{ rule: 'emDash', line: 3, excerpt: 'Ordinary prose—here.' }],
+  },
+  {
+    name: 'decodes a hexadecimal em dash',
+    markdown: 'A pause&#x2014;then more.',
+    expected: [{ rule: 'emDash', line: 1, excerpt: 'A pause—then more.' }],
+  },
+  {
     name: 'returns no findings for empty text',
     markdown: '',
     expected: [],
@@ -300,6 +315,16 @@ const sentenceTable: {
     name: 'reads a formatted tight list item',
     markdown: '- `a—b` text',
     expected: [{ text: 'code text', line: 1, words: 2 }],
+  },
+  {
+    name: 'keeps an out-of-range numeric entity literal',
+    markdown: 'A &#x110000; here.',
+    expected: [{ text: 'A &#x110000; here.', line: 1, words: 3 }],
+  },
+  {
+    name: 'decodes the last code point',
+    markdown: 'A &#x10FFFF; here.',
+    expected: [{ text: `A ${String.fromCodePoint(0x10ffff)} here.`, line: 1, words: 3 }],
   },
 ];
 
