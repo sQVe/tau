@@ -25,8 +25,9 @@ interface ProseBlock {
   tokens: readonly MarkedToken[];
 }
 
-const curlyQuotes = ['\u2018', '\u2019', '\u201C', '\u201D'];
+const ruleOrder: readonly ProseRule[] = ['longSentence', 'emDash', 'curlyQuote'];
 
+const curlyQuotes = ['\u2018', '\u2019', '\u201C', '\u201D'];
 const emDash = '\u2014';
 const longestSentence = 40;
 const excerptLength = 100;
@@ -35,7 +36,6 @@ const sentenceEnd = /[.!?](?=\s|$)/g;
 const lexer = new Marked();
 
 const newlineCount = (text: string): number => text.split('\n').length - 1;
-
 const countWords = (text: string): number => text.split(/\s+/).filter((word) => word !== '').length;
 
 const childTokens = (token: Token | Tokens.TableCell): readonly MarkedToken[] =>
@@ -151,9 +151,8 @@ const sentenceSpans = (text: string): { text: string; start: number }[] => {
 const sentencesOfBlock = (block: ProseBlock): ProseSentence[] => {
   const segments = segmentsOf(block.tokens);
   const text = segments.map((segment) => segment.text).join('');
-  const spans = sentenceSpans(text);
 
-  return spans.map((span) => ({
+  return sentenceSpans(text).map((span) => ({
     text: span.text,
     line: lineAt(segments, span.start, block.startLine),
     words: countWords(span.text),
@@ -193,7 +192,8 @@ const findingsOf = (sentence: ProseSentence): ProseFinding[] => {
   return rules.map((rule) => ({ rule, line: sentence.line, excerpt }));
 };
 
+const byLineThenRule = (left: ProseFinding, right: ProseFinding): number =>
+  left.line - right.line || ruleOrder.indexOf(left.rule) - ruleOrder.indexOf(right.rule);
+
 export const checkProse = (markdown: string): ProseFinding[] =>
-  proseSentences(markdown)
-    .flatMap(findingsOf)
-    .toSorted((left, right) => left.line - right.line);
+  proseSentences(markdown).flatMap(findingsOf).toSorted(byLineThenRule);

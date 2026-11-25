@@ -106,6 +106,14 @@ const table: {
     expected: [{ rule: 'emDash', line: 3, excerpt: 'Second—sentence.' }],
   },
   {
+    name: 'sorts same-line findings by rule order',
+    markdown: `A—b. ${words(41, '.')}`,
+    expected: [
+      { rule: 'longSentence', line: 1, excerpt: cut(words(41, '.')) },
+      { rule: 'emDash', line: 1, excerpt: 'A—b.' },
+    ],
+  },
+  {
     name: 'cuts long excerpts',
     markdown: words(60, '.'),
     expected: [{ rule: 'longSentence', line: 1, excerpt: cut(words(60, '.')) }],
