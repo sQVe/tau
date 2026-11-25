@@ -100,22 +100,42 @@ const toolSize = (tool: ToolDefinition): number =>
 const toolsSize = (tools: ToolDefinition[]): number =>
   tools.reduce((total, tool) => total + toolSize(tool), 0);
 
+const stubRoleEnvironment = (role: RoleKind, agentDirectory: string): void => {
+  const tauRole = role === 'lead' ? undefined : role;
+  const workerRecord = role === 'worker' ? 'worker-record' : '';
+  const terminalId = role === 'worker' ? workerTerminal : 'manager';
+
+  vi.stubEnv('TAU_ROLE', tauRole);
+  vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+  vi.stubEnv('HC_TERMINAL_ID', terminalId);
+  // A caller's handover sender must not register its lead-only tool in a measurement.
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+};
+
+const withRoleEnvironment = async <T>(
+  role: RoleKind,
+  agentDirectory: string,
+  action: () => Promise<T>,
+): Promise<T> => {
+  stubRoleEnvironment(role, agentDirectory);
+
+  try {
+    return await action();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+};
+
 const loadTools = async (
   role: RoleKind,
   agentDirectory: string,
   registerExtensions: (pi: ExtensionAPI) => Promise<void> = tauRegistration,
-) => {
-  const tauRole = role === 'lead' ? undefined : role;
-  vi.stubEnv('TAU_ROLE', tauRole);
-  const workerRecord = role === 'worker' ? 'worker-record' : '';
-  vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
-  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
-  const terminalId = role === 'worker' ? workerTerminal : 'manager';
-  vi.stubEnv('HC_TERMINAL_ID', terminalId);
+) =>
+  withRoleEnvironment(role, agentDirectory, async () => {
+    const fake = fakeExtensionApi();
 
-  const fake = fakeExtensionApi();
-
-  try {
     await registerExtensions(fake.pi);
 
     if (role === 'worker') {
@@ -123,10 +143,7 @@ const loadTools = async (
     }
 
     return fake;
-  } finally {
-    vi.unstubAllEnvs();
-  }
-};
+  });
 
 const failRegistration = async (): Promise<void> => {
   throw new Error('registration failed');
@@ -138,37 +155,40 @@ const roleOptions = {
   qaGuidePath,
 };
 
-const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) => {
-  const fake = await loadTools(role, agentDirectory);
+const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) =>
+  withRoleEnvironment(role, agentDirectory, async () => {
+    const fake = fakeExtensionApi();
 
-  const event = {
-    systemPromptOptions: { appendSystemPrompt: '', selectedTools: [...fake.tools.keys()] },
-  };
+    await tauRegistration(fake.pi);
 
-  for (const handler of fake.handlers.get('before_agent_start') ?? []) {
-    await handler(
-      event as never,
-      {
-        cwd: agentDirectory,
-        sessionManager: { getBranch: () => [], getSessionId: () => 'session-1' },
-      } as unknown as ExtensionContext,
-    );
-  }
+    const event = {
+      systemPromptOptions: { appendSystemPrompt: '', selectedTools: [...fake.tools.keys()] },
+    };
 
-  const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt, agentDirectory);
-  const guidelines = managerGuidelines(role, roleOptions);
-  const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
+    for (const handler of fake.handlers.get('before_agent_start') ?? []) {
+      await handler(
+        event as never,
+        {
+          cwd: agentDirectory,
+          sessionManager: { getBranch: () => [], getSessionId: () => 'session-1' },
+        } as unknown as ExtensionContext,
+      );
+    }
 
-  if (missingGuidelines.length > 0) {
-    throw new Error(
-      `${role} prompt lacks ${missingGuidelines.length} of ${guidelines.length} delegation guidelines`,
-    );
-  }
+    const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt, agentDirectory);
+    const guidelines = managerGuidelines(role, roleOptions);
+    const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
 
-  const tools = [...fake.tools.values()];
+    if (missingGuidelines.length > 0) {
+      throw new Error(
+        `${role} prompt lacks ${missingGuidelines.length} of ${guidelines.length} delegation guidelines`,
+      );
+    }
 
-  return { tools, size: prompt.length + toolsSize(tools), prompt };
-};
+    const tools = [...fake.tools.values()];
+
+    return { tools, size: prompt.length + toolsSize(tools), prompt };
+  });
 
 const loadoutFor = (profileName: string, directory: string): Loadout => {
   const profile = resolveProfile(directory, directory, true, profileName);
@@ -496,23 +516,27 @@ describe('prompt budget', () => {
   });
 
   it('keeps the question tool within its budget for a lead with a handover sender', async () => {
-    const fake = await loadTools('lead', directory);
+    const questionTool = await withRoleEnvironment('lead', directory, async () => {
+      const fake = fakeExtensionApi();
 
-    const context = {
-      cwd: directory,
-      sessionManager: {
-        getBranch: () => senderBranch,
-        getSessionId: () => 'session-1',
-      },
-    } as unknown as ExtensionContext;
+      await tauRegistration(fake.pi);
 
-    const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: [] } };
+      const context = {
+        cwd: directory,
+        sessionManager: {
+          getBranch: () => senderBranch,
+          getSessionId: () => 'session-1',
+        },
+      } as unknown as ExtensionContext;
 
-    for (const handler of fake.handlers.get('before_agent_start') ?? []) {
-      await handler(event as never, context);
-    }
+      const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: [] } };
 
-    const questionTool = fake.tools.get('handover_question');
+      for (const handler of fake.handlers.get('before_agent_start') ?? []) {
+        await handler(event as never, context);
+      }
+
+      return fake.tools.get('handover_question');
+    });
 
     expect(questionTool).toBeDefined();
 
