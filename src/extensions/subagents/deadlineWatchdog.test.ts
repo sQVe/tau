@@ -669,6 +669,36 @@ it('kills at once when the assignment file is missing', async () => {
   expect(notifications).toEqual([[`Missing assignment file: /agent/missing.json.`, 'error']]);
 });
 
+it('runs the deadline action calls on the runtime it is given', async () => {
+  const hcFake = createHcFake();
+  const path = '/agent/missing.json';
+
+  hcFake.reply('get', JSON.stringify(terminal(path, now + 300_000)));
+  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
+  hcFake.reply('label', JSON.stringify(terminal(path, now + 300_000)));
+
+  const { context, hc } = harness(hcFake);
+  const controller = new AbortController();
+  const runtime: HcRuntime = { ...hc, signal: controller.signal };
+
+  const watchdog = createDeadlineWatchdog(hc, {
+    deliver: () => undefined,
+    showEnded: () => undefined,
+    markDeadlinePending: () => undefined,
+    clearDeadlinePending: () => undefined,
+  });
+
+  await watchdog.apply(
+    context,
+    manager,
+    [{ terminal: terminal(path, now + 300_000), assignment: { kind: 'missing', path } }],
+    runtime,
+  );
+
+  expect(hcFake.calls.map((call) => call.commandArguments[0])).toEqual(['get', 'kill', 'label']);
+  expect(hcFake.calls.every((call) => call.signal === controller.signal)).toBe(true);
+});
+
 it('kills at once when the assignment file is malformed', async () => {
   const hcFake = createHcFake();
   const directory = temporaryDirectory(onTestFinished, 'tau-deadline-');

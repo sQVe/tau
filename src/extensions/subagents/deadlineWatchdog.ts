@@ -29,6 +29,7 @@ export interface DeadlineWatchdog {
     context: DeadlineWatchdogContext,
     managerTerminal: string,
     children: readonly WorkerChildRead[],
+    runtime: HcRuntime,
   ) => Promise<void>;
   clear: () => void;
 }
@@ -176,9 +177,10 @@ export const createDeadlineWatchdog = (
   const markEndedAtDeadline = async (
     context: DeadlineWatchdogContext,
     target: DeadlineTimer | DeadlineKill,
+    runtime: HcRuntime = hc,
   ): Promise<void> => {
     try {
-      await label(hc, target.address, { [deadlineEndLabel.key]: deadlineEndLabel.value });
+      await label(runtime, target.address, { [deadlineEndLabel.key]: deadlineEndLabel.value });
     } catch (error) {
       reportKillProblem(
         context,
@@ -222,6 +224,7 @@ export const createDeadlineWatchdog = (
     context: DeadlineWatchdogContext,
     target: DeadlineTimer | DeadlineKill,
     attempt = 0,
+    runtime: HcRuntime = hc,
   ): Promise<void> => {
     if (isStopped()) {
       return;
@@ -238,7 +241,7 @@ export const createDeadlineWatchdog = (
     let terminal: HcTerminal;
 
     try {
-      terminal = await get(hc, target.address);
+      terminal = await get(runtime, target.address);
     } catch (error) {
       reportKillProblem(
         context,
@@ -267,7 +270,7 @@ export const createDeadlineWatchdog = (
     setKillPending(target, true);
 
     try {
-      await kill(hc, target.address);
+      await kill(runtime, target.address);
     } catch (error) {
       reportKillProblem(
         context,
@@ -289,7 +292,7 @@ export const createDeadlineWatchdog = (
 
     showEndedNotice(context, target);
 
-    await markEndedAtDeadline(context, target);
+    await markEndedAtDeadline(context, target, runtime);
   };
 
   const arm = (context: DeadlineWatchdogContext, timer: DeadlineTimer): void => {
@@ -326,6 +329,7 @@ export const createDeadlineWatchdog = (
     context: DeadlineWatchdogContext,
     managerTerminal: string,
     children: readonly WorkerChildRead[],
+    runtime: HcRuntime,
   ): Promise<void> => {
     if (isStopped()) {
       return;
@@ -374,7 +378,7 @@ export const createDeadlineWatchdog = (
       }
     }
 
-    await Promise.all(plan.kills.map((target) => killAtDeadline(context, target)));
+    await Promise.all(plan.kills.map((target) => killAtDeadline(context, target, 0, runtime)));
   };
 
   return {
