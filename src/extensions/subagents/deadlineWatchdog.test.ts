@@ -354,7 +354,7 @@ const launchingDelivery = () => {
     },
   } as unknown as ExtensionAPI;
 
-  return { delivery: createWorkerDelivery(pi), messages };
+  return { delivery: createWorkerDelivery(pi, () => ''), messages };
 };
 
 const launchingContext = (parentSession: string) =>

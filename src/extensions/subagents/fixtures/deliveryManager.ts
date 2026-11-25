@@ -28,6 +28,7 @@ interface Manager {
   messages: SentMessage[];
   sendOptions: unknown[];
   entries: SessionEntryLike[];
+  branchEntries: SessionEntryLike[];
   notifications: [string, string | undefined][];
   entriesOf: (sessionFile: string) => SessionEntryLike[];
   switchSession: (sessionFile: string) => void;
@@ -47,6 +48,7 @@ const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
 
 export const createManager = (options: { idle?: boolean; running?: boolean } = {}): Manager => {
   const messages: SentMessage[] = [];
+  const branchEntries: SessionEntryLike[] = [];
   const sendOptions: unknown[] = [];
   const sessions = new Map<string, SessionEntryLike[]>([[managerSession, []]]);
   const queued: SentMessage[] = [];
@@ -73,6 +75,7 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
   const context = {
     sessionManager: {
       getEntries: () => entriesOf(currentSession),
+      getBranch: () => branchEntries,
       getSessionFile: () => currentSession,
     },
     ui: {
@@ -88,6 +91,7 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
     messages,
     sendOptions,
     entries: entriesOf(managerSession),
+    branchEntries,
     notifications,
     entriesOf,
     switchSession: (sessionFile: string) => {

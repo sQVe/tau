@@ -22,7 +22,7 @@ import instructionsExtension from '../extensions/instructions.js';
 import mergeWatchExtension from '../extensions/mergeWatch/mergeWatch.js';
 import modelFallbackExtension from '../extensions/modelFallback/modelFallback.js';
 import piResumeExtension from '../extensions/piResume/piResume.js';
-import planExtension from '../extensions/plan/plan.js';
+import planExtension, { planReportText } from '../extensions/plan/plan.js';
 import prExtension from '../extensions/pr/pr.js';
 import prFeedbackExtension from '../extensions/prFeedback/prFeedback.js';
 import sessionLockExtension from '../extensions/sessionLock/sessionLock.js';
@@ -88,7 +88,7 @@ export default async function tauRegistration(pi: ExtensionAPI): Promise<void> {
   staticLoaderExtension(pi);
   statusbarExtension(pi);
   planExtension(pi);
-  subagentsExtension(pi, capacityRefusal);
+  subagentsExtension(pi, capacityRefusal, planReportText);
   compactionExtension(pi);
   bareRootExtension(pi);
   checkoutWarningExtension(pi, checkoutDirectory);

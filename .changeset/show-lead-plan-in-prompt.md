@@ -3,4 +3,5 @@
 ---
 
 The lead's system prompt now lists its current plan on every run, also after a compaction, and lists
-nothing when there is no plan or every step is completed.
+nothing when there is no plan or every step is completed. A worker report to a lead with a plan now
+ends with the plan and a reminder to update it.

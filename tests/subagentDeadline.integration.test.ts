@@ -92,7 +92,7 @@ const managerView = (): ManagerView => {
 };
 
 const startWatchdog = (hc: HcSession, view: ManagerView) => {
-  const delivery = createWorkerDelivery(view.pi);
+  const delivery = createWorkerDelivery(view.pi, () => '');
   const watchdog = createDeadlineWatchdog(hc.runtime, delivery);
 
   return {

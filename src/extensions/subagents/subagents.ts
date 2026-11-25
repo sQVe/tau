@@ -40,6 +40,7 @@ import { qaGuidePath } from './qaBrief.js';
 import { qaLaunchProcedurePath } from './qaLaunch.js';
 import { defaultWorkerCapacity, readWorkerCapacity } from './workerCapacityConfig.js';
 import { createWorkerDelivery } from './workerDelivery.js';
+import type { ReportSuffix } from './workerDelivery.js';
 import { workerModelLine } from './workerModels.js';
 import { createWorkerScan } from './workerScan.js';
 import type { WorkerScan, WorkerScanContext } from './workerScan.js';
@@ -317,6 +318,7 @@ const managerRole = (): 'lead' | 'architect' =>
 export default function subagentsExtension(
   pi: ExtensionAPI,
   capacityRefusal: CapacityRefusal,
+  reportSuffix: ReportSuffix,
 ): void {
   if (isWorkerProcess()) {
     return;
@@ -340,7 +342,7 @@ export default function subagentsExtension(
 
   let facts: AnswerRequestFacts | undefined;
 
-  const delivery = createWorkerDelivery(pi);
+  const delivery = createWorkerDelivery(pi, reportSuffix);
   const watchdog = createDeadlineWatchdog(hc, delivery);
   const scan = createWorkerScan(hc, delivery, watchdog, getAgentDir());
   const events = createEventWatch(subscribeEvents, scan);

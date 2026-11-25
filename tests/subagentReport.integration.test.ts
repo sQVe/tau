@@ -58,7 +58,11 @@ const recordingManager = () => {
   } as unknown as ExtensionAPI;
 
   const context = {
-    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSessionFile },
+    sessionManager: {
+      getEntries: () => entries,
+      getBranch: () => [],
+      getSessionFile: () => managerSessionFile,
+    },
     ui: { notify: () => undefined },
     isIdle: () => true,
     signal: undefined,
@@ -160,14 +164,14 @@ it('shows a real worker report once before it gives the worker the manager envir
 
   await createWorkerScan(
     hc.runtime,
-    createWorkerDelivery(pi),
+    createWorkerDelivery(pi, () => ''),
     noDeadline,
     temporaryDirectory(onTestFinished, 'tau-sweep-'),
   ).scan(deliveryContext);
 
   await createWorkerScan(
     hc.runtime,
-    createWorkerDelivery(pi),
+    createWorkerDelivery(pi, () => ''),
     noDeadline,
     temporaryDirectory(onTestFinished, 'tau-sweep-'),
   ).scan(deliveryContext);
@@ -200,7 +204,7 @@ it('delivers one worker report through the real hc event watch', async () => {
 
   const scan = createWorkerScan(
     hc.runtime,
-    createWorkerDelivery(pi),
+    createWorkerDelivery(pi, () => ''),
     noDeadline,
     temporaryDirectory(onTestFinished, 'tau-sweep-'),
   );

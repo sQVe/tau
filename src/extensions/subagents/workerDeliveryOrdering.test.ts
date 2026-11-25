@@ -109,7 +109,7 @@ const createWorld = (managerState: Manager): World => ({
       '/agent/assignment-2.json',
     ),
   ],
-  delivery: createWorkerDelivery(managerState.pi),
+  delivery: createWorkerDelivery(managerState.pi, () => ''),
   phases: [0, 0],
   polledSinceReport: [false, false],
   nextQuestion: 1,
@@ -504,7 +504,7 @@ class RestartCommand extends WorldCommand {
   apply(model: World, real: Manager): void {
     recordStep('restart');
 
-    model.delivery = createWorkerDelivery(real.pi);
+    model.delivery = createWorkerDelivery(real.pi, () => '');
     model.phases = [0, 0];
   }
 

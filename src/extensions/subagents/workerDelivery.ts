@@ -27,6 +27,8 @@ import {
 
 type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui' | 'isIdle' | 'signal'>;
 
+export type ReportSuffix = (entries: readonly unknown[]) => string;
+
 export interface WorkerDelivery {
   deliver: (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]) => void;
   showEnded: (
@@ -218,7 +220,10 @@ const deliveryFact = (
   };
 };
 
-export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
+export const createWorkerDelivery = (
+  pi: ExtensionAPI,
+  reportSuffix: ReportSuffix,
+): WorkerDelivery => {
   const queuedKeys = new Set<string>();
   const deadlinePending = new Set<string>();
   const wake = createWake(pi);
@@ -242,10 +247,13 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
       notifyOnce(context.ui, 'worker-report-delivery', error, error, 'error');
     }
 
+    const suffix =
+      plan.reports.length === 0 ? '' : reportSuffix(context.sessionManager.getBranch());
+
     for (const { assignmentId, report } of plan.reports) {
       wake(context, {
         customType: reportMessageType,
-        content: reportText(assignmentId, report),
+        content: `${reportText(assignmentId, report)}${suffix}`,
         display: true,
         details: { assignmentId, outcome: report.outcome },
       });

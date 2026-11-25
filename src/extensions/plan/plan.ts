@@ -23,6 +23,8 @@ const drawSavedPlan = (context: ExtensionContext): void => {
   }
 };
 
+export { planReportText } from './prompt.js';
+
 export default function planExtension(pi: ExtensionAPI): void {
   if (!roleRegistersTool(currentRole(), 'plan')) {
     return;

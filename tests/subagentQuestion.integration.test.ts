@@ -183,7 +183,7 @@ it('shows a real worker question once and carries the subagent_answer reply into
   const tracked = completionTracked(
     createWorkerScan(
       hc.runtime,
-      createWorkerDelivery(pi),
+      createWorkerDelivery(pi, () => ''),
       noDeadline,
       temporaryDirectory(onTestFinished, 'tau-sweep-'),
     ),
@@ -288,7 +288,7 @@ it('shows a question once across repeated delivery scans', async () => {
 
   await createWorkerScan(
     hc.runtime,
-    createWorkerDelivery(pi),
+    createWorkerDelivery(pi, () => ''),
     noDeadline,
     temporaryDirectory(onTestFinished, 'tau-sweep-'),
   ).scan(context);
@@ -302,7 +302,7 @@ it('shows a question once across repeated delivery scans', async () => {
 
   await createWorkerScan(
     hc.runtime,
-    createWorkerDelivery(pi),
+    createWorkerDelivery(pi, () => ''),
     noDeadline,
     temporaryDirectory(onTestFinished, 'tau-sweep-'),
   ).scan(context);
