@@ -17,13 +17,30 @@ const approvedBranch = (preview = 'Cancel ME-1: Title') => [
   askResult('call-1', [answer]),
 ];
 
-const table: { name: string; branch: SessionEntry[]; expected: boolean }[] = [
+const table: { name: string; branch: SessionEntry[]; identifier?: string; expected: boolean }[] = [
   {
     name: 'an approval preview with the ticket and title gives true',
     branch: approvedBranch('Cancel ME-1: Title'),
     expected: true,
   },
   { name: 'a bare cancel line gives true', branch: approvedBranch('Cancel ME-1'), expected: true },
+  {
+    name: 'a preview with two cancel lines approves the first ticket',
+    branch: approvedBranch('Cancel ME-1: A\nCancel ME-2: B'),
+    expected: true,
+  },
+  {
+    name: 'a preview with two cancel lines approves the second ticket',
+    branch: approvedBranch('Cancel ME-1: A\nCancel ME-2: B'),
+    identifier: 'ME-2',
+    expected: true,
+  },
+  {
+    name: 'a preview with two cancel lines does not approve an unlisted ticket',
+    branch: approvedBranch('Cancel ME-1: A\nCancel ME-2: B'),
+    identifier: 'ME-3',
+    expected: false,
+  },
   {
     name: 'a preview for another ticket gives false',
     branch: approvedBranch('Cancel ME-2: Title'),
@@ -123,9 +140,12 @@ const table: { name: string; branch: SessionEntry[]; expected: boolean }[] = [
   },
 ];
 
-it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { branch, expected }) => {
-  expect(approvesCancel(approvedPreviewLines(branch), 'ME-1')).toBe(expected);
-});
+it.each(table.map((row) => [row.name, row] as const))(
+  '%s',
+  (_name, { branch, identifier = 'ME-1', expected }) => {
+    expect(approvesCancel(approvedPreviewLines(branch), identifier)).toBe(expected);
+  },
+);
 
 it('duplicate tool call ids give no lines', () => {
   const branch = [
@@ -163,15 +183,6 @@ it('a selected label that is not a string gives no lines', () => {
   ];
 
   expect(approvesCancel(approvedPreviewLines(branch), 'ME-1')).toBe(false);
-});
-
-it('approves each identifier a preview lists', () => {
-  const branch = approvedBranch('Cancel ME-1: A\nCancel ME-2: B');
-  const lines = approvedPreviewLines(branch);
-
-  expect(approvesCancel(lines, 'ME-1')).toBe(true);
-  expect(approvesCancel(lines, 'ME-2')).toBe(true);
-  expect(approvesCancel(lines, 'ME-3')).toBe(false);
 });
 
 it('trims preview lines before matching', () => {

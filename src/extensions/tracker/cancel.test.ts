@@ -7,6 +7,7 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createLinearFake } from '../../../tests/linearFake.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
 import { cancel } from './cancel.js';
+import { answer, cancelOption } from './fixtures/approvedPreview.js';
 
 interface AnswerFacts {
   selected?: string[];
@@ -40,18 +41,17 @@ const questionEntry = (options: readonly unknown[], overrides: Record<string, un
 const answeredBranch = (
   options: readonly unknown[],
   { selected = ['Cancel it'], typed = false }: AnswerFacts = {},
-  overrides: Record<string, unknown> = {},
+  questionOverrides: Record<string, unknown> = {},
+  resultOverrides: Record<string, unknown> = {},
 ) => [
-  questionEntry(options, overrides),
+  questionEntry(options, questionOverrides),
   branchEntry({
     role: 'toolResult',
     toolName: 'ask_user_question',
     toolCallId: 'call-1',
     isError: false,
-    details: {
-      kind: 'answered',
-      answers: [{ question: 'Cancel the ticket?', selected, typed }],
-    },
+    details: { kind: 'answered', answers: [{ question: 'Cancel the ticket?', selected, typed }] },
+    ...resultOverrides,
   }),
 ];
 
@@ -477,6 +477,30 @@ const nonApprovalBranches = (identifier: string) => [
   {
     name: 'an approval before the latest user message',
     branch: [...approvalBranch(identifier), userEntry()],
+  },
+  {
+    name: 'a decided result',
+    branch: answeredBranch(
+      [cancelOption(`Cancel ${identifier}: Title`)],
+      {},
+      {},
+      {
+        details: { kind: 'decided', answers: [answer] },
+      },
+    ),
+  },
+  {
+    name: 'an error result',
+    branch: answeredBranch(
+      [cancelOption(`Cancel ${identifier}: Title`)],
+      {},
+      {},
+      { isError: true },
+    ),
+  },
+  {
+    name: 'a choice question',
+    branch: answeredBranch([cancelOption(`Cancel ${identifier}: Title`)], {}, { kind: 'choice' }),
   },
 ];
 
