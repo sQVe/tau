@@ -42,8 +42,13 @@ batch would answer a shape the sample never measured.
 ### Audit one decision in five
 
 One would-be decision in five goes to the dialog instead. The dialog starts the normal shadow job,
-which records all five variants and the asker's confidence, so the measured sample keeps covering
-calls the gate answers.
+which records all five variants and the asker's confidence, so the measured sample can include calls
+the gate answers.
+
+The shadow job keeps its own rules. It records at most one batch per minute, and it writes nothing
+when a model it needs is not allowed, so an audited call can ask without adding a record. It also
+judges the question again, and its verdict can differ from the one that decided the call. The score
+counts the shadow record's verdict.
 
 A decided call opens no dialog, so it writes no shadow record. Without the audit, every record would
 come from a call the gate asked, and the sample would never cover a call the gate answered.
@@ -90,7 +95,7 @@ records, which the report shows with their time and head so a reader can tell th
 - A failed save or notice leaves the user with the dialog instead of a silent answer.
 - A cancelled call before the notice leaves no notice, no record, and no dialog.
 - The record makes each gate answer visible after the fact.
-- The shadow sample covers calls the gate answers, not only calls it asks.
+- The shadow sample can include a call the gate answered, not only calls it asked.
 
 ### Negative
 
@@ -104,6 +109,9 @@ records, which the report shows with their time and head so a reader can tell th
 - Every would-be decision costs one judge run, even when the audit sends the call to the dialog.
 - A call with more than one eligible question never gets a gate answer, even when the frozen
   candidate would agree.
+- An audited call adds no record when the shadow job's minute limit or a refused model blocks it.
+- The shadow job judges the question again, so a record can hold a different verdict from the one
+  that decided the call.
 
 ## Alternatives considered
 
@@ -116,8 +124,8 @@ one batch.
 ### Audit before judging
 
 Sample the call before the judges run, so an audited call costs no judge call. Rejected because the
-audit would also send calls to the dialog that the gate would have asked, and the audited share
-would no longer be one in five of the calls the gate answers.
+sample would also take calls the gate would have asked, which adds no coverage of gate answers, and
+it would not identify which diverted calls the gate would have decided.
 
 ### Measure only the calls the gate answers
 
