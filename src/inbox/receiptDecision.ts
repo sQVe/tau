@@ -43,14 +43,16 @@ interface HandoverQuestionHeading {
   askerSession: string;
 }
 
+type QuestionCarrier = SavableMessageBody | InboxReceipt;
+
 export const inboxReceiptVersion = 4;
 
-const previousInboxReceiptVersion = 2;
+const retiredInboxReceiptVersion = 2;
 
 const handoverQuestionReceiptVersion = 3;
 
 type InboxReceiptVersion =
-  | typeof previousInboxReceiptVersion
+  | typeof retiredInboxReceiptVersion
   | typeof handoverQuestionReceiptVersion
   | typeof inboxReceiptVersion;
 
@@ -72,8 +74,20 @@ export type InboxReceipt =
 
 export const inboxMessageType = 'tau-inbox-message';
 
+export const carriedQuestionId = (carrier: QuestionCarrier): string | undefined => {
+  if (carrier.family === 'handover') {
+    return undefined;
+  }
+
+  if ('payload' in carrier) {
+    return carrier.payload.questionId;
+  }
+
+  return carrier.questionId;
+};
+
 const isReceiptVersion = (value: unknown): value is InboxReceiptVersion =>
-  value === previousInboxReceiptVersion ||
+  value === retiredInboxReceiptVersion ||
   value === handoverQuestionReceiptVersion ||
   value === inboxReceiptVersion;
 
@@ -87,7 +101,7 @@ const handoverQuestionReceipt = (
   identity: ReceiptIdentity,
   questionId: unknown,
 ): InboxReceipt | undefined => {
-  if (identity.version === previousInboxReceiptVersion) {
+  if (identity.version === retiredInboxReceiptVersion) {
     return undefined;
   }
 
@@ -227,19 +241,8 @@ export const matchesReceipt = (
   { receipt, content }: ReceiptedMessage,
   body: SavableMessageBody,
 ): boolean => {
-  const keepsQuestion =
-    receipt.family === 'answer' ||
-    receipt.family === 'handover-question' ||
-    receipt.family === 'handover-answer';
-
-  const receiptQuestionId = keepsQuestion ? receipt.questionId : undefined;
-
-  const bodyKeepsQuestion =
-    body.family === 'answer' ||
-    body.family === 'handover-question' ||
-    body.family === 'handover-answer';
-
-  const bodyQuestionId = bodyKeepsQuestion ? body.payload.questionId : undefined;
+  const receiptQuestionId = carriedQuestionId(receipt);
+  const bodyQuestionId = carriedQuestionId(body);
   const sameQuestion = receiptQuestionId === bodyQuestionId;
   const sameContent = content === messageText(body) || matchesSenderFreePayload(content, body);
 

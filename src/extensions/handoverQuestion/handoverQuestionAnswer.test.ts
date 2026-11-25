@@ -239,16 +239,21 @@ it('reads the session cwd instead of the process cwd', async () => {
 
   expect(await receiver.accept(answerRequest())).toEqual(queuedAnswerReply);
 
-  for (const handler of fake.handlers.get('session_shutdown') ?? []) {
+  const shutdownHandlers = fake.handlers.get('session_shutdown') ?? [];
+
+  expect(shutdownHandlers).not.toHaveLength(0);
+
+  for (const handler of shutdownHandlers) {
     await handler(
       { type: 'session_shutdown', reason: 'quit' } as never,
       context({ cwd: root, sessionId: answerAskerSession }),
     );
   }
 
-  expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toEqual(
-    queuedAnswerReply,
-  );
+  const save = vi.fn<() => Promise<MessageReply>>(async () => queuedAnswerReply);
+
+  expect(await check(answerRequest(), save)).toContain('has not started');
+  expect(save).not.toHaveBeenCalled();
 });
 
 it('reads the checkout of the next session start', async () => {

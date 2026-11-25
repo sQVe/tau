@@ -10,13 +10,13 @@ import type { AcceptCheck } from '../../../inbox/inbox.js';
 import { createReceiver } from '../../../inbox/inbox.js';
 import type { MessageReply, MessageRequest } from '../../../inbox/protocol.js';
 import { createReceiptStore } from '../../../inbox/receipts.js';
-import type { QuestionRecord } from '../question/questionRecord.js';
 import {
   questionRecordDirectory,
   readQuestionRecord,
   writeQuestionRecord,
 } from '../question/questionRecord.js';
 import { handoverAnswerCheck } from './answerCheck.js';
+import { answeredRecord, openRecord } from './fixtures/answerRecord.js';
 
 type Save = Parameters<AcceptCheck>[1];
 
@@ -25,25 +25,6 @@ const askerSession = '22222222-2222-4222-8222-222222222222';
 const senderSession = '33333333-3333-4333-8333-333333333333';
 const otherId = '44444444-4444-4444-8444-444444444444';
 const answer = 'Use option A.';
-
-const recordFields = {
-  version: 1 as const,
-  questionId,
-  askerTerminal: 'worker-1',
-  askerSession,
-  senderTerminal: 'lead-1',
-  senderSession,
-  text: 'Which option should I use?',
-  askedAt: '2026-11-18T12:00:00.000Z',
-};
-
-const openRecord = (): QuestionRecord => ({ ...recordFields, state: 'open', answer: null });
-
-const answeredRecord = (savedAnswer = answer): QuestionRecord => ({
-  ...recordFields,
-  state: 'answered',
-  answer: savedAnswer,
-});
 
 const answerRequest = (messageId = questionId): MessageRequest => ({
   protocol: 'rpc1',
@@ -95,7 +76,7 @@ const startReceiver = (root: string) => {
 it('marks the record answered and starts the turn with the answer text', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await writeQuestionRecord(root, openRecord());
+  await writeQuestionRecord(root, openRecord(senderSession));
   const { receiver, woken } = startReceiver(root);
 
   const reply = await receiver.accept(answerRequest());
@@ -104,7 +85,7 @@ it('marks the record answered and starts the turn with the answer text', async (
 
   expect(await readQuestionRecord(root, questionId)).toEqual({
     kind: 'record',
-    record: answeredRecord(),
+    record: answeredRecord(senderSession, answer),
   });
 
   await receiver.deliver(new AbortController().signal);
@@ -125,7 +106,7 @@ const recordBytes = async (root: string): Promise<string | undefined> => {
 it('refuses a message ID other than the question ID and saves nothing', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await writeQuestionRecord(root, openRecord());
+  await writeQuestionRecord(root, openRecord(senderSession));
   const { receiver, woken, directory } = startReceiver(root);
   const before = await recordBytes(root);
 
@@ -146,7 +127,7 @@ it('refuses a message ID other than the question ID and saves nothing', async ()
 it('queues a repeat of the saved answer without a second turn', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await writeQuestionRecord(root, openRecord());
+  await writeQuestionRecord(root, openRecord(senderSession));
   const { receiver, woken } = startReceiver(root);
 
   const first = await receiver.accept(answerRequest());
@@ -161,7 +142,7 @@ it('queues a repeat of the saved answer without a second turn', async () => {
 
   expect(await readQuestionRecord(root, questionId)).toEqual({
     kind: 'record',
-    record: answeredRecord(),
+    record: answeredRecord(senderSession, answer),
   });
 });
 
@@ -202,7 +183,7 @@ it('refuses when the session cwd is outside a Git checkout and saves nothing', a
 it('writes the answered record before the save runs', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await writeQuestionRecord(root, openRecord());
+  await writeQuestionRecord(root, openRecord(senderSession));
 
   const states: string[] = [];
 
@@ -222,14 +203,14 @@ it('writes the answered record before the save runs', async () => {
 
   expect(await readQuestionRecord(root, questionId)).toEqual({
     kind: 'record',
-    record: answeredRecord(),
+    record: answeredRecord(senderSession, answer),
   });
 });
 
 it('restores the open record when the save is refused', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await writeQuestionRecord(root, openRecord());
+  await writeQuestionRecord(root, openRecord(senderSession));
 
   const states: string[] = [];
 
@@ -249,14 +230,14 @@ it('restores the open record when the save is refused', async () => {
 
   expect(await readQuestionRecord(root, questionId)).toEqual({
     kind: 'record',
-    record: openRecord(),
+    record: openRecord(senderSession),
   });
 });
 
 it('restores the open record when the save throws', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await writeQuestionRecord(root, openRecord());
+  await writeQuestionRecord(root, openRecord(senderSession));
 
   const save = vi.fn<Save>().mockRejectedValue(new Error('The inbox is full.'));
 
@@ -266,6 +247,6 @@ it('restores the open record when the save throws', async () => {
 
   expect(await readQuestionRecord(root, questionId)).toEqual({
     kind: 'record',
-    record: openRecord(),
+    record: openRecord(senderSession),
   });
 });

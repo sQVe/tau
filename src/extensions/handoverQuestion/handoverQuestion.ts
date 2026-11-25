@@ -111,6 +111,10 @@ export default function handoverQuestionExtension(pi: ExtensionAPI): void {
     sessionDirectory = context.cwd;
   });
 
+  pi.on('session_shutdown', () => {
+    sessionDirectory = undefined;
+  });
+
   const hc: HcRuntime = { exec: piExec(pi), connect, cwd: process.cwd() };
 
   if (roleRegistersTool(currentRole(), 'handover_answer')) {

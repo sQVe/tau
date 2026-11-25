@@ -523,56 +523,50 @@ it.each(['', 'architect', 'worker'])(
   },
 );
 
-it('passes a registered handover-question check in a non-worker session', async () => {
-  vi.stubEnv('TAU_ROLE', '');
+const handoverAcceptCases = [
+  {
+    role: '',
+    family: 'handover-question',
+    payload: {
+      questionId: randomUUID(),
+      text: 'Which option should I use?',
+      askerTerminal: 'worker',
+      askerSession: randomUUID(),
+    },
+  },
+  {
+    role: '',
+    family: 'handover-answer',
+    payload: {
+      questionId: randomUUID(),
+      senderSession: randomUUID(),
+      answer: 'Use option A.',
+    },
+  },
+  {
+    role: 'worker',
+    family: 'handover-answer',
+    payload: {
+      questionId: randomUUID(),
+      senderSession: randomUUID(),
+      answer: 'Use option A.',
+    },
+  },
+] as const;
 
-  const harness = startHarness();
-  const sessionId = randomUUID();
-  const messageId = randomUUID();
-
-  setAcceptCheck('handover-question', async () => 'The question is closed.');
-
-  cleanups.push(() => {
-    forgetAcceptCheck('handover-question');
-  });
-
-  await harness.start(sessionId);
-  cleanups.push(() => harness.shutdown(sessionId));
-
-  await expect(
-    exchange(socketOf(sessionId), {
-      ...handoverTo(sessionId, messageId),
-      family: 'handover-question',
-      payload: {
-        questionId: randomUUID(),
-        text: 'Which option should I use?',
-        askerTerminal: 'worker',
-        askerSession: randomUUID(),
-      },
-    }),
-  ).resolves.toEqual({
-    protocol: 'rpc1',
-    kind: 'refused',
-    reason: 'The question is closed.',
-    messageId,
-  });
-
-  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
-});
-
-it.each(['', 'worker'])(
-  'passes a registered handover-answer check in a session with role "%s"',
-  async (role) => {
+it.each(handoverAcceptCases)(
+  'passes a registered $family check in a session with role "$role"',
+  async ({ role, family, payload }) => {
     vi.stubEnv('TAU_ROLE', role);
 
     const harness = startHarness();
     const sessionId = randomUUID();
     const messageId = randomUUID();
 
-    setAcceptCheck('handover-answer', async () => 'The question is closed.');
+    setAcceptCheck(family, async () => 'The question is closed.');
 
     cleanups.push(() => {
-      forgetAcceptCheck('handover-answer');
+      forgetAcceptCheck(family);
     });
 
     await harness.start(sessionId);
@@ -581,12 +575,8 @@ it.each(['', 'worker'])(
     await expect(
       exchange(socketOf(sessionId), {
         ...handoverTo(sessionId, messageId),
-        family: 'handover-answer',
-        payload: {
-          questionId: randomUUID(),
-          senderSession: randomUUID(),
-          answer: 'Use option A.',
-        },
+        family,
+        payload,
       }),
     ).resolves.toEqual({
       protocol: 'rpc1',

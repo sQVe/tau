@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 
-import type { QuestionRecord } from '../question/questionRecord.js';
 import type { AnswerFacts } from './answerDecision.js';
 import { decideAnswer } from './answerDecision.js';
+import { answeredRecord, openRecord } from './fixtures/answerRecord.js';
 
 const questionId = '11111111-1111-4111-8111-111111111111';
 const targetSessionId = '22222222-2222-4222-8222-222222222222';
@@ -11,32 +11,13 @@ const otherId = '44444444-4444-4444-8444-444444444444';
 const otherSession = '55555555-5555-4555-8555-555555555555';
 const answer = 'Use option A.';
 
-const recordFields = {
-  version: 1 as const,
-  questionId,
-  askerTerminal: 'worker-1',
-  askerSession: targetSessionId,
-  senderTerminal: 'lead-1',
-  senderSession,
-  text: 'Which option should I use?',
-  askedAt: '2026-11-18T12:00:00.000Z',
-};
-
-const openRecord = (): QuestionRecord => ({ ...recordFields, state: 'open', answer: null });
-
-const answeredRecord = (savedAnswer = answer): QuestionRecord => ({
-  ...recordFields,
-  state: 'answered',
-  answer: savedAnswer,
-});
-
 const payload = { questionId, senderSession, answer };
 
 const facts = (overrides: Partial<AnswerFacts> = {}): AnswerFacts => ({
   messageId: questionId,
   targetSessionId,
   payload,
-  read: { kind: 'record', record: openRecord() },
+  read: { kind: 'record', record: openRecord(senderSession) },
   ...overrides,
 });
 
@@ -68,7 +49,10 @@ it.each([
   {
     name: 'refuses a question asked from another session',
     given: facts({
-      read: { kind: 'record', record: { ...openRecord(), askerSession: otherSession } },
+      read: {
+        kind: 'record',
+        record: { ...openRecord(senderSession), askerSession: otherSession },
+      },
     }),
     expected: {
       kind: 'refuse',
@@ -78,7 +62,10 @@ it.each([
   {
     name: 'refuses a question sent to another lead session',
     given: facts({
-      read: { kind: 'record', record: { ...openRecord(), senderSession: otherSession } },
+      read: {
+        kind: 'record',
+        record: { ...openRecord(senderSession), senderSession: otherSession },
+      },
     }),
     expected: {
       kind: 'refuse',
@@ -87,7 +74,9 @@ it.each([
   },
   {
     name: 'refuses a different answer to an answered question',
-    given: facts({ read: { kind: 'record', record: answeredRecord('Use option B.') } }),
+    given: facts({
+      read: { kind: 'record', record: answeredRecord(senderSession, 'Use option B.') },
+    }),
     expected: {
       kind: 'refuse',
       reason: `Handover question ${questionId} already has a different answer.`,
@@ -95,13 +84,17 @@ it.each([
   },
   {
     name: 'saves a repeat of the saved answer',
-    given: facts({ read: { kind: 'record', record: answeredRecord() } }),
+    given: facts({ read: { kind: 'record', record: answeredRecord(senderSession, answer) } }),
     expected: { kind: 'save' },
   },
   {
     name: 'marks an open question answered',
     given: facts(),
-    expected: { kind: 'markAnswered', open: openRecord(), answered: answeredRecord() },
+    expected: {
+      kind: 'markAnswered',
+      open: openRecord(senderSession),
+      answered: answeredRecord(senderSession, answer),
+    },
   },
 ] as const)('$name', ({ given, expected }) => {
   expect(decideAnswer(given)).toEqual(expected);

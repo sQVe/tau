@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { createReceiptStore, createReceiver } from './inbox.js';
+import {
+  queuedReply as queued,
+  savedRecordPath as recordOf,
+  startReceiveDouble,
+} from './fixtures/receiveDouble.js';
 import type { MessageRequest } from './protocol.js';
 import { inboxMessageType } from './receiptDecision.js';
 import type { ReceiptEntryFact } from './receiptDecision.js';
@@ -23,17 +26,6 @@ const handoverAnswer = (
   family: 'handover-answer',
   payload: { questionId, senderSession: 'lead-session', answer: 'Use option A.' },
 });
-
-const queued = (sessionId: string, messageId: string) => ({
-  protocol: 'rpc1',
-  kind: 'queued',
-  messageId,
-  terminal: 't7',
-  sessionId,
-});
-
-const recordOf = (directory: string, sessionId: string, messageId: string): string =>
-  join(directory, 'records', sessionId, `${messageId}.json`);
 
 const shownText = (questionId: string): string =>
   `Handover answer to question ${questionId}:\n\nUse option A.`;
@@ -53,26 +45,14 @@ const startReceiver = (
   directory: string,
   sessionId: string,
   entries: () => readonly ReceiptEntryFact[],
-) => {
-  const woken: unknown[] = [];
-
-  const receiver = createReceiver({
-    directory: join(directory, 'records', sessionId),
-    terminal: 't7',
+) =>
+  startReceiveDouble(
+    directory,
     sessionId,
-    accepts: { 'handover-answer': (_request, save) => save() },
-    receipts: createReceiptStore(sessionId),
+    { 'handover-answer': (_request, save) => save() },
+    0,
     entries,
-    wake: (message) => {
-      woken.push(message);
-
-      return true;
-    },
-    notify: () => undefined,
-  });
-
-  return { receiver, woken };
-};
+  );
 
 it('saves a handover-answer and wakes once with its fixed text', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-receive-handover-answer-');

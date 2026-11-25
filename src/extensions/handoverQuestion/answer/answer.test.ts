@@ -18,6 +18,7 @@ import type { QuestionRecord } from '../question/questionRecord.js';
 import { writeQuestionRecord } from '../question/questionRecord.js';
 import { answerQuestion } from './answer.js';
 import { handoverAnswerCheck } from './answerCheck.js';
+import { answeredRecord, openRecord } from './fixtures/answerRecord.js';
 
 const questionId = '11111111-1111-4111-8111-111111111111';
 const otherQuestionId = '44444444-4444-4444-8444-444444444444';
@@ -34,13 +35,18 @@ const runtimeOf = (fake: ReturnType<typeof createHcFake>): HcRuntime => ({
   cwd: '/repository',
 });
 
-const questionEntry = (savedQuestionId = questionId): SessionEntry =>
+const questionEntry = (savedQuestionId = questionId, asker = askerTerminal): SessionEntry =>
   ({
     type: 'custom_message',
     customType: inboxMessageType,
     content: messageText({
       family: 'handover-question',
-      payload: { questionId: savedQuestionId, text: questionText, askerTerminal, askerSession },
+      payload: {
+        questionId: savedQuestionId,
+        text: questionText,
+        askerTerminal: asker,
+        askerSession,
+      },
     }),
     display: true,
     details: {
@@ -51,30 +57,6 @@ const questionEntry = (savedQuestionId = questionId): SessionEntry =>
       questionId: savedQuestionId,
     },
   }) as unknown as SessionEntry;
-
-const recordFields = {
-  version: 1 as const,
-  questionId,
-  askerTerminal,
-  askerSession,
-  senderTerminal: 'lead-1',
-  text: questionText,
-  askedAt: '2026-11-18T12:00:00.000Z',
-};
-
-const openRecord = (senderSession: string): QuestionRecord => ({
-  ...recordFields,
-  senderSession,
-  state: 'open',
-  answer: null,
-});
-
-const answeredRecord = (senderSession: string, savedAnswer: string): QuestionRecord => ({
-  ...recordFields,
-  senderSession,
-  state: 'answered',
-  answer: savedAnswer,
-});
 
 const startAsker = async (onFrame: () => void = () => undefined) => {
   const root = temporaryDirectory(onTestFinished, 'tau-handover-answer-');
@@ -200,10 +182,41 @@ it('refuses a question this session never received', async () => {
     { questionId, answer },
   );
 
-  const reason = `This session never received handover question ${questionId}.`;
+  const reason = reasonOf(result);
 
   expect(result.isError).toBe(true);
-  expect(result.details).toEqual({ status: 'refused', questionId, reason });
+  expect(result.details).toMatchObject({ status: 'refused', questionId });
+  expect(reason).toContain(questionId);
+  expect(frames).toBe(0);
+  expect(savedFiles(asker)).toEqual([]);
+});
+
+it('refuses when two receipts name different askers', async () => {
+  let frames = 0;
+
+  const asker = await startAsker(() => {
+    frames += 1;
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, askerTerminal, asker.path);
+
+  const result = await answerQuestion(
+    {
+      hc: runtimeOf(fake),
+      entries: [questionEntry(), questionEntry(questionId, 'worker-2')],
+      leadSession,
+    },
+    { questionId, answer },
+  );
+
+  const reason = reasonOf(result);
+
+  expect(result.isError).toBe(true);
+  expect(result.details).toMatchObject({ status: 'refused', questionId });
+  expect(reason).toContain('conflicting');
+  expect(reason).toContain(questionId);
   expect(frames).toBe(0);
   expect(savedFiles(asker)).toEqual([]);
 });

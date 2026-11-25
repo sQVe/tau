@@ -261,10 +261,10 @@ it.each(replyCases)('decodes %s', (_name, input, expected) => {
   expect(decodeReply(input)).toEqual(expected);
 });
 
-const answerRequestFixture = (name: string): unknown =>
-  JSON.parse(
-    readFileSync(join(import.meta.dirname, 'fixtures', 'answerRequest', name), 'utf8'),
-  ) as unknown;
+const fixture = (directory: string, name: string): unknown =>
+  JSON.parse(readFileSync(join(import.meta.dirname, directory, name), 'utf8')) as unknown;
+
+const answerRequestFixture = (name: string): unknown => fixture('fixtures/answerRequest', name);
 
 it('decodes the frozen answer-request frames', () => {
   const request = answerRequestFixture('request.json');
@@ -293,9 +293,7 @@ it('refuses an answer-request payload with an extra field', () => {
 });
 
 const handoverQuestionFixture = (name: string): unknown =>
-  JSON.parse(
-    readFileSync(join(import.meta.dirname, 'fixtures', 'handoverQuestion', name), 'utf8'),
-  ) as unknown;
+  fixture('fixtures/handoverQuestion', name);
 
 it('decodes a pinned handover-question frame', () => {
   const request = handoverQuestionFixture('request.json');
@@ -319,12 +317,7 @@ it('refuses a handover-question payload with an extra field', () => {
 });
 
 const handoverAnswerFixture = (name: string): unknown =>
-  JSON.parse(
-    readFileSync(
-      join(import.meta.dirname, '..', '..', 'tests', 'fixtures', 'handoverAnswer', name),
-      'utf8',
-    ),
-  ) as unknown;
+  fixture('../../tests/fixtures/handoverAnswer', name);
 
 it('decodes the handover-answer frame fixture', () => {
   const request = handoverAnswerFixture('request.json');

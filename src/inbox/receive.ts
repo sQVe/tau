@@ -1,6 +1,7 @@
 import type { Family, MessageReply, MessageRequest, SavableMessageBody } from './protocol.js';
 import { refusedReply } from './protocol.js';
 import {
+  carriedQuestionId,
   decideCandidate,
   inboxMessageType,
   inboxReceiptVersion,
@@ -156,14 +157,13 @@ const receiptOf = (
     sessionId: options.sessionId,
   } as const;
 
-  const keepsQuestion =
-    body.family === 'answer' ||
-    body.family === 'handover-question' ||
-    body.family === 'handover-answer';
+  const questionId = carriedQuestionId(body);
 
-  return keepsQuestion
-    ? { ...identity, family: body.family, questionId: body.payload.questionId }
-    : { ...identity, family: body.family };
+  if (body.family === 'handover' || questionId === undefined) {
+    return { ...identity, family: 'handover' };
+  }
+
+  return { ...identity, family: body.family, questionId };
 };
 
 const wakeOnce = (options: ReceiverOptions, messageId: string, body: SavableMessageBody): void => {

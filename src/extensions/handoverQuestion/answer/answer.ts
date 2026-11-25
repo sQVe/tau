@@ -34,13 +34,16 @@ export type AnswerInput = Static<typeof answerParameters>;
 export const answerToolDescription = [
   'Answer a handover question shown in this session, by its questionId.',
   'When the question asks for an approval-only action, ask the user with ask_user_question first.',
-  'Send a design question to architect ask first.',
+  'For a design question, call architect ask first.',
 ].join(' ');
 
 const unreachable = 'Tell the user the asker cannot be reached.';
 
 const notReceivedReason = (questionId: string): string =>
   `This session never received handover question ${questionId}.`;
+
+const conflictingReceiptsReason = (questionId: string): string =>
+  `This session has conflicting receipts for handover question ${questionId}.`;
 
 const unknownNote = (sent: InboxSendResult): string => {
   const reason = sent.reason ?? 'The asker may not have received the answer.';
@@ -56,8 +59,11 @@ export const answerQuestion = async (
 
   const received = receivedQuestion(target.entries, input.questionId, target.leadSession);
 
-  if (received === undefined) {
-    const reason = notReceivedReason(input.questionId);
+  if (received.kind !== 'received') {
+    const reason =
+      received.kind === 'conflict'
+        ? conflictingReceiptsReason(input.questionId)
+        : notReceivedReason(input.questionId);
 
     return toolResult(
       reason,

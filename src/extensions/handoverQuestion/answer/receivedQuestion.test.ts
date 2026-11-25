@@ -88,12 +88,14 @@ const frozenVersion3Entry = (): SessionEntry =>
     },
   }) as unknown as SessionEntry;
 
-const asker: ReceivedQuestion = { askerTerminal, askerSession };
+const asker: ReceivedQuestion = { kind: 'received', askerTerminal, askerSession };
+const notReceived: ReceivedQuestion = { kind: 'not-received' };
+const conflict: ReceivedQuestion = { kind: 'conflict' };
 
 const cases: readonly {
   name: string;
   entries: readonly SessionEntry[];
-  expected: ReceivedQuestion | undefined;
+  expected: ReceivedQuestion;
 }[] = [
   {
     name: 'the question this lead session received',
@@ -118,39 +120,39 @@ const cases: readonly {
   {
     name: 'a handover-answer receipt naming the same question',
     entries: [questionEntry({ receiptFamily: 'handover-answer' })],
-    expected: undefined,
+    expected: notReceived,
   },
   {
     name: 'another question ID',
     entries: [
       questionEntry({ receiptQuestionId: otherQuestionId, headingQuestionId: otherQuestionId }),
     ],
-    expected: undefined,
+    expected: notReceived,
   },
   {
     name: 'a handover receipt',
     entries: [questionEntry({ receiptFamily: 'handover' })],
-    expected: undefined,
+    expected: notReceived,
   },
   {
     name: 'a receipt from another session',
     entries: [questionEntry({ receiptSessionId: otherSession })],
-    expected: undefined,
+    expected: notReceived,
   },
   {
     name: 'a receipt with another question ID and the requested heading',
     entries: [questionEntry({ receiptQuestionId: otherQuestionId })],
-    expected: undefined,
+    expected: notReceived,
   },
   {
     name: 'two receipts naming different asker terminals',
     entries: [questionEntry(), questionEntry({ headingAskerTerminal: 'worker-2' })],
-    expected: undefined,
+    expected: conflict,
   },
   {
     name: 'two receipts on one terminal naming different asker sessions',
     entries: [questionEntry(), questionEntry({ headingAskerSession: otherAskerSession })],
-    expected: undefined,
+    expected: conflict,
   },
   {
     name: 'a heading with a non-UUID question ID',
@@ -159,17 +161,17 @@ const cases: readonly {
         content: `Handover question not-a-uuid from terminal ${askerTerminal}, session ${askerSession}:\n\n${questionText}`,
       }),
     ],
-    expected: undefined,
+    expected: notReceived,
   },
   {
     name: 'a heading with a mismatched question ID',
     entries: [questionEntry({ headingQuestionId: otherQuestionId })],
-    expected: undefined,
+    expected: notReceived,
   },
   {
     name: 'block content',
     entries: [questionEntry({ content: [{ type: 'text', text: headingText(questionId) }] })],
-    expected: undefined,
+    expected: notReceived,
   },
 ];
 

@@ -4,7 +4,6 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ExtensionToolContext,
-  SessionEntry,
 } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -25,7 +24,6 @@ import { questionRecordDirectory, readQuestionRecord } from './question/question
 
 interface ContextOptions {
   branch?: unknown;
-  entries?: readonly SessionEntry[];
   sessionId?: string;
   cwd?: string;
 }
@@ -51,7 +49,7 @@ const contextFields = (options: ContextOptions) => ({
   cwd: options.cwd ?? '/repository',
   sessionManager: {
     getBranch: () => options.branch ?? branch,
-    getEntries: () => options.entries ?? [],
+    getEntries: () => [],
     getSessionId: () => options.sessionId ?? 'session-1',
   },
 });

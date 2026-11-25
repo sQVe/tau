@@ -316,6 +316,8 @@ it('sets the session directory before the inbox accepts answers', async ({ onTes
   const beforeInbox = starts.filter((start) => start.index < inboxStart.index);
   const fromInbox = starts.filter((start) => start.index >= inboxStart.index);
 
+  expect(handoverStart.index).toBeLessThan(inboxStart.index);
+
   for (const start of beforeInbox) {
     await start.handler({ type: 'session_start', reason: 'startup' } as never, context);
   }
