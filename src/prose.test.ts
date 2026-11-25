@@ -293,8 +293,8 @@ const sentenceTable: {
   },
   {
     name: 'keeps an unknown or malformed entity literal',
-    markdown: 'A &unknown; &#xZZ; here.',
-    expected: [{ text: 'A &unknown; &#xZZ; here.', line: 1, words: 4 }],
+    markdown: 'A &unknown; &constructor; &#xZZ; here.',
+    expected: [{ text: 'A &unknown; &constructor; &#xZZ; here.', line: 1, words: 5 }],
   },
   {
     name: 'reads a formatted tight list item',

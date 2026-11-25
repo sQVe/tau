@@ -48,28 +48,30 @@ const lastCodePoint = 0x10ffff;
 
 const lexer = new Marked();
 
-const entities: Readonly<Record<string, string>> = {
-  amp: '&',
-  apos: "'",
-  gt: '>',
-  hellip: '\u2026',
-  ldquo: '\u201C',
-  lsquo: '\u2018',
-  lt: '<',
-  mdash: '\u2014',
-  nbsp: '\u00A0',
-  ndash: '\u2013',
-  quot: '"',
-  rdquo: '\u201D',
-  rsquo: '\u2019',
-};
+const entities = new Map<string, string>([
+  ['amp', '&'],
+  ['apos', "'"],
+  ['gt', '>'],
+  ['hellip', '\u2026'],
+  ['ldquo', '\u201C'],
+  ['lsquo', '\u2018'],
+  ['lt', '<'],
+  ['mdash', '\u2014'],
+  ['nbsp', '\u00A0'],
+  ['ndash', '\u2013'],
+  ['quot', '"'],
+  ['rdquo', '\u201D'],
+  ['rsquo', '\u2019'],
+]);
 
 const newlineCount = (text: string): number => text.split('\n').length - 1;
 const countWords = (text: string): number => text.split(/\s+/).filter((word) => word !== '').length;
 
 const decodedEntity = (reference: string): string => {
   if (!reference.startsWith('&#')) {
-    return entities[reference.slice(1, -1).toLowerCase()] ?? reference;
+    const name = reference.slice(1, -1).toLowerCase();
+
+    return entities.get(name) ?? reference;
   }
 
   const hexadecimal = reference.slice(0, hexadecimalPrefixLength).toLowerCase() === '&#x';
