@@ -92,7 +92,6 @@ it('reports review findings per prose field, not over the JSON', async () => {
       field: 'comments[0].body',
       rule: 'emDash',
       line: 1,
-      excerpt: commentBody,
     }),
   ]);
 

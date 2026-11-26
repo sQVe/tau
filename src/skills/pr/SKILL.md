@@ -396,7 +396,7 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
       exists on its side of the PR diff at that head.
     - `$prdir/review.json` holds the previewed body and comments in this shape:
       `{"commit_id": "<head SHA>", "event": "COMMENT", "body": "<previewed body>", "comments": [{"path": "<file>", "line": <line>, "side": "<side>", "body": "<text>"}]}`.
-      `event` must be set, or GitHub leaves the review pending. `body` is required for `COMMENT`.
-      The published bytes are the ones step 7 dry ran.
+      `event` must be set, or GitHub leaves the review pending. `body` is required for `COMMENT` and
+      `REQUEST_CHANGES`. The published bytes are the ones step 7 dry ran.
     - Publish with `pr` `publish`, `kind: 'review'`, the last `dryRun` `token`, `repository`, `pr`,
       and `directory`. Report the returned `url`, then stop.
