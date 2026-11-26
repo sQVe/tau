@@ -4,6 +4,7 @@ import {
   commandKeywords,
   commandWords,
   parseShellCommands,
+  runsRedirectionsOnlyExec,
   shellScriptOf,
   wrapperValueOptions,
 } from './shell.js';
@@ -130,6 +131,13 @@ describe('parseShellCommands', () => {
     ['a brace compound with a trailing ampersand', '{ a; } &', [true, true]],
     ['a negated brace compound with a trailing ampersand', '! { a; } &', [true, true]],
     ['a timed brace compound with a trailing ampersand', 'time { a; } &', [true, true]],
+    [
+      'a timed brace compound after a time output option',
+      'time -o /tmp/x.log { a; } &',
+      [true, true],
+    ],
+    ['a wrapper before a brace argument', 'sudo { a; } &', [false, true]],
+    ['an env assignment before a brace argument', 'env FOO=1 { a; } &', [false, true]],
     [
       'a heredoc body read after its owner is backgrounded',
       'cat <<EOF &\n$(grep x 2>/dev/null)\nEOF',
@@ -359,6 +367,7 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         heredocs: ['body\n'],
         background: false,
+        shellId: '0',
         redirections: [],
       },
       {
@@ -366,6 +375,7 @@ describe('parseShellCommands', () => {
         arguments: ['next'],
         heredocs: [],
         background: false,
+        shellId: '0',
         redirections: [],
       },
     ]);
@@ -409,6 +419,7 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         heredocs: [],
         background: false,
+        shellId: '0',
         redirections: [{ fileDescriptor: undefined, operator: '<<<', target: 'word' }],
       },
       {
@@ -416,6 +427,7 @@ describe('parseShellCommands', () => {
         arguments: ['next'],
         heredocs: [],
         background: false,
+        shellId: '0',
         redirections: [],
       },
     ]);
@@ -475,6 +487,7 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         heredocs: [''],
         background: false,
+        shellId: '0',
         redirections: [],
       },
     ]);
@@ -602,4 +615,25 @@ describe('commandWords and shellScriptOf', () => {
 
     expect(shellScriptOf(['command', '-v', 'sh', '-c', 'cmd'])).toBeUndefined();
   });
+});
+
+it.each([
+  { name: 'a bare exec', words: ['exec'], runs: true },
+  { name: 'an exec with a name option', words: ['exec', '-a', 'name'], runs: true },
+  { name: 'a negated exec', words: ['!', 'exec'], runs: true },
+  { name: 'a timed exec', words: ['time', 'exec'], runs: true },
+  {
+    name: 'a timed exec after a time option',
+    words: ['time', '-o', '/tmp/x.log', 'exec'],
+    runs: true,
+  },
+  { name: 'a command-qualified exec', words: ['command', 'exec'], runs: true },
+  { name: 'a builtin-qualified exec', words: ['builtin', 'exec'], runs: true },
+  { name: 'an exec that runs a command', words: ['exec', 'cmd'], runs: false },
+  { name: 'an env exec', words: ['env', 'exec'], runs: false },
+  { name: 'a sudo exec', words: ['sudo', 'exec'], runs: false },
+  { name: 'a command lookup of exec', words: ['command', '-v', 'exec'], runs: false },
+  { name: 'a command that is not exec', words: ['cmd'], runs: false },
+])('decides whether $name changes this shell', ({ words, runs }) => {
+  expect(runsRedirectionsOnlyExec(words)).toBe(runs);
 });

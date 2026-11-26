@@ -28,6 +28,10 @@ export interface ShellCommand {
   // The index of the first command inside this command's group, set only on the command that
   // closes the group.
   group: number | undefined;
+  // The shell process that runs the command, as a dotted path from the top-level shell. A command
+  // substitution, backtick, or expanding heredoc body starts a child shell, so an `exec` there does
+  // not change the descriptors of the shell that contains it.
+  shellId: string;
   redirections: ShellRedirection[];
 }
 
@@ -204,12 +208,10 @@ const optionEnd = (
 // `flock /tmp/lock -w 5 sh -c ...`. The command it runs starts after both.
 const afterWrapper = (
   words: readonly string[],
-  index: number,
+  afterOptions: number,
   valueOptions: ReadonlySet<string>,
   fixedArguments: number,
 ): number => {
-  const afterOptions = optionEnd(words, index + 1, valueOptions);
-
   if (fixedArguments === 0) {
     return afterOptions;
   }
@@ -241,7 +243,7 @@ const commandStart = (words: readonly string[]): CommandStart => {
 
       lookup ||= name === 'command' && options.some((option) => lookupOptionPattern.test(option));
       wrappers.push({ name, index });
-      index = afterWrapper(words, index, valueOptions, wrapperArguments[name] ?? 0);
+      index = afterWrapper(words, afterOptions, valueOptions, wrapperArguments[name] ?? 0);
     }
   }
 
@@ -361,8 +363,9 @@ const compoundClosers: Readonly<Record<string, string>> = {
 
 const closingKeywords: ReadonlySet<string> = new Set(['}', 'done', 'esac', 'fi']);
 
-// The first compound word a command runs, after its leading keywords and wrappers. A reserved word
-// such as `!` or a wrapper such as `time` can sit before the compound opener.
+// The first compound word a command runs, after its leading keywords. Only a reserved word can sit
+// before a compound opener: bash treats a brace after `sudo`, `chroot`, or `env` as that wrapper's
+// argument, so a wrapper does not start a compound. `time` is a reserved word and keeps its options.
 const compoundWordAt = (words: readonly string[]): { index: number; word: string } | undefined => {
   let index = 0;
 
@@ -380,18 +383,61 @@ const compoundWordAt = (words: readonly string[]): { index: number; word: string
       continue;
     }
 
-    const valueOptions = Object.hasOwn(wrapperValueOptions, name)
-      ? wrapperValueOptions[name]
-      : undefined;
-
-    if (valueOptions === undefined) {
+    if (name !== 'time') {
       return undefined;
     }
 
-    index = afterWrapper(words, index, valueOptions, wrapperArguments[name] ?? 0);
+    const timeOptions = wrapperValueOptions.time ?? emptyOptionValues;
+
+    index = afterWrapper(words, optionEnd(words, index + 1, timeOptions), timeOptions, 0);
   }
 
   return undefined;
+};
+
+// The shell builtins that run the command after them in the current shell. A wrapper such as `env`
+// or `sudo` starts a child process instead, so the `exec` it runs does not change this shell.
+const shellQualifierNames: ReadonlySet<string> = new Set(['builtin', 'command']);
+
+// Whether the words run the shell's own `exec` with no command, so it changes the descriptors of
+// the shell that runs it. Only a keyword, `time`, or a shell qualifier may sit before `exec`.
+export const runsRedirectionsOnlyExec = (words: readonly string[]): boolean => {
+  let index = 0;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+    const name = commandNameOf(word);
+
+    if (commandKeywords.has(word) || assignmentPattern.test(word)) {
+      index += 1;
+    } else if (name === 'time') {
+      const timeOptions = wrapperValueOptions.time ?? emptyOptionValues;
+
+      index = afterWrapper(words, optionEnd(words, index + 1, timeOptions), timeOptions, 0);
+    } else if (shellQualifierNames.has(name)) {
+      const afterOptions = optionEnd(words, index + 1, emptyOptionValues);
+      const options = words.slice(index + 1, afterOptions);
+      const isLookup = options.some((option) => lookupOptionPattern.test(option));
+
+      if (isLookup) {
+        return false;
+      }
+
+      index = afterOptions;
+    } else {
+      break;
+    }
+  }
+
+  const head = words[index];
+
+  if (head === undefined || commandNameOf(head) !== 'exec') {
+    return false;
+  }
+
+  const execOptions = wrapperValueOptions.exec ?? emptyOptionValues;
+
+  return optionEnd(words, index + 1, execOptions) === words.length;
 };
 
 const isBackgroundSeparator = (character: string, length: number): boolean =>
@@ -498,9 +544,34 @@ class ShellParser {
   private position = 0;
   private readonly pendingHeredocs: PendingHeredoc[] = [];
   private readonly heredocOwners = new Map<ShellCommand, ShellCommand>();
+  private shellId: string;
+  private childShells = 0;
 
-  constructor(source: string) {
+  constructor(source: string, shellId = '0') {
     this.source = source;
+    this.shellId = shellId;
+  }
+
+  private childShellId(): string {
+    this.childShells += 1;
+
+    return `${this.shellId}.${this.childShells}`;
+  }
+
+  // A substitution runs in a child shell. The parser keeps its position, so only the commands it
+  // creates belong to the child.
+  private parseSubshell(parse: () => void): void {
+    const parentShellId = this.shellId;
+    const childShellId = this.childShellId();
+    const parentChildShells = this.childShells;
+
+    this.shellId = childShellId;
+    this.childShells = 0;
+
+    parse();
+
+    this.shellId = parentShellId;
+    this.childShells = parentChildShells;
   }
 
   // Parse until the end, or until the `)` that closes a `$(` when `closesSubstitution` is set.
@@ -819,35 +890,50 @@ class ShellParser {
     state.wordQuoted = false;
   }
 
-  // A compound keyword runs the commands up to its closer as one unit, so a trailing `&` after the
-  // closer backgrounds the whole compound instead of only the closer's command. Closing the
-  // compound restores the unit start it opened in, because a separator inside it moved the unit
-  // start forward.
-  private trackCompound(state: ListState, word: string, wordIndex: number): void {
-    const leading = compoundWordAt(state.command.arguments);
-
-    if (leading === undefined || leading.index !== wordIndex || leading.word !== word) {
-      return;
-    }
-
-    const start = this.commands.indexOf(state.command);
+  private applyCompound(state: ListState, word: string, start: number): void {
     const closer = Object.hasOwn(compoundClosers, word) ? compoundClosers[word] : undefined;
-
-    if (start === -1) {
-      return;
-    }
 
     if (closer !== undefined) {
       const unitStart = state.unitStarts.at(-1) ?? start;
 
       state.compounds.push({ closer, unitStart });
-    } else if (closingKeywords.has(word) && state.compounds.at(-1)?.closer === word) {
-      const compound = state.compounds.pop();
 
-      if (compound !== undefined) {
-        state.unitStarts[state.unitStarts.length - 1] = compound.unitStart;
-      }
+      return;
     }
+
+    if (!closingKeywords.has(word) || state.compounds.at(-1)?.closer !== word) {
+      return;
+    }
+
+    const compound = state.compounds.pop();
+
+    if (compound !== undefined) {
+      state.unitStarts[state.unitStarts.length - 1] = compound.unitStart;
+    }
+  }
+
+  // A compound keyword runs the commands up to its closer as one unit, so a trailing `&` after the
+  // closer backgrounds the whole compound instead of only the closer's command. Closing the
+  // compound restores the unit start it opened in, because a separator inside it moved the unit
+  // start forward.
+  private trackCompound(state: ListState, word: string, wordIndex: number): void {
+    if (!Object.hasOwn(compoundClosers, word) && !closingKeywords.has(word)) {
+      return;
+    }
+
+    const leading = compoundWordAt(state.command.arguments);
+
+    if (leading === undefined || leading.index !== wordIndex) {
+      return;
+    }
+
+    const start = this.commands.indexOf(state.command);
+
+    if (start === -1) {
+      return;
+    }
+
+    this.applyCompound(state, word, start);
   }
 
   private readDoubleQuotedEscape(): string {
@@ -873,6 +959,7 @@ class ShellParser {
       heredocs: [],
       background: false,
       group: undefined,
+      shellId: this.shellId,
       redirections: [],
     };
 
@@ -921,7 +1008,9 @@ class ShellParser {
     this.position += 2;
 
     if (next === '(') {
-      this.parseList(true);
+      this.parseSubshell(() => {
+        this.parseList(true);
+      });
 
       return { text: this.source.slice(start, this.position), quoted: false };
     }
@@ -982,7 +1071,7 @@ class ShellParser {
     }
 
     this.position += 1;
-    const innerParser = new ShellParser(inner);
+    const innerParser = new ShellParser(inner, this.childShellId());
 
     innerParser.parseList(false);
 
@@ -1054,7 +1143,7 @@ class ShellParser {
       heredoc.command.heredocs.push(body);
 
       if (heredoc.expands) {
-        const bodyParser = new ShellParser(body);
+        const bodyParser = new ShellParser(body, this.childShellId());
 
         bodyParser.readExpandingText(undefined, false);
 
