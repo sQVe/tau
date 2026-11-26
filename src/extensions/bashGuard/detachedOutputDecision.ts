@@ -1,4 +1,4 @@
-import { commandNameOf, commandWords, parseShellCommands, shellScriptOf } from '../../shell.js';
+import { parseShellCommands, runsRedirectionsOnlyExec, shellScriptOf } from '../../shell.js';
 import type { ShellCommand, ShellRedirection } from '../../shell.js';
 
 export interface DetachedOutputFacts {
@@ -40,6 +40,11 @@ interface CompoundScope {
 }
 
 type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
+
+interface EnclosingGroup {
+  readonly closing: ShellCommand;
+  readonly start: number;
+}
 
 const devNull = '/dev/null';
 const maximumDepth = 4;
@@ -152,8 +157,8 @@ const encloses = (group: number | undefined, closingIndex: number, index: number
 const innermostGroupOf = (
   commands: readonly ShellCommand[],
   index: number,
-): ShellCommand | undefined => {
-  let innermost: { command: ShellCommand; start: number } | undefined;
+): EnclosingGroup | undefined => {
+  let innermost: EnclosingGroup | undefined;
 
   for (const [closingIndex, command] of commands.entries()) {
     const start = command.group;
@@ -163,51 +168,67 @@ const innermostGroupOf = (
     }
 
     if (innermost === undefined || start > innermost.start) {
-      innermost = { command, start };
+      innermost = { closing: command, start };
     }
   }
 
-  return innermost?.command;
+  return innermost;
 };
+
+// A command in a child shell inherits the descriptors its parent has when it starts, so an `exec`
+// in the parent changes them too. An `exec` in a child shell never reaches the parent.
+const runsInShellOf = (exec: ShellCommand, command: ShellCommand): boolean =>
+  command.shellId === exec.shellId || command.shellId.startsWith(`${exec.shellId}.`);
 
 // `exec` with only redirections changes the shell's own descriptors for the commands that follow
-// it in the same shell scope.
-const runsRedirectionsOnlyExec = (command: ShellCommand): boolean => {
-  const { words, lookup } = commandWords(command.arguments);
-  const runsExec = command.arguments.some((word) => commandNameOf(word) === 'exec');
-  const runsNoCommand = !lookup && words.length === 0;
-  const changesDescriptors = command.redirections.length > 0;
+// it in that shell. A backgrounded `exec` runs in a subshell, so it changes nothing.
+const changesShellStreams = (command: ShellCommand): boolean =>
+  !command.background &&
+  command.redirections.length > 0 &&
+  runsRedirectionsOnlyExec(command.arguments);
 
-  return runsExec && runsNoCommand && changesDescriptors;
-};
-
+// Applies the `exec` commands whose innermost group is `scope`, in source order. The enclosing
+// groups apply their own redirections between these passes, so a group redirection that starts
+// after an inherited `exec` still wins.
 const applyExecRedirections = (
-  commands: readonly ShellCommand[],
+  scope: CompoundScope,
   index: number,
   inherited: Streams,
-  from: number,
+  group: ShellCommand | undefined,
 ): Streams => {
-  const shell = innermostGroupOf(commands, index);
+  const { commands, from } = scope;
+  const target = commands[index];
   let streams = inherited;
+
+  if (target === undefined) {
+    return streams;
+  }
 
   for (let earlier = from; earlier < index; earlier += 1) {
     const command = commands[earlier];
-    const sameShell = innermostGroupOf(commands, earlier) === shell;
 
-    if (command !== undefined && sameShell && runsRedirectionsOnlyExec(command)) {
-      streams = streamsOf(command, streams);
+    // Most scripts contain no `exec`, so reject one before the group scan.
+    if (command === undefined || !changesShellStreams(command)) {
+      continue;
     }
+
+    if (!runsInShellOf(command, target)) {
+      continue;
+    }
+
+    if (innermostGroupOf(commands, earlier)?.closing !== group) {
+      continue;
+    }
+
+    streams = streamsOf(command, streams);
   }
 
   return streams;
 };
 
-const enclosingStreams = (
-  commands: readonly ShellCommand[],
-  index: number,
-  inherited: Streams,
-  from: number,
-): Streams => {
+const enclosingStreams = (scope: CompoundScope, index: number): Streams => {
+  const { commands, inherited, from } = scope;
+
   const enclosing = commands
     .map((command, closingIndex) => ({ command, closingIndex }))
     .filter(({ command, closingIndex }) => {
@@ -217,12 +238,13 @@ const enclosingStreams = (
     })
     .toSorted((left, right) => (left.command.group ?? 0) - (right.command.group ?? 0));
 
-  const withGroups = enclosing.reduce(
-    (streams, { command }) => streamsOf(command, streams),
-    inherited,
-  );
+  let streams = applyExecRedirections(scope, index, inherited, undefined);
 
-  return applyExecRedirections(commands, index, withGroups, from);
+  for (const { command } of enclosing) {
+    streams = applyExecRedirections(scope, index, streamsOf(command, streams), command);
+  }
+
+  return streams;
 };
 
 const compoundScope = (
@@ -243,7 +265,7 @@ const enclosingOf = (scope: CompoundScope, index: number): Streams => {
     return cached;
   }
 
-  const enclosing = enclosingStreams(scope.commands, index, scope.inherited, scope.from);
+  const enclosing = enclosingStreams(scope, index);
 
   scope.enclosingByIndex.set(index, enclosing);
 
@@ -367,7 +389,7 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
 // A backgrounded group is judged as a whole, so its members are not judged again. A command
 // backgrounded inside a foreground group still carries its own hidden failure.
 const insideBackgroundedGroup = (commands: readonly ShellCommand[], index: number): boolean =>
-  innermostGroupOf(commands, index)?.background === true;
+  innermostGroupOf(commands, index)?.closing.background === true;
 
 const hidesFailure = (scope: CompoundScope, index: number): boolean => {
   const command = scope.commands[index];
@@ -390,9 +412,15 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
 };
 
 // A command the parser creates at an opening parenthesis has no arguments and closes no group, so
-// judging it would read the enclosing redirections as its own.
-const isJudgedCommand = (command: ShellCommand): boolean =>
-  command.group !== undefined || command.arguments.length > 0;
+// judging it would read the enclosing redirections as its own. A redirection-only `exec` runs no
+// command, so it has no failure to hide.
+const isJudgedCommand = (command: ShellCommand): boolean => {
+  if (runsRedirectionsOnlyExec(command.arguments)) {
+    return false;
+  }
+
+  return command.group !== undefined || command.arguments.length > 0;
+};
 
 const judgesHiddenFailure = (scope: CompoundScope, index: number): boolean => {
   const command = scope.commands[index];

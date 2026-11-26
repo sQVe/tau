@@ -427,6 +427,71 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: false,
   },
   {
+    name: 'a detached command after an exec in an enclosing brace group',
+    command: 'exec 2>/dev/null; { cmd & }',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after an exec in an enclosing paren group',
+    command: 'exec 2>/dev/null; ( cmd & )',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after an exec that a group redirection overrides',
+    command: 'exec 2>/dev/null; ( cmd & ) 2>/tmp/x.log',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after an exec in a command substitution',
+    command: 'printf "%s" "$(exec 2>/dev/null)"; nohup app &',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after an exec in a heredoc body',
+    command: 'cat <<EOF\n$(exec 2>/dev/null)\nEOF\nnohup app &',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after an exec in a sibling substitution',
+    command: 'printf "%s" "$(exec 2>/dev/null)"; printf "%s" "$(cmd &)"',
+    blocked: false,
+  },
+  {
+    name: 'a detached command in a substitution after a parent exec',
+    command: 'exec 2>/dev/null; printf "%s" "$(cmd &)"',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after a backgrounded exec that discards stderr',
+    command: 'exec 2>/dev/null &\nnohup app &',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after an env exec that discards stderr',
+    command: 'env exec 2>/dev/null; cmd &',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after a sudo exec that discards stderr',
+    command: 'sudo exec 2>/dev/null; cmd &',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after a builtin exec that discards stderr',
+    command: 'builtin exec 2>/dev/null; cmd &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after a command-qualified exec that discards stderr',
+    command: 'command exec 2>/dev/null; cmd &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after a command lookup of exec',
+    command: 'command -v exec 2>/dev/null; cmd &',
+    blocked: false,
+  },
+  {
     name: 'a negated compound that discards stderr',
     command: '! { cmd 2>/dev/null; } &',
     blocked: true,
