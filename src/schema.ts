@@ -36,8 +36,8 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // Adds additionalProperties: false to every object schema in an asserted position, so Pi refuses an
 // argument the tool does not declare. A map schema keeps its additionalProperties schema, which
 // constrains every key. A node counts as an object when its type includes `object`, or when it
-// declares `properties` without a type. A subschema under `not` or `if` narrows the negation or
-// condition instead, so closing it would accept inputs the tool rejects.
+// declares `properties` or `patternProperties` without a type. A subschema under `not` or `if`
+// narrows the negation or condition instead, so closing it would accept inputs the tool rejects.
 // Add a keyword to one of these sets when a tool schema can hold a subschema under it. A subschema
 // under a keyword outside these sets stays as written, so an object there keeps its keys open.
 export const schemaMapKeywords = new Set([
@@ -80,7 +80,9 @@ const declaresObject = (value: Record<string, unknown>): boolean => {
     return true;
   }
 
-  return type === undefined && 'properties' in value;
+  const declaresKeys = 'properties' in value || 'patternProperties' in value;
+
+  return type === undefined && declaresKeys;
 };
 
 const strictSchemaMap = (value: unknown, visit: (child: unknown) => unknown): unknown => {

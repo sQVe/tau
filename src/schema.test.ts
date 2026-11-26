@@ -165,20 +165,25 @@ it('closes an object schema that declares properties without a type', () => {
   });
 });
 
-// Built from parts so the lint rule against promise thenables does not read the JSON Schema keyword
-// as a promise method.
-const thenKeyword = ['t', 'h', 'e', 'n'].join('');
+it('closes an object schema that declares patternProperties without a type', () => {
+  const schema = { patternProperties: { '^[a-z]+$': { type: 'string' } } };
+
+  expect(strictToolParameters(Type.Unsafe<unknown>(schema))).toMatchObject({
+    additionalProperties: false,
+  });
+});
 
 it('closes an object schema under then, else, and contains', () => {
   const schema: Record<string, unknown> = {
     type: 'object',
-    [thenKeyword]: childSchema(),
+    // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword, not a promise method.
+    then: childSchema(),
     else: childSchema(),
     contains: childSchema(),
   };
 
   const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
-  const thenChild = isRecord(strict) ? strict[thenKeyword] : undefined;
+  const thenChild = isRecord(strict) ? strict['then'] : undefined;
   const elseChild = isRecord(strict) ? strict['else'] : undefined;
   const containsChild = isRecord(strict) ? strict['contains'] : undefined;
 
@@ -245,9 +250,9 @@ it('installs the wrapper once per API', () => {
   const api = registrationApi((tool) => registered.push(tool));
 
   strictToolRegistration(api);
-  strictToolRegistration(api);
-
   const wrapper = api.registerTool;
+
+  strictToolRegistration(api);
 
   registerThrough(api, Type.Object({}));
 
