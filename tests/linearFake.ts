@@ -32,6 +32,8 @@ interface FakeIssue {
   sortOrder: number;
   state: Readonly<{ type: StateType; name: string }>;
   pullRequests: string[];
+  mentions: string[];
+  plainLinks: string[];
   blockedBy: string[];
   inverseRelations: { type: string; identifier: string }[];
 }
@@ -39,6 +41,11 @@ interface FakeIssue {
 interface Fence {
   character: string;
   length: number;
+}
+
+// GraphQL returns only the fields a query selects, so the fake follows each attachment selection.
+interface AttachmentFields {
+  metadata: boolean;
 }
 
 interface FakeProject {
@@ -76,6 +83,30 @@ const labels = [{ id: 'label-bug', name: 'Bug', teamId: 'team-me' }];
 
 const issueId = (identifier: string) => `id-${identifier}`;
 
+const attachmentSelections = (query: string): AttachmentFields[] =>
+  [
+    ...query.matchAll(/attachments\([^)]*\)\s*\{\s*pageInfo\s*\{[^}]*\}\s*nodes\s*\{([^}]*)\}/gu),
+  ].map((match) => ({ metadata: match[1]!.includes('metadata') }));
+
+// A query the fake does not model fails loudly instead of reporting the wrong fields. A query that
+// selects no attachments keeps the node's attachments without the field.
+const attachmentSelection = (query: string, index: number): AttachmentFields => {
+  if (!/\battachments\b/u.test(query)) {
+    return { metadata: false };
+  }
+
+  const selections = attachmentSelections(query);
+  const selection = selections[index];
+
+  if (selection === undefined) {
+    throw new Error(
+      `The fake cannot read attachment selection ${index} from ${query}: it parsed ${selections.length}.`,
+    );
+  }
+
+  return selection;
+};
+
 // Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
 const openingFence = (line: string): Fence | undefined => {
   const marker = /^\s*(`{3,}|~{3,})/u.exec(line)?.[1];
@@ -111,7 +142,25 @@ const savedDescription = (description: string) => {
   return lines.join('\n');
 };
 
-const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
+// A linked pull request either closes the issue, only mentions it, or arrives without Linear's
+// record of either.
+const attachmentNodes = (issue: FakeIssue, fields: AttachmentFields) => [
+  ...issue.pullRequests.map((url) => ({
+    url,
+    ...(fields.metadata ? { metadata: { linkKind: 'closes' } } : {}),
+  })),
+  ...issue.mentions.map((url) => ({
+    url,
+    ...(fields.metadata ? { metadata: { linkKind: 'links' } } : {}),
+  })),
+  ...issue.plainLinks.map((url) => ({ url, ...(fields.metadata ? { metadata: null } : {}) })),
+];
+
+const childNode = (
+  issue: FakeIssue,
+  project: { name: string } | null,
+  fields: AttachmentFields,
+) => ({
   identifier: issue.identifier,
   branchName: issue.branchName,
   title: issue.title,
@@ -123,7 +172,7 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   creator: issue.creatorId === null ? null : { id: issue.creatorId },
   assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
   state: issue.state,
-  attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
+  attachments: { nodes: attachmentNodes(issue, fields) },
   inverseRelations: {
     nodes: [
       ...issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
@@ -174,6 +223,8 @@ export const createLinearFake = (): LinearFake => {
       sortOrder: [...issues.values()].filter((other) => other.parent === issue.parent).length,
       state: { type: 'started', name: 'In Progress' },
       pullRequests: [],
+      mentions: [],
+      plainLinks: [],
       blockedBy: [],
       inverseRelations: [],
       ...issue,
@@ -218,7 +269,9 @@ export const createLinearFake = (): LinearFake => {
     };
   };
 
-  const containerData = (identifier: string) => {
+  const containerData = (identifier: string, query: string) => {
+    const issueFields = attachmentSelection(query, 0);
+    const childFields = attachmentSelection(query, 1);
     const issue = issues.get(identifier);
 
     if (issue === undefined) {
@@ -231,13 +284,15 @@ export const createLinearFake = (): LinearFake => {
     return {
       viewer: { id: 'user-viewer' },
       issue: {
-        ...pagedNode(childNode(issue, project(issue.projectId))),
+        ...pagedNode(childNode(issue, project(issue.projectId), issueFields)),
         id: issueId(identifier),
         team: team(issue.teamId),
         project: project(issue.projectId),
         children: {
           pageInfo: { hasNextPage: children.length < allChildren.length },
-          nodes: children.map((child) => pagedNode(childNode(child, project(child.projectId)))),
+          nodes: children.map((child) =>
+            pagedNode(childNode(child, project(child.projectId), childFields)),
+          ),
         },
       },
     };
@@ -439,7 +494,7 @@ export const createLinearFake = (): LinearFake => {
       }
 
       case 'container': {
-        return containerData(operation.variables.id);
+        return containerData(operation.variables.id, operation.query);
       }
 
       case 'issuePullRequests': {
@@ -449,13 +504,14 @@ export const createLinearFake = (): LinearFake => {
           return { issue: null };
         }
 
-        const { attachments } = pagedNode(childNode(issue, project(issue.projectId)));
+        const fields = attachmentSelection(operation.query, 0);
+        const { attachments } = pagedNode(childNode(issue, project(issue.projectId), fields));
 
         return { issue: { attachments } };
       }
 
       case 'ticket': {
-        return containerData(operation.variables.id);
+        return containerData(operation.variables.id, operation.query);
       }
 
       case 'routing': {

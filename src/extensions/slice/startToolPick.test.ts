@@ -80,6 +80,30 @@ it('picks the first ready child and reads the remote default branch', async () =
 });
 
 it.each([
+  { kind: 'a mention-only', links: { mentions: ['https://github.com/me/repo/pull/2'] } },
+  { kind: 'an unrecorded', links: { plainLinks: ['https://github.com/me/repo/pull/2'] } },
+])('does not read $kind merged pull request as merged', async ({ links }) => {
+  const { fake, read } = await setUp();
+
+  fake.addIssue({
+    identifier: 'ME-2',
+    title: 'Linked',
+    state: { type: 'backlog', name: 'Backlog' },
+    ...links,
+  });
+
+  fake.mergedPullRequests.add('https://github.com/me/repo/pull/2');
+
+  const result = await read('ME-2');
+
+  expect(result.details).toMatchObject({
+    pick: { chosen: { identifier: 'ME-2' }, slices: [{ identifier: 'ME-2', status: 'ready' }] },
+  });
+
+  expect(fake.writes()).toEqual([]);
+});
+
+it.each([
   { kind: 'child', stateType: 'completed', status: 'completedWithoutMergedPr' },
   { kind: 'child', stateType: 'canceled', status: 'canceled' },
   { kind: 'child', stateType: 'started', status: 'ready' },
@@ -179,47 +203,52 @@ it('reads the remote default branch when origin/HEAD is stale', async () => {
   });
 });
 
-it('returns the open blocker URL and the named slice links', async () => {
-  const { root, fake, read } = await setUp();
-  await git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
+it.each(['pullRequests', 'mentions'] as const)(
+  'returns the open blocker URL and the slice links from %s',
+  async (field) => {
+    const { root, fake, read } = await setUp();
+    await git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
 
-  fake.addIssue({
-    identifier: 'ME-1',
-    title: 'Slice',
-    blockedBy: ['ME-2'],
-    pullRequests: ['https://github.com/me/repo/pull/1'],
-  });
+    fake.addIssue({
+      identifier: 'ME-1',
+      title: 'Slice',
+      blockedBy: ['ME-2'],
+      [field]: ['https://github.com/me/repo/pull/1'],
+    });
 
-  fake.addIssue({
-    identifier: 'ME-2',
-    title: 'Blocker',
-    pullRequests: ['https://github.com/me/repo/pull/2'],
-  });
+    fake.addIssue({
+      identifier: 'ME-2',
+      title: 'Blocker',
+      pullRequests: ['https://github.com/me/repo/pull/2'],
+    });
 
-  const result = await read('ME-1');
+    const result = await read('ME-1');
 
-  expect(result.details).toMatchObject({
-    pick: {
-      chosen: { identifier: 'ME-1', pullRequests: ['https://github.com/me/repo/pull/1'] },
-      base: null,
-      openBlockerPullRequests: ['https://github.com/me/repo/pull/2'],
-      slices: [
-        {
-          blockers: [
-            {
-              identifier: 'ME-2',
-              state: 'open',
-              pullRequests: ['https://github.com/me/repo/pull/2'],
-            },
-          ],
-        },
-      ],
-    },
-  });
+    expect(result.details).toMatchObject({
+      pick: {
+        chosen: { identifier: 'ME-1', pullRequests: ['https://github.com/me/repo/pull/1'] },
+        base: null,
+        openBlockerPullRequests: ['https://github.com/me/repo/pull/2'],
+        slices: [
+          {
+            identifier: 'ME-1',
+            status: 'ready',
+            blockers: [
+              {
+                identifier: 'ME-2',
+                state: 'open',
+                pullRequests: ['https://github.com/me/repo/pull/2'],
+              },
+            ],
+          },
+        ],
+      },
+    });
 
-  expect(fake.calls.filter((call) => call.command === 'gh')).toHaveLength(2);
-  expect(fake.writes()).toEqual([]);
-});
+    expect(fake.calls.filter((call) => call.command === 'gh')).toHaveLength(2);
+    expect(fake.writes()).toEqual([]);
+  },
+);
 
 it('reads an outside blocker PR without reading its children', async () => {
   const { fake, read } = await setUp();

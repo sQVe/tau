@@ -16,6 +16,15 @@ const createWithoutTitle =
 const issuesWithoutPageInfo =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
 
+const attachmentsBeforePageInfo =
+  'query($id: String!) { issue(id: $id) { attachments(first: 100) { nodes { url } pageInfo { hasNextPage } } } }';
+
+const childAttachmentsWithoutArguments =
+  'query($id: String!) { issue(id: $id) { children { nodes { identifier attachments { nodes { url } } } } } }';
+
+const issueAttachmentsThenChildAttachmentsWithoutArguments =
+  'query($id: String!) { issue(id: $id) { attachments(first: 100) { pageInfo { hasNextPage } nodes { url metadata } } children { nodes { identifier attachments { nodes { url } } } } } }';
+
 const refusedCalls: [string, string, string[]][] = [
   ['another executable', 'not-linear', ['api', 'query { team(id: "ME") { id } }']],
   ['an unknown query', 'linear', ['api', 'query { definitelyNotALinearField }']],
@@ -132,6 +141,33 @@ test('refuses an update input field of the wrong type and leaves the issue uncha
   expect(issue.title).toBe('Keep');
   expect(issue.description).toBe('Body');
   expect(issue.sortOrder).toBe(3);
+});
+
+test.each([
+  {
+    name: 'nodes before page info',
+    query: attachmentsBeforePageInfo,
+    expected: 'cannot read attachment selection 0',
+  },
+  {
+    name: 'a lone child attachment selection without arguments',
+    query: childAttachmentsWithoutArguments,
+    expected: 'cannot read attachment selection 0',
+  },
+  {
+    name: 'a child attachment selection without arguments after a modeled issue selection',
+    query: issueAttachmentsThenChildAttachmentsWithoutArguments,
+    expected: 'cannot read attachment selection 1',
+  },
+])('refuses $name', async ({ query, expected }) => {
+  const fake = createLinearFake();
+  fake.addIssue({ title: 'Ticket', pullRequests: ['https://github.com/me/repo/pull/1'] });
+
+  const result = await fake.exec('linear', ['api', query, '--variable', 'id=ME-1']);
+
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain(expected);
+  expect(fake.writes()).toEqual([]);
 });
 
 test('an override or failure does not rescue an unsupported call', async () => {

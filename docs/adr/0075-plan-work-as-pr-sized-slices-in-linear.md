@@ -62,6 +62,8 @@ reason.
 ### Closing
 
 - Merging a slice's PR closes only that slice. Linear should close its agent tickets with it.
+- A linked pull request proves a slice merged only when it closes the slice. A pull request that
+  mentions the slice did not land its work.
 - A Done status is not proof. Compare the acceptance checks and the PR state.
 - The container closes by hand once every slice is done.
 

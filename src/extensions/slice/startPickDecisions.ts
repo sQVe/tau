@@ -1,6 +1,7 @@
 export interface PickPullRequest {
   url: string;
   state: string;
+  closes: boolean;
 }
 
 interface PickBlocker {
@@ -38,12 +39,25 @@ export interface StartPick {
   defaultBranch: string;
 }
 
+// Linear attaches a pull request that only mentions the issue too, and that one did not land the
+// issue's work.
+const isClosing = (request: PickPullRequest, state: 'MERGED' | 'OPEN'): boolean =>
+  request.closes && request.state === state;
+
+const hasClosingPullRequest = (
+  requests: readonly PickPullRequest[],
+  state: 'MERGED' | 'OPEN',
+): boolean => requests.some((request) => isClosing(request, state));
+
+export const hasClosingMergedPullRequest = (requests: readonly PickPullRequest[]): boolean =>
+  hasClosingPullRequest(requests, 'MERGED');
+
 const blockerState = (blocker: PickBlocker): 'merged' | 'open' | 'other' => {
-  if (blocker.pullRequests.some((request) => request.state === 'MERGED')) {
+  if (hasClosingMergedPullRequest(blocker.pullRequests)) {
     return 'merged';
   }
 
-  if (blocker.pullRequests.some((request) => request.state === 'OPEN')) {
+  if (hasClosingPullRequest(blocker.pullRequests, 'OPEN')) {
     return 'open';
   }
 
@@ -51,7 +65,7 @@ const blockerState = (blocker: PickBlocker): 'merged' | 'open' | 'other' => {
 };
 
 const sliceStatus = (slice: PickSlice): StartPick['slices'][number]['status'] => {
-  if (slice.pullRequests.some((request) => request.state === 'MERGED')) {
+  if (hasClosingMergedPullRequest(slice.pullRequests)) {
     return 'merged';
   }
 
@@ -92,7 +106,7 @@ export const decidePick = (facts: {
       .filter((blocker) => blockerState(blocker) === 'open')
       .flatMap((blocker) =>
         blocker.pullRequests
-          .filter((request) => request.state === 'OPEN')
+          .filter((request) => isClosing(request, 'OPEN'))
           .map((request) => request.url),
       ) ?? [];
 
