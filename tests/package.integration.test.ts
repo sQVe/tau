@@ -25,7 +25,9 @@ import { createPiSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 it('ships Safety Net as a runtime dependency and explicit extension', () => {
-  expect(manifest.dependencies).toHaveProperty('cc-safety-net');
+  const safetyNetVersion = manifest.dependencies['cc-safety-net'];
+
+  expect(safetyNetVersion).toMatch(/^\d+\.\d+\.\d+$/);
   expect(manifest.devDependencies).not.toHaveProperty('cc-safety-net');
   expect(manifest.pi.extensions).toContain('./node_modules/cc-safety-net/dist/pi/index.js');
 });
