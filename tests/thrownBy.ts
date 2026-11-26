@@ -5,5 +5,5 @@ export const thrownBy = (action: () => unknown): unknown => {
     return error;
   }
 
-  return undefined;
+  throw new Error('The action did not throw.');
 };

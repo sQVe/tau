@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../tests/execFake.ts';
-import { thrownBy } from '../../tests/thrownBy.ts';
+import { createExecFake, succeededResult } from '../../tests/execFake.js';
+import { thrownBy } from '../../tests/thrownBy.js';
 import type { Exec } from '../command.js';
 import {
   pullRequestListArguments,
