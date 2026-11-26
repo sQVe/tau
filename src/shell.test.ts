@@ -280,8 +280,7 @@ describe('parseShellCommands', () => {
         words: ['cat'],
         arguments: ['cat'],
         inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
-        heredocs: ['body\n'],
-        heredocScopes: ['0'],
+        heredocs: [{ body: 'body\n', scope: '0' }],
         depth: 0,
         scope: '',
       },
@@ -290,7 +289,6 @@ describe('parseShellCommands', () => {
         arguments: ['next'],
         inputs: [],
         heredocs: [],
-        heredocScopes: [],
         depth: 0,
         scope: '',
       },
@@ -299,10 +297,12 @@ describe('parseShellCommands', () => {
 
   it('strips leading tabs from the delimiter line only for <<-', () => {
     expect(parseShellCommands('cat <<-EOF\n\tbody\n\tEOF\nnext')?.[0]?.heredocs).toEqual([
-      '\tbody\n',
+      { body: '\tbody\n', scope: '0' },
     ]);
 
-    expect(parseShellCommands('cat <<EOF\n\tEOF\nEOF\nnext')?.[0]?.heredocs).toEqual(['\tEOF\n']);
+    expect(parseShellCommands('cat <<EOF\n\tEOF\nEOF\nnext')?.[0]?.heredocs).toEqual([
+      { body: '\tEOF\n', scope: '0' },
+    ]);
   });
 
   it('records the scope of each expanding heredoc body on its owner', () => {
@@ -310,15 +310,15 @@ describe('parseShellCommands', () => {
       "cd sub <<EOF\n$(a)\nEOF\ncat <<'E2'\nx\nE2\ncat <<E3\n$(b)\nE3\n",
     );
 
-    const owners = commands?.map(({ words, heredocScopes }) => [words, heredocScopes]);
+    const owners = commands?.map(({ words, heredocs, scope }) => [words, heredocs, scope]);
 
     expect(owners).toEqual([
-      [['cd', 'sub'], ['0']],
-      [['cat'], []],
-      [['a'], []],
-      [['cat'], ['1']],
-      [[], []],
-      [['b'], []],
+      [['cd', 'sub'], [{ body: '$(a)\n', scope: '0' }], ''],
+      [['cat'], [{ body: 'x\n', scope: undefined }], ''],
+      [['a'], [], '0.0'],
+      [['cat'], [{ body: '$(b)\n', scope: '1' }], ''],
+      [[], [], ''],
+      [['b'], [], '1.0'],
     ]);
   });
 
@@ -329,7 +329,6 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         inputs: [{ descriptor: undefined, kind: 'hereString', target: 'word' }],
         heredocs: [],
-        heredocScopes: [],
         depth: 0,
         scope: '',
       },
@@ -338,7 +337,6 @@ describe('parseShellCommands', () => {
         arguments: ['next'],
         inputs: [],
         heredocs: [],
-        heredocScopes: [],
         depth: 0,
         scope: '',
       },
@@ -398,8 +396,7 @@ describe('parseShellCommands', () => {
         words: ['cat'],
         arguments: ['cat'],
         inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
-        heredocs: [''],
-        heredocScopes: ['0'],
+        heredocs: [{ body: '', scope: '0' }],
         depth: 0,
         scope: '',
       },
@@ -420,15 +417,19 @@ describe('parseShellCommands', () => {
   });
 
   it('keeps the heredoc body free of a phantom line at the end of the source', () => {
-    expect(parseShellCommands('cat <<EOF\nbody\n')?.[0]?.heredocs).toEqual(['body\n']);
+    expect(parseShellCommands('cat <<EOF\nbody\n')?.[0]?.heredocs).toEqual([
+      { body: 'body\n', scope: '0' },
+    ]);
   });
 
   it('strips every leading tab, and only leading tabs, before comparing the delimiter', () => {
-    expect(parseShellCommands('cat <<-ab\na\tb\nab\nnext')?.[0]?.heredocs).toEqual(['a\tb\n']);
+    expect(parseShellCommands('cat <<-ab\na\tb\nab\nnext')?.[0]?.heredocs).toEqual([
+      { body: 'a\tb\n', scope: '0' },
+    ]);
 
     const commands = parseShellCommands('cat <<-EOF\n\t\tEOF\nnext');
 
-    expect(commands?.[0]?.heredocs).toEqual(['']);
+    expect(commands?.[0]?.heredocs).toEqual([{ body: '', scope: '0' }]);
     expect(commands?.map(({ words }) => words)).toContainEqual(['next']);
   });
 

@@ -8,6 +8,11 @@ export interface ShellInput {
   target: string;
 }
 
+interface ShellHeredoc {
+  body: string;
+  scope: string | undefined;
+}
+
 export interface ShellCommand {
   words: string[];
   // The words bash passes to the command: `words` without file descriptor numbers and redirection
@@ -15,9 +20,8 @@ export interface ShellCommand {
   arguments: string[];
   // The redirections that apply to the command, in source order.
   inputs: ShellInput[];
-  heredocs: string[];
-  // The scopes of the expanding heredoc bodies the command owns, in source order.
-  heredocScopes: string[];
+  // The heredoc bodies the command owns, in source order. Only an expanding body has a scope.
+  heredocs: ShellHeredoc[];
   // The parenthesis nesting depth of the command inside its scope, so a subshell keeps its own
   // directory.
   depth: number;
@@ -192,7 +196,7 @@ class ShellParser {
 
   // Each substitution or expanding heredoc body runs in its own scope, named by its parent and an
   // ordinal that is unique within the parse.
-  private childParser(source: string, scope = this.nextChildScope()): ShellParser {
+  private childParser(source: string, scope: string): ShellParser {
     return new ShellParser(source, scope);
   }
 
@@ -465,7 +469,6 @@ class ShellParser {
       arguments: [],
       inputs: [],
       heredocs: [],
-      heredocScopes: [],
       depth,
       scope: this.scope,
     };
@@ -570,7 +573,7 @@ class ShellParser {
     }
 
     this.position += 1;
-    const innerParser = this.childParser(inner);
+    const innerParser = this.childParser(inner, this.nextChildScope());
 
     innerParser.parseList(false);
     this.commands.push(...innerParser.commands);
@@ -625,14 +628,11 @@ class ShellParser {
   private readPendingHeredocs(): void {
     for (const heredoc of this.pendingHeredocs.splice(0)) {
       const body = this.readHeredocBody(heredoc);
+      const scope = heredoc.expands ? this.nextChildScope() : undefined;
 
-      heredoc.command.heredocs.push(body);
+      heredoc.command.heredocs.push({ body, scope });
 
-      if (heredoc.expands) {
-        const scope = this.nextChildScope();
-
-        heredoc.command.heredocScopes.push(scope);
-
+      if (scope !== undefined) {
         const bodyParser = this.childParser(body, scope);
 
         bodyParser.readExpandingText(undefined, false);

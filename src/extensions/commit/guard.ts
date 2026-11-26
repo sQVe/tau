@@ -139,7 +139,7 @@ const scriptsOf = (commands: ShellCommand[]) =>
       }
     }
 
-    return [...scripts, ...heredocs];
+    return [...scripts, ...heredocs.map(({ body }) => body)];
   });
 
 // Fail closed when nested scripts exceed the parser's inspection budget.
@@ -495,27 +495,31 @@ const commandOptionValue = (
   const word = words[index] ?? '';
 
   for (const option of commandOptions) {
+    if (!matchesOption(word, option)) {
+      continue;
+    }
+
     if (word === option) {
       return words[index + 1];
     }
 
-    if (word.startsWith(`${option}=`)) {
-      return word.slice(option.length + 1);
-    }
+    const attached = word.slice(option.length);
+
+    return attached.startsWith('=') ? attached.slice(1) : attached;
   }
 
   return undefined;
 };
 
-// The wrapper's own shell-code option comes before its first positional, or directly after the
-// single positional it takes, as in `flock lock -c 'cmd'`. A later option belongs to the wrapped
-// command.
+// `flock` permutes its options, so its own shell-code option can follow the lock file positional.
+// The scan stops at the wrapped command word, the second positional.
 const optionCommandCode = (
   words: string[],
   index: number,
   commandOptions: ReadonlySet<string>,
   valueOptions: ReadonlySet<string>,
 ): string | undefined => {
+  let positionals = 0;
   let next = index + 1;
 
   while (next < words.length) {
@@ -529,14 +533,26 @@ const optionCommandCode = (
 
     if (valueOptions.has(word)) {
       next += 2;
-    } else if (isOptionWord(word)) {
-      next += 1;
-    } else {
-      break;
+
+      continue;
     }
+
+    if (isOptionWord(word)) {
+      next += 1;
+
+      continue;
+    }
+
+    positionals += 1;
+
+    if (positionals > 1) {
+      return undefined;
+    }
+
+    next += 1;
   }
 
-  return commandOptionValue(words, next + 1, commandOptions);
+  return undefined;
 };
 
 const wrapperInlineCode = (words: string[]): string | undefined => {
@@ -604,41 +620,43 @@ const commandWord = ({ arguments: words }: ShellCommand): string | undefined => 
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
   const wrapperCode = wrapperInlineCode(command.arguments);
-  const code = wrapperCode === undefined ? [] : [wrapperCode];
+
+  if (wrapperCode !== undefined) {
+    return { files: [], code: [wrapperCode] };
+  }
+
   const index = commandWordIndex(command.arguments);
 
   if (index === undefined) {
-    return { files: [], code };
+    return { files: [], code: [] };
   }
 
   const word = command.arguments[index];
 
   if (word === undefined || !isInterpreter(word)) {
-    return { files: [], code };
+    return { files: [], code: [] };
   }
 
   const mode = shellMode(command.arguments.slice(index + 1));
   const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
-    return { files: [mode.name], code };
+    return { files: [mode.name], code: [] };
   }
 
   if (mode.kind === 'inline') {
-    const inlineCode = mode.code === undefined ? [] : [mode.code];
-
-    return { files: [], code: [...code, ...inlineCode] };
+    return { files: [], code: mode.code === undefined ? [] : [mode.code] };
   }
 
   if (stdin === undefined || stdin.kind === 'heredoc') {
-    return { files: [], code };
+    return { files: [], code: [] };
   }
 
   if (stdin.kind === 'hereString') {
-    return { files: [], code: [...code, stdin.target] };
+    return { files: [], code: [stdin.target] };
   }
 
-  return { files: [stdin.target], code };
+  return { files: [stdin.target], code: [] };
 };
 
 // A bare word resolves through `PATH`, so only a word with a path separator names a local file.
@@ -845,6 +863,18 @@ const readPathDirectories = (): string[] => {
   return path.split(delimiter).filter((directory) => directory !== '');
 };
 
+const recordHeredocBases = (
+  command: ShellCommand,
+  directory: string,
+  bases: Map<string, string>,
+): void => {
+  for (const { scope } of command.heredocs) {
+    if (scope !== undefined) {
+      bases.set(scope, directory);
+    }
+  }
+};
+
 const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0): boolean => {
   if (depth > maximumScriptDepth) {
     return true;
@@ -872,9 +902,7 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
     const directory = directoryFor(stack, command.depth);
     const scripts = namedScriptsOf(command, directory);
 
-    for (const scope of command.heredocScopes) {
-      bases.set(scope, directory);
-    }
+    recordHeredocBases(command, directory, bases);
 
     const blocks = (script: NamedScript) =>
       inspectNamedScript(script, state, (text) => inspect(script.cwd, text));

@@ -806,6 +806,9 @@ describe('guardToolCall', () => {
     ['flock --command', "flock --command 'sh commit.sh' lock"],
     ['flock --command=', "flock --command='sh commit.sh' lock"],
     ['flock -w 5 lock -c', "flock -w 5 lock -c 'sh commit.sh'"],
+    ['flock lock -w 5 -c', "flock lock -w 5 -c 'sh commit.sh'"],
+    ['flock lock -o -c', "flock lock -o -c 'sh commit.sh'"],
+    ["flock -c'sh commit.sh' lock", "flock -c'sh commit.sh' lock"],
   ])('blocks inline code after %s', (_label, command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -821,6 +824,12 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     expect(guard(makeBashEvent("flock lock -c 'git status'"), directory)).toBeUndefined();
+  });
+
+  it('allows an inline-code option that belongs to the wrapped shell', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent("flock lock sh -c 'git status'"), directory)).toBeUndefined();
   });
 
   it('blocks a script file named after a redirection target digit', () => {
