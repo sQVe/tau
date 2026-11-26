@@ -5,6 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
+import type { TestContext } from 'vitest';
 
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import type { QuestionRecord } from '../src/extensions/handoverQuestion/question/questionRecord.js';
@@ -32,6 +33,8 @@ interface Registration {
   handler: Handler;
   stack: string;
 }
+
+type RegisterCleanup = TestContext['onTestFinished'];
 
 const requireRegistration = (
   registration: Registration | undefined,
@@ -100,6 +103,131 @@ const answerRequest = (sessionId: string): MessageRequest => ({
     answer: 'Use option A.',
   },
 });
+
+const setupAnswerScenario = async (onTestFinished: RegisterCleanup) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-answer-order-');
+  const outside = temporaryDirectory(onTestFinished, 'tau-outside-repository-');
+  const sessionId = randomUUID();
+  const processGroup = 100;
+  const processCwd = vi.spyOn(process, 'cwd').mockReturnValue(outside);
+  const uid = process.getuid?.();
+
+  const socketPath =
+    uid === undefined ? undefined : socketPathFor(socketDirectoryFor(uid), sessionId);
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+  vi.stubEnv('TAU_ROLE', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+  vi.stubEnv('HC_TERMINAL_ID', 't-worker');
+
+  onTestFinished(() => {
+    processCwd.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  const fake = fakeExtensionApi({
+    exec: async (command) => {
+      if (command === 'ps') {
+        return succeededResult(`${String(processGroup)}\n`);
+      }
+
+      const labels = { 'tau.inbox': 'rpc1:/tmp/unused.sock' };
+
+      const foreground = {
+        pid: processGroup,
+        name: 'pi',
+        argv: ['pi'],
+        cwd: root,
+      };
+
+      const terminal = {
+        address: 't-worker',
+        state: 'live',
+        foreground,
+        labels,
+      };
+
+      return succeededResult(JSON.stringify(terminal));
+    },
+  });
+
+  const registered = recordRegistrations(fake);
+
+  await tauRegistration(fake.pi);
+
+  const handoverStart = requireRegistration(
+    registrationsFrom(registered, 'session_start', 'handoverQuestion/handoverQuestion.ts')[0],
+    'the handover question session start',
+  );
+
+  const inboxStart = requireRegistration(
+    registrationsFrom(registered, 'session_start', 'extensions/inbox/lifecycle.ts')[0],
+    'the inbox session start',
+  );
+
+  const inboxShutdown = requireRegistration(
+    registrationsFrom(registered, 'session_shutdown', 'extensions/inbox/lifecycle.ts')[0],
+    'the inbox session shutdown',
+  );
+
+  const beforeInboxShutdown = registered.filter(
+    (entry) => entry.name === 'session_shutdown' && entry.index < inboxShutdown.index,
+  );
+
+  await writeQuestionRecord(root, answerRecord(sessionId));
+
+  const check = acceptChecks()['handover-answer'];
+
+  if (check === undefined) {
+    throw new Error('Tau registered no handover-answer check.');
+  }
+
+  const request = answerRequest(sessionId);
+
+  const queued: MessageReply = {
+    protocol: 'rpc1',
+    kind: 'queued',
+    messageId: questionId,
+    terminal: 't-worker',
+    sessionId,
+  };
+
+  const save = () => Promise.resolve(queued);
+  const notify = vi.fn<(message: string, level?: string) => void>();
+
+  const context = {
+    cwd: root,
+    ui: { notify },
+    shutdown: vi.fn<() => void>(),
+    isProjectTrusted: (): boolean => true,
+    sessionManager: {
+      getSessionFile: () => join(root, 'answer-session.jsonl'),
+      getSessionId: () => sessionId,
+      getEntries: () => [],
+    },
+  } as unknown as ExtensionContext;
+
+  onTestFinished(async () => {
+    await inboxShutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
+  });
+
+  return {
+    root,
+    sessionId,
+    socketPath,
+    context,
+    notify,
+    handoverStart,
+    inboxStart,
+    beforeInboxShutdown,
+    check,
+    request,
+    queued,
+    save,
+  };
+};
 
 // Both tests register the process-wide handover checks, and setup can fail before a test can
 // register its own cleanup.
@@ -228,102 +356,35 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   expect(await readLiveLockHolder(lockPath)).toBeUndefined();
 });
 
-it('keeps the session directory while the inbox shuts down', async ({ onTestFinished }) => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-answer-shutdown-');
-  const outside = temporaryDirectory(onTestFinished, 'tau-outside-repository-');
-  const sessionId = randomUUID();
-  const processGroup = 100;
-  const processCwd = vi.spyOn(process, 'cwd').mockReturnValue(outside);
-
-  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
-  vi.stubEnv('TAU_ROLE', '');
-  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
-  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
-  vi.stubEnv('HC_TERMINAL_ID', 't-worker');
-
-  onTestFinished(() => {
-    processCwd.mockRestore();
-    vi.unstubAllEnvs();
-  });
-
-  const fake = fakeExtensionApi({
-    exec: async (command) => {
-      if (command === 'ps') {
-        return succeededResult(`${String(processGroup)}\n`);
-      }
-
-      const labels = { 'tau.inbox': 'rpc1:/tmp/unused.sock' };
-      const foreground = { pid: processGroup, name: 'pi', argv: ['pi'], cwd: root };
-      const terminal = { address: 't-worker', state: 'live', foreground, labels };
-
-      return succeededResult(JSON.stringify(terminal));
-    },
-  });
-
-  const registered = recordRegistrations(fake);
-
-  await tauRegistration(fake.pi);
-
-  const handoverStart = requireRegistration(
-    registrationsFrom(registered, 'session_start', 'handoverQuestion/handoverQuestion.ts')[0],
-    'the handover question session start',
-  );
-
-  const inboxStart = requireRegistration(
-    registrationsFrom(registered, 'session_start', 'extensions/inbox/lifecycle.ts')[0],
-    'the inbox session start',
-  );
-
-  const inboxShutdown = requireRegistration(
-    registrationsFrom(registered, 'session_shutdown', 'extensions/inbox/lifecycle.ts')[0],
-    'the inbox session shutdown',
-  );
-
-  const beforeInboxShutdown = registered.filter(
-    (entry) => entry.name === 'session_shutdown' && entry.index < inboxShutdown.index,
-  );
-
-  await writeQuestionRecord(root, answerRecord(sessionId));
-
-  const check = acceptChecks()['handover-answer'];
-
-  if (check === undefined) {
-    throw new Error('Tau registered no handover-answer check.');
-  }
-
-  const request = answerRequest(sessionId);
-
-  const queued: MessageReply = {
-    protocol: 'rpc1',
-    kind: 'queued',
-    messageId: questionId,
-    terminal: 't-worker',
+it('keeps the session directory through the shutdown handlers that run before the inbox', async ({
+  onTestFinished,
+}) => {
+  const {
+    root,
     sessionId,
-  };
+    socketPath,
+    context,
+    notify,
+    handoverStart,
+    inboxStart,
+    beforeInboxShutdown,
+    check,
+    request,
+    queued,
+    save,
+  } = await setupAnswerScenario(onTestFinished);
 
-  const save = () => Promise.resolve(queued);
-
-  const context = {
-    cwd: root,
-    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
-    shutdown: vi.fn<() => void>(),
-    isProjectTrusted: (): boolean => true,
-    sessionManager: {
-      getSessionFile: () => join(root, 'answer-session.jsonl'),
-      getSessionId: () => sessionId,
-      getEntries: () => [],
-    },
-  } as unknown as ExtensionContext;
-
-  onTestFinished(async () => {
-    await inboxShutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
-  });
+  if (socketPath === undefined) {
+    throw new Error('The inbox shutdown test needs a POSIX user ID.');
+  }
 
   expect(handoverStart.index).toBeLessThan(inboxStart.index);
 
   await handoverStart.handler({ type: 'session_start', reason: 'startup' } as never, context);
   await inboxStart.handler({ type: 'session_start', reason: 'startup' } as never, context);
+
+  expect(existsSync(socketPath)).toBe(true);
+  expect(notify).not.toHaveBeenCalled();
 
   for (const shutdown of beforeInboxShutdown) {
     await shutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
@@ -333,97 +394,17 @@ it('keeps the session directory while the inbox shuts down', async ({ onTestFini
 
   expect(await readQuestionRecord(root, questionId)).toEqual({
     kind: 'record',
-    record: { ...answerRecord(sessionId), state: 'answered', answer: 'Use option A.' },
+    record: {
+      ...answerRecord(sessionId),
+      state: 'answered',
+      answer: 'Use option A.',
+    },
   });
 });
 
 it('sets the session directory before the inbox accepts answers', async ({ onTestFinished }) => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-answer-order-');
-  const outside = temporaryDirectory(onTestFinished, 'tau-outside-repository-');
-  const sessionId = randomUUID();
-  const processGroup = 100;
-  const processCwd = vi.spyOn(process, 'cwd').mockReturnValue(outside);
-
-  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
-  vi.stubEnv('TAU_ROLE', '');
-  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
-  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
-  vi.stubEnv('HC_TERMINAL_ID', 't-worker');
-
-  onTestFinished(() => {
-    processCwd.mockRestore();
-    vi.unstubAllEnvs();
-  });
-
-  const fake = fakeExtensionApi({
-    exec: async (command) => {
-      if (command === 'ps') {
-        return succeededResult(`${String(processGroup)}\n`);
-      }
-
-      const labels = { 'tau.inbox': 'rpc1:/tmp/unused.sock' };
-      const foreground = { pid: processGroup, name: 'pi', argv: ['pi'], cwd: root };
-      const terminal = { address: 't-worker', state: 'live', foreground, labels };
-
-      return succeededResult(JSON.stringify(terminal));
-    },
-  });
-
-  const registered = recordRegistrations(fake);
-
-  await tauRegistration(fake.pi);
-
-  const handoverStart = requireRegistration(
-    registrationsFrom(registered, 'session_start', 'handoverQuestion/handoverQuestion.ts')[0],
-    'the handover question session start',
-  );
-
-  const inboxStart = requireRegistration(
-    registrationsFrom(registered, 'session_start', 'extensions/inbox/lifecycle.ts')[0],
-    'the inbox session start',
-  );
-
-  const inboxShutdown = requireRegistration(
-    registrationsFrom(registered, 'session_shutdown', 'extensions/inbox/lifecycle.ts')[0],
-    'the inbox session shutdown',
-  );
-
-  await writeQuestionRecord(root, answerRecord(sessionId));
-
-  const check = acceptChecks()['handover-answer'];
-
-  if (check === undefined) {
-    throw new Error('Tau registered no handover-answer check.');
-  }
-
-  const request = answerRequest(sessionId);
-
-  const queued: MessageReply = {
-    protocol: 'rpc1',
-    kind: 'queued',
-    messageId: questionId,
-    terminal: 't-worker',
-    sessionId,
-  };
-
-  const save = () => Promise.resolve(queued);
-
-  const context = {
-    cwd: root,
-    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
-    shutdown: vi.fn<() => void>(),
-    isProjectTrusted: (): boolean => true,
-    sessionManager: {
-      getSessionFile: () => join(root, 'answer-session.jsonl'),
-      getSessionId: () => sessionId,
-      getEntries: () => [],
-    },
-  } as unknown as ExtensionContext;
-
-  onTestFinished(async () => {
-    await inboxShutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
-  });
+  const { context, handoverStart, inboxStart, check, request, queued, save } =
+    await setupAnswerScenario(onTestFinished);
 
   const starts = [handoverStart, inboxStart].toSorted((left, right) => left.index - right.index);
   const beforeInbox = starts.filter((start) => start.index < inboxStart.index);
