@@ -11,16 +11,7 @@ export type ForegroundReader = (terminal: string) => Promise<readonly string[] |
 type StartRequest = Parameters<typeof startPiSession>[1];
 type LaunchRequest = Parameters<typeof launchPiSession>[1];
 type PaneRequest = Parameters<typeof launchPiSessionRightOf>[1];
-
-interface CommonRequest {
-  folder: string;
-  task: string;
-  model: string | undefined;
-  session: string | undefined;
-  bareRoot: boolean;
-  environment: Record<string, string> | undefined;
-  readForegroundArgv: ForegroundReader;
-}
+type CommonRequest = Omit<StartRequest, 'target' | 'tabName'>;
 
 export const readerFor = <Key extends string>(
   fake: ExecFake<Key>,

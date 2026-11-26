@@ -52,9 +52,6 @@ const requestFor = (
   sender: undefined,
 });
 
-const commandsOf = (fake: ExecFake<HerdrAppCommand>) =>
-  fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
-
 // The hc fake answers `hc` and the app fake answers `herdr-app`.
 const execAnsweringHc =
   (app: ExecFake<HerdrAppCommand>, hc: HcFake): ExecFake<HerdrAppCommand>['exec'] =>
@@ -81,6 +78,7 @@ const tabCommand = (root: string, argv: string, task: string, title: string) => 
     '--focus',
     'false',
   ],
+  signal: undefined,
 });
 
 it('names the tab after the handover title in an existing space', async () => {
@@ -119,7 +117,7 @@ it('opens a tab in the space with the file text as its task', async () => {
     spaceStatus: 'reused',
   });
 
-  expect(commandsOf(fake)).toEqual([
+  expect(fake.calls).toEqual([
     tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps'),
     readbackCall('t-new'),
   ]);
@@ -135,7 +133,7 @@ it('passes the lead as sender to the new tab', async () => {
     sender: { terminal: 't7', sessionId: 'lead-id' },
   });
 
-  expect(commandsOf(fake)).toEqual([
+  expect(fake.calls).toEqual([
     tabCommand(
       root,
       '["env","TAU_HANDOVER_SENDER_TERMINAL=t7","TAU_HANDOVER_SENDER_SESSION=lead-id","pi"]',
@@ -156,7 +154,7 @@ it('starts without a sender as today', async () => {
     sender: undefined,
   });
 
-  expect(commandsOf(fake)).toEqual([
+  expect(fake.calls).toEqual([
     tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps'),
     readbackCall('t-new'),
   ]);
@@ -417,13 +415,10 @@ it('returns the model the started terminal runs', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
-  const result = await startHandover(
-    { exec: app.exec, cwd: root },
-    {
-      ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
-      model: 'morph/morph-dsv41flash-1017',
-    },
-  );
+  const result = await startHandover(runtimeOf(app, root), {
+    ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+    model: 'morph/morph-dsv41flash-1017',
+  });
 
   expect(result.model).toBe('morph/morph-dsv41flash-1017');
   expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
