@@ -30,7 +30,10 @@ const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
 
 const attachmentSchema = Type.Object({
   url: Type.String(),
-  metadata: Type.Object({ linkKind: Type.Optional(Type.Union([Type.String(), Type.Null()])) }),
+  metadata: Type.Union([
+    Type.Object({ linkKind: Type.Optional(Type.Union([Type.String(), Type.Null()])) }),
+    Type.Null(),
+  ]),
 });
 
 type Attachment = Static<typeof attachmentSchema>;
@@ -96,8 +99,9 @@ const issuePullRequestsSchema = Type.Object({
 type ChildNode = Static<typeof childSchema>;
 
 // Linear records how a pull request refers to the issue: it closes the issue, or it only mentions
-// it. Only a closing pull request can prove the issue's work landed.
-const closesIssue = (attachment: Attachment) => attachment.metadata.linkKind === 'closes';
+// it. Only a closing pull request can prove the issue's work landed, and a link without that record
+// closes nothing.
+const closesIssue = (attachment: Attachment) => attachment.metadata?.linkKind === 'closes';
 
 const readPullRequests = async (
   exec: Exec,

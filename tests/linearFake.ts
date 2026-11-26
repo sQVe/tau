@@ -126,8 +126,8 @@ const savedDescription = (description: string) => {
   return lines.join('\n');
 };
 
-// Linear reports how a linked pull request refers to an issue: it closes the issue, or it only
-// mentions it.
+// A linked pull request either closes the issue, only mentions it, or arrives without Linear's
+// record of either.
 const attachmentNodes = (issue: FakeIssue, fields: { metadata: boolean }) => [
   ...issue.pullRequests.map((url) => ({
     url,
@@ -137,7 +137,7 @@ const attachmentNodes = (issue: FakeIssue, fields: { metadata: boolean }) => [
     url,
     ...(fields.metadata ? { metadata: { linkKind: 'links' } } : {}),
   })),
-  ...issue.plainLinks.map((url) => ({ url, ...(fields.metadata ? { metadata: {} } : {}) })),
+  ...issue.plainLinks.map((url) => ({ url, ...(fields.metadata ? { metadata: null } : {}) })),
 ];
 
 const childNode = (

@@ -100,7 +100,7 @@ it('does not read a mention-only merged pull request as merged', async () => {
   expect(fake.writes()).toEqual([]);
 });
 
-it('does not read a merged pull request without a link kind as merged', async () => {
+it('does not read a merged pull request without attachment metadata as merged', async () => {
   const { fake, read } = await setUp();
 
   fake.addIssue({
