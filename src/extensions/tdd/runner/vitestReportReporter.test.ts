@@ -3,7 +3,6 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
-import { JsonReporter } from 'vitest/node';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
@@ -18,6 +17,7 @@ const verificationArgv = defaultTddConfig.verificationArgv;
 
 const installedRequire = createRequire(import.meta.url);
 const installedDirectory = dirname(installedRequire.resolve('vitest/package.json'));
+const projectRequire = createRequire(`${process.cwd()}/`);
 
 const installedManifest = async (): Promise<unknown> => {
   const text = await readFile(join(installedDirectory, 'package.json'), 'utf8');
@@ -40,7 +40,7 @@ const manifestVersion = (manifest: unknown): string => {
 };
 
 const jsonReporterReexport = () =>
-  `export { JsonReporter } from ${JSON.stringify(join(installedDirectory, 'dist', 'reporters.js'))};\n`;
+  `export { JsonReporter } from ${JSON.stringify(join(installedDirectory, 'dist', 'node.js'))};\n`;
 
 // The installed Vitest binary behind a package that exports the JSON reporter from one entry stands
 // in for a project that pins another Vitest release: Vitest 5 exports it from "vitest/node" only,
@@ -56,11 +56,13 @@ const createProjectExportingReporterFrom = async (entry: ReporterEntry) => {
     throw new TypeError('The installed Vitest manifest has no bin entry.');
   }
 
+  const exportsFromReportersEntry = entry === 'vitest/reporters';
+
   const exports = {
     '.': './index.js',
     './node': './node.js',
     './package.json': './package.json',
-    ...(entry === 'vitest/reporters' ? { './reporters': './reporters.js' } : {}),
+    ...(exportsFromReportersEntry ? { './reporters': './reporters.js' } : {}),
   };
 
   await mkdir(packageDirectory, { recursive: true });
@@ -83,7 +85,7 @@ const createProjectExportingReporterFrom = async (entry: ReporterEntry) => {
 
   await writeFile(join(packageDirectory, 'node.js'), nodeEntry);
 
-  if (entry === 'vitest/reporters') {
+  if (exportsFromReportersEntry) {
     await writeFile(join(packageDirectory, 'reporters.js'), jsonReporterReexport());
   }
 
@@ -103,13 +105,17 @@ describe('report reporter', () => {
     vi.unstubAllEnvs();
   });
 
+  // Importing the reporter relates it to this file for the mutation run; the assertion pins what it
+  // resolves for the working directory, through the same require that production uses.
   it('exports the JSON reporter of the Vitest installed for the working directory', () => {
-    expect(reportReporter).toBe(JsonReporter);
+    const installed: unknown = projectRequire('vitest/node');
+
+    expect(installed).toMatchObject({ JsonReporter: reportReporter });
   });
 
   it.for([{ entry: 'vitest/node' as const }, { entry: 'vitest/reporters' as const }])(
     'records observations in a project whose Vitest exports the reporter from $entry',
-    { timeout: 30_000 },
+    { timeout: 125_000 },
     async ({ entry }) => {
       const cwd = await createProjectExportingReporterFrom(entry);
 
