@@ -148,7 +148,7 @@ it('shows no warning when the worker reports before the warning time', async () 
     context,
   );
 
-  // The timer git arms to drain a child's streams once the child exits.
+  // A timer that belongs to git's stream drain, not to the warning: the count must ignore it.
   setTimeout(() => undefined, outputIdleMilliseconds);
 
   expect(clock.armedWarningTimers()).toBe(0);
@@ -270,7 +270,7 @@ it('shows no warning when the warning is cleared while the report read is pendin
 });
 
 it('does not warn again when the start message arrives twice', async () => {
-  withFakeTimers();
+  const clock = withFakeTimers();
   const { context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
@@ -285,6 +285,8 @@ it('does not warn again when the start message arrives twice', async () => {
   await vi.waitFor(() => {
     expect(pi.sendMessage).toHaveBeenCalledTimes(1);
   });
+
+  expect(clock.armedWarningTimers()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
 
