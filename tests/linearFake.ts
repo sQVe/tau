@@ -32,6 +32,7 @@ interface FakeIssue {
   sortOrder: number;
   state: Readonly<{ type: StateType; name: string }>;
   pullRequests: string[];
+  mentions: string[];
   blockedBy: string[];
   inverseRelations: { type: string; identifier: string }[];
 }
@@ -111,6 +112,13 @@ const savedDescription = (description: string) => {
   return lines.join('\n');
 };
 
+// Linear reports how a linked pull request refers to an issue: it closes the issue, or it only
+// mentions it.
+const attachmentNodes = (issue: FakeIssue) => [
+  ...issue.pullRequests.map((url) => ({ url, metadata: { linkKind: 'closes' } })),
+  ...issue.mentions.map((url) => ({ url, metadata: { linkKind: 'links' } })),
+];
+
 const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   identifier: issue.identifier,
   branchName: issue.branchName,
@@ -123,7 +131,7 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   creator: issue.creatorId === null ? null : { id: issue.creatorId },
   assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
   state: issue.state,
-  attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
+  attachments: { nodes: attachmentNodes(issue) },
   inverseRelations: {
     nodes: [
       ...issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
@@ -174,6 +182,7 @@ export const createLinearFake = (): LinearFake => {
       sortOrder: [...issues.values()].filter((other) => other.parent === issue.parent).length,
       state: { type: 'started', name: 'In Progress' },
       pullRequests: [],
+      mentions: [],
       blockedBy: [],
       inverseRelations: [],
       ...issue,

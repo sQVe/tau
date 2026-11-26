@@ -79,6 +79,27 @@ it('picks the first ready child and reads the remote default branch', async () =
   expect(fake.writes()).toEqual([]);
 });
 
+it('does not read a mention-only merged pull request as merged', async () => {
+  const { fake, read } = await setUp();
+
+  fake.addIssue({
+    identifier: 'ME-2',
+    title: 'Mentioned',
+    state: { type: 'backlog', name: 'Backlog' },
+    mentions: ['https://github.com/me/repo/pull/2'],
+  });
+
+  fake.mergedPullRequests.add('https://github.com/me/repo/pull/2');
+
+  const result = await read('ME-2');
+
+  expect(result.details).toMatchObject({
+    pick: { chosen: { identifier: 'ME-2' }, slices: [{ identifier: 'ME-2', status: 'ready' }] },
+  });
+
+  expect(fake.writes()).toEqual([]);
+});
+
 it.each([
   { kind: 'child', stateType: 'completed', status: 'completedWithoutMergedPr' },
   { kind: 'child', stateType: 'canceled', status: 'canceled' },

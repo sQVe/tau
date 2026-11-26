@@ -20,12 +20,22 @@ type ReadContainer = Omit<LinearContainer, 'children'> &
   };
 
 const containerQuery =
-  'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url branchName inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url branchName team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
+  'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url branchName inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url metadata } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url branchName team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url metadata } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
 
 const issuePullRequestsQuery =
-  'query($id: String!) { issue(id: $id) { attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } } }';
+  'query($id: String!) { issue(id: $id) { attachments(first: 100) { pageInfo { hasNextPage } nodes { url metadata } } } }';
 
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
+
+const attachmentSchema = Type.Object({
+  url: Type.String(),
+  metadata: Type.Union([
+    Type.Object({ linkKind: Type.Optional(Type.Union([Type.String(), Type.Null()])) }),
+    Type.Null(),
+  ]),
+});
+
+type Attachment = Static<typeof attachmentSchema>;
 
 const userSchema = Type.Union([Type.Object({ id: Type.String() }), Type.Null()]);
 
@@ -42,7 +52,7 @@ const childSchema = Type.Object({
   state: Type.Object({ type: Type.String() }),
   attachments: Type.Object({
     pageInfo: pageInfoSchema,
-    nodes: Type.Array(Type.Object({ url: Type.String() })),
+    nodes: Type.Array(attachmentSchema),
   }),
   inverseRelations: Type.Object({
     pageInfo: pageInfoSchema,
@@ -66,7 +76,7 @@ const containerSchema = Type.Object({
       state: Type.Object({ type: Type.String() }),
       attachments: Type.Object({
         pageInfo: pageInfoSchema,
-        nodes: Type.Array(Type.Object({ url: Type.String() })),
+        nodes: Type.Array(attachmentSchema),
       }),
       assignee: userSchema,
       creator: userSchema,
@@ -87,13 +97,18 @@ const issuePullRequestsSchema = Type.Object({
 
 type ChildNode = Static<typeof childSchema>;
 
+// Linear marks a pull request that fixes an issue as `closes`. One that only mentions the issue
+// did not land its work.
+const closesIssue = (attachment: Attachment) => attachment.metadata?.linkKind === 'closes';
+
 const readPullRequests = async (
   exec: Exec,
   cwd: string,
-  urls: readonly string[],
+  attachments: readonly Attachment[],
   states: Map<string, Promise<string>>,
 ) => {
   const runtime = { exec, cwd, signal: undefined };
+  const urls = attachments.filter(closesIssue).map((attachment) => attachment.url);
   const pullRequests = urls.filter(isPullRequestUrl);
 
   return Promise.all(
@@ -132,9 +147,9 @@ export const readIssuePullRequests = async (
     throw new Error(`${identifier} has more than one Linear page of attachments.`);
   }
 
-  const urls = issue.attachments.nodes.map((attachment) => attachment.url);
+  const attachments = issue.attachments.nodes;
 
-  return readPullRequests(exec, cwd, urls, states);
+  return readPullRequests(exec, cwd, attachments, states);
 };
 
 const toChild = async (
@@ -143,12 +158,7 @@ const toChild = async (
   node: ChildNode,
   states: Map<string, Promise<string>>,
 ): Promise<LinearChild & PickEvidence> => {
-  const pullRequests = await readPullRequests(
-    exec,
-    cwd,
-    node.attachments.nodes.map((attachment) => attachment.url),
-    states,
-  );
+  const pullRequests = await readPullRequests(exec, cwd, node.attachments.nodes, states);
 
   return {
     branchName: node.branchName,
@@ -209,8 +219,7 @@ export const readContainer = async (
     .toSorted((left, right) => left.subIssueSortOrder - right.subIssueSortOrder);
 
   const children = await Promise.all(nodes.map((node) => toChild(exec, cwd, node, states)));
-  const attachmentUrls = issue.attachments.nodes.map((attachment) => attachment.url);
-  const pullRequests = await readPullRequests(exec, cwd, attachmentUrls, states);
+  const pullRequests = await readPullRequests(exec, cwd, issue.attachments.nodes, states);
 
   return {
     id: issue.id,
