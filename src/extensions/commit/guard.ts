@@ -482,7 +482,13 @@ const appletWord = (
 const appletInterpreter = (words: string[]): string | undefined => {
   const applet = appletWord(words, 0);
 
-  return applet === undefined ? undefined : commandName(applet.word);
+  if (applet !== undefined) {
+    return commandName(applet.word);
+  }
+
+  const [first] = words;
+
+  return first === undefined ? undefined : commandName(first);
 };
 
 const shebangInterpreter = (text: string): string | undefined => {
@@ -1017,11 +1023,7 @@ const namedScriptsOf = (
 const factsKey = (path: string, failClosed: boolean): string =>
   `${failClosed ? 'closed' : 'open'}:${path}`;
 
-const scriptFacts = (
-  path: string,
-  state: GuardState,
-  failClosed: boolean,
-): NamedFileFacts | undefined => {
+const scriptFacts = (path: string, state: GuardState, failClosed: boolean): NamedFileFacts => {
   const key = factsKey(path, failClosed);
   const cached = state.facts.get(key);
 
@@ -1075,10 +1077,6 @@ const inspectNamedScript = (
 ): boolean => {
   for (const [index, path] of candidatePaths(script).entries()) {
     const facts = scriptFacts(path, state, index === 0);
-
-    if (facts === undefined) {
-      return true;
-    }
 
     if (facts.kind === 'missing') {
       continue;
