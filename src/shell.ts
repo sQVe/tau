@@ -53,9 +53,251 @@ interface ListState {
   unitStarts: number[];
   // The first command index of the group at each nesting depth.
   groupStarts: number[];
+  // The open compound keywords, with the first command index of each.
+  compounds: { closer: string; start: number }[];
+  // The first command index of a compound that closed in the word just finished.
+  closedCompound: number | undefined;
   continuesList: boolean;
   closesSubstitution: boolean;
 }
+
+export interface CommandWords {
+  readonly words: readonly string[];
+  readonly lookup: boolean;
+}
+
+interface CommandStart {
+  // The index of the word the shell runs as the command, or the word count when none follows.
+  readonly index: number;
+  readonly wrappers: readonly { readonly name: string; readonly index: number }[];
+  readonly lookup: boolean;
+}
+
+// The name a word runs, without its directory.
+export const commandNameOf = (word: string): string => word.slice(word.lastIndexOf('/') + 1);
+
+const shellNames: ReadonlySet<string> = new Set([
+  'ash',
+  'bash',
+  'dash',
+  'ksh',
+  'mksh',
+  'sh',
+  'zsh',
+]);
+
+// A word that runs the command after it instead of being the command itself.
+export const commandKeywords: ReadonlySet<string> = new Set([
+  '!',
+  '{',
+  'do',
+  'elif',
+  'else',
+  'if',
+  'then',
+  'until',
+  'while',
+]);
+
+// Each wrapper runs the command after its own options and fixed arguments. The set lists the
+// options that take the next word as their value.
+export const wrapperValueOptions: Readonly<Record<string, ReadonlySet<string>>> = {
+  chroot: new Set(['--groups', '--userspec']),
+  command: new Set(),
+  doas: new Set(['-C', '-a', '-u']),
+  env: new Set(['-C', '-S', '-u', '--chdir', '--split-string', '--unset']),
+  exec: new Set(['-a']),
+  flock: new Set(['-E', '-c', '-w', '--command', '--conflict-exit-code', '--timeout']),
+  nice: new Set(['-n', '--adjustment']),
+  nohup: new Set(),
+  setsid: new Set(),
+  stdbuf: new Set(['-e', '-i', '-o', '--error', '--input', '--output']),
+  sudo: new Set([
+    '-C',
+    '-D',
+    '-R',
+    '-T',
+    '-U',
+    '-a',
+    '-c',
+    '-g',
+    '-h',
+    '-p',
+    '-r',
+    '-t',
+    '-u',
+    '--auth-type',
+    '--chdir',
+    '--chroot',
+    '--close-from',
+    '--command-timeout',
+    '--group',
+    '--host',
+    '--login-class',
+    '--other-user',
+    '--prompt',
+    '--role',
+    '--type',
+    '--user',
+  ]),
+  time: new Set(['-f', '-o', '--format', '--output']),
+  timeout: new Set(['-k', '-s', '--kill-after', '--signal']),
+  watch: new Set(['-n', '-q', '--equexit', '--interval']),
+  xargs: new Set([
+    '-a',
+    '-d',
+    '-E',
+    '-I',
+    '-L',
+    '-n',
+    '-P',
+    '-s',
+    '--arg-file',
+    '--delimiter',
+    '--eof',
+    '--max-args',
+    '--max-chars',
+    '--max-lines',
+    '--max-procs',
+    '--process-slot-var',
+    '--replace',
+  ]),
+};
+
+// The fixed arguments a wrapper takes before the command it runs.
+const wrapperArguments: Readonly<Record<string, number>> = {
+  chroot: 1,
+  flock: 1,
+  timeout: 1,
+};
+
+// The wrappers that run a script through a shell, and the options that name that script. `watch`
+// has no option: it joins its remaining words and hands them to `sh -c`.
+const scriptWrapperNames: ReadonlySet<string> = new Set(['flock', 'watch']);
+const flockScriptOptions: ReadonlySet<string> = new Set(['-c', '--command']);
+
+const emptyOptionValues: ReadonlySet<string> = new Set();
+const assignmentPattern = /^[A-Za-z_][A-Za-z0-9_]*=/u;
+// `command -v` and `command -V`, also combined with `-p`, describe the command instead of running
+// it.
+const lookupOptionPattern = /^-p*[vV][pvV]*$/u;
+
+const optionEnd = (
+  words: readonly string[],
+  start: number,
+  valueOptions: ReadonlySet<string>,
+): number => {
+  let index = start;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+
+    if (!word.startsWith('-')) {
+      return index;
+    }
+
+    index += valueOptions.has(word) ? 2 : 1;
+  }
+
+  return index;
+};
+
+// Walks the leading assignments, keywords, and wrappers to the command they run.
+const commandStart = (words: readonly string[]): CommandStart => {
+  const wrappers: { name: string; index: number }[] = [];
+  let index = 0;
+  let lookup = false;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+    const name = commandNameOf(word);
+    const valueOptions = wrapperValueOptions[name];
+
+    if (commandKeywords.has(word) || assignmentPattern.test(word)) {
+      index += 1;
+    } else if (valueOptions === undefined) {
+      break;
+    } else {
+      const afterOptions = optionEnd(words, index + 1, valueOptions);
+      const options = words.slice(index + 1, afterOptions);
+
+      lookup ||= name === 'command' && options.some((option) => lookupOptionPattern.test(option));
+      wrappers.push({ name, index });
+      index = afterOptions + (wrapperArguments[name] ?? 0);
+    }
+  }
+
+  return { index, wrappers, lookup };
+};
+
+// The words a wrapper or keyword runs as a command. `lookup` is true when a `command -v` or
+// `command -V` wrapper names a command instead of running it.
+export const commandWords = (words: readonly string[]): CommandWords => {
+  const { index, lookup } = commandStart(words);
+
+  return { words: words.slice(index), lookup };
+};
+
+const shellOptionScript = (words: readonly string[]): string | undefined => {
+  const optionIndex = words.findIndex((word) => /^-[a-z]*c[a-z]*$/u.test(word));
+
+  return optionIndex === -1 ? undefined : words[optionIndex + 1];
+};
+
+const scriptOptionValue = (
+  words: readonly string[],
+  start: number,
+  end: number,
+): string | undefined => {
+  for (let index = start; index < end; index += 1) {
+    if (flockScriptOptions.has(words[index] ?? '')) {
+      return words[index + 1];
+    }
+  }
+
+  return undefined;
+};
+
+// `flock` takes its script as an option value, either before or after the lock file.
+const flockScript = (words: readonly string[]): string | undefined => {
+  const fileIndex = optionEnd(words, 1, wrapperValueOptions.flock ?? emptyOptionValues);
+  const beforeFile = scriptOptionValue(words, 1, fileIndex);
+
+  return beforeFile ?? scriptOptionValue(words, fileIndex + 1, fileIndex + 2);
+};
+
+// `watch` joins its remaining words and hands them to `sh -c`, so they are the script text.
+const watchScript = (words: readonly string[]): string | undefined => {
+  const start = optionEnd(words, 1, wrapperValueOptions.watch ?? emptyOptionValues);
+  const script = words.slice(start).join(' ');
+
+  return script === '' ? undefined : script;
+};
+
+const wrapperScript = (name: string, words: readonly string[]): string | undefined =>
+  name === 'watch' ? watchScript(words) : flockScript(words);
+
+// The script a command runs through a shell: a shell's `-c` word, a wrapper's script option, or
+// the words `watch` joins.
+export const shellScriptOf = (words: readonly string[]): string | undefined => {
+  const { index, wrappers, lookup } = commandStart(words);
+
+  if (lookup) {
+    return undefined;
+  }
+
+  const headName = commandNameOf(words[index] ?? '');
+
+  if (shellNames.has(headName)) {
+    return shellOptionScript(words.slice(index + 1));
+  }
+
+  const scriptWrapper = wrappers.findLast(({ name }) => scriptWrapperNames.has(name));
+
+  return scriptWrapper === undefined
+    ? undefined
+    : wrapperScript(scriptWrapper.name, words.slice(scriptWrapper.index));
+};
 
 export const quoteShellArgument = (argument: string): string =>
   /^[A-Za-z0-9_./@%+=:,-]+$/u.test(argument)
@@ -71,6 +313,19 @@ const doubledRedirectionOperators = ['<>', '<&', '>>', '>&', '>|'] as const;
 
 const separatorLength = (character: string, next: string): number =>
   multiCharacterSeparators.has(character + next) ? 2 : 1;
+
+// A compound keyword runs the commands up to its closer as one unit.
+const compoundClosers: Readonly<Record<string, string>> = {
+  '{': '}',
+  case: 'esac',
+  for: 'done',
+  if: 'fi',
+  select: 'done',
+  until: 'done',
+  while: 'done',
+};
+
+const closingKeywords: ReadonlySet<string> = new Set(['}', 'done', 'esac', 'fi']);
 
 const isBackgroundSeparator = (character: string, length: number): boolean =>
   character === '&' && length === 1;
@@ -175,7 +430,7 @@ class ShellParser {
   private readonly source: string;
   private position = 0;
   private readonly pendingHeredocs: PendingHeredoc[] = [];
-  private readonly heredocBodyCommands = new Set<ShellCommand>();
+  private readonly heredocOwners = new Map<ShellCommand, ShellCommand>();
 
   constructor(source: string) {
     this.source = source;
@@ -196,6 +451,8 @@ class ShellParser {
       depth: 0,
       unitStarts: [firstCommand],
       groupStarts: [],
+      compounds: [],
+      closedCompound: undefined,
       continuesList: false,
       closesSubstitution,
     };
@@ -366,6 +623,10 @@ class ShellParser {
     this.finishWord(state);
     rejectPendingHeredoc(state);
 
+    const compoundStart = state.closedCompound;
+
+    state.closedCompound = undefined;
+
     if (continuesListOnNewline(character, state.continuesList)) {
       this.position += 1;
       this.readPendingHeredocs();
@@ -384,7 +645,7 @@ class ShellParser {
     }
 
     if (isBackground) {
-      this.backgroundUnit(state);
+      this.backgroundUnit(state, compoundStart);
     }
 
     const endsUnit = endsListUnit(character, isBackground);
@@ -413,14 +674,19 @@ class ShellParser {
     return false;
   }
 
-  // A trailing `&` backgrounds the whole pipeline or list unit, not only its last command. A
-  // command parsed from a heredoc body is produced by expanding the redirection, not by running a
-  // member of that pipeline, so it stays in the foreground.
-  private backgroundUnit(state: ListState): void {
-    const start = state.unitStarts.at(-1) ?? 0;
+  // A trailing `&` backgrounds the whole pipeline or list unit, not only its last command, and the
+  // whole compound when it follows the compound's closing keyword. A command parsed from a heredoc
+  // body runs when the command that carries the heredoc expands the body, so it joins the
+  // background unit only when that command does.
+  private backgroundUnit(state: ListState, compoundStart: number | undefined): void {
+    const start = compoundStart ?? state.unitStarts.at(-1) ?? 0;
+    const unit = this.commands.slice(start);
+    const backgrounded = new Set(unit);
 
-    for (const command of this.commands.slice(start)) {
-      if (!this.heredocBodyCommands.has(command)) {
+    for (const command of unit) {
+      const owner = this.heredocOwners.get(command);
+
+      if (owner === undefined || backgrounded.has(owner)) {
         command.background = true;
       }
     }
@@ -460,6 +726,10 @@ class ShellParser {
 
       if (!isIoNumber(word, wordQuoted, redirectionFollows) && !redirectionTarget) {
         state.command.arguments.push(word);
+
+        if (state.command.arguments.length === 1 && !wordQuoted) {
+          this.trackCompound(state, word);
+        }
       }
 
       if (redirectionTarget && pendingRedirection !== undefined) {
@@ -483,6 +753,23 @@ class ShellParser {
     state.pendingRedirection = undefined;
     state.word = undefined;
     state.wordQuoted = false;
+  }
+
+  // A compound keyword runs the commands up to its closer as one unit, so a trailing `&` after the
+  // closer backgrounds the whole compound instead of only the closer's command.
+  private trackCompound(state: ListState, word: string): void {
+    const start = this.commands.indexOf(state.command);
+    const closer = compoundClosers[word];
+
+    if (start === -1) {
+      return;
+    }
+
+    if (closer !== undefined) {
+      state.compounds.push({ closer, start });
+    } else if (closingKeywords.has(word) && state.compounds.at(-1)?.closer === word) {
+      state.closedCompound = state.compounds.pop()?.start;
+    }
   }
 
   private readDoubleQuotedEscape(): string {
@@ -627,6 +914,10 @@ class ShellParser {
       this.offsetCommand(command, base);
     }
 
+    for (const [command, owner] of innerParser.heredocOwners) {
+      this.heredocOwners.set(command, owner);
+    }
+
     this.commands.push(...innerParser.commands);
 
     return `\`${inner}\``;
@@ -693,7 +984,7 @@ class ShellParser {
 
         for (const command of bodyParser.commands) {
           this.offsetCommand(command, base);
-          this.heredocBodyCommands.add(command);
+          this.heredocOwners.set(command, heredoc.command);
         }
 
         this.commands.push(...bodyParser.commands);

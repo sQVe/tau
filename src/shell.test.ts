@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseShellCommands } from './shell.js';
+import {
+  commandKeywords,
+  commandWords,
+  parseShellCommands,
+  shellScriptOf,
+  wrapperValueOptions,
+} from './shell.js';
 
 const wordsOf = (source: string) =>
   parseShellCommands(source)
@@ -119,6 +125,14 @@ describe('parseShellCommands', () => {
       'a heredoc body command before a background unit',
       'cat <<EOF\n$(touch x 2>/dev/null)\nEOF\nother &',
       [false, true, false],
+    ],
+    ['an if compound with a trailing ampersand', 'if a; then b; fi &', [true, true, true]],
+    ['a brace compound with a trailing ampersand', '{ a; } &', [true, true]],
+    ['a background inside an if compound', 'if a; then b & fi', [false, true, false]],
+    [
+      'a command before an if compound with a trailing ampersand',
+      'a; if b; then c; fi &',
+      [false, true, true, true],
     ],
   ])(
     'marks background inside the unit that ends with an ampersand: %s',
@@ -350,6 +364,14 @@ describe('parseShellCommands', () => {
     ]);
   });
 
+  it('keeps a heredoc body command inside a command substitution in the background unit', () => {
+    expect(backgroundsOf('echo $(cat <<EOF\n$(touch x 2>/dev/null)\nEOF\n) &')).toEqual([
+      true,
+      true,
+      true,
+    ]);
+  });
+
   it('strips leading tabs from the delimiter line only for <<-', () => {
     expect(parseShellCommands('cat <<-EOF\n\tbody\n\tEOF\nnext')?.[0]?.heredocs).toEqual([
       '\tbody\n',
@@ -481,4 +503,53 @@ describe('parseShellCommands', () => {
       expect(commands?.map(({ words }) => words)).toContainEqual(['git', 'commit']);
     },
   );
+});
+
+const wrapperOptions = Object.entries(wrapperValueOptions).flatMap(([name, options]) =>
+  [...options].map((option) => ({ name, option })),
+);
+
+const wrapperFixedArguments = (name: string): string[] =>
+  ['chroot', 'flock', 'timeout'].includes(name) ? ['root'] : [];
+
+describe('commandWords and shellScriptOf', () => {
+  it.each(wrapperOptions)(
+    'reads the command head past the $name option $option',
+    ({ name, option }) => {
+      const words = [name, option, 'value', ...wrapperFixedArguments(name), 'sh', '-c', 'cmd'];
+
+      expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
+      expect(shellScriptOf(words)).toBe('cmd');
+    },
+  );
+
+  it.each([...commandKeywords])('reads the command head past the %s keyword', (keyword) => {
+    const words = [keyword, 'sh', '-c', 'cmd'];
+
+    expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
+    expect(shellScriptOf(words)).toBe('cmd');
+  });
+
+  it('reads a flock script option before and after the lock file', () => {
+    expect(shellScriptOf(['flock', '-c', 'cmd 2>/dev/null', '/tmp/lock'])).toBe('cmd 2>/dev/null');
+    expect(shellScriptOf(['flock', '/tmp/lock', '-c', 'cmd 2>/dev/null'])).toBe('cmd 2>/dev/null');
+  });
+
+  it('joins the words watch hands to its shell', () => {
+    expect(shellScriptOf(['watch', '-n', '1', 'cmd 2>/dev/null'])).toBe('cmd 2>/dev/null');
+  });
+
+  it('marks a command lookup instead of a command', () => {
+    expect(commandWords(['command', '-v', 'sh', '-c', 'cmd'])).toEqual({
+      words: ['sh', '-c', 'cmd'],
+      lookup: true,
+    });
+
+    expect(commandWords(['command', '-p', '--', 'hc', 'send'])).toEqual({
+      words: ['hc', 'send'],
+      lookup: false,
+    });
+
+    expect(shellScriptOf(['command', '-v', 'sh', '-c', 'cmd'])).toBeUndefined();
+  });
 });

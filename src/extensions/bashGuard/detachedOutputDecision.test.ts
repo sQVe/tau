@@ -17,7 +17,31 @@ it('allows the logged setsid close whose inner command writes a log', () => {
   expect(decideDetachedOutput({ toolName: 'bash', command: loggedClose })).toBeUndefined();
 });
 
+// Each wrapper prefix runs the shell after it, so the guard must judge the same hidden failure.
+const wrapperPrefixes: readonly (readonly [string, string])[] = [
+  ['a timeout', 'timeout -k 1 5'],
+  ['an env assignment', 'env FOO=1'],
+  ['a leading assignment', 'FOO=1'],
+  ['a negation', '!'],
+  ['a doas user option', 'doas -u root'],
+  ['a sudo chroot', 'sudo -R /newroot'],
+  ['a time output option', 'time -o /tmp/x.log'],
+  ['a nice adjustment', 'nice -n 5'],
+  ['a stdbuf option', 'stdbuf -oL'],
+  ['an xargs option', 'xargs -n 1'],
+  ['a flock lock file', 'flock -w 5 /tmp/lock'],
+  ['a chroot root', 'chroot /newroot'],
+  ['a watch interval', 'watch -n 1'],
+];
+
+const wrapperRows = wrapperPrefixes.map(([name, prefix]) => ({
+  name: `a detached script behind ${name}`,
+  command: `${prefix} sh -c 'cmd 2>/dev/null' &`,
+  blocked: true,
+}));
+
 it.each<{ name: string; command: string; blocked: boolean }>([
+  ...wrapperRows,
   { name: 'a detached command that keeps stderr', command: 'cmd &', blocked: false },
   {
     name: 'a detached command with stderr to /dev/null',
@@ -218,6 +242,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a heredoc body command inside a command substitution before a background unit',
+    command: 'echo $(cat <<EOF\n$(touch x 2>/dev/null)\nEOF\n) &',
+    blocked: true,
+  },
+  {
     name: 'stderr duplicated from an inherited descriptor',
     command: 'cmd 2>&3 3>/dev/null &',
     blocked: true,
@@ -258,69 +287,59 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: false,
   },
   {
-    name: 'a detached script behind a timeout',
-    command: "timeout -k 1 5 sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached script behind a sudo login class',
+    command: "sudo -c staff sh -c 'cmd 2>/dev/null' &",
     blocked: true,
   },
   {
-    name: 'a detached script behind an env assignment',
-    command: "env FOO=1 sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached script behind a sudo long login class',
+    command: "sudo --login-class staff sh -c 'cmd 2>/dev/null' &",
     blocked: true,
   },
   {
-    name: 'a detached script behind a leading assignment',
-    command: "FOO=1 sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached script behind a sudo auth type',
+    command: "sudo -a pam sh -c 'cmd 2>/dev/null' &",
     blocked: true,
   },
   {
-    name: 'a detached script behind a negation',
-    command: "! sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached script behind a sudo long auth type',
+    command: "sudo --auth-type pam sh -c 'cmd 2>/dev/null' &",
     blocked: true,
   },
   {
-    name: 'a detached script behind a doas option',
-    command: "doas -u root sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached script behind a doas auth type',
+    command: "doas -a style sh -c 'cmd 2>/dev/null' &",
     blocked: true,
   },
   {
-    name: 'a detached script behind a sudo chroot',
-    command: "sudo -R /newroot sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached flock script option before the lock file',
+    command: "flock -c 'cmd 2>/dev/null' /tmp/lock &",
     blocked: true,
   },
   {
-    name: 'a detached script behind a time output option',
-    command: "time -o /tmp/x.log sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached flock script option after the lock file',
+    command: "flock /tmp/lock -c 'cmd 2>/dev/null' &",
     blocked: true,
   },
   {
-    name: 'a detached script behind a nice adjustment',
-    command: "nice -n 5 sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached watch script',
+    command: "watch -n 1 'cmd 2>/dev/null' &",
     blocked: true,
   },
   {
-    name: 'a detached script behind a stdbuf option',
-    command: "stdbuf -oL sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached script behind an if keyword',
+    command: "if sh -c 'cmd 2>/dev/null'; then echo ok; fi &",
     blocked: true,
   },
   {
-    name: 'a detached script behind an xargs option',
-    command: "xargs -n 1 sh -c 'cmd 2>/dev/null' &",
+    name: 'a detached script behind a brace keyword',
+    command: "{ sh -c 'cmd 2>/dev/null'; } &",
     blocked: true,
   },
   {
-    name: 'a detached script behind a flock lock file',
-    command: "flock -w 5 /tmp/lock sh -c 'cmd 2>/dev/null' &",
-    blocked: true,
-  },
-  {
-    name: 'a detached script behind a chroot root',
-    command: "chroot /newroot sh -c 'cmd 2>/dev/null' &",
-    blocked: true,
-  },
-  {
-    name: 'a detached script behind a watch interval',
-    command: "watch -n 1 sh -c 'cmd 2>/dev/null' &",
-    blocked: true,
+    name: 'a command lookup of a shell',
+    command: "command -v sh -c 'cmd 2>/dev/null' &",
+    blocked: false,
   },
   {
     name: 'a detached script the parser cannot parse',

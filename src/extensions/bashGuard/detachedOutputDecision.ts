@@ -1,4 +1,4 @@
-import { parseShellCommands } from '../../shell.js';
+import { parseShellCommands, shellScriptOf } from '../../shell.js';
 import type { ShellCommand, ShellRedirection } from '../../shell.js';
 
 export interface DetachedOutputFacts {
@@ -41,7 +41,6 @@ interface CompoundScope {
 
 type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
 
-const shellNames = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh', 'mksh', 'ash']);
 const devNull = '/dev/null';
 const maximumDepth = 4;
 const terminalDescriptors = new Set([1, 2]);
@@ -49,87 +48,8 @@ const terminalDescriptors = new Set([1, 2]);
 const emptyStreams: Streams = new Map();
 const terminal: StreamTarget = { kind: 'terminal' };
 const unknownTarget: StreamTarget = { kind: 'unknown' };
-const emptyOptionValues: ReadonlySet<string> = new Set();
-
-// A wrapper runs the command that follows its own options and fixed arguments.
-const wrapperOptionValues: Readonly<Record<string, ReadonlySet<string>>> = {
-  chroot: new Set(['--groups', '--userspec']),
-  doas: new Set(['-C', '-u']),
-  env: new Set(['-C', '--chdir', '-S', '--split-string', '-u', '--unset']),
-  exec: new Set(['-a']),
-  flock: new Set(['-E', '-c', '-w', '--command', '--conflict-exit-code', '--timeout']),
-  nice: new Set(['-n', '--adjustment']),
-  stdbuf: new Set(['-e', '-i', '-o', '--error', '--input', '--output']),
-  sudo: new Set([
-    '-C',
-    '-D',
-    '-g',
-    '-h',
-    '-p',
-    '-r',
-    '-R',
-    '-t',
-    '-T',
-    '-u',
-    '-U',
-    '--chdir',
-    '--chroot',
-    '--close-from',
-    '--group',
-    '--host',
-    '--prompt',
-    '--role',
-    '--type',
-    '--user',
-  ]),
-  time: new Set(['-f', '-o', '--format', '--output']),
-  timeout: new Set(['-k', '--kill-after', '-s', '--signal']),
-  watch: new Set(['-n', '--interval']),
-  xargs: new Set([
-    '-a',
-    '-d',
-    '-E',
-    '-I',
-    '-L',
-    '-n',
-    '-P',
-    '-s',
-    '--arg-file',
-    '--delimiter',
-    '--eof',
-    '--max-args',
-    '--max-chars',
-    '--max-lines',
-    '--max-procs',
-    '--process-slot-var',
-    '--replace',
-  ]),
-};
-
-// The fixed arguments a wrapper takes before the command it runs.
-const wrapperArguments = new Map<string, number>([
-  ['chroot', 1],
-  ['command', 0],
-  ['doas', 0],
-  ['env', 0],
-  ['exec', 0],
-  ['flock', 1],
-  ['nice', 0],
-  ['nohup', 0],
-  ['setsid', 0],
-  ['stdbuf', 0],
-  ['sudo', 0],
-  ['time', 0],
-  ['timeout', 1],
-  ['watch', 0],
-  ['xargs', 0],
-]);
 
 const isDescriptor = (target: string): boolean => /^\d+$/u.test(target) || target === '-';
-
-const isOption = (argument: string): boolean => argument.startsWith('-');
-
-const isAssignment = (argument: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*=/u.test(argument);
 
 const targetOf = (streams: Streams, fileDescriptor: number): StreamTarget => {
   const target = streams.get(fileDescriptor);
@@ -226,67 +146,6 @@ const discardsStderr = (streams: Streams): boolean => {
   return stderr.kind === 'closed' || writesDevNull;
 };
 
-const shellNameOf = (argument: string): string => argument.slice(argument.lastIndexOf('/') + 1);
-
-const skipWrapper = (commandArguments: readonly string[], index: number): number => {
-  const name = shellNameOf(commandArguments[index] ?? '');
-  const optionValues = wrapperOptionValues[name] ?? emptyOptionValues;
-  let next = index + 1;
-
-  while (next < commandArguments.length) {
-    const argument = commandArguments[next] ?? '';
-
-    if (!isOption(argument)) {
-      break;
-    }
-
-    next += optionValues.has(argument) ? 2 : 1;
-  }
-
-  if (name === 'env') {
-    while (next < commandArguments.length && isAssignment(commandArguments[next] ?? '')) {
-      next += 1;
-    }
-  }
-
-  return next + (wrapperArguments.get(name) ?? 0);
-};
-
-// A leading assignment or `!` runs the wrapper or shell after it, so neither is the command head.
-const commandHead = (commandArguments: readonly string[]): number => {
-  let index = 0;
-
-  while (index < commandArguments.length) {
-    const argument = commandArguments[index] ?? '';
-    const name = shellNameOf(argument);
-
-    if (argument === '!' || isAssignment(argument)) {
-      index += 1;
-    } else if (wrapperArguments.has(name)) {
-      index = skipWrapper(commandArguments, index);
-    } else {
-      break;
-    }
-  }
-
-  return index;
-};
-
-const scriptOf = (command: ShellCommand): string | undefined => {
-  const head = commandHead(command.arguments);
-  const headName = shellNameOf(command.arguments[head] ?? '');
-
-  if (!shellNames.has(headName)) {
-    return undefined;
-  }
-
-  const commandFlagIndex = command.arguments.findIndex(
-    (argument, index) => index > head && /^-[a-z]*c[a-z]*$/u.test(argument),
-  );
-
-  return commandFlagIndex === -1 ? undefined : command.arguments[commandFlagIndex + 1];
-};
-
 const encloses = (group: number | undefined, closingIndex: number, index: number): boolean =>
   group !== undefined && group <= index && index < closingIndex;
 
@@ -336,9 +195,7 @@ const enclosingOf = (scope: CompoundScope, index: number): Streams => {
 const noFacts: CompoundFacts = { shows: false, discards: false, ownDiscards: false };
 const failClosedFacts: CompoundFacts = { shows: false, discards: true, ownDiscards: false };
 
-// The last member with arguments decides whether a reader sees the failure. Any member that throws
-// stderr away hides one. An empty member set falls back to the streams the compound inherits.
-const memberRangeOf = (
+const memberRangeWithFallbackOf = (
   scope: CompoundScope,
   closingIndex: number | undefined,
 ): { start: number; end: number; fallbackStreams: Streams } => {
@@ -352,13 +209,15 @@ const memberRangeOf = (
   return { start, end, fallbackStreams };
 };
 
+// The last member with arguments decides whether a reader sees the failure. Any member that throws
+// stderr away hides one. An empty member set falls back to the streams the compound inherits.
 const membersFacts = (
   factsOf: CompoundFactsOf,
   scope: CompoundScope,
   closingIndex: number | undefined,
   depth: number,
 ): CompoundFacts => {
-  const { start, end, fallbackStreams } = memberRangeOf(scope, closingIndex);
+  const { start, end, fallbackStreams } = memberRangeWithFallbackOf(scope, closingIndex);
   let shows: boolean | undefined;
   let discards = false;
 
@@ -429,7 +288,7 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
   const enclosing = enclosingOf(scope, index);
   const own = streamsOf(command, enclosing);
   const ownDiscards = command.redirections.length > 0 && discardsStderr(own);
-  const script = scriptOf(command);
+  const script = shellScriptOf(command.arguments);
 
   if (script !== undefined) {
     const nested = scriptFacts(compoundFacts, script, own, depth);
@@ -481,7 +340,7 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
   }
 
   const own = streamsOf(command, enclosingOf(scope, index));
-  const script = scriptOf(command);
+  const script = shellScriptOf(command.arguments);
 
   if (script !== undefined || command.group !== undefined) {
     const facts = compoundFacts(scope, index, 0);
