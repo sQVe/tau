@@ -15,6 +15,7 @@ import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
 import {
   launchRequest,
   paneRequest,
+  readbackCall,
   readerFor,
   startRequest,
 } from '../../tests/piStartRequests.js';
@@ -25,12 +26,6 @@ import {
   startPiSession,
   startPiSessionRightOf,
 } from './piStart.js';
-
-const readbackCall = (terminal: string) => ({
-  command: 'hc',
-  commandArguments: ['get', '--json', '--', terminal],
-  signal: undefined,
-});
 
 it('a space start opens one tab with the argv as JSON', async () => {
   const fake = createHerdrAppFake();

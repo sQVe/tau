@@ -7,12 +7,14 @@ import { argumentAfter } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
+import type { HcFake } from '../../../tests/hcFake.js';
 import {
   commandArgumentsOf,
   createHerdrAppFake,
   spaceOrTabLaunchesOf,
 } from '../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
+import { readbackCall } from '../../../tests/piStartRequests.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { tabName } from '../../tabName.js';
 import type { SpaceChoice } from './placement.js';
@@ -53,10 +55,13 @@ const requestFor = (
 const commandsOf = (fake: ExecFake<HerdrAppCommand>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
 
-const readbackCommand = (terminal: string) => ({
-  command: 'hc',
-  commandArguments: ['get', '--json', '--', terminal],
-});
+// The hc fake answers `hc` and the app fake answers `herdr-app`.
+const execAnsweringHc =
+  (app: ExecFake<HerdrAppCommand>, hc: HcFake): ExecFake<HerdrAppCommand>['exec'] =>
+  (command, commandArguments, options) =>
+    command === 'hc'
+      ? hc.exec(command, commandArguments, options)
+      : app.exec(command, commandArguments, options);
 
 const tabCommand = (root: string, argv: string, task: string, title: string) => ({
   command: 'herdr-app',
@@ -116,7 +121,7 @@ it('opens a tab in the space with the file text as its task', async () => {
 
   expect(commandsOf(fake)).toEqual([
     tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps'),
-    readbackCommand('t-new'),
+    readbackCall('t-new'),
   ]);
 });
 
@@ -137,7 +142,7 @@ it('passes the lead as sender to the new tab', async () => {
       'Handover sender: terminal t7, session lead-id.\n\nNext steps\n',
       'Next steps',
     ),
-    readbackCommand('t-new'),
+    readbackCall('t-new'),
   ]);
 });
 
@@ -153,7 +158,7 @@ it('starts without a sender as today', async () => {
 
   expect(commandsOf(fake)).toEqual([
     tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps'),
-    readbackCommand('t-new'),
+    readbackCall('t-new'),
   ]);
 });
 
@@ -389,13 +394,8 @@ it('fails when the started terminal runs another model', async () => {
     }),
   );
 
-  const exec: typeof app.exec = (command, commandArguments, options) =>
-    command === 'hc'
-      ? hc.exec(command, commandArguments, options)
-      : app.exec(command, commandArguments, options);
-
   const failure = await startHandover(
-    { exec, cwd: root },
+    { exec: execAnsweringHc(app, hc), cwd: root },
     {
       ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
       model: 'claude-bridge/claude-opus-5-5',
@@ -414,31 +414,11 @@ it('fails when the started terminal runs another model', async () => {
 
 it('returns the model the started terminal runs', async () => {
   const app = createHerdrAppFake();
-  const hc = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
-  hc.replyGet(
-    't-new',
-    JSON.stringify({
-      address: 't-new',
-      state: 'live',
-      foreground: {
-        pid: 1,
-        name: 'pi',
-        argv: ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-        cwd: root,
-      },
-    }),
-  );
-
-  const exec: typeof app.exec = (command, commandArguments, options) =>
-    command === 'hc'
-      ? hc.exec(command, commandArguments, options)
-      : app.exec(command, commandArguments, options);
-
   const result = await startHandover(
-    { exec, cwd: root },
+    { exec: app.exec, cwd: root },
     {
       ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
       model: 'morph/morph-dsv41flash-1017',
