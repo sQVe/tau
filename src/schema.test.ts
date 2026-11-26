@@ -147,7 +147,7 @@ it('leaves an existing false additionalProperties alone', () => {
   expect(strictToolParameters(schema)).toMatchObject({ additionalProperties: false });
 });
 
-it('keeps an explicit additionalProperties: true as the tool author wrote it', () => {
+it('keeps an explicit additionalProperties: true because the author declared free-form input', () => {
   const schema = Type.Unsafe<unknown>({
     type: 'object',
     properties: { value: { type: 'string' } },
@@ -187,10 +187,38 @@ it.each([
     };
 
     const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+    const dependentSchemas = isRecord(strict) ? strict[keyword] : undefined;
 
+    const dependentSubschema = isRecord(dependentSchemas)
+      ? dependentSchemas['credit_card']
+      : undefined;
+
+    expect(dependentSubschema).not.toHaveProperty('additionalProperties');
     expect(Value.Check(strict, { credit_card: 'x', billing_address: 'y' })).toBe(true);
   },
 );
+
+it('leaves an object nested under a dependent schema open', () => {
+  const schema = {
+    type: 'object',
+    properties: { credit_card: { type: 'string' } },
+    dependentSchemas: {
+      credit_card: {
+        properties: {
+          address: { type: 'object', properties: { city: { type: 'string' } } },
+        },
+      },
+    },
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+  const dependentSchemas = isRecord(strict) ? strict['dependentSchemas'] : undefined;
+  const dependent = isRecord(dependentSchemas) ? dependentSchemas['credit_card'] : undefined;
+  const properties = isRecord(dependent) ? dependent['properties'] : undefined;
+  const address = isRecord(properties) ? properties['address'] : undefined;
+
+  expect(address).not.toHaveProperty('additionalProperties');
+});
 
 it('closes an object schema whose type list includes object', () => {
   const schema = { type: ['object', 'null'], properties: { value: { type: 'string' } } };

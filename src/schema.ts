@@ -43,8 +43,9 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // written. The schema form of `dependencies` and `dependentSchemas` applies to the whole instance
 // when a named property is present, like a conditional `allOf`, so they stay as written too. Add a
 // keyword to one of these sets when a tool schema can hold a subschema under it. A subschema under
-// a keyword outside these sets stays as written, so an object there keeps its keys open. An
-// explicit additionalProperties: true stays, so a tool author can opt out of closing an object.
+// a keyword outside these sets stays as written, so an object there keeps its keys open, including
+// objects nested inside it. An explicit additionalProperties: true stays, because the tool author
+// declared free-form input; closing it would reject calls the author declared valid.
 export const schemaMapKeywords: ReadonlySet<string> = new Set([
   '$defs',
   'definitions',
@@ -184,11 +185,21 @@ const notWritableMessage =
   'Cannot install strict tool parameters: registerTool is not writable on this API.';
 
 const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
-  if (typeof pi.registerTool !== 'function') {
-    throw new TypeError('Cannot install strict tool parameters: registerTool is not a function.');
-  }
+  let registered: ExtensionAPI['registerTool'];
 
-  const registered = pi.registerTool.bind(pi);
+  try {
+    if (typeof pi.registerTool !== 'function') {
+      throw new TypeError('Cannot install strict tool parameters: registerTool is not a function.');
+    }
+
+    registered = pi.registerTool.bind(pi);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw error;
+    }
+
+    throw new Error(notWritableMessage, { cause: error });
+  }
 
   const wrapper: ExtensionAPI['registerTool'] = (tool) => {
     // oxlint-disable-next-line typescript/no-confusing-void-expression -- the installed API may return a value at runtime, and the wrapper must keep it.
@@ -203,7 +214,13 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
 
   const descriptor = Object.getOwnPropertyDescriptor(pi, 'registerTool');
   const installed: unknown = descriptor?.value;
-  const readBack: unknown = descriptor?.get?.call(pi);
+  let readBack: unknown;
+
+  try {
+    readBack = descriptor?.get?.call(pi);
+  } catch (error) {
+    throw new Error(notWritableMessage, { cause: error });
+  }
 
   if (installed !== wrapper && readBack !== wrapper) {
     throw new Error(notWritableMessage);

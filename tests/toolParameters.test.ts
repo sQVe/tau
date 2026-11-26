@@ -297,6 +297,14 @@ it.each([
   expect(objectProblems('sample', schema, '')).toEqual(expected);
 });
 
+it('keeps an explicit open object as the author declared it', () => {
+  const explicit = { type: 'object', additionalProperties: true };
+  const omitted = { type: 'object' };
+
+  expect(objectProblems('sample', explicit, '')).toEqual([]);
+  expect(objectProblems('sample', omitted, '')).toEqual(['sample parameters']);
+});
+
 it('ignores an object value in an annotation keyword', () => {
   const schema = {
     type: 'object',

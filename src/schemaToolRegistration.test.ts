@@ -143,3 +143,26 @@ it('reports a clear error when registerTool ignores the replacement', () => {
     strictToolRegistration(api);
   }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
 });
+
+it('reports a clear error when reading registerTool back throws', () => {
+  const api = {} as ExtensionAPI;
+  let reads = 0;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      reads += 1;
+
+      if (reads === 3) {
+        throw new Error('the getter failed');
+      }
+
+      return () => undefined;
+    },
+    set: () => undefined,
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+});
