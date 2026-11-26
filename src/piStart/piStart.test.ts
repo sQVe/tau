@@ -1,10 +1,15 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createExecFake, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
 import {
   createTemporaryBareRepository,
+  createTemporaryBareRoot,
   createTemporaryRepository,
+  git,
 } from '../../tests/gitRepository.js';
 import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
@@ -164,6 +169,46 @@ it('a true bare repository root starts a session', async () => {
   expect(fake.calls).toHaveLength(1);
 });
 
+it('a bare repository starts a session without the caller naming it bare', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryBareRepository(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    startRequest(root, { bareRoot: false }),
+  );
+
+  expect(result.terminal).toBe('t-new');
+  expect(fake.calls).toHaveLength(1);
+});
+
+it('a bare root layout starts a session', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryBareRoot(onTestFinished);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    startRequest(root, { bareRoot: false }),
+  );
+
+  expect(result.terminal).toBe('t-new');
+  expect(fake.calls).toHaveLength(1);
+});
+
+it('a linked worktree starts a session', async () => {
+  const fake = createHerdrAppFake();
+  const repository = await createTemporaryRepository(onTestFinished);
+  const worktree = temporaryDirectory(onTestFinished, 'tau-pi-start-worktree-');
+
+  await git(repository, 'commit', '--quiet', '--allow-empty', '-m', 'one');
+  await git(repository, 'worktree', 'add', '--quiet', worktree);
+
+  const result = await startPiSession({ exec: fake.exec, cwd: repository }, startRequest(worktree));
+
+  expect(result.terminal).toBe('t-new');
+  expect(fake.calls).toHaveLength(1);
+});
+
 it('a resolver start runs the target it resolves', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
@@ -232,6 +277,54 @@ it('a folder that is not a Git checkout is refused', async () => {
   await expect(
     startPiSession({ exec: fake.exec, cwd: root }, startRequest(root, { folder })),
   ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('a folder whose Git pointer names a missing path is refused', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-stale-');
+
+  writeFileSync(join(folder, '.git'), 'gitdir: absent\n');
+
+  await expect(
+    startPiSession({ exec: fake.exec, cwd: root }, startRequest(root, { folder })),
+  ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('a folder inside a checkout starts a session', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const folder = join(root, 'src');
+
+  mkdirSync(folder);
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    startRequest(root, { folder }),
+  );
+
+  expect(result.terminal).toBe('t-new');
+  expect(fake.calls).toHaveLength(1);
+});
+
+it('a start whose Git cannot run runs no command', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const emptyPath = temporaryDirectory(onTestFinished, 'tau-pi-start-no-git-');
+
+  vi.stubEnv('PATH', emptyPath);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  await expect(startPiSession({ exec: fake.exec, cwd: root }, startRequest(root))).rejects.toThrow(
+    /^git rev-parse --git-dir failed:/u,
+  );
 
   expect(fake.calls).toEqual([]);
 });

@@ -55,8 +55,35 @@ export class MergedListAbortError extends Error {
   }
 }
 
+export class MissingSessionCwdError extends Error {
+  constructor() {
+    super('A fixture session has no session record with a cwd on one line.');
+    this.name = 'MissingSessionCwdError';
+  }
+}
+
 const fixturePath = (name: string) =>
   join(import.meta.dirname, '..', 'src', 'improvement', 'fixtures', name);
+
+const sessionRecord = /("type":"session"[^\n]*?"cwd":)"[^"]*"/u;
+
+// A fixture session names the developer's home, so its paths move under the fixture home. The
+// session cwd must name the repository after that rewrite, not before.
+export const rewriteFixtureSession = (
+  content: string,
+  repository: string,
+  fixtureHome: string,
+): string => {
+  const rewritten = content.replaceAll('/home/', `${fixtureHome}/`);
+
+  if (!sessionRecord.test(rewritten)) {
+    throw new MissingSessionCwdError();
+  }
+
+  const cwd = JSON.stringify(repository);
+
+  return rewritten.replace(sessionRecord, (_record, prefix: string) => `${prefix}${cwd}`);
+};
 
 export const eventHash = (repository: string, number: number): string =>
   createHash('sha256').update(`${repository}#${number}`).digest('hex').slice(0, 32);
@@ -128,10 +155,7 @@ export const createSweepFixture = async (
   const writeFixtureSession = (name: string, fixtureName: string): string => {
     const content = readFileSync(fixturePath(fixtureName), 'utf8');
     const fixtureHome = join(agentDirectory, 'fixture-home');
-
-    const rewritten = content
-      .replace(/"cwd":"[^"]*"/u, `"cwd":${JSON.stringify(repository)}`)
-      .replaceAll('/home/', `${fixtureHome}/`);
+    const rewritten = rewriteFixtureSession(content, repository, fixtureHome);
 
     return writeSession(name, rewritten);
   };

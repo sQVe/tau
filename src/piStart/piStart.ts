@@ -1,5 +1,4 @@
 import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
 
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';
@@ -7,7 +6,7 @@ import type { TSchema } from 'typebox';
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { isMissingFile } from '../errors.js';
-import { existingEntry } from '../tauDirectory.js';
+import { isGitRepository } from '../git.js';
 import { piArguments } from './piArguments.js';
 
 export type PiStartTarget = { space: string } | { name: string };
@@ -157,11 +156,7 @@ const isGitCheckout = async (folder: string, bareRoot: boolean): Promise<boolean
     return false;
   }
 
-  if ((await existingEntry(join(folder, '.git'))) !== undefined) {
-    return true;
-  }
-
-  return bareRoot;
+  return bareRoot || (await isGitRepository(folder));
 };
 
 const requireCheckout = async (

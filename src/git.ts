@@ -210,6 +210,9 @@ export const runGit = (
     }
   });
 
+const gitFailure = (commandArguments: string[], result: GitResult): Error =>
+  new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+
 export const readGit = async (
   cwd: string,
   commandArguments: string[],
@@ -218,7 +221,7 @@ export const readGit = async (
   const result = await runGit(cwd, commandArguments, options);
 
   if (result.exitCode !== 0) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+    throw gitFailure(commandArguments, result);
   }
 
   return result.stdout.toString('utf8').trim();
@@ -236,7 +239,7 @@ export const readGitUnlessMissing = async (
   }
 
   if (result.exitCode !== 0) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+    throw gitFailure(commandArguments, result);
   }
 
   return result.stdout.toString('utf8').trim();
@@ -322,6 +325,19 @@ const hasGitEntry = (root: string): Promise<boolean> =>
     () => true,
     () => false,
   );
+
+// A `.git` entry can name a path Git cannot resolve, so a folder counts as a checkout only when
+// Git resolves a repository there.
+export const isGitRepository = async (folder: string): Promise<boolean> => {
+  const commandArguments = ['rev-parse', '--git-dir'];
+  const result = await runGit(folder, commandArguments, { timeoutMilliseconds: 5000 });
+
+  if (result.exitCode === null) {
+    throw gitFailure(commandArguments, result);
+  }
+
+  return result.exitCode === 0;
+};
 
 // A `.git` entry means a checkout, so its presence answers without a Git call.
 export const isBareRootWithoutGitEntry = async (root: string): Promise<boolean> =>

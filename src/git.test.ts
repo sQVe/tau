@@ -11,6 +11,7 @@ import { createTemporaryRepository } from '../tests/gitRepository.js';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
   findCheckoutRoot,
+  isGitRepository,
   readGit,
   readGitUnlessMissing,
   runGit,
@@ -276,6 +277,17 @@ it('resolves a null exit code when the signal aborts Git', async ({ onTestFinish
   const result = await runGit(root, ['status'], { signal: AbortSignal.abort() });
 
   expect(result.exitCode).toBeNull();
+});
+
+it('throws the Git reason when the repository probe cannot start Git', async ({
+  onTestFinished,
+}) => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-git-missing-');
+  const missing = join(directory, 'absent');
+
+  await expect(isGitRepository(missing)).rejects.toThrow(
+    /git rev-parse --git-dir failed: .*ENOENT/u,
+  );
 });
 
 it('adds the environment on top of the scrubbed one', async ({ onTestFinished }) => {
