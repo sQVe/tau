@@ -151,64 +151,42 @@ const executableNames = (name: string, suffixes: readonly string[]): string[] =>
   ...suffixes.map((suffix) => `${name}.${suffix}`),
 ];
 
-const piExecutableNames = new Set(executableNames('pi', ['cmd', 'js', 'exe']));
+const piExecutableSuffixes = ['cmd', 'js', 'exe'];
+
+const piExecutableNames = new Set(executableNames('pi', piExecutableSuffixes));
 
 const runtimeExecutables = new Set([
   ...executableNames('node', ['exe']),
   ...executableNames('bun', ['exe']),
 ]);
 
-// Runtime flags that consume the next argument, so that argument is not the script.
-const valueTakingRuntimeFlags = new Set([
-  '--conditions',
-  '-C',
-  '--dns-result-order',
-  '--env-file',
-  '--eval',
-  '-e',
-  '--experimental-loader',
-  '--icu-data-dir',
-  '--import',
-  '--inspect-port',
-  '--loader',
-  '--max-http-header-size',
-  '--max-old-space-size',
-  '--openssl-config',
-  '--preload',
-  '--print',
-  '-p',
-  '--redirect-warnings',
-  '--require',
-  '-r',
-  '--title',
-  '--tls-cipher-list',
-  '--watch-path',
-]);
-
 const isPiExecutable = (argument: string | undefined): boolean =>
   argument !== undefined && piExecutableNames.has(basename(argument));
 
-const scriptArgument = (argv: readonly string[]): string | undefined => {
-  let valueFollows = false;
+const carriesPath = (argument: string): boolean =>
+  argument.includes('/') || argument.includes('\\');
 
-  for (const argument of argv.slice(1)) {
-    if (valueFollows) {
-      valueFollows = false;
+const hasExecutableSuffix = (argument: string): boolean =>
+  piExecutableSuffixes.some((suffix) => argument.endsWith(`.${suffix}`));
 
-      continue;
-    }
+// The script is the first argument after the runtime, or a later argument that names a path or an
+// executable. A bare Pi name later in the arguments is more likely a flag value.
+const isPiScriptAt = (argv: readonly string[], index: number): boolean => {
+  const argument = argv[index];
 
-    if (argument.startsWith('-')) {
-      valueFollows = valueTakingRuntimeFlags.has(argument);
-
-      continue;
-    }
-
-    return argument;
+  if (argument === undefined || !isPiExecutable(argument)) {
+    return false;
   }
 
-  return undefined;
+  if (index === 1) {
+    return true;
+  }
+
+  return carriesPath(argument) || hasExecutableSuffix(argument);
 };
+
+const scriptArgument = (argv: readonly string[]): string | undefined =>
+  argv.slice(1).find((_argument, offset) => isPiScriptAt(argv, offset + 1));
 
 const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined => {
   if (argv === undefined) {

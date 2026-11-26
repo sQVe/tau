@@ -806,6 +806,36 @@ it.each([
     ],
   },
   {
+    name: 'a node pi path after a value-taking flag',
+    argv: [
+      'node',
+      '--stack-size',
+      '2000',
+      '/path/pi',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
+  },
+  {
+    name: 'a node pi.js script after a value-taking flag',
+    argv: [
+      'node',
+      '--stack-size',
+      '2000',
+      'pi.js',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
+  },
+  {
+    name: 'a bare pi script after the runtime',
+    argv: ['node', 'pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+  },
+  {
     name: 'a bun pi path',
     argv: ['bun', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
   },
