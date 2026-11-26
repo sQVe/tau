@@ -75,14 +75,12 @@ interface WrapperProgress {
   sawUnless: boolean;
 }
 
-type WrapperWordKind = 'option' | 'code' | 'assignment' | 'positional' | 'command';
-
-interface WrapperWord {
-  kind: WrapperWordKind;
-  // Where the walk continues; a command word keeps its own index.
-  next: number;
-  code: string;
-}
+type WrapperWord =
+  | { kind: 'code'; code: string; next: number }
+  | { kind: 'skip'; next: number }
+  | { kind: 'assignment'; word: string }
+  | { kind: 'positional' }
+  | { kind: 'command' };
 
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
@@ -599,6 +597,8 @@ const operandKind = (
   allowedPositionals: number,
   word: string,
 ): 'positional' | 'assignment' | 'command' => {
+  // A positional slot wins over an assignment-shaped word: in `flock FOO=bar sh tool.sh` the
+  // `FOO=bar` names the lock file, so `sh` is the command word.
   if (candidateCount <= allowedPositionals) {
     return 'positional';
   }
@@ -629,13 +629,21 @@ const wrapperWord = (
   }
 
   if (step.kind === 'skip') {
-    return { kind: 'option', next: step.next, code: '' };
+    return { kind: 'skip', next: step.next };
   }
 
   const allowed = progress.sawUnless ? 0 : skipped;
   const kind = operandKind(progress.positionals + 1, allowed, word);
 
-  return { kind, next: kind === 'command' ? index : index + 1, code: '' };
+  if (kind === 'command') {
+    return { kind };
+  }
+
+  if (kind === 'assignment') {
+    return { kind, word };
+  }
+
+  return { kind };
 };
 
 // A wrapper permutes its own options around its positional arguments, so one walk finds both the
@@ -647,21 +655,32 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
   let next = index + 1;
 
   while (next < words.length) {
-    const word = wrapperWord(words, next, name, progress);
+    const classified = wrapperWord(words, next, name, progress);
 
-    if (word.kind === 'command') {
+    if (classified.kind === 'command') {
       return { assignments, codes, commandIndex: next };
     }
 
-    if (word.kind === 'code') {
-      codes.push(word.code);
-    } else if (word.kind === 'assignment') {
-      assignments.push(words[next] ?? '');
-    } else if (word.kind === 'positional') {
+    if (classified.kind === 'code') {
+      codes.push(classified.code);
+      next = classified.next;
+
+      continue;
+    }
+
+    if (classified.kind === 'skip') {
+      next = classified.next;
+
+      continue;
+    }
+
+    if (classified.kind === 'assignment') {
+      assignments.push(classified.word);
+    } else {
       progress.positionals += 1;
     }
 
-    next = word.next;
+    next += 1;
   }
 
   return { assignments, codes, commandIndex: undefined };

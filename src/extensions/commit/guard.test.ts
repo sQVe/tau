@@ -1194,12 +1194,30 @@ describe('guardToolCall', () => {
     });
   });
 
-  it('keeps an env assignment before the command word', () => {
+  it('keeps a PATH assignment after another env assignment', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
-    writeScript(directory, 'tool.sh', 'git commit -m x\n');
+    writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('env FOO=bar sh tool.sh'), directory)).toEqual({
+    expect(guard(makeBashEvent(`env FOO=bar PATH=${pathDirectory} sh tool.sh`), directory)).toEqual(
+      {
+        block: true,
+        reason: commitGuardReason,
+      },
+    );
+  });
+
+  it('uses the last PATH assignment among env assignments', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const first = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+    const second = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(second, 'tool.sh', 'git commit -m x\n');
+
+    expect(
+      guard(makeBashEvent(`env PATH=${first} FOO=bar PATH=${second} sh tool.sh`), directory),
+    ).toEqual({
       block: true,
       reason: commitGuardReason,
     });
