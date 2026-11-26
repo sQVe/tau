@@ -136,7 +136,7 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
-    name: 'a |& pipeline discarding stderr',
+    name: 'a detached |& pipeline that merges stderr into the pipe',
     command: 'cmd 2>/dev/null |& cat &',
     blocked: false,
   },
@@ -205,6 +205,76 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a heredoc body command before a background unit',
     command: 'cat <<EOF\n$(touch x 2>/dev/null)\nEOF\nother &',
+    blocked: false,
+  },
+  {
+    name: 'a heredoc body that follows a continued line',
+    command: 'cat <<EOF &&\ncmd 2>/dev/null &\nEOF\necho done',
+    blocked: false,
+  },
+  {
+    name: 'a heredoc body command inside a backtick before a background unit',
+    command: 'echo `cat <<EOF\n$(touch x 2>/dev/null)\nEOF` &',
+    blocked: false,
+  },
+  {
+    name: 'stderr duplicated from a discarded descriptor',
+    command: 'cmd 2>&3 3>/dev/null &',
+    blocked: true,
+  },
+  {
+    name: 'stderr duplicated from a logged descriptor',
+    command: 'cmd 3>/dev/null 2>&3 &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command whose argument mentions a shell',
+    command: "echo sh -c 'cmd 2>/dev/null' &",
+    blocked: false,
+  },
+  {
+    name: 'a detached ksh script that discards stderr',
+    command: "ksh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script at a path',
+    command: "/bin/sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script whose inner command closes stderr',
+    command: `sh -c 'cmd 2>&-' > /tmp/x.log 2>&1 &`,
+    blocked: true,
+  },
+  {
+    name: 'a detached append of both streams to /dev/null',
+    command: 'cmd &>>/dev/null &',
+    blocked: true,
+  },
+  {
+    name: 'a detached append of both streams to a log',
+    command: 'cmd &>>/tmp/x.log &',
+    blocked: false,
+  },
+  {
+    name: 'a detached script behind a timeout',
+    command: "timeout -k 1 5 sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind an env assignment',
+    command: "env FOO=1 sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script the parser cannot parse',
+    command: `sh -c "echo 'unterminated" > /tmp/x.log 2>&1 &`,
+    blocked: true,
+  },
+  {
+    name: 'a nested group whose outer redirection keeps stderr visible',
+    command: '( ( cmd 1>&2 ) ) 2>&1 1>/dev/null &',
     blocked: false,
   },
   {

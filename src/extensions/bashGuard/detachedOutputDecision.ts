@@ -1,5 +1,5 @@
 import { parseShellCommands } from '../../shell.js';
-import type { ShellCommand } from '../../shell.js';
+import type { ShellCommand, ShellRedirection } from '../../shell.js';
 
 export interface DetachedOutputFacts {
   toolName: string;
@@ -13,12 +13,15 @@ interface BlockedDetachedOutput {
 
 export type DetachedOutputDecision = BlockedDetachedOutput | undefined;
 
-type StreamTarget = { kind: 'file'; path: string } | { kind: 'closed' } | { kind: 'unknown' };
+type StreamTarget =
+  | { kind: 'terminal' }
+  | { kind: 'file'; path: string }
+  | { kind: 'closed' }
+  | { kind: 'unknown' };
 
-interface Streams {
-  stdout: StreamTarget | undefined;
-  stderr: StreamTarget | undefined;
-}
+// The target of every descriptor the shell redirects. A descriptor the table does not name is the
+// terminal for stdout and stderr, and unresolved for any other descriptor.
+type Streams = Map<number, StreamTarget>;
 
 // Whether a reader sees a compound's failure, whether a command inside it throws stderr away, and
 // whether the command's own redirection does.
@@ -31,45 +34,96 @@ interface CompoundFacts {
 interface CompoundScope {
   commands: readonly ShellCommand[];
   inherited: Streams;
+  // Members below this index sit inside a group whose redirections `inherited` already includes.
+  from: number;
   enclosingByIndex: Map<number, Streams>;
+}
+
+interface MemberRange {
+  start: number;
+  end: number;
 }
 
 type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
 
-const shellNames = new Set(['sh', 'bash', 'dash', 'zsh']);
+const shellNames = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh', 'mksh', 'ash']);
 const devNull = '/dev/null';
 const maximumDepth = 4;
+const terminalDescriptors = new Set([1, 2]);
 
-const emptyStreams: Streams = { stdout: undefined, stderr: undefined };
+const emptyStreams: Streams = new Map();
+const terminal: StreamTarget = { kind: 'terminal' };
+const unknownTarget: StreamTarget = { kind: 'unknown' };
+const emptyOptionValues: ReadonlySet<string> = new Set();
+
+// A wrapper runs the command that follows its own options and fixed arguments.
+const wrapperOptionValues: Readonly<Record<string, ReadonlySet<string>>> = {
+  env: new Set(['-C', '--chdir', '-S', '--split-string', '-u', '--unset']),
+  exec: new Set(['-a']),
+  sudo: new Set([
+    '-C',
+    '-D',
+    '-g',
+    '-h',
+    '-p',
+    '-r',
+    '-t',
+    '-T',
+    '-u',
+    '-U',
+    '--chdir',
+    '--close-from',
+    '--group',
+    '--host',
+    '--prompt',
+    '--role',
+    '--type',
+    '--user',
+  ]),
+  timeout: new Set(['-k', '--kill-after', '-s', '--signal']),
+};
+
+// The fixed arguments a wrapper takes before the command it runs.
+const wrapperArguments = new Map<string, number>([
+  ['command', 0],
+  ['doas', 0],
+  ['env', 0],
+  ['exec', 0],
+  ['nohup', 0],
+  ['setsid', 0],
+  ['sudo', 0],
+  ['time', 0],
+  ['timeout', 1],
+]);
 
 const isDescriptor = (target: string): boolean => /^\d+$/u.test(target) || target === '-';
 
-const setStream = (
-  streams: Streams,
-  fileDescriptor: number | undefined,
-  target: StreamTarget,
-): void => {
-  if (fileDescriptor === 2) {
-    streams.stderr = target;
-  } else if (fileDescriptor === undefined || fileDescriptor === 1) {
-    streams.stdout = target;
+const isOption = (argument: string): boolean => argument.startsWith('-');
+
+const isAssignment = (argument: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*=/u.test(argument);
+
+const targetOf = (streams: Streams, fileDescriptor: number): StreamTarget => {
+  const target = streams.get(fileDescriptor);
+
+  if (target !== undefined) {
+    return target;
   }
+
+  return terminalDescriptors.has(fileDescriptor) ? terminal : unknownTarget;
 };
+
+const fileTarget = (path: string): StreamTarget => ({ kind: 'file', path });
 
 const duplicatedTarget = (streams: Streams, target: string): StreamTarget => {
   if (target === '-') {
     return { kind: 'closed' };
   }
 
-  if (target === '1') {
-    return streams.stdout ?? { kind: 'unknown' };
+  if (!/^\d+$/u.test(target)) {
+    return unknownTarget;
   }
 
-  if (target === '2') {
-    return streams.stderr ?? { kind: 'unknown' };
-  }
-
-  return { kind: 'unknown' };
+  return targetOf(streams, Number(target));
 };
 
 // `>&word` redirects both streams when word is a file, and duplicates one descriptor when word is a
@@ -77,45 +131,49 @@ const duplicatedTarget = (streams: Streams, target: string): StreamTarget => {
 const applyAmpersand = (
   streams: Streams,
   fileDescriptor: number | undefined,
+  defaultDescriptor: number,
   target: string,
 ): void => {
+  const descriptor = fileDescriptor ?? defaultDescriptor;
+
   if (isDescriptor(target)) {
-    setStream(streams, fileDescriptor, duplicatedTarget(streams, target));
+    streams.set(descriptor, duplicatedTarget(streams, target));
 
     return;
   }
 
-  const file: StreamTarget = { kind: 'file', path: target };
+  const file = fileTarget(target);
 
-  if (fileDescriptor === undefined) {
-    streams.stdout = file;
-    streams.stderr = file;
+  if (descriptor === 1 && fileDescriptor === undefined) {
+    streams.set(1, file);
+    streams.set(2, file);
 
     return;
   }
 
   // Bash refuses a numbered `>&` to a file, so this stream is neither a log nor a discard.
-  setStream(streams, fileDescriptor, { kind: 'unknown' });
+  streams.set(descriptor, unknownTarget);
 };
 
-const applyRedirection = (
-  streams: Streams,
-  redirection: ShellCommand['redirections'][number],
-): void => {
+const applyRedirection = (streams: Streams, redirection: ShellRedirection): void => {
   const { fileDescriptor, operator, target } = redirection;
 
   if (operator === '&>' || operator === '&>>') {
-    streams.stdout = { kind: 'file', path: target };
-    streams.stderr = { kind: 'file', path: target };
-  } else if (['>', '>>', '>|'].includes(operator)) {
-    setStream(streams, fileDescriptor, { kind: 'file', path: target });
+    const file = fileTarget(target);
+
+    streams.set(1, file);
+    streams.set(2, file);
+  } else if (operator === '>' || operator === '>>' || operator === '>|') {
+    streams.set(fileDescriptor ?? 1, fileTarget(target));
   } else if (operator === '>&') {
-    applyAmpersand(streams, fileDescriptor, target);
+    applyAmpersand(streams, fileDescriptor, 1, target);
+  } else if (operator === '<&') {
+    applyAmpersand(streams, fileDescriptor, 0, target);
   }
 };
 
 const streamsOf = (command: ShellCommand, inherited: Streams): Streams => {
-  const streams: Streams = { ...inherited };
+  const streams = new Map(inherited);
 
   for (const redirection of command.redirections) {
     applyRedirection(streams, redirection);
@@ -126,33 +184,71 @@ const streamsOf = (command: ShellCommand, inherited: Streams): Streams => {
 
 // A stream with no redirection reaches the terminal, which is visible.
 const showsStderr = (streams: Streams): boolean => {
-  const stderr = streams.stderr;
+  const stderr = targetOf(streams, 2);
+  const writesVisibleFile = stderr.kind === 'file' && stderr.path !== devNull;
 
-  const writesVisibleFile = stderr?.kind === 'file' && stderr.path !== devNull;
-
-  return stderr === undefined || writesVisibleFile;
+  return stderr.kind === 'terminal' || writesVisibleFile;
 };
 
 const discardsStderr = (streams: Streams): boolean => {
-  const stderr = streams.stderr;
-  const writesDevNull = stderr?.kind === 'file' && stderr.path === devNull;
+  const stderr = targetOf(streams, 2);
+  const writesDevNull = stderr.kind === 'file' && stderr.path === devNull;
 
-  return stderr?.kind === 'closed' || writesDevNull;
+  return stderr.kind === 'closed' || writesDevNull;
 };
 
 const shellNameOf = (argument: string): string => argument.slice(argument.lastIndexOf('/') + 1);
 
-const scriptOf = (command: ShellCommand): string | undefined => {
-  const shellIndex = command.arguments.findIndex((argument) =>
-    shellNames.has(shellNameOf(argument)),
-  );
+const skipWrapper = (commandArguments: readonly string[], index: number): number => {
+  const name = shellNameOf(commandArguments[index] ?? '');
+  const optionValues = wrapperOptionValues[name] ?? emptyOptionValues;
+  let next = index + 1;
 
-  if (shellIndex === -1) {
+  while (next < commandArguments.length) {
+    const argument = commandArguments[next] ?? '';
+
+    if (!isOption(argument)) {
+      break;
+    }
+
+    next += optionValues.has(argument) ? 2 : 1;
+  }
+
+  if (name === 'env') {
+    while (next < commandArguments.length && isAssignment(commandArguments[next] ?? '')) {
+      next += 1;
+    }
+  }
+
+  return next + (wrapperArguments.get(name) ?? 0);
+};
+
+const commandHead = (commandArguments: readonly string[]): number => {
+  let index = 0;
+
+  while (index < commandArguments.length) {
+    const name = shellNameOf(commandArguments[index] ?? '');
+
+    if (!wrapperArguments.has(name)) {
+      break;
+    }
+
+    index = skipWrapper(commandArguments, index);
+  }
+
+  return index;
+};
+
+const scriptOf = (command: ShellCommand): string | undefined => {
+  const head = commandHead(command.arguments);
+  const headName = shellNameOf(command.arguments[head] ?? '');
+
+  if (!shellNames.has(headName)) {
     return undefined;
   }
 
   const commandFlagIndex = command.arguments.findIndex(
-    (argument, index) => index > shellIndex && /^-[a-z]*c[a-z]*$/u.test(argument),
+    (argument, index) => index > head && /^-[a-z]*c[a-z]*$/u.test(argument),
   );
 
   return commandFlagIndex === -1 ? undefined : command.arguments[commandFlagIndex + 1];
@@ -165,18 +261,28 @@ const enclosingStreams = (
   commands: readonly ShellCommand[],
   index: number,
   inherited: Streams,
+  from: number,
 ): Streams => {
   const enclosing = commands
     .map((command, closingIndex) => ({ command, closingIndex }))
-    .filter(({ command, closingIndex }) => encloses(command.group, closingIndex, index))
+    .filter(({ command, closingIndex }) => {
+      const group = command.group;
+
+      return group !== undefined && group >= from && encloses(group, closingIndex, index);
+    })
     .toSorted((left, right) => (left.command.group ?? 0) - (right.command.group ?? 0));
 
   return enclosing.reduce((streams, { command }) => streamsOf(command, streams), inherited);
 };
 
-const compoundScope = (commands: readonly ShellCommand[], inherited: Streams): CompoundScope => ({
+const compoundScope = (
+  commands: readonly ShellCommand[],
+  inherited: Streams,
+  from = 0,
+): CompoundScope => ({
   commands,
   inherited,
+  from,
   enclosingByIndex: new Map(),
 });
 
@@ -187,7 +293,7 @@ const enclosingOf = (scope: CompoundScope, index: number): Streams => {
     return cached;
   }
 
-  const enclosing = enclosingStreams(scope.commands, index, scope.inherited);
+  const enclosing = enclosingStreams(scope.commands, index, scope.inherited, scope.from);
 
   scope.enclosingByIndex.set(index, enclosing);
 
@@ -196,6 +302,38 @@ const enclosingOf = (scope: CompoundScope, index: number): Streams => {
 
 const noFacts: CompoundFacts = { shows: false, discards: false, ownDiscards: false };
 const failClosedFacts: CompoundFacts = { shows: false, discards: true, ownDiscards: false };
+
+// The last member with arguments decides whether a reader sees the failure. Any member that throws
+// stderr away hides one. An empty member set falls back to the streams the compound inherits.
+const membersFacts = (
+  factsOf: CompoundFactsOf,
+  scope: CompoundScope,
+  { start, end }: MemberRange,
+  fallbackStreams: Streams,
+  depth: number,
+): CompoundFacts => {
+  let shows: boolean | undefined;
+
+  for (let index = end - 1; index >= start; index -= 1) {
+    const command = scope.commands[index];
+
+    if (command !== undefined && command.arguments.length > 0) {
+      shows = factsOf(scope, index, depth + 1).shows;
+
+      break;
+    }
+  }
+
+  let discards = false;
+
+  for (let index = start; index < end; index += 1) {
+    const member = factsOf(scope, index, depth + 1);
+
+    discards ||= member.discards || member.ownDiscards;
+  }
+
+  return { shows: shows ?? showsStderr(fallbackStreams), discards, ownDiscards: false };
+};
 
 const groupFacts = (
   factsOf: CompoundFactsOf,
@@ -210,24 +348,15 @@ const groupFacts = (
     return noFacts;
   }
 
-  const members = scope.commands
-    .map((command, memberIndex) => ({ command, index: memberIndex }))
-    .filter(({ index: memberIndex }) => memberIndex >= groupStart && memberIndex < closingIndex);
+  const groupStreams = streamsOf(closing, scope.inherited);
 
-  const last = members.findLast(({ command }) => command.arguments.length > 0);
-
-  const shows =
-    last === undefined
-      ? showsStderr(streamsOf(closing, scope.inherited))
-      : factsOf(scope, last.index, depth + 1).shows;
-
-  const discards = members.some(({ index: memberIndex }) => {
-    const member = factsOf(scope, memberIndex, depth + 1);
-
-    return member.discards || member.ownDiscards;
-  });
-
-  return { shows, discards, ownDiscards: false };
+  return membersFacts(
+    factsOf,
+    scope,
+    { start: groupStart, end: closingIndex },
+    groupStreams,
+    depth,
+  );
 };
 
 const scriptFacts = (
@@ -236,20 +365,16 @@ const scriptFacts = (
   scriptInherited: Streams,
   depth: number,
 ): CompoundFacts => {
-  const commands = parseShellCommands(script) ?? [];
+  const commands = parseShellCommands(script);
+
+  // The parser cannot rule out a hidden failure in a script it does not understand.
+  if (commands === undefined) {
+    return failClosedFacts;
+  }
+
   const scope = compoundScope(commands, scriptInherited);
-  const lastIndex = commands.findLastIndex((command) => command.arguments.length > 0);
 
-  const shows =
-    lastIndex === -1 ? showsStderr(scriptInherited) : factsOf(scope, lastIndex, depth + 1).shows;
-
-  const discards = commands.some((_command, scriptIndex) => {
-    const member = factsOf(scope, scriptIndex, depth + 1);
-
-    return member.discards || member.ownDiscards;
-  });
-
-  return { shows, discards, ownDiscards: false };
+  return membersFacts(factsOf, scope, { start: 0, end: commands.length }, scriptInherited, depth);
 };
 
 // A command shows its failure when its own redirections, over the streams it inherits, end stderr in
@@ -274,11 +399,15 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
   const ownDiscards = command.redirections.length > 0 && discardsStderr(own);
   const script = scriptOf(command);
 
-  if (script !== undefined || command.group !== undefined) {
-    const nested =
-      script === undefined
-        ? groupFacts(compoundFacts, compoundScope(scope.commands, enclosing), index, depth)
-        : scriptFacts(compoundFacts, script, own, depth);
+  if (script !== undefined) {
+    const nested = scriptFacts(compoundFacts, script, own, depth);
+
+    return { shows: nested.shows, discards: nested.discards, ownDiscards };
+  }
+
+  if (command.group !== undefined) {
+    const nestedScope = compoundScope(scope.commands, enclosing, command.group);
+    const nested = groupFacts(compoundFacts, nestedScope, index, depth);
 
     return { shows: nested.shows, discards: nested.discards, ownDiscards };
   }
@@ -319,18 +448,17 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
     return false;
   }
 
-  const enclosing = enclosingOf(scope, index);
-  const own = streamsOf(command, enclosing);
+  const own = streamsOf(command, enclosingOf(scope, index));
   const script = scriptOf(command);
 
   if (script !== undefined || command.group !== undefined) {
     const facts = compoundFacts(scope, index, 0);
-    const hidden = discardsStderr(own) && !facts.shows;
+    const hidden = !showsStderr(own) && !facts.shows;
 
     return facts.discards || hidden;
   }
 
-  return discardsStderr(own) && !showsStderr(own);
+  return !showsStderr(own);
 };
 
 // A command the parser creates at an opening parenthesis has no arguments and closes no group, so
