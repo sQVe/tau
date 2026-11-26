@@ -154,6 +154,9 @@ export const launchedTerminalReply = (
 
 const getKey = 'get';
 
+// hc's exit code when it cannot find the terminal, which this fake shares with the CLI.
+const notFoundExitCode = 3;
+
 type HerdrAppKey = HerdrAppCommand | typeof getKey;
 
 export const createHerdrAppFake = (
@@ -177,7 +180,7 @@ export const createHerdrAppFake = (
                 JSON.stringify({
                   error: { kind: 'not_found', message: `unknown terminal: ${address}` },
                 }),
-                3,
+                notFoundExitCode,
               )
             : succeededResult(foregroundReply(address, foreground));
         };

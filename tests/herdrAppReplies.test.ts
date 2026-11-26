@@ -84,4 +84,5 @@ it('records no foreground for a reply that carried no --argv', async () => {
   const result = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
 
   expect(result.code).toBe(3);
+  expect(JSON.parse(result.stderr)).toMatchObject({ error: { kind: 'not_found' } });
 });
