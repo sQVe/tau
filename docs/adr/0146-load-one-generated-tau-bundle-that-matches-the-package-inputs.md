@@ -81,9 +81,10 @@ writes the complete chunk to a unique sibling file, rechecks the key, and rename
 failed build, a changed key, or a missing input publishes nothing. Generated files are ignored and
 not committed.
 
-`pnpm build:tau` runs the build, `prepare` runs it before the existing hook setup, and `pnpm check`
-runs it before the test stage. The builder is a production dependency, so Pi's Git install builds
-without devDependencies or Pi peer packages.
+`pnpm build:tau` runs the build, `postinstall` runs it, and `pnpm check` runs it before the test
+stage. `prepare` runs only the hook setup, because pnpm `install --prod` does not run root
+`prepare`. The builder is a production dependency, so Pi's Git install builds without
+devDependencies or Pi peer packages.
 
 ## Consequences
 

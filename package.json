@@ -30,7 +30,8 @@
     "lint": "vp lint --deny-warnings",
     "style:check": "stomme-ts-style",
     "style:fix": "stomme-ts-style --fix",
-    "prepare": "node scripts/buildTauExtension.ts && node scripts/prepare.ts",
+    "postinstall": "node scripts/buildTauExtension.ts",
+    "prepare": "node scripts/prepare.ts",
     "question-gate-score": "node scripts/questionGateScore.ts",
     "prose-report": "node scripts/proseReport.ts",
     "session-health": "node scripts/sessionHealth.ts",
@@ -91,7 +92,7 @@
   "engines": {
     "node": ">=24.11.0"
   },
-  "packageManager": "pnpm@12.3.4",
+  "packageManager": "pnpm@12.23.0",
   "pi": {
     "extensions": [
       "./src/tau.ts",

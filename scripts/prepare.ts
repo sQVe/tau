@@ -2,8 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Pi installs Tau from Git without devDependencies but still runs `prepare`. Without Vite+ there
-// are no Git hooks to configure.
+// pnpm `install --prod` skips root `prepare`, so the build runs in `postinstall`. This script only
+// sets up hooks when Vite+ is installed.
 const vitePlus = join('node_modules', '.bin', 'vp');
 
 if (existsSync(vitePlus)) {
