@@ -1,6 +1,6 @@
 import type { Exec } from '../src/command.js';
 import { createCommentFake } from './linearCommentFake.js';
-import { attachmentFields, attachmentNodes, decode } from './linearRequestFake.js';
+import { attachmentFields, attachmentPage, decode } from './linearRequestFake.js';
 import type {
   AttachmentFields,
   FakeCall,
@@ -114,11 +114,7 @@ const savedDescription = (description: string) => {
   return lines.join('\n');
 };
 
-const childNode = (
-  issue: FakeIssue,
-  project: { name: string } | null,
-  fields: AttachmentFields,
-) => ({
+const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   identifier: issue.identifier,
   branchName: issue.branchName,
   title: issue.title,
@@ -130,7 +126,6 @@ const childNode = (
   creator: issue.creatorId === null ? null : { id: issue.creatorId },
   assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
   state: issue.state,
-  attachments: { nodes: attachmentNodes(issue, fields) },
   inverseRelations: {
     nodes: [
       ...issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
@@ -210,16 +205,17 @@ export const createLinearFake = (): LinearFake => {
 
   const team = (id: string) => [...teams.values()].find((candidate) => candidate.id === id)!;
 
-  const pagedNode = (node: ReturnType<typeof childNode>) => {
-    const attachments = node.attachments.nodes;
+  const pagedNode = (
+    issue: FakeIssue,
+    issueProject: { name: string } | null,
+    fields: AttachmentFields,
+  ) => {
+    const node = childNode(issue, issueProject);
     const relations = node.inverseRelations.nodes;
 
     return {
       ...node,
-      attachments: {
-        pageInfo: { hasNextPage: attachments.length > attachmentLimit },
-        nodes: attachments.slice(0, attachmentLimit),
-      },
+      attachments: attachmentPage(issue, fields, attachmentLimit),
       inverseRelations: {
         pageInfo: { hasNextPage: relations.length > relationLimit },
         nodes: relations.slice(0, relationLimit),
@@ -242,15 +238,13 @@ export const createLinearFake = (): LinearFake => {
     return {
       viewer: { id: 'user-viewer' },
       issue: {
-        ...pagedNode(childNode(issue, project(issue.projectId), issueFields)),
+        ...pagedNode(issue, project(issue.projectId), issueFields),
         id: issueId(identifier),
         team: team(issue.teamId),
         project: project(issue.projectId),
         children: {
           pageInfo: { hasNextPage: children.length < allChildren.length },
-          nodes: children.map((child) =>
-            pagedNode(childNode(child, project(child.projectId), childFields)),
-          ),
+          nodes: children.map((child) => pagedNode(child, project(child.projectId), childFields)),
         },
       },
     };
@@ -463,9 +457,8 @@ export const createLinearFake = (): LinearFake => {
         }
 
         const fields = attachmentFields(operation.query, 0);
-        const { attachments } = pagedNode(childNode(issue, project(issue.projectId), fields));
 
-        return { issue: { attachments } };
+        return { issue: { attachments: attachmentPage(issue, fields, attachmentLimit) } };
       }
 
       case 'ticket': {

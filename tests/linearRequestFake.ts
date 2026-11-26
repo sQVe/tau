@@ -64,7 +64,7 @@ export interface AttachmentSources {
   plainLinks: readonly string[];
 }
 
-export interface AttachmentNode {
+interface AttachmentNode {
   url: string;
   metadata?: { linkKind: string } | null;
 }
@@ -148,10 +148,7 @@ export const attachmentFields = (query: string, index = 0): AttachmentFields => 
 
 // A linked pull request either closes the issue, only mentions it, or arrives without Linear's
 // record of either.
-export const attachmentNodes = (
-  issue: AttachmentSources,
-  fields: AttachmentFields,
-): AttachmentNode[] => [
+const attachmentNodes = (issue: AttachmentSources, fields: AttachmentFields): AttachmentNode[] => [
   ...issue.pullRequests.map((url) => ({
     url,
     ...(fields.metadata ? { metadata: { linkKind: 'closes' } } : {}),
