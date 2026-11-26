@@ -1,5 +1,19 @@
 # tau
 
+## 1.4.1
+
+### Patch Changes
+
+- [#774](https://github.com/sQVe/tau/pull/774)
+  [`08579d5`](https://github.com/sQVe/tau/commit/08579d5d1ff09de0ba36bbaa90f607e2271162d6) Thanks
+  [@renovate](https://github.com/apps/renovate)! - Accept U+FFFD when an out-of-range numeric
+  character reference appears in prose text, matching how marked 18.2.1 decodes it.
+
+- [#763](https://github.com/sQVe/tau/pull/763)
+  [`16f5951`](https://github.com/sQVe/tau/commit/16f59514af1e88723bd8c700f95e9b8648e40bc5) Thanks
+  [@renovate](https://github.com/apps/renovate)! - Type the readFile test fakes from the Node.js
+  readFile parameters, so they type-check with `@types/node` 24.19.
+
 ## 1.4.0
 
 ### Minor Changes
