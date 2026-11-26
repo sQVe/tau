@@ -308,32 +308,35 @@ export const commandWords = (words: readonly string[]): CommandWords => {
 };
 
 // A shell option word may take the next word as its value, as `-o pipefail` and `--rcfile file` do.
-const shellValueOptions: ReadonlySet<string> = new Set([
-  '-O',
-  '-o',
-  '--init-file',
-  '--rcfile',
-  '+O',
-  '+o',
-]);
+const shellValueOptions: ReadonlySet<string> = new Set(['--init-file', '--rcfile']);
 
 const startsLikeOption = (word: string): boolean => word.startsWith('-') || word.startsWith('+');
 
 const isShellOptionWord = (word: string): boolean => word.length > 1 && startsLikeOption(word);
 
+const takesShellOptionValue = (word: string): boolean =>
+  shellValueOptions.has(word) || /^[-+][a-zA-Z]*[oO]$/u.test(word);
+
+const namesShellScript = (word: string): boolean => /^-[a-zA-Z]*c[a-zA-Z]*$/u.test(word);
+
 // A shell runs a `-c` script only when `-c` is an option. A positional operand names a script file
-// instead, so the scan stops there and after `--`.
+// instead, so the scan stops there and after `--`. A flag word can set `c` and take a value at once,
+// as `-co pipefail` does, so the scan remembers `c` until it reaches the script word.
 const shellOptionScript = (words: readonly string[]): string | undefined => {
   let index = 0;
+  let namesScript = false;
 
   while (index < words.length) {
     const word = words[index] ?? '';
 
     if (word === '--' || !isShellOptionWord(word)) {
-      return undefined;
+      return namesScript ? word : undefined;
     }
 
-    const consumesValue = shellValueOptions.has(word) || /^[-+][a-zA-Z]*[oO]$/u.test(word);
+    const consumesValue = takesShellOptionValue(word);
+    const namesScriptHere = namesShellScript(word);
+
+    namesScript ||= namesScriptHere;
 
     if (consumesValue) {
       index += 2;
@@ -341,7 +344,7 @@ const shellOptionScript = (words: readonly string[]): string | undefined => {
       continue;
     }
 
-    if (/^-[a-zA-Z]*c[a-zA-Z]*$/u.test(word)) {
+    if (namesScriptHere) {
       return words[index + 1];
     }
 
@@ -1141,8 +1144,9 @@ class ShellParser {
     wordQuoted: boolean,
     redirectionFollows: boolean,
   ): void {
-    const isCasePattern = state.compounds.at(-1)?.caseState === 'pattern';
-    const isCaseCloser = isCasePattern && closingKeywords.has(word);
+    const compound = state.compounds.at(-1);
+    const isCasePattern = compound?.caseState === 'pattern';
+    const isCaseCloser = isCasePattern && !wordQuoted && compound.closer === word;
 
     if (isCasePattern && !isCaseCloser) {
       return;
@@ -1228,6 +1232,15 @@ class ShellParser {
   // start forward.
   private trackCompound(state: ListState, word: string, wordIndex: number): void {
     if (!Object.hasOwn(compoundClosers, word) && !closingKeywords.has(word)) {
+      return;
+    }
+
+    const top = state.compounds.at(-1);
+    const closesPatternList = top?.caseState === 'pattern' && top.closer === word;
+
+    if (closesPatternList) {
+      this.applyCompound(state, word, state.commandIndex);
+
       return;
     }
 

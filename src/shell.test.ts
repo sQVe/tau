@@ -231,6 +231,38 @@ describe('parseShellCommands', () => {
     ]);
   });
 
+  it.each(['fi', 'done', '}'])(
+    'keeps a case pattern that spells the %s keyword out of the command',
+    (pattern) => {
+      expect(wordsOf(`case x in ${pattern}) echo ok ;; esac`)).toEqual([
+        ['case', 'x', 'in'],
+        ['echo', 'ok'],
+        ['esac'],
+      ]);
+    },
+  );
+
+  it('keeps a quoted case closer out of the command', () => {
+    expect(wordsOf("case x in 'esac') echo ok ;; esac")).toEqual([
+      ['case', 'x', 'in'],
+      ['echo', 'ok'],
+      ['esac'],
+    ]);
+  });
+
+  it('records the command after a case whose pattern list is empty', () => {
+    expect(wordsOf('case x in esac; echo ok')).toEqual([
+      ['case', 'x', 'in', 'esac'],
+      ['echo', 'ok'],
+    ]);
+  });
+
+  it('records a detached command after a case whose pattern list is empty', () => {
+    expect(parseShellCommands('case $x in esac; nohup cmd 2>/dev/null &')).toContainEqual(
+      expect.objectContaining({ arguments: ['nohup', 'cmd'], background: true }),
+    );
+  });
+
   it('backgrounds only a case pattern list member that ends with an ampersand', () => {
     expect(backgroundsOf('case x in a) b & ;; esac')).toEqual([false, true, false]);
   });
@@ -637,6 +669,14 @@ describe('commandWords and shellScriptOf', () => {
     expect(shellScriptOf(['bash', '-euo', 'pipefail', '-c', 'cmd'])).toBe('cmd');
     expect(shellScriptOf(['bash', '--rcfile', '/tmp/rc', '-c', 'cmd'])).toBe('cmd');
     expect(shellScriptOf(['bash', '-lc', 'cmd'])).toBe('cmd');
+  });
+
+  it('reads the script after a flag word that sets -c and takes a value', () => {
+    expect(shellScriptOf(['bash', '-co', 'pipefail', 'cmd 2>/dev/null &'])).toBe(
+      'cmd 2>/dev/null &',
+    );
+
+    expect(shellScriptOf(['bash', '-cO', 'pipefail', 'cmd'])).toBe('cmd');
   });
 
   it('reads the command the external time binary runs', () => {
