@@ -288,7 +288,10 @@ export const createGhFake = (): GhFake => {
     commandArguments: readonly string[],
   ): Promise<ExecResult> => {
     const flag = key === 'api post' ? '--input' : '--body-file';
-    const path = argumentAfter(commandArguments, flag);
+    // The plan appends the real file flag after every option, so a title equal to the flag comes
+    // first.
+    const flagIndex = commandArguments.lastIndexOf(flag);
+    const path = flagIndex === -1 ? undefined : commandArguments[flagIndex + 1];
 
     if (path === undefined) {
       return failedResult(`missing ${flag}`);

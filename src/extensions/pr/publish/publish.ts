@@ -25,7 +25,7 @@ import { runPath, runPrefix } from '../verify.js';
 import { decidePublication, publicationToken } from './publishDecisions.js';
 import type { PublicationFile, PublicationTargetFacts } from './publishDecisions.js';
 
-export interface PublicationRequest {
+export interface PublishRequest {
   kind?: PublicationKind;
   repository?: string;
   directory?: string;
@@ -67,7 +67,7 @@ interface PublicationTarget {
   kind: PublicationKind;
   repository: Repository;
   directory: string;
-  request: PublicationRequest;
+  request: PublishRequest;
 }
 
 interface PullRequestFiles {
@@ -173,7 +173,7 @@ const runDirectory = async (root: string, action: string, directory: string | un
 const publicationTarget = async (
   action: PublicationTarget['action'],
   root: string,
-  request: PublicationRequest,
+  request: PublishRequest,
 ): Promise<PublicationTarget> => {
   const kind = requireKind(action, request.kind);
   const repository = parseRepository(requireValue(action, 'repository', request.repository));
@@ -478,6 +478,7 @@ const publishedUrl = (kind: PublicationKind, stdout: string): string | null =>
 const privateDirectoryMode = 0o700;
 const privateFileMode = 0o600;
 const fileArgumentFlags = new Set(['--body-file', '--input']);
+const valueFlags = new Set(['--repo', '--title', '--base', '--head', '--hostname', '--method']);
 
 // Rewrites every file argument to a unique copy below directory, so equal basenames cannot collide.
 export const verifiedCopyArguments = (
@@ -488,8 +489,21 @@ export const verifiedCopyArguments = (
   const rewritten = [...commandArguments];
   const copies: VerifiedCopy[] = [];
   let found = false;
+  let skipValue = false;
 
   for (const [index, argument] of commandArguments.entries()) {
+    if (skipValue) {
+      skipValue = false;
+
+      continue;
+    }
+
+    if (valueFlags.has(argument)) {
+      skipValue = true;
+
+      continue;
+    }
+
     if (!fileArgumentFlags.has(argument)) {
       continue;
     }
@@ -551,7 +565,7 @@ const runWithVerifiedBytes = async (
 // Reads the files a publish would send, reports the prose findings, and pins their bytes.
 export const readPublication = async (
   root: string,
-  request: PublicationRequest,
+  request: PublishRequest,
 ): Promise<Record<string, unknown>> => {
   const target = await publicationTarget('dryRun', root, request);
   const plan = await planPublication(target);
@@ -567,7 +581,7 @@ export const readPublication = async (
 export const publishPublication = async (
   runtime: CommandRuntime,
   root: string,
-  request: PublicationRequest,
+  request: PublishRequest,
 ): Promise<Record<string, unknown>> => {
   const target = await publicationTarget('publish', root, request);
   const plan = await planPublication(target);

@@ -132,6 +132,18 @@ const reviewBots = async (
   return { ...(await readReviewBotStatuses(runtime, location, context.ui, parameters)) };
 };
 
+const dryRun = async (runtime: CommandRuntime, parameters: PrInput) => {
+  const root = await findCheckoutRoot(runtime.cwd, 'pr');
+
+  return { ...(await readPublication(root, parameters)) };
+};
+
+const publish = async (runtime: CommandRuntime, parameters: PrInput) => {
+  const root = await findCheckoutRoot(runtime.cwd, 'pr');
+
+  return { ...(await publishPublication(runtime, root, parameters)) };
+};
+
 const runAction = async (
   exec: Exec,
   options: PrToolOptions,
@@ -159,15 +171,11 @@ const runAction = async (
   }
 
   if (parameters.action === 'dryRun') {
-    const root = await findCheckoutRoot(cwd, 'pr');
-
-    return { ...(await readPublication(root, parameters)) };
+    return dryRun(runtime, parameters);
   }
 
   if (parameters.action === 'publish') {
-    const root = await findCheckoutRoot(cwd, 'pr');
-
-    return { ...(await publishPublication(runtime, root, parameters)) };
+    return publish(runtime, parameters);
   }
 
   if (parameters.action === 'coverage') {

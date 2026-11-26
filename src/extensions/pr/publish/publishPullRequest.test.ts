@@ -14,6 +14,8 @@ import {
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 
+const isRoot = process.getuid?.() === 0;
+
 const setUp = () => setUpPublication(onTestFinished);
 
 it('publishes a new pull request with the approved title, body, base, head, and draft', async () => {
@@ -410,7 +412,29 @@ it('removes the verified copy when the publish fails and names the run file', as
   await expect(access(publishedPath)).rejects.toThrow(/ENOENT/u);
 });
 
-it('keeps the publish result when the private copy cannot be removed', async () => {
+it.each(['--body-file', '--input'])(
+  'publishes a title equal to %s and still rewrites the real file argument',
+  async (flag) => {
+    const { fake, run } = await setUp();
+    const directory = await prepareRun(run);
+
+    await writeRunFile(directory, 'body.md', 'Adds it.\n');
+    await writeRunFile(directory, 'title.md', `${flag}\n`);
+
+    const request = dryRunPullRequest(directory);
+    const dryRun = await run(request);
+
+    await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+
+    const commandArguments = fake.writes[0]?.commandArguments ?? [];
+
+    expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it.\n'));
+    expect(commandArguments[commandArguments.indexOf('--title') + 1]).toBe(flag);
+    expect(commandArguments.join(' ')).toMatch(/--body-file \/.*tau-publish-[^/]+\/\d+-body\.md/u);
+  },
+);
+
+it.skipIf(isRoot)('keeps the publish result when the private copy cannot be removed', async () => {
   let privateDirectory = '';
 
   const { run } = await createPublicationTool(onTestFinished, {
