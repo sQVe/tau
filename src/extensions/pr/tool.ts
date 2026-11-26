@@ -11,7 +11,7 @@ import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readCheckHeader } from './checkEvidence.js';
 import { readChainCoverage } from './coverage.js';
 import { readPublicationEvidence } from './evidence.js';
-import { publishPublication, readPublication } from './publish/publish.js';
+import { publishPublication, publicationKindSchema, readPublication } from './publish/publish.js';
 import { readReuse } from './reuse.js';
 import { readTarget } from './target.js';
 import { readVerify, runPath, runPrefix } from './verify.js';
@@ -75,11 +75,7 @@ export const prToolParameters = Type.Object({
   head: Type.Optional(
     Type.String({ description: 'coverage: revision; default HEAD. dryRun/publish: create head.' }),
   ),
-  kind: Type.Optional(
-    Type.Union([Type.Literal('pullRequest'), Type.Literal('comment'), Type.Literal('review')], {
-      description: 'dryRun/publish: the write to send.',
-    }),
-  ),
+  kind: Type.Optional(publicationKindSchema),
   file: Type.Optional(
     Type.String({ description: 'dryRun/publish comment: path in the run directory.' }),
   ),
@@ -98,7 +94,7 @@ const description = `- prepare: start a run; {directory}.
 - reuse: review vs mergeBase..HEAD; {status:match|mismatch,reasons,recordedBase,paths:{differing,missing,extra},reports}.
 - verify: published PR vs approval; directory holds body.md. {url,matches,differences:[{field,expected,actual}]} for title/body/base/draft/head.
 - dryRun {kind,repository,directory,pr?,base?,head?,draft?,file?}: {kind,token,findings:[{file,field?,rule,line,excerpt}]} for the files publish would send; writes nothing, runs no gh. pullRequest: title.md and body.md; pr edits, else creates with base,head,draft. comment: file. review: review.json; no event: pending; findings come from body and comments[<i>].body, with field.
-- publish {same,token}: refuses unless every file still matches token, naming the changed file, then runs one gh command. {kind,files,url}; url: null when the output has none. Findings never block.
+- publish {same,token}: refuses unless the token matches the target and every file, naming the changed file, then runs one gh command. {kind,files,url}; url: null when the output has none. Findings never block.
 - reviewBots: {bots:[{login,comment,status}]}; reviewed: current head; requested: comment after head and first check suite; request: needs comment. Empty: no bots.`;
 
 const prepare = async (runtime: CommandRuntime) => {

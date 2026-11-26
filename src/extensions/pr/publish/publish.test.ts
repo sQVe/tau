@@ -339,6 +339,136 @@ it('refuses a dry run or publish that lacks a required input', async () => {
   expect(fake.calls).toEqual([]);
 });
 
+it('refuses a whitespace-only title.md at the dry run', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', '   \n');
+
+  await expect(run(dryRunPullRequest(directory))).rejects.toThrow('title.md must not be empty.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('trims base and head and refuses a whitespace-only value', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+  const body = await writeRunFile(directory, 'body.md', 'Adds it.\n');
+
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  await expect(run({ ...dryRunPullRequest(directory), base: '  ' })).rejects.toThrow(
+    'dryRun needs base.',
+  );
+
+  await expect(run({ ...dryRunPullRequest(directory), head: '\t' })).rejects.toThrow(
+    'dryRun needs head.',
+  );
+
+  expect(fake.calls).toEqual([]);
+
+  const request = { ...dryRunPullRequest(directory), base: ' main ', head: ' feature ' };
+  const dryRun = await run(request);
+
+  await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+
+  expect(fake.writes[0]?.commandArguments).toEqual([
+    'pr',
+    'create',
+    '--repo',
+    'github.com/sQVe/tau',
+    '--base',
+    'main',
+    '--head',
+    'feature',
+    '--title',
+    'Add a feature',
+    '--body-file',
+    body,
+    '--draft',
+  ]);
+});
+
+it('refuses to publish when only title.md changed and names it', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  const request = dryRunPullRequest(directory);
+  const dryRun = await run(request);
+
+  await writeRunFile(directory, 'title.md', 'Another title\n');
+
+  await expect(
+    run({ ...request, action: 'publish', token: String(dryRun['token']) }),
+  ).rejects.toThrow(/title\.md changed since the dry run/u);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses to publish a token from another create target and sends nothing', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  const request = dryRunPullRequest(directory);
+  const dryRun = await run(request);
+  const changes = [{ base: 'develop' }, { head: 'other' }, { draft: false }];
+
+  for (const change of changes) {
+    await expect(
+      run({ ...request, ...change, action: 'publish', token: String(dryRun['token']) }),
+    ).rejects.toThrow('The token covers a different publication target');
+  }
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses to publish a token from another pull request and sends nothing', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  const request = { ...dryRunPullRequest(directory), pr: 7 };
+  const dryRun = await run(request);
+
+  await expect(
+    run({ ...request, action: 'publish', pr: 8, token: String(dryRun['token']) }),
+  ).rejects.toThrow('The token covers a different publication target');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses to publish a token from another run directory and sends nothing', async () => {
+  const { fake, run } = await setUp();
+  const first = await prepareRun(run);
+  const second = await prepareRun(run);
+
+  for (const directory of [first, second]) {
+    await writeRunFile(directory, 'body.md', 'Adds it.\n');
+    await writeRunFile(directory, 'title.md', 'Add a feature\n');
+  }
+
+  const dryRun = await run(dryRunPullRequest(first));
+
+  await expect(
+    run({
+      ...dryRunPullRequest(second),
+      action: 'publish',
+      token: String(dryRun['token']),
+    }),
+  ).rejects.toThrow('The token covers a different publication target');
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('refuses a run directory without body.md', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
@@ -428,6 +558,38 @@ it('refuses a comment file that climbs out of the run directory', async () => {
       file: '../body.md',
     }),
   ).rejects.toThrow('The comment file must stay in the run directory');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a comment file path with a backslash', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await expect(
+    run({
+      action: 'dryRun',
+      kind: 'comment',
+      repository,
+      directory,
+      pr: 7,
+      file: 'bots\\0.md',
+    }),
+  ).rejects.toThrow('The comment file must not contain a backslash');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a comment file that is a directory', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+  const path = join(directory, 'bots');
+
+  await mkdir(path);
+
+  await expect(
+    run({ action: 'dryRun', kind: 'comment', repository, directory, pr: 7, file: 'bots' }),
+  ).rejects.toThrow(`not a regular file: ${path}`);
 
   expect(fake.calls).toEqual([]);
 });

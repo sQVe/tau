@@ -7,7 +7,7 @@ import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../../command.js';
 import { outputPreviewLength } from '../../../command.js';
-import { parseRepository, run } from '../../../github/github.js';
+import { parseRepository, requirePullRequestNumber, run } from '../../../github/github.js';
 import type { Repository } from '../../../github/github.js';
 import { formatRepository } from '../../../github/repositoryTargetDecisions.js';
 import { checkProse } from '../../../prose.js';
@@ -20,12 +20,9 @@ import {
   rejectLinkedFile,
   requireTauChild,
 } from '../../../tauDirectory.js';
-import { requirePullRequestNumber } from '../pullRequestNumber.js';
 import { runPath, runPrefix } from '../verify.js';
 import { decidePublication, publicationToken } from './publishDecisions.js';
-import type { PublicationFile } from './publishDecisions.js';
-
-type PublicationKind = 'pullRequest' | 'comment' | 'review';
+import type { PublicationFile, PublicationTargetFacts } from './publishDecisions.js';
 
 export interface PublicationRequest {
   kind?: PublicationKind;
@@ -58,6 +55,7 @@ interface ReviewFinding extends FileFinding {
 type PublicationFinding = FileFinding | ReviewFinding;
 
 interface PublicationPlan {
+  target: PublicationTargetFacts;
   files: RunFile[];
   commandArguments: string[];
   findings: PublicationFinding[];
@@ -70,6 +68,13 @@ interface PublicationTarget {
   directory: string;
   request: PublicationRequest;
 }
+
+export const publicationKindSchema = Type.Union(
+  [Type.Literal('pullRequest'), Type.Literal('comment'), Type.Literal('review')],
+  { description: 'dryRun/publish: the write to send.' },
+);
+
+type PublicationKind = Static<typeof publicationKindSchema>;
 
 const titleFileName = 'title.md';
 const bodyFileName = 'body.md';
@@ -107,12 +112,26 @@ const reviewSchema = Type.Object(
 
 const repositoryPath = (repository: Repository) => `${repository.owner}/${repository.name}`;
 
-const requireValue = <Value>(action: string, name: string, value: Value | undefined): Value => {
+const requireValue = <ValueType>(
+  action: string,
+  name: string,
+  value: ValueType | undefined,
+): ValueType => {
   if (value === undefined) {
     throw new Error(`${action} needs ${name}.`);
   }
 
   return value;
+};
+
+const requireText = (action: string, name: string, value: string | undefined): string => {
+  const text = requireValue(action, name, value).trim();
+
+  if (text === '') {
+    throw new Error(`${action} needs ${name}.`);
+  }
+
+  return text;
 };
 
 const requireKind = (action: string, kind: PublicationKind | undefined): PublicationKind => {
@@ -148,7 +167,7 @@ const publicationTarget = async (
 const rejectPathLinks = async (directory: string, file: string) => {
   let path = directory;
 
-  for (const segment of file.split('/')) {
+  for (const segment of file.split(/[/\\]/u)) {
     path = join(path, segment);
     // oxlint-disable-next-line no-await-in-loop -- Checking in path order names the first refusal.
     await rejectLinkedFile(path, 'read');
@@ -160,8 +179,14 @@ const readPublicationFile = async (directory: string, file: string): Promise<Run
 
   await rejectPathLinks(directory, file);
 
-  if ((await existingEntry(path)) === undefined) {
+  const entry = await existingEntry(path);
+
+  if (entry === undefined) {
     throw new Error(`No ${file} at ${path}. Write it there first.`);
+  }
+
+  if (!entry.isFile()) {
+    throw new Error(`Refusing to read a path that is not a regular file: ${path}`);
   }
 
   const bytes = await readFile(path);
@@ -178,6 +203,12 @@ const requireCommentFile = (action: string, file: string | undefined): string =>
 
   if (climbsOut(requested)) {
     throw new Error(`The comment file must stay in the run directory, not ${requested}.`);
+  }
+
+  if (requested.includes('\\')) {
+    throw new Error(
+      `The comment file must not contain a backslash, which is a name character on some platforms: ${requested}`,
+    );
   }
 
   if (requested === '' || normalize(requested) === '.') {
@@ -242,6 +273,11 @@ const readPullRequest = async (target: PublicationTarget): Promise<PublicationPl
   const titleFile = await readPublicationFile(directory, titleFileName);
   const bodyFile = await readPublicationFile(directory, bodyFileName);
   const title = titleFile.text.trim();
+
+  if (title === '') {
+    throw new Error(`${titleFileName} must not be empty.`);
+  }
+
   const files = [titleFile, bodyFile];
   const findings = files.flatMap(fileFindings);
   const repositoryTarget = formatRepository(repository);
@@ -261,11 +297,18 @@ const readPullRequest = async (target: PublicationTarget): Promise<PublicationPl
       bodyFile.path,
     ];
 
-    return { files, commandArguments, findings };
+    const facts: PublicationTargetFacts = {
+      kind: 'pullRequest',
+      repository: repositoryTarget,
+      directory,
+      pr,
+    };
+
+    return { target: facts, files, commandArguments, findings };
   }
 
-  const base = requireValue(action, 'base', request.base);
-  const head = requireValue(action, 'head', request.head);
+  const base = requireText(action, 'base', request.base);
+  const head = requireText(action, 'head', request.head);
   const draft = request.draft === true ? ['--draft'] : [];
 
   const commandArguments = [
@@ -284,7 +327,16 @@ const readPullRequest = async (target: PublicationTarget): Promise<PublicationPl
     ...draft,
   ];
 
-  return { files, commandArguments, findings };
+  const facts: PublicationTargetFacts = {
+    kind: 'pullRequest',
+    repository: repositoryTarget,
+    directory,
+    base,
+    head,
+    draft: request.draft === true,
+  };
+
+  return { target: facts, files, commandArguments, findings };
 };
 
 const readComment = async (target: PublicationTarget): Promise<PublicationPlan> => {
@@ -302,7 +354,14 @@ const readComment = async (target: PublicationTarget): Promise<PublicationPlan> 
     file.path,
   ];
 
-  return { files: [file], commandArguments, findings: fileFindings(file) };
+  const facts: PublicationTargetFacts = {
+    kind: 'comment',
+    repository: formatRepository(repository),
+    directory,
+    pr,
+  };
+
+  return { target: facts, files: [file], commandArguments, findings: fileFindings(file) };
 };
 
 const readReview = async (target: PublicationTarget): Promise<PublicationPlan> => {
@@ -324,7 +383,14 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
 
   const review = parseReview(file);
 
-  return { files: [file], commandArguments, findings: reviewFindings(file, review) };
+  const facts: PublicationTargetFacts = {
+    kind: 'review',
+    repository: formatRepository(repository),
+    directory,
+    pr,
+  };
+
+  return { target: facts, files: [file], commandArguments, findings: reviewFindings(file, review) };
 };
 
 const planPublication = (target: PublicationTarget): Promise<PublicationPlan> => {
@@ -365,7 +431,7 @@ export const readPublication = async (
 
   return {
     kind: target.kind,
-    token: publicationToken(plan.files),
+    token: publicationToken(plan.target, plan.files),
     findings: plan.findings,
   };
 };
@@ -379,7 +445,8 @@ export const publishPublication = async (
   const target = await publicationTarget('publish', root, request);
   const plan = await planPublication(target);
   const token = requireValue('publish', 'token from dryRun', request.token);
-  const decision = decidePublication({ token, files: plan.files });
+
+  const decision = decidePublication({ token, target: plan.target, files: plan.files });
 
   if (decision.kind === 'refuse') {
     throw new Error(decision.reason);
