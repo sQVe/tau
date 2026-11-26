@@ -57,12 +57,12 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
       return actual.copyFile(...parameters);
     },
-    readFile: (async (path: PathLike, options?: BufferEncoding) => {
-      if (fails('readFile', path)) {
+    readFile: (async (...parameters: Parameters<typeof actual.readFile>) => {
+      if (fails('readFile', parameters[0])) {
         return Buffer.from('changed on disk');
       }
 
-      return actual.readFile(path, options);
+      return actual.readFile(...parameters);
     }) as typeof actual.readFile,
   };
 });

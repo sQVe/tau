@@ -46,6 +46,22 @@
       "matchDepTypes": ["dependencies", "peerDependencies"],
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "vite-plus bundles oxlint, @oxlint/plugins, and vitest, and @sqve/stomme-ts-style pins its vite-plus peer, so these move together only when approved on the dashboard. oxlint 1.92 and later need vite-plus 1.6 to load vite.config.ts.",
+      "matchPackageNames": ["vite-plus", "oxlint", "@oxlint/plugins", "vitest", "@vitest/**"],
+      "groupName": "Vite+ toolchain",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "oxlint 1.92 and later need vite-plus 1.6 to load vite.config.ts.",
+      "matchPackageNames": ["oxlint", "@oxlint/plugins"],
+      "allowedVersions": "<1.92.0"
+    },
+    {
+      "description": "Pi 1.6.0 provides typebox 1.3 at runtime, so the development copy stays on 1.3 until Pi moves.",
+      "matchPackageNames": ["typebox"],
+      "allowedVersions": "<1.4.0"
     }
   ]
 }
