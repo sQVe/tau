@@ -65,7 +65,7 @@ export const isSymlink = async (path: string): Promise<boolean> => {
 
     return stats.isSymbolicLink();
   } catch (error) {
-    if (isMissingFile(error)) {
+    if (isMissingPath(error)) {
       return false;
     }
 
@@ -136,7 +136,7 @@ const rejectLinkedIgnoreFile = async (root: string) => {
       throw new Error(`Refusing to write through a file with another hard link: ${path}`);
     }
   } catch (error) {
-    if (!isMissingFile(error)) {
+    if (!isMissingPath(error)) {
       throw error;
     }
   }
@@ -362,7 +362,14 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
     await rejectTracked(root, ['.tau', ...segments].join('/'));
   }
 
-  await mkdir(join(root, '.tau'), { recursive: true });
+  const tauPath = join(root, '.tau');
+  const tauEntry = await existingEntry(tauPath);
+
+  if (tauEntry !== undefined && !tauEntry.isDirectory()) {
+    throw new Error(`Tau directory ${tauPath} is not a directory.`);
+  }
+
+  await mkdir(tauPath, { recursive: true });
   await ignoreTauDirectory(root);
   await checkTauDirectoryWith(root, path, bareProbes);
 

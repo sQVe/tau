@@ -20,6 +20,7 @@ import {
   checkTauDirectory,
   ensureTauDirectory,
   existingEntry,
+  isSymlink,
   rejectLinkedEntries,
   rejectLinkedFile,
 } from './tauDirectory.js';
@@ -148,6 +149,38 @@ for (const verb of ['read', 'write'] as const) {
     });
   }
 }
+
+it('existingEntry rethrows an error that is not a missing path', async () => {
+  const directory = temporaryDirectory(afterThisTest, 'tau-entry-');
+
+  await expect(existingEntry(join(directory, 'a'.repeat(300)))).rejects.toMatchObject({
+    code: 'ENAMETOOLONG',
+  });
+});
+
+it('rejectLinkedFile rethrows an error that is not a missing path', async () => {
+  const directory = temporaryDirectory(afterThisTest, 'tau-linked-file-');
+
+  await expect(rejectLinkedFile(join(directory, 'a'.repeat(300)), 'read')).rejects.toMatchObject({
+    code: 'ENAMETOOLONG',
+  });
+});
+
+it('isSymlink reports a path through a file as not a link', async () => {
+  const directory = temporaryDirectory(afterThisTest, 'tau-link-check-');
+
+  await writeFile(join(directory, 'plain.md'), 'text\n');
+
+  await expect(isSymlink(join(directory, 'plain.md', 'file.md'))).resolves.toBe(false);
+});
+
+it('ensureTauDirectory refuses a .tau that is a regular file without a raw ENOTDIR', async () => {
+  const root = await createTemporaryRepository(afterThisTest);
+
+  await writeFile(join(root, '.tau'), 'text\n');
+
+  await expect(ensureTauDirectory(root, 'workers')).rejects.toThrow('is not a directory');
+});
 
 it('rejectLinkedFile treats a path through a file as missing', async () => {
   const parent = join(temporaryDirectory(afterThisTest, 'tau-linked-file-'), 'plain.md');
