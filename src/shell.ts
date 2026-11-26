@@ -58,8 +58,9 @@ const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const longestRedirection = '<<<';
 
-// A digit word touching `<` or `>` is a file descriptor. Quoting makes it an ordinary word.
-const isIoNumber = (word: string, wordQuoted: boolean) => !wordQuoted && /^\d+$/u.test(word);
+// An unquoted digit word names a file descriptor only where a redirection operator touches it.
+const isUnquotedDigitWord = (word: string, wordQuoted: boolean) =>
+  !wordQuoted && /^\d+$/u.test(word);
 
 const rejectPendingHeredoc = (state: ListState) => {
   if (state.heredocOperator !== undefined) {
@@ -189,6 +190,10 @@ class ShellParser {
 
   // Each substitution or expanding heredoc body runs in its own scope, named by its parent and an
   // ordinal that is unique within the parse.
+  private childParser(source: string): ShellParser {
+    return new ShellParser(source, this.nextChildScope());
+  }
+
   private nextChildScope(): string {
     const ordinal = this.childScopes;
 
@@ -401,7 +406,7 @@ class ShellParser {
     } else if (
       redirectionFollows &&
       state.pendingRedirection === undefined &&
-      isIoNumber(word, wordQuoted)
+      isUnquotedDigitWord(word, wordQuoted)
     ) {
       state.command.words.push(word);
       state.redirectionDescriptor = word;
@@ -562,7 +567,7 @@ class ShellParser {
     }
 
     this.position += 1;
-    const innerParser = new ShellParser(inner, this.nextChildScope());
+    const innerParser = this.childParser(inner);
 
     innerParser.parseList(false);
     this.commands.push(...innerParser.commands);
@@ -621,7 +626,7 @@ class ShellParser {
       heredoc.command.heredocs.push(body);
 
       if (heredoc.expands) {
-        const bodyParser = new ShellParser(body, this.nextChildScope());
+        const bodyParser = this.childParser(body);
 
         bodyParser.readExpandingText(undefined, false);
         this.commands.push(...bodyParser.commands);

@@ -171,12 +171,12 @@ const shellInterpreters = new Set([
 // look like the command word. A wrapper not in this table hides its command, and the guard then
 // allows it.
 const wrapperOptionValues = new Map<string, ReadonlySet<string>>([
-  ['chrt', new Set()],
+  ['chrt', new Set(['-T', '--sched-runtime', '-P', '--sched-period', '-D', '--sched-deadline'])],
   ['command', new Set()],
   ['doas', new Set(['-u', '-C'])],
   ['env', new Set(['-u', '--unset', '-C', '--chdir', '-S', '--split-string', '-P', '--path'])],
   ['exec', new Set(['-a'])],
-  ['flock', new Set()],
+  ['flock', new Set(['-w', '--timeout', '-E', '--conflict-exit-code'])],
   ['ionice', new Set(['-c', '-n', '-p', '--class', '--classdata'])],
   ['nice', new Set(['-n', '--adjustment'])],
   ['nohup', new Set()],
@@ -609,7 +609,8 @@ const scriptFacts = (
 ): NamedFileFacts | undefined => {
   const cached = state.facts.get(path);
 
-  if (cached !== undefined) {
+  // A fail-open probe caches an unreadable file as missing, which must not excuse a fail-closed read.
+  if (cached !== undefined && !(failClosed && cached.kind === 'missing')) {
     return cached;
   }
 
@@ -684,6 +685,23 @@ const directoryFor = (directories: string[], depth: number): string => {
   return directories[depth] ?? '';
 };
 
+// A substitution's scope can be nested under a scope that owns no command, such as a heredoc
+// body, so walk up until a scope with a stack exists.
+const ancestorDirectory = (stacks: Map<string, string[]>, scope: string): string | undefined => {
+  let current = scope;
+
+  while (current !== '') {
+    current = current.includes('.') ? current.slice(0, current.lastIndexOf('.')) : '';
+    const stack = stacks.get(current);
+
+    if (stack !== undefined) {
+      return stack[stack.length - 1];
+    }
+  }
+
+  return undefined;
+};
+
 // Each scope starts at the directory its parent scope is in when the substitution begins.
 const directoryStack = (stacks: Map<string, string[]>, scope: string, cwd: string): string[] => {
   const existing = stacks.get(scope);
@@ -692,9 +710,7 @@ const directoryStack = (stacks: Map<string, string[]>, scope: string, cwd: strin
     return existing;
   }
 
-  const parentScope = scope.includes('.') ? scope.slice(0, scope.lastIndexOf('.')) : '';
-  const parent = scope === '' ? undefined : stacks.get(parentScope);
-  const base = parent === undefined ? cwd : (parent[parent.length - 1] ?? cwd);
+  const base = scope === '' ? cwd : (ancestorDirectory(stacks, scope) ?? cwd);
   const stack = [base];
 
   stacks.set(scope, stack);

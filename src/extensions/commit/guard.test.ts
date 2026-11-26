@@ -57,6 +57,14 @@ const withPath = (directory: string): void => {
   });
 };
 
+const withExactPath = (...entries: string[]): void => {
+  vi.stubEnv('PATH', entries.join(delimiter));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+};
+
 const makeReadEvent = (): ToolCallEvent => ({
   type: 'tool_call',
   toolCallId: 'tool-call-1',
@@ -732,6 +740,22 @@ describe('guardToolCall', () => {
     });
   });
 
+  it.each([
+    ['a heredoc substitution', 'cd sub; cat <<EOF\n$(./commit.sh)\nEOF'],
+    ['a heredoc backtick', 'cd sub; cat <<EOF\n`./commit.sh`\nEOF'],
+    ['a nested heredoc substitution', 'cd sub; cat <<EOF\n$(echo $(./commit.sh))\nEOF'],
+  ])('blocks a script named by %s after a cd', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git status\n');
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(command), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
   it('blocks a script file named after a redirection target digit', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -859,6 +883,9 @@ describe('guardToolCall', () => {
     'taskset -c 0 sh commit.sh',
     'stdbuf -oL bash commit.sh',
     'flock lock sh commit.sh',
+    'flock -w 5 lock sh commit.sh',
+    'flock -E 3 lock sh commit.sh',
+    'chrt -T 5 10 sh commit.sh',
   ])('blocks a script file after another wrapper: %s', (command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -875,11 +902,7 @@ describe('guardToolCall', () => {
     const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
     chmodSync(locked, 0o000);
-    vi.stubEnv('PATH', locked);
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
+    withExactPath(locked);
 
     try {
       expect(guard(makeBashEvent('sh tool.sh'), directory)).toBeUndefined();
@@ -895,11 +918,7 @@ describe('guardToolCall', () => {
 
     writeScript(later, 'tool.sh', 'git commit -m x\n');
     chmodSync(locked, 0o000);
-    vi.stubEnv('PATH', [locked, later].join(delimiter));
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
+    withExactPath(locked, later);
 
     try {
       expect(guard(makeBashEvent('sh tool.sh'), directory)).toEqual({
@@ -911,17 +930,35 @@ describe('guardToolCall', () => {
     }
   });
 
+  it.skipIf(chmodRestricted)(
+    'blocks a fail-closed read of a path a PATH probe found unreadable',
+    () => {
+      const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+      const later = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+      const script = join(later, 'tool.sh');
+
+      writeScript(later, 'tool.sh', 'git commit -m x\n');
+      chmodSync(script, 0o000);
+      withExactPath(later);
+
+      try {
+        expect(guard(makeBashEvent(`sh tool.sh; sh ${script}`), directory)).toEqual({
+          block: true,
+          reason: commitGuardReason,
+        });
+      } finally {
+        chmodSync(script, 0o644);
+      }
+    },
+  );
+
   it.skipIf(chmodRestricted)('allows a local script before an unreadable PATH entry', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
     writeScript(directory, 'tool.sh', 'git status\n');
     chmodSync(locked, 0o000);
-    vi.stubEnv('PATH', locked);
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
+    withExactPath(locked);
 
     try {
       expect(guard(makeBashEvent('sh tool.sh'), directory)).toBeUndefined();
@@ -1019,11 +1056,7 @@ describe('guardToolCall', () => {
       join(directory, `missing-${index}`),
     );
 
-    vi.stubEnv('PATH', entries.join(delimiter));
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
+    withExactPath(...entries);
 
     expect(guard(makeBashEvent('sh missing.sh'), directory)).toBeUndefined();
   });
@@ -1037,11 +1070,7 @@ describe('guardToolCall', () => {
       writeScript(pathDirectory, name, 'echo hello\n');
     }
 
-    vi.stubEnv('PATH', pathDirectory);
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
+    withExactPath(pathDirectory);
 
     expect(guard(makeBashEvent(referencesTo(names)), directory)).toEqual({
       block: true,
