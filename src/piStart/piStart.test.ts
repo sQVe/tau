@@ -11,39 +11,25 @@ import {
   createTemporaryRepository,
   git,
 } from '../../tests/gitRepository.js';
-import { createHerdrAppFake, foregroundReaderFor } from '../../tests/herdrAppFake.js';
+import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
+import {
+  launchRequest,
+  paneRequest,
+  readerFor,
+  startRequest,
+} from '../../tests/piStartRequests.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import {
   launchPiSession,
   launchPiSessionRightOf,
-  launchTimeoutMilliseconds,
   startPiSession,
   startPiSessionRightOf,
 } from './piStart.js';
 
-type ForegroundReader = (terminal: string) => Promise<readonly string[] | undefined>;
-
-const neverResolves = new Promise<readonly string[] | undefined>(() => {});
-const neverReads = (): Promise<readonly string[] | undefined> => neverResolves;
-
-const readerFor = <Key extends string>(fake: ExecFake<Key>, root: string): ForegroundReader =>
-  foregroundReaderFor({ exec: fake.exec, cwd: root });
-
-const startRequest = (
-  root: string,
-  readForegroundArgv: ForegroundReader,
-  overrides: Partial<Parameters<typeof startPiSession>[1]> = {},
-): Parameters<typeof startPiSession>[1] => ({
-  folder: root,
-  target: { space: 'space-1' },
-  tabName: 'lead',
-  task: 'Next steps\n',
-  model: undefined,
-  session: undefined,
-  bareRoot: false,
-  environment: undefined,
-  readForegroundArgv,
-  ...overrides,
+const readbackCall = (terminal: string) => ({
+  command: 'hc',
+  commandArguments: ['get', '--json', '--', terminal],
+  signal: undefined,
 });
 
 it('a space start opens one tab with the argv as JSON', async () => {
@@ -87,6 +73,7 @@ it('a space start opens one tab with the argv as JSON', async () => {
       ],
       signal: undefined,
     },
+    readbackCall('t-new'),
   ]);
 });
 
@@ -171,6 +158,7 @@ it('a space start names its first tab', async () => {
       ],
       signal: undefined,
     },
+    readbackCall('t-new'),
   ]);
 });
 
@@ -190,7 +178,7 @@ it('a true bare repository root starts a session', async () => {
     model: 'default',
   });
 
-  expect(fake.calls).toHaveLength(1);
+  expect(fake.calls).toHaveLength(2);
 });
 
 it('a bare repository starts a session without the caller naming it bare', async () => {
@@ -203,7 +191,7 @@ it('a bare repository starts a session without the caller naming it bare', async
   );
 
   expect(result.terminal).toBe('t-new');
-  expect(fake.calls).toHaveLength(1);
+  expect(fake.calls).toHaveLength(2);
 });
 
 it('a bare root layout starts a session', async () => {
@@ -216,7 +204,7 @@ it('a bare root layout starts a session', async () => {
   );
 
   expect(result.terminal).toBe('t-new');
-  expect(fake.calls).toHaveLength(1);
+  expect(fake.calls).toHaveLength(2);
 });
 
 it('a linked worktree starts a session', async () => {
@@ -233,7 +221,7 @@ it('a linked worktree starts a session', async () => {
   );
 
   expect(result.terminal).toBe('t-new');
-  expect(fake.calls).toHaveLength(1);
+  expect(fake.calls).toHaveLength(2);
 });
 
 it('a resolver start runs the target it resolves', async () => {
@@ -275,6 +263,7 @@ it('a resolver start runs the target it resolves', async () => {
       ],
       signal: undefined,
     },
+    readbackCall('t-new'),
   ]);
 });
 
@@ -344,7 +333,7 @@ it('a folder inside a checkout starts a session', async () => {
   );
 
   expect(result.terminal).toBe('t-new');
-  expect(fake.calls).toHaveLength(1);
+  expect(fake.calls).toHaveLength(2);
 });
 
 it('a start whose Git cannot run runs no command', async () => {
@@ -455,17 +444,6 @@ it('a pane split reply without a pane ends the start', async () => {
   ).rejects.toThrow('herdr-app do pane.split printed unexpected output');
 
   expect(fake.calls).toHaveLength(1);
-});
-
-const paneRequest = (root: string, readForegroundArgv: ForegroundReader) => ({
-  folder: root,
-  pane: 'p-lead',
-  task: 'Design this',
-  model: undefined,
-  session: undefined,
-  bareRoot: false,
-  environment: undefined,
-  readForegroundArgv,
 });
 
 it('a refused split rejects with the command context and no second command', async () => {
@@ -590,21 +568,6 @@ it('a right-of start with an aborted signal runs no command', async () => {
   expect(fake.calls).toEqual([]);
 });
 
-const launchRequest = (
-  root: string,
-  readForegroundArgv: ForegroundReader,
-): Parameters<typeof launchPiSession>[1] => ({
-  folder: root,
-  target: { name: 'ticket-1' },
-  tabName: 'architect',
-  task: 'Next steps\n',
-  model: undefined,
-  session: undefined,
-  bareRoot: false,
-  environment: undefined,
-  readForegroundArgv,
-});
-
 it('bounds the launch call with the launch timeout', async () => {
   let launchTimeout: number | undefined;
 
@@ -727,373 +690,4 @@ it('a killed launch returns no terminal and the launcher error', async () => {
   expect(result.error).toBeInstanceOf(Error);
   expect((result.error as Error).message).toContain('herdr-app do failed');
   expect((result.error as Error).message).toContain('the launch was killed');
-});
-
-const launchWithForeground = (
-  argv: string[],
-  reply = '{"space":"sp-new","tab":"tb-new","terminal":"t-new"}',
-): ExecFake<'launch' | 'get'> => {
-  const getReply = JSON.stringify({
-    address: 't-new',
-    state: 'live',
-    foreground: { pid: 1, name: 'pi', argv, cwd: '/tmp' },
-  });
-
-  return createExecFake<'launch' | 'get'>({
-    keyOf: (command, commandArguments) => {
-      if (command === 'herdr-app') {
-        return 'launch';
-      }
-
-      return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
-    },
-    handlerFor: (key) =>
-      key === 'launch' ? () => succeededResult(reply) : () => succeededResult(getReply),
-  });
-};
-
-it('a start returns the model its terminal runs', async () => {
-  const fake = launchWithForeground([
-    'pi',
-    '--provider',
-    'morph',
-    '--model',
-    'morph-dsv41flash-1017',
-  ]);
-
-  const root = await createTemporaryRepository(onTestFinished);
-
-  const result = await startPiSession(
-    { exec: fake.exec, cwd: root },
-    startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
-  );
-
-  expect(result.model).toBe('morph/morph-dsv41flash-1017');
-});
-
-it.each([
-  {
-    name: 'a pi path',
-    argv: ['/usr/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a node pi path',
-    argv: ['node', '/usr/local/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a node pi path with a leading flag',
-    argv: [
-      'node',
-      '--experimental-strip-types',
-      '/path/pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a node pi path with a value-taking flag before the script',
-    argv: [
-      'node',
-      '--loader',
-      'tsx',
-      '/path/pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a node pi path after a value-taking flag',
-    argv: [
-      'node',
-      '--stack-size',
-      '2000',
-      '/path/pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a node pi.js script after a value-taking flag',
-    argv: [
-      'node',
-      '--stack-size',
-      '2000',
-      'pi.js',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a bare pi script after the runtime',
-    argv: ['node', 'pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a bare pi after an attached flag',
-    argv: [
-      'node',
-      '--require=./setup.js',
-      'pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a bare pi after a loader flag',
-    argv: [
-      'node',
-      '--loader',
-      'tsx',
-      'pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a bare pi after a memory flag',
-    argv: [
-      'node',
-      '--max-old-space-size',
-      '4096',
-      'pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a bun pi path',
-    argv: ['bun', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a bun.exe pi path',
-    argv: ['bun.exe', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a node.exe pi.cmd path',
-    argv: [
-      'node.exe',
-      '/usr/local/bin/pi.cmd',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-])('a start reads the model from $name', async ({ argv }) => {
-  const fake = launchWithForeground(argv);
-  const root = await createTemporaryRepository(onTestFinished);
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-
-  try {
-    const opening = startPiSession(
-      { exec: fake.exec, cwd: root },
-      startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
-    );
-
-    await vi.waitFor(() => {
-      expect(fake.calls.length).toBeGreaterThanOrEqual(1);
-    });
-
-    await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
-
-    const result = await opening;
-
-    expect(result.model).toBe('morph/morph-dsv41flash-1017');
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-it.each<[string, readonly string[] | undefined]>([
-  ['undefined', undefined],
-  ['a non-Pi argv', ['bash']],
-  ['a node command with a trailing pi argument', ['node', '/path/tool.js', 'pi']],
-  ['a node command with a flag value of pi', ['node', '--title', 'pi', '/path/tool.js']],
-  ['a node command with a Pi-named flag value', ['node', '--require', './pi.js', 'main.js']],
-  ['a bare pi argument after an unknown value-taking flag', ['node', '--stack-size', '2000', 'pi']],
-  ['a node eval command with a trailing pi', ['node', '-e', 'code', 'pi']],
-  ['a node eval command with a path-shaped pi after the code', ['node', '-e', 'code', '/path/pi']],
-  ['a node print command with a trailing pi', ['node', '--print', 'code', 'pi']],
-  ['a node long eval command with a trailing pi', ['node', '--eval', 'code', 'pi']],
-  ['a node short print command with a trailing pi', ['node', '-p', 'code', 'pi']],
-  [
-    'a node long eval command with an inline code value and a trailing pi',
-    ['node', '--eval=code', 'pi'],
-  ],
-  [
-    'a node long print command with an inline code value and a trailing pi',
-    ['node', '--print=code', 'pi'],
-  ],
-])('a start retries a model read that first returns %s', async (_shape, firstRead) => {
-  const fake = launchWithForeground([
-    'pi',
-    '--provider',
-    'morph',
-    '--model',
-    'morph-dsv41flash-1017',
-  ]);
-
-  const root = await createTemporaryRepository(onTestFinished);
-  let reads = 0;
-
-  const reader = async (): Promise<readonly string[] | undefined> => {
-    reads += 1;
-
-    return reads === 1
-      ? firstRead
-      : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
-  };
-
-  const result = await startPiSession(
-    { exec: fake.exec, cwd: root },
-    startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
-  );
-
-  expect(result.model).toBe('morph/morph-dsv41flash-1017');
-  expect(reads).toBe(2);
-});
-
-it('a start fails when the terminal runs another model', async () => {
-  const fake = launchWithForeground([
-    'pi',
-    '--provider',
-    'morph',
-    '--model',
-    'morph-dsv41flash-1017',
-  ]);
-
-  const root = await createTemporaryRepository(onTestFinished);
-
-  const failure = await startPiSession(
-    { exec: fake.exec, cwd: root },
-    startRequest(root, readerFor(fake, root), { model: 'claude-bridge/claude-opus-5-5' }),
-  ).catch((error: unknown) => error);
-
-  expect(failure).toBeInstanceOf(Error);
-
-  const message = (failure as Error).message;
-
-  expect(message).toContain('claude-bridge/claude-opus-5-5');
-  expect(message).toContain('morph/morph-dsv41flash-1017');
-  expect(message).toContain('t-new');
-  expect(message).toContain('hc get t-new');
-});
-
-it('a start fails when the terminal never shows a foreground before the deadline', async () => {
-  const fake = createHerdrAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-
-  try {
-    const opening = startPiSession(
-      { exec: fake.exec, cwd: root },
-      startRequest(root, neverReads),
-    ).catch((error: unknown) => error);
-
-    await vi.waitFor(() => {
-      expect(fake.calls).toHaveLength(1);
-    });
-
-    await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
-
-    const failure = await opening;
-
-    expect(failure).toBeInstanceOf(Error);
-
-    const message = (failure as Error).message;
-
-    expect(message).toContain('t-new');
-    expect(message).toContain('hc get t-new');
-    expect(message).toContain('It may still be running');
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-it('an abort during the model readback ends the call', async () => {
-  const fake = createHerdrAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const controller = new AbortController();
-  const cancellation = new Error('cancelled during the readback');
-
-  const opening = startPiSession(
-    { exec: fake.exec, cwd: root, signal: controller.signal },
-    startRequest(root, neverReads),
-  ).catch((error: unknown) => error);
-
-  await vi.waitFor(() => {
-    expect(fake.calls).toHaveLength(1);
-  });
-
-  controller.abort(cancellation);
-
-  expect(await opening).toBe(cancellation);
-});
-
-it('a model read that times out removes its abort listener', async () => {
-  const fake = createHerdrAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const controller = new AbortController();
-  const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-
-  try {
-    const opening = startPiSession(
-      { exec: fake.exec, cwd: root, signal: controller.signal },
-      startRequest(root, neverReads),
-    ).catch((error: unknown) => error);
-
-    await vi.waitFor(() => {
-      expect(fake.calls).toHaveLength(1);
-    });
-
-    await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
-
-    expect(await opening).toBeInstanceOf(Error);
-    expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
-  } finally {
-    removeListener.mockRestore();
-    vi.useRealTimers();
-  }
-});
-
-it('a launch returns the model its terminal runs', async () => {
-  const fake = launchWithForeground(['pi', '--provider', 'a', '--model', 'architect']);
-  const root = await createTemporaryRepository(onTestFinished);
-
-  const result = await launchPiSession(
-    { exec: fake.exec, cwd: root },
-    { ...launchRequest(root, readerFor(fake, root)), model: 'a/architect' },
-  );
-
-  expect(result.model).toBe('a/architect');
-});
-
-it('a right-of launch returns the model its terminal runs', async () => {
-  const fake = launchWithForeground(
-    ['pi', '--provider', 'a', '--model', 'architect'],
-    '{"pane":"p-new","terminal":"t-new"}',
-  );
-
-  const root = await createTemporaryRepository(onTestFinished);
-
-  const result = await launchPiSessionRightOf(
-    { exec: fake.exec, cwd: root },
-    { ...paneRequest(root, readerFor(fake, root)), model: 'a/architect' },
-  );
-
-  expect(result.model).toBe('a/architect');
 });

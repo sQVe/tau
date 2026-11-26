@@ -119,7 +119,7 @@ export const terminalFromReply = (stdout: string): string | undefined => {
   }
 };
 
-export const foregroundFromLaunch = (
+const foregroundFromLaunch = (
   commandArguments: readonly string[],
 ): {
   pid: number;
@@ -139,30 +139,52 @@ export const foregroundFromLaunch = (
   return { pid: 1, name: 'pi', argv: ['pi', ...modelArguments], cwd: '' };
 };
 
+type StartedForeground = ReturnType<typeof foregroundFromLaunch>;
+
+const foregroundReply = (address: string, foreground: StartedForeground): string =>
+  JSON.stringify({ address, state: 'live', foreground });
+
+// The one reply shape for a terminal this fake started, so a reader and the hc get schema agree.
+export const launchedTerminalReply = (
+  address: string,
+  commandArguments: readonly string[],
+): string => foregroundReply(address, foregroundFromLaunch(commandArguments));
+
+const getKey = 'get';
+
+type HerdrAppKey = HerdrAppCommand | typeof getKey;
+
 export const createHerdrAppFake = (
   options: HerdrAppFakeOptions = {},
 ): ExecFake<HerdrAppCommand> => {
-  const execFake = createExecFake<HerdrAppCommand>({
-    keyOf: commandOf,
-    handlerFor: (key) => (commandArguments) => {
-      options.beforeReply?.(key);
+  const startedForegrounds = new Map<string, StartedForeground>();
 
-      return succeededResult(replyFor(key, commandArguments, options.spaces));
+  const execFake = createExecFake<HerdrAppKey>({
+    keyOf: (command, commandArguments) =>
+      command === 'hc' && commandArguments[0] === getKey
+        ? getKey
+        : commandOf(command, commandArguments),
+    handlerFor: (key) => {
+      if (key === getKey) {
+        return (commandArguments) => {
+          const address = commandArguments.at(-1) ?? '';
+          const foreground = startedForegrounds.get(address);
+
+          return foreground === undefined
+            ? failedResult(`unknown terminal: ${address}`)
+            : succeededResult(foregroundReply(address, foreground));
+        };
+      }
+
+      return (commandArguments) => {
+        options.beforeReply?.(key);
+
+        return succeededResult(replyFor(key, commandArguments, options.spaces));
+      };
     },
   });
 
-  const startedForegrounds = new Map<string, unknown>();
-
   const exec: Exec = async (command, commandArguments, execOptions) => {
-    if (command === 'hc' && commandArguments[0] === 'get') {
-      const address = commandArguments.at(-1) ?? '';
-      const foreground = startedForegrounds.get(address);
-
-      return foreground === undefined
-        ? failedResult(`unknown terminal: ${address}`)
-        : succeededResult(JSON.stringify({ address, state: 'live', foreground }));
-    }
-
     const result = await execFake.exec(command, commandArguments, execOptions);
 
     if (result.code === 0 && command === 'herdr-app') {

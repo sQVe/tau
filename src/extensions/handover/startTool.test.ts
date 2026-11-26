@@ -296,7 +296,7 @@ it('creates a space without listing the spaces when the caller asks for one', as
     spaceStatus: 'created',
   });
 
-  expect(app.calls.map((call) => call.commandArguments[0])).toEqual(['do']);
+  expect(app.calls.map((call) => call.commandArguments[0])).toEqual(['do', 'get']);
 });
 
 it('opens a tab in the space the caller names without listing the spaces', async () => {
@@ -323,7 +323,7 @@ it('opens a tab in the space the caller names without listing the spaces', async
 
   const commands = app.calls.map((call) => call.commandArguments[0]);
 
-  expect(commands).toEqual(['do']);
+  expect(commands).toEqual(['do', 'get']);
 
   const launches = spaceOrTabLaunchesOf(app);
 

@@ -17,7 +17,7 @@ import {
 } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
-import { createHerdrAppFake } from '../../../tests/herdrAppFake.js';
+import { createHerdrAppFake, spaceOrTabLaunchesOf } from '../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
@@ -579,7 +579,10 @@ it('starts a tab from a real bare repository root', async () => {
     spaceStatus: 'reused',
   });
 
-  expect(app.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
+  const launchCommands = spaceOrTabLaunchesOf(app).map((call) => call.commandArguments[1]);
+
+  expect(launchCommands).toEqual(['tab.new']);
+  expect(app.calls).toHaveLength(2);
 });
 
 const countBareProbes = (calls: string): number =>
@@ -630,7 +633,7 @@ it('passes the model to the new Pi through herdr-app', async () => {
     modelContext(root, onTestFinished),
   );
 
-  expect(app.calls).toHaveLength(1);
+  expect(app.calls).toHaveLength(2);
 
   const [launch] = app.calls;
 

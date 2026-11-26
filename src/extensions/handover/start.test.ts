@@ -53,6 +53,11 @@ const requestFor = (
 const commandsOf = (fake: ExecFake<HerdrAppCommand>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
 
+const readbackCommand = (terminal: string) => ({
+  command: 'hc',
+  commandArguments: ['get', '--json', '--', terminal],
+});
+
 const tabCommand = (root: string, argv: string, task: string, title: string) => ({
   command: 'herdr-app',
   commandArguments: [
@@ -109,7 +114,10 @@ it('opens a tab in the space with the file text as its task', async () => {
     spaceStatus: 'reused',
   });
 
-  expect(commandsOf(fake)).toEqual([tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps')]);
+  expect(commandsOf(fake)).toEqual([
+    tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps'),
+    readbackCommand('t-new'),
+  ]);
 });
 
 it('passes the lead as sender to the new tab', async () => {
@@ -129,6 +137,7 @@ it('passes the lead as sender to the new tab', async () => {
       'Handover sender: terminal t7, session lead-id.\n\nNext steps\n',
       'Next steps',
     ),
+    readbackCommand('t-new'),
   ]);
 });
 
@@ -142,7 +151,10 @@ it('starts without a sender as today', async () => {
     sender: undefined,
   });
 
-  expect(commandsOf(fake)).toEqual([tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps')]);
+  expect(commandsOf(fake)).toEqual([
+    tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps'),
+    readbackCommand('t-new'),
+  ]);
 });
 
 it('opens a new space with Pi in its only tab', async () => {
@@ -397,4 +409,42 @@ it('fails when the started terminal runs another model', async () => {
   expect(message).toContain('claude-bridge/claude-opus-5-5');
   expect(message).toContain('morph/morph-dsv41flash-1017');
   expect(message).toContain('t-new');
+  expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
+});
+
+it('returns the model the started terminal runs', async () => {
+  const app = createHerdrAppFake();
+  const hc = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  hc.replyGet(
+    't-new',
+    JSON.stringify({
+      address: 't-new',
+      state: 'live',
+      foreground: {
+        pid: 1,
+        name: 'pi',
+        argv: ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+        cwd: root,
+      },
+    }),
+  );
+
+  const exec: typeof app.exec = (command, commandArguments, options) =>
+    command === 'hc'
+      ? hc.exec(command, commandArguments, options)
+      : app.exec(command, commandArguments, options);
+
+  const result = await startHandover(
+    { exec, cwd: root },
+    {
+      ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+      model: 'morph/morph-dsv41flash-1017',
+    },
+  );
+
+  expect(result.model).toBe('morph/morph-dsv41flash-1017');
+  expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
 });

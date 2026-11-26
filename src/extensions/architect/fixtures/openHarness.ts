@@ -10,7 +10,7 @@ import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
 import {
   createHerdrAppFake,
-  foregroundFromLaunch,
+  launchedTerminalReply,
   terminalFromReply,
 } from '../../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
@@ -86,16 +86,7 @@ export const recordStartedTerminal = (
     return undefined;
   }
 
-  terminals.set(
-    terminal,
-    succeededResult(
-      JSON.stringify({
-        address: terminal,
-        state: 'live',
-        foreground: foregroundFromLaunch(commandArguments),
-      }),
-    ),
-  );
+  terminals.set(terminal, succeededResult(launchedTerminalReply(terminal, commandArguments)));
 
   return terminal;
 };
