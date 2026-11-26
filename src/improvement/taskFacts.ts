@@ -61,6 +61,8 @@ const actions: Readonly<Record<string, ReadonlySet<string>>> = {
     'verify',
     'reviewBots',
     'coverage',
+    'dryRun',
+    'publish',
   ]),
   pr_feedback: new Set(['read', 'checks', 'post', 'status']),
   code_review: new Set(['prepare', 'capture', 'freshness', 'evidence']),

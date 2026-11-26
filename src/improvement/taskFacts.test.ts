@@ -161,6 +161,22 @@ const table: { rule: string; call: ToolCall; facts: string[]; missing: string[][
     missing: [],
   },
   {
+    rule: 'a successful dry run is no fact and leaves no missing evidence',
+    call: call('pr', { action: 'dryRun', kind: 'pullRequest', repository, pr: 560 }),
+    facts: [],
+    missing: [],
+  },
+  {
+    rule: 'a successful publish is no fact and leaves no missing evidence',
+    call: call(
+      'pr',
+      { action: 'publish', kind: 'pullRequest', repository, pr: 560 },
+      done({ url: 'https://github.com/sQVe/tau/pull/560' }),
+    ),
+    facts: [],
+    missing: [],
+  },
+  {
     rule: 'an unknown pr action is missing evidence',
     call: call('pr', { action: 'create' }),
     facts: [],
