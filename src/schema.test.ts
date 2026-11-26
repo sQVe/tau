@@ -6,8 +6,12 @@ import {
   anyItem,
   anyKey,
   findUnknownKeys,
+  isRecord,
   newerRecordVersion,
   reportedId,
+  schemaArrayKeywords,
+  schemaMapKeywords,
+  schemaValueKeywords,
   strictToolParameters,
   stringEnum,
   unreportedKeys,
@@ -134,31 +138,83 @@ it('leaves an existing false additionalProperties alone', () => {
   expect(strictToolParameters(schema)).toMatchObject({ additionalProperties: false });
 });
 
-it('closes an object schema under every subschema keyword', () => {
+const expectedSchemaMapKeywords = [
+  '$defs',
+  'definitions',
+  'dependencies',
+  'dependentSchemas',
+  'patternProperties',
+  'properties',
+];
+
+const expectedSchemaArrayKeywords = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
+
+const expectedSchemaValueKeywords = [
+  'additionalItems',
+  'additionalProperties',
+  'contains',
+  'else',
+  'if',
+  'items',
+  'not',
+  'propertyNames',
+  'then',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+];
+
+it('lists every subschema keyword in the production sets', () => {
+  expect([...schemaMapKeywords].toSorted()).toEqual(expectedSchemaMapKeywords);
+  expect([...schemaArrayKeywords].toSorted()).toEqual(expectedSchemaArrayKeywords);
+  expect([...schemaValueKeywords].toSorted()).toEqual(expectedSchemaValueKeywords);
+});
+
+const isClosed = (value: unknown): boolean =>
+  isRecord(value) && value['additionalProperties'] === false;
+
+it('closes an object schema under every subschema keyword in the sets', () => {
   const child = { type: 'object', properties: { value: { type: 'string' } } };
+  const schema: Record<string, unknown> = { type: 'object' };
 
-  const schema = Type.Unsafe<unknown>({
-    type: 'object',
-    definitions: { child },
-    dependentSchemas: { child },
-    dependencies: { child },
-    propertyNames: child,
-    contains: child,
-    additionalItems: child,
-    unevaluatedProperties: child,
-    unevaluatedItems: child,
-  });
+  for (const keyword of schemaMapKeywords) {
+    schema[keyword] = { child };
+  }
 
-  expect(strictToolParameters(schema)).toMatchObject({
-    definitions: { child: { additionalProperties: false } },
-    dependentSchemas: { child: { additionalProperties: false } },
-    dependencies: { child: { additionalProperties: false } },
-    propertyNames: { additionalProperties: false },
-    contains: { additionalProperties: false },
-    additionalItems: { additionalProperties: false },
-    unevaluatedProperties: { additionalProperties: false },
-    unevaluatedItems: { additionalProperties: false },
-  });
+  for (const keyword of schemaArrayKeywords) {
+    schema[keyword] = [child];
+  }
+
+  for (const keyword of schemaValueKeywords) {
+    schema[keyword] = child;
+  }
+
+  const strict: unknown = strictToolParameters(Type.Unsafe<unknown>(schema));
+  const unclosed: string[] = [];
+
+  for (const keyword of schemaMapKeywords) {
+    const entries = isRecord(strict) && isRecord(strict[keyword]) ? strict[keyword] : undefined;
+
+    if (entries === undefined || !isClosed(entries['child'])) {
+      unclosed.push(keyword);
+    }
+  }
+
+  for (const keyword of schemaArrayKeywords) {
+    const entries =
+      isRecord(strict) && Array.isArray(strict[keyword]) ? strict[keyword] : undefined;
+
+    if (entries === undefined || !entries.every((entry) => isClosed(entry))) {
+      unclosed.push(keyword);
+    }
+  }
+
+  for (const keyword of schemaValueKeywords) {
+    if (!isRecord(strict) || !isClosed(strict[keyword])) {
+      unclosed.push(keyword);
+    }
+  }
+
+  expect(unclosed).toEqual([]);
 });
 
 it('does not rewrite an object value stored in an annotation keyword', () => {

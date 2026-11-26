@@ -280,11 +280,12 @@ const pureModules = [
 const pureAdvice =
   'A pure module must not read records, the clock, randomness, or the environment. Move the read or effect to the caller and pass the value in as a fact.';
 
-// `strictToolRegistration` mutates the API it installs on and keeps a set of installed APIs, so
-// `src/schema.ts` breaks the no-effect rule. The import table may only shrink, so a new module is
-// not an option. Record the one exception instead of dropping the module from the registry.
+// `strictToolRegistration` replaces `registerTool` on the API it is given and keeps a set of
+// installed APIs, so `src/schema.ts` breaks the no-effect rule. The import table may only shrink,
+// so a new module is not an option. Record the finding instead of dropping the module from the
+// registry.
 const pureModuleExceptions: Readonly<Record<string, string>> = {
-  'src/schema.ts': 'strictToolRegistration mutates its argument and records installed APIs.',
+  'src/schema.ts': 'assigns a function to a property',
 };
 
 const effectMembers = new Set(['Date.now', 'Math.random', 'performance.now', 'process.env']);
@@ -393,6 +394,15 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
     ExportNamedDeclaration: checkImport,
     ExportAllDeclaration: checkImport,
     ImportExpression: (node) => at(node.start, 'dynamic import'),
+    AssignmentExpression: (node) => {
+      const assignsFunction =
+        node.right.type === 'ArrowFunctionExpression' || node.right.type === 'FunctionExpression';
+
+      // Replacing a property on a value the module did not create changes the caller's behavior.
+      if (assignsFunction && node.left.type === 'MemberExpression') {
+        at(node.start, 'assigns a function to a property');
+      }
+    },
     CallExpression: (node) => {
       const callee = node.callee.type === 'Identifier' ? node.callee.name : undefined;
 
@@ -519,23 +529,81 @@ it('keeps fixtures out of production modules', () => {
   expect(importers).toEqual([]);
 });
 
+const purityProblems = (
+  modules: readonly string[],
+  exceptions: Readonly<Record<string, string>>,
+  readSource: (path: string) => string,
+): string[] => {
+  const problems = modules.flatMap((path) => {
+    const findings = impurities(path, readSource(path), modules);
+    const exception = exceptions[path];
+
+    if (exception === undefined) {
+      return findings;
+    }
+
+    const suppressed = findings.findIndex((finding) => finding.endsWith(exception));
+
+    if (suppressed === -1) {
+      return [...findings, `${path}: unused exception ${exception}`];
+    }
+
+    return findings.filter((_finding, index) => index !== suppressed);
+  });
+
+  const unregistered = Object.keys(exceptions)
+    .filter((path) => !modules.includes(path))
+    .map((path) => `${path}: exception for an unregistered module`);
+
+  return [...problems, ...unregistered];
+};
+
 it('keeps registered pure modules free of reads and effects', () => {
-  const found = pureModules.flatMap((path) =>
-    impurities(path, readFileSync(join(root, path), 'utf8'), pureModules),
+  const found = purityProblems(pureModules, pureModuleExceptions, (path) =>
+    readFileSync(join(root, path), 'utf8'),
   );
 
   expect(found, pureAdvice).toEqual([]);
 });
 
-it('records each exception to the pure module rule', () => {
-  const entries = Object.entries(pureModuleExceptions);
+const readImportSource = (): string => "import { readFile } from 'node:fs/promises';\n";
 
-  expect(entries.map(([path]) => path)).toEqual(['src/schema.ts']);
+it('applies each pure module exception to one finding and reports a stale exception', () => {
+  const modules = ['src/pure/decide.ts'];
 
-  for (const [path, reason] of entries) {
-    expect(pureModules, path).toContain(path);
-    expect(reason, path).not.toBe('');
-  }
+  expect(purityProblems(modules, {}, readImportSource)).toEqual([
+    'src/pure/decide.ts:1: runtime import of node:fs/promises',
+  ]);
+
+  expect(
+    purityProblems(
+      modules,
+      { 'src/pure/decide.ts': 'runtime import of node:fs/promises' },
+      readImportSource,
+    ),
+  ).toEqual([]);
+
+  expect(
+    purityProblems(
+      modules,
+      { 'src/pure/decide.ts': 'assigns a function to a property' },
+      readImportSource,
+    ),
+  ).toEqual([
+    'src/pure/decide.ts:1: runtime import of node:fs/promises',
+    'src/pure/decide.ts: unused exception assigns a function to a property',
+  ]);
+
+  expect(
+    purityProblems(
+      modules,
+      { 'src/pure/other.ts': 'runtime import of node:fs/promises' },
+      readImportSource,
+    ),
+  ).toEqual([
+    'src/pure/decide.ts:1: runtime import of node:fs/promises',
+    'src/pure/other.ts: exception for an unregistered module',
+  ]);
 });
 
 const versionedRecords = [
@@ -689,6 +757,7 @@ it('refuses reads and effects in a pure module but allows types and other pure m
     'export const home = () => process.env.HOME;',
     "export const homeByKey = () => process['env'].HOME;",
     "import { Value } from 'typebox/value';",
+    'export const install = (api) => { api.run = () => 1; };',
   ].join('\n');
 
   const schemaLibrary = "import { Value } from 'typebox/value';";
@@ -696,7 +765,7 @@ it('refuses reads and effects in a pure module but allows types and other pure m
   expect(impurities('src/pure/decide.ts', allowed, registry)).toEqual([]);
 
   expect(findingLines(impurities('src/pure/decide.ts', refused, registry))).toEqual(
-    Array.from({ length: 17 }, (_, index) => index + 1),
+    Array.from({ length: 18 }, (_, index) => index + 1),
   );
 
   expect(impurities('src/schema.ts', schemaLibrary, registry)).toEqual([]);
