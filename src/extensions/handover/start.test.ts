@@ -123,7 +123,7 @@ it('opens a tab in the space with the file text as its task', async () => {
   ]);
 });
 
-it('names the started space, tab, and terminal when the model readback fails', async () => {
+it('names the started space, tab, and terminal when the started model differs', async () => {
   const app = createHerdrAppFake();
   const hc = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
