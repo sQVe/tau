@@ -201,7 +201,7 @@ it.each([
 it('leaves an object nested under a dependent schema open', () => {
   const schema = {
     type: 'object',
-    properties: { credit_card: { type: 'string' } },
+    properties: { credit_card: { type: 'string' }, address: {} },
     dependentSchemas: {
       credit_card: {
         properties: {
@@ -212,12 +212,8 @@ it('leaves an object nested under a dependent schema open', () => {
   };
 
   const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
-  const dependentSchemas = isRecord(strict) ? strict['dependentSchemas'] : undefined;
-  const dependent = isRecord(dependentSchemas) ? dependentSchemas['credit_card'] : undefined;
-  const properties = isRecord(dependent) ? dependent['properties'] : undefined;
-  const address = isRecord(properties) ? properties['address'] : undefined;
 
-  expect(address).not.toHaveProperty('additionalProperties');
+  expect(Value.Check(strict, { credit_card: 'x', address: { city: 'a', extra: 1 } })).toBe(true);
 });
 
 it('closes an object schema whose type list includes object', () => {
