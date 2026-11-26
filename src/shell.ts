@@ -53,9 +53,8 @@ interface ListState {
   unitStarts: number[];
   // The first command index of the group at each nesting depth.
   groupStarts: number[];
-  // The open compound keywords, with the first command index of each and of the unit that encloses
-  // it.
-  compounds: { closer: string; start: number; unitStart: number }[];
+  // The open compound keywords, with the first command index of the unit that encloses each.
+  compounds: { closer: string; unitStart: number }[];
   continuesList: boolean;
   closesSubstitution: boolean;
 }
@@ -783,7 +782,7 @@ class ShellParser {
     if (closer !== undefined) {
       const unitStart = state.unitStarts.at(-1) ?? start;
 
-      state.compounds.push({ closer, start, unitStart });
+      state.compounds.push({ closer, unitStart });
     } else if (closingKeywords.has(word) && state.compounds.at(-1)?.closer === word) {
       const compound = state.compounds.pop();
 
