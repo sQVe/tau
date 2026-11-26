@@ -12,8 +12,8 @@ import {
   open,
   openRequest,
   openTool,
-  startedTerminalResult,
   requestFor,
+  startedTerminalResult,
 } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';

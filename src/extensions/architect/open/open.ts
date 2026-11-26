@@ -259,6 +259,9 @@ const launchFailure = (launch: PiLaunchResult): Error =>
     ? launch.error
     : new Error('The architect launch failed before it reported a terminal.');
 
+const launchFailed = (launch: PiLaunchResult): boolean =>
+  launchOutcomeDecision(launchFacts(launch)) === 'notCreated' || launch.error !== undefined;
+
 const launchResult = (prepared: PreparedArchitectStart, model = 'unknown'): OpenResult =>
   prepared.session === undefined
     ? { status: 'opened', sessionFile: null, model }
@@ -416,7 +419,7 @@ const applyLaunchOutcome = async (
   fence: StartFence,
   started: PiLaunchResult,
 ): Promise<void> => {
-  if (launchOutcomeDecision(launchFacts(started)) === 'notCreated' || started.error !== undefined) {
+  if (launchFailed(started)) {
     await settleLaunch(request, fence, launchFailure(started));
 
     return;

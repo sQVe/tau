@@ -12,8 +12,8 @@ import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import {
   adoptClaim,
   openTool,
-  startedTerminalResult,
   requestFor,
+  startedTerminalResult,
 } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
