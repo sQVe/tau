@@ -25,6 +25,11 @@ if (argumentsList.length < fileCount) {
 
 const files = argumentsList.slice(0, fileCount).map((file) => resolve(process.cwd(), file));
 const [displayCutArgument, ...runnerArguments] = argumentsList.slice(fileCount);
+
+if (displayCutArgument === undefined) {
+  throw new Error('The focused runner requires a display cut argument.');
+}
+
 const displayCut = Number(displayCutArgument);
 
 if (!Number.isSafeInteger(displayCut) || displayCut < 0) {
@@ -49,7 +54,7 @@ if ('reporter' in normalizedOptions && Array.isArray(normalizedOptions.reporter)
 // Vitest renders an `it.each` "$name" through chai's display cut and stores that rendered name, so
 // an exact filter on the name written in the table would never match. Raise the cut just enough for
 // the longest requested name, and leave it alone for a run that cannot need it.
-const withoutDisplayCut = <Test extends { chaiConfig?: { truncateThreshold?: number } }>(
+const raiseDisplayCut = <Test extends { chaiConfig?: { truncateThreshold?: number } }>(
   test: Test,
   requiredCut: number,
 ): Test => {
@@ -73,13 +78,13 @@ try {
             : [configuredReporters];
 
           reporters.push([reporterPath, { files }]);
-          config.test = withoutDisplayCut(config.test ?? {}, displayCut);
+          config.test = raiseDisplayCut(config.test ?? {}, displayCut);
           config.test.reporters = reporters;
 
-          // An inline project resolves its own test config, so it needs the same cut removed.
+          // An inline project resolves its own test config, so it needs the same cut raised.
           for (const project of config.test.projects ?? []) {
             if (typeof project === 'object' && 'test' in project) {
-              project.test = withoutDisplayCut(project.test ?? {}, displayCut);
+              project.test = raiseDisplayCut(project.test ?? {}, displayCut);
             }
           }
         },

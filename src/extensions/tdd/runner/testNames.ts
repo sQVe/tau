@@ -1,7 +1,9 @@
 const arrowSeparatorMajor = 5;
 
-// Chai's default truncateThreshold, which also counts the two quotes it adds around a value.
+// Chai's default truncateThreshold, which also counts the quotes it adds around a substituted value.
 export const chaiDisplayCut = 40;
+
+const quotedNamePadding = 2;
 
 // Vitest 5 joins nested test names with ` > `; earlier versions use a space.
 export const nameSeparator = (version: string): string =>
@@ -13,9 +15,9 @@ const quoteCharacters = ['"', "'"];
 
 const isQuote = (character: string): boolean => quoteCharacters.includes(character);
 
-// Vitest renders an `it.each` "$name" through chai's display, which wraps the value in quotes, so
-// the name it registers differs from the name written in the table. The wrapper opens at the start
-// of a name segment, so each segment boundary is a candidate.
+// Vitest renders an `it.each` "$name" through chai's display, which wraps each substituted value in
+// quotes, so the name it registers differs from the name written in the table. Chai leaves no
+// marker for the wrapper, so it may open at any space.
 const wrapStarts = (name: string): number[] => {
   const starts = [0];
   let index = name.indexOf(' ');
@@ -25,13 +27,13 @@ const wrapStarts = (name: string): number[] => {
     index = name.indexOf(' ', index + 1);
   }
 
-  return starts;
+  return starts.filter((start) => name.length > start + 1);
 };
 
 const wrapsAt = (name: string, start: number): boolean => {
   const quote = name.charAt(start);
 
-  return name.length > start + 1 && isQuote(quote) && name.at(-1) === quote;
+  return isQuote(quote) && name.at(-1) === quote;
 };
 
 const unwrappedAt = (name: string, start: number): string =>
@@ -47,6 +49,14 @@ export const matchesRequestedName = (registeredName: string, requestedName: stri
       wrapsAt(registeredName, start) && unwrappedAt(registeredName, start) === requestedName,
   );
 };
+
+export const matchesAnyRequestedName = (
+  registeredName: string,
+  requestedNames: readonly string[],
+): boolean => requestedNames.some((name) => matchesRequestedName(registeredName, name));
+
+export const displayCutFor = (requestedNames: readonly string[]): number =>
+  Math.max(chaiDisplayCut, ...requestedNames.map((name) => name.length + quotedNamePadding));
 
 const wrappedAlternatives = (name: string): string[] =>
   wrapStarts(name).flatMap((start) => {

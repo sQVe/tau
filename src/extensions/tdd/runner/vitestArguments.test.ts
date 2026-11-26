@@ -97,7 +97,7 @@ describe('runTests', () => {
         deps,
       );
 
-      const runnerArgumentsStart = scope === 'focused' ? 4 : 1;
+      const runnerArgumentsStart = scope === 'focused' ? 5 : 1;
 
       expect(captured).toContain(pathArgument);
       expect(captured.slice(runnerArgumentsStart)).not.toContain('-a.test.ts');

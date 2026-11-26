@@ -2,7 +2,7 @@ import { isAbsolute, relative } from 'node:path';
 
 import { isRecord } from '../../../schema.js';
 import { capMessage, maximumFailures } from './constants.js';
-import { matchesRequestedName, nameSeparator } from './testNames.js';
+import { matchesAnyRequestedName, nameSeparator } from './testNames.js';
 import type { RunnerResult, RunTestsInput, TestFailure, TestResult } from './types.js';
 
 type VitestAssertionStatus = TestResult['status'] | 'pending' | 'disabled';
@@ -176,7 +176,7 @@ const selects = (testNames: readonly string[] | undefined) => {
     return () => true;
   }
 
-  return (fullname: string) => testNames.some((name) => matchesRequestedName(fullname, name));
+  return (fullname: string) => matchesAnyRequestedName(fullname, testNames);
 };
 
 const toTestResult = (

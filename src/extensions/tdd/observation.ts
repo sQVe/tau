@@ -20,7 +20,7 @@ import type { CheckpointInput, CycleState, HintDecision } from './observationTra
 import { classificationPath, projectDirectoryFromSession } from './projectPath.js';
 import { finishDiagnostics } from './runner/retention.js';
 import { lookupRunner } from './runner/runners.js';
-import { matchesRequestedName } from './runner/testNames.js';
+import { matchesAnyRequestedName, matchesRequestedName } from './runner/testNames.js';
 import type { RunDiagnostics, RunnerResult, TestRunner } from './runner/types.js';
 import type { Behavior, ObservationResult, TestObservation, TestScope } from './types.js';
 
@@ -133,7 +133,7 @@ const reportedInputs = (before: InputHash, after: InputHash): ObservationResult[
 };
 
 const isSelectedName = (behavior: Behavior, fullname: string): boolean =>
-  testNames(behavior).some((name) => matchesRequestedName(fullname, name));
+  matchesAnyRequestedName(fullname, testNames(behavior));
 
 const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =>
   report.kind === 'fail' &&

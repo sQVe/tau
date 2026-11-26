@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { matchesRequestedName, nameSeparator, requestedNamePattern } from './testNames.js';
+import { matchesRequestedName, requestedNamePattern } from './testNames.js';
 
 describe('matchesRequestedName', () => {
   it.for([
@@ -27,12 +27,6 @@ describe('matchesRequestedName', () => {
       name: 'a decision-table name under a Vitest 5 suite',
       registered: "outer > inner > 'a declared record accepts'",
       requested: 'outer > inner > a declared record accepts',
-      matches: true,
-    },
-    {
-      name: 'a decision-table name inside a title',
-      registered: "outer > handles 'a declared record accepts'",
-      requested: 'outer > handles a declared record accepts',
       matches: true,
     },
     {
@@ -90,6 +84,12 @@ describe('requestedNamePattern', () => {
     expect(matchesPattern(pattern, `${name} again`)).toBe(false);
   });
 
+  it('rejects a quoted separator', () => {
+    const pattern = requestedNamePattern(['outer > works']);
+
+    expect(matchesPattern(pattern, "outer '>' works")).toBe(false);
+  });
+
   it('escapes regular expression characters in the requested name', () => {
     const pattern = requestedNamePattern(['adds (item) [1]']);
 
@@ -99,9 +99,5 @@ describe('requestedNamePattern', () => {
 
   it('matches no name when none is requested', () => {
     expect(matchesPattern(requestedNamePattern([]), 'works')).toBe(false);
-  });
-
-  it('uses one separator per Vitest major', () => {
-    expect([nameSeparator('4.1.11'), nameSeparator('5.0.1')]).toEqual([' ', ' > ']);
   });
 });

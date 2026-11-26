@@ -17,7 +17,7 @@ import {
   resolutionFailure,
 } from './resolution.js';
 import type { ResolveVitest } from './resolution.js';
-import { chaiDisplayCut, requestedNamePattern } from './testNames.js';
+import { displayCutFor, requestedNamePattern } from './testNames.js';
 import type {
   RunTestsInput,
   RunnerResult,
@@ -188,7 +188,7 @@ const runInDirectory = async (
   if (focusedEntry) {
     const entry = fileURLToPath(new URL('./vitestFocused.ts', import.meta.url));
     const files = scopedPaths(input);
-    const displayCut = Math.max(chaiDisplayCut, ...input.testNames.map((name) => name.length + 2));
+    const displayCut = displayCutFor(input.testNames);
 
     commandArguments.splice(1, 0, String(files.length), ...files, String(displayCut));
     commandArguments.unshift(entry);

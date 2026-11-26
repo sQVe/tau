@@ -39,9 +39,10 @@ display, which wraps the value in quotes and cuts it at a configured length, so 
 registers is not the name written in the table. The entry raises that cut to fit the longest
 requested name and leaves it alone for a run whose names fit chai's default, and Tau accepts a
 requested name whether or not the registered name carries the display quotes. The `-t` pattern, the
-report selection, and the observation layer share that one rule. Older versions keep the CLI path,
-and a project declared by path or glob keeps its own test config, so the display cut still applies
-there.
+report selection, and the observation layer share that one rule. A title that interpolates several
+values registers a name Tau cannot rebuild from the name written in the table, so a focused run must
+use the name the report prints for it. Older versions keep the CLI path, and a project declared by
+path or glob keeps its own test config, so the display cut still applies there.
 
 The TypeScript entry ships with Tau's source and uses Node's native TypeScript support. It needs no
 separate build artifact. Affected and full runs keep the CLI boundary because they do not need exact
