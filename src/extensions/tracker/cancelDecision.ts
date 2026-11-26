@@ -1,4 +1,6 @@
-export type PullRequestEvidence = { url: string; state: string } | { url: string; error: string };
+export type ClosingPullRequestEvidence =
+  | { url: string; state: string }
+  | { url: string; error: string };
 
 export type CancelDecision =
   | { kind: 'cancel' }
@@ -22,7 +24,7 @@ export const decideConfirmedCancel = (
 
 export const decideCancel = (
   state: string,
-  pullRequests: readonly PullRequestEvidence[],
+  closingPullRequests: readonly ClosingPullRequestEvidence[],
 ): CancelDecision => {
   if (state === 'canceled') {
     return { kind: 'unchanged' };
@@ -32,7 +34,7 @@ export const decideCancel = (
     return { kind: 'refuse', reason: 'The ticket is completed.' };
   }
 
-  for (const pullRequest of pullRequests) {
+  for (const pullRequest of closingPullRequests) {
     if ('error' in pullRequest) {
       return { kind: 'refuse', reason: `Cannot read ${pullRequest.url}: ${pullRequest.error}` };
     }

@@ -238,7 +238,15 @@ export const updateComment = async (
 };
 
 const cancelQuery =
-  'query($id: String!) { issue(id: $id) { identifier title state { type name } attachments(first: 100) { nodes { url } pageInfo { hasNextPage } } } }';
+  'query($id: String!) { issue(id: $id) { identifier title state { type name } attachments(first: 100) { nodes { url metadata } pageInfo { hasNextPage } } } }';
+
+const attachmentSchema = Type.Object({
+  url: Type.String(),
+  metadata: Type.Union([
+    Type.Object({ linkKind: Type.Optional(Type.Union([Type.String(), Type.Null()])) }),
+    Type.Null(),
+  ]),
+});
 
 const cancelSchema = Type.Object({
   issue: Type.Union([
@@ -248,7 +256,7 @@ const cancelSchema = Type.Object({
       title: Type.String(),
       state: Type.Object({ type: Type.String(), name: Type.String() }),
       attachments: Type.Object({
-        nodes: Type.Array(Type.Object({ url: Type.String() })),
+        nodes: Type.Array(attachmentSchema),
         pageInfo: pageInfoSchema,
       }),
     }),

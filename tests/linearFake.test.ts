@@ -145,11 +145,6 @@ test('refuses an update input field of the wrong type and leaves the issue uncha
 
 test.each([
   {
-    name: 'nodes before page info',
-    query: attachmentsBeforePageInfo,
-    expected: 'cannot read attachment selection 0',
-  },
-  {
     name: 'a lone child attachment selection without arguments',
     query: childAttachmentsWithoutArguments,
     expected: 'cannot read attachment selection 0',
@@ -168,6 +163,31 @@ test.each([
   expect(result.code).toBe(1);
   expect(result.stderr).toContain(expected);
   expect(fake.writes()).toEqual([]);
+});
+
+test('reads an attachment selection that lists nodes before page info', async () => {
+  const fake = createLinearFake();
+  fake.addIssue({ title: 'Ticket', pullRequests: ['https://github.com/me/repo/pull/1'] });
+
+  const result = await fake.exec('linear', [
+    'api',
+    attachmentsBeforePageInfo,
+    '--variable',
+    'id=ME-1',
+  ]);
+
+  expect(result.code).toBe(0);
+
+  expect(JSON.parse(result.stdout)).toEqual({
+    data: {
+      issue: {
+        attachments: {
+          pageInfo: { hasNextPage: false },
+          nodes: [{ url: 'https://github.com/me/repo/pull/1' }],
+        },
+      },
+    },
+  });
 });
 
 test('an override or failure does not rescue an unsupported call', async () => {

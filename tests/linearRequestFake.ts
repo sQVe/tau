@@ -54,6 +54,26 @@ interface IssueInput {
   subIssueSortOrder?: number;
 }
 
+export interface AttachmentFields {
+  metadata: boolean;
+}
+
+export interface AttachmentSources {
+  pullRequests: readonly string[];
+  mentions: readonly string[];
+  plainLinks: readonly string[];
+}
+
+interface AttachmentNode {
+  url: string;
+  metadata?: { linkKind: string } | null;
+}
+
+export interface AttachmentPage {
+  pageInfo: { hasNextPage: boolean };
+  nodes: AttachmentNode[];
+}
+
 export interface QueryVariables {
   commentCreate: { issue: string; body: string };
   commentUpdate: { id: string; body: string };
@@ -96,6 +116,59 @@ export type Operation =
   | { kind: 'cancel'; identifier: string }
   | { kind: 'relation'; action: 'add' | 'delete'; identifier: string; blocker: string }
   | QueryOperation;
+
+const attachmentSelection =
+  /attachments\([^)]*\)\s*\{\s*(?:pageInfo\s*\{[^}]*\}\s*nodes\s*\{([^}]*)\}|nodes\s*\{([^}]*)\}\s*pageInfo\s*\{[^}]*\})\s*\}/gu;
+
+const attachmentSelections = (query: string): AttachmentFields[] =>
+  [...query.matchAll(attachmentSelection)].map((match) => ({
+    metadata: (match[1] ?? match[2] ?? '').includes('metadata'),
+  }));
+
+// GraphQL returns only the fields a query selects, so a fake follows each attachment selection in
+// the query, in either field order. A selection the fake cannot read fails loudly instead of
+// reporting the wrong fields, and a query that selects no attachments keeps the node's attachments
+// without the field.
+export const attachmentFields = (query: string, index = 0): AttachmentFields => {
+  if (!/\battachments\b/u.test(query)) {
+    return { metadata: false };
+  }
+
+  const selections = attachmentSelections(query);
+  const selection = selections[index];
+
+  if (selection === undefined) {
+    throw new Error(
+      `The fake cannot read attachment selection ${index} from ${query}: it parsed ${selections.length}.`,
+    );
+  }
+
+  return selection;
+};
+
+// A linked pull request either closes the issue, only mentions it, or arrives without Linear's
+// record of either.
+const attachmentNodes = (issue: AttachmentSources, fields: AttachmentFields): AttachmentNode[] => [
+  ...issue.pullRequests.map((url) => ({
+    url,
+    ...(fields.metadata ? { metadata: { linkKind: 'closes' } } : {}),
+  })),
+  ...issue.mentions.map((url) => ({
+    url,
+    ...(fields.metadata ? { metadata: { linkKind: 'links' } } : {}),
+  })),
+  ...issue.plainLinks.map((url) => ({ url, ...(fields.metadata ? { metadata: null } : {}) })),
+];
+
+export const attachmentPage = (
+  issue: AttachmentSources,
+  fields: AttachmentFields,
+  limit: number,
+): AttachmentPage => {
+  const nodes = attachmentNodes(issue, fields);
+
+  return { pageInfo: { hasNextPage: nodes.length > limit }, nodes: nodes.slice(0, limit) };
+};
 
 const coerceVariable = (text: string): unknown => {
   if (['true', 'false', 'null'].includes(text) || /^-?\d+(\.\d+)?$/u.test(text)) {

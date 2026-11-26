@@ -1,7 +1,8 @@
 import type { Exec } from '../src/command.js';
 import { createCommentFake } from './linearCommentFake.js';
-import { decode } from './linearRequestFake.js';
+import { attachmentFields, attachmentPage, decode } from './linearRequestFake.js';
 import type {
+  AttachmentFields,
   FakeCall,
   Operation,
   QueryName,
@@ -43,11 +44,6 @@ interface Fence {
   length: number;
 }
 
-// GraphQL returns only the fields a query selects, so the fake follows each attachment selection.
-interface AttachmentFields {
-  metadata: boolean;
-}
-
 interface FakeProject {
   id: string;
   name: string;
@@ -82,30 +78,6 @@ const teams = new Map([
 const labels = [{ id: 'label-bug', name: 'Bug', teamId: 'team-me' }];
 
 const issueId = (identifier: string) => `id-${identifier}`;
-
-const attachmentSelections = (query: string): AttachmentFields[] =>
-  [
-    ...query.matchAll(/attachments\([^)]*\)\s*\{\s*pageInfo\s*\{[^}]*\}\s*nodes\s*\{([^}]*)\}/gu),
-  ].map((match) => ({ metadata: match[1]!.includes('metadata') }));
-
-// A query the fake does not model fails loudly instead of reporting the wrong fields. A query that
-// selects no attachments keeps the node's attachments without the field.
-const attachmentSelection = (query: string, index: number): AttachmentFields => {
-  if (!/\battachments\b/u.test(query)) {
-    return { metadata: false };
-  }
-
-  const selections = attachmentSelections(query);
-  const selection = selections[index];
-
-  if (selection === undefined) {
-    throw new Error(
-      `The fake cannot read attachment selection ${index} from ${query}: it parsed ${selections.length}.`,
-    );
-  }
-
-  return selection;
-};
 
 // Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
 const openingFence = (line: string): Fence | undefined => {
@@ -142,25 +114,7 @@ const savedDescription = (description: string) => {
   return lines.join('\n');
 };
 
-// A linked pull request either closes the issue, only mentions it, or arrives without Linear's
-// record of either.
-const attachmentNodes = (issue: FakeIssue, fields: AttachmentFields) => [
-  ...issue.pullRequests.map((url) => ({
-    url,
-    ...(fields.metadata ? { metadata: { linkKind: 'closes' } } : {}),
-  })),
-  ...issue.mentions.map((url) => ({
-    url,
-    ...(fields.metadata ? { metadata: { linkKind: 'links' } } : {}),
-  })),
-  ...issue.plainLinks.map((url) => ({ url, ...(fields.metadata ? { metadata: null } : {}) })),
-];
-
-const childNode = (
-  issue: FakeIssue,
-  project: { name: string } | null,
-  fields: AttachmentFields,
-) => ({
+const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   identifier: issue.identifier,
   branchName: issue.branchName,
   title: issue.title,
@@ -172,7 +126,6 @@ const childNode = (
   creator: issue.creatorId === null ? null : { id: issue.creatorId },
   assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
   state: issue.state,
-  attachments: { nodes: attachmentNodes(issue, fields) },
   inverseRelations: {
     nodes: [
       ...issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
@@ -252,16 +205,17 @@ export const createLinearFake = (): LinearFake => {
 
   const team = (id: string) => [...teams.values()].find((candidate) => candidate.id === id)!;
 
-  const pagedNode = (node: ReturnType<typeof childNode>) => {
-    const attachments = node.attachments.nodes;
+  const pagedNode = (
+    issue: FakeIssue,
+    issueProject: { name: string } | null,
+    fields: AttachmentFields,
+  ) => {
+    const node = childNode(issue, issueProject);
     const relations = node.inverseRelations.nodes;
 
     return {
       ...node,
-      attachments: {
-        pageInfo: { hasNextPage: attachments.length > attachmentLimit },
-        nodes: attachments.slice(0, attachmentLimit),
-      },
+      attachments: attachmentPage(issue, fields, attachmentLimit),
       inverseRelations: {
         pageInfo: { hasNextPage: relations.length > relationLimit },
         nodes: relations.slice(0, relationLimit),
@@ -270,8 +224,8 @@ export const createLinearFake = (): LinearFake => {
   };
 
   const containerData = (identifier: string, query: string) => {
-    const issueFields = attachmentSelection(query, 0);
-    const childFields = attachmentSelection(query, 1);
+    const issueFields = attachmentFields(query, 0);
+    const childFields = attachmentFields(query, 1);
     const issue = issues.get(identifier);
 
     if (issue === undefined) {
@@ -284,15 +238,13 @@ export const createLinearFake = (): LinearFake => {
     return {
       viewer: { id: 'user-viewer' },
       issue: {
-        ...pagedNode(childNode(issue, project(issue.projectId), issueFields)),
+        ...pagedNode(issue, project(issue.projectId), issueFields),
         id: issueId(identifier),
         team: team(issue.teamId),
         project: project(issue.projectId),
         children: {
           pageInfo: { hasNextPage: children.length < allChildren.length },
-          nodes: children.map((child) =>
-            pagedNode(childNode(child, project(child.projectId), childFields)),
-          ),
+          nodes: children.map((child) => pagedNode(child, project(child.projectId), childFields)),
         },
       },
     };
@@ -504,10 +456,9 @@ export const createLinearFake = (): LinearFake => {
           return { issue: null };
         }
 
-        const fields = attachmentSelection(operation.query, 0);
-        const { attachments } = pagedNode(childNode(issue, project(issue.projectId), fields));
+        const fields = attachmentFields(operation.query, 0);
 
-        return { issue: { attachments } };
+        return { issue: { attachments: attachmentPage(issue, fields, attachmentLimit) } };
       }
 
       case 'ticket': {

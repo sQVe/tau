@@ -1,3 +1,4 @@
+import { attachmentFields, attachmentPage } from './linearRequestFake.js';
 import type { Operation, QueryOperation } from './linearRequestFake.js';
 
 interface FakeComment {
@@ -15,6 +16,8 @@ interface Ticket {
   creatorId: string | null;
   state: Readonly<{ type: string; name: string }>;
   pullRequests: string[];
+  mentions: string[];
+  plainLinks: string[];
 }
 
 type CommentOperation = Extract<
@@ -107,10 +110,7 @@ export const createCommentFake = (
         assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
         creator: issue.creatorId === null ? null : { id: issue.creatorId },
         state: issue.state,
-        attachments: {
-          nodes: issue.pullRequests.slice(0, attachmentLimit()).map((url) => ({ url })),
-          pageInfo: { hasNextPage: issue.pullRequests.length > attachmentLimit() },
-        },
+        attachments: attachmentPage(issue, attachmentFields(operation.query), attachmentLimit()),
         comments: {
           nodes: matches.slice(0, limit),
           pageInfo: { hasNextPage: matches.length > limit },

@@ -21,6 +21,8 @@ interface AnswerFacts {
   typed?: boolean;
 }
 
+type NonClosingLink = { mentions: string[] } | { plainLinks: string[] };
+
 const pullRequest = 'https://github.com/sQVe/tau/pull/42';
 
 afterEach(() => vi.unstubAllEnvs());
@@ -69,6 +71,33 @@ it('refuses cancel for a merged PR without a write or confirmation', async () =>
   expect(issue.state.type).toBe('started');
   expect(prompts).toEqual([]);
   expect(await readdir(directory)).toEqual(['.git']);
+});
+
+const nonClosingLinks: [string, NonClosingLink][] = [
+  ['only mentions it', { mentions: [pullRequest] }],
+  ['carries no link kind', { plainLinks: [pullRequest] }],
+];
+
+it.each(nonClosingLinks)('cancels a ticket whose merged PR %s', async (_case, links) => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Mentioned work', ...links });
+  fake.mergedPullRequests.add(pullRequest);
+  const prompts: string[] = [];
+
+  const context = confirmContext('/repo', async (title) => {
+    prompts.push(title);
+
+    return true;
+  });
+
+  expect(await cancel(fake.exec, context, issue.identifier)).toEqual({
+    status: 'canceled',
+    identifier: issue.identifier,
+  });
+
+  expect(issue.state.type).toBe('canceled');
+  expect(prompts).toHaveLength(1);
+  expect(fake.calls.filter((call) => call.command === 'gh')).toEqual([]);
 });
 
 it('refuses cancellation when a linked PR merges during confirmation', async () => {
