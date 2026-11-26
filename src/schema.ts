@@ -10,6 +10,11 @@ export interface KnownKeys {
   readonly [key: string]: KnownKeys | true;
 }
 
+// The API shape read at installation. `registerTool` may be absent, an accessor, or a proxy trap.
+interface RegisterToolHost {
+  registerTool?: ExtensionAPI['registerTool'];
+}
+
 export type AskKind = 'choice' | 'approval';
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -185,12 +190,13 @@ const notWritableMessage =
   'Cannot install strict tool parameters: registerTool is not writable on this API.';
 
 const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
+  const host: RegisterToolHost = pi;
   let current: ExtensionAPI['registerTool'] | undefined;
 
   // An accessor or proxy trap may throw or return a different function on each read, so read the
   // property once and bind the value that was checked.
   try {
-    current = pi['registerTool'];
+    current = host.registerTool;
   } catch (error) {
     throw new Error(notWritableMessage, { cause: error });
   }
