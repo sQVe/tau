@@ -9,6 +9,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
+import { gitEnvironment } from '../../git.js';
 import { readTextWithinSync } from '../../record.js';
 import { parseShellCommands, quoteShellArgument } from '../../shell.js';
 import type { ShellCommand, ShellInput } from '../../shell.js';
@@ -190,8 +191,8 @@ const scriptsOf = (commands: ShellCommand[]) =>
 // Fail closed when nested scripts exceed the parser's inspection budget.
 const maximumScriptDepth = 8;
 
-// oxlint-disable-next-line no-magic-numbers -- A 1 MiB script cap bounds the read of one file.
-const maximumScriptBytes = 1024 * 1024;
+const bytesPerKibibyte = 1024;
+const maximumScriptBytes = bytesPerKibibyte * bytesPerKibibyte;
 
 // 512 bytes hold a shebang and an executable header.
 const maximumScriptHeaderBytes = 512;
@@ -1186,8 +1187,7 @@ const pathDirectoriesFor = (
 };
 
 const readPathDirectories = (): string[] => {
-  // oxlint-disable-next-line node/no-process-env -- The shell searches the PATH of the running process.
-  const path = process.env['PATH'] ?? '';
+  const path = gitEnvironment().PATH ?? '';
 
   return path.split(delimiter).filter((directory) => directory !== '');
 };
