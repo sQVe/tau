@@ -8,10 +8,12 @@ import {
   cargoPackage,
   createCrate,
   createNextestTool,
+  expectOutcome,
   libraryWith,
   nextestConfig,
   prebuildCrate,
   removeDepInfoFiles,
+  stageOutput,
   useSharedCargoEnvironment,
 } from './nextestHarness.js';
 import type { NextestPatch, NextestRequest, NextestToolResult } from './nextestHarness.js';
@@ -63,7 +65,8 @@ const expectNoRedObservation = async (cwd: string, path: string): Promise<void> 
 };
 
 const expectUnknownNoRed = async (result: NextestToolResult, fullname: string): Promise<void> => {
-  expect(result.details.kind).toBe('fail');
+  expect(result.details.kind, stageOutput(result.details.report)).toBe('fail');
+  expectOutcome(result.details.report, { kind: 'fail' });
 
   const test = testsOf(result)[0];
 
@@ -88,7 +91,7 @@ it('records RED when a focused failing unit test is attributed to src/sub.rs', a
     testFullName: 'sub::tests::inner_fails',
   });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'fail',
     tests: [{ file: 'src/sub.rs', fullname: 'sub::tests::inner_fails', status: 'failed' }],
   });
@@ -115,7 +118,7 @@ it('records RED for a tests/api.rs test that panics inside a src/sub.rs helper',
 
   const result = await run(crate, { files: ['tests/api.rs'], testFullName: 'api_fails' });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'fail',
     tests: [{ file: 'tests/api.rs', fullname: 'api_fails', status: 'failed' }],
   });
@@ -139,7 +142,7 @@ it('attributes a focused passing integration test to tests/api.rs', async ({ onT
 
   const result = await run(crate, { files: ['tests/api.rs'], testFullName: 'api_passes' });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'pass',
     tests: [{ file: 'tests/api.rs', fullname: 'api_passes', status: 'passed' }],
   });
@@ -161,7 +164,8 @@ it('reports a test name in two binaries with different files as ambiguous and re
 
   const result = await run(crate, { files: ['src/lib.rs'], testFullName: 'shared_fails' });
 
-  expect(result.details.kind).toBe('fail');
+  expect(result.details.kind, stageOutput(result.details.report)).toBe('fail');
+  expectOutcome(result.details.report, { kind: 'fail' });
 
   const test = testsOf(result)[0];
 
@@ -192,7 +196,7 @@ it('runs the matched binary when another requested file matches none and records
     testFullName: 'lib_fails',
   });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'fail',
     tests: [{ file: 'src/lib.rs', fullname: 'lib_fails', status: 'failed' }],
   });
@@ -224,7 +228,6 @@ it('gives unknown attribution when the binary lists no requested file and record
     testFullName: 'tests::b_fails',
   });
 
-  expect(result.details.kind).toBe('fail');
   await expectUnknownNoRed(result, 'tests::b_fails');
   await expectNoRedObservation(crate, 'pkg_a/src/lib.rs');
 });
@@ -247,7 +250,8 @@ it('reports a test compiled into the lib and the bin as ambiguous and records no
     testFullName: 'shared::shared_fails',
   });
 
-  expect(result.details.kind).toBe('fail');
+  expect(result.details.kind, stageOutput(result.details.report)).toBe('fail');
+  expectOutcome(result.details.report, { kind: 'fail' });
 
   const tests = testsOf(result);
   const binaryIds = ['probe_dual', 'probe_dual::bin/probe_dual'].toSorted();
@@ -283,7 +287,7 @@ it('attributes a non-default workspace member to its file from the workspace roo
     testFullName: 'tests::b_passes',
   });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'pass',
     tests: [{ file: 'pkg_b/src/lib.rs', fullname: 'tests::b_passes', status: 'passed' }],
   });
@@ -304,7 +308,7 @@ it('resolves workspace dep-info against the root when the suite runs from a memb
     testFullName: 'tests::b_passes',
   });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'pass',
     tests: [{ file: 'src/lib.rs', fullname: 'tests::b_passes', status: 'passed' }],
   });
@@ -328,7 +332,7 @@ it('attributes a test in backend/Cargo.toml to its file from the repository root
     testFullName: 'tests::backend_passes',
   });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'pass',
     tests: [{ file: 'backend/src/lib.rs', fullname: 'tests::backend_passes', status: 'passed' }],
   });
@@ -355,7 +359,7 @@ it('resolves the manifest path from the Git root when the session is the project
     testFullName: 'tests::nested_passes',
   });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'pass',
     tests: [{ file: 'src/lib.rs', fullname: 'tests::nested_passes', status: 'passed' }],
   });
@@ -382,7 +386,7 @@ it('applies the Cargo config beside the chosen manifest when the session is the 
     testFullName: 'tests::reads_config',
   });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'pass',
     tests: [{ file: 'backend/src/lib.rs', fullname: 'tests::reads_config', status: 'passed' }],
   });
@@ -411,7 +415,7 @@ it('records RED for a test in a chosen project beside the session', async ({ onT
     testFullName: 'tests::sibling_fails',
   });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'fail',
     tests: [{ file: '../backend/src/lib.rs', fullname: 'tests::sibling_fails', status: 'failed' }],
   });
@@ -441,7 +445,6 @@ it('gives unknown attribution when a binary dep-info file is missing', async ({
     testFullName: 'sub::tests::inner_fails',
   });
 
-  expect(result.details.kind).toBe('fail');
   await expectUnknownNoRed(result, 'sub::tests::inner_fails');
   await expectNoRedObservation(crate, 'src/sub.rs');
 });
@@ -457,7 +460,7 @@ it('runs a focused test in a bin-only crate', async ({ onTestFinished }) => {
 
   const result = await run(crate, { files: ['src/main.rs'], testFullName: 'bin_passes' });
 
-  expect(result.details.report).toMatchObject({
+  expectOutcome(result.details.report, {
     kind: 'pass',
     tests: [{ file: 'src/main.rs', fullname: 'bin_passes', status: 'passed' }],
   });

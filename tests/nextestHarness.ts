@@ -4,10 +4,11 @@ import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { beforeAll, vi } from 'vitest';
+import { beforeAll, expect, vi } from 'vitest';
 
 import { parseCargoMetadata } from '../src/extensions/tdd/runner/cargoMetadata.js';
 import { targetArguments } from '../src/extensions/tdd/runner/nextestArguments.js';
+import type { RunnerResult } from '../src/extensions/tdd/runner/types.js';
 import tddExtension from '../src/extensions/tdd/tdd.js';
 import type { ObservationResult } from '../src/extensions/tdd/types.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -35,7 +36,30 @@ export interface NextestTool {
   edit: (cwd: string, path: string, content: string) => Promise<NextestPatch | undefined>;
 }
 
+type DeepPartial<Value> = Value extends readonly (infer Item)[]
+  ? readonly DeepPartial<Item>[]
+  : Value extends object
+    ? { [Key in keyof Value]?: DeepPartial<Value[Key]> }
+    : Value;
+
 export const nextestConfig = JSON.stringify({ tdd: { runner: 'nextest' } });
+
+// A toMatchObject failure prints only the keys the expectation names, so the reason has to travel as
+// the assertion message. The runner's message starts at the first error line, and a run stage carries
+// no output in its message, so the stage excerpts follow.
+export const stageOutput = (result: RunnerResult): string => {
+  const message = 'message' in result ? result.message : '';
+
+  const stages = (result.diagnostics?.stages ?? []).map(
+    (stage) => `${stage.name}: exit ${stage.exitCode ?? 'unavailable'}\n${stage.excerpt ?? ''}`,
+  );
+
+  return [message, ...stages].filter((part) => part !== '').join('\n\n');
+};
+
+export const expectOutcome = (report: RunnerResult, expected: DeepPartial<RunnerResult>): void => {
+  expect(report, stageOutput(report)).toMatchObject(expected);
+};
 
 export const createCrate = async (
   cleanup: Parameters<typeof temporaryDirectory>[0],

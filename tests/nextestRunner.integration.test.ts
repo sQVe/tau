@@ -15,7 +15,9 @@ import { writeFileMap } from './fileMap.js';
 import {
   cargoPackage,
   createCrate,
+  expectOutcome,
   libraryWith,
+  stageOutput,
   useSharedCargoEnvironment,
 } from './nextestHarness.js';
 import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -36,19 +38,6 @@ const run = (input: RunTestsInput, overrides: Partial<NextestDeps> = {}) =>
 
 const testNamesOf = (result: RunnerResult): string[] =>
   'tests' in result ? result.tests.map((test) => test.fullname) : [];
-
-// A toMatchObject failure prints only the keys the expectation names, so the reason has to travel as
-// the assertion message. The runner's message starts at the first error line, and a run stage carries
-// no output in its message, so the stage excerpts follow.
-const stageOutput = (result: RunnerResult): string => {
-  const message = 'message' in result ? result.message : '';
-
-  const stages = (result.diagnostics?.stages ?? []).map(
-    (stage) => `${stage.name}: exit ${stage.exitCode ?? 'unavailable'}\n${stage.excerpt ?? ''}`,
-  );
-
-  return [message, ...stages].filter((part) => part !== '').join('\n\n');
-};
 
 let basicCrate = '';
 const registerCleanup = suiteCleanup();
@@ -84,7 +73,7 @@ beforeAll(async () => {
 it('gives pass for a focused passing test on a real crate', async () => {
   const result = await run(focusedInput(basicCrate, ['tests::adds']));
 
-  expect(result).toMatchObject({
+  expectOutcome(result, {
     kind: 'pass',
     tests: [{ file: '', fullname: 'tests::adds', status: 'passed' }],
   });
@@ -93,7 +82,7 @@ it('gives pass for a focused passing test on a real crate', async () => {
 it('gives fail for a focused failing test on a real crate', async () => {
   const result = await run(focusedInput(basicCrate, ['tests::fails']));
 
-  expect(result).toMatchObject({
+  expectOutcome(result, {
     kind: 'fail',
     failures: [{ file: '', fullname: 'tests::fails' }],
     tests: [{ fullname: 'tests::fails', status: 'failed' }],
@@ -111,8 +100,16 @@ it('reports a type error from list as compile-error with the compiler message', 
   const result = await run(focusedInput(crate, ['tests::adds']));
   const message = 'message' in result ? result.message : '';
 
-  expect(result.kind).toBe('compile-error');
+  expectOutcome(result, { kind: 'compile-error' });
   expect(message).toContain('error[E0308]');
+
+  expect(() => {
+    expectOutcome(result, { kind: 'no-tests-collected' });
+  }).toThrow('cargo nextest list');
+
+  expect(() => {
+    expectOutcome(result, { kind: 'no-tests-collected' });
+  }).toThrow('error[E0308]');
 });
 
 it('reports the Cargo error and keeps an out-of-date Cargo.lock when cargoLocked is set', async ({
@@ -138,7 +135,7 @@ it('reports the Cargo error and keeps an out-of-date Cargo.lock when cargoLocked
   const result = await run({ ...focusedInput(crate, ['tests::adds']), cargoLocked: true });
   const message = 'message' in result ? result.message : '';
 
-  expect(result.kind).toBe('compile-error');
+  expectOutcome(result, { kind: 'compile-error' });
   expect(message).toContain('because --locked was passed');
   expect(await readFile(join(crate, 'Cargo.lock'), 'utf8')).toBe(outdatedLock);
 });
@@ -146,7 +143,7 @@ it('reports the Cargo error and keeps an out-of-date Cargo.lock when cargoLocked
 it('collects no tests when the requested name matches nothing', async () => {
   const result = await run(focusedInput(basicCrate, ['tests::missing']));
 
-  expect(result.kind).toBe('no-tests-collected');
+  expectOutcome(result, { kind: 'no-tests-collected' });
 });
 
 it('reports a test that nextest stops for running too long as a timeout', async ({
@@ -166,7 +163,11 @@ it('reports a test that nextest stops for running too long as a timeout', async 
 
   const result = await run(focusedInput(crate, ['tests::sleeps']));
 
-  expect(result, stageOutput(result)).toMatchObject({ kind: 'timeout', stage: 'run' });
+  expectOutcome(result, { kind: 'timeout', stage: 'run' });
+
+  expect(() => {
+    expectOutcome(result, { kind: 'pass' });
+  }).toThrow('probe_sleep');
 });
 
 it('names the build error when earlier warnings fill the stage excerpt', async ({
@@ -215,7 +216,7 @@ it('ignores a repository default filter, fail-fast, and a Tau-like profile', asy
 
   const result = await run(focusedInput(crate, ['tests::passes', 'tests::fails']));
 
-  expect(result.kind).toBe('fail');
+  expectOutcome(result, { kind: 'fail' });
   const testNames = testNamesOf(result).toSorted();
   expect(testNames).toEqual(['tests::fails', 'tests::passes']);
 });
@@ -223,7 +224,7 @@ it('ignores a repository default filter, fail-fast, and a Tau-like profile', asy
 it('reads the JUnit file even when a test prints a testsuite to stdout', async () => {
   const result = await run(focusedInput(basicCrate, ['tests::prints_forged_report']));
 
-  expect(result).toMatchObject({ kind: 'pass' });
+  expectOutcome(result, { kind: 'pass' });
   expect(testNamesOf(result)).toEqual(['tests::prints_forged_report']);
 });
 
@@ -235,7 +236,7 @@ it('reports a missing cargo-nextest with an install hint and a resolution record
   const result = await run(focusedInput(basicCrate, ['tests::adds']), { searchPath: emptyPath });
   const resolution = result.diagnostics?.resolution;
 
-  expect(result.kind).toBe('runner-missing');
+  expectOutcome(result, { kind: 'runner-missing' });
 
   const message = 'message' in result ? result.message : '';
 
@@ -265,7 +266,7 @@ it('reports a deadline shorter than the first stage as a timeout and starts no r
     timeoutMs: 1,
   });
 
-  expect(result).toMatchObject({ kind: 'timeout', stage: 'metadata' });
+  expectOutcome(result, { kind: 'timeout', stage: 'metadata' });
   expect(started).toEqual(['--no-deps']);
 });
 
@@ -289,7 +290,7 @@ it('reports an aborted first stage as cancelled and starts no run process', asyn
     timeoutMs: 60_000,
   });
 
-  expect(result.kind).toBe('cancelled');
+  expectOutcome(result, { kind: 'cancelled' });
   expect(started).toEqual(['--no-deps']);
   expect(result.diagnostics?.stages.map((stage) => stage.name)).toEqual(['metadata']);
 });
@@ -311,7 +312,7 @@ it('runs a test in a non-default member of a virtual workspace', async ({ onTest
 
   const result = await run(focusedInput(crate, ['tests::b']));
 
-  expect(result).toMatchObject({
+  expectOutcome(result, {
     kind: 'pass',
     tests: [{ fullname: 'tests::b', status: 'passed' }],
   });
@@ -328,6 +329,6 @@ it('leaves the crate config directory with only the files the test wrote', async
 
   const result = await run(focusedInput(crate, ['tests::adds']));
 
-  expect(result.kind).toBe('pass');
+  expectOutcome(result, { kind: 'pass' });
   expect(await readdir(join(crate, '.config'))).toEqual(['nextest.toml']);
 });
