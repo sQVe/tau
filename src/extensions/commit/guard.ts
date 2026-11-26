@@ -486,7 +486,9 @@ const optionValue = (
     }
 
     if (word === option) {
-      return { value: words[index + 1] ?? '', next: index + 2 };
+      const value = words[index + 1];
+
+      return value === undefined ? undefined : { value, next: index + 2 };
     }
 
     const attached = word.slice(option.length);
@@ -498,8 +500,15 @@ const optionValue = (
   return undefined;
 };
 
-const takesOptionValue = (word: string, options: ReadonlySet<string>): boolean =>
-  [...options].some((option) => matchesOption(word, option));
+const takesOptionValue = (word: string, options: ReadonlySet<string>): boolean => {
+  for (const option of options) {
+    if (matchesOption(word, option)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const wrapperStep = (
   words: string[],
@@ -620,7 +629,7 @@ const commandWordIndex = (words: string[]): number | undefined => {
 
     const scan = scanWrapper(words, index, name);
 
-    if (scan.commandIndex === undefined) {
+    if (scan.codes.length > 0 || scan.commandIndex === undefined) {
       return undefined;
     }
 

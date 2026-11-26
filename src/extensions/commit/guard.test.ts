@@ -839,10 +839,42 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent("flock lock sh -c 'git status'"), directory)).toBeUndefined();
   });
 
-  it('reads a word starting with -c as shell code', () => {
+  it('reads a short option with its value attached as shell code', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    expect(guard(makeBashEvent('flock lock -command'), directory)).toBeUndefined();
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent("flock lock -c'git commit -m x'"), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a trailing shell-code option with no value', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('flock lock -c'), directory)).toBeUndefined();
+  });
+
+  it('allows a positional after shell code that flock never runs', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(
+      guard(makeBashEvent("flock -c 'git status' lock ./commit.sh"), directory),
+    ).toBeUndefined();
+  });
+
+  it('blocks shell code that runs a committing script file', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent("flock -c './commit.sh' lock"), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
   });
 
   it('blocks a script file named after a redirection target digit', () => {
