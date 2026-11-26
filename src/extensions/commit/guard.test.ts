@@ -54,14 +54,6 @@ const writeScriptFiles = (directory: string, count: number): string[] => {
 
 const referencesTo = (names: string[]): string => names.map((name) => `sh ${name}`).join('; ');
 
-const withPath = (directory: string): void => {
-  vi.stubEnv('PATH', `${directory}${delimiter}${process.env['PATH'] ?? ''}`);
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-};
-
 const withExactPath = (...entries: string[]): void => {
   vi.stubEnv('PATH', entries.join(delimiter));
 
@@ -1013,6 +1005,60 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('cd sub && sh tool.sh'), directory);
   });
 
+  it.each([
+    ['sh -c attached', "sh -c'git commit -m x'"],
+    ['bash -lc attached', "bash -lc'./commit.sh'"],
+  ])('blocks inline code attached to a short option: %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('allows attached inline code that does not create a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent("sh -c'git status'"), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['if then', 'if true; then sh commit.sh; fi'],
+    ['negation', '! ./commit.sh'],
+    ['while do', 'while true; do sh commit.sh; done'],
+  ])('blocks a script after a shell keyword: %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('allows keyword-like words that name data', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('echo then sh commit.sh'), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['sudo -Eu', 'sudo -Eu root sh commit.sh'],
+    ['xargs -tn', 'xargs -tn 2 sh commit.sh'],
+    ['sudo -C', 'sudo -C 5 sh commit.sh'],
+    ['sudo --command-timeout', 'sudo --command-timeout 5 sh commit.sh'],
+  ])('blocks a script after a short-option cluster: %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('allows a short-option cluster that names data', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('printf -tn 2 sh commit.sh'), directory)).toBeUndefined();
+  });
+
   it('blocks a script after a positional that looks like an assignment', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1067,8 +1113,10 @@ describe('guardToolCall', () => {
   it('does not apply a PATH assignment of another command to a later command', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+    const emptyDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
     writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
+    withExactPath(emptyDirectory);
 
     expect(
       guard(makeBashEvent(`PATH=${pathDirectory} true; sh tool.sh`), directory),
@@ -1259,7 +1307,7 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
-    withPath(pathDirectory);
+    withExactPath(pathDirectory);
 
     expect(guard(makeBashEvent('sh tool.sh'), directory)).toBeUndefined();
   });
@@ -1270,7 +1318,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'tool.sh', 'git status\n');
     writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
-    withPath(pathDirectory);
+    withExactPath(pathDirectory);
 
     expect(guard(makeBashEvent('sh tool.sh'), directory)).toBeUndefined();
   });
@@ -1280,7 +1328,7 @@ describe('guardToolCall', () => {
     const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
     writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
-    withPath(pathDirectory);
+    withExactPath(pathDirectory);
 
     expect(guard(makeBashEvent('sh ./tool.sh'), directory)).toBeUndefined();
   });

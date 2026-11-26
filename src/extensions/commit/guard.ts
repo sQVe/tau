@@ -231,6 +231,10 @@ const wrapperOptionValues = new Map<string, ReadonlySet<string>>([
       '--chdir',
       '-R',
       '--chroot',
+      '-C',
+      '--close-from',
+      '-T',
+      '--command-timeout',
     ]),
   ],
   ['taskset', new Set(['-c', '--cpu-list'])],
@@ -307,6 +311,43 @@ const matchesOption = (word: string, option: string) =>
     ? word === option || word.startsWith(`${option}=`)
     : word.startsWith(option);
 
+// In a short-option cluster such as `-Eu`, a value-taking letter takes the rest of the word or,
+// when it is last, the next word.
+const clusterValue = (
+  words: string[],
+  index: number,
+  word: string,
+  options: ReadonlySet<string>,
+): { value: string; next: number } | undefined => {
+  if (!/^-[A-Za-z]{2,}$/u.test(word)) {
+    return undefined;
+  }
+
+  const letters = word.slice(1);
+
+  for (let position = 0; position < letters.length; position += 1) {
+    const letter = letters[position] ?? '';
+
+    if (!options.has(`-${letter}`)) {
+      continue;
+    }
+
+    const attached = letters.slice(position + 1);
+
+    if (attached !== '') {
+      return { value: attached, next: index + 1 };
+    }
+
+    const value = words[index + 1];
+
+    return value === undefined ? undefined : { value, next: index + 2 };
+  }
+
+  return undefined;
+};
+
+// `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
+// before the program.
 const optionValue = (
   words: string[],
   index: number,
@@ -331,11 +372,9 @@ const optionValue = (
     return { value, next: index + 1 };
   }
 
-  return undefined;
+  return clusterValue(words, index, word, options);
 };
 
-// `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
-// before the program.
 const envTarget = (words: string[]): string | undefined => {
   const valueOptions = wrapperOptionValues.get('env') ?? new Set<string>();
   const expanded: string[] = [];
@@ -505,9 +544,27 @@ const codeOperand = (words: string[], start: number): string | undefined => {
   return undefined;
 };
 
+// A short-option word can carry its code after the `c`, as in `-c'git commit'`.
+const attachedInlineCode = (word: string): string | undefined => {
+  if (!/^[-+][A-Za-z]/u.test(word)) {
+    return undefined;
+  }
+
+  const index = word.indexOf('c');
+  const code = index === -1 ? '' : word.slice(index + 1);
+
+  return code === '' ? undefined : code;
+};
+
 const shellMode = (words: string[]): ShellMode => {
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? '';
+
+    const attached = attachedInlineCode(word);
+
+    if (attached !== undefined) {
+      return { kind: 'inline', code: attached };
+    }
 
     if (inlineCodePattern.test(word)) {
       return { kind: 'inline', code: codeOperand(words, index + 1) };
@@ -686,9 +743,16 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
   return { assignments, codes, commandIndex: undefined };
 };
 
+// Shell keywords that can precede a command word in the same simple command.
+const reservedWords = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while', 'until', 'do']);
+
 const walkWrappers = (words: string[]): WrapperScan => {
   const assignments: string[] = [];
   let index = 0;
+
+  while (index < words.length && reservedWords.has(words[index] ?? '')) {
+    index += 1;
+  }
 
   while (index < words.length) {
     const word = words[index] ?? '';
@@ -840,8 +904,9 @@ const namedScriptsOf = (
   command: ShellCommand,
   directory: string,
   pathDirectories: string[],
+  sources: InterpreterSources,
 ): NamedScript[] => {
-  const scripts = interpreterSources(command).files.map((name) => ({
+  const scripts = sources.files.map((name) => ({
     name,
     checksShebang: false,
     cwd: directory,
@@ -1062,8 +1127,9 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
   for (const command of commands) {
     const stack = directoryStack(stacks, command.scope, cwd, bases);
     const directory = directoryFor(stack, command.depth);
+    const sources = interpreterSources(command);
     const pathDirectories = pathDirectoriesFor(commandPathAssignment(command), directory, state);
-    const scripts = namedScriptsOf(command, directory, pathDirectories);
+    const scripts = namedScriptsOf(command, directory, pathDirectories, sources);
 
     recordHeredocBases(command, directory, bases);
 
@@ -1074,12 +1140,12 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
       return true;
     }
 
-    const inline = interpreterSources(command).code;
+    const inline = sources.code;
 
     if (inline.length > 0 || scriptCommands.includes(command)) {
-      const sources = [...scriptsOf([command]), ...inline];
+      const texts = [...scriptsOf([command]), ...inline];
 
-      if (sources.some((text) => text !== source && inspect(directory, text))) {
+      if (texts.some((text) => text !== source && inspect(directory, text))) {
         return true;
       }
     }
