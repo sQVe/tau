@@ -809,6 +809,13 @@ describe('guardToolCall', () => {
     ['flock lock -w 5 -c', "flock lock -w 5 -c 'sh commit.sh'"],
     ['flock lock -o -c', "flock lock -o -c 'sh commit.sh'"],
     ["flock -c'sh commit.sh' lock", "flock -c'sh commit.sh' lock"],
+    ['flock -c repeated', "flock -c 'git status' -c 'sh commit.sh' lock"],
+    ['flock --command then -c', "flock --command true -c 'sh commit.sh' lock"],
+    ['flock -c repeated with a bare script', 'flock -c true -c ./commit.sh lock'],
+    ['flock --command then -c with a bare script', 'flock --command true -c ./commit.sh lock'],
+    ['flock lock -w 5 sh', 'flock lock -w 5 sh commit.sh'],
+    ['flock lock sh -c', "flock lock sh -c 'git commit -m x'"],
+    ['flock lock sh', 'flock lock sh commit.sh'],
   ])('blocks inline code after %s', (_label, command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -830,6 +837,12 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     expect(guard(makeBashEvent("flock lock sh -c 'git status'"), directory)).toBeUndefined();
+  });
+
+  it('reads a word starting with -c as shell code', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('flock lock -command'), directory)).toBeUndefined();
   });
 
   it('blocks a script file named after a redirection target digit', () => {

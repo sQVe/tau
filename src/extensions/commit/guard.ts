@@ -54,6 +54,18 @@ interface PositionalSkip {
   unless: ReadonlySet<string>;
 }
 
+interface WrapperScan {
+  // The shell code of every command option, in source order.
+  codes: string[];
+  // Where the wrapped command word starts, when the wrapper runs one.
+  commandIndex: number | undefined;
+}
+
+type WrapperStep =
+  | { kind: 'code'; code: string; next: number }
+  | { kind: 'skip'; next: number }
+  | { kind: 'command' };
+
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
 
@@ -454,108 +466,107 @@ const effectiveInput = (inputs: ShellInput[]): ShellInput | undefined => {
 
 const isInterpreter = (word: string) => shellInterpreters.has(commandName(word));
 
+// A long option matches exactly or with `=value`. A short option also matches with its value
+// attached, as getopt reads `-command` as `-c` with the value `ommand`.
 const matchesOption = (word: string, option: string) =>
   option.startsWith('--')
     ? word === option || word.startsWith(`${option}=`)
     : word.startsWith(option);
 
-const skipWrapper = (
+const optionValue = (
   words: string[],
   index: number,
-  name: string,
-  valueOptions: ReadonlySet<string>,
-): number => {
-  const skip = wrapperPositionalSkips.get(name);
-  const unless = skip === undefined ? [] : [...skip.unless];
-  let next = index + 1;
-  let sawUnless = false;
-
-  while (next < words.length) {
-    const word = words[next] ?? '';
-
-    if (valueOptions.has(word)) {
-      sawUnless ||= unless.includes(word);
-      next += 2;
-    } else if (isOptionWord(word)) {
-      sawUnless ||= unless.some((option) => matchesOption(word, option));
-      next += 1;
-    } else {
-      break;
-    }
-  }
-
-  return skip === undefined || sawUnless ? next : next + skip.count;
-};
-
-const commandOptionValue = (
-  words: string[],
-  index: number,
-  commandOptions: ReadonlySet<string>,
-): string | undefined => {
+  options: ReadonlySet<string>,
+): { value: string; next: number } | undefined => {
   const word = words[index] ?? '';
 
-  for (const option of commandOptions) {
+  for (const option of options) {
     if (!matchesOption(word, option)) {
       continue;
     }
 
     if (word === option) {
-      return words[index + 1];
+      return { value: words[index + 1] ?? '', next: index + 2 };
     }
 
     const attached = word.slice(option.length);
+    const value = attached.startsWith('=') ? attached.slice(1) : attached;
 
-    return attached.startsWith('=') ? attached.slice(1) : attached;
+    return { value, next: index + 1 };
   }
 
   return undefined;
 };
 
-// `flock` permutes its options, so its own shell-code option can follow the lock file positional.
-// The scan stops at the wrapped command word, the second positional.
-const optionCommandCode = (
+const takesOptionValue = (word: string, options: ReadonlySet<string>): boolean =>
+  [...options].some((option) => matchesOption(word, option));
+
+const wrapperStep = (
   words: string[],
   index: number,
-  commandOptions: ReadonlySet<string>,
   valueOptions: ReadonlySet<string>,
-): string | undefined => {
+  commandOptions: ReadonlySet<string>,
+): WrapperStep => {
+  const code = optionValue(words, index, commandOptions);
+
+  if (code !== undefined) {
+    return { kind: 'code', code: code.value, next: code.next };
+  }
+
+  const value = optionValue(words, index, valueOptions);
+
+  if (value !== undefined) {
+    return { kind: 'skip', next: value.next };
+  }
+
+  return isOptionWord(words[index] ?? '') ? { kind: 'skip', next: index + 1 } : { kind: 'command' };
+};
+
+// A wrapper permutes its own options around its positional arguments, so one walk finds both the
+// shell code it runs and the wrapped command word.
+const scanWrapper = (words: string[], index: number, name: string): WrapperScan => {
+  const valueOptions = wrapperOptionValues.get(name) ?? new Set<string>();
+  const commandOptions = wrapperCommandOptions.get(name) ?? new Set<string>();
+  const skip = wrapperPositionalSkips.get(name);
+  const codes: string[] = [];
+  const skipped = skip === undefined ? 0 : skip.count;
   let positionals = 0;
+  let sawUnless = false;
   let next = index + 1;
 
   while (next < words.length) {
-    const own = commandOptionValue(words, next, commandOptions);
-
-    if (own !== undefined) {
-      return own;
-    }
-
     const word = words[next] ?? '';
 
-    if (valueOptions.has(word)) {
-      next += 2;
+    sawUnless ||= skip !== undefined && takesOptionValue(word, skip.unless);
+
+    const step = wrapperStep(words, next, valueOptions, commandOptions);
+
+    if (step.kind === 'code') {
+      codes.push(step.code);
+      next = step.next;
 
       continue;
     }
 
-    if (isOptionWord(word)) {
-      next += 1;
+    if (step.kind === 'skip') {
+      next = step.next;
 
       continue;
     }
 
     positionals += 1;
 
-    if (positionals > 1) {
-      return undefined;
+    if (positionals > (sawUnless ? 0 : skipped)) {
+      return { codes, commandIndex: next };
     }
 
     next += 1;
   }
 
-  return undefined;
+  return { codes, commandIndex: undefined };
 };
 
-const wrapperInlineCode = (words: string[]): string | undefined => {
+const wrapperCodes = (words: string[]): string[] => {
   let index = 0;
 
   while (index < words.length) {
@@ -568,21 +579,25 @@ const wrapperInlineCode = (words: string[]): string | undefined => {
     }
 
     const name = commandName(word);
-    const commandOptions = wrapperCommandOptions.get(name);
-    const valueOptions = wrapperOptionValues.get(name);
 
-    if (valueOptions === undefined) {
-      return undefined;
+    if (wrapperOptionValues.get(name) === undefined) {
+      return [];
     }
 
-    if (commandOptions !== undefined) {
-      return optionCommandCode(words, index, commandOptions, valueOptions);
+    const scan = scanWrapper(words, index, name);
+
+    if (scan.codes.length > 0) {
+      return scan.codes;
     }
 
-    index = skipWrapper(words, index, name, valueOptions);
+    if (scan.commandIndex === undefined) {
+      return [];
+    }
+
+    index = scan.commandIndex;
   }
 
-  return undefined;
+  return [];
 };
 
 const commandWordIndex = (words: string[]): number | undefined => {
@@ -598,13 +613,18 @@ const commandWordIndex = (words: string[]): number | undefined => {
     }
 
     const name = commandName(word);
-    const valueOptions = wrapperOptionValues.get(name);
 
-    if (valueOptions === undefined) {
+    if (wrapperOptionValues.get(name) === undefined) {
       return isOptionWord(word) ? undefined : index;
     }
 
-    index = skipWrapper(words, index, name, valueOptions);
+    const scan = scanWrapper(words, index, name);
+
+    if (scan.commandIndex === undefined) {
+      return undefined;
+    }
+
+    index = scan.commandIndex;
   }
 
   return undefined;
@@ -619,10 +639,10 @@ const commandWord = ({ arguments: words }: ShellCommand): string | undefined => 
 // An interpreter runs a file or inline code only from the executable position, so data such as
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
-  const wrapperCode = wrapperInlineCode(command.arguments);
+  const codes = wrapperCodes(command.arguments);
 
-  if (wrapperCode !== undefined) {
-    return { files: [], code: [wrapperCode] };
+  if (codes.length > 0) {
+    return { files: [], code: codes };
   }
 
   const index = commandWordIndex(command.arguments);
