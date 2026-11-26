@@ -193,28 +193,46 @@ export const walkMarkdownTokens = (
   }
 };
 
-const commentStart = '<!--';
-const anchorOrComment = /<!--[\s\S]*?-->|<a\b[^>]*>/gi;
-const anchorAttribute = /(?:^|\s)(?:name|id)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/gi;
-const surroundingQuotes = /^["']|["']$/g;
+// Reads a comment or an anchor element in one pass, so an anchor inside a comment is skipped and
+// an anchor after one is still read. A quoted attribute value is consumed whole, so a `>` inside it
+// does not end the tag.
+const anchorOrComment = /(<!--[\s\S]*?-->)|<a\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;
 
-const attributeName = (attribute: string) =>
-  attribute.slice(attribute.indexOf('=') + 1).replaceAll(surroundingQuotes, '');
+// Matches one attribute at a time, so a quoted value of another attribute is never read as one.
+const tagAttribute = /\s*([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+
+const isAnchorAttribute = (name: string) => {
+  const lowercased = name.toLowerCase();
+
+  return lowercased === 'name' || lowercased === 'id';
+};
+
+const attributeValue = (value: string) =>
+  value.replaceAll(characterReference, (reference) => decodedReference(reference));
+
+const anchorValuesOf = (attributes: string): string[] => {
+  const values: string[] = [];
+
+  for (const match of attributes.matchAll(tagAttribute)) {
+    const [, name = '', doubleQuoted, singleQuoted, bare] = match;
+    const value = doubleQuoted ?? singleQuoted ?? bare;
+
+    if (isAnchorAttribute(name) && value !== undefined && value !== '') {
+      values.push(attributeValue(value));
+    }
+  }
+
+  return values;
+};
 
 const anchorNamesOf = (html: string): string[] => {
   const names: string[] = [];
 
   for (const element of html.matchAll(anchorOrComment)) {
-    if (element[0].startsWith(commentStart)) {
-      continue;
-    }
+    const attributes = element[2];
 
-    for (const attribute of element[0].matchAll(anchorAttribute)) {
-      const name = attributeName(attribute[0]);
-
-      if (name !== '') {
-        names.push(name);
-      }
+    if (attributes !== undefined) {
+      names.push(...anchorValuesOf(attributes));
     }
   }
 

@@ -477,6 +477,11 @@ const anchorTable: { name: string; markdown: string; expected: readonly string[]
     expected: [],
   },
   {
+    name: 'reads no anchor from an attribute without a value',
+    markdown: '<a name></a>\n',
+    expected: [],
+  },
+  {
     name: 'reads no anchor from an anchor element inside an HTML comment',
     markdown: '<!-- <a name="commented"></a> -->\n',
     expected: [],
@@ -490,6 +495,26 @@ const anchorTable: { name: string; markdown: string; expected: readonly string[]
     name: 'reads an anchor after a comment in one HTML token',
     markdown: '<!-- commented --><a name="after"></a>\n',
     expected: ['after'],
+  },
+  {
+    name: 'reads an anchor whose tag holds a greater-than sign in a quoted value',
+    markdown: '<a title="1 > 0" name="real"></a>\n',
+    expected: ['real'],
+  },
+  {
+    name: 'reads no anchor from an attribute value that names another attribute',
+    markdown: '<a title="set id = phantom"></a>\n',
+    expected: [],
+  },
+  {
+    name: 'decodes a character reference in an anchor name',
+    markdown: '<a name="R&amp;D"></a>\n',
+    expected: ['R&D'],
+  },
+  {
+    name: 'reads an anchor tag with an uppercase name',
+    markdown: '<A NAME="upper"></A>\n',
+    expected: ['upper'],
   },
   {
     name: 'reads no anchor from an anchor element inside a code span or a fence',
