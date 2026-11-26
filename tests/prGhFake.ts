@@ -78,6 +78,11 @@ export interface GhFake {
   failCommand: (key: CommandKey, stderr?: string) => void;
 }
 
+interface WriteFacts {
+  fileFlag: '--body-file' | '--input';
+  stdout: (commandArguments: readonly string[]) => string;
+}
+
 // gh pr list prints at most 30 pull requests unless --limit says otherwise.
 const defaultListLimit = 30;
 
@@ -93,12 +98,37 @@ const commandKeys: Record<string, CommandKey> = {
   'api user': 'api user',
 };
 
-const writeKeys: ReadonlySet<WriteKey> = new Set<WriteKey>([
-  'pr create',
-  'pr edit',
-  'pr comment',
-  'api write',
-]);
+const writeFacts = {
+  'pr create': {
+    fileFlag: '--body-file',
+    stdout: (commandArguments) =>
+      `https://${argumentAfter(commandArguments, '--repo') ?? ''}/pull/8\n`,
+  },
+  'pr edit': { fileFlag: '--body-file', stdout: () => '' },
+  'pr comment': {
+    fileFlag: '--body-file',
+    stdout: (commandArguments) =>
+      `https://${argumentAfter(commandArguments, '--repo') ?? ''}/pull/${commandArguments[2] ?? ''}#issuecomment-1\n`,
+  },
+  'api write': {
+    fileFlag: '--input',
+    stdout: (commandArguments) => {
+      const host = argumentAfter(commandArguments, '--hostname') ?? '';
+      const endpoint = commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
+      const [owner = '', name = '', , pr = ''] = endpoint.split('/').slice(1);
+
+      return JSON.stringify({
+        id: 1,
+        state: 'PENDING',
+        html_url: `https://${host}/${owner}/${name}/pull/${pr}#pullrequestreview-1`,
+      });
+    },
+  },
+} satisfies Record<WriteKey, WriteFacts>;
+
+const writeKeys: ReadonlySet<WriteKey> = new Set<WriteKey>(
+  Object.keys(writeFacts) as readonly WriteKey[],
+);
 
 const parentOutput = (parent: string | undefined) => {
   if (parent === undefined) {
@@ -108,32 +138,6 @@ const parentOutput = (parent: string | undefined) => {
   const [owner = '', name = ''] = parent.split('/');
 
   return { id: 'R_parent', name, owner: { id: 'U_owner', login: owner } };
-};
-
-const writeOutput = (key: WriteKey, commandArguments: readonly string[]) => {
-  const repository = argumentAfter(commandArguments, '--repo') ?? '';
-
-  if (key === 'pr create') {
-    return `https://${repository}/pull/8\n`;
-  }
-
-  if (key === 'pr comment') {
-    return `https://${repository}/pull/${commandArguments[2] ?? ''}#issuecomment-1\n`;
-  }
-
-  if (key === 'api write') {
-    const host = argumentAfter(commandArguments, '--hostname') ?? '';
-    const endpoint = commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
-    const [owner = '', name = '', , pr = ''] = endpoint.split('/').slice(1);
-
-    return JSON.stringify({
-      id: 1,
-      state: 'PENDING',
-      html_url: `https://${host}/${owner}/${name}/pull/${pr}#pullrequestreview-1`,
-    });
-  }
-
-  return '';
 };
 
 export const createGhFake = (): GhFake => {
@@ -295,7 +299,7 @@ export const createGhFake = (): GhFake => {
     key: WriteKey,
     commandArguments: readonly string[],
   ): Promise<ExecResult> => {
-    const flag = key === 'api write' ? '--input' : '--body-file';
+    const { fileFlag: flag, stdout } = writeFacts[key];
     // The plan appends the real file flag after every option, so a title equal to the flag comes
     // first.
     const flagIndex = commandArguments.lastIndexOf(flag);
@@ -313,7 +317,7 @@ export const createGhFake = (): GhFake => {
       return failedResult(`could not read ${path}: ${String(error)}`);
     }
 
-    return succeededResult(writeOutput(key, commandArguments));
+    return succeededResult(stdout(commandArguments));
   };
 
   const handlerFor = (key: CommandKey) => async (commandArguments: readonly string[]) => {
