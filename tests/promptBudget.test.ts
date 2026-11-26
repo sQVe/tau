@@ -47,9 +47,8 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // one. That is why a local reading can sit below its ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 69_213, // target 38,000
-  // The adopted-project reading merged into 9c01224d is 64,376. The ceiling adds 124 characters so a
-  // small base-branch prompt change does not fail the merge; measure the merge again before lowering
-  // it.
+  // The adopted-project reading is 64,376. The ceiling adds 124 characters so a small base-branch
+  // prompt change does not fail the merge; measure the merge again before lowering it.
   architect: 64_500,
   worker: 29_356, // target 14,000
   reviewer: 24_635, // target 11,000
