@@ -24,7 +24,7 @@ const reviewWrite = (contents: string) => ({
     'POST',
     'repos/sQVe/tau/pulls/7/reviews',
     '--input',
-    expect.stringMatching(/tau-publish-[^/\\]+[\\/]\d+-review\.json$/u),
+    expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
   ],
   contents: Buffer.from(contents),
 });

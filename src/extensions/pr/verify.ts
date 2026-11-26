@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
@@ -13,7 +12,7 @@ import {
 } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import { existingEntry, rejectLinkedFile } from '../../tauDirectory.js';
-import { bodyFileName, requireValue, runDirectoryPath, runName } from './prRun.js';
+import { bodyFileName, readRunFile, requireValue, runDirectoryPath, runName } from './prRun.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 
@@ -55,7 +54,9 @@ const readBody = async (root: string, directory: string) => {
 
   await rejectLinkedFile(path, 'read');
 
-  return readFile(path, 'utf8');
+  const bytes = await readRunFile(path);
+
+  return bytes.toString('utf8');
 };
 
 const readPublished = async (

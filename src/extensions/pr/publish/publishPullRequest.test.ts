@@ -42,7 +42,7 @@ it('publishes a new pull request with the approved title, body, base, head, and 
         '--title',
         'Add a feature',
         '--body-file',
-        expect.stringMatching(/tau-publish-[^/\\]+[\\/]\d+-body\.md$/u),
+        expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
         '--draft',
       ],
       contents: Buffer.from('Adds it.\n'),
@@ -75,7 +75,7 @@ it('publishes an edited pull request with the approved title and body', async ()
         '--title',
         'Add a feature',
         '--body-file',
-        expect.stringMatching(/tau-publish-[^/\\]+[\\/]\d+-body\.md$/u),
+        expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
       ],
       contents: Buffer.from('Adds it.\n'),
     },
@@ -110,7 +110,7 @@ it('creates a pull request without --draft when draft is false', async () => {
     '--title',
     'Add a feature',
     '--body-file',
-    expect.stringMatching(/tau-publish-[^/\\]+[\\/]\d+-body\.md$/u),
+    expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
   ]);
 });
 
@@ -130,9 +130,7 @@ it('returns the em dash finding from the dry run and publishes with it', async (
   expect(fake.writes).toHaveLength(1);
   expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it \u2014 now.\n'));
 
-  expect(fake.writes[0]?.commandArguments.join(' ')).toMatch(
-    /tau-publish-[^/\\]+[\\/]\d+-body\.md/u,
-  );
+  expect(fake.writes[0]?.commandArguments.join(' ')).toMatch(/tau-publish-[^/]+\/\d+-body\.md/u);
 });
 
 it.each(['--body-file', '--input'])(
@@ -152,8 +150,6 @@ it.each(['--body-file', '--input'])(
     expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it.\n'));
     expect(commandArguments[commandArguments.indexOf('--title') + 1]).toBe(flag);
 
-    expect(commandArguments.join(' ')).toMatch(
-      /--body-file \/.*tau-publish-[^/\\]+[\\/]\d+-body\.md/u,
-    );
+    expect(commandArguments.join(' ')).toMatch(/--body-file \/.*tau-publish-[^/]+\/\d+-body\.md/u);
   },
 );

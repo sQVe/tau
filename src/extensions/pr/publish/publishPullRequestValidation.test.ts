@@ -103,7 +103,7 @@ it('trims base and head and refuses a whitespace-only value', async () => {
     '--title',
     'Add a feature',
     '--body-file',
-    expect.stringMatching(/tau-publish-[^/\\]+[\\/]\d+-body\.md$/u),
+    expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
     '--draft',
   ]);
 });

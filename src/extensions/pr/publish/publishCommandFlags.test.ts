@@ -9,9 +9,35 @@ import {
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 import type { PrInput } from '../tool.js';
-import { commandFlags, flagKind } from './publishExecution.js';
+import { flagKind } from './publishExecution.js';
 
 const setUp = () => setUpPublication(onTestFinished);
+
+// Skips the value after a value or file flag, as verifiedCopyArguments does.
+const commandFlags = (commandArguments: readonly string[]): string[] => {
+  const flags: string[] = [];
+
+  for (let index = 0; index < commandArguments.length; index += 1) {
+    const argument = commandArguments[index] ?? '';
+
+    if (!argument.startsWith('--')) {
+      continue;
+    }
+
+    flags.push(argument);
+
+    const kind = flagKind(argument);
+
+    if (kind === 'value' || kind === 'file') {
+      index += 1;
+    }
+  }
+
+  return flags;
+};
+
+const unclassifiedFlags = (flags: string[]): string[] =>
+  flags.filter((flag) => flagKind(flag) === undefined);
 
 const publishedFlags = async (
   files: Record<string, string>,
@@ -31,14 +57,8 @@ const publishedFlags = async (
   return commandFlags(fake.calls[0]?.commandArguments ?? []);
 };
 
-const unclassifiedFlags = (flags: string[]): string[] =>
-  flags.filter((flag) => flagKind(flag) === undefined);
-
-it('reports an unexpected flag right after --title', async () => {
-  const flags = await publishedFlags(
-    { 'body.md': 'Adds it.\n', 'title.md': '--unexpected\n' },
-    (directory) => dryRunPullRequest(directory),
-  );
+it('reports an unclassified flag in flag position', () => {
+  const flags = commandFlags(['pr', 'create', '--repo', 'x', '--unexpected', 'y']);
 
   expect(unclassifiedFlags(flags)).toEqual(['--unexpected']);
 });

@@ -47,32 +47,6 @@ export const flagKind = (flag: string): 'boolean' | 'file' | 'value' | undefined
   return booleanFlags.has(flag) ? 'boolean' : undefined;
 };
 
-// Lists the flags a command carries. A flag right after a value or file flag is still listed, so an
-// unexpected one cannot hide behind a title.
-export const commandFlags = (commandArguments: readonly string[]): string[] => {
-  const flags: string[] = [];
-
-  for (let index = 0; index < commandArguments.length; index += 1) {
-    const argument = commandArguments[index] ?? '';
-
-    if (!argument.startsWith('--')) {
-      continue;
-    }
-
-    flags.push(argument);
-
-    const kind = flagKind(argument);
-    const next = commandArguments[index + 1] ?? '';
-    const skipsNext = kind === 'value' || kind === 'file';
-
-    if (skipsNext && !next.startsWith('--')) {
-      index += 1;
-    }
-  }
-
-  return flags;
-};
-
 // Rewrites every file argument to a unique copy below directory, so equal basenames cannot collide.
 export const verifiedCopyArguments = (
   commandArguments: readonly string[],
