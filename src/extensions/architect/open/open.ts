@@ -258,10 +258,10 @@ const launchFailure = (launch: PiLaunchResult): Error =>
     ? launch.error
     : new Error('The architect launch failed before it reported a terminal.');
 
-const launchResult = (prepared: PreparedArchitectStart, model: string | undefined): OpenResult =>
+const launchResult = (prepared: PreparedArchitectStart, model = 'unknown'): OpenResult =>
   prepared.session === undefined
-    ? { status: 'opened', sessionFile: null, model: model ?? 'unknown' }
-    : { status: 'resumed', sessionFile: prepared.session, model: model ?? 'unknown' };
+    ? { status: 'opened', sessionFile: null, model }
+    : { status: 'resumed', sessionFile: prepared.session, model };
 
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
