@@ -900,18 +900,6 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent("bash -c 'git status'"), directory)).toBeUndefined();
   });
 
-  it.each([
-    ['env busybox sh', '#!/usr/bin/env busybox sh'],
-    ['env -S busybox sh', '#!/usr/bin/env -S busybox sh'],
-    ['busybox hush', '#!/bin/busybox hush'],
-  ])('blocks a commit in a file with a %s shebang', (_label, shebang) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-
-    writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
-
-    expectOutcome(makeBashEvent('./commit.sh'), directory);
-  });
-
   it('allows a commit in a file whose busybox applet is not a shell', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -924,6 +912,9 @@ describe('guardToolCall', () => {
     ['fish', '#!/usr/bin/env fish'],
     ['csh', '#!/bin/csh'],
     ['busybox sh', '#!/bin/busybox sh'],
+    ['env busybox sh', '#!/usr/bin/env busybox sh'],
+    ['env -S busybox sh', '#!/usr/bin/env -S busybox sh'],
+    ['busybox hush', '#!/bin/busybox hush'],
     ['tcsh', '#!/bin/tcsh'],
     ['yash', '#!/bin/yash'],
   ])('blocks a commit in a file with a %s shebang', (_label, shebang) => {
@@ -1146,6 +1137,32 @@ describe('guardToolCall', () => {
     ['csh', 'cat <<EOF | csh\ngit commit -m x\nEOF'],
   ])('blocks piped code for %s', (_label, command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it.each([
+    ['piped', "echo 'git commit -m x' | hush"],
+    ['heredoc', 'cat <<EOF | hush\ngit commit -m x\nEOF'],
+  ])('blocks %s code for hush', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('allows piped data for hush that does not create a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('echo hi | hush'), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['busybox sh with a script', 'busybox sh commit.sh'],
+    ['busybox hush with code', "busybox hush -c 'git commit -m x'"],
+  ])('blocks a busybox applet that runs code: %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
     expectOutcome(makeBashEvent(command), directory);
   });

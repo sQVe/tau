@@ -88,6 +88,11 @@ interface ShortOption {
   tail: string;
 }
 
+type PathState =
+  | { kind: 'missing' }
+  | { kind: 'present' }
+  | { kind: 'failed'; facts: NamedFileFacts };
+
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
 
@@ -105,8 +110,10 @@ const shellRunnerNames = new Set([
   'dash',
   'eval',
   'fish',
+  'hush',
   'ksh',
   'mksh',
+  'msh',
   'sh',
   'ssh',
   'su',
@@ -452,21 +459,30 @@ const envTarget = (words: string[]): string[] | undefined => {
   return index === -1 ? undefined : expanded.slice(index);
 };
 
-// A busybox applet names the shell it runs, such as `sh` in `busybox sh`.
-const appletInterpreter = (words: string[]): string | undefined => {
-  const [program, ...rest] = words;
+// A busybox applet is the program the wrapper runs, such as `sh` in `busybox sh`.
+const appletWord = (
+  words: string[],
+  index: number,
+): { index: number; word: string } | undefined => {
+  const word = words[index];
 
-  if (program === undefined) {
+  if (word === undefined) {
     return undefined;
   }
 
-  const name = commandName(program);
-
-  if (name !== 'busybox') {
-    return name;
+  if (commandName(word) !== 'busybox') {
+    return { index, word };
   }
 
-  return rest[0] === undefined ? name : commandName(rest[0]);
+  const applet = words[index + 1];
+
+  return applet === undefined ? undefined : { index: index + 1, word: applet };
+};
+
+const appletInterpreter = (words: string[]): string | undefined => {
+  const applet = appletWord(words, 0);
+
+  return applet === undefined ? undefined : commandName(applet.word);
 };
 
 const shebangInterpreter = (text: string): string | undefined => {
@@ -556,15 +572,15 @@ const readScriptHeader = (path: string): string => {
 const hasNativeHeader = (head: string) =>
   head.includes('\u0000') && nativeMagics.some((magic) => head.startsWith(magic));
 
-const namedFileFacts = (path: string, failClosed: boolean): NamedFileFacts => {
+const statPath = (path: string, failClosed: boolean): PathState => {
   try {
-    if (!statSync(path).isFile()) {
-      return { kind: 'missing' };
-    }
+    return statSync(path).isFile() ? { kind: 'present' } : { kind: 'missing' };
   } catch (error) {
-    return failedFacts(error, failClosed);
+    return { kind: 'failed', facts: failedFacts(error, failClosed) };
   }
+};
 
+const readFileFacts = (path: string, failClosed: boolean): NamedFileFacts => {
   try {
     const head = readScriptHeader(path);
 
@@ -885,13 +901,13 @@ const interpreterSources = (command: ShellCommand): InterpreterSources => {
     return { files: [], code: [] };
   }
 
-  const word = command.arguments[commandIndex];
+  const shell = appletWord(command.arguments, commandIndex);
 
-  if (word === undefined || !isInterpreter(word)) {
+  if (shell === undefined || !isInterpreter(shell.word)) {
     return { files: [], code: [] };
   }
 
-  const mode = shellMode(command.arguments.slice(commandIndex + 1));
+  const mode = shellMode(command.arguments.slice(shell.index + 1));
   const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
@@ -1014,28 +1030,26 @@ const scriptFacts = (
   }
 
   // A stat is not a read, so a path that does not exist costs no budget.
-  try {
-    if (!statSync(path).isFile()) {
-      const missing: NamedFileFacts = { kind: 'missing' };
+  const stat = statPath(path, failClosed);
 
-      state.facts.set(key, missing);
+  if (stat.kind !== 'present') {
+    const facts: NamedFileFacts = stat.kind === 'missing' ? { kind: 'missing' } : stat.facts;
 
-      return missing;
-    }
-  } catch (error) {
-    const failed = failedFacts(error, failClosed);
+    state.facts.set(key, facts);
 
-    state.facts.set(key, failed);
-
-    return failed;
+    return facts;
   }
 
   // Reaching the cap fails closed without reading an existing file.
   if (state.reads >= maximumScriptReads) {
-    return undefined;
+    const capped: NamedFileFacts = { kind: 'unreadable' };
+
+    state.facts.set(key, capped);
+
+    return capped;
   }
 
-  const facts = namedFileFacts(path, failClosed);
+  const facts = readFileFacts(path, failClosed);
 
   state.reads += 1;
   state.facts.set(key, facts);
