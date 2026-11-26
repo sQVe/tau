@@ -5,11 +5,12 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createHcFake } from '../../../tests/hcFake.js';
+import { signalActiveGenerationRead } from '../../../tests/sweepLockRead.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { holdFileLock } from '../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import type { StartingWorker } from './workerFolderDecision.js';
-import { sweepWorkerFolders } from './workerFolderSweep.js';
+import { sweepLockPath, sweepWorkerFolders } from './workerFolderSweep.js';
 
 interface HeldList {
   called: Promise<void>;
@@ -56,9 +57,6 @@ const setup = () => {
     snapshotRoot: join(agentDirectory, 'tmp', 'tau-worker-packages'),
   };
 };
-
-const sweepLockPath = (agentDirectory: string): string =>
-  join(agentDirectory, '.tau-worker-folder-sweep.lock');
 
 const unusedMarkerName = '.tau-unused-since';
 
@@ -145,28 +143,6 @@ const holdNextLink = (): HeldLink => {
   };
 };
 
-// Resolves on the waiting sweep's read of the lock generation its holder published.
-const signalActiveGenerationRead = (agentDirectory: string): Promise<void> => {
-  const path = `${sweepLockPath(agentDirectory)}.1`;
-  const { promise, resolve } = Promise.withResolvers<undefined>();
-  const readFile = vi.mocked(fsPromises.readFile);
-  const original = readFile.getMockImplementation() ?? actualFsPromises.readFile;
-
-  readFile.mockImplementation(((target: string, ...rest: never[]) => {
-    if (target === path) {
-      resolve(undefined);
-    }
-
-    return original(target, ...rest);
-  }) as typeof fsPromises.readFile);
-
-  onTestFinished(() => {
-    readFile.mockImplementation(original);
-  });
-
-  return promise;
-};
-
 it('keeps a snapshot for a day after the follow-up that reused it ends', async () => {
   const { agentDirectory, hc, hcFake, snapshotRoot } = setup();
   const snapshot = makeFolder(snapshotRoot, 'snapshot-source');
@@ -197,7 +173,8 @@ it('keeps a snapshot for a day after the follow-up that reused it ends', async (
 
   await stale.called;
 
-  const contenderRead = signalActiveGenerationRead(agentDirectory);
+  const contenderRead = signalActiveGenerationRead(agentDirectory, 1);
+
   const launchSweep = sweepWorkerFolders(hc, agentDirectory, () => startedAt, [followUp]);
 
   pending.push(launchSweep);
@@ -244,7 +221,7 @@ it('starts the unused window after a sweep waits for the lock', async () => {
 
   onTestFinished(() => held.release());
 
-  const contenderRead = signalActiveGenerationRead(agentDirectory);
+  const contenderRead = signalActiveGenerationRead(agentDirectory, 1);
   const sweep = sweepWorkerFolders(hc, agentDirectory, () => now, []);
 
   await contenderRead;

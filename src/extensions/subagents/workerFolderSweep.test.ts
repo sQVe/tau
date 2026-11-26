@@ -12,12 +12,12 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { savedAssignment } from '../../../tests/deliveryManager.js';
 import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { assignmentPath, writeAssignment } from './assignment.js';
-import { savedAssignment } from './fixtures/deliveryManager.js';
 import type { StartingWorker } from './workerFolderDecision.js';
 import { sweepWorkerFolders } from './workerFolderSweep.js';
 import type { WorkerFolderSweep } from './workerFolderSweep.js';

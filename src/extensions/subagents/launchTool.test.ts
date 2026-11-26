@@ -121,7 +121,7 @@ const registerTool = (
     getAllTools: () => registeredToolNames.map((name) => ({ name })) as never,
   });
 
-  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi), () => '');
 
   const tool = pi.tools.get('subagent');
 
@@ -676,7 +676,7 @@ it('fails closed and reports an invalid worker capacity', async ({ onTestFinishe
     getAllTools: () => allSkillToolNames.map((name) => ({ name })) as never,
   });
 
-  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi), () => '');
 
   const context = toolContext(fixture);
 
@@ -714,7 +714,7 @@ it('gives the manager the configured browser login command', async ({ onTestFini
 
   const pi = fakeExtensionApi({ exec: fake.exec });
 
-  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi), () => '');
 
   const context = {
     ...toolContext(fixture),
@@ -757,7 +757,7 @@ it.for([
 
     const pi = fakeExtensionApi({ exec: fake.exec });
 
-    subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+    subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi), () => '');
 
     const context = {
       ...toolContext(fixture),
@@ -798,7 +798,7 @@ it('reports a broken browser login command and leaves it out of the prompt', asy
 
   const pi = fakeExtensionApi({ exec: fake.exec });
 
-  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi), () => '');
 
   const context = {
     ...toolContext(fixture),

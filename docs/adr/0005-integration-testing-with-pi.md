@@ -39,10 +39,13 @@ configuration loading and initial catalog refresh are disabled. Resource discove
 (`noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`) so a developer's `~/.pi` can never
 change a result.
 
-One exception: a test may use a disk-backed `SessionManager.create()` when the saved session file is
-the behavior under test. Only `tests/toolResultRedaction.integration.test.ts` does this. It reads
-the saved file to check that no secret reaches disk, and its session directory is a temporary
-directory.
+One exception: a test may use a disk-backed `SessionManager.create()` when its behavior needs a real
+saved session file, either because the file is the behavior under test or because the behavior reads
+a session file path. `tests/toolResultRedaction.integration.test.ts` reads the saved file to check
+that no secret reaches disk. `tests/planReport.integration.test.ts` needs a real file because
+delivery compares the assignment's path with the manager session's file.
+`tests/snippetFlow.integration.test.ts` reopens the saved session to check the history Pi builds at
+startup. Each session directory is a temporary directory.
 
 ### Dependency versions
 

@@ -117,6 +117,7 @@ const pureModules = [
   'src/extensions/modelFallback/fallbackRoute.ts',
   'src/extensions/piResume/sessionDecision.ts',
   'src/extensions/plan/headerLayout.ts',
+  'src/extensions/plan/prompt.ts',
   'src/extensions/plan/stepStyle.ts',
   'src/extensions/plan/steps.ts',
   'src/extensions/pr/evidenceDecisions.ts',
@@ -258,6 +259,7 @@ const pureModules = [
   'src/sessionMessage/sessionMessage.ts',
   'src/shell.ts',
   'src/tabName.ts',
+  'src/terminalText.ts',
   'src/verification/freshness.ts',
   'src/verification/selection.ts',
   'src/wake/deliveryStep.ts',
@@ -329,6 +331,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/instructions/syncRecord.ts': ['smol-toml'],
   'src/prose.ts': ['marked'],
   'src/schema.ts': ['typebox', 'typebox/value'],
+  'src/terminalText.ts': ['node:util'],
   'tests/hcIsolationHarness.ts': ['node:path'],
 };
 

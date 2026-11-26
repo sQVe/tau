@@ -119,7 +119,7 @@ const readOwner = async (lockPath: string): Promise<LockOwner | undefined> => {
   }
 };
 
-const generationPath = (lockPath: string, generation: number): string =>
+export const generationPath = (lockPath: string, generation: number): string =>
   `${lockPath}.${generation}`;
 
 const stagingPath = (path: string, owner: LockOwner): string => `${path}.${owner.token}.staging`;

@@ -109,11 +109,12 @@ const savedAssignment = async (
   return join(assignmentDirectory(assignmentId), 'assignment.json');
 };
 
-const harness = (hcFake: HcFake) => {
+const harness = (hcFake: HcFake, watchdogRuntime?: HcRuntime) => {
   const hc: HcRuntime = { exec: hcFake.exec, connect: hcFake.connect, cwd: process.cwd() };
   const ended: { assignmentId: string; address: string; parentSession: string }[] = [];
   const order: string[] = [];
   const notifications: [string, string | undefined][] = [];
+  const pending: { assignmentId: string; pending: boolean }[] = [];
 
   const delivery: WorkerDelivery = {
     deliver: () => undefined,
@@ -121,8 +122,12 @@ const harness = (hcFake: HcFake) => {
       order.push('showEnded');
       ended.push(worker);
     },
-    markDeadlinePending: () => undefined,
-    clearDeadlinePending: () => undefined,
+    markDeadlinePending: (assignmentId) => {
+      pending.push({ assignmentId, pending: true });
+    },
+    clearDeadlinePending: (assignmentId) => {
+      pending.push({ assignmentId, pending: false });
+    },
   };
 
   const context = {
@@ -134,7 +139,7 @@ const harness = (hcFake: HcFake) => {
     },
   } as unknown as DeadlineWatchdogContext;
 
-  const watchdog = createDeadlineWatchdog(hc, delivery);
+  const watchdog = createDeadlineWatchdog(watchdogRuntime ?? hc, delivery);
 
   const scanner = createWorkerScan(
     hc,
@@ -156,7 +161,7 @@ const harness = (hcFake: HcFake) => {
   const commands = (name: string) =>
     hcFake.calls.filter((call) => call.commandArguments[0] === name);
 
-  return { context, ended, order, notifications, scanner, hc, emit, commands };
+  return { context, delivery, ended, order, notifications, pending, scanner, hc, emit, commands };
 };
 
 const setup = async (options: { deadline?: number; reported?: boolean } = {}) => {
@@ -181,6 +186,33 @@ const standalone = (hcFake: HcFake) => {
   hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
 
   return harness(hcFake);
+};
+
+const hangingCommand = (hcFake: HcFake, commandName: string) => {
+  const entered = deferred();
+  let calls = 0;
+
+  const exec: HcRuntime['exec'] = (command, commandArguments, options) => {
+    if (commandArguments[0] !== commandName) {
+      return hcFake.exec(command, commandArguments, options);
+    }
+
+    calls += 1;
+
+    return new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener(
+        'abort',
+        () => {
+          reject(new Error('The operation was aborted'));
+        },
+        { once: true },
+      );
+
+      entered.resolve();
+    });
+  };
+
+  return { exec, entered: entered.promise, calls: () => calls };
 };
 
 it('kills at the deadline without sending a warning', async () => {
@@ -354,7 +386,7 @@ const launchingDelivery = () => {
     },
   } as unknown as ExtensionAPI;
 
-  return { delivery: createWorkerDelivery(pi), messages };
+  return { delivery: createWorkerDelivery(pi, () => ''), messages };
 };
 
 const launchingContext = (parentSession: string) =>
@@ -365,15 +397,18 @@ const launchingContext = (parentSession: string) =>
     signal: undefined,
   }) as unknown as DeadlineWatchdogContext;
 
-const parentSessionOf = async (path: string): Promise<string> => {
+const savedAssignmentOf = async (path: string): Promise<Assignment> => {
   const assignment = await readAssignment(path);
 
   if (assignment === undefined) {
     throw new Error('The assignment file is missing.');
   }
 
-  return assignment.parentSession;
+  return assignment;
 };
+
+const parentSessionOf = async (path: string): Promise<string> =>
+  (await savedAssignmentOf(path)).parentSession;
 
 it('shows one deadline message when the worker finishes while its kill is pending', async () => {
   const { path, deadline, hc, hcFake, commands } = await setup();
@@ -667,6 +702,273 @@ it('kills at once when the assignment file is missing', async () => {
   expect(commands('kill')).toHaveLength(1);
   expect(ended).toEqual([]);
   expect(notifications).toEqual([[`Missing assignment file: /agent/missing.json.`, 'error']]);
+});
+
+it('runs the deadline action calls on the runtime it is given', async () => {
+  const hcFake = createHcFake();
+  const path = '/agent/missing.json';
+
+  hcFake.reply('get', JSON.stringify(terminal(path, now + 300_000)));
+  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
+  hcFake.reply('label', JSON.stringify(terminal(path, now + 300_000)));
+
+  const { context, hc } = harness(hcFake);
+  const controller = new AbortController();
+  const runtime: HcRuntime = { ...hc, signal: controller.signal };
+
+  const watchdog = createDeadlineWatchdog(hc, {
+    deliver: () => undefined,
+    showEnded: () => undefined,
+    markDeadlinePending: () => undefined,
+    clearDeadlinePending: () => undefined,
+  });
+
+  await watchdog.apply(
+    context,
+    manager,
+    [{ terminal: terminal(path, now + 300_000), assignment: { kind: 'missing', path } }],
+    runtime,
+  );
+
+  expect(hcFake.calls.map((call) => call.commandArguments[0])).toEqual(['get', 'kill', 'label']);
+  expect(hcFake.calls.every((call) => call.signal === controller.signal)).toBe(true);
+});
+
+it('runs the deadline timer calls on the watchdog runtime', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-deadline-');
+  const deadline = now + 120_000;
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+
+  const path = await savedAssignment(directory, deadline);
+  const hcFake = createHcFake();
+  const timerCalls: string[] = [];
+
+  hcFake.reply('ls', JSON.stringify({ terminals: [childRow] }));
+  hcFake.reply('get', JSON.stringify(terminal(path, deadline)));
+  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
+  hcFake.reply('label', JSON.stringify(terminal(path, deadline)));
+
+  const watchdogRuntime: HcRuntime = {
+    exec: (command, commandArguments, options) => {
+      timerCalls.push(commandArguments[0] ?? '');
+
+      return hcFake.exec(command, commandArguments, options);
+    },
+    connect: hcFake.connect,
+    cwd: process.cwd(),
+  };
+
+  const { context, scanner } = harness(hcFake, watchdogRuntime);
+
+  await scanner.scan(context);
+
+  timerCalls.length = 0;
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(timerCalls).toEqual(['get', 'kill', 'label']);
+  });
+});
+
+it('runs a scheduled deadline retry on the runtime it is given', async () => {
+  const hcFake = createHcFake();
+  const path = '/agent/missing.json';
+
+  hcFake.reply('get', JSON.stringify(terminal(path, now + 300_000)));
+  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
+  hcFake.reply('label', JSON.stringify(terminal(path, now + 300_000)));
+
+  const { context, delivery, hc } = harness(hcFake);
+  const controller = new AbortController();
+  const signals: (AbortSignal | undefined)[] = [];
+  const realExec = hc.exec;
+
+  const runtime: HcRuntime = {
+    ...hc,
+    signal: controller.signal,
+    exec: (command, commandArguments, options) => {
+      if (commandArguments[0] === 'get') {
+        signals.push(options?.signal);
+
+        if (signals.length === 1) {
+          return Promise.resolve(failedResult('temporary get failure'));
+        }
+      }
+
+      return realExec(command, commandArguments, options);
+    },
+  };
+
+  const watchdog = createDeadlineWatchdog(hc, delivery);
+
+  await watchdog.apply(
+    context,
+    manager,
+    [{ terminal: terminal(path, now + 300_000), assignment: { kind: 'missing', path } }],
+    runtime,
+  );
+
+  expect(signals).toEqual([controller.signal]);
+
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  expect(signals).toEqual([controller.signal, controller.signal]);
+});
+
+it('skips the get and the kill when a scheduled deadline retry runs after its runtime is aborted', async () => {
+  const hcFake = createHcFake();
+  const path = '/agent/missing.json';
+
+  hcFake.reply('get', JSON.stringify(terminal(path, now + 300_000)));
+  hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
+  hcFake.reply('label', JSON.stringify(terminal(path, now + 300_000)));
+
+  const { context, delivery, hc } = harness(hcFake);
+  const controller = new AbortController();
+  const realExec = hc.exec;
+  let getCalls = 0;
+
+  const runtime: HcRuntime = {
+    ...hc,
+    signal: controller.signal,
+    exec: (command, commandArguments, options) => {
+      if (commandArguments[0] === 'get') {
+        getCalls += 1;
+
+        if (getCalls === 1) {
+          return Promise.resolve(failedResult('temporary get failure'));
+        }
+      }
+
+      return realExec(command, commandArguments, options);
+    },
+  };
+
+  const watchdog = createDeadlineWatchdog(hc, delivery);
+
+  await watchdog.apply(
+    context,
+    manager,
+    [{ terminal: terminal(path, now + 300_000), assignment: { kind: 'missing', path } }],
+    runtime,
+  );
+
+  controller.abort();
+
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  expect(getCalls).toBe(1);
+  expect(hcFake.calls.filter((call) => call.commandArguments[0] === 'kill')).toHaveLength(0);
+});
+
+it('skips the kill when the scan is cleared while the deadline read settles', async () => {
+  const { context, scanner, hc, hcFake, commands, notifications } = await setup({ deadline: now });
+  const realExec = hcFake.exec;
+  let getCalls = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    const result = await realExec(command, commandArguments, options);
+
+    if (commandArguments[0] === 'get') {
+      getCalls += 1;
+
+      if (getCalls === 2) {
+        scanner.clear();
+      }
+    }
+
+    return result;
+  };
+
+  await scanner.scan(context);
+
+  expect(getCalls).toBe(2);
+  expect(commands('kill')).toHaveLength(0);
+  expect(commands('label')).toHaveLength(0);
+  expect(notifications).toEqual([]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('skips the ended notice and label when the scan is cleared while the kill settles', async () => {
+  const { context, scanner, hc, hcFake, commands, ended } = await setup({ deadline: now });
+  const realExec = hcFake.exec;
+
+  hc.exec = async (command, commandArguments, options) => {
+    const result = await realExec(command, commandArguments, options);
+
+    if (commandArguments[0] === 'kill') {
+      scanner.clear();
+    }
+
+    return result;
+  };
+
+  await scanner.scan(context);
+
+  expect(commands('kill')).toHaveLength(1);
+  expect(commands('label')).toHaveLength(0);
+  expect(ended).toEqual([]);
+});
+
+it('reports no kill failure and retries nothing when the scan is cleared during the kill', async () => {
+  const { context, scanner, hc, hcFake, commands, notifications } = await setup({ deadline: now });
+  const hang = hangingCommand(hcFake, 'kill');
+
+  hc.exec = hang.exec;
+
+  const scanning = scanner.scan(context);
+
+  await hang.entered;
+
+  scanner.clear();
+
+  await scanning;
+
+  expect(hang.calls()).toBe(1);
+  expect(commands('label')).toHaveLength(0);
+  expect(notifications).toEqual([]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('clears the pending kill marker when the scan is cleared during the kill', async () => {
+  const { context, scanner, hc, hcFake, path, pending } = await setup({ deadline: now });
+  const { assignmentId } = await savedAssignmentOf(path);
+  const hang = hangingCommand(hcFake, 'kill');
+
+  hc.exec = hang.exec;
+
+  const scanning = scanner.scan(context);
+
+  await hang.entered;
+
+  scanner.clear();
+
+  await scanning;
+
+  expect(pending).toEqual([
+    { assignmentId, pending: true },
+    { assignmentId, pending: false },
+  ]);
+});
+
+it('reports no label failure when the scan is cleared during the label', async () => {
+  const { context, scanner, hc, hcFake, commands, notifications } = await setup({ deadline: now });
+  const hang = hangingCommand(hcFake, 'label');
+
+  hc.exec = hang.exec;
+
+  const scanning = scanner.scan(context);
+
+  await hang.entered;
+
+  scanner.clear();
+
+  await scanning;
+
+  expect(commands('kill')).toHaveLength(1);
+  expect(notifications).toEqual([]);
 });
 
 it('kills at once when the assignment file is malformed', async () => {

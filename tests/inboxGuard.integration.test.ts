@@ -66,7 +66,7 @@ const resolvedExtensions = async (sources: string[]): Promise<string[]> => {
 // manager and a worker load this same entry point.
 const bashResult = async (command: string) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
-  const { bin, log } = installHcCommand(directory);
+  const { bin, log, replies } = installHcCommand(directory);
 
   isolateWebAccessConfig(directory, onTestFinished);
 
@@ -76,6 +76,7 @@ const bashResult = async (command: string) => {
 
   vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
   vi.stubEnv('HC_FAKE_LOG', log);
+  vi.stubEnv('HC_FAKE_REPLIES', replies);
   vi.stubEnv('HC_SESSION', 'tau-test-inbox-guard');
   vi.stubEnv('HC_TERMINAL_ID', undefined);
 

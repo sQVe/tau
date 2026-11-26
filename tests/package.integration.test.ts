@@ -43,9 +43,10 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     vi.unstubAllEnvs();
   });
 
-  const { bin: hcBin, log: hcLog } = installHcCommand(workingDirectory);
+  const { bin: hcBin, log: hcLog, replies: hcReplies } = installHcCommand(workingDirectory);
 
   vi.stubEnv('HC_FAKE_LOG', hcLog);
+  vi.stubEnv('HC_FAKE_REPLIES', hcReplies);
   vi.stubEnv('PATH', `${hcBin}:${process.env.PATH ?? ''}`);
   vi.stubEnv('HC_SESSION', 'tau-test-package');
   vi.stubEnv('HC_TERMINAL_ID', 'manager');
@@ -254,9 +255,10 @@ it('refuses to run hc with an empty HC_SESSION from the package integration path
     vi.unstubAllEnvs();
   });
 
-  const { bin, log } = installHcCommand(workingDirectory);
+  const { bin, log, replies } = installHcCommand(workingDirectory);
 
   vi.stubEnv('HC_FAKE_LOG', log);
+  vi.stubEnv('HC_FAKE_REPLIES', replies);
   vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
   vi.stubEnv('HC_SESSION', '');
   vi.stubEnv('HC_TERMINAL_ID', 'manager');

@@ -28,6 +28,7 @@ const createScan = () => {
       return gate ?? Promise.resolve();
     },
     clear: () => undefined,
+    drain: () => Promise.resolve(),
   };
 
   return {

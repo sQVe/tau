@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { savedAssignment } from '../../../tests/deliveryManager.js';
 import { initializeRepositorySync } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
@@ -22,7 +23,6 @@ import type { Connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
 import type { HcTerminal } from '../../hc/hc.js';
 import { assignmentDirectory, readAssignment, writeAssignment } from './assignment.js';
-import { savedAssignment } from './fixtures/deliveryManager.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
 import { Admission, executeLaunch, startReservedWorker } from './launch.js';

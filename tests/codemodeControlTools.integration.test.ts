@@ -208,7 +208,7 @@ const runManager = async (responses: FauxResponseStep[]) => {
       createCodemodeExtension({ mode: 'on' }),
       askUserQuestionExtension,
       (pi) => {
-        subagentsExtension(pi, registerCapacityRefusal(pi));
+        subagentsExtension(pi, registerCapacityRefusal(pi), () => '');
       },
     ],
   });

@@ -123,6 +123,7 @@ const completionTracked = (scan: WorkerScan) => {
         return last;
       },
       clear: () => undefined,
+      drain: () => scan.drain(),
     },
     settled: () => last,
   };
@@ -132,7 +133,11 @@ const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: ()
 
 const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
   ({
-    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSessionFile },
+    sessionManager: {
+      getEntries: () => entries,
+      getBranch: () => entries,
+      getSessionFile: () => managerSessionFile,
+    },
     ui: { notify: () => undefined },
     isIdle: () => true,
     signal: undefined,
@@ -183,7 +188,7 @@ it('shows a real worker question once and carries the subagent_answer reply into
   const tracked = completionTracked(
     createWorkerScan(
       hc.runtime,
-      createWorkerDelivery(pi),
+      createWorkerDelivery(pi, () => ''),
       noDeadline,
       temporaryDirectory(onTestFinished, 'tau-sweep-'),
     ),
@@ -288,7 +293,7 @@ it('shows a question once across repeated delivery scans', async () => {
 
   await createWorkerScan(
     hc.runtime,
-    createWorkerDelivery(pi),
+    createWorkerDelivery(pi, () => ''),
     noDeadline,
     temporaryDirectory(onTestFinished, 'tau-sweep-'),
   ).scan(context);
@@ -302,7 +307,7 @@ it('shows a question once across repeated delivery scans', async () => {
 
   await createWorkerScan(
     hc.runtime,
-    createWorkerDelivery(pi),
+    createWorkerDelivery(pi, () => ''),
     noDeadline,
     temporaryDirectory(onTestFinished, 'tau-sweep-'),
   ).scan(context);

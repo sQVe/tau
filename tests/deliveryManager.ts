@@ -3,10 +3,12 @@ import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import type { Assignment, SavedQuestion } from '../assignment.js';
-import { assignmentDirectory } from '../assignment.js';
-import type { createWorkerDelivery } from '../workerDelivery.js';
-import { fixtureLoadout } from './loadout.js';
+import { planEntryType, planRecord } from '../src/extensions/plan/steps.js';
+import type { PlanStep } from '../src/extensions/plan/steps.js';
+import type { Assignment, SavedQuestion } from '../src/extensions/subagents/assignment.js';
+import { assignmentDirectory } from '../src/extensions/subagents/assignment.js';
+import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
+import type { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 
 export type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
@@ -22,12 +24,19 @@ interface SessionEntryLike {
   details?: unknown;
 }
 
+interface SessionEntries {
+  entries: SessionEntryLike[];
+  branchEntries: Set<SessionEntryLike>;
+}
+
 interface Manager {
   pi: ExtensionAPI;
   context: DeliveryContext;
   messages: SentMessage[];
   sendOptions: unknown[];
-  entries: SessionEntryLike[];
+  pushEntry: (entry: SessionEntryLike) => void;
+  pushBranchEntry: (entry: SessionEntryLike) => void;
+  branchReads: string[];
   notifications: [string, string | undefined][];
   entriesOf: (sessionFile: string) => SessionEntryLike[];
   switchSession: (sessionFile: string) => void;
@@ -45,16 +54,47 @@ const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
   details: message.details,
 });
 
+export const planEntry = (steps: readonly PlanStep[]): SessionEntryLike => ({
+  type: 'custom',
+  customType: planEntryType,
+  data: planRecord(steps),
+});
+
+const emptySession = (): SessionEntries => ({ entries: [], branchEntries: new Set() });
+
 export const createManager = (options: { idle?: boolean; running?: boolean } = {}): Manager => {
   const messages: SentMessage[] = [];
   const sendOptions: unknown[] = [];
-  const sessions = new Map<string, SessionEntryLike[]>([[managerSession, []]]);
+
+  const sessions = new Map<string, SessionEntries>([[managerSession, emptySession()]]);
+
   const queued: SentMessage[] = [];
+  const branchReads: string[] = [];
   const notifications: [string, string | undefined][] = [];
   let currentSession = managerSession;
   let streaming = false;
 
-  const entriesOf = (sessionFile: string): SessionEntryLike[] => sessions.get(sessionFile) ?? [];
+  const sessionOf = (sessionFile: string): SessionEntries => {
+    const existing = sessions.get(sessionFile);
+
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const created = emptySession();
+
+    sessions.set(sessionFile, created);
+
+    return created;
+  };
+
+  const entriesOf = (sessionFile: string): SessionEntryLike[] => sessionOf(sessionFile).entries;
+
+  const branchOf = (sessionFile: string): SessionEntryLike[] => {
+    const session = sessionOf(sessionFile);
+
+    return session.entries.filter((entry) => session.branchEntries.has(entry));
+  };
 
   const pi = {
     on: () => undefined,
@@ -73,6 +113,11 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
   const context = {
     sessionManager: {
       getEntries: () => entriesOf(currentSession),
+      getBranch: () => {
+        branchReads.push(currentSession);
+
+        return branchOf(currentSession);
+      },
       getSessionFile: () => currentSession,
     },
     ui: {
@@ -87,15 +132,18 @@ export const createManager = (options: { idle?: boolean; running?: boolean } = {
     context,
     messages,
     sendOptions,
-    entries: entriesOf(managerSession),
+    pushEntry: (entry) => {
+      entriesOf(currentSession).push(entry);
+    },
+    pushBranchEntry: (entry) => {
+      entriesOf(currentSession).push(entry);
+      sessionOf(currentSession).branchEntries.add(entry);
+    },
+    branchReads,
     notifications,
     entriesOf,
     switchSession: (sessionFile: string) => {
       currentSession = sessionFile;
-
-      if (!sessions.has(sessionFile)) {
-        sessions.set(sessionFile, []);
-      }
     },
     setStreaming: (value: boolean) => {
       streaming = value;

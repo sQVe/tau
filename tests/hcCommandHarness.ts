@@ -4,31 +4,91 @@ import { join } from 'node:path';
 export interface HcCommandFiles {
   bin: string;
   log: string;
+  replies: string;
+  reply: (command: string, stdout: string) => void;
+  replyGet: (address: string, stdout: string) => void;
 }
 
 export const emptySessionRefusal = 'refused hc with an empty HC_SESSION';
 
 // The package starts hc as a child process, so the fake is a script on PATH rather than an
-// in-process fake. It refuses a command with no HC_SESSION, so no test can reach the user's core.
+// in-process fake. It refuses a command with no HC_SESSION, so no test can reach the user's core,
+// and it refuses to run without a log it can write or a replies directory. The reply lookup tries
+// `<subcommand>-<last argument>`, then `<subcommand>`, then the empty terminal list. The
+// subcommand is the first argument that does not start with `-`, and the address is the last
+// argument, so a reply key depends on the subcommand followed by flags and then the address.
 export const installHcCommand = (directory: string): HcCommandFiles => {
   const bin = join(directory, 'bin');
   const log = join(directory, 'hc.log');
+  const replies = join(directory, 'hc-replies');
 
   mkdirSync(bin, { recursive: true });
+  mkdirSync(replies, { recursive: true });
 
   writeFileSync(
     join(bin, 'hc'),
     `#!/bin/sh
+append_log() {
+  if ! printf '%s\\n' "$1" >> "$HC_FAKE_LOG" 2>/dev/null; then
+    printf '%s\\n' "hc fake: HC_FAKE_LOG is not writable: $HC_FAKE_LOG" >&2
+    exit 70
+  fi
+}
+if [ -z "\${HC_FAKE_LOG:-}" ]; then
+  printf '%s\\n' 'hc fake: HC_FAKE_LOG is unset' >&2
+  exit 70
+fi
+if [ -z "\${HC_FAKE_REPLIES:-}" ]; then
+  printf '%s\\n' 'hc fake: HC_FAKE_REPLIES is unset' >&2
+  exit 70
+fi
+if [ ! -d "$HC_FAKE_REPLIES" ]; then
+  printf '%s\\n' "hc fake: HC_FAKE_REPLIES is not a directory: $HC_FAKE_REPLIES" >&2
+  exit 70
+fi
 if [ -z "\${HC_SESSION:-}" ]; then
-  printf '%s\\n' '${emptySessionRefusal}' >> "$HC_FAKE_LOG"
+  append_log '${emptySessionRefusal}'
   exit 64
 fi
-printf '%s\\n' "$*" >> "$HC_FAKE_LOG"
-printf '{"terminals":[]}\\n'
+append_log "$*"
+last=''
+subcommand=''
+for argument in "$@"; do
+  last="$argument"
+  if [ -z "$subcommand" ]; then
+    case "$argument" in
+      -*) ;;
+      *) subcommand="$argument" ;;
+    esac
+  fi
+done
+reply="\${HC_FAKE_REPLIES}/\${subcommand}-$last"
+if [ ! -f "$reply" ]; then
+  reply="\${HC_FAKE_REPLIES}/$subcommand"
+fi
+if [ -f "$reply" ]; then
+  cat "$reply"
+else
+  printf '{"terminals":[]}\\n'
+fi
 `,
   );
 
   chmodSync(join(bin, 'hc'), 0o755);
 
-  return { bin, log };
+  const writeReply = (name: string, stdout: string): void => {
+    writeFileSync(join(replies, name), `${stdout}\n`);
+  };
+
+  return {
+    bin,
+    log,
+    replies,
+    reply: (command, stdout) => {
+      writeReply(command, stdout);
+    },
+    replyGet: (address, stdout) => {
+      writeReply(`get-${address}`, stdout);
+    },
+  };
 };

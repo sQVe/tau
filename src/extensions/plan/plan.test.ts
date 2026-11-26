@@ -11,9 +11,10 @@ import type {
 import type { TUI } from '@earendil-works/pi-tui';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { guidelineLines } from '../../instructions/systemPrompt.js';
-import planExtension from './plan.js';
+import planExtension, { currentRolePlanReportText } from './plan.js';
+import { planUpdateLine } from './prompt.js';
 import type { PlanStep } from './steps.js';
 import { planEntryType } from './steps.js';
 import { planToolGuidelines } from './tool.js';
@@ -266,16 +267,47 @@ it.each(['architect', 'worker'] as const)(
   },
 );
 
-it('adds the plan guidelines once without a message', () => {
-  const fake = lead();
-  const handler = fake.handler('before_agent_start');
-  const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: ['plan'] } };
+it.each([
+  {
+    name: 'a lead',
+    role: 'lead',
+    expected: `\n\nCurrent plan:\n[in_progress] Brief worker\n\n${planUpdateLine}`,
+  },
+  { name: 'an architect', role: 'architect', expected: '' },
+] as const)('adds the report suffix for $name', ({ role, expected }) => {
+  vi.stubEnv('TAU_ROLE', role);
 
-  const result = handler(event, {} as ExtensionContext);
+  const branch = [savedEntry({ version: 1, steps: [step('Brief worker', 'in_progress')] })];
 
-  expect(event.systemPromptOptions.appendSystemPrompt).toBe(guidelineLines(planToolGuidelines));
-  expect(result).toBeUndefined();
-  expect(fake.sendMessage).not.toHaveBeenCalled();
-  expect(fake.sendUserMessage).not.toHaveBeenCalled();
-  expect(fake.handlers.has('context')).toBe(false);
+  expect(currentRolePlanReportText(branch)).toBe(expected);
 });
+
+it.each([
+  { name: 'no plan', branch: [] as unknown[], planBlock: '' },
+  {
+    name: 'a saved plan',
+    branch: [savedEntry({ version: 1, steps: [step('Brief worker', 'in_progress')] })],
+    planBlock: '\n\nCurrent plan:\n[in_progress] Brief worker',
+  },
+])(
+  'adds the plan guidelines and $name to the prompt once without a message',
+  ({ branch, planBlock }) => {
+    const fake = lead();
+    const { context } = planContext({ branch });
+
+    const prompt = appendedSystemPrompt(fake.handlers, ['plan'], context);
+
+    expect(prompt).toBe(`${guidelineLines(planToolGuidelines)}${planBlock}`);
+    expect(fake.sendMessage).not.toHaveBeenCalled();
+    expect(fake.sendUserMessage).not.toHaveBeenCalled();
+    expect(fake.handlers.has('context')).toBe(false);
+
+    const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: ['plan'] } };
+
+    const returns = (fake.handlers.get('before_agent_start') ?? []).map((handler) =>
+      handler(event as never, context),
+    );
+
+    expect(returns).toEqual([undefined, undefined]);
+  },
+);
