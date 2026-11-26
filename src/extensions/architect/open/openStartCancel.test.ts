@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { succeededResult } from '../../../../tests/execFake.js';
 import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
+import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
 import {
   appCommands,
   open,
@@ -39,6 +40,59 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+it('an abort during the model readback rejects with the cancellation error', async ({
+  onTestFinished: cleanup,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  const { root, config } = await setup(cleanup);
+  const { terminals, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled during the readback');
+  const readbackStarted = Promise.withResolvers<undefined>();
+
+  const nonPiForeground = succeededResult(
+    JSON.stringify({
+      address: 't-architect',
+      state: 'live',
+      foreground: { pid: 1, name: 'bash', argv: ['bash'], cwd: '' },
+    }),
+  );
+
+  useFakeStartProcess(cleanup, 'running', true);
+  await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    const result = await runtime.exec(command, commandArguments, options);
+
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      terminals.set('t-architect', nonPiForeground);
+    }
+
+    const readingStartedTerminal =
+      command === 'hc' &&
+      commandArguments[0] === 'get' &&
+      commandArguments.at(-1) === 't-architect';
+
+    if (readingStartedTerminal) {
+      readbackStarted.resolve(undefined);
+    }
+
+    return result;
+  };
+
+  const opening = openArchitect(
+    requestFor(root, config.location, { ...runtime, exec, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  await readbackStarted.promise;
+  controller.abort(cancellation);
+
+  await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
+
+  expect(await opening).toBe(cancellation);
 });
 
 it('an abort during the poll stops the terminal, releases the claim, and rejects', async ({

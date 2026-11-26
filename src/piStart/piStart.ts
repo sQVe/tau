@@ -33,19 +33,17 @@ interface PiReadbackRequest extends PiSessionRequest {
   readForegroundArgv: ReadForegroundArgv;
 }
 
-interface PiStartBaseRequest extends PiSessionRequest {
+interface PiStartBaseRequest extends PiReadbackRequest {
   bareRoot: boolean;
   tabName: string;
 }
 
 interface PiLaunchRequest extends PiStartBaseRequest {
   target: PiStartTarget;
-  readForegroundArgv: ReadForegroundArgv;
 }
 
 export interface PiStartRequest extends PiStartBaseRequest {
   target: PiStartTarget | PiStartTargetResolver;
-  readForegroundArgv: ReadForegroundArgv;
 }
 
 export interface PiStartRightOfRequest extends PiSessionRequest {
@@ -148,23 +146,32 @@ const cancellationError = (signal: AbortSignal | undefined): Error => {
     : new Error('The started model readback was cancelled.', { cause: reason });
 };
 
+const piExecutablePattern = /^pi(?:\.(?:cmd|js|exe))?$/u;
+const nodeExecutables = new Set(['node', 'node.exe', 'bun']);
+
 const isPiExecutable = (argument: string | undefined): boolean =>
-  argument !== undefined && basename(argument) === 'pi';
+  argument !== undefined && piExecutablePattern.test(basename(argument));
 
 const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined => {
   if (argv === undefined) {
     return undefined;
   }
 
-  const [first, second] = argv;
+  const [first] = argv;
 
   if (isPiExecutable(first)) {
     return argv;
   }
 
-  const runsNode = first !== undefined && basename(first) === 'node';
+  const runtime = first === undefined ? undefined : basename(first);
 
-  return runsNode && isPiExecutable(second) ? argv : undefined;
+  if (runtime === undefined || !nodeExecutables.has(runtime)) {
+    return undefined;
+  }
+
+  const script = argv.find((argument, index) => index > 0 && !argument.startsWith('-'));
+
+  return isPiExecutable(script) ? argv : undefined;
 };
 
 // Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
@@ -208,7 +215,7 @@ const readWithinBudget = (
   });
 
 const readStartedModel = async (
-  readForegroundArgv: (terminal: string) => Promise<readonly string[] | undefined>,
+  readForegroundArgv: ReadForegroundArgv,
   terminal: string,
   model: string | undefined,
   signal: AbortSignal | undefined,

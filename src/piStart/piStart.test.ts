@@ -729,7 +729,10 @@ it('a killed launch returns no terminal and the launcher error', async () => {
   expect((result.error as Error).message).toContain('the launch was killed');
 });
 
-const launchWithForeground = (argv: string[]): ExecFake<'launch' | 'get'> => {
+const launchWithForeground = (
+  argv: string[],
+  reply = '{"space":"sp-new","tab":"tb-new","terminal":"t-new"}',
+): ExecFake<'launch' | 'get'> => {
   const getReply = JSON.stringify({
     address: 't-new',
     state: 'live',
@@ -745,31 +748,7 @@ const launchWithForeground = (argv: string[]): ExecFake<'launch' | 'get'> => {
       return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
     },
     handlerFor: (key) =>
-      key === 'launch'
-        ? () => succeededResult('{"space":"sp-new","tab":"tb-new","terminal":"t-new"}')
-        : () => succeededResult(getReply),
-  });
-};
-
-const launchRightOfWithForeground = (argv: string[]): ExecFake<'split' | 'get'> => {
-  const getReply = JSON.stringify({
-    address: 't-new',
-    state: 'live',
-    foreground: { pid: 1, name: 'pi', argv, cwd: '/tmp' },
-  });
-
-  return createExecFake<'split' | 'get'>({
-    keyOf: (command, commandArguments) => {
-      if (command === 'herdr-app') {
-        return 'split';
-      }
-
-      return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
-    },
-    handlerFor: (key) =>
-      key === 'split'
-        ? () => succeededResult('{"pane":"p-new","terminal":"t-new"}')
-        : () => succeededResult(getReply),
+      key === 'launch' ? () => succeededResult(reply) : () => succeededResult(getReply),
   });
 };
 
@@ -800,6 +779,33 @@ it.each([
   {
     name: 'a node pi path',
     argv: ['node', '/usr/local/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+  },
+  {
+    name: 'a node pi path with a leading flag',
+    argv: [
+      'node',
+      '--experimental-strip-types',
+      '/path/pi',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
+  },
+  {
+    name: 'a bun pi path',
+    argv: ['bun', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+  },
+  {
+    name: 'a node.exe pi.cmd path',
+    argv: [
+      'node.exe',
+      '/usr/local/bin/pi.cmd',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
   },
 ])('a start reads the model from $name', async ({ argv }) => {
   const fake = launchWithForeground(argv);
@@ -842,7 +848,7 @@ it('a start retries a model read that has no Pi foreground yet', async () => {
     reads += 1;
 
     return reads === 1
-      ? undefined
+      ? ['bash']
       : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
   };
 
@@ -972,7 +978,11 @@ it('a launch returns the model its terminal runs', async () => {
 });
 
 it('a right-of launch returns the model its terminal runs', async () => {
-  const fake = launchRightOfWithForeground(['pi', '--provider', 'a', '--model', 'architect']);
+  const fake = launchWithForeground(
+    ['pi', '--provider', 'a', '--model', 'architect'],
+    '{"pane":"p-new","terminal":"t-new"}',
+  );
+
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await launchPiSessionRightOf(

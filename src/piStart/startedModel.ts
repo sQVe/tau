@@ -14,33 +14,47 @@ export type StartedModelDecision =
   | { kind: 'mismatch'; requested: string; started: string }
   | { kind: 'unreadable' };
 
-const valueAfter = (argv: readonly string[], flag: string): string | undefined => {
+type FlagValue = { kind: 'absent' } | { kind: 'unreadable' } | { kind: 'value'; value: string };
+
+// The first occurrence in argv order wins, so a task message that starts with `--model=` cannot
+// win over the flag the launcher passed.
+const flagValue = (argv: readonly string[], flag: string): FlagValue => {
   const equalsPrefix = `${flag}=`;
-  const equalsArgument = argv.find((argument) => argument.startsWith(equalsPrefix));
 
-  if (equalsArgument !== undefined) {
-    return equalsArgument.slice(equalsPrefix.length);
+  for (const [index, argument] of argv.entries()) {
+    if (argument === flag) {
+      const value = argv[index + 1];
+      const usable = value !== undefined && value !== '' && !value.startsWith('-');
+
+      return usable ? { kind: 'value', value } : { kind: 'unreadable' };
+    }
+
+    if (argument.startsWith(equalsPrefix)) {
+      const value = argument.slice(equalsPrefix.length);
+
+      return value === '' ? { kind: 'unreadable' } : { kind: 'value', value };
+    }
   }
 
-  const index = argv.indexOf(flag);
-
-  if (index === -1) {
-    return undefined;
-  }
-
-  const value = argv[index + 1];
-
-  return value === undefined || value.startsWith('-') ? undefined : value;
+  return { kind: 'absent' };
 };
 
-const startedReference = (argv: readonly string[]): RequestedModel => {
-  const id = valueAfter(argv, '--model');
+const startedReference = (argv: readonly string[]): RequestedModel | 'unreadable' => {
+  const provider = flagValue(argv, '--provider');
+  const model = flagValue(argv, '--model');
 
-  if (id === undefined) {
+  if (provider.kind === 'unreadable' || model.kind === 'unreadable') {
+    return 'unreadable';
+  }
+
+  if (model.kind === 'absent') {
     return { provider: undefined, id: undefined };
   }
 
-  return { provider: valueAfter(argv, '--provider'), id };
+  return {
+    provider: provider.kind === 'value' ? provider.value : undefined,
+    id: model.value,
+  };
 };
 
 const displayModel = ({ provider, id }: RequestedModel): string => {
@@ -57,6 +71,10 @@ export const decideStartedModel = (facts: StartedModelFacts): StartedModelDecisi
   }
 
   const started = startedReference(facts.argv);
+
+  if (started === 'unreadable') {
+    return { kind: 'unreadable' };
+  }
 
   const matches =
     started.provider === facts.requested.provider && started.id === facts.requested.id;

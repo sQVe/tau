@@ -53,7 +53,47 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
       requested: { provider: undefined, id: undefined },
       argv: ['pi', '--model', '--provider', 'x'],
     }),
-    expected: { kind: 'match', model: 'default' },
+    expected: { kind: 'unreadable' },
+  },
+  {
+    name: 'a model flag with an empty equals value',
+    facts: facts({
+      requested: { provider: undefined, id: undefined },
+      argv: ['pi', '--model='],
+    }),
+    expected: { kind: 'unreadable' },
+  },
+  {
+    name: 'a provider flag followed by another flag',
+    facts: facts({
+      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      argv: ['pi', '--provider', '--model', 'claude-opus-5-5'],
+    }),
+    expected: { kind: 'unreadable' },
+  },
+  {
+    name: 'a provider flag with no value and no model flag',
+    facts: facts({
+      requested: { provider: undefined, id: undefined },
+      argv: ['pi', '--provider', '--other'],
+    }),
+    expected: { kind: 'unreadable' },
+  },
+  {
+    name: 'a task message that starts with --model after the real flag',
+    facts: facts({
+      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      argv: ['pi', '--model', 'claude-opus-5-5', '--model=from-the-task'],
+    }),
+    expected: { kind: 'match', model: 'claude-opus-5-5' },
+  },
+  {
+    name: 'a space-separated model before an equals model',
+    facts: facts({
+      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      argv: ['pi', '--model', 'claude-opus-5-5', '--model=later'],
+    }),
+    expected: { kind: 'match', model: 'claude-opus-5-5' },
   },
   {
     name: 'a model given with an equals sign',

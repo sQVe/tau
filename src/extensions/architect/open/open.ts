@@ -217,8 +217,6 @@ const launchArchitect = (
   prepared: PreparedArchitectStart,
   fence: StartFence,
 ): Promise<PiLaunchResult> => {
-  const launchHc = { ...request.hc, signal: undefined };
-
   const start = {
     folder: request.root,
     task: prepared.task,
@@ -226,18 +224,23 @@ const launchArchitect = (
     session: prepared.session,
     bareRoot: prepared.bareRoot,
     environment: prepared.environment,
-    readForegroundArgv: (terminal: string) => foregroundArgv(launchHc, terminal),
+    readForegroundArgv: (terminal: string) => foregroundArgv(request.hc, terminal),
     argvWrapper: (argv: string[]): string[] => fence.wrapArgv(argv),
   };
 
   if (prepared.pane === undefined) {
     const target = { name: `architect-${basename(request.root)}` };
-    const started = launchPiSession(launchHc, { ...start, target, tabName: tabName('architect') });
+
+    const started = launchPiSession(request.hc, {
+      ...start,
+      target,
+      tabName: tabName('architect'),
+    });
 
     return started;
   }
 
-  return launchPiSessionRightOf(launchHc, { ...start, pane: prepared.pane });
+  return launchPiSessionRightOf(request.hc, { ...start, pane: prepared.pane });
 };
 
 const replyTerminalOf = (launch: PiLaunchResult): ReplyTerminal =>
