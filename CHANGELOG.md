@@ -1,5 +1,741 @@
 # tau
 
+## 1.3.0
+
+### Minor Changes
+
+- [#757](https://github.com/sQVe/tau/pull/757)
+  [`33db242`](https://github.com/sQVe/tau/commit/33db24214319ec75f30da1f934e5fde9d0ef1ed8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Decide mode answers eligible `ask_user_question` calls with
+  the frozen shadow candidate, so the user sees no dialog. It is off unless `questionGate.decide` is
+  set. Each answer saves a decision record, and the `pr` preview lists the current branch's gate
+  decisions.
+
+- [#700](https://github.com/sQVe/tau/pull/700)
+  [`3b3f2cb`](https://github.com/sQVe/tau/commit/3b3f2cbaa6b44ef4fed6bf83cc931296784ab704) Thanks
+  [@sQVe](https://github.com/sQVe)! - The improvement tool gains a `correct` action that turns
+  mistakes repeating across tasks into proposed checks, with `pass` and `class` records and a
+  version 2 event format. It also gains a `history` action that reads reverts, reviews, and comments
+  for the classes it proposes, with reported coverage. The retrospective skill gains a `correct`
+  mode that runs the pass.
+
+- [#791](https://github.com/sQVe/tau/pull/791)
+  [`6f1fc9f`](https://github.com/sQVe/tau/commit/6f1fc9f776429dbba72dda7ae74468e858b72021) Thanks
+  [@sQVe](https://github.com/sQVe)! - `subagent` and `subagent_follow_up` take an optional
+  `fullCheck: { owner, reason }` for an editing assignment whose tree cannot pass the full check by
+  design. The checkout root must configure a full check command. The worker still runs `full_check`.
+  Its `success` report is accepted when it cites the newest record for the current tree and command,
+  whether that record passed or failed, even when a newer record of another command exists. The
+  report names the owner and the record result. Without the declaration, the gate still requires a
+  passing record.
+
+- [#799](https://github.com/sQVe/tau/pull/799)
+  [`00a2b98`](https://github.com/sQVe/tau/commit/00a2b984b479c2a03dc159d595e63f5ff106ae66) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the lead-only `plan` tool and show its list above the
+  lead's editor.
+
+- [#727](https://github.com/sQVe/tau/pull/727)
+  [`7e6b17f`](https://github.com/sQVe/tau/commit/7e6b17facc4589a7aa1ca4183f0c110dd68974c4) Thanks
+  [@sQVe](https://github.com/sQVe)! - Load the `coding` instruction set from stomme. A project with
+  `stomme.toml` gets its synced general, language, and layer guides. Without `stomme.toml`, Tau
+  loads its bundled general guide. Tau reads the guides again at each run, in the main session and
+  in workers. A broken installation shows an error notice and a prompt line instead of the guides.
+  Tau no longer ships its own coding instructions file. Without `stomme.toml`, Tau loads its bundled
+  TypeScript or Rust guide when a session first reads or changes a file of that language. The
+  `/rust-rules` command loads the Rust guide, like `/typescript-rules` for TypeScript. In a stomme
+  project, the project's language guide loads with the coding guides, and these first-access rules
+  stay off.
+
+- [#747](https://github.com/sQVe/tau/pull/747)
+  [`4a482e2`](https://github.com/sQVe/tau/commit/4a482e23943c1b8c67e494e1661e21aca71fd76d) Thanks
+  [@sQVe](https://github.com/sQVe)! - A fast or deep retrospective may now propose a setup, fixture,
+  test-command, CI, or verification change in the reviewed task's own repository when one verified
+  incident supports it. The row names the repository, the observed gap, the change, and the past
+  failure the change must catch. A redirect re-checks and re-approves the rewritten row or class
+  before any work, and the saved review describes the approved rows. A review saves one decision per
+  row with the final answer, and always saves an outcome so its Backlog and decision records keep
+  their review ID. A stomme-rule finding now reaches Backlog with the stomme repository named.
+
+- [#724](https://github.com/sQVe/tau/pull/724)
+  [`97e48f9`](https://github.com/sQVe/tau/commit/97e48f9c3e19679e1805cf60edaf295e558108b2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the user-file `fallbackModels` config, which registers
+  each entry as the virtual model `tau/<name>` and routes to its fallback model from the configured
+  consecutive retry until the next user message. An entry that names another `tau/<name>` as its
+  primary or fallback is refused.
+
+- [#711](https://github.com/sQVe/tau/pull/711)
+  [`ceafe35`](https://github.com/sQVe/tau/commit/ceafe3514c066cfa5662cf3a4028e3a90bba869b) Thanks
+  [@sQVe](https://github.com/sQVe)! - Split the manager role into a lead that orchestrates and an
+  architect that decides, with role models and an `architect` tool.
+
+### Patch Changes
+
+- [#813](https://github.com/sQVe/tau/pull/813)
+  [`040af1d`](https://github.com/sQVe/tau/commit/040af1db2d36f5e74576c125dfedccea4f652805) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a pure `prose` module that reports long sentences, em
+  dashes, and curly quotes in Markdown.
+
+- [#721](https://github.com/sQVe/tau/pull/721)
+  [`1031a0d`](https://github.com/sQVe/tau/commit/1031a0d4321ee5e4b582534bb174b10fddf1b4b1) Thanks
+  [@sQVe](https://github.com/sQVe)! - Adopt stomme 0.1.0: pin the binary with mise, add the shared
+  rules check, and replace `@sqve/seam` with `@sqve/stomme-ts-style` 0.3.0. Name call chains and
+  ternaries passed as arguments, as the new house rule requires.
+
+- [#806](https://github.com/sQVe/tau/pull/806)
+  [`ab6368a`](https://github.com/sQVe/tau/commit/ab6368aea1e2ab64273f69689dddee6b2b780e36) Thanks
+  [@sQVe](https://github.com/sQVe)! - Align the plan header with the working row: the header reads
+  `── Plan ───`, the label and the step text start in the same column, and each status icon gets a
+  leading space.
+
+- [#694](https://github.com/sQVe/tau/pull/694)
+  [`d527b6b`](https://github.com/sQVe/tau/commit/d527b6bc524ae80ec32ada23e4ff92df30dea96a) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the `answer-request` inbox family and the `unknown` reply
+  kind to the `rpc1` protocol.
+
+- [#809](https://github.com/sQVe/tau/pull/809)
+  [`9e13399`](https://github.com/sQVe/tau/commit/9e13399574a5a0f5cec8f12ead0a17fcfb2e2b67) Thanks
+  [@sQVe](https://github.com/sQVe)! - Cancel a ticket without the Yes/No dialog when an answered
+  `ask_user_question` approval since the latest user message selected an option whose own preview
+  has the line `Cancel <ID>` or `Cancel <ID>: <title>`. Every other cancel still asks.
+
+- [#759](https://github.com/sQVe/tau/pull/759)
+  [`769ae06`](https://github.com/sQVe/tau/commit/769ae06f608ac6e61d6e7e32621e372035319ae1) Thanks
+  [@sQVe](https://github.com/sQVe)! - An architect ask to a live architect that shows no inbox, such
+  as during its reload, saves no ask record. The lead is told to ask again instead of the ask
+  failing.
+
+- [#798](https://github.com/sQVe/tau/pull/798)
+  [`5a6f4c5`](https://github.com/sQVe/tau/commit/5a6f4c5665583f95356be89697109b09e0de609f) Thanks
+  [@sQVe](https://github.com/sQVe)! - `architect` `open` and the hidden route of `ask` take the
+  architect lock before they start Pi. A second caller is refused before it starts Pi or writes an
+  ask record. A one-shot start ticket fences each launch: the lead creates `<token>.lead.<leadPid>`,
+  the child renames it to `<token>.lead.<leadPid>.started.<childPid>`, and `exec` keeps that child
+  ID for Pi. A caller that abandons a launch cancels the ticket and releases its claim only when the
+  rename proves no Pi can run, or when the kernel reports the marker's process gone. `running` and
+  `unknown` keep the claim and the marker. The caller stops a taken child by process ID with
+  `SIGTERM` and then `SIGKILL`, within one absolute 10 second deadline. Absence from `hc` no longer
+  releases a claim, deletes a marker, or refuses a start.
+
+  The caller keeps its own copy of the child's process ID and whether it has seen its adopted
+  marker. Neither a later read nor another caller's lock changes that copy. After the architect
+  takes the claim over, it renames its marker to `<token>.lead.<leadPid>.adopted.<childPid>` and
+  keeps it. The caller counts the child as adopted when it has seen its own adopted marker, or when
+  the live lock holder's process ID is the child's. A different token or process ID is never its
+  child's takeover. Adoption ends the fence: after it, the fence never signals the child, and the
+  claim release decision receives `adopted: true`. A hidden ask whose launch reply gives no address
+  but whose child adopted waits on the child's process ID instead of abandoning it, then reports
+  from its locked record.
+
+  A sweep deletes a started marker whose process is gone, even when its finished terminal was
+  removed, and otherwise refuses with the process ID. A `.started` name without a valid process ID
+  refuses with the marker path. An adopted marker refuses a later start until the kernel reads its
+  child as gone. Once the child is gone, a live lead keeps the marker as its evidence. The sweep
+  leaves the marker while its child or its lead is running or unknown, and deletes it only when the
+  kernel reads both as gone. The lead deletes its own markers once its child is gone, so it always
+  settles a hidden ask whose Pi stopped without its shutdown handler. Hidden ask records change only
+  while they are `running`, under the per-ask lock, so `sent`, `timeout`, and `failed` are final.
+  The lead reports `timeout` and `sent` from the locked record after its wait. A hidden ask enforces
+  its own deadline, and a reader repairs a running ask whose recorded terminal has ended.
+
+- [#784](https://github.com/sQVe/tau/pull/784)
+  [`905609a`](https://github.com/sQVe/tau/commit/905609aa7e39ed3a4612377e7a9ea085b405ed06) Thanks
+  [@sQVe](https://github.com/sQVe)! - A visible architect that ends without a final handover now
+  sends its lead one inbox note with its terminal and last record, so the lead can resume the
+  session or ask the user instead of waiting.
+
+- [#717](https://github.com/sQVe/tau/pull/717)
+  [`3c7d864`](https://github.com/sQVe/tau/commit/3c7d86480a861bfe7dfb2222657699fb18bc1231) Thanks
+  [@sQVe](https://github.com/sQVe)! - Let `architect` `ask` queue the question in the inbox of a
+  live architect in this checkout. The architect answers with `architect` `answer` and the ask ID,
+  and the answer reaches only the lead session that asked. An `unknown` ask retries with `askId` and
+  the same message ID. The architect saves a question only while it holds the lock the lead saw, and
+  it checks this at the moment the message is published. It cannot send its final handover while an
+  ask is open. A close waits up to 10 seconds for answers and saves that are still in flight. It
+  sends an answer with an unknown outcome once more, then tells the lead to ask again about each ask
+  that is still open. A refused resend keeps an unknown ask open, because the first copy may still
+  be saved.
+
+- [#789](https://github.com/sQVe/tau/pull/789)
+  [`ded0d8a`](https://github.com/sQVe/tau/commit/ded0d8ab92d07ddd98abfc76dc9afc2fa6cd75b6) Thanks
+  [@sQVe](https://github.com/sQVe)! - `architect open` now refuses a terminal that the saved record
+  ties to a previous lock generation. It compares the record's lock token with the live lock holder
+  before reusing the terminal.
+
+- [#718](https://github.com/sQVe/tau/pull/718)
+  [`6d89d63`](https://github.com/sQVe/tau/commit/6d89d630ac3dafe6af15093b20e6621c90221780) Thanks
+  [@sQVe](https://github.com/sQVe)! - `architect` `open` starts the architect in a pane to the right
+  of the lead, in the lead's space, instead of a new herdr-app space. It takes the user's `request`
+  and puts it in the architect's first message. It reports a live visible architect instead of
+  starting a second one, only while that architect holds the lock, and it never reuses a hidden
+  `ask` terminal. `open` starts the architect in a new space when the lead terminal has no herdr-app
+  space.
+
+- [#804](https://github.com/sQVe/tau/pull/804)
+  [`f38e04c`](https://github.com/sQVe/tau/commit/f38e04c74041d9eb4a8f3574897196616b51fda6) Thanks
+  [@sQVe](https://github.com/sQVe)! - `architect` `open` and `ask` refuse while an adopted start
+  marker names a live process, and name its process ID. A reload keeps the architect lock and hands
+  its token to the next runtime in the same process, so the lock never reads free while Pi replaces
+  the runtime. A `/resume` into another checkout releases the old checkout's lock and takes the new
+  checkout's lock.
+
+- [#745](https://github.com/sQVe/tau/pull/745)
+  [`cd77707`](https://github.com/sQVe/tau/commit/cd77707bae9914cfa547fed84694cae5696e1f09) Thanks
+  [@sQVe](https://github.com/sQVe)! - `architect` `open` splits the architect to the right of the
+  lead in one Herdr command. The lead stays on the left and the architect on the right in the lead's
+  tab, and no second layout command moves the panes after the split.
+
+- [#808](https://github.com/sQVe/tau/pull/808)
+  [`d401364`](https://github.com/sQVe/tau/commit/d401364dcedca55b3f2cbf5d5b3cf92379d9e24e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Decide mode asks a call with more than one question. It also
+  sends about one in five decisions it would have made to the dialog, so the shadow records can
+  cover the calls the gate answers.
+
+- [#766](https://github.com/sQVe/tau/pull/766)
+  [`3291df3`](https://github.com/sQVe/tau/commit/3291df3ae1d3d2fc0d5604e857a5abba08215f33) Thanks
+  [@sQVe](https://github.com/sQVe)! - Tau reads stomme guide links with a Markdown tokenizer,
+  decodes encoded paths, and reports a link to a missing heading.
+
+- [#730](https://github.com/sQVe/tau/pull/730)
+  [`675bfb6`](https://github.com/sQVe/tau/commit/675bfb6d4f83c3aca5fc21b562d3ec34ff95c460) Thanks
+  [@sQVe](https://github.com/sQVe)! - A Pi process starts its inbox only when it is in the
+  foreground process group of its terminal, so a Pi started from a session's shell tool no longer
+  removes the session's `tau.inbox` label.
+
+- [#790](https://github.com/sQVe/tau/pull/790)
+  [`bd46122`](https://github.com/sQVe/tau/commit/bd4612212e1154aa4a2bdb6db3e6b3b577412b42) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a code-quality rule that a finding which removes or moves
+  a test must map each claim to a surviving assertion before it says coverage stays, and a
+  caller-owned claim needs an assertion through the same caller.
+
+- [#755](https://github.com/sQVe/tau/pull/755)
+  [`a2624af`](https://github.com/sQVe/tau/commit/a2624af6de4d1fd03abf743ac333003c0ba3c70b) Thanks
+  [@sQVe](https://github.com/sQVe)! - Stop the improvement sweep at session shutdown. A session
+  shutdown aborts a running sweep and waits for it to save its progress, so nothing in the agent
+  directory changes after the session ends.
+
+- [#823](https://github.com/sQVe/tau/pull/823)
+  [`05a9af8`](https://github.com/sQVe/tau/commit/05a9af8213a6cad2efde95cc12f76d921f941d9c) Thanks
+  [@sQVe](https://github.com/sQVe)! - Count only the deadline warning's timer in the worker deadline
+  warning tests. Git arms a timer to drain a child's streams when the child exits, and the worker
+  scan runs git without the test awaiting it, so a count of every pending timer failed the mutation
+  dry run under load.
+
+- [#828](https://github.com/sQVe/tau/pull/828)
+  [`2c118e8`](https://github.com/sQVe/tau/commit/2c118e81fa9808934150d856d518e859a28472af) Thanks
+  [@sQVe](https://github.com/sQVe)! - Fail the dialog resize test when the message keeps the old
+  width. The test changed the height and width together and asserted only row counts, so a render at
+  the old width still passed. It now holds the height fixed and wraps a message line only at the
+  narrower width, and a second test keeps the height-change coverage.
+
+- [#680](https://github.com/sQVe/tau/pull/680)
+  [`0280b14`](https://github.com/sQVe/tau/commit/0280b14c3cc458ef1e382fb556f06c61638e9644) Thanks
+  [@sQVe](https://github.com/sQVe)! - draft_review writes request.json version 2. It names the
+  requesting manager's hc terminal (managerTerminal, null outside hc) and the absolute
+  stagingDirectory, and allows an optional reviewedItem. Version 1 requests are retired.
+
+- [#735](https://github.com/sQVe/tau/pull/735)
+  [`84d1c69`](https://github.com/sQVe/tau/commit/84d1c69f3b3120c8550892d4d21b0bb1851f8e7b) Thanks
+  [@sQVe](https://github.com/sQVe)! - `ticket` `read` finds an unrecorded duplicate of a new ticket
+  with an exact-title lookup of open issues instead of a loose search. Many loose matches no longer
+  refuse every new ticket.
+
+- [#736](https://github.com/sQVe/tau/pull/736)
+  [`bbf0ba5`](https://github.com/sQVe/tau/commit/bbf0ba55b61d6ba23e14b05616d2bc5aa32ab8a8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a workflow rule to fix a found defect at its cause in its
+  own space, or file a bug ticket when it cannot be fixed now. A failing check gets its cause fixed,
+  or a bug ticket when the fix cannot happen now, never a skipped check or a resource cap that hides
+  the cause. The fix-bug skill files that ticket through the `tracker` skill and needs none for a
+  defect it fixes, unless the user asks.
+
+- [#699](https://github.com/sQVe/tau/pull/699)
+  [`9ecd56c`](https://github.com/sQVe/tau/commit/9ecd56c442675cc8a914ed1fda1eca99b9a96e2a) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `improvement` tool's `record` action saves a reviewed
+  task's `review`, `backlog`, and `decision` events in the task's project root, which those calls
+  now take as a required `projectRoot`, not in the reviewing session's project. The retrospective
+  skill passes the `projectRoot` that `task` returns, so a review of another project's task reaches
+  that project's status and sweep.
+
+- [#702](https://github.com/sQVe/tau/pull/702)
+  [`d499bab`](https://github.com/sQVe/tau/commit/d499bab9d60833946858e32c6ed8fefa45d918d4) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `improvement` tool's `status` action skips an event file
+  it cannot read and lists it in `gaps` with its path and reason. The other readable events still
+  produce the status. A failed event read now counts as correct due instead of nothing due.
+
+- [#716](https://github.com/sQVe/tau/pull/716)
+  [`7c43e9c`](https://github.com/sQVe/tau/commit/7c43e9cefcef59c1b67183234c563ec29ab17526) Thanks
+  [@sQVe](https://github.com/sQVe)! - The visible architect closes only after a queued `handover`
+  send with `final: true`. Other queued sends keep it running, and `final` is refused outside
+  `send`.
+
+- [#792](https://github.com/sQVe/tau/pull/792)
+  [`6ead569`](https://github.com/sQVe/tau/commit/6ead5697ac2c5a11b1e2c3e9be08b52665bf1f6d) Thanks
+  [@sQVe](https://github.com/sQVe)! - Lead, architect, and worker terminals carry a tau.role label.
+
+- [#737](https://github.com/sQVe/tau/pull/737)
+  [`91cf1aa`](https://github.com/sQVe/tau/commit/91cf1aafcc89172d745251032f96effc73983ce0) Thanks
+  [@sQVe](https://github.com/sQVe)! - The workflow instructions tell agents to give a new space its
+  task in its start brief or request, to end a blocked handover session before restarting it with
+  the answer in its brief, and to send the answer only after the architect's run ends.
+
+- [#793](https://github.com/sQVe/tau/pull/793)
+  [`34c455b`](https://github.com/sQVe/tau/commit/34c455b26b09649ae3f56531ef188898d41510e9) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the `handover-question` inbox family. The receiver saves
+  it in inbox record version 3, still reads versions 1 and 2, and shows a fixed question line above
+  the question text.
+
+- [#691](https://github.com/sQVe/tau/pull/691)
+  [`42ee331`](https://github.com/sQVe/tau/commit/42ee3315b2564d0c371c935a02c03ed337716f31) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `handover` tool's `start` action takes an optional `model`
+  as provider/model-id, so the new Pi runs on that model instead of the default. A malformed,
+  disallowed, or unknown model is refused before anything starts.
+
+- [#771](https://github.com/sQVe/tau/pull/771)
+  [`9c90a31`](https://github.com/sQVe/tau/commit/9c90a319a5388bc923ade656190c52faa9d6eec9) Thanks
+  [@sQVe](https://github.com/sQVe)! - `questionGate` accepts unknown keys at any depth and warns
+  once per session with the file and the full key path, as other config blocks do. A wrong type or a
+  missing required field still fails the block with the same message.
+
+- [#701](https://github.com/sQVe/tau/pull/701)
+  [`485c1b6`](https://github.com/sQVe/tau/commit/485c1b60884a175d7754a59332beec8ca1e8530e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Tests that write improvement events can no longer write
+  outside their temporary directory. A wrong project root or agent directory now fails before
+  creating any file.
+
+- [#783](https://github.com/sQVe/tau/pull/783)
+  [`d5426b0`](https://github.com/sQVe/tau/commit/d5426b021c3424c4a002a449b8c1f1a4e652426b) Thanks
+  [@sQVe](https://github.com/sQVe)! - Record the lead's terminal and session as the sender on a
+  `handover` message. The inbox saves it in record version 2, still reads version 1, and shows the
+  sender line above the handover text.
+
+- [#765](https://github.com/sQVe/tau/pull/765)
+  [`53ddb27`](https://github.com/sQVe/tau/commit/53ddb27af72084ccb5a369bef1fe38400db1b06c) Thanks
+  [@sQVe](https://github.com/sQVe)! - A Pi that shuts down no longer removes the `tau.inbox` label
+  that a replacement Pi on the same terminal just wrote.
+
+- [#817](https://github.com/sQVe/tau/pull/817)
+  [`1ca11dc`](https://github.com/sQVe/tau/commit/1ca11dcc25c47597ced117b19c42cff06e42519f) Thanks
+  [@sQVe](https://github.com/sQVe)! - A session that starts before its terminal reports it in the
+  foreground now advertises its inbox once it does. A session that never becomes the foreground
+  process shows one notice that it has no inbox and why, instead of staying silent.
+
+- [#762](https://github.com/sQVe/tau/pull/762)
+  [`9cefb75`](https://github.com/sQVe/tau/commit/9cefb75d048b4c24ada2bfe45d643343fcafcaac) Thanks
+  [@sQVe](https://github.com/sQVe)! - An inbox shutdown during startup closes the socket and removes
+  the label.
+
+- [#760](https://github.com/sQVe/tau/pull/760)
+  [`c5e6a08`](https://github.com/sQVe/tau/commit/c5e6a084be4e75ecdd85eae1f3c503b0e10a8cb8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Read the instruction sets from a directory the caller passes.
+  The extension still loads its bundled sets, so a session started from any working directory reads
+  the same files.
+
+- [#794](https://github.com/sQVe/tau/pull/794)
+  [`f79d072`](https://github.com/sQVe/tau/commit/f79d072c3d95f185e45639e546c9646718d64587) Thanks
+  [@sQVe](https://github.com/sQVe)! - The lead asks the architect, not the user, when the architect
+  gate is unsure.
+
+- [#815](https://github.com/sQVe/tau/pull/815)
+  [`9411e48`](https://github.com/sQVe/tau/commit/9411e48f2262e992e2fd287c49da75acec0bf5ab) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a deterministic check before a lead turn settles. When the
+  final text asks the user to approve or do a step, Tau appends one displayed reminder and continues
+  the turn, so the lead can finish the step its work already settled. A choice question, a plain
+  report, a non-lead session, an errored or aborted run, and a second hand-back since the last user
+  message still settle. The check makes no model call.
+
+- [#801](https://github.com/sQVe/tau/pull/801)
+  [`c01086d`](https://github.com/sQVe/tau/commit/c01086d354443f87f19cd22940cb9e3f5eeeb808) Thanks
+  [@sQVe](https://github.com/sQVe)! - Tell a lead to keep its plan current with `plan` while the
+  work has steps, and to mark a step completed as its agent ticket finishes.
+
+- [#779](https://github.com/sQVe/tau/pull/779)
+  [`828584c`](https://github.com/sQVe/tau/commit/828584cfc3b2ac3dad70ad7055426305d343f2eb) Thanks
+  [@sQVe](https://github.com/sQVe)! - Remove lead and architect guidelines that another message,
+  tool description, or skill already delivers. Split worker briefs between the roles: the lead
+  writes launch briefs, and the architect writes the ticket bodies workers start from. Every
+  architect session the lead opens now ends with one final handover to the lead.
+
+- [#821](https://github.com/sQVe/tau/pull/821)
+  [`a2f2c1c`](https://github.com/sQVe/tau/commit/a2f2c1c174b887b28fe97bfc9d6bfa66daa70474) Thanks
+  [@sQVe](https://github.com/sQVe)! - Load the JSON reporter for `run_tests` from the project's own
+  Vitest, so a project that pins a release without the `vitest/reporters` entry, such as Vitest 5,
+  records its RED and GREEN observations instead of failing to load Tau's reporter.
+
+- [#753](https://github.com/sQVe/tau/pull/753)
+  [`c7f57a2`](https://github.com/sQVe/tau/commit/c7f57a2882bf234d3d869aae77d65f0eff9012f9) Thanks
+  [@sQVe](https://github.com/sQVe)! - Load one generated bundle of Tau's registration when its input
+  hash matches the package, and fall back to the TypeScript source otherwise. The build runs in
+  `prepare`, `pnpm build:tau`, and before the test stage of `pnpm check`, so a Pi Git install builds
+  it without devDependencies or Pi peer packages. It refuses a source module whose suffix the hash
+  does not cover, so a file such as `.cjs` cannot leave a stale bundle in place.
+
+- [#734](https://github.com/sQVe/tau/pull/734)
+  [`11b2f23`](https://github.com/sQVe/tau/commit/11b2f23b1a640298aee96bd1ce14c57557b7855f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Record the holder's hc terminal in the file lock owner record.
+  Add `holdFileLock`, which refuses at once with the live holder, and use it for the architect lock.
+
+- [#751](https://github.com/sQVe/tau/pull/751)
+  [`ec3462c`](https://github.com/sQVe/tau/commit/ec3462cc3e57c2b9dc4b453cfa71d9f672c47328) Thanks
+  [@sQVe](https://github.com/sQVe)! - Lock each worker folder sweep on its agent directory. The
+  sweep now takes `.tau-worker-folder-sweep.lock` before reading the terminal list and the folders,
+  and holds it through marker writes and removals. A sweep that read a snapshot as unused can no
+  longer write that stale marker after another manager's launch cleared it. The unused window starts
+  after a sweep gets the lock, so a wait never backdates a new marker. A follow-up that reuses a
+  package snapshot waits for the same lock before it starts, clears the snapshot's old marker, and
+  keeps the lock through the terminal request. It restores the old marker when the start fails
+  definitely. Launches still start their sweep without waiting.
+
+- [#714](https://github.com/sQVe/tau/pull/714)
+  [`3537ed8`](https://github.com/sQVe/tau/commit/3537ed8512d49aa9e8a9f2e35c6adaf033bc113f) Thanks
+  [@sQVe](https://github.com/sQVe)! - The manager does the work it can do: it fixes a found bug in
+  its own space, makes the tracker status change it can make, and treats an effectively accepted
+  proposal as decided.
+
+- [#795](https://github.com/sQVe/tau/pull/795)
+  [`10c2832`](https://github.com/sQVe/tau/commit/10c2832c06ce4826ca8bbc32499a56b8e3497c69) Thanks
+  [@sQVe](https://github.com/sQVe)! - Handover tabs are named after their work, such as
+  `lead: engine moves to`.
+
+- [#742](https://github.com/sQVe/tau/pull/742)
+  [`6b272ef`](https://github.com/sQVe/tau/commit/6b272efe43313eb101da186f466068572a169899) Thanks
+  [@sQVe](https://github.com/sQVe)! - Tabs that Tau opens are named by role: `lead` for a `handover`
+  `start`, and `architect` for an architect that `architect` `open` starts in its own space.
+
+- [#696](https://github.com/sQVe/tau/pull/696)
+  [`60b3bee`](https://github.com/sQVe/tau/commit/60b3bee18ad9fecf7e8f5784c9c6f56dce76d455) Thanks
+  [@sQVe](https://github.com/sQVe)! - Test suites register their temporary-directory and environment
+  cleanup through one suite cleanup helper. Vitest ignored cleanup registered inside `beforeAll`, so
+  nextest target and basic-crate folders accumulated in `/tmp`. A lint rule now rejects `afterAll`
+  registered inside another hook.
+
+- [#775](https://github.com/sQVe/tau/pull/775)
+  [`4ae2a96`](https://github.com/sQVe/tau/commit/4ae2a96b57259095289fe580cec9c7dca16a49b6) Thanks
+  [@sQVe](https://github.com/sQVe)! - Read only the question gate config section each command uses.
+  The historical scorer no longer fails on an invalid shadow block, while shadow consumers still
+  validate it.
+
+- [#807](https://github.com/sQVe/tau/pull/807)
+  [`abbcf30`](https://github.com/sQVe/tau/commit/abbcf30b539420afbe9f868fda332f37d64fb317) Thanks
+  [@sQVe](https://github.com/sQVe)! - Pad the plan step icons: each status icon now has two columns
+  of space after it, so a terminal that draws the icon two cells wide still leaves one visible space
+  before the step text. The header grows with the gap, so the `Plan` label and the step text keep
+  starting in the same column.
+
+- [#754](https://github.com/sQVe/tau/pull/754)
+  [`9618aec`](https://github.com/sQVe/tau/commit/9618aec434566c9279a2ab1d8c5dd010fdb69996) Thanks
+  [@sQVe](https://github.com/sQVe)! - Tau now builds against pi 1.6.0.
+
+- [#801](https://github.com/sQVe/tau/pull/801)
+  [`c01086d`](https://github.com/sQVe/tau/commit/c01086d354443f87f19cd22940cb9e3f5eeeb808) Thanks
+  [@sQVe](https://github.com/sQVe)! - The plan list above the lead's editor now starts with a
+  `─ Plan ─…` border and marks each step with a Nerd Font status circle. Completed steps are drawn
+  in gray.
+
+- [#746](https://github.com/sQVe/tau/pull/746)
+  [`e2b41c1`](https://github.com/sQVe/tau/commit/e2b41c1b1e762726226e43f73872b0006953e1b1) Thanks
+  [@sQVe](https://github.com/sQVe)! - Route the findings left after a lead's one fix review by
+  priority instead of asking the user for a disposition. The lead fixes P1 findings in the branch,
+  files each P2 and P3 finding as a follow-up ticket, and lists those tickets in the pull request
+  body. The three existing approvals still apply.
+
+- [#709](https://github.com/sQVe/tau/pull/709)
+  [`e2218c2`](https://github.com/sQVe/tau/commit/e2218c2c97bd59d7a0d5e1d9607b3d6b52533023) Thanks
+  [@sQVe](https://github.com/sQVe)! - The pr skill's body rules describe only the change as it
+  ships. They leave out earlier versions, review rounds, regressions found and fixed during the
+  task, and build order. Internal ticket references follow the repository's rule.
+
+- [#740](https://github.com/sQVe/tau/pull/740)
+  [`d93b9a6`](https://github.com/sQVe/tau/commit/d93b9a64d3d88516df4ad202b21426dc627aeb2b) Thanks
+  [@sQVe](https://github.com/sQVe)! - Probe each repository's object format and bare state at most
+  once per operation, and read the check state once per evidence read. A standalone `pr` `coverage`
+  read is one operation. A new operation probes again, so a repository replaced at the same path is
+  read with its new format. A probe that fails is not remembered, so the next call asks Git again.
+  The pr evidence tests spawn fewer Git processes per pr evidence read.
+
+- [#706](https://github.com/sQVe/tau/pull/706)
+  [`2e6a50a`](https://github.com/sQVe/tau/commit/2e6a50aa4284062e923186f2cd80a4978451d44e) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `pr-feedback` skill reads `pr evidence` for each manual
+  verification item after a rebase, and reruns a stale item or reports it as not run before
+  recommending merge. A review that did not complete, or whose state is failed or contradictory, is
+  now unknown and reported as a limitation instead of clean.
+
+- [#758](https://github.com/sQVe/tau/pull/758)
+  [`1e1ce38`](https://github.com/sQVe/tau/commit/1e1ce38e6d5307956b7f187c967da21db3cffa65) Thanks
+  [@sQVe](https://github.com/sQVe)! - A Tau session with project settings, started without
+  `--approve`, now advertises its inbox.
+
+- [#813](https://github.com/sQVe/tau/pull/813)
+  [`040af1d`](https://github.com/sQVe/tau/commit/040af1db2d36f5e74576c125dfedccea4f652805) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add `scripts/proseReport.ts`, which runs the prose check over
+  saved session replies and named text files and prints a Markdown precision report.
+
+- [#785](https://github.com/sQVe/tau/pull/785)
+  [`f259134`](https://github.com/sQVe/tau/commit/f2591342e37bdd4591a128b5f92b4f9e3316a768) Thanks
+  [@sQVe](https://github.com/sQVe)! - Tell the manager to read each item's state from its own
+  source: repository metadata for archived state, open PRs for finished work, and live terminals for
+  running work.
+
+- [#820](https://github.com/sQVe/tau/pull/820)
+  [`005feae`](https://github.com/sQVe/tau/commit/005feae69f493b2ae1f9ec9e46b57e291a53461c) Thanks
+  [@sQVe](https://github.com/sQVe)! - A read-only code review no longer starts the posting routine
+  before the user approves changing the review's scope. The read-only guard in step 8 now decides
+  before every action in that step, and the posting route claims precedence only over the triage
+  actions.
+
+- [#727](https://github.com/sQVe/tau/pull/727)
+  [`7e6b17f`](https://github.com/sQVe/tau/commit/7e6b17facc4589a7aa1ca4183f0c110dd68974c4) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the stomme 0.2.0 guide bundle under `vendor/stomme/`, a
+  reader that checks a synced guide folder against its `.sync-record.toml`, and a resolver that
+  turns a working directory into a guide snapshot with a digest.
+
+- [#731](https://github.com/sQVe/tau/pull/731)
+  [`244557a`](https://github.com/sQVe/tau/commit/244557a8c91fd70bf8d5dc575f1b830f3ac79fa0) Thanks
+  [@sQVe](https://github.com/sQVe)! - Redact secret environment values from every tool result, in
+  the main session and in workers.
+
+- [#802](https://github.com/sQVe/tau/pull/802)
+  [`0588890`](https://github.com/sQVe/tau/commit/0588890b9ce5da0ab44de008363c42a72dc6c9d5) Thanks
+  [@sQVe](https://github.com/sQVe)! - Refuse a `handover` `start` without `space` when the checkout
+  folder already has a herdr space, and name each space so the caller can reuse one. Pass
+  `newSpace: true` to create another space. The result reports `spaceStatus` as `created` or
+  `reused`.
+
+- [#734](https://github.com/sQVe/tau/pull/734)
+  [`11b2f23`](https://github.com/sQVe/tau/commit/11b2f23b1a640298aee96bd1ce14c57557b7855f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Refuse a second Pi that opens a session file another Pi holds.
+  The second Pi shows the holder's terminal and exits before other Tau handlers run, so it no longer
+  takes over the first Pi's inbox label. `/resume` onto a held session file is cancelled.
+
+- [#824](https://github.com/sQVe/tau/pull/824)
+  [`d401f6a`](https://github.com/sQVe/tau/commit/d401f6a4b317527f32f71cf71c8200e24a264e50) Thanks
+  [@sQVe](https://github.com/sQVe)! - A Pi start now refuses a folder whose `.git` pointer names a
+  missing path, with `start folder is not a Git checkout`. The guard asks Git instead of trusting
+  the `.git` entry, so a bare repository and a linked worktree still start.
+
+- [#748](https://github.com/sQVe/tau/pull/748)
+  [`7f1a7e0`](https://github.com/sQVe/tau/commit/7f1a7e032608ae22468f5ebb6461c333236fffcc) Thanks
+  [@sQVe](https://github.com/sQVe)! - Keep a refused live ask recoverable when the record update
+  after the refusal fails. The lead sees the refusal and the ask ID. It can restore record access
+  and call `architect ask` with that ID in the same session, which marks the ask failed without
+  resending the question. If the repair observes the ask lock held, it stops waiting and asks the
+  lead to retry the same ID after the lock releases. A repair that still fails reports the failure
+  without claiming the ask is still sending. The failed record no longer blocks the architect's
+  final handover.
+
+- [#778](https://github.com/sQVe/tau/pull/778)
+  [`64182cc`](https://github.com/sQVe/tau/commit/64182ccec32f9b2b97290a872353fca0ecc5e18d) Thanks
+  [@sQVe](https://github.com/sQVe)! - A `tau.json` that is valid JSON but not an object, such as
+  `[]` or `null`, now fails every config read with
+  `Invalid Tau config <path>: not a JSON object (found <kind>).` Before, some readers reported a
+  misleading error about the field they were reading.
+
+- [#724](https://github.com/sQVe/tau/pull/724)
+  [`97e48f9`](https://github.com/sQVe/tau/commit/97e48f9c3e19679e1805cf60edaf295e558108b2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Report the user `tau.json` `fallbackModels` errors and
+  warnings on standard error when Tau starts, so print mode, RPC mode, and `--list-models` show a
+  refused user entry. A repository `tau.json` setting is not covered by this report.
+
+- [#710](https://github.com/sQVe/tau/pull/710)
+  [`5493218`](https://github.com/sQVe/tau/commit/5493218fc7d0ae5ca32d1536ef92084e529cc843) Thanks
+  [@sQVe](https://github.com/sQVe)! - `mutation_check` reads `totals.timeout` from the mutation
+  report and prints a line when mutants timed out, because Stryker counts a timed-out mutant as
+  killed and an overloaded machine hides survivors.
+
+- [#781](https://github.com/sQVe/tau/pull/781)
+  [`f4a2304`](https://github.com/sQVe/tau/commit/f4a23047f413e77eab46b5a6fe906eabe6b33c57) Thanks
+  [@sQVe](https://github.com/sQVe)! - Report a question gate config or allowlist refusal once per
+  session instead of dropping it. A decide config refusal asks the dialog as usual and writes no
+  decision record. A refused shadow model skips shadow sampling for that dialog, with no judge call
+  and no shadow record.
+
+- [#741](https://github.com/sQVe/tau/pull/741)
+  [`95eb7f5`](https://github.com/sQVe/tau/commit/95eb7f57c38ab3073815ca7e9c9c599915a94fd3) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a workflow rule to report status in the user's terms:
+  answer the feature the workspace exists for, and name each piece of work by what it does instead
+  of by its ticket identifier alone.
+
+- [#724](https://github.com/sQVe/tau/pull/724)
+  [`97e48f9`](https://github.com/sQVe/tau/commit/97e48f9c3e19679e1805cf60edaf295e558108b2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Reset the once-per-session config notices in one place at
+  session start, so a notice that one feature reports early in a session is not reported again by a
+  later feature.
+
+- [#723](https://github.com/sQVe/tau/pull/723)
+  [`8209e8f`](https://github.com/sQVe/tau/commit/8209e8fc9e2e1f215ed6478d45c50b31c5ba19cf) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `subagent` tool refuses a launch that sets `model` unless
+  the profile is `reviewer` or `checker`. The user `tau.json` sets the model for every other
+  profile.
+
+- [#786](https://github.com/sQVe/tau/pull/786)
+  [`e4868d0`](https://github.com/sQVe/tau/commit/e4868d0cc2b6d24a1cf60d077c2f65c4b8cf3dc4) Thanks
+  [@sQVe](https://github.com/sQVe)! - Tell the lead to send a changed design fact to the architect
+  before it writes plan text, ticket bodies, or acceptance criteria.
+
+- [#811](https://github.com/sQVe/tau/pull/811)
+  [`f8ce758`](https://github.com/sQVe/tau/commit/f8ce758dd448e3ee0fc84c909f98a6fd221c0477) Thanks
+  [@sQVe](https://github.com/sQVe)! - GitHub review comments now follow one shared style with
+  invented samples. Code review can post them as a pending review on another person's pull request
+  when the user asks.
+
+- [#773](https://github.com/sQVe/tau/pull/773)
+  [`3d51e36`](https://github.com/sQVe/tau/commit/3d51e367799b2a1cd6dc2a9ea76e8003ad34e979) Thanks
+  [@renovate](https://github.com/apps/renovate)! - Update cc-safety-net to 2.8.2. The worker fixture
+  now proves Safety Net with `git -C delete-fixture clean -fdx`, a command 2.8.2 still blocks.
+
+- [#752](https://github.com/sQVe/tau/pull/752)
+  [`2cb936d`](https://github.com/sQVe/tau/commit/2cb936dc0d2acddedb0e24011fa965fc5dfdb178) Thanks
+  [@sQVe](https://github.com/sQVe)! - `pnpm question-gate-score --shadow` reports the frozen shadow
+  candidate's agreement, a session-aware 95% lower bound, potential dialogs saved, and judge time.
+  It reads only shadow records, makes no model calls, and takes no launch decision.
+
+- [#749](https://github.com/sQVe/tau/pull/749)
+  [`189d06b`](https://github.com/sQVe/tau/commit/189d06bd57ccc8c4c60d2f4b787a3d8a8a13cf41) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add `pnpm question-gate-score`. It judges the user's past
+  eligible questions with the configured classifier and panel, each with and without past examples.
+  It reports decide share and agreement at cutoffs from 0.50 to 1.00, the lowest tuning cutoff that
+  reaches 95% agreement, and that cutoff's held-out result. It explores only and sets no launch
+  cutoff.
+
+- [#805](https://github.com/sQVe/tau/pull/805)
+  [`99d1409`](https://github.com/sQVe/tau/commit/99d140995889c335a4414fe0b9b329fc0dfd74df) Thanks
+  [@sQVe](https://github.com/sQVe)! - A hidden `ask` whose launch reply is lost now settles from one
+  fence outcome, `cancelled`, `gone`, `adopted`, or `unresolved`, computed once and shared by every
+  caller. The lead writes its ask record as failed only for `cancelled` or `gone`, so a child that
+  adopts after the last early read can still save and return its answer. `adopted` waits on the
+  child's process ID, and `unresolved` leaves the record running with the unconfirmed-stop detail
+  because the child may still adopt and answer. An answer the child already saved wins over that
+  kept-claim result. A release or read failure is reported beside the outcome.
+
+  `open` uses the same outcome: `adopted` is a takeover, even when adoption happens after the wait
+  expires; `cancelled` and `gone` report the launch error; and `unresolved` reports the kept claim.
+  The fence now waits for the takeover itself, so no caller reads adoption or passes adoption and
+  stop facts in.
+
+- [#713](https://github.com/sQVe/tau/pull/713)
+  [`cc65c6d`](https://github.com/sQVe/tau/commit/cc65c6dbf85d743f27555ed8ecd51327032f74ec) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `improvement` tool resolves a task's project root with
+  `findSharedRepositoryRoot`, so every worktree shares one repository root. A conventional bare
+  repository now resolves to itself, not its parent directory.
+
+- [#796](https://github.com/sQVe/tau/pull/796)
+  [`d66d836`](https://github.com/sQVe/tau/commit/d66d83647949391f4a5a96081979067154111b88) Thanks
+  [@sQVe](https://github.com/sQVe)! - Give each worker a short scratch `TMPDIR` at
+  `<agentDirectory>/tmp/ws/<first 8 hex of the assignment ID>`, so `browser` and `qa` workers can
+  start Chrome without a `Socket path too long` error. You may delete the old
+  `<agentDirectory>/tmp/tau-worker-scratch` folders only after all workers launched before the
+  upgrade have stopped.
+
+- [#812](https://github.com/sQVe/tau/pull/812)
+  [`57e8fa5`](https://github.com/sQVe/tau/commit/57e8fa5e7ff433c3f93d61d9203cdbe966403e5a) Thanks
+  [@sQVe](https://github.com/sQVe)! - The lead's system prompt now lists its current plan on every
+  run, also after a compaction, and lists nothing when there is no plan or every step is completed.
+  A worker report to a lead with a plan now ends with the plan and a reminder to update it.
+
+- [#722](https://github.com/sQVe/tau/pull/722)
+  [`84abefc`](https://github.com/sQVe/tau/commit/84abefcab4ecaaf3b9d9cd2b0ee8a8f9ea0fb419) Thanks
+  [@sQVe](https://github.com/sQVe)! - An architect session launches and resumes workers. The
+  skill-tools launch check now skips a listed tool that the session's role never registers, such as
+  the `architect` tool outside the lead role. A lead session that lacks a listed tool still gets the
+  `/reload` refusal. An architect session can launch only investigation workers. A worker profile
+  that loads a skill listing a lead-only tool now starts without that tool.
+
+- [#819](https://github.com/sQVe/tau/pull/819)
+  [`baa8a02`](https://github.com/sQVe/tau/commit/baa8a0238d3bba8b991f220141ac228e2a3c43bd) Thanks
+  [@sQVe](https://github.com/sQVe)! - Read a slice as merged only when a linked pull request closes
+  it. A pull request that only mentions the slice no longer hides it from `start_slice` read or from
+  the slice read's merged flag.
+
+- [#818](https://github.com/sQVe/tau/pull/818)
+  [`4c899a5`](https://github.com/sQVe/tau/commit/4c899a5be69cda5c0435a671ba3a64e130aad4f7) Thanks
+  [@sQVe](https://github.com/sQVe)! - Slug a Markdown heading from its rendered text, so a character
+  reference and link markup inside a heading resolve to the same fragment GitHub uses.
+
+- [#719](https://github.com/sQVe/tau/pull/719)
+  [`7d42e27`](https://github.com/sQVe/tau/commit/7d42e2701c6aabd32a7d3fc9a3edf036f5bd94ff) Thanks
+  [@sQVe](https://github.com/sQVe)! - The retrospective skill's deep-mode tooling lens and the
+  configuration examples name `gpt-6.2-sol` in place of `gpt-6.1-sol`.
+
+- [#744](https://github.com/sQVe/tau/pull/744)
+  [`6089850`](https://github.com/sQVe/tau/commit/60898503b9283c930f134d397a2fd1caf11262a5) Thanks
+  [@sQVe](https://github.com/sQVe)! - `handover start` creates a new space with Pi in its first and
+  only tab. In an existing space it opens a new tab and leaves every existing pane alone.
+
+- [#705](https://github.com/sQVe/tau/pull/705)
+  [`4b96732`](https://github.com/sQVe/tau/commit/4b967320e46159ab71c17c1cb6a77154a14200ef) Thanks
+  [@sQVe](https://github.com/sQVe)! - `start-slice` step 7 names one probe per missing dependency
+  and says a probe that reports a skip is not a pass. A slice that changes a tool or read path the
+  manager uses now plans its QA walk in a manager session that loaded the branch, with one recorded
+  item and one `Target: none` item, and keeps a public-interface criterion open while only an
+  internal adapter ran.
+
+- [#750](https://github.com/sQVe/tau/pull/750)
+  [`579dbe3`](https://github.com/sQVe/tau/commit/579dbe327501337068b841c02ceac28eef380dcb) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a workflow rule to read a system's own configuration or
+  run record before reporting an integration or workflow as missing or disabled, and to report
+  `unknown` when that source cannot be read.
+
+- [#822](https://github.com/sQVe/tau/pull/822)
+  [`c8a901c`](https://github.com/sQVe/tau/commit/c8a901cb3d564c8c6a913a3fb32587421d27a25d) Thanks
+  [@sQVe](https://github.com/sQVe)! - Take the SIGTERM grace of a stopped check or verification
+  command from the caller, and let the process-group tests bound it. A command that ignores SIGTERM
+  now escalates to SIGKILL inside a wait the caller chooses, instead of running into the test
+  budget. The real Vitest runs in the focused runner test get a budget for one process start.
+
+- [#810](https://github.com/sQVe/tau/pull/810)
+  [`59e2967`](https://github.com/sQVe/tau/commit/59e2967619a686e91772cb9dceeccab49aee726b) Thanks
+  [@sQVe](https://github.com/sQVe)! - Style each plan step by its status and show the completed
+  count in the plan header.
+
+- [#693](https://github.com/sQVe/tau/pull/693)
+  [`b9aadaa`](https://github.com/sQVe/tau/commit/b9aadaa2a8d4b0912e0624bb5130328727559664) Thanks
+  [@sQVe](https://github.com/sQVe)! - The improvement sweep now reads session transcripts it has not
+  seen before it retries unresolved ones. A transcript that never resolves no longer uses the sweep
+  budget ahead of new transcripts, so new tasks are still discovered.
+
+- [#788](https://github.com/sQVe/tau/pull/788)
+  [`1ef167b`](https://github.com/sQVe/tau/commit/1ef167be90a7fbf5ee413c8213625fc876f1587f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a rule to step 1 of the `tdd` skill: pick the fixture so
+  the test also fails for the nearest false substitute, and name that substitute in the test or in
+  the step 6 report.
+
+- [#708](https://github.com/sQVe/tau/pull/708)
+  [`61f38c1`](https://github.com/sQVe/tau/commit/61f38c1229cd32e6120cfab8ec51513446ccf615) Thanks
+  [@sQVe](https://github.com/sQVe)! - Test runs remove their temporary folders even when the process
+  exits or receives a signal, and scratch Git repositories and shared cargo directories register the
+  same cleanup. Saved bash and codemode output, Pi session event logs, and smoke-run scratch
+  repositories now remove folders older than a day when the next folder with the same prefix is
+  saved.
+
+- [#720](https://github.com/sQVe/tau/pull/720)
+  [`cc2cdde`](https://github.com/sQVe/tau/commit/cc2cddeb032a4dd980d0902a40451adeec94e89e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Verification runs are stored under the shared repository root,
+  so `pr evidence` can read a run made in a linked worktree. Configuration, command working
+  directories, and tree identity stay on the checkout, and the launching checkout stops its own run.
+  Register and stop refuse a symlinked `.tau` or `.tau/verification` folder before they write.
+
+- [#712](https://github.com/sQVe/tau/pull/712)
+  [`fbcd85b`](https://github.com/sQVe/tau/commit/fbcd85b806ba298f0c77c0aeb6d7ca952fa9c125) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a workflow rule to read a loaded tool's current schema or
+  help before claiming what it can do, and to check the effect a call produced, such as a started
+  process's argv or model name.
+
+- [#733](https://github.com/sQVe/tau/pull/733)
+  [`9943277`](https://github.com/sQVe/tau/commit/99432770bf7180c13cdafb8a1187b3d5deab6814) Thanks
+  [@sQVe](https://github.com/sQVe)! - Give each worker launch and follow-up a scratch folder outside
+  `/tmp`, set as `TMPDIR`, `TMP`, and `TEMP`. A failed or cancelled launch removes its folder.
+  Remove the scratch folders of ended workers and package snapshots that no running worker has used
+  for 24 hours. Each worker scan and each launch runs the sweep.
+
+- [#732](https://github.com/sQVe/tau/pull/732)
+  [`b882bb1`](https://github.com/sQVe/tau/commit/b882bb168717c504c90f65a1883d436cabd7af04) Thanks
+  [@sQVe](https://github.com/sQVe)! - Editing workers open in the `-workers` tab of the manager's
+  tab, like other workers. `draft_review` opens tuicr in the `-review` tab of the caller's tab. The
+  lead's tab holds only the architect and the lead.
+
+- [#739](https://github.com/sQVe/tau/pull/739)
+  [`be19f8a`](https://github.com/sQVe/tau/commit/be19f8a3bf82b0d00c3a546441f57e212ea0891f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Write the user's own Linear tickets, title and body edits, and
+  slice plans without an approval dialog.
+
 ## 1.2.0
 
 ### Minor Changes
