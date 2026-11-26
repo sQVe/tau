@@ -461,9 +461,6 @@ const createBindingScopes = () => {
 
 type BindingScopes = ReturnType<typeof createBindingScopes>;
 
-const bodyStatements = (node: Function | ArrowFunctionExpression): readonly Statement[] =>
-  node.body?.type === 'BlockStatement' ? node.body.body : [];
-
 // A function declaration is hoisted to the top of its scope, so a later assignment still sees it.
 const functionNames = (statements: readonly Statement[]): string[] =>
   statements.flatMap((statement) => {
@@ -527,8 +524,6 @@ const enterFunctionScope = (
   for (const name of node.params.flatMap(bindingNames)) {
     bindings.declare(name, 'escaping');
   }
-
-  declareFunctions(bindings, bodyStatements(node));
 };
 
 const enterBlockScope = (bindings: BindingScopes, node: BlockStatement): void => {
@@ -540,7 +535,12 @@ const declareVariables = (bindings: BindingScopes, node: VariableDeclaration): v
   const declareName = node.kind === 'var' ? bindings.declareVariable : bindings.declare;
 
   for (const declarator of node.declarations) {
-    const kind = isFunctionValue(bindings, declarator.init) ? 'function' : 'local';
+    // Only a plain identifier can alias the initializer's function value. A pattern binds
+    // properties of it, such as a number from a function's `length`.
+    const isFunctionAlias =
+      declarator.id.type === 'Identifier' && isFunctionValue(bindings, declarator.init);
+
+    const kind = isFunctionAlias ? 'function' : 'local';
 
     for (const name of bindingNames(declarator.id)) {
       declareName(name, kind);
@@ -833,13 +833,22 @@ const importedNestedFunctionPropertySource = (): string =>
   "import { api } from './rules.js';\napi.config.run = () => 1;\n";
 
 const globalFunctionPropertySource = (): string =>
-  'globalThis.install = () => 1;\nwindow.handler = () => 1;\n';
+  'globalThis.install = () => 1;\nwindow.handler = () => 1;\nglobal.install = () => 1;\nprocess.handler = () => 1;\nself.install = () => 1;\n';
 
 const localFunctionPropertySource = (): string =>
   'const handlers = {};\nhandlers.run = () => "";\n';
 
 const shadowingImportSource = (): string =>
   "import { api } from './rules.js';\nexport const make = () => {\n  const api = {};\n  api.run = () => 1;\n  return api;\n};\n";
+
+const shadowingParameterSource = (): string =>
+  'export const install = (api) => {\n  {\n    const api = {};\n    api.run = () => 1;\n  }\n};\n';
+
+const destructuredFunctionSource = (): string =>
+  'const helper = () => 1;\nexport const read = (api) => {\n  const { length } = helper;\n  api.run = length;\n};\n';
+
+const hoistedVarFunctionSource = (): string =>
+  'export const install = (api) => {\n  if (api) {\n    var later = () => 1;\n  }\n  api.run = later;\n};\n';
 
 const hoistedFunctionPropertySource = (): string =>
   'export const install = (api) => {\n  api.run = later;\n};\nfunction later() {}\n';
@@ -871,6 +880,9 @@ it('reports a function assigned to a property of a global or of a nested member 
   expect(impurities('src/pure/decide.ts', globalFunctionPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:1: assigns a function to a property',
     'src/pure/decide.ts:2: assigns a function to a property',
+    'src/pure/decide.ts:3: assigns a function to a property',
+    'src/pure/decide.ts:4: assigns a function to a property',
+    'src/pure/decide.ts:5: assigns a function to a property',
   ]);
 
   expect(
@@ -884,6 +896,20 @@ it('does not report a function assigned to a property of a local object', () => 
 
 it('does not report a local that shadows an import', () => {
   expect(impurities('src/pure/decide.ts', shadowingImportSource(), testRegistry)).toEqual([]);
+});
+
+it('does not report a local that shadows a parameter', () => {
+  expect(impurities('src/pure/decide.ts', shadowingParameterSource(), testRegistry)).toEqual([]);
+});
+
+it('does not report a destructured binding as a function', () => {
+  expect(impurities('src/pure/decide.ts', destructuredFunctionSource(), testRegistry)).toEqual([]);
+});
+
+it('reports a function assigned to a var hoisted out of a block', () => {
+  expect(impurities('src/pure/decide.ts', hoistedVarFunctionSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:5: assigns a function to a property',
+  ]);
 });
 
 it('reports a function assigned before its hoisted declaration', () => {
