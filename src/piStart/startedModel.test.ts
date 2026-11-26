@@ -48,6 +48,30 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
     expected: { kind: 'match', model: 'default' },
   },
   {
+    name: 'a model flag followed by another flag',
+    facts: facts({
+      requested: { provider: undefined, id: undefined },
+      argv: ['pi', '--model', '--provider', 'x'],
+    }),
+    expected: { kind: 'match', model: 'default' },
+  },
+  {
+    name: 'a model given with an equals sign',
+    facts: facts({
+      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      argv: ['pi', '--model=claude-opus-5-5'],
+    }),
+    expected: { kind: 'match', model: 'claude-opus-5-5' },
+  },
+  {
+    name: 'a provider without a model',
+    facts: facts({
+      requested: { provider: undefined, id: undefined },
+      argv: ['pi', '--provider', 'x'],
+    }),
+    expected: { kind: 'match', model: 'default' },
+  },
+  {
     name: 'an argv that could not be read',
     facts: facts({ argv: undefined }),
     expected: { kind: 'unreadable' },

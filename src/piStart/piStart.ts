@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { Type } from 'typebox';
@@ -17,14 +18,19 @@ export type PiStartTarget = { space: string } | { name: string };
 
 type PiStartTargetResolver = () => Promise<PiStartTarget>;
 
+type ReadForegroundArgv = (terminal: string) => Promise<readonly string[] | undefined>;
+
 interface PiSessionRequest {
   folder: string;
   task: string;
   model: string | undefined;
   session: string | undefined;
   environment: Record<string, string> | undefined;
-  readForegroundArgv: (terminal: string) => Promise<readonly string[] | undefined>;
   argvWrapper?: ((argv: string[]) => string[]) | undefined;
+}
+
+interface PiReadbackRequest extends PiSessionRequest {
+  readForegroundArgv: ReadForegroundArgv;
 }
 
 interface PiStartBaseRequest extends PiSessionRequest {
@@ -34,13 +40,20 @@ interface PiStartBaseRequest extends PiSessionRequest {
 
 interface PiLaunchRequest extends PiStartBaseRequest {
   target: PiStartTarget;
+  readForegroundArgv: ReadForegroundArgv;
 }
 
 export interface PiStartRequest extends PiStartBaseRequest {
   target: PiStartTarget | PiStartTargetResolver;
+  readForegroundArgv: ReadForegroundArgv;
 }
 
 export interface PiStartRightOfRequest extends PiSessionRequest {
+  pane: string;
+  bareRoot: boolean;
+}
+
+interface PiLaunchRightOfRequest extends PiReadbackRequest {
   pane: string;
   bareRoot: boolean;
 }
@@ -135,8 +148,24 @@ const cancellationError = (signal: AbortSignal | undefined): Error => {
     : new Error('The started model readback was cancelled.', { cause: reason });
 };
 
-const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined =>
-  argv?.[0] === 'pi' ? argv : undefined;
+const isPiExecutable = (argument: string | undefined): boolean =>
+  argument !== undefined && basename(argument) === 'pi';
+
+const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined => {
+  if (argv === undefined) {
+    return undefined;
+  }
+
+  const [first, second] = argv;
+
+  if (isPiExecutable(first)) {
+    return argv;
+  }
+
+  const runsNode = first !== undefined && basename(first) === 'node';
+
+  return runsNode && isPiExecutable(second) ? argv : undefined;
+};
 
 // Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
 // launch budget.
@@ -146,14 +175,15 @@ const readWithinBudget = (
   signal: AbortSignal | undefined,
 ): Promise<readonly string[] | undefined> =>
   new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      resolve(undefined);
-    }, remaining);
-
     const onAbort = (): void => {
       clearTimeout(timer);
       reject(cancellationError(signal));
     };
+
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(undefined);
+    }, remaining);
 
     if (signal?.aborted === true) {
       onAbort();
@@ -358,7 +388,7 @@ const launch = async (
   runtime: CommandRuntime,
   command: LaunchCommand,
   terminalOf: TerminalReply,
-  request: PiSessionRequest,
+  request: PiReadbackRequest,
 ): Promise<PiLaunchResult> => {
   let launched: PiLaunchResult;
 
@@ -449,7 +479,7 @@ export const launchPiSession = async (
 
 export const launchPiSessionRightOf = async (
   runtime: CommandRuntime,
-  request: PiStartRightOfRequest,
+  request: PiLaunchRightOfRequest,
 ): Promise<PiLaunchResult> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 

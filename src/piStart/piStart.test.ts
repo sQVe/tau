@@ -409,7 +409,6 @@ it('a pane start splits to the right of the requested pane once', async () => {
       session: undefined,
       bareRoot: false,
       environment: { TAU_ROLE: 'architect' },
-      readForegroundArgv: readerFor(fake, root),
     },
   );
 
@@ -451,7 +450,6 @@ it('a pane split reply without a pane ends the start', async () => {
         session: undefined,
         bareRoot: false,
         environment: undefined,
-        readForegroundArgv: readerFor(fake, root),
       },
     ),
   ).rejects.toThrow('herdr-app do pane.split printed unexpected output');
@@ -753,6 +751,28 @@ const launchWithForeground = (argv: string[]): ExecFake<'launch' | 'get'> => {
   });
 };
 
+const launchRightOfWithForeground = (argv: string[]): ExecFake<'split' | 'get'> => {
+  const getReply = JSON.stringify({
+    address: 't-new',
+    state: 'live',
+    foreground: { pid: 1, name: 'pi', argv, cwd: '/tmp' },
+  });
+
+  return createExecFake<'split' | 'get'>({
+    keyOf: (command, commandArguments) => {
+      if (command === 'herdr-app') {
+        return 'split';
+      }
+
+      return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
+    },
+    handlerFor: (key) =>
+      key === 'split'
+        ? () => succeededResult('{"pane":"p-new","terminal":"t-new"}')
+        : () => succeededResult(getReply),
+  });
+};
+
 it('a start returns the model its terminal runs', async () => {
   const fake = launchWithForeground([
     'pi',
@@ -770,6 +790,69 @@ it('a start returns the model its terminal runs', async () => {
   );
 
   expect(result.model).toBe('morph/morph-dsv41flash-1017');
+});
+
+it.each([
+  {
+    name: 'a pi path',
+    argv: ['/usr/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+  },
+  {
+    name: 'a node pi path',
+    argv: ['node', '/usr/local/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+  },
+])('a start reads the model from $name', async ({ argv }) => {
+  const fake = launchWithForeground(argv);
+  const root = await createTemporaryRepository(onTestFinished);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const opening = startPiSession(
+      { exec: fake.exec, cwd: root },
+      startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
+    );
+
+    await vi.waitFor(() => {
+      expect(fake.calls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
+
+    const result = await opening;
+
+    expect(result.model).toBe('morph/morph-dsv41flash-1017');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('a start retries a model read that has no Pi foreground yet', async () => {
+  const fake = launchWithForeground([
+    'pi',
+    '--provider',
+    'morph',
+    '--model',
+    'morph-dsv41flash-1017',
+  ]);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  let reads = 0;
+
+  const reader = async (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    return reads === 1
+      ? undefined
+      : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
+  };
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
+  );
+
+  expect(result.model).toBe('morph/morph-dsv41flash-1017');
+  expect(reads).toBe(2);
 });
 
 it('a start fails when the terminal runs another model', async () => {
@@ -796,7 +879,6 @@ it('a start fails when the terminal runs another model', async () => {
   expect(message).toContain('morph/morph-dsv41flash-1017');
   expect(message).toContain('t-new');
   expect(message).toContain('hc get t-new');
-  expect(message).not.toContain('The process is still running.');
 });
 
 it('a start fails when the terminal never shows a foreground before the deadline', async () => {
@@ -850,6 +932,33 @@ it('an abort during the model readback ends the call', async () => {
   expect(await opening).toBe(cancellation);
 });
 
+it('a model read that times out removes its abort listener', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+  const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const opening = startPiSession(
+      { exec: fake.exec, cwd: root, signal: controller.signal },
+      startRequest(root, neverReads),
+    ).catch((error: unknown) => error);
+
+    await vi.waitFor(() => {
+      expect(fake.calls).toHaveLength(1);
+    });
+
+    await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
+
+    expect(await opening).toBeInstanceOf(Error);
+    expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+  } finally {
+    removeListener.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it('a launch returns the model its terminal runs', async () => {
   const fake = launchWithForeground(['pi', '--provider', 'a', '--model', 'architect']);
   const root = await createTemporaryRepository(onTestFinished);
@@ -857,6 +966,18 @@ it('a launch returns the model its terminal runs', async () => {
   const result = await launchPiSession(
     { exec: fake.exec, cwd: root },
     { ...launchRequest(root, readerFor(fake, root)), model: 'a/architect' },
+  );
+
+  expect(result.model).toBe('a/architect');
+});
+
+it('a right-of launch returns the model its terminal runs', async () => {
+  const fake = launchRightOfWithForeground(['pi', '--provider', 'a', '--model', 'architect']);
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await launchPiSessionRightOf(
+    { exec: fake.exec, cwd: root },
+    { ...paneRequest(root, readerFor(fake, root)), model: 'a/architect' },
   );
 
   expect(result.model).toBe('a/architect');

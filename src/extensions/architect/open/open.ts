@@ -213,12 +213,11 @@ const prepareArchitectStart = async (
 };
 
 const launchArchitect = (
-  hc: HcRuntime,
   request: OpenRequest,
   prepared: PreparedArchitectStart,
   fence: StartFence,
 ): Promise<PiLaunchResult> => {
-  const launchHc = { ...hc, signal: undefined };
+  const launchHc = { ...request.hc, signal: undefined };
 
   const start = {
     folder: request.root,
@@ -227,7 +226,7 @@ const launchArchitect = (
     session: prepared.session,
     bareRoot: prepared.bareRoot,
     environment: prepared.environment,
-    readForegroundArgv: (terminal: string) => foregroundArgv(hc, terminal),
+    readForegroundArgv: (terminal: string) => foregroundArgv(launchHc, terminal),
     argvWrapper: (argv: string[]): string[] => fence.wrapArgv(argv),
   };
 
@@ -472,7 +471,7 @@ export const openArchitect = async (
 
     throwIfOpenCancelled(request.hc.signal);
 
-    const started = await launchArchitect(request.hc, request, prepared, fence);
+    const started = await launchArchitect(request, prepared, fence);
 
     await applyLaunchOutcome(request, fence, started);
 

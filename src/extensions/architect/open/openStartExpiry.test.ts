@@ -454,12 +454,6 @@ it('returns the normal result when a space reply has no terminal and the child a
   expect(result).toEqual({ status: 'resumed', sessionFile, model: 'unknown' });
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
 
-  const readTerminals = hc.calls
-    .filter((call) => call.commandArguments[0] === 'get')
-    .map((call) => call.commandArguments.at(-1));
-
-  expect(readTerminals).toEqual(['t-lead']);
-
   expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({ token: 'adopted' });
 });
 

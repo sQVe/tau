@@ -15,9 +15,22 @@ export type StartedModelDecision =
   | { kind: 'unreadable' };
 
 const valueAfter = (argv: readonly string[], flag: string): string | undefined => {
+  const equalsPrefix = `${flag}=`;
+  const equalsArgument = argv.find((argument) => argument.startsWith(equalsPrefix));
+
+  if (equalsArgument !== undefined) {
+    return equalsArgument.slice(equalsPrefix.length);
+  }
+
   const index = argv.indexOf(flag);
 
-  return index === -1 ? undefined : argv[index + 1];
+  if (index === -1) {
+    return undefined;
+  }
+
+  const value = argv[index + 1];
+
+  return value === undefined || value.startsWith('-') ? undefined : value;
 };
 
 const startedReference = (argv: readonly string[]): RequestedModel => {
