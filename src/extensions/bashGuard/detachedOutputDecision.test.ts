@@ -126,6 +126,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: false,
   },
   {
+    name: 'a nested backgrounded group that inherits a discarded stderr',
+    command: '( ( cmd ) & ) >/dev/null 2>&1',
+    blocked: true,
+  },
+  {
     name: 'a |& pipeline discarding stderr',
     command: 'cmd 2>/dev/null |& cat &',
     blocked: false,

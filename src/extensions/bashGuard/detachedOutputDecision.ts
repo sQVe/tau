@@ -325,9 +325,9 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
 
   if (script !== undefined || command.group !== undefined) {
     const facts = compoundFacts(scope, index, 0);
-    const ownHidden = facts.ownDiscards && !facts.shows;
+    const hidden = discardsStderr(own) && !facts.shows;
 
-    return facts.discards || ownHidden;
+    return facts.discards || hidden;
   }
 
   return discardsStderr(own) && !showsStderr(own);
