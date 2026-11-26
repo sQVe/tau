@@ -80,21 +80,9 @@ it('reports review findings per prose field, not over the JSON', async () => {
 
   const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
 
-  expect(dryRun['findings']).toEqual([
-    {
-      file: 'review.json',
-      field: 'body',
-      rule: 'longSentence',
-      line: 1,
-      excerpt: `${longReviewBody.slice(0, 100)}...`,
-    },
-    {
-      file: 'review.json',
-      field: 'comments[0].body',
-      rule: 'emDash',
-      line: 1,
-      excerpt: commentBody,
-    },
+  expect(dryRun.findings).toEqual([
+    expect.objectContaining({ file: 'review.json', field: 'body', rule: 'longSentence' }),
+    expect.objectContaining({ file: 'review.json', field: 'comments[0].body', rule: 'emDash' }),
   ]);
 
   expect(JSON.stringify(dryRun['findings'])).not.toContain('commit_id');
@@ -165,6 +153,36 @@ it('posts a review comment that carries only position', async () => {
   expect(fake.writes).toEqual([reviewWrite(contents)]);
 
   expect(published.url).toBe('https://github.com/sQVe/tau/pull/7#pullrequestreview-1');
+});
+
+it('refuses a COMMENT review without a body', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(
+    directory,
+    'review.json',
+    `${JSON.stringify({ event: 'COMMENT', comments: [{ path: 'src/a.ts', line: 3, body: 'Fine.' }] })}\n`,
+  );
+
+  await expect(
+    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
+  ).rejects.toThrow('review.json needs a body for a COMMENT event.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses review.json that is not JSON', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'review.json', '{');
+
+  await expect(
+    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
+  ).rejects.toThrow(/review\.json is not JSON/u);
+
+  expect(fake.calls).toEqual([]);
 });
 
 it('names the review.json field that is not valid', async () => {

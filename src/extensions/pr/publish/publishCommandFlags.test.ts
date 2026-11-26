@@ -8,7 +8,9 @@ import {
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 import type { PrInput } from '../tool.js';
-import { booleanFlags, fileArgumentFlags, valueFlags } from './publishExecution.js';
+import { fileArgumentFlags, valueFlags } from './publishExecution.js';
+
+const booleanFlags: ReadonlySet<string> = new Set(['--draft']);
 
 const setUp = () => setUpPublication(onTestFinished);
 

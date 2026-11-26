@@ -33,7 +33,7 @@ const createTarget: PublicationTargetFacts = {
 
 const createToken = publicationToken(createTarget, files);
 
-const targetWithoutBase: PublicationTargetFacts = {
+const targetWithoutPrOrBase: PublicationTargetFacts = {
   kind: 'pullRequest',
   repository: 'github.com/sQVe/tau',
   directory: '/repo/.tau/pr/run-1',
@@ -41,9 +41,9 @@ const targetWithoutBase: PublicationTargetFacts = {
   draft: false,
 };
 
-const tokenWithoutBase = publicationToken(targetWithoutBase, files);
+const tokenWithoutPrOrBase = publicationToken(targetWithoutPrOrBase, files);
 
-const sentinelBaseTarget: PublicationTargetFacts = { ...targetWithoutBase, base: 'absent' };
+const sentinelBaseTarget: PublicationTargetFacts = { ...targetWithoutPrOrBase, base: 'absent' };
 const sentinelBaseToken = publicationToken(sentinelBaseTarget, files);
 
 const refusal = (reason: string): PublicationDecision => ({ kind: 'refuse', reason });
@@ -118,18 +118,18 @@ const table: {
     expected: { kind: 'publish' },
   },
   {
-    name: 'refuses a token for an empty base when the base is absent',
-    facts: { token: tokenWithoutBase, target: { ...targetWithoutBase, base: '' }, files },
+    name: 'refuses an absent-base token when the target base is empty',
+    facts: { token: tokenWithoutPrOrBase, target: { ...targetWithoutPrOrBase, base: '' }, files },
     expected: targetRefusal,
   },
   {
-    name: 'refuses a token for a base named absent when the base is absent',
-    facts: { token: tokenWithoutBase, target: sentinelBaseTarget, files },
+    name: 'refuses an absent-base token when the target base is the text absent',
+    facts: { token: tokenWithoutPrOrBase, target: sentinelBaseTarget, files },
     expected: targetRefusal,
   },
   {
-    name: 'refuses a token for an absent base when the base is named absent',
-    facts: { token: sentinelBaseToken, target: targetWithoutBase, files },
+    name: 'refuses a text-absent-base token when the target base is absent',
+    facts: { token: sentinelBaseToken, target: targetWithoutPrOrBase, files },
     expected: targetRefusal,
   },
   {

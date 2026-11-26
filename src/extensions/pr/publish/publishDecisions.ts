@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import type { PublicationKind } from './publishKind.js';
+
 export interface PublicationFile {
   file: string;
   bytes: Uint8Array;
@@ -8,7 +10,7 @@ export interface PublicationFile {
 // The facts that choose where a publication goes. Text that comes from a file, such as the title,
 // stays out so a changed file is named as the changed file.
 export interface PublicationTargetFacts {
-  kind: 'pullRequest' | 'comment' | 'review';
+  kind: PublicationKind;
   repository: string;
   directory: string;
   pr?: number;
@@ -25,7 +27,7 @@ export interface PublicationFacts {
 
 export type PublicationDecision = { kind: 'publish' } | { kind: 'refuse'; reason: string };
 
-const tokenVersion = 'v2';
+const tokenVersion = 'v1';
 const separator = ':';
 const unversionedToken = 'The token is not from dryRun. Nothing was published. Run dryRun again.';
 

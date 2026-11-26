@@ -33,8 +33,6 @@ export const valueFlags: ReadonlySet<string> = new Set([
   '--method',
 ]);
 
-export const booleanFlags: ReadonlySet<string> = new Set(['--draft']);
-
 // Rewrites every file argument to a unique copy below directory, so equal basenames cannot collide.
 export const verifiedCopyArguments = (
   commandArguments: readonly string[],

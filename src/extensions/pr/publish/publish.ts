@@ -425,6 +425,10 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
     throw new Error(`${reviewFileName} comments[${missingPosition}] needs line or position.`);
   }
 
+  if (review.event === 'COMMENT' && (review.body ?? '').trim() === '') {
+    throw new Error(`${reviewFileName} needs a body for a COMMENT event.`);
+  }
+
   const facts: PublicationTargetFacts = {
     kind: 'review',
     repository: repositoryTarget,
