@@ -28,7 +28,6 @@ interface Registration {
 interface SchemaChild {
   path: string;
   value: unknown;
-  closesNode: boolean;
 }
 
 // JSON Schema treats a node as an object when its type includes `object`, or when it declares
@@ -48,8 +47,8 @@ const isObjectNode = (value: Record<string, unknown>): boolean => {
 const isOpenObject = (value: Record<string, unknown>): boolean => {
   const additionalProperties = value['additionalProperties'];
 
-  const hasDefaultAdditionalProperties =
-    additionalProperties === undefined || additionalProperties === true;
+  // An explicit true is the tool author's opt-out, so production leaves it as written.
+  const hasDefaultAdditionalProperties = additionalProperties === undefined;
 
   return isObjectNode(value) && hasDefaultAdditionalProperties;
 };
@@ -59,8 +58,6 @@ const isOpenObject = (value: Record<string, unknown>): boolean => {
 const localMapKeywords: ReadonlySet<string> = new Set([
   '$defs',
   'definitions',
-  'dependencies',
-  'dependentSchemas',
   'patternProperties',
   'properties',
 ]);
@@ -86,6 +83,8 @@ const localValueKeywords: ReadonlySet<string> = new Set([
 // sibling declares.
 const localUnassertedKeywords: ReadonlySet<string> = new Set([
   'allOf',
+  'dependencies',
+  'dependentSchemas',
   'else',
   'if',
   'not',
@@ -102,40 +101,33 @@ const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChi
 
     if (localMapKeywords.has(key) && isRecord(child)) {
       for (const [name, entry] of Object.entries(child)) {
-        children.push({ path: `${path}/${key}/${name}`, value: entry, closesNode: true });
+        children.push({ path: `${path}/${key}/${name}`, value: entry });
       }
     } else if (localArrayKeywords.has(key) && Array.isArray(child)) {
       for (const [index, entry] of child.entries()) {
-        children.push({ path: `${path}/${key}/${index}`, value: entry, closesNode: true });
+        children.push({ path: `${path}/${key}/${index}`, value: entry });
       }
     } else if (localValueKeywords.has(key)) {
-      children.push({ path: `${path}/${key}`, value: child, closesNode: true });
+      children.push({ path: `${path}/${key}`, value: child });
     }
   }
 
   return children;
 };
 
-const objectProblems = (
-  toolName: string,
-  value: unknown,
-  path: string,
-  closesNode = true,
-): string[] => {
+const objectProblems = (toolName: string, value: unknown, path: string): string[] => {
   if (Array.isArray(value)) {
-    return value.flatMap((item, index) =>
-      objectProblems(toolName, item, `${path}/${index}`, closesNode),
-    );
+    return value.flatMap((item, index) => objectProblems(toolName, item, `${path}/${index}`));
   }
 
   if (!isRecord(value)) {
     return [];
   }
 
-  const own = closesNode && isOpenObject(value) ? [`${toolName} parameters${path}`] : [];
+  const own = isOpenObject(value) ? [`${toolName} parameters${path}`] : [];
 
   const nested = schemaChildren(value, path).flatMap((child) =>
-    objectProblems(toolName, child.value, child.path, child.closesNode),
+    objectProblems(toolName, child.value, child.path),
   );
 
   return [...own, ...nested];
@@ -281,7 +273,7 @@ it('reports a loose nested object with its tool and path', () => {
     type: 'object',
     additionalProperties: false,
     properties: {
-      outer: { type: 'object', additionalProperties: true },
+      outer: { type: 'object' },
       schemaValue: { type: 'object', additionalProperties: { type: 'string' } },
     },
   };
@@ -291,7 +283,7 @@ it('reports a loose nested object with its tool and path', () => {
 
 it.each([
   { name: 'an undefined additionalProperties', additionalProperties: undefined, problem: true },
-  { name: 'a true additionalProperties', additionalProperties: true, problem: true },
+  { name: 'a true additionalProperties', additionalProperties: true, problem: false },
   { name: 'a false additionalProperties', additionalProperties: false, problem: false },
   {
     name: 'a schema-valued additionalProperties',

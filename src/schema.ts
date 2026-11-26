@@ -12,12 +12,6 @@ export interface KnownKeys {
 
 export type AskKind = 'choice' | 'approval';
 
-// Whether this node gets additionalProperties: false, and whether the nodes below it are asserted.
-interface SchemaStrictness {
-  readonly closeNode: boolean;
-  readonly closeDescendants: boolean;
-}
-
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -46,14 +40,14 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // narrows the negation or condition instead, so closing anything inside it would accept inputs the
 // tool rejects. A subschema under `then`, `else`, or `allOf` combines with sibling schemas, so
 // closing anything below it could reject an argument the tool declares; the whole subtree stays as
-// written. Add a keyword to one of these sets when a tool schema can hold a subschema under it. A
-// subschema under a keyword outside these sets stays as written, so an object there keeps its keys
-// open.
+// written. The schema form of `dependencies` and `dependentSchemas` applies to the whole instance
+// when a named property is present, like a conditional `allOf`, so they stay as written too. Add a
+// keyword to one of these sets when a tool schema can hold a subschema under it. A subschema under
+// a keyword outside these sets stays as written, so an object there keeps its keys open. An
+// explicit additionalProperties: true stays, so a tool author can opt out of closing an object.
 export const schemaMapKeywords: ReadonlySet<string> = new Set([
   '$defs',
   'definitions',
-  'dependencies',
-  'dependentSchemas',
   'patternProperties',
   'properties',
 ]);
@@ -82,22 +76,17 @@ export const schemaValueKeywords: ReadonlySet<string> = new Set([
 // A subschema under one of these keywords narrows the instance instead of asserting it, or combines
 // with sibling schemas. Closing any object below one of them could accept an input the negation or
 // condition rejects, or reject a value a sibling declares, so the whole subtree stays as written.
+// The schema form of `dependencies` and `dependentSchemas` combines with the whole instance, so its
+// subschemas stay open as well.
 export const schemaUnassertedKeywords: ReadonlySet<string> = new Set([
   'allOf',
+  'dependencies',
+  'dependentSchemas',
   'else',
   'if',
   'not',
   'then',
 ]);
-
-const assertedStrictness: SchemaStrictness = { closeNode: true, closeDescendants: true };
-const unassertedStrictness: SchemaStrictness = { closeNode: false, closeDescendants: false };
-
-// The nodes below an asserted node are asserted again, whatever kept this node open.
-const descendantStrictness = (strictness: SchemaStrictness): SchemaStrictness => ({
-  closeNode: strictness.closeDescendants,
-  closeDescendants: strictness.closeDescendants,
-});
 
 const declaresObject = (value: Record<string, unknown>): boolean => {
   const type = value['type'];
@@ -117,18 +106,17 @@ const declaresObject = (value: Record<string, unknown>): boolean => {
 
 const strictSchemaMap = (
   value: unknown,
-  strictness: SchemaStrictness,
-  visit: (child: unknown, strictness: SchemaStrictness) => unknown,
+  asserted: boolean,
+  visit: (child: unknown, asserted: boolean) => unknown,
 ): unknown => {
   if (!isRecord(value)) {
     return value;
   }
 
   const clone: Record<PropertyKey, unknown> = { ...value };
-  const nested = descendantStrictness(strictness);
 
   for (const key of Object.keys(value)) {
-    clone[key] = visit(value[key], nested);
+    clone[key] = visit(value[key], asserted);
   }
 
   return clone;
@@ -137,33 +125,31 @@ const strictSchemaMap = (
 const strictSchemaChild = (
   key: string,
   child: unknown,
-  strictness: SchemaStrictness,
-  visit: (value: unknown, strictness: SchemaStrictness) => unknown,
+  asserted: boolean,
+  visit: (value: unknown, asserted: boolean) => unknown,
 ): unknown => {
   if (schemaUnassertedKeywords.has(key)) {
-    return visit(child, unassertedStrictness);
+    return visit(child, false);
   }
 
   if (schemaMapKeywords.has(key)) {
-    return strictSchemaMap(child, strictness, visit);
+    return strictSchemaMap(child, asserted, visit);
   }
 
   if (schemaArrayKeywords.has(key)) {
-    const nested = descendantStrictness(strictness);
-
-    return Array.isArray(child) ? child.map((entry) => visit(entry, nested)) : child;
+    return Array.isArray(child) ? child.map((entry) => visit(entry, asserted)) : child;
   }
 
   if (schemaValueKeywords.has(key)) {
-    return visit(child, descendantStrictness(strictness));
+    return visit(child, asserted);
   }
 
   return child;
 };
 
-const strictSchemaValue = (value: unknown, strictness = assertedStrictness): unknown => {
+const strictSchemaValue = (value: unknown, asserted = true): unknown => {
   if (Array.isArray(value)) {
-    return value.map((item) => strictSchemaValue(item, strictness));
+    return value.map((item) => strictSchemaValue(item, asserted));
   }
 
   if (!isRecord(value)) {
@@ -173,13 +159,13 @@ const strictSchemaValue = (value: unknown, strictness = assertedStrictness): unk
   const clone: Record<PropertyKey, unknown> = { ...value };
 
   for (const key of Object.keys(value)) {
-    clone[key] = strictSchemaChild(key, value[key], strictness, strictSchemaValue);
+    clone[key] = strictSchemaChild(key, value[key], asserted, strictSchemaValue);
   }
 
-  if (strictness.closeNode && declaresObject(value)) {
+  if (asserted && declaresObject(value)) {
     const additionalProperties = value['additionalProperties'];
 
-    if (additionalProperties === undefined || additionalProperties === true) {
+    if (additionalProperties === undefined) {
       clone['additionalProperties'] = false;
     }
   }
@@ -215,9 +201,11 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
     throw new Error(notWritableMessage, { cause: error });
   }
 
-  const installed: unknown = Object.getOwnPropertyDescriptor(pi, 'registerTool')?.value;
+  const descriptor = Object.getOwnPropertyDescriptor(pi, 'registerTool');
+  const installed: unknown = descriptor?.value;
+  const readBack: unknown = descriptor?.get?.call(pi);
 
-  if (installed !== wrapper) {
+  if (installed !== wrapper && readBack !== wrapper) {
     throw new Error(notWritableMessage);
   }
 

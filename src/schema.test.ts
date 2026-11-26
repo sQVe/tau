@@ -1,5 +1,3 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import type { TSchema } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { expect, it } from 'vitest';
@@ -16,7 +14,6 @@ import {
   schemaUnassertedKeywords,
   schemaValueKeywords,
   strictToolParameters,
-  strictToolRegistration,
   stringEnum,
   unreportedKeys,
 } from './schema.js';
@@ -149,6 +146,51 @@ it('leaves an existing false additionalProperties alone', () => {
 
   expect(strictToolParameters(schema)).toMatchObject({ additionalProperties: false });
 });
+
+it('keeps an explicit additionalProperties: true as the tool author wrote it', () => {
+  const schema = Type.Unsafe<unknown>({
+    type: 'object',
+    properties: { value: { type: 'string' } },
+    additionalProperties: true,
+  });
+
+  const strict = strictToolParameters(schema);
+
+  expect(strict).toMatchObject({ additionalProperties: true });
+  expect(Value.Check(strict, { value: 'a', extra: 1 })).toBe(true);
+});
+
+it.each([
+  {
+    name: 'dependentSchemas',
+    keyword: 'dependentSchemas',
+    dependent: {
+      properties: { billing_address: { type: 'string' } },
+      required: ['billing_address'],
+    },
+  },
+  {
+    name: 'the schema form of dependencies',
+    keyword: 'dependencies',
+    dependent: {
+      properties: { billing_address: { type: 'string' } },
+      required: ['billing_address'],
+    },
+  },
+])(
+  'keeps a subschema under $name open to the properties the enclosing schema declares',
+  ({ keyword, dependent }) => {
+    const schema = {
+      type: 'object',
+      properties: { credit_card: { type: 'string' }, billing_address: { type: 'string' } },
+      [keyword]: { credit_card: dependent },
+    };
+
+    const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+    expect(Value.Check(strict, { credit_card: 'x', billing_address: 'y' })).toBe(true);
+  },
+);
 
 it('closes an object schema whose type list includes object', () => {
   const schema = { type: ['object', 'null'], properties: { value: { type: 'string' } } };
@@ -319,126 +361,7 @@ it('leaves a nested object under not open', () => {
   });
 });
 
-const registrationApi = (registerTool: (tool: unknown) => unknown): ExtensionAPI =>
-  ({ registerTool }) as unknown as ExtensionAPI;
-
-const registerThrough = (api: ExtensionAPI, parameters: TSchema): unknown => {
-  const register = api.registerTool as unknown as (tool: unknown) => unknown;
-
-  return register({ name: 'sample', parameters });
-};
-
-it('closes the parameters of a tool registered through the wrapped API', () => {
-  const registered: unknown[] = [];
-  const api = registrationApi((tool) => registered.push(tool));
-
-  strictToolRegistration(api);
-  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
-
-  expect(registered).toMatchObject([
-    {
-      name: 'sample',
-      parameters: {
-        additionalProperties: false,
-        properties: { nested: { additionalProperties: false } },
-      },
-    },
-  ]);
-});
-
-it('installs the wrapper once per API', () => {
-  const registered: unknown[] = [];
-  const api = registrationApi((tool) => registered.push(tool));
-
-  strictToolRegistration(api);
-  const wrapper = api.registerTool;
-
-  strictToolRegistration(api);
-
-  registerThrough(api, Type.Object({}));
-
-  expect(api.registerTool).toBe(wrapper);
-  expect(registered).toHaveLength(1);
-});
-
-it('installs through an API that intercepts reads of registerTool', () => {
-  const registered: unknown[] = [];
-  const target = registrationApi((tool) => registered.push(tool));
-
-  const api = new Proxy(target, {
-    get: (value, key) => {
-      const properties = value as unknown as Record<PropertyKey, unknown>;
-      const property = properties[key];
-
-      if (key !== 'registerTool' || typeof property !== 'function') {
-        return property;
-      }
-
-      const registerTool = property as (tool: unknown) => unknown;
-
-      return (tool: unknown) => registerTool(tool);
-    },
-  });
-
-  strictToolRegistration(api);
-  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
-
-  expect(registered).toMatchObject([
-    {
-      name: 'sample',
-      parameters: {
-        additionalProperties: false,
-        properties: { nested: { additionalProperties: false } },
-      },
-    },
-  ]);
-});
-
-it('keeps the value the wrapped registration returns', () => {
-  const api = registrationApi(() => 'registered');
-
-  strictToolRegistration(api);
-
-  expect(registerThrough(api, Type.Object({}))).toBe('registered');
-});
-
-it('reports a clear error when registerTool is not a function', () => {
-  const api = {} as unknown as ExtensionAPI;
-
-  expect(() => {
-    strictToolRegistration(api);
-  }).toThrow('Cannot install strict tool parameters: registerTool is not a function.');
-});
-
-it('reports a clear error when registerTool cannot be replaced', () => {
-  const api = registrationApi(() => undefined);
-
-  Object.defineProperty(api, 'registerTool', { configurable: false, writable: false });
-
-  expect(() => {
-    strictToolRegistration(api);
-  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
-});
-
-it('reports a clear error when registerTool ignores the replacement', () => {
-  const api = new Proxy(
-    registrationApi(() => undefined),
-    { set: () => true },
-  );
-
-  expect(() => {
-    strictToolRegistration(api);
-  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
-});
-
-const expectedSchemaMapKeywords = [
-  '$defs',
-  'definitions',
-  'dependencies',
-  'dependentSchemas',
-  'patternProperties',
-  'properties',
-];
+const expectedSchemaMapKeywords = ['$defs', 'definitions', 'patternProperties', 'properties'];
 
 const expectedSchemaArrayKeywords = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
 
@@ -462,7 +385,15 @@ it('pins the subschema keyword sets', () => {
   expect([...schemaArrayKeywords].toSorted()).toEqual(expectedSchemaArrayKeywords);
   expect([...schemaValueKeywords].toSorted()).toEqual(expectedSchemaValueKeywords);
 
-  expect([...schemaUnassertedKeywords].toSorted()).toEqual(['allOf', 'else', 'if', 'not', 'then']);
+  expect([...schemaUnassertedKeywords].toSorted()).toEqual([
+    'allOf',
+    'dependencies',
+    'dependentSchemas',
+    'else',
+    'if',
+    'not',
+    'then',
+  ]);
 });
 
 it('closes an object schema under every asserted subschema keyword in the sets', () => {
