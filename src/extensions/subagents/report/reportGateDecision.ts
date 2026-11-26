@@ -66,8 +66,32 @@ const selectNewestLogRecord = (
     (log): log is ValidSavedLog => isValidLog(log) && sameTree(facts.tree, log),
   );
 
+const pathCharacter = /[A-Za-z0-9._/-]/;
+
+const continuesPath = (character: string | undefined): boolean =>
+  character !== undefined && pathCharacter.test(character);
+
+// A citation is the log path itself, not a path that merely contains it, so a copy such as
+// `<log>.bak` does not stand for the log.
+const citesPath = (text: string, logPath: string): boolean => {
+  let start = text.indexOf(logPath);
+
+  while (start !== -1) {
+    const end = start + logPath.length;
+    const standsAlone = !continuesPath(text[start - 1]) && !continuesPath(text[end]);
+
+    if (standsAlone) {
+      return true;
+    }
+
+    start = text.indexOf(logPath, start + 1);
+  }
+
+  return false;
+};
+
 const citesLogPath = (summary: string, evidence: readonly string[], logPath: string): boolean =>
-  summary.includes(logPath) || evidence.some((item) => item.includes(logPath));
+  citesPath(summary, logPath) || evidence.some((item) => citesPath(item, logPath));
 
 export const decideReportGate = (facts: ReportGateFacts): ReportGateDecision => {
   if (facts.role !== 'editing') {

@@ -32,6 +32,19 @@ const citedInSummaryOnly = {
   evidence: ['a reference'],
 };
 
+const citedAsCopy = {
+  summary: 'Done.\n\nEvidence: a reference',
+  evidence: [`${logPath}.bak`],
+};
+
+const citedAsCopyInSummary = {
+  summary: `Done.\n\nEvidence: ${logPath}.bak`,
+  evidence: ['a reference'],
+};
+
+const noCitationMessage =
+  'Report refused: the report does not cite the full check log for the current tree. Add its log path to evidence or summary, then report.';
+
 const noRecordMessage =
   'Report refused: no full check record for the current tree and command. Run full_check on the final tree, then report.';
 
@@ -140,10 +153,44 @@ it.each([
     savedRecords: [savedLog(false)],
     configuredArgv: argv,
     citation: cited(false),
+    expected: { status: 'refuse', message: noCitationMessage },
+  },
+  {
+    name: 'a declared record cited only as a copy in evidence refuses',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true)],
+    configuredArgv: argv,
+    citation: citedAsCopy,
+    expected: { status: 'refuse', message: noCitationMessage },
+  },
+  {
+    name: 'a declared record cited only as a copy in the summary refuses',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true)],
+    configuredArgv: argv,
+    citation: citedAsCopyInSummary,
+    expected: { status: 'refuse', message: noCitationMessage },
+  },
+  {
+    name: 'a declared record cited in one of several evidence items accepts',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true)],
+    configuredArgv: argv,
+    citation: { summary: 'Done.', evidence: ['a reference', logPath, 'another reference'] },
     expected: {
-      status: 'refuse',
-      message:
-        'Report refused: the report does not cite the full check log for the current tree. Add its log path to evidence or summary, then report.',
+      status: 'accept',
+      fullCheck: { owner: declaredFullCheck.owner, logPath, passed: true },
+    },
+  },
+  {
+    name: 'a declared record cited with trailing punctuation accepts',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true)],
+    configuredArgv: argv,
+    citation: { summary: `Done. See ${logPath}, then report.`, evidence: ['a reference'] },
+    expected: {
+      status: 'accept',
+      fullCheck: { owner: declaredFullCheck.owner, logPath, passed: true },
     },
   },
   {
