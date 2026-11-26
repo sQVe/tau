@@ -55,9 +55,9 @@ interface PositionalSkip {
 }
 
 interface WrapperScan {
-  // The shell code of every command option, in source order.
+  // The shell code of every command option seen, in source order.
   codes: string[];
-  // Where the wrapped command word starts, when the wrapper runs one.
+  // Where the wrapped command word starts, when a command follows.
   commandIndex: number | undefined;
 }
 
@@ -65,13 +65,6 @@ type WrapperStep =
   | { kind: 'code'; code: string; next: number }
   | { kind: 'skip'; next: number }
   | { kind: 'command' };
-
-interface WrapperChain {
-  // The shell code of every command option seen along the chain, in source order.
-  codes: string[];
-  // Where the wrapped command word starts, when the chain ends at a command.
-  commandIndex: number | undefined;
-}
 
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
@@ -582,7 +575,7 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
   return { codes, commandIndex: undefined };
 };
 
-const walkWrappers = (words: string[]): WrapperChain => {
+const walkWrappers = (words: string[]): WrapperScan => {
   let index = 0;
 
   while (index < words.length) {
@@ -616,8 +609,6 @@ const walkWrappers = (words: string[]): WrapperChain => {
   return { codes: [], commandIndex: undefined };
 };
 
-const wrapperCodes = (words: string[]): string[] => walkWrappers(words).codes;
-
 const commandWordIndex = (words: string[]): number | undefined => walkWrappers(words).commandIndex;
 
 const commandWord = ({ arguments: words }: ShellCommand): string | undefined => {
@@ -629,25 +620,23 @@ const commandWord = ({ arguments: words }: ShellCommand): string | undefined => 
 // An interpreter runs a file or inline code only from the executable position, so data such as
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
-  const codes = wrapperCodes(command.arguments);
+  const { codes, commandIndex } = walkWrappers(command.arguments);
 
   if (codes.length > 0) {
     return { files: [], code: codes };
   }
 
-  const index = commandWordIndex(command.arguments);
-
-  if (index === undefined) {
+  if (commandIndex === undefined) {
     return { files: [], code: [] };
   }
 
-  const word = command.arguments[index];
+  const word = command.arguments[commandIndex];
 
   if (word === undefined || !isInterpreter(word)) {
     return { files: [], code: [] };
   }
 
-  const mode = shellMode(command.arguments.slice(index + 1));
+  const mode = shellMode(command.arguments.slice(commandIndex + 1));
   const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
