@@ -317,14 +317,14 @@ class ShellParser {
       this.finishWord(state, true);
       const redirection = this.readRedirection();
 
+      if (state.pendingRedirection !== undefined) {
+        state.redirectionDescriptor = undefined;
+      }
+
       if (redirection.kind === 'heredoc') {
         state.heredocOperator = redirection;
         state.pendingRedirection = undefined;
       } else {
-        if (state.pendingRedirection !== undefined) {
-          state.redirectionDescriptor = undefined;
-        }
-
         state.pendingRedirection = redirection;
       }
     } else if (character === '&' && next === '>') {

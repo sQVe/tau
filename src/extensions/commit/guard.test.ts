@@ -1004,6 +1004,15 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('sh tool.sh'), directory);
   });
 
+  it('resolves a relative PATH entry against a command directory after a cd', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'sub/bin/tool.sh', 'git commit -m x\n');
+    withExactPath('bin');
+
+    expectOutcome(makeBashEvent('cd sub && sh tool.sh'), directory);
+  });
+
   it('blocks a script after a positional that looks like an assignment', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 

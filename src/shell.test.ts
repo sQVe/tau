@@ -114,6 +114,16 @@ describe('parseShellCommands', () => {
     ['sh 3< commit.sh 2>&3', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
     ['sh 3< commit.sh >&2', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
     ['sh 0< >&1', [[]]],
+    ['sh 0< <<EOF\nbody\nEOF', [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
+    [
+      'sh 3<<EOF < commit.sh\nbody\nEOF',
+      [
+        [
+          { descriptor: '3', kind: 'heredoc', target: '' },
+          { descriptor: undefined, kind: 'file', target: 'commit.sh' },
+        ],
+      ],
+    ],
     [
       'sh <&3<&4',
       [
