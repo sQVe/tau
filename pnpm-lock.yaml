@@ -119,8 +119,8 @@ importers:
         specifier: 0.9.12
         version: 0.9.12
       cc-safety-net:
-        specifier: 2.4.1
-        version: 2.4.1
+        specifier: 2.8.2
+        version: 2.8.2
       entities:
         specifier: 9.0.0
         version: 9.0.0
@@ -2181,14 +2181,17 @@ packages:
   caniuse-lite@1.0.30001826:
     resolution: {integrity: sha512-wTB+9tIbLro/BCXwLuNV1meHE4L9dS6dArMDwgYfNBPMYScqClHyGunhkCSDtHhe/69Xl0sHlKgBVZ+fNsYtWA==}
 
-  cc-safety-net@2.4.1:
-    resolution: {integrity: sha512-kZMPptnLcW8rhKviZDhKaLjA1PJ9zDkA1bpRQMFm2oyJ52A19IjJsB1DtNnrqwEbdh5sIpUrzczYd+DhEyk9RA==}
-    engines: {node: '>=18'}
+  cc-safety-net@2.8.2:
+    resolution: {integrity: sha512-O6SYf5oOdhiJrHj6SdTbbuvkaZuNAoBA5f8X8sX2ufJrGiBgPhucRTVA/j4tUw7z0fxCkbXBtyf3pSg+cPgKxA==}
+    engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
-      '@opencode-ai/plugin': ^1.18.3
+      '@opencode-ai/plugin': ^1.18.29
+      '@opencode/plugin': ^2.0.6
     peerDependenciesMeta:
       '@opencode-ai/plugin':
+        optional: true
+      '@opencode/plugin':
         optional: true
 
   chai@6.3.0:
@@ -5850,7 +5853,7 @@ snapshots:
 
   caniuse-lite@1.0.30001826: {}
 
-  cc-safety-net@2.4.1: {}
+  cc-safety-net@2.8.2: {}
 
   chai@6.3.0: {}
 
