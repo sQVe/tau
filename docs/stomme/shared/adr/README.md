@@ -53,6 +53,7 @@ row.
 
 - [0007: Test placement, names, and fakes](./0007-test-placement-and-fakes.md)
 - [0009: Advisory mutation testing and size as a review signal](./0009-advisory-review-signals.md)
+- [0011: A weakened-test ratchet against the target branch](./0011-weakened-test-ratchet.md)
 
 ## Retired
 

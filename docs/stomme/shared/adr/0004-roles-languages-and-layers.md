@@ -30,11 +30,13 @@ to one path in the `[roles]` table of `stomme.toml`. A project may have any subs
 says whether it has an app, a command line tool, both, or neither.
 
 - `core` holds the domain: its types, rules, and the I/O that every entry point shares. It depends on
-  no other role.
-- `ui` holds the project's views and UI state.
-- `kit` holds reusable UI building blocks with no domain logic, such as wrapped components.
-- `app` is the graphical entry point. It wires effects and owns the app's lifetime.
-- `cli` is the command line entry point. It depends on `core` and on no UI role.
+  no other role. <!-- role:core -->
+- `ui` holds the project's views and UI state. <!-- role:ui -->
+- `kit` holds reusable UI building blocks with no domain logic, such as wrapped
+  components. <!-- role:kit -->
+- `app` is the graphical entry point. It wires effects and owns the app's
+  lifetime. <!-- role:app -->
+- `cli` is the command line entry point. It depends on `core` and on no UI role. <!-- role:cli -->
 
 Code uses a role's name in the language's normal case. A project names the capability modules inside
 a role itself, as [ADR 0002](./0002-capability-modules.md) says. The role list is closed, so a shared

@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   sync:
-    uses: sQVe/stomme/.github/workflows/sync-update.yml@536b16723c33f806f019bf43655109d7dac59a95 # v0.2.2
+    uses: sQVe/stomme/.github/workflows/sync-update.yml@bc077c19d6b378f7d4867037fc4696fcb8fc13dc # v0.2.5
     secrets:
       app-id: ${{ secrets.STOMME_APP_ID }}
       app-private-key: ${{ secrets.STOMME_APP_PRIVATE_KEY }}
