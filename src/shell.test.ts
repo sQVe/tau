@@ -128,6 +128,13 @@ describe('parseShellCommands', () => {
     ],
     ['an if compound with a trailing ampersand', 'if a; then b; fi &', [true, true, true]],
     ['a brace compound with a trailing ampersand', '{ a; } &', [true, true]],
+    ['a negated brace compound with a trailing ampersand', '! { a; } &', [true, true]],
+    ['a timed brace compound with a trailing ampersand', 'time { a; } &', [true, true]],
+    [
+      'a heredoc body read after its owner is backgrounded',
+      'cat <<EOF &\n$(grep x 2>/dev/null)\nEOF',
+      [true, true],
+    ],
     ['a background inside an if compound', 'if a; then b & fi', [false, true, false]],
     [
       'a command before an if compound with a trailing ampersand',
@@ -560,6 +567,13 @@ describe('commandWords and shellScriptOf', () => {
     expect(shellScriptOf(['flock', '/tmp/lock', '-w', '5', '-c', 'cmd 2>/dev/null'])).toBe(
       'cmd 2>/dev/null',
     );
+  });
+
+  it('reads the command flock runs after the lock file and its other options', () => {
+    const words = ['flock', '/tmp/lock', '-w', '5', 'sh', '-c', 'cmd 2>/dev/null'];
+
+    expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd 2>/dev/null']);
+    expect(shellScriptOf(words)).toBe('cmd 2>/dev/null');
   });
 
   it.each(['constructor', 'toString', '__proto__'])(

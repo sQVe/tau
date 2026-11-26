@@ -200,6 +200,23 @@ const optionEnd = (
   return index;
 };
 
+// A wrapper's options may sit before or after its fixed operands, as in
+// `flock /tmp/lock -w 5 sh -c ...`. The command it runs starts after both.
+const afterWrapper = (
+  words: readonly string[],
+  index: number,
+  valueOptions: ReadonlySet<string>,
+  fixedArguments: number,
+): number => {
+  const afterOptions = optionEnd(words, index + 1, valueOptions);
+
+  if (fixedArguments === 0) {
+    return afterOptions;
+  }
+
+  return optionEnd(words, afterOptions + fixedArguments, valueOptions);
+};
+
 // Walks the leading assignments, keywords, and wrappers to the command they run.
 const commandStart = (words: readonly string[]): CommandStart => {
   const wrappers: { name: string; index: number }[] = [];
@@ -224,7 +241,7 @@ const commandStart = (words: readonly string[]): CommandStart => {
 
       lookup ||= name === 'command' && options.some((option) => lookupOptionPattern.test(option));
       wrappers.push({ name, index });
-      index = afterOptions + (wrapperArguments[name] ?? 0);
+      index = afterWrapper(words, index, valueOptions, wrapperArguments[name] ?? 0);
     }
   }
 
@@ -343,6 +360,39 @@ const compoundClosers: Readonly<Record<string, string>> = {
 };
 
 const closingKeywords: ReadonlySet<string> = new Set(['}', 'done', 'esac', 'fi']);
+
+// The first compound word a command runs, after its leading keywords and wrappers. A reserved word
+// such as `!` or a wrapper such as `time` can sit before the compound opener.
+const compoundWordAt = (words: readonly string[]): { index: number; word: string } | undefined => {
+  let index = 0;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+    const name = commandNameOf(word);
+
+    if (Object.hasOwn(compoundClosers, word) || closingKeywords.has(word)) {
+      return { index, word };
+    }
+
+    if (commandKeywords.has(word) || assignmentPattern.test(word)) {
+      index += 1;
+
+      continue;
+    }
+
+    const valueOptions = Object.hasOwn(wrapperValueOptions, name)
+      ? wrapperValueOptions[name]
+      : undefined;
+
+    if (valueOptions === undefined) {
+      return undefined;
+    }
+
+    index = afterWrapper(words, index, valueOptions, wrapperArguments[name] ?? 0);
+  }
+
+  return undefined;
+};
 
 const isBackgroundSeparator = (character: string, length: number): boolean =>
   character === '&' && length === 1;
@@ -737,10 +787,12 @@ class ShellParser {
       state.command.words.push(word);
 
       if (!isIoNumber(word, wordQuoted, redirectionFollows) && !redirectionTarget) {
+        const wordIndex = state.command.arguments.length;
+
         state.command.arguments.push(word);
 
-        if (state.command.arguments.length === 1 && !wordQuoted) {
-          this.trackCompound(state, word);
+        if (!wordQuoted) {
+          this.trackCompound(state, word, wordIndex);
         }
       }
 
@@ -771,7 +823,13 @@ class ShellParser {
   // closer backgrounds the whole compound instead of only the closer's command. Closing the
   // compound restores the unit start it opened in, because a separator inside it moved the unit
   // start forward.
-  private trackCompound(state: ListState, word: string): void {
+  private trackCompound(state: ListState, word: string, wordIndex: number): void {
+    const leading = compoundWordAt(state.command.arguments);
+
+    if (leading === undefined || leading.index !== wordIndex || leading.word !== word) {
+      return;
+    }
+
     const start = this.commands.indexOf(state.command);
     const closer = Object.hasOwn(compoundClosers, word) ? compoundClosers[word] : undefined;
 
@@ -1005,6 +1063,7 @@ class ShellParser {
         for (const command of bodyParser.commands) {
           this.offsetCommand(command, base);
           this.heredocOwners.set(command, heredoc.command);
+          command.background ||= heredoc.command.background;
         }
 
         this.commands.push(...bodyParser.commands);
