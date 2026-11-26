@@ -326,7 +326,12 @@ const hasGitEntry = (root: string): Promise<boolean> =>
 // A `.git` entry can name a path Git cannot resolve, so a folder counts as a checkout only when
 // Git resolves a repository there.
 export const isGitRepository = async (folder: string): Promise<boolean> => {
-  const result = await runGit(folder, ['rev-parse', '--git-dir'], { timeoutMilliseconds: 5000 });
+  const commandArguments = ['rev-parse', '--git-dir'];
+  const result = await runGit(folder, commandArguments, { timeoutMilliseconds: 5000 });
+
+  if (result.exitCode === null) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+  }
 
   return result.exitCode === 0;
 };
