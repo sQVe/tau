@@ -3,12 +3,16 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { JsonReporter } from 'vitest/node';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
 import { runTests } from '../fixtures/vitestRunner.js';
 import { extractBinPath } from './resolution.js';
 import { defaultDeps } from './vitest.js';
+import reportReporter from './vitestReportReporter.js';
+
+type ReporterEntry = 'vitest/node' | 'vitest/reporters';
 
 const verificationArgv = defaultTddConfig.verificationArgv;
 
@@ -35,10 +39,14 @@ const manifestVersion = (manifest: unknown): string => {
   return version;
 };
 
-// The installed Vitest binary, described by a package whose exports omit "./reporters", stands in
-// for a project that pins a Vitest release without that entry, such as Vitest 5. Its "./node" entry
-// re-exports the installed JSON reporter, so the run writes a real report.
-const createProjectWithoutReportersEntry = async () => {
+const jsonReporterReexport = () =>
+  `export { JsonReporter } from ${JSON.stringify(join(installedDirectory, 'dist', 'reporters.js'))};\n`;
+
+// The installed Vitest binary behind a package that exports the JSON reporter from one entry stands
+// in for a project that pins another Vitest release: Vitest 5 exports it from "vitest/node" only,
+// and Vitest 4.0 from "vitest/reporters" only. The "./node" entry of the 4.0 shape has no
+// JsonReporter, as in that release.
+const createProjectExportingReporterFrom = async (entry: ReporterEntry) => {
   const cwd = temporaryDirectory(onTestFinished, 'tau-report-reporter-');
   const packageDirectory = join(cwd, 'node_modules', 'vitest');
   const manifest = await installedManifest();
@@ -47,6 +55,13 @@ const createProjectWithoutReportersEntry = async () => {
   if (binary === null) {
     throw new TypeError('The installed Vitest manifest has no bin entry.');
   }
+
+  const exports = {
+    '.': './index.js',
+    './node': './node.js',
+    './package.json': './package.json',
+    ...(entry === 'vitest/reporters' ? { './reporters': './reporters.js' } : {}),
+  };
 
   await mkdir(packageDirectory, { recursive: true });
 
@@ -57,21 +72,20 @@ const createProjectWithoutReportersEntry = async () => {
       version: manifestVersion(manifest),
       type: 'module',
       bin: { vitest: './vitest.mjs' },
-      exports: {
-        '.': './index.js',
-        './node': './node.js',
-        './package.json': './package.json',
-      },
+      exports,
     }),
   );
 
   await symlink(join(installedDirectory, binary), join(packageDirectory, 'vitest.mjs'));
   await writeFile(join(packageDirectory, 'index.js'), 'export {};\n');
 
-  await writeFile(
-    join(packageDirectory, 'node.js'),
-    `export { JsonReporter } from ${JSON.stringify(join(installedDirectory, 'dist', 'reporters.js'))};\n`,
-  );
+  const nodeEntry = entry === 'vitest/node' ? jsonReporterReexport() : 'export {};\n';
+
+  await writeFile(join(packageDirectory, 'node.js'), nodeEntry);
+
+  if (entry === 'vitest/reporters') {
+    await writeFile(join(packageDirectory, 'reporters.js'), jsonReporterReexport());
+  }
 
   await writeFile(join(cwd, 'vitest.config.mjs'), 'export default { test: { globals: true } };\n');
 
@@ -89,11 +103,15 @@ describe('report reporter', () => {
     vi.unstubAllEnvs();
   });
 
-  it(
-    'records observations where the project Vitest package exports no reporters entry',
+  it('exports the JSON reporter of the Vitest installed for the working directory', () => {
+    expect(reportReporter).toBe(JsonReporter);
+  });
+
+  it.for([{ entry: 'vitest/node' as const }, { entry: 'vitest/reporters' as const }])(
+    'records observations in a project whose Vitest exports the reporter from $entry',
     { timeout: 30_000 },
-    async () => {
-      const cwd = await createProjectWithoutReportersEntry();
+    async ({ entry }) => {
+      const cwd = await createProjectExportingReporterFrom(entry);
 
       const result = await runTests(
         { scope: 'full', verificationArgv, cwd },
