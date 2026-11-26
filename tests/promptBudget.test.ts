@@ -42,7 +42,8 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 
 // Each ceiling caps a session at its larger measured size, the empty folder or the adopted project.
 // The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
-// ceiling. Each ceiling follows the CI reading, which can differ from a local run.
+// ceiling. The lead and architect ceilings are set from the CI reading, which has run higher than a
+// local run. Other entries say how they were measured.
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 68_938, // target 38,000
   architect: 63_259, // measured locally; lower CI readings are the local-versus-CI difference
