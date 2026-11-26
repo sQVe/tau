@@ -46,8 +46,9 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // prompt text the base branch adds after the branch's last merge; measure that merge before lowering
 // one. That is why a local reading can sit below its ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  // The adopted-project reading is 70,713.
-  lead: 70_713, // target 38,000
+  // The adopted-project reading is 70,713. The ceiling adds 124 characters so a small base-branch
+  // prompt change does not fail the merge; measure the merge again before lowering it.
+  lead: 70_837, // target 38,000
   // The adopted-project reading is 64,376. The ceiling adds 124 characters so a small base-branch
   // prompt change does not fail the merge; measure the merge again before lowering it.
   architect: 64_500,

@@ -527,6 +527,18 @@ const isFunctionValue = (bindings: BindingScopes, node: Expression | null): bool
   return node.type === 'Identifier' && bindings.kindOf(node.name) === 'function';
 };
 
+// A plain identifier initializer carries its binding's kind, so an alias of an imported or parameter
+// object still escapes when a property of the alias is assigned.
+const aliasKind = (bindings: BindingScopes, node: Expression | null): BindingKind => {
+  if (isFunctionValue(bindings, node)) {
+    return 'function';
+  }
+
+  const isEscapingAlias = node?.type === 'Identifier' && bindings.kindOf(node.name) === 'escaping';
+
+  return isEscapingAlias ? 'escaping' : 'local';
+};
+
 const enterFunctionScope = (
   bindings: BindingScopes,
   node: Function | ArrowFunctionExpression,
@@ -547,12 +559,9 @@ const declareVariables = (bindings: BindingScopes, node: VariableDeclaration): v
   const declareName = node.kind === 'var' ? bindings.declareVariable : bindings.declare;
 
   for (const declarator of node.declarations) {
-    // Only a plain identifier can alias the initializer's function value. A pattern binds
-    // properties of it, such as a number from a function's `length`.
-    const isFunctionAlias =
-      declarator.id.type === 'Identifier' && isFunctionValue(bindings, declarator.init);
-
-    const kind = isFunctionAlias ? 'function' : 'local';
+    // A pattern binds properties of the initializer, such as a number from a function's `length`.
+    const kind =
+      declarator.id.type === 'Identifier' ? aliasKind(bindings, declarator.init) : 'local';
 
     for (const name of bindingNames(declarator.id)) {
       declareName(name, kind);
@@ -858,6 +867,9 @@ const lateClassSource = (): string =>
 const importedFunctionPropertySource = (): string =>
   "import { api } from './rules.js';\napi.run = () => 1;\n";
 
+const importedAliasPropertySource = (): string =>
+  "import { api } from './rules.js';\nconst target = api;\ntarget.run = () => 1;\n";
+
 const importedNestedFunctionPropertySource = (): string =>
   "import { api } from './rules.js';\napi.config.run = () => 1;\n";
 
@@ -902,6 +914,10 @@ it('reports a function assigned to a property of a parameter or an imported bind
 
   expect(impurities('src/pure/decide.ts', importedFunctionPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:2: assigns a function to a property',
+  ]);
+
+  expect(impurities('src/pure/decide.ts', importedAliasPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:3: assigns a function to a property',
   ]);
 });
 
