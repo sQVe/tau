@@ -178,10 +178,11 @@ test('reads an attachment selection that lists nodes before page info', async ()
 
   expect(result.code).toBe(0);
 
-  expect(JSON.parse(result.stdout)).toMatchObject({
+  expect(JSON.parse(result.stdout)).toEqual({
     data: {
       issue: {
         attachments: {
+          pageInfo: { hasNextPage: false },
           nodes: [{ url: 'https://github.com/me/repo/pull/1' }],
         },
       },
