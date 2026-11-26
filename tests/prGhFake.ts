@@ -1,6 +1,8 @@
+import { readFile } from 'node:fs/promises';
+
 import type { Exec } from '../src/command.js';
 import { argumentAfter, createExecFake, failedResult, succeededResult } from './execFake.js';
-import type { ExecCall } from './execFake.js';
+import type { ExecCall, ExecResult } from './execFake.js';
 
 interface FakeRepository {
   defaultBranch: string;
@@ -34,13 +36,28 @@ type CommandKey =
   | 'repo view'
   | 'pr list'
   | 'pr view'
+  | 'pr create'
+  | 'pr edit'
+  | 'pr comment'
   | 'api'
+  | 'api post'
   | 'api user'
   | 'check-suites';
+
+type WriteKey = 'pr create' | 'pr edit' | 'pr comment' | 'api post';
+
+interface FakeWrite {
+  key: WriteKey;
+  commandArguments: string[];
+  // The bytes of the file that --body-file or --input named.
+  contents: Buffer;
+}
 
 export interface GhFake {
   exec: Exec;
   calls: ExecCall[];
+  // Each publish command, with the bytes of the file it sent.
+  writes: FakeWrite[];
   viewer: string;
   // Keyed by <host>/<owner>/<name>.
   repositories: Record<string, FakeRepository>;
@@ -61,9 +78,21 @@ const commandKeys: Record<string, CommandKey> = {
   'repo view': 'repo view',
   'pr list': 'pr list',
   'pr view': 'pr view',
+  'pr create': 'pr create',
+  'pr edit': 'pr edit',
+  'pr comment': 'pr comment',
   'api --hostname': 'api',
   'api user': 'api user',
 };
+
+const writeKeys: ReadonlySet<CommandKey> = new Set<WriteKey>([
+  'pr create',
+  'pr edit',
+  'pr comment',
+  'api post',
+]);
+
+const isWriteKey = (key: CommandKey): key is WriteKey => writeKeys.has(key);
 
 const parentOutput = (parent: string | undefined) => {
   if (parent === undefined) {
@@ -73,6 +102,31 @@ const parentOutput = (parent: string | undefined) => {
   const [owner = '', name = ''] = parent.split('/');
 
   return { id: 'R_parent', name, owner: { id: 'U_owner', login: owner } };
+};
+
+const writeOutput = (key: WriteKey, commandArguments: readonly string[]) => {
+  const repository = argumentAfter(commandArguments, '--repo') ?? '';
+
+  if (key === 'pr create') {
+    return `https://${repository}/pull/8\n`;
+  }
+
+  if (key === 'pr comment') {
+    return `https://${repository}/pull/${commandArguments[2] ?? ''}#issuecomment-1\n`;
+  }
+
+  if (key === 'api post') {
+    const host = argumentAfter(commandArguments, '--hostname') ?? '';
+    const [owner = '', name = '', , pr = ''] = (commandArguments[5] ?? '').split('/').slice(1);
+
+    return JSON.stringify({
+      id: 1,
+      state: 'PENDING',
+      html_url: `https://${host}/${owner}/${name}/pull/${pr}#pullrequestreview-1`,
+    });
+  }
+
+  return '';
 };
 
 export const createGhFake = (): GhFake => {
@@ -210,16 +264,51 @@ export const createGhFake = (): GhFake => {
 
   const keyOf = (command: string, commandArguments: readonly string[]) => {
     const baseKey = commandKeys[commandArguments.slice(0, 2).join(' ')];
-    const readsCheckSuites = commandArguments[3]?.endsWith('/check-suites') === true;
 
     if (command !== 'gh') {
       return undefined;
     }
 
-    return baseKey === 'api' && readsCheckSuites ? 'check-suites' : baseKey;
+    if (baseKey !== 'api') {
+      return baseKey;
+    }
+
+    const readsCheckSuites = commandArguments[3]?.endsWith('/check-suites') === true;
+
+    if (readsCheckSuites) {
+      return 'check-suites';
+    }
+
+    return argumentAfter(commandArguments, '--method') === 'POST' ? 'api post' : baseKey;
   };
 
-  const handlerFor = (key: CommandKey) => (commandArguments: readonly string[]) => {
+  const recordWrite = async (
+    key: WriteKey,
+    commandArguments: readonly string[],
+  ): Promise<ExecResult> => {
+    const flag = key === 'api post' ? '--input' : '--body-file';
+    const path = argumentAfter(commandArguments, flag);
+
+    if (path === undefined) {
+      return failedResult(`missing ${flag}`);
+    }
+
+    try {
+      const contents = await readFile(path);
+
+      fake.writes.push({ key, commandArguments: [...commandArguments], contents });
+    } catch (error) {
+      return failedResult(`could not read ${path}: ${String(error)}`);
+    }
+
+    return succeededResult(writeOutput(key, commandArguments));
+  };
+
+  const handlerFor = (key: CommandKey) => async (commandArguments: readonly string[]) => {
+    if (isWriteKey(key)) {
+      return recordWrite(key, commandArguments);
+    }
+
     const stdout = output(key, commandArguments);
 
     return stdout === undefined
@@ -235,6 +324,7 @@ export const createGhFake = (): GhFake => {
 
   const fake: GhFake = {
     calls: shared.calls,
+    writes: [],
     viewer: 'sQVe',
     repositories: {},
     pullRequests: {},

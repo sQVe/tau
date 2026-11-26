@@ -13,6 +13,7 @@ import {
   rejectLinkedFile,
   requireTauChild,
 } from '../../tauDirectory.js';
+import { requirePullRequestNumber } from './pullRequestNumber.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 
@@ -104,19 +105,7 @@ const requireValue = <Value>(name: string, value: Value | undefined): Value => {
   return value;
 };
 
-const parsePullRequestNumber = (pr: number | undefined) => {
-  const number = requireValue('pr', pr);
-
-  if (!Number.isSafeInteger(number)) {
-    throw new TypeError(`pr must be an integer, not ${number}.`);
-  }
-
-  if (number < 1) {
-    throw new Error(`pr must be 1 or more, not ${number}.`);
-  }
-
-  return number;
-};
+const parsePullRequestNumber = (pr: number | undefined) => requirePullRequestNumber('verify', pr);
 
 // Reads the run's body.md, local HEAD, and the published pull request, and writes nothing.
 export const readVerify = async (
