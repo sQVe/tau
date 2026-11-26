@@ -66,7 +66,7 @@ const secondPersonQuestion = /\b(?:can|could|would|will) you\b/i;
 
 const prefixAction = new RegExp(`${secondPersonQuestion.source}[^.!?\\n]*\\b${actionVerb}\\b`, 'i');
 
-const prefixClause = /[,;]\s+(?:and|but|so|then)\b|\band\b/i;
+const prefixClause = /[,;]\s+(?:but|so|then)\b|\band\b/i;
 
 const userAction = new RegExp(
   [
