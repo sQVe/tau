@@ -1,3 +1,4 @@
+// Catches only a synchronous throw; a rejected promise escapes it.
 export const thrownBy = (action: () => unknown): unknown => {
   try {
     action();
