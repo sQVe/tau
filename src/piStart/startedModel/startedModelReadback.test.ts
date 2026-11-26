@@ -73,8 +73,42 @@ it('reports a permanent read failure without polling the whole budget', async ()
 
     expect(outcome).toBeInstanceOf(Error);
     expect((outcome as Error).message).toContain('spawn hc ENOENT');
+    expect((outcome as Error).message).not.toContain('It may still be running');
     expect((outcome as Error).cause).toBe(failure);
     expect(reads).toBeLessThan(10);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('keeps an earlier read failure when a later read uses the rest of the budget', async () => {
+  const failure = new Error('read failed once');
+  let reads = 0;
+
+  const read = (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    return reads === 1 ? Promise.reject(failure) : new Promise(() => {});
+  };
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const reading = readStartedModel({
+      readForegroundArgv: read,
+      terminal: 't-new',
+      model: undefined,
+      signal: undefined,
+      deadline: Date.now() + 1_000,
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const outcome = await reading;
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toContain('A read failed: read failed once');
+    expect((outcome as Error).cause).toBe(failure);
   } finally {
     vi.useRealTimers();
   }

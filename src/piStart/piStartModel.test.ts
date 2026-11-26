@@ -1,6 +1,6 @@
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../tests/execFake.js';
+import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
 import type { ExecFake } from '../../tests/execFake.js';
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
@@ -16,6 +16,7 @@ import {
   launchTimeoutMilliseconds,
   startPiSession,
 } from './piStart.js';
+import { readbackFailureBudgetMilliseconds } from './startedModel/startedModelReadback.js';
 
 const neverResolves = new Promise<readonly string[] | undefined>(() => {});
 const neverReads = (): Promise<readonly string[] | undefined> => neverResolves;
@@ -293,6 +294,67 @@ it('a start retries a model read that fails once before answering', async () => 
 
   expect(result.model).toBe('morph/morph-dsv41flash-1017');
   expect(reads).toBe(2);
+});
+
+it('a start keeps reading a terminal that is not registered yet past the failure budget', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const notFoundReply = JSON.stringify({
+    error: { kind: 'not_found', message: 'no terminal "t-new"' },
+  });
+
+  const foregroundReply = JSON.stringify({
+    address: 't-new',
+    state: 'live',
+    foreground: {
+      pid: 1,
+      name: 'pi',
+      argv: ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+      cwd: root,
+    },
+  });
+
+  let registered = false;
+
+  const fake = createExecFake<'launch' | 'get'>({
+    keyOf: (command, commandArguments) => {
+      if (command === 'herdr-app') {
+        return 'launch';
+      }
+
+      return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
+    },
+    handlerFor: (key) =>
+      key === 'launch'
+        ? () => succeededResult('{"space":"sp-new","tab":"tb-new","terminal":"t-new"}')
+        : () => (registered ? succeededResult(foregroundReply) : failedResult(notFoundReply, 3)),
+  });
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const opening = startPiSession(
+      { exec: fake.exec, cwd: root },
+      startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
+    ).catch((error: unknown) => error);
+
+    await vi.waitFor(() => {
+      expect(fake.calls.some(({ command }) => command === 'hc')).toBe(true);
+    });
+
+    await vi.advanceTimersByTimeAsync(readbackFailureBudgetMilliseconds + 1_000);
+
+    registered = true;
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    const result = await opening;
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect((result as { model?: string }).model).toBe('morph/morph-dsv41flash-1017');
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('a start fails when the terminal runs another model', async () => {

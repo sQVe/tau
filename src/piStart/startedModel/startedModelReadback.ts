@@ -19,11 +19,23 @@ export interface StartedModelReadRequest {
   deadline: number;
 }
 
-// Records a failed read. A failure that outlasts the failure budget is not a terminal that has
-// not registered yet, so it stops the readback.
-interface ReadFailures {
+// Records a failed read and when its streak started. A terminal that has not registered yet reads
+// as no foreground argv, so a thrown failure is a real read failure, not a terminal still starting.
+interface ReadFailure {
   error: unknown;
-  since: number | undefined;
+  since: number;
+}
+
+// Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
+// launch budget. The read gets its own signal, so the command is cancelled when the budget expires.
+// A synchronous throw from the read must clear the timer and the listener it already registered.
+type ReadWithinBudget =
+  | { readonly kind: 'read'; readonly argv: readonly string[] | undefined }
+  | { readonly kind: 'timeout' };
+
+interface ReadAttempt {
+  readonly argv: readonly string[] | undefined;
+  readonly failure: ReadFailure | undefined;
 }
 
 const readbackInitialIntervalMilliseconds = 100;
@@ -47,9 +59,10 @@ const stillRunningHint = (terminal: string): string =>
 const unreadableModelError = (terminal: string, cause?: unknown): Error => {
   const options = cause === undefined ? undefined : { cause };
   const failure = cause === undefined ? '' : ` A read failed: ${errorMessage(cause)}.`;
+  const hint = cause === undefined ? ` ${stillRunningHint(terminal)}` : '';
 
   return new Error(
-    `The started model on terminal ${terminal} is unknown.${failure} ${stillRunningHint(terminal)}`,
+    `The started model on terminal ${terminal} is unknown.${failure}${hint}`,
     options,
   );
 };
@@ -88,14 +101,11 @@ const pauseBeforeRead = async (
   }
 };
 
-// Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
-// launch budget. The read gets its own signal, so the command is cancelled when the budget expires.
-// A synchronous throw from the read must clear the timer and the listener it already registered.
 const readWithinBudget = (
   read: (signal: AbortSignal) => Promise<readonly string[] | undefined>,
   remaining: number,
   signal: AbortSignal | undefined,
-): Promise<readonly string[] | undefined> =>
+): Promise<ReadWithinBudget> =>
   new Promise((resolve, reject) => {
     const readSignal = new AbortController();
 
@@ -108,7 +118,7 @@ const readWithinBudget = (
     const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       readSignal.abort();
-      resolve(undefined);
+      resolve({ kind: 'timeout' });
     }, remaining);
 
     const settle = (): void => {
@@ -128,7 +138,7 @@ const readWithinBudget = (
       void read(readSignal.signal).then(
         (argv) => {
           settle();
-          resolve(argv);
+          resolve({ kind: 'read', argv });
         },
         (error: unknown) => {
           settle();
@@ -141,56 +151,65 @@ const readWithinBudget = (
     }
   });
 
-const noteReadFailure = (failures: ReadFailures, error: unknown, now: number): boolean => {
-  failures.error ??= error;
-  failures.since ??= now;
+const noteReadFailure = (
+  previous: ReadFailure | undefined,
+  error: unknown,
+  now: number,
+): ReadFailure => previous ?? { error, since: now };
 
-  return now - failures.since >= readbackFailureBudgetMilliseconds;
+// A read that uses the rest of the budget returns no argv and leaves the recorded failure in place,
+// so the deadline error still names it.
+const attemptRead = async (
+  request: StartedModelReadRequest,
+  failure: ReadFailure | undefined,
+  remaining: number,
+): Promise<ReadAttempt> => {
+  try {
+    const read = await readWithinBudget(
+      (readSignal) => request.readForegroundArgv(request.terminal, readSignal),
+      remaining,
+      request.signal,
+    );
+
+    return read.kind === 'read'
+      ? { argv: read.argv, failure: undefined }
+      : { argv: undefined, failure };
+  } catch (error) {
+    if (request.signal?.aborted === true) {
+      throw cancellationError(request.signal);
+    }
+
+    const now = Date.now();
+    const next = noteReadFailure(failure, error, now);
+
+    if (now - next.since >= readbackFailureBudgetMilliseconds) {
+      throw unreadableModelError(request.terminal, next.error);
+    }
+
+    return { argv: undefined, failure: next };
+  }
 };
 
 export const readStartedModel = async (request: StartedModelReadRequest): Promise<string> => {
-  const { readForegroundArgv, terminal, model, signal, deadline } = request;
+  const { terminal, model, signal, deadline } = request;
   const requested = requestedModelOf(model);
 
-  const failures: ReadFailures = {
-    error: undefined,
-    since: undefined,
-  };
-
+  let failure: ReadFailure | undefined;
   let interval = readbackInitialIntervalMilliseconds;
 
   for (;;) {
     const remaining = deadline - Date.now();
 
     if (remaining <= 0) {
-      throw unreadableModelError(terminal, failures.error);
+      throw unreadableModelError(terminal, failure?.error);
     }
 
-    let argv: readonly string[] | undefined;
+    // oxlint-disable-next-line no-await-in-loop -- each read must wait for the previous one.
+    const attempt = await attemptRead(request, failure, remaining);
 
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- each read must wait for the previous one.
-      argv = await readWithinBudget(
-        (readSignal) => readForegroundArgv(terminal, readSignal),
-        remaining,
-        signal,
-      );
+    failure = attempt.failure;
 
-      failures.error = undefined;
-      failures.since = undefined;
-    } catch (error) {
-      if (signal?.aborted === true) {
-        throw cancellationError(signal);
-      }
-
-      if (noteReadFailure(failures, error, Date.now())) {
-        throw unreadableModelError(terminal, failures.error);
-      }
-
-      argv = undefined;
-    }
-
-    const startedArgv = piArgv(argv);
+    const startedArgv = piArgv(attempt.argv);
 
     if (startedArgv !== undefined) {
       const decision = decideStartedModel({ requested, argv: startedArgv });
@@ -209,7 +228,7 @@ export const readStartedModel = async (request: StartedModelReadRequest): Promis
     const remainingAfterRead = deadline - Date.now();
 
     if (remainingAfterRead <= 0) {
-      throw unreadableModelError(terminal, failures.error);
+      throw unreadableModelError(terminal, failure?.error);
     }
 
     // oxlint-disable-next-line no-await-in-loop -- the poll needs a pause between reads.

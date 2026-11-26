@@ -89,6 +89,9 @@ export const launchTimeoutMilliseconds = 30_000;
 // not reported as an unknown model.
 const readbackMinimumMilliseconds = 5_000;
 
+const readbackDeadline = (deadline: number): number =>
+  Math.max(deadline, Date.now() + readbackMinimumMilliseconds);
+
 const splitReplySchema = Type.Object({
   pane: Type.String(),
   terminal: Type.String({ minLength: 1 }),
@@ -279,7 +282,7 @@ const launch = async (
     terminal: launched.terminal,
     model: request.model,
     signal: runtime.signal,
-    deadline: Math.max(deadline, Date.now() + readbackMinimumMilliseconds),
+    deadline: readbackDeadline(deadline),
   });
 
   return { ...launched, model };
@@ -378,7 +381,7 @@ export const startPiSession = async (
     terminal,
     model: request.model,
     signal: runtime.signal,
-    deadline: Math.max(deadline, Date.now() + readbackMinimumMilliseconds),
+    deadline: readbackDeadline(deadline),
   });
 
   return { reply, target, terminal, model };
