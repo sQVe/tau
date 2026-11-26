@@ -157,7 +157,7 @@ export const isMarkdownTable = (token: Token): token is Tokens.Table =>
   token.type === 'table' && hasTableCells(token);
 
 export const isMarkdownHeading = (token: Token): token is Tokens.Heading =>
-  token.type === 'heading';
+  token.type === 'heading' && 'depth' in token && Array.isArray(token.tokens);
 
 export const isMarkdownList = (token: Token): token is Tokens.List =>
   token.type === 'list' && 'items' in token && Array.isArray(token.items);
