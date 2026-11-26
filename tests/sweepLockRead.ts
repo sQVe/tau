@@ -24,13 +24,15 @@ export const signalActiveGenerationRead = (
   const readFile = vi.mocked(fsPromises.readFile);
   const original = readFile.getMockImplementation() ?? actualFsPromises.readFile;
 
-  readFile.mockImplementation(((target: string, ...rest: never[]) => {
+  readFile.mockImplementation((...parameters: Parameters<typeof fsPromises.readFile>) => {
+    const [target] = parameters;
+
     if (target === path) {
       resolve(undefined);
     }
 
-    return original(target, ...rest);
-  }) as typeof fsPromises.readFile);
+    return original(...parameters);
+  });
 
   onTestFinished(() => {
     readFile.mockImplementation(original);
