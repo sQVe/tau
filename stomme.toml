@@ -437,6 +437,7 @@ public = [
   "src/extensions/tdd/runner/report.ts",
   "src/extensions/tdd/runner/retention.ts",
   "src/extensions/tdd/runner/runners.ts",
+  "src/extensions/tdd/runner/testNames.ts",
   "src/extensions/tdd/runner/types.ts",
   "src/extensions/tdd/runner/vitest.ts",
 ]

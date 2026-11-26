@@ -34,6 +34,16 @@ Where the public parser omits private CLI option normalization, Tau keeps a smal
 rather than importing internal Vitest modules. The process boundary keeps project configuration and
 test execution outside Pi, while preserving Tau's timeout and cancellation control.
 
+A focused run also selects tests by name. Vitest renders an `it.each` `$name` value through chai's
+display, which wraps the value in quotes and cuts it at a configured length, so the name it
+registers is not the name written in the table. The entry raises that cut to fit the longest
+requested name and leaves it alone for a run whose names fit chai's default, and Tau accepts a
+requested name whether or not the registered name carries the display quotes. The `-t` pattern, the
+report selection, and the observation layer share that one rule. A title that interpolates several
+values registers a name Tau cannot rebuild from the name written in the table, so a focused run must
+use the name the report prints for it. Older versions keep the CLI path, and a project declared by
+path or glob keeps its own test config, so the display cut still applies there.
+
 The TypeScript entry ships with Tau's source and uses Node's native TypeScript support. It needs no
 separate build artifact. Affected and full runs keep the CLI boundary because they do not need exact
 file selection.
@@ -54,6 +64,8 @@ Focused runs require Tau outside `node_modules` because Node refuses type stripp
 - Tau must test the adapter against changes to Vitest's public API and CLI semantics.
 - The discovery adapter depends on the public initialization hook running before project discovery.
 - Private CLI option normalization requires a small local equivalent.
+- A requested name also matches a hand-written title that quotes one word of it, because chai's
+  rendering leaves no marker that tells the two apart.
 - The entry depends on Node's native TypeScript support at runtime.
 
 ## Alternatives considered

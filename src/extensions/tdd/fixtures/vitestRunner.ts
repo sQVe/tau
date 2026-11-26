@@ -32,6 +32,17 @@ export const outputFileFrom = (argumentsList: string[]): string => {
   return flag.slice('--outputFile='.length);
 };
 
+export const nameFilterFrom = (argumentsList: string[]): string => {
+  const index = argumentsList.indexOf('-t');
+  const pattern = argumentsList[index + 1];
+
+  if (index === -1 || pattern === undefined) {
+    throw new Error('vitest was spawned without a -t name filter');
+  }
+
+  return pattern;
+};
+
 export const fakeSpawn =
   ({ report, ...result }: Partial<SpawnResult> & { report?: unknown }): SpawnCommand =>
   async (command, argumentsList) => {

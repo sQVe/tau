@@ -335,6 +335,39 @@ it('keeps Vitest 5 exact names literal and observes unique nested failures', asy
   expect((await observation.run(selected, 'focused')).hint).toBeUndefined();
 });
 
+it('observes RED from a decision-table test requested by its unquoted name', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const name = 'a declared record cited with trailing punctuation accepts';
+  const selected = { ...behavior, testFullName: name };
+  vi.mocked(runTests).mockResolvedValueOnce(result('failed', `'${name}'`));
+
+  await observation.run(selected, 'focused');
+
+  await writeFile(join(cwd, 'src/value.ts'), 'implementation after the table failure');
+  expect(await observation.checkpoint(true)).toBeUndefined();
+});
+
+it('classifies a thrown error from a decision-table test requested by its unquoted name', async ({
+  onTestFinished,
+}) => {
+  const { observation } = await setup(onTestFinished);
+  const name = 'a declared record cited with trailing punctuation accepts';
+  const fullname = `'${name}'`;
+
+  vi.mocked(runTests).mockResolvedValueOnce({
+    kind: 'fail',
+    tests: [{ file: 'value.test.ts', fullname, status: 'failed' }],
+    failures: [{ file: 'value.test.ts', fullname, message: 'TypeError: x is not a function' }],
+    truncated: false,
+  });
+
+  const observed = await observation.run({ ...behavior, testFullName: name }, 'focused');
+
+  expect(observed.hint).toContain('TypeError');
+});
+
 it.for(['duplicate', 'skipped', 'missing', 'load error'])(
   'does not observe RED from Vitest 5 %s tests',
   async (invalid, { onTestFinished }) => {

@@ -20,6 +20,7 @@ import type { CheckpointInput, CycleState, HintDecision } from './observationTra
 import { classificationPath, projectDirectoryFromSession } from './projectPath.js';
 import { finishDiagnostics } from './runner/retention.js';
 import { lookupRunner } from './runner/runners.js';
+import { matchesAnyRequestedName, matchesRequestedName } from './runner/testNames.js';
 import type { RunDiagnostics, RunnerResult, TestRunner } from './runner/types.js';
 import type { Behavior, ObservationResult, TestObservation, TestScope } from './types.js';
 
@@ -131,12 +132,15 @@ const reportedInputs = (before: InputHash, after: InputHash): ObservationResult[
   return { before: before.hash, after: after.hash, ...(error === undefined ? {} : { error }) };
 };
 
+const isSelectedName = (behavior: Behavior, fullname: string): boolean =>
+  matchesAnyRequestedName(fullname, testNames(behavior));
+
 const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =>
   report.kind === 'fail' &&
   testNames(behavior).every((name) => {
     const matches = report.tests.filter(
       (test) =>
-        test.fullname === name &&
+        matchesRequestedName(test.fullname, name) &&
         test.attribution === undefined &&
         behavior.files.some((file) => resolve(cwd, test.file) === resolve(cwd, file)),
     );
@@ -167,7 +171,7 @@ const selectedThrownErrorType = (cwd: string, behavior: Behavior, report: Runner
   const selectedFailures = report.failures.filter(
     (failure) =>
       failure.attribution === undefined &&
-      testNames(behavior).includes(failure.fullname) &&
+      isSelectedName(behavior, failure.fullname) &&
       behavior.files.some((file) => resolve(cwd, failure.file) === resolve(cwd, file)),
   );
 
