@@ -4,11 +4,28 @@ import { basename, join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseSync, Visitor } from 'oxc-parser';
-import type { Expression, MemberExpression, ModuleDeclaration } from 'oxc-parser';
+import type {
+  ArrowFunctionExpression,
+  AssignmentExpression,
+  BindingPattern,
+  BindingRestElement,
+  Expression,
+  Function,
+  MemberExpression,
+  ModuleDeclaration,
+  ParamPattern,
+  Program,
+  TSParameterProperty,
+} from 'oxc-parser';
 import { expect, it } from 'vitest';
 
 import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
+
+interface EffectScope {
+  parameters: Set<string>;
+  functions: Set<string>;
+}
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -361,9 +378,48 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
 const isPureLibrary = (path: string, specifier: string) =>
   pureLibraries[path]?.includes(specifier) ?? false;
 
+const bindingNames = (
+  pattern: BindingPattern | BindingRestElement | ParamPattern | TSParameterProperty,
+): string[] => {
+  switch (pattern.type) {
+    case 'Identifier':
+      return [pattern.name];
+    case 'ObjectPattern':
+      return pattern.properties.flatMap((property) =>
+        property.type === 'RestElement'
+          ? bindingNames(property.argument)
+          : bindingNames(property.value),
+      );
+    case 'ArrayPattern':
+      return pattern.elements.flatMap((element) => (element === null ? [] : bindingNames(element)));
+    case 'AssignmentPattern':
+      return bindingNames(pattern.left);
+    case 'RestElement':
+      return bindingNames(pattern.argument);
+    case 'TSParameterProperty':
+      return bindingNames(pattern.parameter);
+    default:
+      return [];
+  }
+};
+
+const importedBindings = (program: Program): Set<string> =>
+  new Set(
+    program.body.flatMap((node) => {
+      if (node.type !== 'ImportDeclaration') {
+        return [];
+      }
+
+      return node.specifiers.map((specifier) => specifier.local.name);
+    }),
+  );
+
 // Lists each runtime import outside the registry, dynamic load, and effect in a registered module.
 const impurities = (path: string, source: string, registry: readonly string[]) => {
   const found: string[] = [];
+  const program = parseSync(path, source).program;
+  const imported = importedBindings(program);
+  const scopes: EffectScope[] = [{ parameters: new Set(), functions: new Set() }];
 
   const at = (offset: number, what: string) => {
     const lineNumber = source.slice(0, offset).split('\n').length;
@@ -389,18 +445,70 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
     }
   };
 
+  const isEscapingObject = (node: MemberExpression) => {
+    if (node.object.type !== 'Identifier') {
+      return false;
+    }
+
+    const name = node.object.name;
+
+    return imported.has(name) || scopes.some((scope) => scope.parameters.has(name));
+  };
+
+  const assignsFunction = (node: AssignmentExpression) => {
+    const right = node.right;
+
+    if (right.type === 'ArrowFunctionExpression' || right.type === 'FunctionExpression') {
+      return true;
+    }
+
+    return right.type === 'Identifier' && scopes.some((scope) => scope.functions.has(right.name));
+  };
+
+  const enterFunction = (node: Function | ArrowFunctionExpression) => {
+    if (node.type === 'FunctionDeclaration' && node.id !== null) {
+      scopes.at(-1)?.functions.add(node.id.name);
+    }
+
+    scopes.push({ parameters: new Set(node.params.flatMap(bindingNames)), functions: new Set() });
+  };
+
+  const exitFunction = () => {
+    scopes.pop();
+  };
+
   new Visitor({
+    FunctionDeclaration: enterFunction,
+    'FunctionDeclaration:exit': exitFunction,
+    FunctionExpression: enterFunction,
+    'FunctionExpression:exit': exitFunction,
+    TSDeclareFunction: enterFunction,
+    'TSDeclareFunction:exit': exitFunction,
+    TSEmptyBodyFunctionExpression: enterFunction,
+    'TSEmptyBodyFunctionExpression:exit': exitFunction,
+    ArrowFunctionExpression: enterFunction,
+    'ArrowFunctionExpression:exit': exitFunction,
+    VariableDeclarator: (node) => {
+      const init = node.init;
+
+      const isFunction =
+        init?.type === 'ArrowFunctionExpression' || init?.type === 'FunctionExpression';
+
+      if (isFunction && node.id.type === 'Identifier') {
+        scopes.at(-1)?.functions.add(node.id.name);
+      }
+    },
     ImportDeclaration: checkImport,
     ExportNamedDeclaration: checkImport,
     ExportAllDeclaration: checkImport,
     ImportExpression: (node) => at(node.start, 'dynamic import'),
     AssignmentExpression: (node) => {
-      const assignsFunction =
-        node.right.type === 'ArrowFunctionExpression' || node.right.type === 'FunctionExpression';
-
-      // Assigning a function to a property mutates the object, so the rule counts it as an effect.
-      if (assignsFunction && node.left.type === 'MemberExpression') {
-        at(node.start, 'assigns a function to a property');
+      // A function assigned to a property of a parameter or an imported binding escapes the module,
+      // so the rule counts it as an effect.
+      if (node.left.type === 'MemberExpression' && isEscapingObject(node.left)) {
+        if (assignsFunction(node)) {
+          at(node.start, 'assigns a function to a property');
+        }
       }
     },
     CallExpression: (node) => {
@@ -425,7 +533,7 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
         at(node.start, name);
       }
     },
-  }).visit(parseSync(path, source).program);
+  }).visit(program);
 
   return found;
 };
@@ -571,7 +679,37 @@ const readImportSource = (): string => "import { readFile } from 'node:fs/promis
 const readImportAndDateSource = (): string =>
   `${readImportSource()}const first = Date();\nconst second = Date();\n`;
 
-const functionPropertySource = (): string => 'const spec = {};\nspec.run = () => 1;\n';
+const testRegistry = ['src/pure/decide.ts', 'src/pure/rules.ts'];
+
+const functionPropertySource = (): string =>
+  'const install = (api) => {\n  api.run = () => 1;\n};\n';
+
+const aliasedFunctionPropertySource = (): string =>
+  'const wrapper = () => 1;\nconst install = (api) => {\n  api.run = wrapper;\n};\n';
+
+const importedFunctionPropertySource = (): string =>
+  "import { api } from './rules.js';\napi.run = () => 1;\n";
+
+const localFunctionPropertySource = (): string =>
+  'const handlers = {};\nhandlers.run = () => "";\n';
+
+it('reports a function assigned to a property of a parameter or an imported binding', () => {
+  expect(impurities('src/pure/decide.ts', functionPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:2: assigns a function to a property',
+  ]);
+
+  expect(impurities('src/pure/decide.ts', aliasedFunctionPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:3: assigns a function to a property',
+  ]);
+
+  expect(impurities('src/pure/decide.ts', importedFunctionPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:2: assigns a function to a property',
+  ]);
+});
+
+it('does not report a function assigned to a property of a local object', () => {
+  expect(impurities('src/pure/decide.ts', localFunctionPropertySource(), testRegistry)).toEqual([]);
+});
 
 it('applies each pure module exception to one finding and reports a stale exception', () => {
   const modules = ['src/pure/decide.ts'];
