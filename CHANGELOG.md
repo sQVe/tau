@@ -1,5 +1,81 @@
 # tau
 
+## 1.4.0
+
+### Minor Changes
+
+- [#814](https://github.com/sQVe/tau/pull/814)
+  [`c6834e4`](https://github.com/sQVe/tau/commit/c6834e47b8695c3b5eaa16348c96c8ae98217da8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Refuse a `qa` success report on a web app unless it carries a
+  `page-inventory.md` that lists each page and every element it saw.
+
+### Patch Changes
+
+- [#831](https://github.com/sQVe/tau/pull/831)
+  [`74cd865`](https://github.com/sQVe/tau/commit/74cd865249349dbc54eb701aa43cdde412610c4d) Thanks
+  [@sQVe](https://github.com/sQVe)! - Accept the anchors GitHub generates for a guide heading that
+  holds a character such as `½`, and for an `a` element with a `name` or `id` attribute, so a synced
+  guide with such a link is no longer reported as a broken installation.
+
+- [#834](https://github.com/sQVe/tau/pull/834)
+  [`812c297`](https://github.com/sQVe/tau/commit/812c29718bdd1f9b9ec7b62367a8d1a982ee3e64) Thanks
+  [@sQVe](https://github.com/sQVe)! - Let the `ticket` `cancel` action cancel a ticket whose merged
+  pull request only mentions it. Only a pull request that closes the ticket still refuses.
+
+- [#797](https://github.com/sQVe/tau/pull/797)
+  [`a1cfc12`](https://github.com/sQVe/tau/commit/a1cfc12e37eb829e2ef1472f34fe3982c8afa1f2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Accept a `handover-answer` in the asker's session only for an
+  open question it asked of that lead. An accepted answer marks the record answered and starts the
+  asker's next turn with the answer text. A repeat of the saved answer starts no second turn.
+
+- [#797](https://github.com/sQVe/tau/pull/797)
+  [`a1cfc12`](https://github.com/sQVe/tau/commit/a1cfc12e37eb829e2ef1472f34fe3982c8afa1f2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Give every lead session a `handover_answer` tool. It answers a
+  handover question this session received, by its question ID, and sends one answer to the asker. It
+  reports `queued`, `refused` with a reason, or `unknown` where a retry with the same answer is
+  safe. It refuses a question this session never received before it sends anything.
+
+- [#826](https://github.com/sQVe/tau/pull/826)
+  [`f2b50ef`](https://github.com/sQVe/tau/commit/f2b50eff70746d92248c8e348bbc29ab191744a5) Thanks
+  [@sQVe](https://github.com/sQVe)! - The nextest integration test assertions now carry the build
+  diagnostic in their failure message.
+
+- [#797](https://github.com/sQVe/tau/pull/797)
+  [`a1cfc12`](https://github.com/sQVe/tau/commit/a1cfc12e37eb829e2ef1472f34fe3982c8afa1f2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Tell the lead how to answer a handover question: ask the user
+  for an approval-only action, ask the architect for a design question, and answer the rest
+  directly. Tell a receiving session to ask its sender with `handover_question` before its user.
+
+- [#833](https://github.com/sQVe/tau/pull/833)
+  [`404a9db`](https://github.com/sQVe/tau/commit/404a9db4a2188ef4feae863a39cef3cad3626c9e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Refuse a worker report whose section heading appears only
+  inside a fenced code block, such as a `## Decisions` line in an example, so a report cannot omit
+  the real section.
+
+- [#830](https://github.com/sQVe/tau/pull/830)
+  [`086cf9d`](https://github.com/sQVe/tau/commit/086cf9d92448510007f0c98100ce13b567f1841f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Refuse a worker report that cites only a copy of the full
+  check log, such as `<log>.bak`, instead of the log path itself.
+
+- [#835](https://github.com/sQVe/tau/pull/835)
+  [`9c01224`](https://github.com/sQVe/tau/commit/9c01224dfc549fcc1993134081ac1b5b8aa41365) Thanks
+  [@sQVe](https://github.com/sQVe)! - A focused `run_tests` run now selects a decision-table test by
+  the name written in the table, however long it is. Vitest renders an `it.each` `$name` through
+  chai's display, which wraps the value in quotes and cuts it short, so the exact name filter never
+  matched the name Vitest registered. The focused entry now removes that cut, and Tau accepts a
+  requested name with or without the display quotes.
+
+- [#797](https://github.com/sQVe/tau/pull/797)
+  [`a1cfc12`](https://github.com/sQVe/tau/commit/a1cfc12e37eb829e2ef1472f34fe3982c8afa1f2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Record how a lead answers a handover question. The journey
+  adds steps 4 to 6 and the end state for a second question and a dead lead. ADR 0149 records why
+  the answer reuses the question ID and who answers an approval-only or design question.
+
+- [#797](https://github.com/sQVe/tau/pull/797)
+  [`a1cfc12`](https://github.com/sQVe/tau/commit/a1cfc12e37eb829e2ef1472f34fe3982c8afa1f2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the `handover-answer` inbox family and save inbox records
+  and receipts as version 4.
+
 ## 1.3.0
 
 ### Minor Changes
