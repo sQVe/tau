@@ -318,6 +318,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/extensions/improvement/recordRequest.ts': ['node:path', 'typebox'],
   'src/extensions/subagents/report/pageInventory/pageInventoryDecision.ts': ['marked'],
   'src/extensions/subagents/report/pageInventory/pageInventoryDecisions.ts': ['marked'],
+  'src/extensions/subagents/report/reportSections.ts': ['marked'],
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/projectPath.ts': ['node:path'],
   'src/extensions/tdd/runner/cargoInputFiles.ts': ['node:path'],

@@ -2,14 +2,15 @@ import { Lexer } from 'marked';
 import type { Token, Tokens } from 'marked';
 
 import {
+  isMarkdownHeading,
   isMarkdownList,
   markdownTokenText,
   walkMarkdownTokens,
 } from '../../../../instructions/markdownLinks.js';
 import {
   decisionsSectionName,
+  fragmentHasHeading,
   handoverSectionNames,
-  summaryHasHeading,
 } from '../reportSections.js';
 import type { PageInventoryElement, PageInventoryPage, PageVerdict } from './pageInventory.js';
 import { elementSeparator } from './pageInventory.js';
@@ -50,8 +51,6 @@ type DecisionsFound =
 
 const unresolvedVerdicts: ReadonlySet<PageVerdict> = new Set(['contradicts', 'unsure']);
 
-const isHeading = (token: Token): token is Tokens.Heading => token.type === 'heading';
-
 const isBlockquote = (token: Token): token is Tokens.Blockquote =>
   token.type === 'blockquote' && 'tokens' in token && Array.isArray(token.tokens);
 
@@ -86,13 +85,15 @@ const sectionName = (text: string): string => {
   return (match?.[1] ?? trimmed).trim();
 };
 
-const isDecisionsText = (text: string): boolean => summaryHasHeading(text, decisionsSectionName);
+const isDecisionsText = (text: string): boolean => fragmentHasHeading(text, decisionsSectionName);
 
 const decisionsStart = (token: Token): DecisionsStart | undefined => {
   const text = blockInlineText(token);
 
   if (text !== undefined && isDecisionsText(text)) {
-    return isHeading(token) ? { kind: 'heading', depth: token.depth } : { kind: 'paragraph' };
+    return isMarkdownHeading(token)
+      ? { kind: 'heading', depth: token.depth }
+      : { kind: 'paragraph' };
   }
 
   if (isBlockquote(token)) {
@@ -124,7 +125,7 @@ const endsAtOrAbove = (token: Tokens.Heading, depth: number | undefined): boolea
   depth === undefined || token.depth <= depth;
 
 const hasSectionName = (text: string): boolean =>
-  handoverSectionNames.some((name) => summaryHasHeading(text, name));
+  handoverSectionNames.some((name) => fragmentHasHeading(text, name));
 
 const firstInlineText = (item: Tokens.ListItem): string | undefined => {
   for (const token of item.tokens) {
@@ -193,7 +194,7 @@ const endsDecisions = (
   depth: number | undefined,
   knownElements: ReadonlySet<string>,
 ): boolean => {
-  if (isHeading(token)) {
+  if (isMarkdownHeading(token)) {
     return isSectionLabel(token, knownElements) || endsAtOrAbove(token, depth);
   }
 
@@ -248,7 +249,7 @@ const findDecisionsStart = (tokens: readonly Token[]): DecisionsFound | undefine
       continue;
     }
 
-    if (start.kind === 'heading' && isHeading(token)) {
+    if (start.kind === 'heading' && isMarkdownHeading(token)) {
       return { kind: 'heading', index, token, start };
     }
 

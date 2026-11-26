@@ -49,6 +49,35 @@ it('stops findings at a section label with notes', () => {
   expect(findings).toEqual(['Your inbox card: still visible.']);
 });
 
+it('reads no Decisions section from a fenced Decisions heading', () => {
+  const tokens = tokensFor(
+    [
+      '## Changes',
+      'None',
+      '',
+      '```markdown',
+      '## Decisions',
+      '- Your inbox card: still visible.',
+      '```',
+      '',
+      '- Team list: still visible.',
+      '',
+      '## Concerns',
+      'None',
+    ].join('\n'),
+  );
+
+  const section = readDecisionsSection(tokens, new Set());
+
+  const sectionFindings =
+    section.kind === 'section' ? collectFindings(section.tokens, new Set()) : [];
+
+  const documentFindings = collectFindings(tokens, new Set());
+
+  expect(sectionFindings).toEqual([]);
+  expect(documentFindings).toEqual(['Team list: still visible.']);
+});
+
 it('needs a finding only for a contradicting or unsure element', () => {
   const matches = [page('https://app.test/teams', [element('Team list', 'matches')])];
   const contradicts = [page('https://app.test/teams', [element('Team list', 'contradicts')])];
