@@ -43,6 +43,11 @@ interface GuardState {
   pathDirectories: string[];
 }
 
+interface CommandStart {
+  scope: string;
+  directory: string;
+}
+
 interface InterpreterSources {
   files: string[];
   code: string[];
@@ -242,6 +247,11 @@ const wrapperPositionalSkips = new Map<string, PositionalSkip>([
   ['flock', { count: 1, unless: new Set() }],
   ['taskset', { count: 1, unless: new Set(['-c', '--cpu-list']) }],
   ['timeout', { count: 1, unless: new Set() }],
+]);
+
+// A wrapper option whose value the wrapper runs as a shell command.
+const wrapperCommandOptions = new Map<string, ReadonlySet<string>>([
+  ['flock', new Set(['-c', '--command'])],
 ]);
 
 const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
@@ -482,6 +492,63 @@ const skipWrapper = (
   return skip === undefined || sawUnless ? next : next + skip.count;
 };
 
+const optionCommandCode = (
+  words: string[],
+  index: number,
+  commandOptions: ReadonlySet<string>,
+  valueOptions: ReadonlySet<string>,
+): string | undefined => {
+  for (let next = index + 1; next < words.length; next += 1) {
+    const word = words[next] ?? '';
+
+    for (const option of commandOptions) {
+      if (word === option) {
+        return words[next + 1];
+      }
+
+      if (word.startsWith(`${option}=`)) {
+        return word.slice(option.length + 1);
+      }
+    }
+
+    if (valueOptions.has(word)) {
+      next += 1;
+    }
+  }
+
+  return undefined;
+};
+
+const wrapperInlineCode = (words: string[]): string | undefined => {
+  let index = 0;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+
+    if (assignmentPattern.test(word)) {
+      index += 1;
+
+      continue;
+    }
+
+    const name = commandName(word);
+    const commandOptions = wrapperCommandOptions.get(name);
+    const valueOptions = wrapperOptionValues.get(name);
+
+    if (valueOptions === undefined) {
+      return undefined;
+    }
+
+    if (commandOptions !== undefined) {
+      return optionCommandCode(words, index, commandOptions, valueOptions);
+    }
+
+    index = skipWrapper(words, index, name, valueOptions);
+  }
+
+  return undefined;
+};
+
 const commandWordIndex = (words: string[]): number | undefined => {
   let index = 0;
 
@@ -516,6 +583,12 @@ const commandWord = ({ arguments: words }: ShellCommand): string | undefined => 
 // An interpreter runs a file or inline code only from the executable position, so data such as
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
+  const inline = wrapperInlineCode(command.arguments);
+
+  if (inline !== undefined) {
+    return { files: [], code: [inline] };
+  }
+
   const index = commandWordIndex(command.arguments);
 
   if (index === undefined) {
@@ -602,15 +675,18 @@ const namedScriptsOf = (command: ShellCommand, directory: string): NamedScript[]
   return scripts;
 };
 
+const factsKey = (path: string, failClosed: boolean): string =>
+  `${failClosed ? 'closed' : 'open'}:${path}`;
+
 const scriptFacts = (
   path: string,
   state: GuardState,
   failClosed: boolean,
 ): NamedFileFacts | undefined => {
-  const cached = state.facts.get(path);
+  const key = factsKey(path, failClosed);
+  const cached = state.facts.get(key);
 
-  // A fail-open probe caches an unreadable file as missing, which must not excuse a fail-closed read.
-  if (cached !== undefined && !(failClosed && cached.kind === 'missing')) {
+  if (cached !== undefined) {
     return cached;
   }
 
@@ -625,7 +701,7 @@ const scriptFacts = (
     }
   }
 
-  state.facts.set(path, facts);
+  state.facts.set(key, facts);
 
   return facts;
 };
@@ -702,15 +778,40 @@ const ancestorDirectory = (stacks: Map<string, string[]>, scope: string): string
   return undefined;
 };
 
-// Each scope starts at the directory its parent scope is in when the substitution begins.
-const directoryStack = (stacks: Map<string, string[]>, scope: string, cwd: string): string[] => {
+const isUnderScope = (scope: string, prefix: string): boolean =>
+  prefix === '' || scope.startsWith(`${prefix}.`);
+
+const isStrictPrefix = (prefix: string, scope: string): boolean =>
+  prefix !== scope && isUnderScope(scope, prefix);
+
+// A heredoc body expands before its owner runs, so it resolves against the directory the owner
+// started in, not the one the owner's own `cd` moves to.
+const ownerDirectory = (history: CommandStart[], scope: string): string | undefined => {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+
+    if (entry !== undefined && isStrictPrefix(entry.scope, scope)) {
+      return entry.directory;
+    }
+  }
+
+  return undefined;
+};
+
+// Each scope starts where its owner command started.
+const directoryStack = (
+  stacks: Map<string, string[]>,
+  scope: string,
+  cwd: string,
+  history: CommandStart[],
+): string[] => {
   const existing = stacks.get(scope);
 
   if (existing !== undefined) {
     return existing;
   }
 
-  const base = scope === '' ? cwd : (ancestorDirectory(stacks, scope) ?? cwd);
+  const base = ownerDirectory(history, scope) ?? ancestorDirectory(stacks, scope) ?? cwd;
   const stack = [base];
 
   stacks.set(scope, stack);
@@ -745,11 +846,16 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
 
   const scriptCommands = commands.some(runsShell) ? commands : commands.filter(runsGit);
   const stacks = new Map<string, string[]>();
+  const history: CommandStart[] = [];
 
   for (const command of commands) {
-    const stack = directoryStack(stacks, command.scope, cwd);
+    const stack = directoryStack(stacks, command.scope, cwd, history);
     const directory = directoryFor(stack, command.depth);
     const scripts = namedScriptsOf(command, directory);
+
+    if (command.arguments.length > 0) {
+      history.push({ scope: command.scope, directory });
+    }
 
     const blocks = (script: NamedScript) =>
       inspectNamedScript(script, state, (text) => inspect(script.cwd, text));
@@ -758,8 +864,10 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
       return true;
     }
 
-    if (scriptCommands.includes(command)) {
-      const sources = [...scriptsOf([command]), ...interpreterSources(command).code];
+    const inline = interpreterSources(command).code;
+
+    if (inline.length > 0 || scriptCommands.includes(command)) {
+      const sources = [...scriptsOf([command]), ...inline];
 
       if (sources.some((text) => text !== source && inspect(directory, text))) {
         return true;

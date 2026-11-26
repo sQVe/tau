@@ -756,6 +756,48 @@ describe('guardToolCall', () => {
     });
   });
 
+  it('blocks a script a heredoc on a cd command names', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'sub/commit.sh', 'git status\n');
+
+    expect(guard(makeBashEvent('cd sub <<EOF\n$(./commit.sh)\nEOF'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a heredoc on a cd command whose body names a script in the new directory', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git status\n');
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('cd sub <<EOF\n$(./commit.sh)\nEOF'), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['flock lock -c', "flock lock -c 'sh commit.sh'"],
+    ['flock --command', "flock --command 'sh commit.sh' lock"],
+    ['flock --command=', "flock --command='sh commit.sh' lock"],
+  ])('blocks inline code after %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(command), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows inline code after flock that does not create a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent("flock lock -c 'git status'"), directory)).toBeUndefined();
+  });
+
   it('blocks a script file named after a redirection target digit', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -886,6 +928,11 @@ describe('guardToolCall', () => {
     'flock -w 5 lock sh commit.sh',
     'flock -E 3 lock sh commit.sh',
     'chrt -T 5 10 sh commit.sh',
+    'flock --timeout 5 lock sh commit.sh',
+    'flock --conflict-exit-code 3 lock sh commit.sh',
+    'chrt --sched-runtime 5 10 sh commit.sh',
+    'chrt --sched-period 5 10 sh commit.sh',
+    'chrt --sched-deadline 5 10 sh commit.sh',
   ])('blocks a script file after another wrapper: %s', (command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
