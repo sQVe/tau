@@ -416,7 +416,7 @@ const applyLaunchOutcome = async (
   fence: StartFence,
   started: PiLaunchResult,
 ): Promise<void> => {
-  if (launchOutcomeDecision(launchFacts(started)) === 'notCreated') {
+  if (launchOutcomeDecision(launchFacts(started)) === 'notCreated' || started.error !== undefined) {
     await settleLaunch(request, fence, launchFailure(started));
 
     return;

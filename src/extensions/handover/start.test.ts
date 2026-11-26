@@ -123,6 +123,39 @@ it('opens a tab in the space with the file text as its task', async () => {
   ]);
 });
 
+it('names the started space, tab, and terminal when the model readback fails', async () => {
+  const app = createHerdrAppFake();
+  const hc = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  hc.replyGet(
+    't-new',
+    JSON.stringify({
+      address: 't-new',
+      state: 'live',
+      foreground: { pid: 1, name: 'pi', argv: ['pi', '--model', 'other/model'], cwd: root },
+    }),
+  );
+
+  const failure = await startHandover(
+    { exec: execAnsweringHc(app, hc), cwd: root },
+    {
+      ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+      model: 'morph/morph-dsv41flash-1017',
+    },
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+
+  const message = (failure as Error).message;
+
+  expect(message).toContain('t-new');
+  expect(message).toContain('space-1');
+  expect(message).toContain('tb-new');
+  expect(message).toContain('hc kill t-new');
+});
+
 it('passes the lead as sender to the new tab', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);

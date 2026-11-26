@@ -2,7 +2,7 @@ import { basename } from 'node:path';
 
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { argumentAfter, succeededResult } from '../../../../tests/execFake.js';
+import { argumentAfter } from '../../../../tests/execFake.js';
 import {
   fakeStartProcessId,
   takeStartTicket,
@@ -12,7 +12,7 @@ import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import {
   adoptClaim,
   openTool,
-  recordStartedTerminal,
+  startedTerminalResult,
   requestFor,
 } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
@@ -107,11 +107,7 @@ it('returns the takeover result when the first marker read fails after the child
 
       faults.failNextMarkerRead = true;
 
-      const reply = '{"pane":"p-architect","terminal":"t-architect"}';
-
-      recordStartedTerminal(terminals, commandArguments, reply);
-
-      return succeededResult(reply);
+      return startedTerminalResult(terminals, commandArguments);
     }
 
     return runtime.exec(command, commandArguments, options);
@@ -140,11 +136,7 @@ it('stops a running child and releases the claim after a one-time marker read fa
       await takeStartTicket(argv);
       faults.failNextMarkerRead = true;
 
-      const reply = '{"pane":"p-architect","terminal":"t-architect"}';
-
-      recordStartedTerminal(terminals, commandArguments, reply);
-
-      return succeededResult(reply);
+      return startedTerminalResult(terminals, commandArguments);
     }
 
     return runtime.exec(command, commandArguments, options);

@@ -131,7 +131,7 @@ export const startHandover = async (
     space: parsed.space,
     tab: parsed.tab,
     terminal: parsed.terminal,
-    model: started.model ?? 'unknown',
+    model: 'terminal' in started ? started.model : 'unknown',
     spaceStatus,
   };
 };

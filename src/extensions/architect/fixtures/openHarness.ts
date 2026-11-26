@@ -75,7 +75,7 @@ const appFake = (): ExecFake<HerdrAppCommand> => {
 
 const leadTerminal = 't-lead';
 
-export const recordStartedTerminal = (
+const recordStartedTerminal = (
   terminals: Map<string, ExecResult>,
   commandArguments: readonly string[],
   reply: string,
@@ -89,6 +89,17 @@ export const recordStartedTerminal = (
   terminals.set(terminal, succeededResult(launchedTerminalReply(terminal, commandArguments)));
 
   return terminal;
+};
+
+// Records the terminal a launch reply names and returns the reply as a successful result.
+export const startedTerminalResult = (
+  terminals: Map<string, ExecResult>,
+  commandArguments: readonly string[],
+  reply: string = appSplit,
+): ExecResult => {
+  recordStartedTerminal(terminals, commandArguments, reply);
+
+  return succeededResult(reply);
 };
 
 const routedExec = (

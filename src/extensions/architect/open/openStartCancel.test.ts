@@ -12,7 +12,7 @@ import {
   open,
   openRequest,
   openTool,
-  recordStartedTerminal,
+  startedTerminalResult,
   requestFor,
 } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
@@ -204,11 +204,7 @@ it('resolves an unused ticket when a valid reply arrives before the rename and a
       replied.resolve(undefined);
       await release.promise;
 
-      const reply = '{"pane":"p-architect","terminal":"t-architect"}';
-
-      recordStartedTerminal(terminals, commandArguments, reply);
-
-      return succeededResult(reply);
+      return startedTerminalResult(terminals, commandArguments);
     }
 
     return runtime.exec(command, commandArguments, options);

@@ -2,7 +2,7 @@ import type { setTimeout as promiseDelay } from 'node:timers/promises';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
+import { argumentAfter, failedResult } from '../../../../tests/execFake.js';
 import { writeNextLockOwnerRecordSync } from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeStartProcessId,
@@ -17,7 +17,7 @@ import {
   open,
   openRequest,
   openTool,
-  recordStartedTerminal,
+  startedTerminalResult,
   requestFor,
 } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
@@ -270,11 +270,7 @@ it('throws when the child is gone after the wait saw its adoption', async ({
 
       child.state = 'gone';
 
-      const reply = '{"pane":"p-architect","terminal":"t-architect"}';
-
-      recordStartedTerminal(terminals, commandArguments, reply);
-
-      return succeededResult(reply);
+      return startedTerminalResult(terminals, commandArguments);
     }
 
     return runtime.exec(command, commandArguments, options);
@@ -654,11 +650,7 @@ it('keeps a successful result when a split adopts the claim', async ({
         cleanup(release);
       }
 
-      const reply = '{"pane":"p-architect","terminal":"t-architect"}';
-
-      recordStartedTerminal(terminals, commandArguments, reply);
-
-      return succeededResult(reply);
+      return startedTerminalResult(terminals, commandArguments);
     }
 
     return runtime.exec(command, commandArguments, options);
