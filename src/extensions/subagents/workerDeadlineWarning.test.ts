@@ -5,6 +5,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { saveReport, writeAssignment } from './assignment.js';
 import type { SavedReport } from './assignment.js';
+import { deadlineWarningDelay } from './deadlineDecision.js';
 import {
   assignmentFor,
   dispatch,
@@ -13,18 +14,47 @@ import {
   setup,
 } from './fixtures/workerExtensionHarness.js';
 
+interface FakeClock {
+  warningTimers: () => number;
+}
+
 vi.mock(import('node:fs/promises'), { spy: true });
 
 const start = 1_700_000_000_000;
 const warningReserve = 90_000;
+const warningDelay = deadlineWarningDelay(start + 120_000, start);
+const gitDrainMilliseconds = 100;
 
-const withFakeTimers = (): void => {
+// Git arms a timer to drain a child's streams when the child exits, and the extension's scan runs
+// git without a test awaiting it, so a count of every timer also counts git's.
+const withFakeTimers = (): FakeClock => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   vi.setSystemTime(start);
+
+  const setTimeoutFake = globalThis.setTimeout;
+  const clearTimeoutFake = globalThis.clearTimeout;
+  const armedTimers = new Map<unknown, number>();
+
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+    const handle = setTimeoutFake(callback, delay, ...args);
+
+    armedTimers.set(handle, delay ?? 0);
+
+    return handle;
+  });
+
+  vi.spyOn(globalThis, 'clearTimeout').mockImplementation((handle) => {
+    armedTimers.delete(handle);
+    clearTimeoutFake(handle);
+  });
 
   onTestFinished(() => {
     vi.useRealTimers();
   });
+
+  return {
+    warningTimers: () => [...armedTimers.values()].filter((delay) => delay === warningDelay).length,
+  };
 };
 
 const warningContent = (pi: ReturnType<typeof setup>['pi']): unknown =>
@@ -91,7 +121,7 @@ const savedReport: SavedReport = {
 };
 
 it('shows no warning when the worker reports before the warning time', async () => {
-  withFakeTimers();
+  const clock = withFakeTimers();
   const { context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
@@ -114,7 +144,9 @@ it('shows no warning when the worker reports before the warning time', async () 
     context,
   );
 
-  expect(vi.getTimerCount()).toBe(0);
+  setTimeout(() => undefined, gitDrainMilliseconds);
+
+  expect(clock.warningTimers()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
 
@@ -145,7 +177,7 @@ it('arms only after the start message, warning at once with 60 s left', async ()
 });
 
 it('shows no warning after session_shutdown', async () => {
-  withFakeTimers();
+  const clock = withFakeTimers();
   const { context, directory, pi } = setup();
 
   await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
@@ -154,11 +186,11 @@ it('shows no warning after session_shutdown', async () => {
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
 
-  expect(vi.getTimerCount()).toBe(1);
+  expect(clock.warningTimers()).toBe(1);
 
   pi.handler('session_shutdown')({}, context);
 
-  expect(vi.getTimerCount()).toBe(0);
+  expect(clock.warningTimers()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
   await flushAsync();
@@ -167,7 +199,7 @@ it('shows no warning after session_shutdown', async () => {
 });
 
 it('shows no warning when the assignment already has a report before the start', async () => {
-  withFakeTimers();
+  const clock = withFakeTimers();
   const { context, directory, pi } = setup();
 
   await writeAssignment({
@@ -179,7 +211,7 @@ it('shows no warning when the assignment already has a report before the start',
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
 
-  expect(vi.getTimerCount()).toBe(0);
+  expect(clock.warningTimers()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
 
