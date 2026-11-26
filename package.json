@@ -52,7 +52,7 @@
     "entities": "9.0.0",
     "marked": "18.0.11",
     "minimatch": "11.0.9",
-    "pi-web-access": "0.33.0",
+    "pi-web-access": "0.48.0",
     "smol-toml": "1.9.1"
   },
   "devDependencies": {
