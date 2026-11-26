@@ -206,8 +206,48 @@ it('keeps a then, else, or allOf subschema from rejecting a declared argument', 
   const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
 
   expect(Value.Check(strict, { mode: 'a', detail: 'b' })).toBe(true);
+  expect(Value.Check(strict, { mode: 'b', detail: 'b' })).toBe(true);
   expect(Value.Check(strict, { mode: 'a', detail: 'b', extra: 1 })).toBe(false);
 });
+
+it('closes an object nested under an allOf branch while the branch stays open', () => {
+  const schema = {
+    type: 'object',
+    properties: { detail: {} },
+    allOf: [
+      {
+        properties: { detail: { type: 'object', properties: { note: { type: 'string' } } } },
+      },
+    ],
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { detail: { note: 'a' } })).toBe(true);
+  expect(Value.Check(strict, { detail: { note: 'a', extra: 1 } })).toBe(false);
+});
+
+it.each([
+  { name: 'then', branch: 'then', mode: 'a' },
+  { name: 'else', branch: 'else', mode: 'b' },
+])(
+  'closes an object nested under a $name branch while the branch stays open',
+  ({ branch, mode }) => {
+    const schema = {
+      type: 'object',
+      properties: { mode: { type: 'string' }, detail: {} },
+      if: { properties: { mode: { const: 'a' } } },
+      [branch]: {
+        properties: { detail: { type: 'object', properties: { note: { type: 'string' } } } },
+      },
+    };
+
+    const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+    expect(Value.Check(strict, { mode, detail: { note: 'a' } })).toBe(true);
+    expect(Value.Check(strict, { mode, detail: { note: 'a', extra: 1 } })).toBe(false);
+  },
+);
 
 it('leaves an object schema under not and if open', () => {
   const schema = { type: 'object', not: childSchema(), if: childSchema() };

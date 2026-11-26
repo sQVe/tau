@@ -12,6 +12,12 @@ export interface KnownKeys {
 
 export type AskKind = 'choice' | 'approval';
 
+// Whether this node gets additionalProperties: false, and whether the nodes below it are asserted.
+interface SchemaStrictness {
+  readonly closeNode: boolean;
+  readonly closeDescendants: boolean;
+}
+
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -37,9 +43,10 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // argument the tool does not declare. A map schema keeps its additionalProperties schema, which
 // constrains every key. A node counts as an object when its type includes `object`, or when it
 // declares `properties` or `patternProperties` without a type. A subschema under `not` or `if`
-// narrows the negation or condition instead, so closing it would accept inputs the tool rejects. A
-// subschema under `then`, `else`, or `allOf` combines with sibling schemas, so closing it would
-// reject arguments the tool declares. Add a keyword to one of these sets when a tool schema can
+// narrows the negation or condition instead, so closing anything inside it would accept inputs the
+// tool rejects. The node under `then`, `else`, or `allOf` combines with sibling schemas, so closing
+// that node would reject arguments the tool declares, but an object nested inside the branch is
+// still asserted when the branch applies. Add a keyword to one of these sets when a tool schema can
 // hold a subschema under it. A subschema under a keyword outside these sets stays as written, so an
 // object there keeps its keys open.
 export const schemaMapKeywords: ReadonlySet<string> = new Set([
@@ -73,13 +80,29 @@ export const schemaValueKeywords: ReadonlySet<string> = new Set([
 ]);
 
 // A subschema under one of these keywords narrows the negation or condition instead of the
-// instance, so closing it there would accept inputs the tool rejects. A `then` or `else` branch
-// usually lists only the conditioned properties, so closing it would reject the others.
-const unassertedKeywords = new Set(['else', 'if', 'not', 'then']);
+// instance, so closing anything inside it would accept inputs the tool rejects.
+const unassertedKeywords = new Set(['if', 'not']);
 
-// An `allOf` branch combines with its siblings, so closing it would require that one branch to
-// declare every property.
-const unassertedArrayKeywords = new Set(['allOf']);
+// A `then` or `else` branch usually lists only the conditioned properties, so closing the branch
+// node would reject the others. An `allOf` branch combines with its siblings, so closing it would
+// require that one branch to declare every property. An object nested below the branch is still
+// asserted when the branch applies, so only the branch node itself stays open.
+const branchKeywords = new Set(['else', 'then']);
+const branchArrayKeywords = new Set(['allOf']);
+
+const assertedStrictness: SchemaStrictness = { closeNode: true, closeDescendants: true };
+const unassertedStrictness: SchemaStrictness = { closeNode: false, closeDescendants: false };
+
+// The nodes below an asserted node are asserted again, whatever kept this node open.
+const descendantStrictness = (strictness: SchemaStrictness): SchemaStrictness => ({
+  closeNode: strictness.closeDescendants,
+  closeDescendants: strictness.closeDescendants,
+});
+
+const branchStrictness = (inherited: SchemaStrictness): SchemaStrictness => ({
+  closeNode: false,
+  closeDescendants: inherited.closeDescendants,
+});
 
 const declaresObject = (value: Record<string, unknown>): boolean => {
   const type = value['type'];
@@ -97,15 +120,20 @@ const declaresObject = (value: Record<string, unknown>): boolean => {
   return type === undefined && declaresKeys;
 };
 
-const strictSchemaMap = (value: unknown, visit: (child: unknown) => unknown): unknown => {
+const strictSchemaMap = (
+  value: unknown,
+  strictness: SchemaStrictness,
+  visit: (child: unknown, strictness: SchemaStrictness) => unknown,
+): unknown => {
   if (!isRecord(value)) {
     return value;
   }
 
   const clone: Record<PropertyKey, unknown> = { ...value };
+  const nested = descendantStrictness(strictness);
 
   for (const key of Object.keys(value)) {
-    clone[key] = visit(value[key]);
+    clone[key] = visit(value[key], nested);
   }
 
   return clone;
@@ -114,31 +142,37 @@ const strictSchemaMap = (value: unknown, visit: (child: unknown) => unknown): un
 const strictSchemaChild = (
   key: string,
   child: unknown,
-  closesObjects: boolean,
-  visit: (value: unknown, closesObjects: boolean) => unknown,
+  strictness: SchemaStrictness,
+  visit: (value: unknown, strictness: SchemaStrictness) => unknown,
 ): unknown => {
   if (schemaMapKeywords.has(key)) {
-    return strictSchemaMap(child, (entry) => visit(entry, closesObjects));
+    return strictSchemaMap(child, strictness, visit);
   }
 
   if (schemaArrayKeywords.has(key)) {
-    const childClosesObjects = closesObjects && !unassertedArrayKeywords.has(key);
+    const nested = descendantStrictness(strictness);
+    const childStrictness = branchArrayKeywords.has(key) ? branchStrictness(nested) : nested;
 
-    return Array.isArray(child) ? child.map((entry) => visit(entry, childClosesObjects)) : child;
+    return Array.isArray(child) ? child.map((entry) => visit(entry, childStrictness)) : child;
   }
 
   if (schemaValueKeywords.has(key)) {
-    const childClosesObjects = closesObjects && !unassertedKeywords.has(key);
+    if (unassertedKeywords.has(key)) {
+      return visit(child, unassertedStrictness);
+    }
 
-    return visit(child, childClosesObjects);
+    const nested = descendantStrictness(strictness);
+    const childStrictness = branchKeywords.has(key) ? branchStrictness(nested) : nested;
+
+    return visit(child, childStrictness);
   }
 
   return child;
 };
 
-const strictSchemaValue = (value: unknown, closesObjects = true): unknown => {
+const strictSchemaValue = (value: unknown, strictness = assertedStrictness): unknown => {
   if (Array.isArray(value)) {
-    return value.map((item) => strictSchemaValue(item, closesObjects));
+    return value.map((item) => strictSchemaValue(item, strictness));
   }
 
   if (!isRecord(value)) {
@@ -148,10 +182,10 @@ const strictSchemaValue = (value: unknown, closesObjects = true): unknown => {
   const clone: Record<PropertyKey, unknown> = { ...value };
 
   for (const key of Object.keys(value)) {
-    clone[key] = strictSchemaChild(key, value[key], closesObjects, strictSchemaValue);
+    clone[key] = strictSchemaChild(key, value[key], strictness, strictSchemaValue);
   }
 
-  if (closesObjects && declaresObject(value)) {
+  if (strictness.closeNode && declaresObject(value)) {
     const additionalProperties = value['additionalProperties'];
 
     if (additionalProperties === undefined || additionalProperties === true) {
