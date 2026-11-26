@@ -12,6 +12,11 @@ const argumentsOf = (source: string) =>
     ?.map(({ arguments: commandArguments }) => commandArguments)
     .filter((commandArguments) => commandArguments.length > 0);
 
+const inputsOf = (source: string) =>
+  parseShellCommands(source)
+    ?.filter(({ words }) => words.length > 0)
+    .map(({ inputs }) => inputs);
+
 describe('parseShellCommands', () => {
   it.each([
     ['git commit>out', [['git', 'commit', 'out']]],
@@ -50,6 +55,39 @@ describe('parseShellCommands', () => {
     ],
   ])('keeps only the arguments bash passes: %s', (source, expected) => {
     expect(argumentsOf(source)).toEqual(expected);
+  });
+
+  it.each([
+    ['sh < commit.sh', [[{ descriptor: undefined, target: 'commit.sh', duplicate: false }]]],
+    ['sh 0< commit.sh', [[{ descriptor: '0', target: 'commit.sh', duplicate: false }]]],
+    ['sh 00< commit.sh', [[{ descriptor: '00', target: 'commit.sh', duplicate: false }]]],
+    ['sh 3< commit.sh', [[{ descriptor: '3', target: 'commit.sh', duplicate: false }]]],
+    [
+      'sh <commit.sh > build.log',
+      [[{ descriptor: undefined, target: 'commit.sh', duplicate: false }]],
+    ],
+    ['sh <> commit.sh', [[{ descriptor: undefined, target: 'commit.sh', duplicate: false }]]],
+    ['sh 3<> commit.sh', [[{ descriptor: '3', target: 'commit.sh', duplicate: false }]]],
+    ['sh <&3', [[{ descriptor: undefined, target: '3', duplicate: true }]]],
+    ['sh 2<&1', [[{ descriptor: '2', target: '1', duplicate: true }]]],
+    [
+      'sh 3< commit.sh <&3',
+      [
+        [
+          { descriptor: '3', target: 'commit.sh', duplicate: false },
+          { descriptor: undefined, target: '3', duplicate: true },
+        ],
+      ],
+    ],
+    ['sh > build.log', [[]]],
+    ['sh >> build.log', [[]]],
+    ['sh >&2', [[]]],
+    ['sh &> build.log', [[]]],
+    ["cat <<'EOF'\nbody\nEOF", [[]]],
+    ["cat <<-'EOF'\n\tbody\n\tEOF", [[]]],
+    ['cat <<< word', [[]]],
+  ])('records the redirections that feed standard input: %s', (source, expected) => {
+    expect(inputsOf(source)).toEqual(expected);
   });
 
   it.each([
@@ -213,8 +251,8 @@ describe('parseShellCommands', () => {
 
   it('reads a heredoc body after the line ends', () => {
     expect(parseShellCommands('cat <<EOF\nbody\nEOF\nnext')).toEqual([
-      { words: ['cat'], arguments: ['cat'], heredocs: ['body\n'] },
-      { words: ['next'], arguments: ['next'], heredocs: [] },
+      { words: ['cat'], arguments: ['cat'], inputs: [], heredocs: ['body\n'], depth: 0 },
+      { words: ['next'], arguments: ['next'], inputs: [], heredocs: [], depth: 0 },
     ]);
   });
 
@@ -228,8 +266,8 @@ describe('parseShellCommands', () => {
 
   it('does not treat <<< as a heredoc', () => {
     expect(parseShellCommands('cat <<< word\nnext')).toEqual([
-      { words: ['cat', 'word'], arguments: ['cat'], heredocs: [] },
-      { words: ['next'], arguments: ['next'], heredocs: [] },
+      { words: ['cat', 'word'], arguments: ['cat'], inputs: [], heredocs: [], depth: 0 },
+      { words: ['next'], arguments: ['next'], inputs: [], heredocs: [], depth: 0 },
     ]);
   });
 
@@ -282,7 +320,7 @@ describe('parseShellCommands', () => {
 
   it('reads an empty heredoc when the source ends after the operator', () => {
     expect(parseShellCommands('cat <<EOF')).toEqual([
-      { words: ['cat'], arguments: ['cat'], heredocs: [''] },
+      { words: ['cat'], arguments: ['cat'], inputs: [], heredocs: [''], depth: 0 },
     ]);
   });
 
