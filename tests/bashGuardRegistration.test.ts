@@ -1,10 +1,8 @@
 import { expect, it, vi } from 'vitest';
 
 import tauRegistration from '../src/tau/tau.js';
+import { nohupClose } from './bashGuardCommands.js';
 import { fakeExtensionApi } from './extensionApi.js';
-
-const nohupClose =
-  'nohup sh -c \'sleep 30; herdr-app do space.close --id sp527dd22aa065042833adf82c857c6cab --confirmed\' >/dev/null 2>&1 & echo "close scheduled"';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;

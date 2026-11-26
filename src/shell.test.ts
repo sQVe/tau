@@ -17,6 +17,9 @@ const backgroundsOf = (source: string): boolean[] | undefined =>
     ?.filter(({ arguments: commandArguments }) => commandArguments.length > 0)
     .map(({ background }) => background);
 
+const unitsOf = (source: string): number[] | undefined =>
+  parseShellCommands(source)?.map(({ unit }) => unit);
+
 describe('parseShellCommands', () => {
   it.each([
     ['git commit>out', [['git', 'commit', 'out']]],
@@ -61,11 +64,7 @@ describe('parseShellCommands', () => {
   });
 
   it('does not mark an and-list as background', () => {
-    const commands = parseShellCommands('cmd && other')?.filter(
-      ({ arguments: commandArguments }) => commandArguments.length > 0,
-    );
-
-    expect(commands?.map(({ background }) => background)).toEqual([false, false]);
+    expect(backgroundsOf('cmd && other')).toEqual([false, false]);
   });
 
   it('marks every command in a background pipeline or list unit', () => {
@@ -73,6 +72,13 @@ describe('parseShellCommands', () => {
     expect(backgroundsOf('cmd 2>/dev/null & cat')).toEqual([true, false]);
     expect(backgroundsOf('cmd && other &')).toEqual([true, true]);
     expect(backgroundsOf('cmd; other &')).toEqual([false, true]);
+  });
+
+  it.each([
+    ['a group and its closing redirections', '( cmd )', [0, 1, 1]],
+    ['a plain list', 'cmd; other', [0, 1]],
+  ])('records the unit index for %s', (_name, source, expected) => {
+    expect(unitsOf(source)).toEqual(expected);
   });
 
   it.each([
@@ -102,6 +108,11 @@ describe('parseShellCommands', () => {
       'an and-list broken across a newline without a trailing ampersand',
       'cmd 2>/dev/null &&\n  other',
       [false, false],
+    ],
+    [
+      'a heredoc body command before a background unit',
+      'cat <<EOF\n$(touch x 2>/dev/null)\nEOF\nother &',
+      [false, true, false],
     ],
   ])(
     'marks background inside the unit that ends with an ampersand: %s',
@@ -306,9 +317,17 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         heredocs: ['body\n'],
         background: false,
+        unit: 0,
         redirections: [],
       },
-      { words: ['next'], arguments: ['next'], heredocs: [], background: false, redirections: [] },
+      {
+        words: ['next'],
+        arguments: ['next'],
+        heredocs: [],
+        background: false,
+        unit: 1,
+        redirections: [],
+      },
     ]);
   });
 
@@ -327,9 +346,17 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         heredocs: [],
         background: false,
+        unit: 0,
         redirections: [{ fileDescriptor: undefined, operator: '<<<', target: 'word' }],
       },
-      { words: ['next'], arguments: ['next'], heredocs: [], background: false, redirections: [] },
+      {
+        words: ['next'],
+        arguments: ['next'],
+        heredocs: [],
+        background: false,
+        unit: 1,
+        redirections: [],
+      },
     ]);
   });
 
@@ -382,7 +409,14 @@ describe('parseShellCommands', () => {
 
   it('reads an empty heredoc when the source ends after the operator', () => {
     expect(parseShellCommands('cat <<EOF')).toEqual([
-      { words: ['cat'], arguments: ['cat'], heredocs: [''], background: false, redirections: [] },
+      {
+        words: ['cat'],
+        arguments: ['cat'],
+        heredocs: [''],
+        background: false,
+        unit: 0,
+        redirections: [],
+      },
     ]);
   });
 

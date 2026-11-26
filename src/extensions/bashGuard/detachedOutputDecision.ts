@@ -20,6 +20,13 @@ interface Streams {
   stderr: StreamTarget | undefined;
 }
 
+interface ScriptFacts {
+  logs: boolean;
+  discards: boolean;
+}
+
+type ScriptFactsOf = (script: string | undefined, depth: number) => ScriptFacts;
+
 const shellNames = new Set(['sh', 'bash', 'dash', 'zsh']);
 const devNull = '/dev/null';
 
@@ -83,13 +90,7 @@ const applyRedirection = (
   streams: Streams,
   redirection: ShellCommand['redirections'][number],
 ): void => {
-  const target = redirection.target;
-
-  if (target === undefined) {
-    return;
-  }
-
-  const { fileDescriptor, operator } = redirection;
+  const { fileDescriptor, operator, target } = redirection;
 
   if (operator === '&>' || operator === '&>>') {
     streams.stdout = { kind: 'file', path: target };
@@ -132,6 +133,8 @@ const logsStderr = (command: ShellCommand): boolean => {
 
 const shellNameOf = (argument: string): string => argument.slice(argument.lastIndexOf('/') + 1);
 
+const maximumScriptDepth = 4;
+
 const scriptOf = (command: ShellCommand): string | undefined => {
   const shellIndex = command.arguments.findIndex((argument) =>
     shellNames.has(shellNameOf(argument)),
@@ -141,31 +144,81 @@ const scriptOf = (command: ShellCommand): string | undefined => {
     return undefined;
   }
 
-  const commandFlagIndex = command.arguments.indexOf('-c', shellIndex + 1);
+  const commandFlagIndex = command.arguments.findIndex(
+    (argument, index) => index > shellIndex && /^-[a-z]*c[a-z]*$/u.test(argument),
+  );
 
   return commandFlagIndex === -1 ? undefined : command.arguments[commandFlagIndex + 1];
 };
 
-// The outer redirection hides the script's own stderr. A script keeps it when its last command
-// writes stderr to a file and no command sends stderr to /dev/null.
-const scriptKeepsStderr = (script: string): boolean => {
-  const commands = parseShellCommands(script);
-  const nonEmpty = (commands ?? []).filter((command) => command.arguments.length > 0);
-  const last = nonEmpty.at(-1);
+const commandsFacts = (
+  commands: readonly ShellCommand[],
+  depth: number,
+  scriptFactsOf: ScriptFactsOf,
+): ScriptFacts =>
+  commands.reduce<ScriptFacts>(
+    (facts, command) => {
+      const nestedScript = scriptOf(command);
 
-  if (last === undefined || !logsStderr(last)) {
+      const nested =
+        nestedScript === undefined
+          ? { logs: false, discards: false }
+          : scriptFactsOf(nestedScript, depth + 1);
+
+      return {
+        logs: facts.logs || logsStderr(command) || nested.logs,
+        discards: facts.discards || discardsStderr(command) || nested.discards,
+      };
+    },
+    { logs: false, discards: false },
+  );
+
+// Fail closed past the depth budget, so a deeply nested script is treated as hiding its stderr.
+const scriptFacts = (script: string | undefined, depth = 0): ScriptFacts => {
+  if (depth > maximumScriptDepth) {
+    return { logs: false, discards: true };
+  }
+
+  const commands = (parseShellCommands(script ?? '') ?? []).filter(
+    (command) => command.arguments.length > 0,
+  );
+
+  return commandsFacts(commands, depth, scriptFacts);
+};
+
+const unitFacts = (commands: readonly ShellCommand[], command: ShellCommand): ScriptFacts =>
+  commandsFacts(
+    commands.filter(
+      (candidate) =>
+        candidate.unit === command.unit && candidate.arguments.length > 0 && candidate !== command,
+    ),
+    0,
+    scriptFacts,
+  );
+
+// The outer redirection hides the script's own stderr. A script keeps it when some command writes
+// stderr to a file and no command sends stderr to /dev/null.
+const scriptKeepsStderr = (script: string): boolean => {
+  const facts = scriptFacts(script);
+
+  return facts.logs && !facts.discards;
+};
+
+const scriptDiscardsStderr = (script: string | undefined): boolean => scriptFacts(script).discards;
+
+const hidesFailure = (command: ShellCommand, commands: readonly ShellCommand[]): boolean => {
+  if (!command.background) {
     return false;
   }
 
-  return nonEmpty.every((command) => !discardsStderr(command));
-};
+  if (command.arguments.length === 0) {
+    if (!discardsStderr(command)) {
+      return false;
+    }
 
-const scriptDiscardsStderr = (script: string | undefined): boolean =>
-  (parseShellCommands(script ?? '') ?? []).some(discardsStderr);
+    const facts = unitFacts(commands, command);
 
-const hidesFailure = (command: ShellCommand): boolean => {
-  if (!command.background) {
-    return false;
+    return !facts.logs || facts.discards;
   }
 
   const script = scriptOf(command);
@@ -191,5 +244,7 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
     return undefined;
   }
 
-  return commands.some(hidesFailure) ? { block: true, reason: blockReason } : undefined;
+  return commands.some((command) => hidesFailure(command, commands))
+    ? { block: true, reason: blockReason }
+    : undefined;
 };

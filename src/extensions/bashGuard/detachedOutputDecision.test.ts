@@ -1,15 +1,10 @@
 import { expect, it } from 'vitest';
 
+import { loggedClose, nohupClose } from '../../../tests/bashGuardCommands.js';
 import { decideDetachedOutput } from './detachedOutputDecision.js';
 
 const blocks = (command: string): boolean =>
   decideDetachedOutput({ toolName: 'bash', command })?.block === true;
-
-const nohupClose =
-  'nohup sh -c \'sleep 30; herdr-app do space.close --id sp527dd22aa065042833adf82c857c6cab --confirmed\' >/dev/null 2>&1 & echo "close scheduled"';
-
-const loggedClose =
-  "setsid sh -c 'sleep 25; herdr-app do space.close --id sp527dd22aa065042833adf82c857c6cab --confirmed true > /tmp/tau-space-close.log 2>&1' </dev/null >/dev/null 2>&1 &";
 
 it('blocks the past nohup close whose stderr went to /dev/null', () => {
   const decision = decideDetachedOutput({ toolName: 'bash', command: nohupClose });
@@ -106,9 +101,24 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: false,
   },
   {
-    name: 'a foreground pipeline that merges stderr and has no trailing ampersand',
-    command: 'cmd 2>/dev/null |& cat',
+    name: 'a detached group whose command logs and whose group discards stderr',
+    command: '( cmd > /tmp/x.log 2>&1 ) >/dev/null 2>&1 &',
     blocked: false,
+  },
+  {
+    name: 'a detached group whose command does not log',
+    command: '( herdr-app do space.close --confirmed ) >/dev/null 2>&1 &',
+    blocked: true,
+  },
+  {
+    name: 'a detached group whose own redirection logs',
+    command: '( cmd ) > /tmp/x.log 2>&1 &',
+    blocked: false,
+  },
+  {
+    name: 'a detached group whose own redirection discards stderr',
+    command: '( cmd ) >/dev/null 2>&1 &',
+    blocked: true,
   },
   {
     name: 'a |& pipeline discarding stderr',
@@ -124,6 +134,26 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     name: 'a shell with a later inner discard',
     command: `sh -c 'true; cmd 2>/dev/null' &`,
     blocked: true,
+  },
+  {
+    name: 'a shell cluster whose script logs',
+    command: `nohup bash -lc 'cmd > /tmp/x.log 2>&1' >/dev/null 2>&1 &`,
+    blocked: false,
+  },
+  {
+    name: 'a shell script whose logging command is followed by a silent one',
+    command: `setsid sh -c 'cmd > /tmp/x.log 2>&1; true' >/dev/null 2>&1 &`,
+    blocked: false,
+  },
+  {
+    name: 'a shell script whose nested script discards stderr',
+    command: `sh -c 'sh -c "cmd 2>/dev/null"' &`,
+    blocked: true,
+  },
+  {
+    name: 'a heredoc body command before a background unit',
+    command: 'cat <<EOF\n$(touch x 2>/dev/null)\nEOF\nother &',
+    blocked: false,
   },
   {
     name: 'a detached pipeline broken across a newline whose first command discards stderr',

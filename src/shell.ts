@@ -1,7 +1,7 @@
 interface ShellRedirection {
   fileDescriptor: number | undefined;
   operator: string;
-  target: string | undefined;
+  target: string;
 }
 
 export interface ShellCommand {
@@ -11,6 +11,8 @@ export interface ShellCommand {
   arguments: string[];
   heredocs: string[];
   background: boolean;
+  // The index of the first command of this command's pipeline or list unit.
+  unit: number;
   redirections: ShellRedirection[];
 }
 
@@ -153,6 +155,7 @@ class ShellParser {
   private readonly source: string;
   private position = 0;
   private readonly pendingHeredocs: PendingHeredoc[] = [];
+  private readonly heredocBodyCommands = new Set<ShellCommand>();
 
   constructor(source: string) {
     this.source = source;
@@ -163,7 +166,7 @@ class ShellParser {
     const firstCommand = this.commands.length;
 
     const state: ListState = {
-      command: this.startCommand(),
+      command: this.startCommand(firstCommand),
       word: undefined,
       wordQuoted: false,
       wordCommandStart: 0,
@@ -363,22 +366,25 @@ class ShellParser {
     }
 
     const endsUnit = endsListUnit(character, isBackground);
+    const commandIndex = this.commands.length;
+    const startsUnit = endsUnit || character === '(';
+    const unit = startsUnit ? commandIndex : (state.unitStarts.at(-1) ?? commandIndex);
 
-    state.command = this.startCommand();
+    state.command = this.startCommand(unit);
     state.redirectionTarget = false;
     state.pendingRedirection = undefined;
     state.continuesList = continuesListAfter(operator);
     this.position += length;
 
     if (endsUnit) {
-      state.unitStarts[state.unitStarts.length - 1] = this.commands.length - 1;
+      state.unitStarts[state.unitStarts.length - 1] = commandIndex;
     }
 
     if (character === '\n') {
       this.readPendingHeredocs();
     } else if (character === '(') {
       state.depth += 1;
-      state.unitStarts.push(this.commands.length - 1);
+      state.unitStarts.push(commandIndex);
     } else if (character === ')') {
       return this.closeGroup(state);
     }
@@ -391,7 +397,9 @@ class ShellParser {
     const start = state.unitStarts.at(-1) ?? 0;
 
     for (const command of this.commands.slice(start)) {
-      command.background = true;
+      if (!this.heredocBodyCommands.has(command)) {
+        command.background = true;
+      }
     }
   }
 
@@ -462,12 +470,13 @@ class ShellParser {
     return '$`"\\'.includes(next) ? next : `\\${next}`;
   }
 
-  private startCommand(): ShellCommand {
+  private startCommand(unit: number): ShellCommand {
     const command: ShellCommand = {
       words: [],
       arguments: [],
       heredocs: [],
       background: false,
+      unit,
       redirections: [],
     };
 
@@ -634,6 +643,14 @@ class ShellParser {
         const bodyParser = new ShellParser(body);
 
         bodyParser.readExpandingText(undefined, false);
+
+        const base = this.commands.length;
+
+        for (const command of bodyParser.commands) {
+          command.unit += base;
+          this.heredocBodyCommands.add(command);
+        }
+
         this.commands.push(...bodyParser.commands);
       }
     }
