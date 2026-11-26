@@ -35,6 +35,10 @@ const differentTarget =
 const digestOf = (content: Uint8Array | string): string =>
   createHash('sha256').update(content).digest('hex');
 
+// Both parts are hex digests, so the separator cannot appear inside either one.
+const fileDigest = (file: PublicationFile): string =>
+  digestOf([digestOf(file.file), digestOf(file.bytes)].join(separator));
+
 const absentPart = 'absent';
 
 // Absence gets a bare word that no JSON value equals, and JSON keeps a number apart from its text.
@@ -63,10 +67,7 @@ const targetDigest = (target: PublicationTargetFacts): string => {
 export const publicationToken = (
   target: PublicationTargetFacts,
   files: readonly PublicationFile[],
-): string =>
-  [tokenVersion, targetDigest(target), ...files.map((file) => digestOf(file.bytes))].join(
-    separator,
-  );
+): string => [tokenVersion, targetDigest(target), ...files.map(fileDigest)].join(separator);
 
 const refusal = (reason: string): PublicationDecision => ({ kind: 'refuse', reason });
 
@@ -87,7 +88,7 @@ export const decidePublication = (facts: PublicationFacts): PublicationDecision 
     );
   }
 
-  const changed = facts.files.find((file, index) => digestOf(file.bytes) !== digests[index]);
+  const changed = facts.files.find((file, index) => fileDigest(file) !== digests[index]);
 
   if (changed === undefined) {
     return { kind: 'publish' };

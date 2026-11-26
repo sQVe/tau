@@ -85,6 +85,17 @@ const table: {
     ),
   },
   {
+    name: 'refuses the same bytes under another file name and names the file',
+    facts: {
+      token,
+      target,
+      files: [title, { ...body, file: 'other.md' }],
+    },
+    expected: refusal(
+      'other.md changed since the dry run. Nothing was published. Run dryRun again.',
+    ),
+  },
+  {
     name: 'refuses a token for a different set of files',
     facts: { token, target, files: [body] },
     expected: refusal(
