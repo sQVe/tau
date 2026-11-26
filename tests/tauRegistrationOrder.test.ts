@@ -18,7 +18,7 @@ import { acceptChecks } from '../src/inbox/inbox.js';
 import type { MessageReply, MessageRequest } from '../src/inbox/protocol.js';
 import { formatInboxLabel, inboxLabelKey } from '../src/inbox/protocol.js';
 import tauRegistration from '../src/tau/tau.js';
-import { succeededResult } from './execFake.js';
+import { createExecFake, succeededResult } from './execFake.js';
 import { fakeExtensionApi } from './extensionApi.js';
 import { openRecord, questionId } from './fixtures/answerRecord.js';
 import { createTemporaryRepository } from './gitRepository.js';
@@ -116,7 +116,8 @@ const startAnswerFixture = async (onTestFinished: SuiteCleanup) => {
     uid === undefined ? undefined : socketPathFor(socketDirectoryFor(uid), sessionId);
 
   const labels = socketPath === undefined ? {} : { [inboxLabelKey]: formatInboxLabel(socketPath) };
-  const calls: { command: string; commandArguments: readonly string[] }[] = [];
+  const foreground = { pid: processGroup, name: 'pi', argv: ['pi'], cwd: root };
+  const terminal = { address: 't-worker', state: 'live', foreground, labels };
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
   vi.stubEnv('TAU_ROLE', '');
@@ -129,20 +130,28 @@ const startAnswerFixture = async (onTestFinished: SuiteCleanup) => {
     vi.unstubAllEnvs();
   });
 
-  const fake = fakeExtensionApi({
-    exec: async (command, commandArguments) => {
-      calls.push({ command, commandArguments });
-
-      if (command === 'ps') {
-        return succeededResult(`${String(processGroup)}\n`);
+  const execFake = createExecFake<'hc' | 'ps'>({
+    keyOf: (command) => {
+      if (command === 'hc') {
+        return 'hc';
       }
 
-      const foreground = { pid: processGroup, name: 'pi', argv: ['pi'], cwd: root };
-      const terminal = { address: 't-worker', state: 'live', foreground, labels };
+      if (command === 'ps') {
+        return 'ps';
+      }
 
-      return succeededResult(JSON.stringify(terminal));
+      return undefined;
+    },
+    handlerFor: (key) => {
+      if (key === 'ps') {
+        return () => succeededResult(`${String(processGroup)}\n`);
+      }
+
+      return () => succeededResult(JSON.stringify(terminal));
     },
   });
+
+  const fake = fakeExtensionApi({ exec: execFake.exec });
 
   const registered = recordRegistrations(fake);
 
@@ -171,7 +180,7 @@ const startAnswerFixture = async (onTestFinished: SuiteCleanup) => {
     root,
     sessionId,
     socketPath,
-    calls,
+    calls: execFake.calls,
     handoverStart,
     inboxStart,
     inboxShutdown,
@@ -204,7 +213,7 @@ const setupAnswerScenario = async (onTestFinished: SuiteCleanup) => {
 
   const context = {
     cwd: fixture.root,
-    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
+    ui: { notify: () => undefined },
     shutdown: vi.fn<() => void>(),
     isProjectTrusted: (): boolean => true,
     sessionManager: {
@@ -369,7 +378,7 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   expect(await readLiveLockHolder(lockPath)).toBeUndefined();
 });
 
-it('keeps the session directory through the shutdown handlers that run before the inbox', async ({
+it('queues an answer before the inbox closes, then withdraws its socket and label', async ({
   onTestFinished,
 }) => {
   const {
@@ -418,10 +427,14 @@ it('keeps the session directory through the shutdown handlers that run before th
 
   expect(existsSync(socketPath)).toBe(false);
 
-  expect(calls).toContainEqual({
-    command: 'hc',
-    commandArguments: ['label', '--json', '--', 't-worker', `${inboxLabelKey}=`],
-  });
+  expect(calls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'hc',
+        commandArguments: ['label', '--json', '--', 't-worker', `${inboxLabelKey}=`],
+      }),
+    ]),
+  );
 });
 
 it('sets the session directory before the inbox accepts answers', async ({ onTestFinished }) => {
