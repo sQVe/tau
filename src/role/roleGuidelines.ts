@@ -44,13 +44,15 @@ const sharedBriefGuidelines = [
 ];
 
 const leadDelegationGuidelines = [
-  'Without waiting to be asked, send open questions needing wide reading or commands to a `scout`.',
+  'Send open questions needing wide reading or commands to a `scout` without waiting to be asked.',
   'Outside a slice, review a finished worker change with the `code-review` skill in fast mode before you accept or commit it. Launch a `reviewer` only from a skill step.',
   'Use the profile default model. Pass `model` only for a `reviewer` or `checker`, when the user asks for another model or a multi-model discussion.',
-  'Launch independent workers in one turn. Start a dependent worker only after the worker it needs reports.',
-  'Give a worker a shorter `timeoutSeconds` only when the user named a cheap model for it.',
-  'Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
+  'Launch independent workers together. Start a dependent worker only after its dependency reports.',
+  'Give a worker a shorter `timeoutSeconds` only when the user names a cheap model.',
+  'Run a multi-model discussion as one round with two models; add a round only for a disagreement that changes the decision.',
   'Send a finished change with user-visible behavior to `qa`, and give it only test-account credentials, because worker records keep them.',
+  'Send checks of whether a page matches the change to `qa`, not `browser`.',
+  'Pass `url` to `qa` on a web app when the user config has no `urlCommand` for this repository; otherwise Tau runs the `urlCommand` and fills the URL from its output.',
 ];
 
 const leadWorkerRunGuidelines = [

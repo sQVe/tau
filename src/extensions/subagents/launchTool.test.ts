@@ -15,6 +15,7 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
+import { launchRefusalMessage } from '../../../tests/refusalMessage.js';
 import type { Exec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
@@ -160,16 +161,6 @@ const resultText = (result: Awaited<ReturnType<ToolDefinition['execute']>>): str
   const [first] = result.content;
 
   return first?.type === 'text' ? first.text : '';
-};
-
-const refusalMessage = async (run: () => Promise<unknown>): Promise<string> => {
-  try {
-    await run();
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
-  }
-
-  throw new Error('The launch was not refused.');
 };
 
 const modelOrderPattern = (profile: string): RegExp =>
@@ -444,7 +435,7 @@ it.for(['worker', 'scout', 'qa', 'browser'] as const)(
 
     vi.mocked(writeAssignment).mockClear();
 
-    const text = await refusalMessage(() =>
+    const text = await launchRefusalMessage(() =>
       execute(
         tool,
         {
@@ -478,7 +469,7 @@ it.for(['invalid model', 'missing/model'] as const)(
 
     vi.mocked(writeAssignment).mockClear();
 
-    const text = await refusalMessage(() =>
+    const text = await launchRefusalMessage(() =>
       execute(
         tool,
         { profile: 'worker', model, task: 'Fix the counts.', acceptance: ['Done.'] },
@@ -523,7 +514,7 @@ it('refuses a qa launch with model before running the configured urlCommand', as
 
   vi.mocked(writeAssignment).mockClear();
 
-  const text = await refusalMessage(() =>
+  const text = await launchRefusalMessage(() =>
     execute(
       tool,
       { profile: 'qa', model: fixture.request.model, task: 'Test the form.' },

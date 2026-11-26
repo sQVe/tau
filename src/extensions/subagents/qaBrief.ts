@@ -1,3 +1,4 @@
+import { isHttpUrl } from './launchEnvironment.js';
 import type { QaSettings } from './qaSettings.js';
 
 export interface UrlCommandRun {
@@ -8,16 +9,6 @@ export interface UrlCommandRun {
 }
 
 export type UrlCommandResult = { url: string } | { refusal: string };
-
-const isHttpUrl = (value: string): boolean => {
-  if (!URL.canParse(value)) {
-    return false;
-  }
-
-  const { protocol } = new URL(value);
-
-  return protocol === 'http:' || protocol === 'https:';
-};
 
 export const urlCommandResult = ({ command, source, stdout }: UrlCommandRun): UrlCommandResult => {
   const named = `qa.repositories urlCommand ${JSON.stringify(command)} in ${source}`;

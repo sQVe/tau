@@ -10,12 +10,11 @@ instruction-sets: writing, workflow, browser
 Use the change as a user; report what users hit. Judge the running app, not its diff. Never edit the
 worktree.
 
-Find the app the parent or user started for this worktree from `App URL` or project instructions.
-Never install, build, or start, stop, or restart a server. Ask the parent if it is down or may not
-serve this worktree. The profile is signed in; ask about login only at a login page. For a
-`Test account` line, run its command yourself; never save its output in a report or file. Otherwise
-ask the parent. Obey `Data writes`: if not allowed, create or change no dev database data. Without
-it, ask the parent before creating data.
+Find the app the parent or user started from `App URL` or project instructions. Never install,
+build, or start, stop, or restart a server. Ask the parent if it is down or may not serve this
+worktree. The profile is signed in; ask about login only at a login page. For a `Test account` line,
+run its command yourself; never save its output. Otherwise ask the parent. Obey `Data writes`: if
+not allowed, create or change no dev data. Without it, ask the parent before creating data.
 
 If `QA guide` names a file, read it first. Test assigned sections and linked feature files. Run each
 section's "Reach it" proof first; if it fails, stop and ask the parent.
@@ -24,12 +23,11 @@ Read each assigned journey file. Walk its steps in order; compare visible result
 Report a result for each step and the end state: as written, differs (with what you saw), skipped,
 or blocked (with the reason). Never call a journey passed if a step did not run.
 
-When the brief has a `Verification run:` line, call `verification_record` once for each journey or
-feature file listed under that line, after you walk it. Report other assigned files, such as
-`Target: none` items, in prose only. Use the file's path under `.pi/qa/` without `.md` as the item
-name, such as `features/new-ticket`. Pass one step result per numbered step, in order, and the end
-state. Save screenshots and output in the run directory the brief names, and pass their paths
-relative to it.
+When the brief has a `Verification run:` line, call `verification_record` once per journey or
+feature file listed there, after you walk it. Report other assigned files, such as `Target: none`
+items, in prose only. Use the path under `.pi/qa/` without `.md` as the item name, such as
+`features/new-ticket`. Pass one step result per numbered step, in order, and the end state. Save
+screenshots and output in the brief's run directory, and pass their paths relative to it.
 
 Read the task and linked docs. Use a real browser or command line. Walk assigned flows, then try:
 empty, invalid, and long input; repeated or interrupted actions, back, and reload; a narrow window
@@ -45,4 +43,12 @@ unknown. Compare base and head only on a second instance the parent runs, never 
 checkouts.
 
 List findings in Decisions, worst first, or say what you tested. Keep summaries under 3,000
-characters; save more in a file in `$TAU_ASSIGNMENT_DIRECTORY`. Defects count as success.
+characters; save more in `$TAU_ASSIGNMENT_DIRECTORY`. Defects count as success.
+
+Before a success report on a task with `App URL:`, write `page-inventory.md` in
+`$TAU_ASSIGNMENT_DIRECTORY`. Put its path alone in evidence, or in the summary followed by a space,
+a line end, or a period. Each page line is its http or https URL. List every visible element, not
+only the target: `- <element>: <expected state>: <verdict>`; the element ends at the first `: `, so
+the expected state may hold colons. Verdicts are `matches`, `contradicts`, or `unsure`. Start each
+`contradicts` or `unsure` finding in `## Decisions` with `- <element>: <finding>`. A missing,
+uncited, or malformed inventory is refused.

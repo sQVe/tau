@@ -125,11 +125,15 @@ const decodedReference = (reference: string): string =>
 const decodedTokenText = (token: Token): string =>
   tokenText(token).replaceAll(characterReference, (reference) => decodedReference(reference));
 
-const renderedText = (tokens: readonly Token[]): string =>
+export const markdownTokenText = (tokens: readonly Token[]): string =>
   tokens
     .map((token) => {
       if (token.type === 'image' || token.type === 'html') {
         return '';
+      }
+
+      if (token.type === 'br') {
+        return '\n';
       }
 
       if (token.type === 'text') {
@@ -142,7 +146,7 @@ const renderedText = (tokens: readonly Token[]): string =>
 
       const children: readonly Token[] | undefined = 'tokens' in token ? token.tokens : undefined;
 
-      return children === undefined ? '' : renderedText(children);
+      return children === undefined ? '' : markdownTokenText(children);
     })
     .join('');
 
@@ -151,7 +155,7 @@ const headingTextOf = (token: Token): string | undefined => {
     return undefined;
   }
 
-  return renderedText(token.tokens ?? []);
+  return markdownTokenText(token.tokens ?? []);
 };
 
 const hasTableHeader = (token: Token): boolean => 'header' in token && Array.isArray(token.header);
@@ -160,43 +164,66 @@ const hasTableRows = (token: Token): boolean => 'rows' in token && Array.isArray
 
 const hasTableCells = (token: Token): boolean => hasTableHeader(token) && hasTableRows(token);
 
-const isTable = (token: Token): token is Tokens.Table =>
+export const isMarkdownTable = (token: Token): token is Tokens.Table =>
   token.type === 'table' && hasTableCells(token);
 
-const isList = (token: Token): token is Tokens.List =>
+export const isMarkdownList = (token: Token): token is Tokens.List =>
   token.type === 'list' && 'items' in token && Array.isArray(token.items);
 
 const childrenOf = (token: Token): readonly Token[] => {
-  if (isTable(token)) {
+  if (isMarkdownTable(token)) {
     const header = token.header.flatMap((cell) => cell.tokens);
     const rows = token.rows.flatMap((row) => row.flatMap((cell) => cell.tokens));
 
     return [...header, ...rows];
   }
 
-  if (isList(token)) {
+  if (isMarkdownList(token)) {
     return token.items;
   }
 
   return 'tokens' in token ? token.tokens : [];
 };
 
-const collectLinks = (tokens: readonly Token[], targets: string[], headings: string[]): void => {
+// Visits every token except code and html. Return false to skip the token's children and its
+// optional after visit.
+export const walkMarkdownTokens = (
+  tokens: readonly Token[],
+  visit: (token: Token) => boolean | undefined,
+  after?: (token: Token) => void,
+): void => {
   for (const token of tokens) {
-    const heading = headingTextOf(token);
-
-    if (heading !== undefined) {
-      headings.push(heading);
+    if (token.type === 'code' || token.type === 'html') {
+      continue;
     }
 
-    collectLinks(childrenOf(token), targets, headings);
-
-    const target = targetOf(token);
-
-    if (target !== undefined) {
-      targets.push(target);
+    if (visit(token) === false) {
+      continue;
     }
+
+    walkMarkdownTokens(childrenOf(token), visit, after);
+    after?.(token);
   }
+};
+
+const collectLinks = (tokens: readonly Token[], targets: string[], headings: string[]): void => {
+  walkMarkdownTokens(
+    tokens,
+    (token) => {
+      const heading = headingTextOf(token);
+
+      if (heading !== undefined) {
+        headings.push(heading);
+      }
+    },
+    (token) => {
+      const target = targetOf(token);
+
+      if (target !== undefined) {
+        targets.push(target);
+      }
+    },
+  );
 };
 
 export const readMarkdownLinks = (markdown: string): MarkdownLinks => {

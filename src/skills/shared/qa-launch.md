@@ -26,8 +26,9 @@ Use this procedure when sending a change to a `qa` worker.
    - Give each registered item to exactly one worker, and list it under its run's
      `Verification run:` line in the brief. A section with `Target: none` keeps its "The manager
      starts" steps; assign its items apart from any run, and the worker reports them in prose.
-4. Leave the app URL, test account, and data writes to Tau, which fills them from the user's config.
-   Ask the user nothing about them in advance.
+4. Pass `url` when the user's Tau config has no `urlCommand`, because Tau then has no app URL to
+   fill. When the config has `urlCommand`, leave the app URL to Tau. Leave the test account and data
+   writes to Tau in both cases, and ask the user nothing about them in advance.
 5. Launch the worker with the brief. Pass a blocking question from the worker to the user.
 6. Call `verification` `stop` on each run, and do the guide's Stop step for each thing you started
    by hand, after every worker that uses it has reported. When a `qa` worker fails to start, stop

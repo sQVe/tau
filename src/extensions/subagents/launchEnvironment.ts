@@ -9,7 +9,7 @@ const checkedProfiles = new Set(['qa', 'browser']);
 
 export const checksLaunchEnvironment = (profile: string): boolean => checkedProfiles.has(profile);
 
-const isHttpUrl = (url: string): boolean => {
+export const isHttpUrl = (url: string): boolean => {
   if (!URL.canParse(url)) {
     return false;
   }
@@ -56,8 +56,31 @@ export const launchEnvironmentRefusal = ({
   return undefined;
 };
 
+const appUrlPrefix = 'App URL:';
+
+const appUrlValue = (line: string): string | undefined => {
+  const trimmed = line.trimStart();
+
+  if (!trimmed.startsWith(appUrlPrefix)) {
+    return undefined;
+  }
+
+  const value = trimmed.slice(appUrlPrefix.length).trim();
+
+  return value === '' ? undefined : value;
+};
+
+const appUrlLine = (url: string): string => `${appUrlPrefix} ${url.trim()}`;
+
+export const hasAppUrlLine = (task: string): boolean =>
+  task.split('\n').some((line) => {
+    const value = appUrlValue(line);
+
+    return value !== undefined && isHttpUrl(value);
+  });
+
 export const briefWithAppUrl = (brief: string, url: string | undefined): string =>
-  url === undefined ? brief : `${brief}\n\nApp URL: ${url}`;
+  url === undefined ? brief : `${brief}\n\n${appUrlLine(url)}`;
 
 // Counts code points, as the saved task schema does.
 export const briefLimitRefusal = (brief: string, limit: number): string | undefined =>
