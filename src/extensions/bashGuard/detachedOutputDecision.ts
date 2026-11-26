@@ -177,17 +177,15 @@ const innermostGroupOf = (
 
 // A command in a child shell inherits the descriptors its parent has when it starts, so an `exec`
 // in the parent changes them too. An `exec` in a child shell never reaches the parent.
-const runsInShellOf = (exec: ShellCommand, command: ShellCommand): boolean =>
-  command.shellId === exec.shellId || command.shellId.startsWith(`${exec.shellId}.`);
+const runsInShellOf = (command: ShellCommand, shellOwner: ShellCommand): boolean =>
+  command.shellId === shellOwner.shellId || command.shellId.startsWith(`${shellOwner.shellId}.`);
 
 // `exec` with only redirections changes the shell's own descriptors for the commands that follow
-// it in that shell. A backgrounded `exec` runs in a subshell, so it changes nothing.
+// it in that shell. A command outside that shell does not inherit the change.
 const changesShellStreams = (command: ShellCommand): boolean =>
-  !command.background &&
-  command.redirections.length > 0 &&
-  runsRedirectionsOnlyExec(command.arguments);
+  command.redirections.length > 0 && runsRedirectionsOnlyExec(command.arguments);
 
-// Applies the `exec` commands whose innermost group is `scope`, in source order. The enclosing
+// Applies the `exec` commands whose innermost group is `group`, in source order. The enclosing
 // groups apply their own redirections between these passes, so a group redirection that starts
 // after an inherited `exec` still wins.
 const applyExecRedirections = (
@@ -205,14 +203,14 @@ const applyExecRedirections = (
   }
 
   for (let earlier = from; earlier < index; earlier += 1) {
-    const command = commands[earlier];
+    const earlierCommand = commands[earlier];
 
     // Most scripts contain no `exec`, so reject one before the group scan.
-    if (command === undefined || !changesShellStreams(command)) {
+    if (earlierCommand === undefined || !changesShellStreams(earlierCommand)) {
       continue;
     }
 
-    if (!runsInShellOf(command, target)) {
+    if (!runsInShellOf(target, earlierCommand)) {
       continue;
     }
 
@@ -220,7 +218,7 @@ const applyExecRedirections = (
       continue;
     }
 
-    streams = streamsOf(command, streams);
+    streams = streamsOf(earlierCommand, streams);
   }
 
   return streams;
@@ -411,12 +409,27 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
   return !showsStderr(own);
 };
 
+// A redirection-only `exec` runs no command, so it has no failure to hide unless one of its
+// redirections can fail while stderr is discarded.
+const redirectionCanFail = (redirection: ShellRedirection): boolean => {
+  const { operator, target } = redirection;
+
+  if (operator === '>&' || operator === '<&') {
+    return !isDescriptor(target) && target !== devNull;
+  }
+
+  if (operator === '<<' || operator === '<<-' || operator === '<<<') {
+    return false;
+  }
+
+  return target !== devNull;
+};
+
 // A command the parser creates at an opening parenthesis has no arguments and closes no group, so
-// judging it would read the enclosing redirections as its own. A redirection-only `exec` runs no
-// command, so it has no failure to hide.
+// judging it would read the enclosing redirections as its own.
 const isJudgedCommand = (command: ShellCommand): boolean => {
   if (runsRedirectionsOnlyExec(command.arguments)) {
-    return false;
+    return command.redirections.some(redirectionCanFail);
   }
 
   return command.group !== undefined || command.arguments.length > 0;

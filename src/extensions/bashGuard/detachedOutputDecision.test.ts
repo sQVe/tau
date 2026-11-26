@@ -25,7 +25,7 @@ const wrapperPrefixes: readonly (readonly [string, string])[] = [
   ['a negation', '!'],
   ['a doas user option', 'doas -u root'],
   ['a sudo chroot', 'sudo -R /newroot'],
-  ['a time output option', 'time -o /tmp/x.log'],
+  ['a time portability flag', 'time -p'],
   ['a nice adjustment', 'nice -n 5'],
   ['a stdbuf option', 'stdbuf -oL'],
   ['an xargs option', 'xargs -n 1'],
@@ -510,6 +510,31 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     name: 'a compound whose member is named like an Object property',
     command: 'if true; then :; constructor; touch x 2>/dev/null; fi &',
     blocked: true,
+  },
+  {
+    name: 'a foreground exec in a backgrounded brace compound',
+    command: '{ exec 2>/dev/null; cmd & } &',
+    blocked: true,
+  },
+  {
+    name: 'a foreground exec before a foreground command in a backgrounded brace compound',
+    command: '{ exec 2>/dev/null; cmd; } &',
+    blocked: true,
+  },
+  {
+    name: 'an exec in a pipeline element',
+    command: 'exec 2>/dev/null | cat; cmd &',
+    blocked: false,
+  },
+  {
+    name: 'a redirection-only exec whose file redirection can fail',
+    command: 'exec 2>/dev/null >/nope/x &',
+    blocked: true,
+  },
+  {
+    name: 'a redirection-only exec that only discards stderr',
+    command: 'exec 2>/dev/null &',
+    blocked: false,
   },
 ])('decides $name', ({ command, blocked }) => {
   expect(blocks(command)).toBe(blocked);
