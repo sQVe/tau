@@ -126,6 +126,8 @@ const writeFacts = {
   },
 } satisfies Record<WriteKey, WriteFacts>;
 
+const writeFieldFlags = ['--input', '-f', '--field', '--raw-field'];
+
 const writeKeys: ReadonlySet<WriteKey> = new Set<WriteKey>(
   Object.keys(writeFacts) as readonly WriteKey[],
 );
@@ -291,8 +293,10 @@ export const createGhFake = (): GhFake => {
     }
 
     const method = argumentAfter(commandArguments, '--method');
+    const writesMethod = method !== undefined && method !== 'GET';
+    const carriesWriteFields = writeFieldFlags.some((field) => commandArguments.includes(field));
 
-    return method === undefined || method === 'GET' ? baseKey : 'api write';
+    return writesMethod || carriesWriteFields ? 'api write' : baseKey;
   };
 
   const recordWrite = async (
@@ -306,6 +310,18 @@ export const createGhFake = (): GhFake => {
     const path = flagIndex === -1 ? undefined : commandArguments[flagIndex + 1];
 
     if (path === undefined) {
+      const carriesWriteFields = writeFieldFlags.some((field) => commandArguments.includes(field));
+
+      if (key === 'api write' && carriesWriteFields) {
+        fake.writes.push({
+          key,
+          commandArguments: [...commandArguments],
+          contents: Buffer.alloc(0),
+        });
+
+        return succeededResult(stdout(commandArguments));
+      }
+
       return failedResult(`missing ${flag}`);
     }
 

@@ -76,7 +76,11 @@ it('reports review findings per prose field, not over the JSON', async () => {
     directory,
     'review.json',
     `${JSON.stringify(
-      { body: longReviewBody, comments: [{ path: 'src/a.ts', line: 3, body: commentBody }] },
+      {
+        commit_id: 'abc123',
+        body: longReviewBody,
+        comments: [{ path: 'src/a.ts', line: 3, body: commentBody }],
+      },
       null,
       2,
     )}\n`,
@@ -104,7 +108,7 @@ it('reports review findings per prose field, not over the JSON', async () => {
     commentBody,
   ]);
 
-  expect(JSON.stringify(dryRun['findings'])).not.toContain('commit_id');
+  expect(JSON.stringify(dryRun.findings)).not.toContain('commit_id');
   expect(fake.calls).toEqual([]);
 });
 

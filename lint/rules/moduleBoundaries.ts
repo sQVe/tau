@@ -120,6 +120,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'instructions/guideRuns',
       'instructions/languageRules/languageRules',
       'instructions/markdownLinks',
+      'instructions/regularFile',
       'instructions/stommeGuides/stommeGuides',
       'instructions/systemPrompt',
     ],

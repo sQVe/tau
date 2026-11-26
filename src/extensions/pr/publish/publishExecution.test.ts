@@ -76,6 +76,23 @@ it('rewrites every file argument to a unique verified copy', () => {
   ]);
 });
 
+it('reads a flag-like file path as a value, not as a flag', () => {
+  const flagLike = { file: 'body.md', path: '--title', bytes: Buffer.from('Flag-like.\n') };
+
+  const result = verifiedCopyArguments(
+    ['--body-file', flagLike.path, '--input', first.path],
+    [flagLike, first],
+    directory,
+  );
+
+  expect(result.commandArguments).toEqual([
+    '--body-file',
+    join(directory, '0---title'),
+    '--input',
+    join(directory, '2-body.md'),
+  ]);
+});
+
 it('refuses a file flag with no value after it', () => {
   expect(() => verifiedCopyArguments(['--input'], [first], directory)).toThrow(
     'The publication command has no file after --input.',

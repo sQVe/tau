@@ -121,7 +121,7 @@ it('returns the em dash finding from the dry run and publishes with it', async (
   const request = dryRunPullRequest(directory);
   const dryRun = await run(request);
 
-  expect(dryRun['findings']).toEqual([
+  expect(dryRun.findings).toEqual([
     { file: 'body.md', rule: 'emDash', line: 1, excerpt: 'Adds it \u2014 now.' },
   ]);
 

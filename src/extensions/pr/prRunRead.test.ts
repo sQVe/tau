@@ -5,8 +5,8 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
-import { readRunFile } from '../prRun.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { readRunFile } from './prRun.js';
 
 const execFileAsync = promisify(execFile);
 

@@ -263,8 +263,12 @@ const reviewFindings = (
 
 const readPullRequestFiles = async (target: PublicationTarget): Promise<PullRequestFiles> => {
   const { directory, repository } = target;
-  const titleFile = await readPublicationFile(directory, titleFileName);
-  const bodyFile = await readPublicationFile(directory, bodyFileName);
+
+  const [titleFile, bodyFile] = await Promise.all([
+    readPublicationFile(directory, titleFileName),
+    readPublicationFile(directory, bodyFileName),
+  ]);
+
   const title = titleFile.text.trim();
 
   if (title === '') {
@@ -297,13 +301,13 @@ const rejectCreateInput = (action: string, name: string, value: unknown) => {
 const readPullRequestEdit = async (target: PublicationTarget): Promise<PublicationPlan> => {
   const { action, directory, request } = target;
 
-  const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
-
   const pr = requirePullRequestNumber(action, request.pr);
 
   rejectCreateInput(action, 'base', request.base);
   rejectCreateInput(action, 'head', request.head);
   rejectCreateInput(action, 'draft', request.draft);
+
+  const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
 
   const commandArguments = [
     'pr',
@@ -330,10 +334,10 @@ const readPullRequestEdit = async (target: PublicationTarget): Promise<Publicati
 const readPullRequestCreate = async (target: PublicationTarget): Promise<PublicationPlan> => {
   const { action, directory, request } = target;
 
-  const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
-
   const base = requireText(action, 'base', request.base);
   const head = requireText(action, 'head', request.head);
+
+  const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
   const isDraft = request.draft === true;
   const draft = isDraft ? ['--draft'] : [];
 

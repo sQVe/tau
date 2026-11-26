@@ -40,8 +40,8 @@ export const publishPublication = async (
   request: PublishRequest,
 ): Promise<PublishResult> => {
   const target = await publicationTarget('publish', root, request);
-  const plan = await planPublication(target);
   const token = requireValue('publish', 'token from dryRun', request.token);
+  const plan = await planPublication(target);
 
   const decision = decidePublication({ token, target: plan.target, files: plan.files });
 

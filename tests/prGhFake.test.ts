@@ -45,6 +45,56 @@ it('records a PATCH api call as a write, not a read', async () => {
   ]);
 });
 
+it.each(['-f', '--field', '--raw-field'])(
+  'records an api call with %s as a write, not a read',
+  async (field) => {
+    const fake = createGhFake();
+
+    const commandArguments = [
+      'api',
+      '--hostname',
+      'github.com',
+      'repos/sQVe/tau/pulls/7/reviews',
+      field,
+      'body=Fine.',
+    ];
+
+    const result = await fake.exec('gh', commandArguments);
+
+    expect(result.code).toBe(0);
+
+    expect(fake.writes).toEqual([
+      { key: 'api write', commandArguments, contents: Buffer.alloc(0) },
+    ]);
+  },
+);
+
+it('records an api call with --input but no --method as a write', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-gh-fake-');
+  const path = join(directory, 'review.json');
+
+  await writeFile(path, '{}\n');
+
+  const fake = createGhFake();
+
+  const commandArguments = [
+    'api',
+    '--hostname',
+    'github.com',
+    'repos/sQVe/tau/pulls/7/reviews',
+    '--input',
+    path,
+  ];
+
+  const result = await fake.exec('gh', commandArguments);
+
+  expect(result.code).toBe(0);
+
+  expect(fake.writes).toEqual([
+    { key: 'api write', commandArguments, contents: Buffer.from('{}\n') },
+  ]);
+});
+
 it('refuses an api write without --input', async () => {
   const fake = createGhFake();
 

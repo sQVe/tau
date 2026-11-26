@@ -19,7 +19,7 @@ const isRoot = process.getuid?.() === 0;
 
 const setUp = () => setUpPublication(onTestFinished);
 
-it('refuses a dry run or publish that lacks a required input', async () => {
+it('refuses a dry run without a kind', async () => {
   const { fake, run } = await setUp();
   const directory = await preparePullRequestRun(run);
 
@@ -27,13 +27,67 @@ it('refuses a dry run or publish that lacks a required input', async () => {
     'dryRun needs kind',
   );
 
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a create without a base', async () => {
+  const { fake, run } = await setUp();
+  const directory = await preparePullRequestRun(run);
+
   await expect(
     run({ action: 'dryRun', kind: 'pullRequest', repository, directory }),
   ).rejects.toThrow('dryRun needs base.');
 
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a create without a head', async () => {
+  const { fake, run } = await setUp();
+  const directory = await preparePullRequestRun(run);
+
   await expect(
     run({ action: 'dryRun', kind: 'pullRequest', repository, directory, base: 'main' }),
   ).rejects.toThrow('dryRun needs head.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a publish without a token', async () => {
+  const { fake, run } = await setUp();
+  const directory = await preparePullRequestRun(run);
+
+  await expect(run({ ...dryRunPullRequest(directory), action: 'publish' })).rejects.toThrow(
+    'publish needs token from dryRun.',
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('reports an invalid pr before a missing run file', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await expect(run({ ...dryRunPullRequestEdit(directory), pr: 0 })).rejects.toThrow(
+    'pr must be 1 or more, not 0.',
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('reports a missing base before a missing run file', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await expect(
+    run({ action: 'dryRun', kind: 'pullRequest', repository, directory, head: 'feature' }),
+  ).rejects.toThrow('dryRun needs base.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('reports the missing token before a missing run file', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
 
   await expect(run({ ...dryRunPullRequest(directory), action: 'publish' })).rejects.toThrow(
     'publish needs token from dryRun.',
@@ -68,23 +122,31 @@ it('refuses a whitespace-only title.md at the dry run', async () => {
   expect(fake.calls).toEqual([]);
 });
 
-it('trims base and head and refuses a whitespace-only value', async () => {
+it('refuses a whitespace-only base', async () => {
   const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-
-  await writeRunFile(directory, 'body.md', 'Adds it.\n');
-
-  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+  const directory = await preparePullRequestRun(run);
 
   await expect(run({ ...dryRunPullRequest(directory), base: '  ' })).rejects.toThrow(
     'dryRun needs base.',
   );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a whitespace-only head', async () => {
+  const { fake, run } = await setUp();
+  const directory = await preparePullRequestRun(run);
 
   await expect(run({ ...dryRunPullRequest(directory), head: '\t' })).rejects.toThrow(
     'dryRun needs head.',
   );
 
   expect(fake.calls).toEqual([]);
+});
+
+it('publishes trimmed base and head', async () => {
+  const { fake, run } = await setUp();
+  const directory = await preparePullRequestRun(run);
 
   const request = { ...dryRunPullRequest(directory), base: ' main ', head: ' feature ' };
   const dryRun = await run(request);
@@ -294,6 +356,7 @@ it.skipIf(isRoot)('keeps the publish result when the private copy cannot be remo
   const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(published.url).toBe('https://github.com/sQVe/tau/pull/8');
+  await expect(access(privateDirectory)).resolves.toBeUndefined();
 });
 
 const createInputValues = { base: 'main', head: 'feature', draft: true } as const;

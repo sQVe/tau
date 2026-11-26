@@ -95,6 +95,7 @@ export const verifiedCopyArguments = (
 
     rewritten[index + 1] = path;
     copies.push({ path, bytes: source.bytes });
+    skipValue = true;
   }
 
   if (!found) {

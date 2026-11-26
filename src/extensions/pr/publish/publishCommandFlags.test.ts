@@ -36,8 +36,8 @@ const commandFlags = (commandArguments: readonly string[]): string[] => {
   return flags;
 };
 
-const unclassifiedFlags = (flags: string[]): string[] =>
-  flags.filter((flag) => flagKind(flag) === undefined);
+const flagKinds = (flags: string[]): string[] =>
+  flags.map((flag) => `${flag}:${flagKind(flag) ?? 'unclassified'}`);
 
 const publishedFlags = async (
   files: Record<string, string>,
@@ -54,14 +54,8 @@ const publishedFlags = async (
 
   await run({ ...request(directory), action: 'publish', token: dryRun.token });
 
-  return commandFlags(fake.calls[0]?.commandArguments ?? []);
+  return commandFlags(fake.writes[0]?.commandArguments ?? []);
 };
-
-it('reports an unclassified flag in flag position', () => {
-  const flags = commandFlags(['pr', 'create', '--repo', 'x', '--unexpected', 'y']);
-
-  expect(unclassifiedFlags(flags)).toEqual(['--unexpected']);
-});
 
 it('classifies every flag of a create command', async () => {
   const flags = await publishedFlags(
@@ -69,8 +63,14 @@ it('classifies every flag of a create command', async () => {
     (directory) => dryRunPullRequest(directory),
   );
 
-  expect(flags.length).toBeGreaterThan(0);
-  expect(unclassifiedFlags(flags)).toEqual([]);
+  expect(flagKinds(flags)).toEqual([
+    '--repo:value',
+    '--base:value',
+    '--head:value',
+    '--title:value',
+    '--body-file:file',
+    '--draft:boolean',
+  ]);
 });
 
 it('classifies every flag of an edit command', async () => {
@@ -79,8 +79,7 @@ it('classifies every flag of an edit command', async () => {
     (directory) => dryRunPullRequestEdit(directory),
   );
 
-  expect(flags.length).toBeGreaterThan(0);
-  expect(unclassifiedFlags(flags)).toEqual([]);
+  expect(flagKinds(flags)).toEqual(['--repo:value', '--title:value', '--body-file:file']);
 });
 
 it('classifies every flag of a comment command', async () => {
@@ -93,8 +92,7 @@ it('classifies every flag of a comment command', async () => {
     file: 'comment.md',
   }));
 
-  expect(flags.length).toBeGreaterThan(0);
-  expect(unclassifiedFlags(flags)).toEqual([]);
+  expect(flagKinds(flags)).toEqual(['--repo:value', '--body-file:file']);
 });
 
 it('classifies every flag of a review command', async () => {
@@ -107,6 +105,5 @@ it('classifies every flag of a review command', async () => {
     (directory) => ({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
   );
 
-  expect(flags.length).toBeGreaterThan(0);
-  expect(unclassifiedFlags(flags)).toEqual([]);
+  expect(flagKinds(flags)).toEqual(['--hostname:value', '--method:value', '--input:file']);
 });
