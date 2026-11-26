@@ -8,8 +8,8 @@ import {
 } from '../../../../instructions/markdownLinks.js';
 import {
   decisionsSectionName,
+  fragmentHasHeading,
   handoverSectionNames,
-  summaryHasHeading,
 } from '../reportSections.js';
 import type { PageInventoryElement, PageInventoryPage, PageVerdict } from './pageInventory.js';
 import { elementSeparator } from './pageInventory.js';
@@ -86,7 +86,7 @@ const sectionName = (text: string): string => {
   return (match?.[1] ?? trimmed).trim();
 };
 
-const isDecisionsText = (text: string): boolean => summaryHasHeading(text, decisionsSectionName);
+const isDecisionsText = (text: string): boolean => fragmentHasHeading(text, decisionsSectionName);
 
 const decisionsStart = (token: Token): DecisionsStart | undefined => {
   const text = blockInlineText(token);
@@ -124,7 +124,7 @@ const endsAtOrAbove = (token: Tokens.Heading, depth: number | undefined): boolea
   depth === undefined || token.depth <= depth;
 
 const hasSectionName = (text: string): boolean =>
-  handoverSectionNames.some((name) => summaryHasHeading(text, name));
+  handoverSectionNames.some((name) => fragmentHasHeading(text, name));
 
 const firstInlineText = (item: Tokens.ListItem): string | undefined => {
   for (const token of item.tokens) {

@@ -292,6 +292,39 @@ it('writes nothing and labels nothing for an invalid report', async () => {
   expect(target.refusal.remindAfterRefusal).toBe(true);
 });
 
+it('refuses a summary whose only Decisions heading is inside a fenced block', async () => {
+  const { deadlineWarning, fake, report, target } = await setup();
+
+  await writeAssignment(target.assignment);
+
+  const summary = [
+    '## Changes',
+    'None',
+    '',
+    '## Evidence',
+    'None',
+    '',
+    '```markdown',
+    '## Decisions',
+    '```',
+    '',
+    '## Concerns',
+    'None',
+  ].join('\n');
+
+  await expect(
+    reportToParent(
+      target,
+      { ...report, outcome: 'failure', summary },
+      deadlineWarning,
+      checkFacts(target),
+    ),
+  ).rejects.toThrow('missing the Decisions');
+
+  expect((await readAssignment(target.assignmentPath))?.report).toBeNull();
+  expect(fake.calls).toEqual([]);
+});
+
 it('refuses an over-long summary without the headings and saves no file', async () => {
   const { deadlineWarning, target } = await setup();
 
