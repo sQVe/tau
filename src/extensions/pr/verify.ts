@@ -5,7 +5,12 @@ import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../../command.js';
 import { readGit } from '../../git.js';
-import { checkOutput, parseRepository, readJson } from '../../github/github.js';
+import {
+  checkOutput,
+  parseRepository,
+  readJson,
+  requirePullRequestNumber,
+} from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import {
   existingEntry,
@@ -13,7 +18,6 @@ import {
   rejectLinkedFile,
   requireTauChild,
 } from '../../tauDirectory.js';
-import { requirePullRequestNumber } from './pullRequestNumber.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 
@@ -105,8 +109,6 @@ const requireValue = <Value>(name: string, value: Value | undefined): Value => {
   return value;
 };
 
-const parsePullRequestNumber = (pr: number | undefined) => requirePullRequestNumber('verify', pr);
-
 // Reads the run's body.md, local HEAD, and the published pull request, and writes nothing.
 export const readVerify = async (
   runtime: CommandRuntime,
@@ -114,7 +116,7 @@ export const readVerify = async (
   request: VerifyRequest,
 ): Promise<VerifyResult> => {
   const repository = parseRepository(requireValue('repository', request.repository));
-  const pr = parsePullRequestNumber(request.pr);
+  const pr = requirePullRequestNumber('verify', request.pr);
   const directory = requireValue('directory', request.directory);
   const title = requireValue('title', request.title);
   const base = requireValue('base', request.base);

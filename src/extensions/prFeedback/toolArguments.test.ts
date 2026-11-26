@@ -11,8 +11,8 @@ describe('read arguments', () => {
   it.each([
     { repository: 'sQVe/tau', pr: 7, error: 'repository must be <host>/<owner>/<name>' },
     { repository: 'github.com/sQVe/tau/pulls', pr: 7, error: 'repository must be' },
-    { repository: 'github.com/sQVe/tau', pr: 0, error: 'pr must be a pull request number' },
-    { repository: 'github.com/sQVe/tau', pr: 1.5, error: 'pr must be a pull request number' },
+    { repository: 'github.com/sQVe/tau', pr: 0, error: 'pr must be 1 or more, not 0.' },
+    { repository: 'github.com/sQVe/tau', pr: 1.5, error: 'pr must be an integer, not 1.5.' },
   ])('rejects repository $repository with pr $pr', async ({ repository, pr, error }) => {
     const { root, fake, read } = await setUp();
 

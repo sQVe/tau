@@ -654,7 +654,7 @@ describe('checks input', () => {
     { repository: undefined, pr: 7, error: 'checks needs repository.' },
     { repository: 'sQVe/tau', pr: 7, error: 'repository must be <host>/<owner>/<name>' },
     { repository: 'github.com/sQVe/tau', pr: undefined, error: 'checks needs pr.' },
-    { repository: 'github.com/sQVe/tau', pr: 0, error: 'pr must be a pull request number' },
+    { repository: 'github.com/sQVe/tau', pr: 0, error: 'pr must be 1 or more, not 0.' },
     { repository: 'github.com/sQVe/tau', pr: 7, head: undefined, error: 'checks needs head.' },
   ])('rejects repository $repository with pr $pr and head $head', async (row) => {
     const { repository, pr, error } = row;

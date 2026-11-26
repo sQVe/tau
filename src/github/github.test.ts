@@ -2,7 +2,12 @@ import { expect, it } from 'vitest';
 
 import { createExecFake, succeededResult } from '../../tests/execFake.ts';
 import type { Exec } from '../command.js';
-import { pullRequestListArguments, readMergedPullRequests, runOutcome } from './github.js';
+import {
+  pullRequestListArguments,
+  readMergedPullRequests,
+  requirePullRequestNumber,
+  runOutcome,
+} from './github.js';
 
 type ExecResult = Awaited<ReturnType<Exec>>;
 
@@ -127,4 +132,41 @@ it('throws when gh fails', async () => {
   await expect(readMergedPullRequests(runtime, mergedRepository, '2026-11-01')).rejects.toThrow(
     /failed: boom/u,
   );
+});
+
+const acceptedPullRequestNumbers: { rule: string; pr: number; expected: number }[] = [
+  { rule: 'returns a pull request number of 1', pr: 1, expected: 1 },
+  { rule: 'returns a larger pull request number', pr: 9999, expected: 9999 },
+];
+
+it.each(acceptedPullRequestNumbers)('$rule', ({ pr, expected }) => {
+  expect(requirePullRequestNumber('publish', pr)).toBe(expected);
+});
+
+const refusedPullRequestNumbers: { rule: string; pr: number | undefined; error: string }[] = [
+  {
+    rule: 'refuses a missing number and names the action',
+    pr: undefined,
+    error: 'publish needs pr.',
+  },
+  { rule: 'refuses zero', pr: 0, error: 'pr must be 1 or more, not 0.' },
+  {
+    rule: 'refuses a negative number',
+    pr: -1,
+    error: 'pr must be 1 or more, not -1.',
+  },
+  {
+    rule: 'refuses a fraction',
+    pr: 1.5,
+    error: 'pr must be an integer, not 1.5.',
+  },
+  {
+    rule: 'refuses a number that is not safe',
+    pr: Number.MAX_SAFE_INTEGER + 1,
+    error: `pr must be an integer, not ${Number.MAX_SAFE_INTEGER + 1}.`,
+  },
+];
+
+it.each(refusedPullRequestNumbers)('$rule', ({ pr, error }) => {
+  expect(() => requirePullRequestNumber('publish', pr)).toThrow(error);
 });
