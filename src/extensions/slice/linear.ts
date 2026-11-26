@@ -4,7 +4,7 @@ import type { Static } from 'typebox';
 import type { Exec } from '../../command.js';
 import { isPullRequestUrl, readPullRequestState } from '../../github/github.js';
 import { api, run } from '../../linear/linear.js';
-import { hasMergedPullRequest } from './startPickDecisions.js';
+import { hasClosingMergedPullRequest } from './startPickDecisions.js';
 import type { PickPullRequest } from './startPickDecisions.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
@@ -172,7 +172,7 @@ const toChild = async (
     sortOrder: node.subIssueSortOrder,
     completed: node.state.type === 'completed',
     canceled: node.state.type === 'canceled',
-    merged: hasMergedPullRequest(pullRequests),
+    merged: hasClosingMergedPullRequest(pullRequests),
     assignee: node.assignee?.id ?? null,
     creator: node.creator?.id ?? null,
     blockedBy: node.inverseRelations.nodes
@@ -228,7 +228,7 @@ export const readContainer = async (
     viewer: viewer.id,
     identifier: issue.identifier,
     completed: issue.state.type === 'completed',
-    merged: hasMergedPullRequest(pullRequests),
+    merged: hasClosingMergedPullRequest(pullRequests),
     branchName: issue.branchName,
     canceled: issue.state.type === 'canceled',
     blockedBy: issue.inverseRelations.nodes

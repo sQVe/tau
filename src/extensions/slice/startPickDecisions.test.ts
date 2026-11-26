@@ -160,7 +160,7 @@ it.each([
     open: [],
   },
   {
-    name: 'keeps an open mention in the blocker chain',
+    name: 'does not open the blocker chain from a mention',
     slices: [
       slice('ME-1', {
         blockers: [
@@ -169,10 +169,31 @@ it.each([
       }),
     ],
     container: false,
+    chosen: undefined,
+    statuses: ['blocked'],
+    base: 'origin/main',
+    open: [],
+  },
+  {
+    name: 'lists only closing blocker PRs as the open chain',
+    slices: [
+      slice('ME-1', {
+        blockers: [
+          {
+            identifier: 'ME-0',
+            pullRequests: [
+              { url: 'mention', state: 'OPEN', closes: false },
+              { url: 'open', state: 'OPEN', closes: true },
+            ],
+          },
+        ],
+      }),
+    ],
+    container: false,
     chosen: 'ME-1',
     statuses: ['ready'],
     base: null,
-    open: ['mention'],
+    open: ['open'],
   },
 ])('$name', ({ slices, container, chosen, statuses, base, open }) => {
   const result = decidePick({ slices, container, defaultBranch: 'main' });

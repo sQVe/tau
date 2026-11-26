@@ -88,8 +88,25 @@ const attachmentSelections = (query: string): AttachmentFields[] =>
     ...query.matchAll(/attachments\([^)]*\)\s*\{\s*pageInfo\s*\{[^}]*\}\s*nodes\s*\{([^}]*)\}/gu),
   ].map((match) => ({ metadata: match[1]!.includes('metadata') }));
 
-const attachmentSelection = (query: string, index: number): AttachmentFields =>
-  attachmentSelections(query)[index] ?? { metadata: false };
+// A query the fake does not model fails loudly instead of reporting the wrong fields. A query that
+// selects no attachments keeps the node's attachments without the field.
+const attachmentSelection = (query: string, index: number): AttachmentFields => {
+  const selections = attachmentSelections(query);
+
+  if (selections.length === 0) {
+    return { metadata: false };
+  }
+
+  const selection = selections[index];
+
+  if (selection === undefined) {
+    throw new Error(
+      `The fake found ${selections.length} attachment selections, not ${index + 1}, in ${query}.`,
+    );
+  }
+
+  return selection;
+};
 
 // Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
 const openingFence = (line: string): Fence | undefined => {
@@ -128,7 +145,7 @@ const savedDescription = (description: string) => {
 
 // A linked pull request either closes the issue, only mentions it, or arrives without Linear's
 // record of either.
-const attachmentNodes = (issue: FakeIssue, fields: { metadata: boolean }) => [
+const attachmentNodes = (issue: FakeIssue, fields: AttachmentFields) => [
   ...issue.pullRequests.map((url) => ({
     url,
     ...(fields.metadata ? { metadata: { linkKind: 'closes' } } : {}),
