@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { thrownBy } from '../../tests/thrownBy.js';
 import { errorMessage } from '../errors.js';
 import { recordFileName } from './record.js';
 import { readRecord, requireRecord } from './recordRead.js';
@@ -25,16 +26,6 @@ const rejection = (outcome: Promise<unknown>) =>
     () => undefined,
     (error: unknown) => error,
   );
-
-const thrownBy = (action: () => unknown) => {
-  try {
-    action();
-  } catch (error) {
-    return error;
-  }
-
-  return undefined;
-};
 
 const refusalOf = async (directory: string) => {
   const result = await readRecord(directory);

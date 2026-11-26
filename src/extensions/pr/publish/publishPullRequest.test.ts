@@ -456,10 +456,17 @@ it.skipIf(isRoot)('keeps the publish result when the private copy cannot be remo
 
   const request = dryRunPullRequest(directory);
   const dryRun = await run(request);
+
+  onTestFinished(async () => {
+    if (privateDirectory === '') {
+      return;
+    }
+
+    await chmod(privateDirectory, 0o700);
+    await rm(privateDirectory, { recursive: true, force: true });
+  });
+
   const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(published.url).toBe('https://github.com/sQVe/tau/pull/8');
-
-  await chmod(privateDirectory, 0o700);
-  await rm(privateDirectory, { recursive: true, force: true });
 });

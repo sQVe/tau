@@ -1,7 +1,13 @@
 import { readFile } from 'node:fs/promises';
 
 import type { Exec } from '../src/command.js';
-import { argumentAfter, createExecFake, failedResult, succeededResult } from './execFake.js';
+import {
+  argumentAfter,
+  createExecFake,
+  failedResult,
+  isCommandOf,
+  succeededResult,
+} from './execFake.js';
 import type { ExecCall, ExecResult } from './execFake.js';
 
 interface FakeRepository {
@@ -46,6 +52,8 @@ type CommandKey =
 
 type WriteKey = 'pr create' | 'pr edit' | 'pr comment' | 'api post';
 
+type ReadKey = Exclude<CommandKey, WriteKey>;
+
 interface FakeWrite {
   key: WriteKey;
   commandArguments: string[];
@@ -85,14 +93,12 @@ const commandKeys: Record<string, CommandKey> = {
   'api user': 'api user',
 };
 
-const writeKeys: ReadonlySet<CommandKey> = new Set<WriteKey>([
+const writeKeys: ReadonlySet<WriteKey> = new Set<WriteKey>([
   'pr create',
   'pr edit',
   'pr comment',
   'api post',
 ]);
-
-const isWriteKey = (key: CommandKey): key is WriteKey => writeKeys.has(key);
 
 const parentOutput = (parent: string | undefined) => {
   if (parent === undefined) {
@@ -195,7 +201,7 @@ export const createGhFake = (): GhFake => {
   };
 
   const view = (
-    key: Exclude<CommandKey, 'auth status' | 'api' | 'api user' | 'check-suites'>,
+    key: Exclude<ReadKey, 'auth status' | 'api' | 'api user' | 'check-suites'>,
     commandArguments: readonly string[],
   ) => {
     if (key === 'repo view') {
@@ -225,7 +231,7 @@ export const createGhFake = (): GhFake => {
     return head?.headCommittedAt ?? '2026-10-14T10:00:00Z';
   };
 
-  const output = (key: CommandKey, commandArguments: readonly string[]) => {
+  const output = (key: ReadKey, commandArguments: readonly string[]) => {
     if (key === 'auth status') {
       return '';
     }
@@ -309,7 +315,7 @@ export const createGhFake = (): GhFake => {
   };
 
   const handlerFor = (key: CommandKey) => async (commandArguments: readonly string[]) => {
-    if (isWriteKey(key)) {
+    if (isCommandOf(writeKeys, key)) {
       return recordWrite(key, commandArguments);
     }
 

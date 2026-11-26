@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { createExecFake, succeededResult } from '../../tests/execFake.ts';
+import { thrownBy } from '../../tests/thrownBy.ts';
 import type { Exec } from '../command.js';
 import {
   pullRequestListArguments,
@@ -175,7 +176,7 @@ const refusedPullRequestNumbers: {
     errorClass: RangeError,
   },
   {
-    rule: 'refuses not a number',
+    rule: 'refuses NaN',
     pr: Number.NaN,
     error: 'pr must be an integer, not NaN.',
     errorClass: TypeError,
@@ -187,16 +188,6 @@ const refusedPullRequestNumbers: {
     errorClass: TypeError,
   },
 ];
-
-const thrownBy = (action: () => void): unknown => {
-  try {
-    action();
-  } catch (error) {
-    return error;
-  }
-
-  return undefined;
-};
 
 it.each(refusedPullRequestNumbers)('$rule', ({ pr, error, errorClass }) => {
   const thrown = thrownBy(() => requirePullRequestNumber('publish', pr));
