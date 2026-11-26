@@ -40,7 +40,7 @@ it('posts a submitted review with inline comments in one call', async () => {
   const request = { action: 'dryRun', kind: 'review', repository, directory, pr: 7 } as const;
   const dryRun = await run(request);
 
-  const published = await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(fake.writes).toEqual([
     {
@@ -59,7 +59,7 @@ it('posts a submitted review with inline comments in one call', async () => {
     },
   ]);
 
-  expect(published['url']).toBe('https://github.com/sQVe/tau/pull/7#pullrequestreview-1');
+  expect(published.url).toBe('https://github.com/sQVe/tau/pull/7#pullrequestreview-1');
   expect(publishedCommands(fake)).toEqual(['api --hostname']);
 });
 
@@ -109,7 +109,7 @@ it('posts a pending review without an event in one call', async () => {
   const request = { action: 'dryRun', kind: 'review', repository, directory, pr: 7 } as const;
   const dryRun = await run(request);
 
-  await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(fake.writes).toEqual([
     {
@@ -151,16 +151,17 @@ it('refuses a review comment with neither line nor position and names its index'
   expect(fake.calls).toEqual([]);
 });
 
-it('accepts a reply comment without a location', async () => {
+it('refuses a reply comment as an unknown field', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
   const review = { comments: [{ path: 'src/a.ts', body: 'Agreed.', in_reply_to: 101 }] };
 
   await writeRunFile(directory, 'review.json', `${JSON.stringify(review, null, 2)}\n`);
 
-  const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
+  await expect(
+    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
+  ).rejects.toThrow(/review\.json has a bad field: \/comments\/0\/in_reply_to/u);
 
-  expect(dryRun['findings']).toEqual([]);
   expect(fake.calls).toEqual([]);
 });
 

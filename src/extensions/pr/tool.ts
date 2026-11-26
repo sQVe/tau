@@ -11,10 +11,12 @@ import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readCheckHeader } from './checkEvidence.js';
 import { readChainCoverage } from './coverage.js';
 import { readPublicationEvidence } from './evidence.js';
-import { publishPublication, publicationKindSchema, readPublication } from './publish/publish.js';
+import { runPath, runPrefix } from './prRun.js';
+import { publishPublication, readPublication } from './publish/publish.js';
+import { publicationKindSchema } from './publish/publishKind.js';
 import { readReuse } from './reuse.js';
 import { readTarget } from './target.js';
-import { readVerify, runPath, runPrefix } from './verify.js';
+import { readVerify } from './verify.js';
 
 export interface PrToolOptions {
   agentDirectory?: string;

@@ -32,7 +32,7 @@ it('publishes a new pull request with the approved title, body, base, head, and 
   const published = await run({
     ...dryRunPullRequest(directory),
     action: 'publish',
-    token: String(dryRun['token']),
+    token: dryRun.token,
   });
 
   expect(fake.writes).toEqual([
@@ -57,8 +57,27 @@ it('publishes a new pull request with the approved title, body, base, head, and 
     },
   ]);
 
-  expect(published['url']).toBe('https://github.com/sQVe/tau/pull/8');
+  expect(published.url).toBe('https://github.com/sQVe/tau/pull/8');
   expect(publishedCommands(fake)).toEqual(['pr create']);
+});
+
+it('publishes the pull request URL when another https line comes first', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  fake.overrideOutput(
+    'pr create',
+    'https://example.com/other\nhttps://github.com/sQVe/tau/pull/8\n',
+  );
+
+  const request = dryRunPullRequest(directory);
+  const dryRun = await run(request);
+  const published = await run({ ...request, action: 'publish', token: dryRun.token });
+
+  expect(published.url).toBe('https://github.com/sQVe/tau/pull/8');
 });
 
 it('publishes an edited pull request with the approved title and body', async () => {
@@ -77,7 +96,7 @@ it('publishes an edited pull request with the approved title and body', async ()
 
   const dryRun = await run(request);
 
-  const published = await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(fake.writes).toEqual([
     {
@@ -97,7 +116,7 @@ it('publishes an edited pull request with the approved title and body', async ()
     },
   ]);
 
-  expect(published['url']).toBeNull();
+  expect(published.url).toBeNull();
   expect(publishedCommands(fake)).toEqual(['pr edit']);
 });
 
@@ -112,7 +131,7 @@ it('creates a pull request without --draft when draft is false', async () => {
   const request = { ...dryRunPullRequest(directory), draft: false };
   const dryRun = await run(request);
 
-  await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(fake.writes[0]?.commandArguments).toEqual([
     'pr',
@@ -203,7 +222,7 @@ it('trims base and head and refuses a whitespace-only value', async () => {
   const request = { ...dryRunPullRequest(directory), base: ' main ', head: ' feature ' };
   const dryRun = await run(request);
 
-  await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(fake.writes[0]?.commandArguments).toEqual([
     'pr',
@@ -234,9 +253,9 @@ it('refuses to publish when only title.md changed and names it', async () => {
 
   await writeRunFile(directory, 'title.md', 'Another title\n');
 
-  await expect(
-    run({ ...request, action: 'publish', token: String(dryRun['token']) }),
-  ).rejects.toThrow(/title\.md changed since the dry run/u);
+  await expect(run({ ...request, action: 'publish', token: dryRun.token })).rejects.toThrow(
+    /title\.md changed since the dry run/u,
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -254,7 +273,7 @@ it('refuses to publish a token from another create target and sends nothing', as
 
   for (const change of changes) {
     await expect(
-      run({ ...request, ...change, action: 'publish', token: String(dryRun['token']) }),
+      run({ ...request, ...change, action: 'publish', token: dryRun.token }),
     ).rejects.toThrow('The token covers a different publication target');
   }
 
@@ -271,9 +290,9 @@ it('refuses to publish a token from another pull request and sends nothing', asy
   const request = { ...dryRunPullRequest(directory), pr: 7 };
   const dryRun = await run(request);
 
-  await expect(
-    run({ ...request, action: 'publish', pr: 8, token: String(dryRun['token']) }),
-  ).rejects.toThrow('The token covers a different publication target');
+  await expect(run({ ...request, action: 'publish', pr: 8, token: dryRun.token })).rejects.toThrow(
+    'The token covers a different publication target',
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -294,7 +313,7 @@ it('refuses to publish a token from another run directory and sends nothing', as
     run({
       ...dryRunPullRequest(second),
       action: 'publish',
-      token: String(dryRun['token']),
+      token: dryRun.token,
     }),
   ).rejects.toThrow('The token covers a different publication target');
 
@@ -323,9 +342,9 @@ it('refuses to publish when a file changed after the dry run and sends nothing',
 
   await writeRunFile(directory, 'body.md', 'Adds something else.\n');
 
-  await expect(
-    run({ ...request, action: 'publish', token: String(dryRun['token']) }),
-  ).rejects.toThrow(/body\.md changed since the dry run/u);
+  await expect(run({ ...request, action: 'publish', token: dryRun.token })).rejects.toThrow(
+    /body\.md changed since the dry run/u,
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -345,7 +364,7 @@ it('returns the em dash finding from the dry run and publishes with it', async (
     { file: 'body.md', rule: 'emDash', line: 1, excerpt: 'Adds it \u2014 now.' },
   ]);
 
-  await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(fake.writes).toHaveLength(1);
   expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it \u2014 now.\n'));
@@ -377,7 +396,7 @@ it('publishes the verified bytes when the file changes after the token check', a
   const request = { ...dryRunPullRequest(directory), pr: 7 };
   const dryRun = await run(request);
 
-  await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it.\n'));
   expect(fileMode & 0o777).toBe(0o600);
@@ -400,7 +419,7 @@ it('removes the verified copy when the publish fails and names the run file', as
   const failure: unknown = await run({
     ...request,
     action: 'publish',
-    token: String(dryRun['token']),
+    token: dryRun.token,
   }).catch((error: unknown) => error);
 
   expect(String(failure)).toContain(`--body-file ${join(directory, 'body.md')}`);
@@ -424,7 +443,7 @@ it.each(['--body-file', '--input'])(
     const request = dryRunPullRequest(directory);
     const dryRun = await run(request);
 
-    await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+    await run({ ...request, action: 'publish', token: dryRun.token });
 
     const commandArguments = fake.writes[0]?.commandArguments ?? [];
 
@@ -456,9 +475,9 @@ it.skipIf(isRoot)('keeps the publish result when the private copy cannot be remo
 
   const request = dryRunPullRequest(directory);
   const dryRun = await run(request);
-  const published = await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
-  expect(published['url']).toBe('https://github.com/sQVe/tau/pull/8');
+  expect(published.url).toBe('https://github.com/sQVe/tau/pull/8');
 
   await chmod(privateDirectory, 0o700);
   await rm(privateDirectory, { recursive: true, force: true });

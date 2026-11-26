@@ -4,10 +4,10 @@ import { dirname, join } from 'node:path';
 import type { onTestFinished } from 'vitest';
 
 import type { GhFake } from '../../../../tests/prGhFake.js';
-import type { PrInput } from '../tool.js';
 import { createPublicationTool } from './publicationRepository.js';
+import type { PublicationRun } from './publicationRepository.js';
 
-export type PublicationRun = (input: PrInput) => Promise<Record<string, unknown>>;
+export type { PublicationRun } from './publicationRepository.js';
 
 export const publicationRepository = 'github.com/sQVe/tau';
 

@@ -1,29 +1,30 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, isAbsolute, join, normalize } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { isAbsolute, join, normalize } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../../command.js';
-import { outputPreviewLength, runCommand } from '../../../command.js';
-import { label, parseRepository, requirePullRequestNumber } from '../../../github/github.js';
+import { outputPreviewLength } from '../../../command.js';
+import { parseRepository, requirePullRequestNumber } from '../../../github/github.js';
 import type { Repository } from '../../../github/github.js';
 import { formatRepository } from '../../../github/repositoryTargetDecisions.js';
 import { checkProse } from '../../../prose.js';
 import type { ProseRule } from '../../../prose.js';
-import { describeSchemaProblem, isRecord } from '../../../schema.js';
+import { describeSchemaProblem } from '../../../schema.js';
+import { climbsOut, existingEntry, rejectLinkedFile } from '../../../tauDirectory.js';
 import {
-  checkTauDirectory,
-  climbsOut,
-  existingEntry,
-  rejectLinkedFile,
-  requireTauChild,
-} from '../../../tauDirectory.js';
-import { runPath, runPrefix } from '../verify.js';
+  bodyFileName,
+  reviewFileName,
+  runDirectoryPath,
+  runName,
+  titleFileName,
+} from '../prRun.js';
 import { decidePublication, publicationToken } from './publishDecisions.js';
 import type { PublicationFile, PublicationTargetFacts } from './publishDecisions.js';
+import { publishedUrl, runWithVerifiedBytes } from './publishExecution.js';
+import type { PublicationKind } from './publishKind.js';
 
 export interface PublishRequest {
   kind?: PublicationKind;
@@ -78,26 +79,17 @@ interface PullRequestFiles {
   repositoryTarget: string;
 }
 
-interface VerifiedCopy {
-  path: string;
-  bytes: Uint8Array;
+export interface DryRunResult {
+  kind: PublicationKind;
+  token: string;
+  findings: PublicationFinding[];
 }
 
-interface VerifiedCommand {
-  commandArguments: string[];
-  copies: VerifiedCopy[];
+export interface PublishResult {
+  kind: PublicationKind;
+  files: string[];
+  url: string | null;
 }
-
-export const publicationKindSchema = Type.Union(
-  [Type.Literal('pullRequest'), Type.Literal('comment'), Type.Literal('review')],
-  { description: 'dryRun/publish: the write to send.' },
-);
-
-type PublicationKind = Static<typeof publicationKindSchema>;
-
-const titleFileName = 'title.md';
-const bodyFileName = 'body.md';
-const reviewFileName = 'review.json';
 
 const reviewCommentSchema = Type.Object(
   {
@@ -108,7 +100,6 @@ const reviewCommentSchema = Type.Object(
     side: Type.Optional(Type.Union([Type.Literal('LEFT'), Type.Literal('RIGHT')])),
     start_line: Type.Optional(Type.Integer({ minimum: 1 })),
     start_side: Type.Optional(Type.Union([Type.Literal('LEFT'), Type.Literal('RIGHT')])),
-    in_reply_to: Type.Optional(Type.Integer({ minimum: 1 })),
   },
   { additionalProperties: false },
 );
@@ -163,11 +154,9 @@ const requireKind = (action: string, kind: PublicationKind | undefined): Publica
 
 const runDirectory = async (root: string, action: string, directory: string | undefined) => {
   const requested = requireValue(action, 'directory', directory);
-  const name = requireTauChild(root, runPath, runPrefix, requested, 'The run directory');
+  const name = await runName(root, requested, 'The run directory');
 
-  await checkTauDirectory(root, `${runPath}/${name}`);
-
-  return join(root, '.tau', runPath, name);
+  return runDirectoryPath(root, name);
 };
 
 const publicationTarget = async (
@@ -386,20 +375,21 @@ const readComment = async (target: PublicationTarget): Promise<PublicationPlan> 
   const { action, directory, repository, request } = target;
   const pr = requirePullRequestNumber(action, request.pr);
   const file = await readPublicationFile(directory, requireCommentFile(action, request.file));
+  const repositoryTarget = formatRepository(repository);
 
   const commandArguments = [
     'pr',
     'comment',
     String(pr),
     '--repo',
-    formatRepository(repository),
+    repositoryTarget,
     '--body-file',
     file.path,
   ];
 
   const facts: PublicationTargetFacts = {
     kind: 'comment',
-    repository: formatRepository(repository),
+    repository: repositoryTarget,
     directory,
     pr,
   };
@@ -411,6 +401,7 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
   const { action, directory, repository, request } = target;
   const pr = requirePullRequestNumber(action, request.pr);
   const file = await readPublicationFile(directory, reviewFileName);
+  const repositoryTarget = formatRepository(repository);
   const path = `repos/${repositoryPath(repository)}/pulls/${pr}/reviews`;
 
   const commandArguments = [
@@ -427,10 +418,7 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
   const review = parseReview(file);
 
   const missingPosition = (review.comments ?? []).findIndex(
-    (comment) =>
-      comment.in_reply_to === undefined &&
-      comment.line === undefined &&
-      comment.position === undefined,
+    (comment) => comment.line === undefined && comment.position === undefined,
   );
 
   if (missingPosition !== -1) {
@@ -439,7 +427,7 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
 
   const facts: PublicationTargetFacts = {
     kind: 'review',
-    repository: formatRepository(repository),
+    repository: repositoryTarget,
     directory,
     pr,
   };
@@ -459,114 +447,11 @@ const planPublication = (target: PublicationTarget): Promise<PublicationPlan> =>
   return readReview(target);
 };
 
-const firstUrlLine = (stdout: string): string | null =>
-  stdout.split(/\r?\n/u).find((line) => line.startsWith('https://')) ?? null;
-
-const reviewUrl = (stdout: string): string | null => {
-  try {
-    const value: unknown = JSON.parse(stdout);
-
-    return isRecord(value) && typeof value.html_url === 'string' ? value.html_url : null;
-  } catch {
-    return null;
-  }
-};
-
-const publishedUrl = (kind: PublicationKind, stdout: string): string | null =>
-  kind === 'review' ? reviewUrl(stdout) : firstUrlLine(stdout);
-
-const privateDirectoryMode = 0o700;
-const privateFileMode = 0o600;
-const fileArgumentFlags = new Set(['--body-file', '--input']);
-const valueFlags = new Set(['--repo', '--title', '--base', '--head', '--hostname', '--method']);
-
-// Rewrites every file argument to a unique copy below directory, so equal basenames cannot collide.
-export const verifiedCopyArguments = (
-  commandArguments: readonly string[],
-  files: readonly (PublicationFile & { path: string })[],
-  directory: string,
-): VerifiedCommand => {
-  const rewritten = [...commandArguments];
-  const copies: VerifiedCopy[] = [];
-  let found = false;
-  let skipValue = false;
-
-  for (const [index, argument] of commandArguments.entries()) {
-    if (skipValue) {
-      skipValue = false;
-
-      continue;
-    }
-
-    if (valueFlags.has(argument)) {
-      skipValue = true;
-
-      continue;
-    }
-
-    if (!fileArgumentFlags.has(argument)) {
-      continue;
-    }
-
-    found = true;
-
-    const sourcePath = commandArguments[index + 1];
-
-    if (sourcePath === undefined) {
-      throw new Error(`The publication command has no file after ${argument}.`);
-    }
-
-    const source = files.find((file) => file.path === sourcePath);
-
-    if (source === undefined) {
-      throw new Error('The publication command reads a file the plan did not verify.');
-    }
-
-    const path = join(directory, `${index}-${basename(source.path)}`);
-
-    rewritten[index + 1] = path;
-    copies.push({ path, bytes: source.bytes });
-  }
-
-  if (!found) {
-    throw new Error('The publication command names no file to read.');
-  }
-
-  return { commandArguments: rewritten, copies };
-};
-
-// gh reads the file when it runs, so the verified bytes go to a private copy that cannot change
-// between the token check and the read.
-const runWithVerifiedBytes = async (
-  runtime: CommandRuntime,
-  plan: PublicationPlan,
-): Promise<string> => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-publish-'));
-
-  try {
-    await chmod(directory, privateDirectoryMode);
-
-    const { commandArguments, copies } = verifiedCopyArguments(
-      plan.commandArguments,
-      plan.files,
-      directory,
-    );
-
-    await Promise.all(
-      copies.map((copy) => writeFile(copy.path, copy.bytes, { mode: privateFileMode })),
-    );
-
-    return await runCommand(runtime, 'gh', commandArguments, label(plan.commandArguments));
-  } finally {
-    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
-  }
-};
-
 // Reads the files a publish would send, reports the prose findings, and pins their bytes.
 export const readPublication = async (
   root: string,
   request: PublishRequest,
-): Promise<Record<string, unknown>> => {
+): Promise<DryRunResult> => {
   const target = await publicationTarget('dryRun', root, request);
   const plan = await planPublication(target);
 
@@ -582,7 +467,7 @@ export const publishPublication = async (
   runtime: CommandRuntime,
   root: string,
   request: PublishRequest,
-): Promise<Record<string, unknown>> => {
+): Promise<PublishResult> => {
   const target = await publicationTarget('publish', root, request);
   const plan = await planPublication(target);
   const token = requireValue('publish', 'token from dryRun', request.token);
@@ -593,8 +478,8 @@ export const publishPublication = async (
     throw new Error(decision.reason);
   }
 
-  const stdout = await runWithVerifiedBytes(runtime, plan);
-  const url = publishedUrl(target.kind, stdout);
+  const stdout = await runWithVerifiedBytes(runtime, plan.commandArguments, plan.files);
+  const url = publishedUrl(target.kind, formatRepository(target.repository), stdout);
 
   return { kind: target.kind, files: plan.files.map((file) => file.file), url };
 };

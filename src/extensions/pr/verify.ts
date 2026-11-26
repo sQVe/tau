@@ -12,12 +12,8 @@ import {
   requirePullRequestNumber,
 } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
-import {
-  existingEntry,
-  checkTauDirectory,
-  rejectLinkedFile,
-  requireTauChild,
-} from '../../tauDirectory.js';
+import { existingEntry, rejectLinkedFile } from '../../tauDirectory.js';
+import { bodyFileName, runDirectoryPath, runName } from './prRun.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 
@@ -36,11 +32,6 @@ export interface VerifyResult {
   differences: Difference[];
 }
 
-export const runPath = 'pr';
-export const runPrefix = 'run-';
-
-const bodyFileName = 'body.md';
-
 const pullRequestViewSchema = Type.Object({
   url: Type.String(),
   title: Type.String(),
@@ -50,17 +41,12 @@ const pullRequestViewSchema = Type.Object({
   headRefOid: Type.String(),
 });
 
-const runName = (root: string, directory: string) =>
-  requireTauChild(root, runPath, runPrefix, directory, 'The body directory');
-
 // A linked directory or body.md, symbolic or hard, could make verify compare a file from outside
 // the checkout.
 const readBody = async (root: string, directory: string) => {
-  const name = runName(root, directory);
+  const name = await runName(root, directory, 'The body directory');
+  const path = join(runDirectoryPath(root, name), bodyFileName);
 
-  await checkTauDirectory(root, `${runPath}/${name}`);
-
-  const path = join(root, '.tau', runPath, name, bodyFileName);
   const entry = await existingEntry(path);
 
   if (entry === undefined) {

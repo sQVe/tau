@@ -7,10 +7,17 @@ import type { GhFake } from '../../../../tests/prGhFake.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../../tests/toolContext.js';
 import type { Exec } from '../../../command.js';
+import type { DryRunResult, PublishResult } from '../publish/publish.js';
 import { createPrTool } from '../tool.js';
 import type { PrInput } from '../tool.js';
 
 type RegisterCleanup = typeof onTestFinished;
+
+export interface PublicationRun {
+  (input: PrInput & { action: 'dryRun' }): Promise<DryRunResult>;
+  (input: PrInput & { action: 'publish' }): Promise<PublishResult>;
+  (input: PrInput): Promise<Record<string, unknown>>;
+}
 
 export const githubUrl = (repository: string): string => `https://github.com/${repository}.git`;
 
@@ -78,7 +85,7 @@ export const createPublicationTool = async (
   root: string;
   forkPoint: string;
   fake: GhFake;
-  run: (input: PrInput) => Promise<Record<string, unknown>>;
+  run: PublicationRun;
 }> => {
   const { root, forkPoint } = await createPublicationRepository(registerCleanup, {
     origin,
@@ -97,5 +104,5 @@ export const createPublicationTool = async (
     return result.details;
   };
 
-  return { root, forkPoint, fake, run };
+  return { root, forkPoint, fake, run: run as PublicationRun };
 };

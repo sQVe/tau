@@ -30,7 +30,7 @@ it('publishes a comment file under bots', async () => {
 
   const dryRun = await run(request);
 
-  const published = await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+  const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(fake.writes).toEqual([
     {
@@ -48,7 +48,7 @@ it('publishes a comment file under bots', async () => {
     },
   ]);
 
-  expect(published['url']).toBe('https://github.com/sQVe/tau/pull/1#issuecomment-1');
+  expect(published.url).toBe('https://github.com/sQVe/tau/pull/1#issuecomment-1');
   expect(publishedCommands(fake)).toEqual(['pr comment']);
 });
 
