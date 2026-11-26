@@ -39,11 +39,6 @@ interface CompoundScope {
   enclosingByIndex: Map<number, Streams>;
 }
 
-interface MemberRange {
-  start: number;
-  end: number;
-}
-
 type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
 
 const shellNames = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh', 'mksh', 'ash']);
@@ -58,8 +53,13 @@ const emptyOptionValues: ReadonlySet<string> = new Set();
 
 // A wrapper runs the command that follows its own options and fixed arguments.
 const wrapperOptionValues: Readonly<Record<string, ReadonlySet<string>>> = {
+  chroot: new Set(['--groups', '--userspec']),
+  doas: new Set(['-C', '-u']),
   env: new Set(['-C', '--chdir', '-S', '--split-string', '-u', '--unset']),
   exec: new Set(['-a']),
+  flock: new Set(['-E', '-c', '-w', '--command', '--conflict-exit-code', '--timeout']),
+  nice: new Set(['-n', '--adjustment']),
+  stdbuf: new Set(['-e', '-i', '-o', '--error', '--input', '--output']),
   sudo: new Set([
     '-C',
     '-D',
@@ -67,11 +67,13 @@ const wrapperOptionValues: Readonly<Record<string, ReadonlySet<string>>> = {
     '-h',
     '-p',
     '-r',
+    '-R',
     '-t',
     '-T',
     '-u',
     '-U',
     '--chdir',
+    '--chroot',
     '--close-from',
     '--group',
     '--host',
@@ -80,20 +82,47 @@ const wrapperOptionValues: Readonly<Record<string, ReadonlySet<string>>> = {
     '--type',
     '--user',
   ]),
+  time: new Set(['-f', '-o', '--format', '--output']),
   timeout: new Set(['-k', '--kill-after', '-s', '--signal']),
+  watch: new Set(['-n', '--interval']),
+  xargs: new Set([
+    '-a',
+    '-d',
+    '-E',
+    '-I',
+    '-L',
+    '-n',
+    '-P',
+    '-s',
+    '--arg-file',
+    '--delimiter',
+    '--eof',
+    '--max-args',
+    '--max-chars',
+    '--max-lines',
+    '--max-procs',
+    '--process-slot-var',
+    '--replace',
+  ]),
 };
 
 // The fixed arguments a wrapper takes before the command it runs.
 const wrapperArguments = new Map<string, number>([
+  ['chroot', 1],
   ['command', 0],
   ['doas', 0],
   ['env', 0],
   ['exec', 0],
+  ['flock', 1],
+  ['nice', 0],
   ['nohup', 0],
   ['setsid', 0],
+  ['stdbuf', 0],
   ['sudo', 0],
   ['time', 0],
   ['timeout', 1],
+  ['watch', 0],
+  ['xargs', 0],
 ]);
 
 const isDescriptor = (target: string): boolean => /^\d+$/u.test(target) || target === '-';
@@ -223,17 +252,21 @@ const skipWrapper = (commandArguments: readonly string[], index: number): number
   return next + (wrapperArguments.get(name) ?? 0);
 };
 
+// A leading assignment or `!` runs the wrapper or shell after it, so neither is the command head.
 const commandHead = (commandArguments: readonly string[]): number => {
   let index = 0;
 
   while (index < commandArguments.length) {
-    const name = shellNameOf(commandArguments[index] ?? '');
+    const argument = commandArguments[index] ?? '';
+    const name = shellNameOf(argument);
 
-    if (!wrapperArguments.has(name)) {
+    if (argument === '!' || isAssignment(argument)) {
+      index += 1;
+    } else if (wrapperArguments.has(name)) {
+      index = skipWrapper(commandArguments, index);
+    } else {
       break;
     }
-
-    index = skipWrapper(commandArguments, index);
   }
 
   return index;
@@ -305,29 +338,37 @@ const failClosedFacts: CompoundFacts = { shows: false, discards: true, ownDiscar
 
 // The last member with arguments decides whether a reader sees the failure. Any member that throws
 // stderr away hides one. An empty member set falls back to the streams the compound inherits.
+const memberRangeOf = (
+  scope: CompoundScope,
+  closingIndex: number | undefined,
+): { start: number; end: number; fallbackStreams: Streams } => {
+  const closing = closingIndex === undefined ? undefined : scope.commands[closingIndex];
+  const start = closing?.group ?? 0;
+  const end = closingIndex ?? scope.commands.length;
+
+  const fallbackStreams =
+    closing === undefined ? scope.inherited : streamsOf(closing, scope.inherited);
+
+  return { start, end, fallbackStreams };
+};
+
 const membersFacts = (
   factsOf: CompoundFactsOf,
   scope: CompoundScope,
-  { start, end }: MemberRange,
-  fallbackStreams: Streams,
+  closingIndex: number | undefined,
   depth: number,
 ): CompoundFacts => {
+  const { start, end, fallbackStreams } = memberRangeOf(scope, closingIndex);
   let shows: boolean | undefined;
-
-  for (let index = end - 1; index >= start; index -= 1) {
-    const command = scope.commands[index];
-
-    if (command !== undefined && command.arguments.length > 0) {
-      shows = factsOf(scope, index, depth + 1).shows;
-
-      break;
-    }
-  }
-
   let discards = false;
 
   for (let index = start; index < end; index += 1) {
     const member = factsOf(scope, index, depth + 1);
+    const hasArguments = (scope.commands[index]?.arguments.length ?? 0) > 0;
+
+    if (hasArguments) {
+      shows = member.shows;
+    }
 
     discards ||= member.discards || member.ownDiscards;
   }
@@ -342,21 +383,12 @@ const groupFacts = (
   depth: number,
 ): CompoundFacts => {
   const closing = scope.commands[closingIndex];
-  const groupStart = closing?.group;
 
-  if (closing === undefined || groupStart === undefined) {
+  if (closing?.group === undefined) {
     return noFacts;
   }
 
-  const groupStreams = streamsOf(closing, scope.inherited);
-
-  return membersFacts(
-    factsOf,
-    scope,
-    { start: groupStart, end: closingIndex },
-    groupStreams,
-    depth,
-  );
+  return membersFacts(factsOf, scope, closingIndex, depth);
 };
 
 const scriptFacts = (
@@ -374,7 +406,7 @@ const scriptFacts = (
 
   const scope = compoundScope(commands, scriptInherited);
 
-  return membersFacts(factsOf, scope, { start: 0, end: commands.length }, scriptInherited, depth);
+  return membersFacts(factsOf, scope, undefined, depth);
 };
 
 // A command shows its failure when its own redirections, over the streams it inherits, end stderr in

@@ -215,15 +215,15 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a heredoc body command inside a backtick before a background unit',
     command: 'echo `cat <<EOF\n$(touch x 2>/dev/null)\nEOF` &',
-    blocked: false,
+    blocked: true,
   },
   {
-    name: 'stderr duplicated from a discarded descriptor',
+    name: 'stderr duplicated from an inherited descriptor',
     command: 'cmd 2>&3 3>/dev/null &',
     blocked: true,
   },
   {
-    name: 'stderr duplicated from a logged descriptor',
+    name: 'stderr duplicated from a descriptor discarded before the duplication',
     command: 'cmd 3>/dev/null 2>&3 &',
     blocked: true,
   },
@@ -265,6 +265,61 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a detached script behind an env assignment',
     command: "env FOO=1 sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a leading assignment',
+    command: "FOO=1 sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a negation',
+    command: "! sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a doas option',
+    command: "doas -u root sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a sudo chroot',
+    command: "sudo -R /newroot sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a time output option',
+    command: "time -o /tmp/x.log sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a nice adjustment',
+    command: "nice -n 5 sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a stdbuf option',
+    command: "stdbuf -oL sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind an xargs option',
+    command: "xargs -n 1 sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a flock lock file',
+    command: "flock -w 5 /tmp/lock sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a chroot root',
+    command: "chroot /newroot sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind a watch interval',
+    command: "watch -n 1 sh -c 'cmd 2>/dev/null' &",
     blocked: true,
   },
   {
