@@ -174,11 +174,11 @@ export const registerInboxLifecycle = (
     current: Generation,
     context: ExtensionContext,
     attempt = 0,
-  ): Promise<boolean> => {
+  ): Promise<void> => {
     const terminal = dependencies.terminal();
 
     if (terminal === undefined) {
-      return false;
+      return;
     }
 
     const [snapshot, processGroup] = await Promise.all([
@@ -187,15 +187,16 @@ export const registerInboxLifecycle = (
     ]);
 
     if (current.controller.signal.aborted) {
-      return false;
+      return;
     }
 
     const foregroundPid = snapshot.foreground?.pid;
 
     if (ownsTerminal({ foregroundPid, processGroup })) {
       await startListener(current, context, terminal);
+      requestDrain(current, context);
 
-      return true;
+      return;
     }
 
     const delay = ownerWaitDelay(attempt);
@@ -203,24 +204,16 @@ export const registerInboxLifecycle = (
     if (delay === undefined) {
       context.ui.notify(noOwnerNotice({ terminal, foregroundPid }), 'warning');
 
-      return false;
+      return;
     }
 
     current.ownerWait = setTimeout(() => {
       current.ownerWait = undefined;
 
-      advertise(current, context, attempt + 1)
-        .then((started) => {
-          if (started) {
-            requestDrain(current, context);
-          }
-        })
-        .catch((error: unknown) => {
-          notifyStartFailure(current, context, error);
-        });
+      advertise(current, context, attempt + 1).catch((error: unknown) => {
+        notifyStartFailure(current, context, error);
+      });
     }, delay);
-
-    return false;
   };
 
   const endGeneration = (): void => {
@@ -254,18 +247,10 @@ export const registerInboxLifecycle = (
     generation = current;
 
     try {
-      const started = await advertise(current, context);
-
-      if (!started) {
-        return;
-      }
+      await advertise(current, context);
     } catch (error) {
       notifyStartFailure(current, context, error);
-
-      return;
     }
-
-    requestDrain(current, context);
   });
 
   pi.on('agent_end', (_event, context) => {

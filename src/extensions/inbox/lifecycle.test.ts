@@ -12,7 +12,7 @@ import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import { releaseInbox, setAcceptCheck, advertiseLabel } from '../../inbox/inbox.js';
-import { saveMessage } from '../../inbox/store.js';
+import { inboxRecordVersion, saveMessage } from '../../inbox/store.js';
 import { createWake } from '../../wake/wake.js';
 import { registerInboxLifecycle } from './lifecycle.js';
 import { ownerWaitDelay } from './ownerDecision.js';
@@ -1049,7 +1049,7 @@ it('delivers a message saved before the terminal reported this process in the fo
   const messageId = randomUUID();
 
   await saveMessage(join(root, 'records', sessionId), {
-    version: 3,
+    version: inboxRecordVersion,
     messageId,
     family: 'handover',
     payload: { text: 'earlier text', sender: { terminal: 'lead', sessionId: randomUUID() } },
@@ -1068,6 +1068,8 @@ it('delivers a message saved before the terminal reported this process in the fo
   await vi.waitFor(() => {
     expect(harness.sendMessage).toHaveBeenCalledTimes(1);
   });
+
+  expect(harness.sendMessage.mock.calls[0]?.[0].details).toMatchObject({ messageId });
 });
 
 it('reports that the inbox could not start when the terminal read fails', async () => {
