@@ -342,11 +342,11 @@ describe('parseShellCommands', () => {
     expect(commands?.map(({ words }) => words)).toEqual([['cat'], ['next']]);
   });
 
-  it('keeps a heredoc body command inside a backtick out of the background unit', () => {
+  it('keeps a heredoc body command inside a backtick in the background unit', () => {
     expect(backgroundsOf('echo `cat <<EOF\n$(touch x 2>/dev/null)\nEOF` &')).toEqual([
       true,
       true,
-      false,
+      true,
     ]);
   });
 

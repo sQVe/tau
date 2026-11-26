@@ -627,10 +627,6 @@ class ShellParser {
       this.offsetCommand(command, base);
     }
 
-    for (const command of innerParser.heredocBodyCommands) {
-      this.heredocBodyCommands.add(command);
-    }
-
     this.commands.push(...innerParser.commands);
 
     return `\`${inner}\``;
