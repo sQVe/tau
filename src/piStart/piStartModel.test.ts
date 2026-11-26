@@ -341,6 +341,44 @@ it('an abort during the model readback ends the call', async () => {
   expect(await opening).toBe(cancellation);
 });
 
+it('an abort during the backoff pause ends the call before the next read', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled during the pause');
+  let reads = 0;
+
+  const readsNothing = (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    return Promise.resolve(undefined);
+  };
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const opening = startPiSession(
+      { exec: fake.exec, cwd: root, signal: controller.signal },
+      startRequest(root, readsNothing),
+    ).catch((error: unknown) => error);
+
+    await vi.waitFor(() => {
+      expect(reads).toBe(1);
+    });
+
+    controller.abort(cancellation);
+
+    // The pause is the only pending work, so a call that ignores the abort stays in the race.
+    const stillWaiting = vi.advanceTimersByTimeAsync(0).then(() => 'still waiting' as const);
+    const outcome = await Promise.race([opening, stillWaiting]);
+
+    expect(outcome).toBe(cancellation);
+    expect(reads).toBe(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('a model read that times out removes its abort listener', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);

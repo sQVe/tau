@@ -150,6 +150,24 @@ const cancellationError = (signal: AbortSignal | undefined): Error => {
     : new Error('The started model readback was cancelled.', { cause: reason });
 };
 
+// A pause between reads rejects as soon as the signal aborts, so cancelling stays prompt.
+const pauseBeforeRead = async (
+  milliseconds: number,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
+  const options = signal === undefined ? {} : { signal };
+
+  try {
+    await sleep(milliseconds, undefined, options);
+  } catch (error) {
+    if (signal?.aborted === true) {
+      throw cancellationError(signal);
+    }
+
+    throw toError(error);
+  }
+};
+
 // Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
 // launch budget.
 const readWithinBudget = (
@@ -241,7 +259,8 @@ const readStartedModel = async (
     }
 
     // oxlint-disable-next-line no-await-in-loop -- the poll needs a pause between reads.
-    await sleep(Math.min(interval, remaining));
+    await pauseBeforeRead(Math.min(interval, remaining), signal);
+
     interval = Math.min(interval * 2, readbackMaxIntervalMilliseconds);
   }
 };
