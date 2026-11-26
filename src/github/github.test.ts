@@ -163,7 +163,7 @@ const refusedPullRequestNumbers: { rule: string; pr: number | undefined; error: 
   {
     rule: 'refuses a number that is not safe',
     pr: Number.MAX_SAFE_INTEGER + 1,
-    error: `pr must be an integer, not ${Number.MAX_SAFE_INTEGER + 1}.`,
+    error: `pr must be a safe integer, not ${Number.MAX_SAFE_INTEGER + 1}.`,
   },
 ];
 
