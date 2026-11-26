@@ -824,17 +824,6 @@ it.each([
       'morph-dsv41flash-1017',
     ],
   },
-  {
-    name: 'a node pi.ps1 path',
-    argv: [
-      'node',
-      '/usr/local/bin/pi.ps1',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
 ])('a start reads the model from $name', async ({ argv }) => {
   const fake = launchWithForeground(argv);
   const root = await createTemporaryRepository(onTestFinished);
@@ -860,9 +849,11 @@ it.each([
   }
 });
 
-it.each([
+it.each<[string, readonly string[] | undefined]>([
   ['undefined', undefined],
   ['a non-Pi argv', ['bash']],
+  ['a node command with a trailing pi argument', ['node', '/path/tool.js', 'pi']],
+  ['a node command with a flag value of pi', ['node', '--title', 'pi', '/path/tool.js']],
 ])('a start retries a model read that first returns %s', async (_shape, firstRead) => {
   const fake = launchWithForeground([
     'pi',

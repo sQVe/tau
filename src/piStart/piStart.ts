@@ -146,18 +146,69 @@ const cancellationError = (signal: AbortSignal | undefined): Error => {
     : new Error('The started model readback was cancelled.', { cause: reason });
 };
 
-const executableSuffixes = ['cmd', 'js', 'exe', 'ps1'];
-const runtimeNames = ['node', 'bun'];
+const executableNames = (name: string, suffixes: readonly string[]): string[] => [
+  name,
+  ...suffixes.map((suffix) => `${name}.${suffix}`),
+];
 
-const piExecutableNames = new Set(['pi', ...executableSuffixes.map((suffix) => `pi.${suffix}`)]);
+const piExecutableNames = new Set(executableNames('pi', ['cmd', 'js', 'exe']));
 
-const nodeExecutables = new Set([
-  ...runtimeNames,
-  ...runtimeNames.flatMap((name) => executableSuffixes.map((suffix) => `${name}.${suffix}`)),
+const runtimeExecutables = new Set([
+  ...executableNames('node', ['exe']),
+  ...executableNames('bun', ['exe']),
+]);
+
+// Runtime flags that consume the next argument, so that argument is not the script.
+const valueTakingRuntimeFlags = new Set([
+  '--conditions',
+  '-C',
+  '--dns-result-order',
+  '--env-file',
+  '--eval',
+  '-e',
+  '--experimental-loader',
+  '--icu-data-dir',
+  '--import',
+  '--inspect-port',
+  '--loader',
+  '--max-http-header-size',
+  '--max-old-space-size',
+  '--openssl-config',
+  '--preload',
+  '--print',
+  '-p',
+  '--redirect-warnings',
+  '--require',
+  '-r',
+  '--title',
+  '--tls-cipher-list',
+  '--watch-path',
 ]);
 
 const isPiExecutable = (argument: string | undefined): boolean =>
   argument !== undefined && piExecutableNames.has(basename(argument));
+
+const scriptArgument = (argv: readonly string[]): string | undefined => {
+  let valueFollows = false;
+
+  for (const argument of argv.slice(1)) {
+    if (valueFollows) {
+      valueFollows = false;
+
+      continue;
+    }
+
+    if (argument.startsWith('-')) {
+      valueFollows = valueTakingRuntimeFlags.has(argument);
+
+      continue;
+    }
+
+    return argument;
+  }
+
+  return undefined;
+};
 
 const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined => {
   if (argv === undefined) {
@@ -172,13 +223,11 @@ const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefi
 
   const runtime = first === undefined ? undefined : basename(first);
 
-  if (runtime === undefined || !nodeExecutables.has(runtime)) {
+  if (runtime === undefined || !runtimeExecutables.has(runtime)) {
     return undefined;
   }
 
-  const runsPi = argv.slice(1).some((argument) => isPiExecutable(argument));
-
-  return runsPi ? argv : undefined;
+  return isPiExecutable(scriptArgument(argv)) ? argv : undefined;
 };
 
 // Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
