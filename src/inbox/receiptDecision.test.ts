@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { assert, property, string, stringMatching, uuid } from 'fast-check';
 import { expect, it } from 'vitest';
 
+import { resolvePropertySeed } from '../../tests/propertySeedHarness.js';
 import { parseSenderLine } from '../handoverSender.js';
 import type { SavableMessageBody } from './protocol.js';
 import {
@@ -633,6 +635,33 @@ it('parses the heading that messageText writes for a handover question', () => {
     askerTerminal: 'worker',
     askerSession: 's1',
   });
+});
+
+const validTerminal = stringMatching(/^\S+$/u);
+const validSession = stringMatching(/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u);
+
+it('parses every generated heading messageText writes for a handover question', () => {
+  const seed = resolvePropertySeed();
+
+  assert(
+    property(
+      uuid(),
+      validTerminal,
+      validSession,
+      string({ minLength: 1, maxLength: 4000 }),
+      (questionId, askerTerminal, askerSession, text) => {
+        const payload = { questionId, text, askerTerminal, askerSession };
+        const content = messageText({ family: 'handover-question', payload });
+
+        expect(parseHandoverQuestionHeading(content)).toEqual({
+          questionId,
+          askerTerminal,
+          askerSession,
+        });
+      },
+    ),
+    { seed, numRuns: 100 },
+  );
 });
 
 it('keeps a heading inside the question text from changing the parsed question', () => {

@@ -13,6 +13,8 @@ import type { MessageRequest } from './protocol.js';
 import { inboxMessageType } from './receiptDecision.js';
 import type { ReceiptEntryFact } from './receiptDecision.js';
 
+const answer = 'Use option A.';
+
 const handoverAnswer = (
   sessionId: string,
   messageId: string,
@@ -24,11 +26,11 @@ const handoverAnswer = (
   targetTerminal: 't7',
   targetSessionId: sessionId,
   family: 'handover-answer',
-  payload: { questionId, senderSession: 'lead-session', answer: 'Use option A.' },
+  payload: { questionId, senderSession: 'lead-session', answer },
 });
 
 const shownText = (questionId: string): string =>
-  `Handover answer to question ${questionId}:\n\nUse option A.`;
+  `Handover answer to question ${questionId}:\n\n${answer}`;
 
 const receiptEntry = (
   sessionId: string,
@@ -71,7 +73,7 @@ it('saves a handover-answer and wakes once with its fixed text', async () => {
     version: 4,
     messageId,
     family: 'handover-answer',
-    payload: { questionId, senderSession: 'lead-session', answer: 'Use option A.' },
+    payload: { questionId, senderSession: 'lead-session', answer },
   });
 
   expect(woken).toEqual([
@@ -84,7 +86,7 @@ it('saves a handover-answer and wakes once with its fixed text', async () => {
   ]);
 });
 
-it('queues a handover-answer retry before the drain without reaching the receipt match', async () => {
+it('queues a handover-answer retry of a saved record that has no receipt', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-receive-handover-answer-');
   const sessionId = randomUUID();
   const messageId = randomUUID();

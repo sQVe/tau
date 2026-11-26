@@ -1,6 +1,8 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
+import { array, assert, constantFrom, property, tuple } from 'fast-check';
 import { expect, it } from 'vitest';
 
+import { resolvePropertySeed } from '../../../../tests/propertySeedHarness.js';
 import { inboxMessageType, messageText } from '../../../inbox/receiptDecision.js';
 import type { ReceivedQuestion } from './receivedQuestion.js';
 import { receivedQuestion } from './receivedQuestion.js';
@@ -177,4 +179,29 @@ const cases: readonly {
 
 it.each(cases.map((row) => [row.name, row] as const))('decides %s', (_name, row) => {
   expect(receivedQuestion(row.entries, questionId, leadSession)).toEqual(row.expected);
+});
+
+const askerPair = tuple(
+  constantFrom(askerTerminal, 'worker-2'),
+  constantFrom(askerSession, otherAskerSession),
+);
+
+const entryOf = ([terminal, session]: readonly [string, string]): SessionEntry =>
+  questionEntry({ headingAskerTerminal: terminal, headingAskerSession: session });
+
+it('keeps its result after reordering and duplicating a receipt', () => {
+  const seed = resolvePropertySeed();
+
+  assert(
+    property(tuple(askerPair, array(askerPair)), ([first, rest]) => {
+      const entries = [first, ...rest].map(entryOf);
+      const received = receivedQuestion(entries, questionId, leadSession);
+      const reordered = receivedQuestion(entries.toReversed(), questionId, leadSession);
+      const duplicated = receivedQuestion([...entries, entryOf(first)], questionId, leadSession);
+
+      expect(reordered).toEqual(received);
+      expect(duplicated).toEqual(received);
+    }),
+    { seed, numRuns: 100 },
+  );
 });
