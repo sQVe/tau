@@ -38,8 +38,8 @@ A focused run also selects tests by name. Vitest renders an `it.each` `$name` va
 display, which wraps the value in quotes and cuts it at a configured length, so the name it
 registers is not the name written in the table. The entry disables that cut, and Tau accepts a
 requested name whether or not the registered name carries the display quotes. Both the `-t` pattern
-and the report selection use that one rule. Older versions keep the CLI path, where the display cut
-still applies.
+and the report selection use that one rule. Older versions keep the CLI path, and a project declared
+by path or glob keeps its own test config, so the display cut still applies there.
 
 The TypeScript entry ships with Tau's source and uses Node's native TypeScript support. It needs no
 separate build artifact. Affected and full runs keep the CLI boundary because they do not need exact
@@ -61,6 +61,8 @@ Focused runs require Tau outside `node_modules` because Node refuses type stripp
 - Tau must test the adapter against changes to Vitest's public API and CLI semantics.
 - The discovery adapter depends on the public initialization hook running before project discovery.
 - Private CLI option normalization requires a small local equivalent.
+- A requested name also matches a hand-written title that quotes one word of it, because chai's
+  rendering leaves no marker that tells the two apart.
 - The entry depends on Node's native TypeScript support at runtime.
 
 ## Alternatives considered

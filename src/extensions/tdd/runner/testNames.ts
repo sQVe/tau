@@ -37,6 +37,11 @@ export const matchesRequestedName = (registeredName: string, requestedName: stri
 // The wrapper opens at the start of the last segment, so every segment boundary is a candidate.
 const segmentStarts = (name: string, separator: string): number[] => {
   const starts = [0];
+
+  if (separator.length === 0) {
+    return starts;
+  }
+
   let index = name.indexOf(separator);
 
   while (index >= 0) {

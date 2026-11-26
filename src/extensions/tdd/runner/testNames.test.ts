@@ -42,9 +42,9 @@ describe('matchesRequestedName', () => {
       matches: false,
     },
     {
-      name: 'a plain name that only ends with a quote',
+      name: 'a plain name with an embedded quote',
       registered: "it's",
-      requested: "it's fine",
+      requested: 'its',
       matches: false,
     },
   ])('$name matches $matches', ({ registered, requested, matches }) => {

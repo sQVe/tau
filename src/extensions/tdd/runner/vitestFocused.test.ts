@@ -142,6 +142,36 @@ describe('focused Vitest entry', { timeout: 30_000 }, () => {
     expect('tests' in result && result.tests).toHaveLength(1);
   });
 
+  it('selects a decision-table name past the cut inside an inline project', async () => {
+    const cwd = await createProject();
+    const name = 'a declared record cited with trailing punctuation accepts';
+
+    await writeFile(
+      join(cwd, 'vitest.config.mjs'),
+      "export default { test: { projects: [{ test: { name: 'one', include: ['value.test.ts'] } }] } };",
+    );
+
+    await writeFile(
+      join(cwd, 'value.test.ts'),
+      `import { it } from 'vitest';\nit.each([{ name: ${JSON.stringify(name)} }])('$name', () => {});`,
+    );
+
+    const result = await runTests({
+      scope: 'focused',
+      verificationArgv,
+      cwd,
+      files: ['value.test.ts'],
+      testNames: [name],
+    });
+
+    expect(result).toMatchObject({
+      kind: 'pass',
+      tests: [{ fullname: `'${name}'`, status: 'passed' }],
+    });
+
+    expect('tests' in result && result.tests).toHaveLength(1);
+  });
+
   it('does not start an unrelated browser provider for a selected node test', async () => {
     const cwd = await createProject();
 

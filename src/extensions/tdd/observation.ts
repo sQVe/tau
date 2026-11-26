@@ -20,6 +20,7 @@ import type { CheckpointInput, CycleState, HintDecision } from './observationTra
 import { classificationPath, projectDirectoryFromSession } from './projectPath.js';
 import { finishDiagnostics } from './runner/retention.js';
 import { lookupRunner } from './runner/runners.js';
+import { matchesRequestedName } from './runner/testNames.js';
 import type { RunDiagnostics, RunnerResult, TestRunner } from './runner/types.js';
 import type { Behavior, ObservationResult, TestObservation, TestScope } from './types.js';
 
@@ -136,7 +137,7 @@ const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =
   testNames(behavior).every((name) => {
     const matches = report.tests.filter(
       (test) =>
-        test.fullname === name &&
+        matchesRequestedName(test.fullname, name) &&
         test.attribution === undefined &&
         behavior.files.some((file) => resolve(cwd, test.file) === resolve(cwd, file)),
     );
@@ -167,7 +168,7 @@ const selectedThrownErrorType = (cwd: string, behavior: Behavior, report: Runner
   const selectedFailures = report.failures.filter(
     (failure) =>
       failure.attribution === undefined &&
-      testNames(behavior).includes(failure.fullname) &&
+      testNames(behavior).some((name) => matchesRequestedName(failure.fullname, name)) &&
       behavior.files.some((file) => resolve(cwd, failure.file) === resolve(cwd, file)),
   );
 

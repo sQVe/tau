@@ -71,6 +71,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'extensions/tdd/runner/report',
       'extensions/tdd/runner/retention',
       'extensions/tdd/runner/runners',
+      'extensions/tdd/runner/testNames',
       'extensions/tdd/runner/types',
       'extensions/tdd/runner/vitest',
     ],
