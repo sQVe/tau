@@ -1028,6 +1028,23 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(command), directory);
   });
 
+  it('blocks attached multi-line code', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent("bash -c'git commit -m x\necho done'"), directory);
+  });
+
+  it.each(['bash -onoclobber commit.sh', 'bash -Ocheckwinsize commit.sh'])(
+    'blocks a script file after a shell option that ends in c: %s',
+    (command) => {
+      const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+      writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+      expectOutcome(makeBashEvent(command), directory);
+    },
+  );
+
   it('allows code after a shell option that ends in c without a commit', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1085,6 +1102,8 @@ describe('guardToolCall', () => {
 
   it('allows a cluster whose value is not the command word', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
     expect(guard(makeBashEvent('sudo -Eu sh commit.sh'), directory)).toBeUndefined();
   });

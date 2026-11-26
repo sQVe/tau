@@ -283,11 +283,39 @@ const envSplitStringOptions = wrapperCommandOptions.get('env') ?? new Set<string
 
 const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
 
-// An option with `c`, such as `-c` or `-lc`, puts the code in an argument, not in a file.
-const inlineCodePattern = /^[-+][A-Za-z]*c[A-Za-z]*$/u;
+// An option with `c`, such as `-c` or `-lc`, puts the code in an argument, not in a file. A `c`
+// after an `o` or `O` letter belongs to that option's value, as in `-onoclobber`.
+const isInlineCodeWord = (word: string): boolean => {
+  const match = /^[-+]([A-Za-z]*)$/u.exec(word);
 
-// An option that makes the shell read its code from standard input.
-const stdinOptionPattern = /^(?:--stdin|-[A-Za-z]*s[A-Za-z]*)$/u;
+  if (match === null) {
+    return false;
+  }
+
+  const letters = match[1] ?? '';
+  const index = letters.indexOf('c');
+
+  return index !== -1 && !/[oO]/u.test(letters.slice(0, index));
+};
+
+// An option that makes the shell read its code from standard input. A `s` after an `o` or `O`
+// letter belongs to that option's value, as in `-Onocasematch`.
+const isStdinOptionWord = (word: string): boolean => {
+  if (word === '--stdin') {
+    return true;
+  }
+
+  const match = /^[-+]([A-Za-z]*)$/u.exec(word);
+
+  if (match === null) {
+    return false;
+  }
+
+  const letters = match[1] ?? '';
+  const index = letters.indexOf('s');
+
+  return index !== -1 && !/[oO]/u.test(letters.slice(0, index));
+};
 
 const assignmentPattern = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 
@@ -548,7 +576,7 @@ const codeOperand = (words: string[], start: number): string | undefined => {
 // A short-option word can carry its code after the `c`, as in `-c'git commit'`. A `c` after an
 // `o` or `O` letter belongs to that option's value, as in `-onoclobber`.
 const attachedInlineCode = (word: string): string | undefined => {
-  const match = /^[-+]([A-Za-z]*)(.*)$/u.exec(word);
+  const match = /^[-+]([A-Za-z]*)([\s\S]*)$/u.exec(word);
 
   if (match === null) {
     return undefined;
@@ -576,11 +604,11 @@ const shellMode = (words: string[]): ShellMode => {
       return { kind: 'inline', code: attached };
     }
 
-    if (inlineCodePattern.test(word)) {
+    if (isInlineCodeWord(word)) {
       return { kind: 'inline', code: codeOperand(words, index + 1) };
     }
 
-    if (stdinOptionPattern.test(word)) {
+    if (isStdinOptionWord(word)) {
       return { kind: 'stdin' };
     }
 
