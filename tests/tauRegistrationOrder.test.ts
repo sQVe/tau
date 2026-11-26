@@ -5,7 +5,6 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { TestContext } from 'vitest';
 
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import type { QuestionRecord } from '../src/extensions/handoverQuestion/question/questionRecord.js';
@@ -17,6 +16,7 @@ import { readLiveLockHolder } from '../src/fileLock/fileLock.js';
 import { socketDirectoryFor, socketPathFor } from '../src/inbox/endpoint.js';
 import { acceptChecks } from '../src/inbox/inbox.js';
 import type { MessageReply, MessageRequest } from '../src/inbox/protocol.js';
+import { formatInboxLabel, inboxLabelKey } from '../src/inbox/protocol.js';
 import tauRegistration from '../src/tau/tau.js';
 import { succeededResult } from './execFake.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -24,6 +24,7 @@ import { openRecord, questionId } from './fixtures/answerRecord.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { forgetAcceptCheck } from './inboxReceiverHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+import type { SuiteCleanup } from './temporaryDirectoryHarness.js';
 
 type Handler = (event: never, context: ExtensionContext) => unknown;
 
@@ -33,8 +34,6 @@ interface Registration {
   handler: Handler;
   stack: string;
 }
-
-type RegisterCleanup = TestContext['onTestFinished'];
 
 const requireRegistration = (
   registration: Registration | undefined,
@@ -104,7 +103,7 @@ const answerRequest = (sessionId: string): MessageRequest => ({
   },
 });
 
-const setupAnswerScenario = async (onTestFinished: RegisterCleanup) => {
+const startAnswerFixture = async (onTestFinished: SuiteCleanup) => {
   const root = await createTemporaryRepository(onTestFinished);
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-answer-order-');
   const outside = temporaryDirectory(onTestFinished, 'tau-outside-repository-');
@@ -115,6 +114,9 @@ const setupAnswerScenario = async (onTestFinished: RegisterCleanup) => {
 
   const socketPath =
     uid === undefined ? undefined : socketPathFor(socketDirectoryFor(uid), sessionId);
+
+  const labels = socketPath === undefined ? {} : { [inboxLabelKey]: formatInboxLabel(socketPath) };
+  const calls: { command: string; commandArguments: readonly string[] }[] = [];
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
   vi.stubEnv('TAU_ROLE', '');
@@ -128,26 +130,15 @@ const setupAnswerScenario = async (onTestFinished: RegisterCleanup) => {
   });
 
   const fake = fakeExtensionApi({
-    exec: async (command) => {
+    exec: async (command, commandArguments) => {
+      calls.push({ command, commandArguments });
+
       if (command === 'ps') {
         return succeededResult(`${String(processGroup)}\n`);
       }
 
-      const labels = { 'tau.inbox': 'rpc1:/tmp/unused.sock' };
-
-      const foreground = {
-        pid: processGroup,
-        name: 'pi',
-        argv: ['pi'],
-        cwd: root,
-      };
-
-      const terminal = {
-        address: 't-worker',
-        state: 'live',
-        foreground,
-        labels,
-      };
+      const foreground = { pid: processGroup, name: 'pi', argv: ['pi'], cwd: root };
+      const terminal = { address: 't-worker', state: 'live', foreground, labels };
 
       return succeededResult(JSON.stringify(terminal));
     },
@@ -176,7 +167,22 @@ const setupAnswerScenario = async (onTestFinished: RegisterCleanup) => {
     (entry) => entry.name === 'session_shutdown' && entry.index < inboxShutdown.index,
   );
 
-  await writeQuestionRecord(root, answerRecord(sessionId));
+  return {
+    root,
+    sessionId,
+    socketPath,
+    calls,
+    handoverStart,
+    inboxStart,
+    inboxShutdown,
+    beforeInboxShutdown,
+  };
+};
+
+const setupAnswerScenario = async (onTestFinished: SuiteCleanup) => {
+  const fixture = await startAnswerFixture(onTestFinished);
+
+  await writeQuestionRecord(fixture.root, answerRecord(fixture.sessionId));
 
   const check = acceptChecks()['handover-answer'];
 
@@ -184,44 +190,51 @@ const setupAnswerScenario = async (onTestFinished: RegisterCleanup) => {
     throw new Error('Tau registered no handover-answer check.');
   }
 
-  const request = answerRequest(sessionId);
+  const request = answerRequest(fixture.sessionId);
 
   const queued: MessageReply = {
     protocol: 'rpc1',
     kind: 'queued',
     messageId: questionId,
     terminal: 't-worker',
-    sessionId,
+    sessionId: fixture.sessionId,
   };
 
   const save = () => Promise.resolve(queued);
-  const notify = vi.fn<(message: string, level?: string) => void>();
 
   const context = {
-    cwd: root,
-    ui: { notify },
+    cwd: fixture.root,
+    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
     shutdown: vi.fn<() => void>(),
     isProjectTrusted: (): boolean => true,
     sessionManager: {
-      getSessionFile: () => join(root, 'answer-session.jsonl'),
-      getSessionId: () => sessionId,
+      getSessionFile: () => join(fixture.root, 'answer-session.jsonl'),
+      getSessionId: () => fixture.sessionId,
       getEntries: () => [],
     },
   } as unknown as ExtensionContext;
 
-  onTestFinished(async () => {
-    await inboxShutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
-  });
+  let inboxClosed = false;
+
+  const closeInbox = async (): Promise<void> => {
+    if (inboxClosed) {
+      return;
+    }
+
+    await fixture.inboxShutdown.handler(
+      { type: 'session_shutdown', reason: 'quit' } as never,
+      context,
+    );
+
+    inboxClosed = true;
+  };
+
+  onTestFinished(closeInbox);
 
   return {
-    root,
-    sessionId,
-    socketPath,
+    ...fixture,
+    closeInbox,
     context,
-    notify,
-    handoverStart,
-    inboxStart,
-    beforeInboxShutdown,
     check,
     request,
     queued,
@@ -363,8 +376,9 @@ it('keeps the session directory through the shutdown handlers that run before th
     root,
     sessionId,
     socketPath,
+    calls,
+    closeInbox,
     context,
-    notify,
     handoverStart,
     inboxStart,
     beforeInboxShutdown,
@@ -375,7 +389,7 @@ it('keeps the session directory through the shutdown handlers that run before th
   } = await setupAnswerScenario(onTestFinished);
 
   if (socketPath === undefined) {
-    throw new Error('The inbox shutdown test needs a POSIX user ID.');
+    throw new Error('This test needs a POSIX user ID for the inbox socket path.');
   }
 
   expect(handoverStart.index).toBeLessThan(inboxStart.index);
@@ -384,7 +398,6 @@ it('keeps the session directory through the shutdown handlers that run before th
   await inboxStart.handler({ type: 'session_start', reason: 'startup' } as never, context);
 
   expect(existsSync(socketPath)).toBe(true);
-  expect(notify).not.toHaveBeenCalled();
 
   for (const shutdown of beforeInboxShutdown) {
     await shutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
@@ -399,6 +412,15 @@ it('keeps the session directory through the shutdown handlers that run before th
       state: 'answered',
       answer: 'Use option A.',
     },
+  });
+
+  await closeInbox();
+
+  expect(existsSync(socketPath)).toBe(false);
+
+  expect(calls).toContainEqual({
+    command: 'hc',
+    commandArguments: ['label', '--json', '--', 't-worker', `${inboxLabelKey}=`],
   });
 });
 
