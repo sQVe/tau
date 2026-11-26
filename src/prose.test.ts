@@ -378,7 +378,12 @@ const sentenceTable: {
   {
     name: 'replaces an out-of-range numeric entity with U+FFFD',
     markdown: 'A &#x110000; here.',
-    expected: [{ text: 'A � here.', line: 1, words: 3 }],
+    expected: [{ text: 'A \uFFFD here.', line: 1, words: 3 }],
+  },
+  {
+    name: 'keeps an out-of-range numeric entity literal inside raw inline HTML',
+    markdown: 'A <code>&#x110000;</code> B.',
+    expected: [{ text: 'A &#x110000; B.', line: 1, words: 3 }],
   },
   {
     name: 'decodes the last code point',
