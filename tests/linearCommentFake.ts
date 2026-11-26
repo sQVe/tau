@@ -1,6 +1,5 @@
-import { attachmentSelections } from './linearAttachmentSelection.js';
-import type { AttachmentFields } from './linearAttachmentSelection.js';
-import type { Operation, QueryOperation } from './linearRequestFake.js';
+import { attachmentFields } from './linearRequestFake.js';
+import type { AttachmentFields, Operation, QueryOperation } from './linearRequestFake.js';
 
 interface FakeComment {
   id: string;
@@ -32,22 +31,6 @@ interface CommentFake {
   respond: (operation: CommentOperation | Extract<Operation, { kind: 'cancel' }>) => unknown;
   limitComments: (count: number) => void;
 }
-
-// Linear returns only the fields a query selects, so the fake follows the attachment selection. A
-// selection it cannot read fails loudly instead of reporting the wrong fields.
-const attachmentFields = (query: string): AttachmentFields => {
-  if (!/\battachments\b/u.test(query)) {
-    return { metadata: false };
-  }
-
-  const selection = attachmentSelections(query)[0];
-
-  if (selection === undefined) {
-    throw new Error(`The fake cannot read the attachment selection from ${query}.`);
-  }
-
-  return selection;
-};
 
 const attachmentNodes = (issue: Ticket, fields: AttachmentFields) => {
   const nodes = [

@@ -1,9 +1,8 @@
 import type { Exec } from '../src/command.js';
-import { attachmentSelections } from './linearAttachmentSelection.js';
-import type { AttachmentFields } from './linearAttachmentSelection.js';
 import { createCommentFake } from './linearCommentFake.js';
-import { decode } from './linearRequestFake.js';
+import { attachmentFields, decode } from './linearRequestFake.js';
 import type {
+  AttachmentFields,
   FakeCall,
   Operation,
   QueryName,
@@ -79,25 +78,6 @@ const teams = new Map([
 const labels = [{ id: 'label-bug', name: 'Bug', teamId: 'team-me' }];
 
 const issueId = (identifier: string) => `id-${identifier}`;
-
-// A query the fake does not model fails loudly instead of reporting the wrong fields. A query that
-// selects no attachments keeps the node's attachments without the field.
-const attachmentSelection = (query: string, index: number): AttachmentFields => {
-  if (!/\battachments\b/u.test(query)) {
-    return { metadata: false };
-  }
-
-  const selections = attachmentSelections(query);
-  const selection = selections[index];
-
-  if (selection === undefined) {
-    throw new Error(
-      `The fake cannot read attachment selection ${index} from ${query}: it parsed ${selections.length}.`,
-    );
-  }
-
-  return selection;
-};
 
 // Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
 const openingFence = (line: string): Fence | undefined => {
@@ -262,8 +242,8 @@ export const createLinearFake = (): LinearFake => {
   };
 
   const containerData = (identifier: string, query: string) => {
-    const issueFields = attachmentSelection(query, 0);
-    const childFields = attachmentSelection(query, 1);
+    const issueFields = attachmentFields(query, 0);
+    const childFields = attachmentFields(query, 1);
     const issue = issues.get(identifier);
 
     if (issue === undefined) {
@@ -496,7 +476,7 @@ export const createLinearFake = (): LinearFake => {
           return { issue: null };
         }
 
-        const fields = attachmentSelection(operation.query, 0);
+        const fields = attachmentFields(operation.query, 0);
         const { attachments } = pagedNode(childNode(issue, project(issue.projectId), fields));
 
         return { issue: { attachments } };

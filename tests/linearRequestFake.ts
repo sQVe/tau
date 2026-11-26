@@ -97,6 +97,39 @@ export type Operation =
   | { kind: 'relation'; action: 'add' | 'delete'; identifier: string; blocker: string }
   | QueryOperation;
 
+export interface AttachmentFields {
+  metadata: boolean;
+}
+
+const attachmentSelection =
+  /attachments\([^)]*\)\s*\{\s*(?:pageInfo\s*\{[^}]*\}\s*nodes\s*\{([^}]*)\}|nodes\s*\{([^}]*)\}\s*pageInfo\s*\{[^}]*\})\s*\}/gu;
+
+const attachmentSelections = (query: string): AttachmentFields[] =>
+  [...query.matchAll(attachmentSelection)].map((match) => ({
+    metadata: (match[1] ?? match[2] ?? '').includes('metadata'),
+  }));
+
+// GraphQL returns only the fields a query selects, so a fake follows each attachment selection in
+// the query, in either field order. A selection the fake cannot read fails loudly instead of
+// reporting the wrong fields, and a query that selects no attachments keeps the node's attachments
+// without the field.
+export const attachmentFields = (query: string, index = 0): AttachmentFields => {
+  if (!/\battachments\b/u.test(query)) {
+    return { metadata: false };
+  }
+
+  const selections = attachmentSelections(query);
+  const selection = selections[index];
+
+  if (selection === undefined) {
+    throw new Error(
+      `The fake cannot read attachment selection ${index} from ${query}: it parsed ${selections.length}.`,
+    );
+  }
+
+  return selection;
+};
+
 const coerceVariable = (text: string): unknown => {
   if (['true', 'false', 'null'].includes(text) || /^-?\d+(\.\d+)?$/u.test(text)) {
     return JSON.parse(text) as unknown;
