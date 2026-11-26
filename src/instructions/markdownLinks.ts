@@ -109,8 +109,10 @@ const characterReference = /&(?:#\d{1,8}|#[xX][\da-fA-F]{1,8}|[A-Za-z][A-Za-z\d]
 const decodedReference = (reference: string): string =>
   reference.includes('#') ? decodeXML(reference) : decodeHTMLStrict(reference);
 
-const decodedTokenText = (token: Token): string =>
-  tokenText(token).replaceAll(characterReference, (reference) => decodedReference(reference));
+const decodedReferences = (text: string): string =>
+  text.replaceAll(characterReference, (reference) => decodedReference(reference));
+
+const decodedTokenText = (token: Token): string => decodedReferences(tokenText(token));
 
 export const markdownTokenText = (tokens: readonly Token[]): string =>
   tokens
@@ -207,9 +209,6 @@ const isAnchorAttribute = (name: string) => {
   return lowercased === 'name' || lowercased === 'id';
 };
 
-const attributeValue = (value: string) =>
-  value.replaceAll(characterReference, (reference) => decodedReference(reference));
-
 const anchorValuesOf = (attributes: string): string[] => {
   const values: string[] = [];
 
@@ -218,7 +217,7 @@ const anchorValuesOf = (attributes: string): string[] => {
     const value = doubleQuoted ?? singleQuoted ?? bare;
 
     if (isAnchorAttribute(name) && value !== undefined && value !== '') {
-      values.push(attributeValue(value));
+      values.push(decodedReferences(value));
     }
   }
 
