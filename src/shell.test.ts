@@ -134,6 +134,21 @@ describe('parseShellCommands', () => {
       'a; if b; then c; fi &',
       [false, true, true, true],
     ],
+    [
+      'an and-list before a backgrounded brace compound',
+      'a 2>/dev/null && { b; } &',
+      [true, true, true],
+    ],
+    [
+      'a brace compound before a backgrounded and-list',
+      '{ b 2>/dev/null; } && c &',
+      [true, true, true],
+    ],
+    [
+      'an and-list after a separator before a backgrounded brace compound',
+      'a; b 2>/dev/null && { c; } &',
+      [false, true, true, true],
+    ],
   ])(
     'marks background inside the unit that ends with an ampersand: %s',
     (_name, source, expected) => {
@@ -534,6 +549,27 @@ describe('commandWords and shellScriptOf', () => {
     expect(shellScriptOf(['flock', '-c', 'cmd 2>/dev/null', '/tmp/lock'])).toBe('cmd 2>/dev/null');
     expect(shellScriptOf(['flock', '/tmp/lock', '-c', 'cmd 2>/dev/null'])).toBe('cmd 2>/dev/null');
   });
+
+  it('reads a flock script from an inline option value', () => {
+    expect(shellScriptOf(['flock', '--command=cmd 2>/dev/null', '/tmp/lock'])).toBe(
+      'cmd 2>/dev/null',
+    );
+  });
+
+  it('reads a flock script option after the lock file and its other options', () => {
+    expect(shellScriptOf(['flock', '/tmp/lock', '-w', '5', '-c', 'cmd 2>/dev/null'])).toBe(
+      'cmd 2>/dev/null',
+    );
+  });
+
+  it.each(['constructor', 'toString', '__proto__'])(
+    'treats the %s command name as an ordinary command',
+    (name) => {
+      expect(() => commandWords([name, '-x'])).not.toThrow();
+      expect(commandWords([name, '-x'])).toEqual({ words: [name, '-x'], lookup: false });
+      expect(shellScriptOf([name, '-x'])).toBeUndefined();
+    },
+  );
 
   it('joins the words watch hands to its shell', () => {
     expect(shellScriptOf(['watch', '-n', '1', 'cmd 2>/dev/null'])).toBe('cmd 2>/dev/null');

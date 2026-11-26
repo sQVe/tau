@@ -53,10 +53,9 @@ interface ListState {
   unitStarts: number[];
   // The first command index of the group at each nesting depth.
   groupStarts: number[];
-  // The open compound keywords, with the first command index of each.
-  compounds: { closer: string; start: number }[];
-  // The first command index of a compound that closed in the word just finished.
-  closedCompound: number | undefined;
+  // The open compound keywords, with the first command index of each and of the unit that encloses
+  // it.
+  compounds: { closer: string; start: number; unitStart: number }[];
   continuesList: boolean;
   closesSubstitution: boolean;
 }
@@ -211,7 +210,10 @@ const commandStart = (words: readonly string[]): CommandStart => {
   while (index < words.length) {
     const word = words[index] ?? '';
     const name = commandNameOf(word);
-    const valueOptions = wrapperValueOptions[name];
+
+    const valueOptions = Object.hasOwn(wrapperValueOptions, name)
+      ? wrapperValueOptions[name]
+      : undefined;
 
     if (commandKeywords.has(word) || assignmentPattern.test(word)) {
       index += 1;
@@ -244,13 +246,25 @@ const shellOptionScript = (words: readonly string[]): string | undefined => {
   return optionIndex === -1 ? undefined : words[optionIndex + 1];
 };
 
+const flockCommandPrefix = '--command=';
+
 const scriptOptionValue = (
   words: readonly string[],
   start: number,
   end: number,
 ): string | undefined => {
   for (let index = start; index < end; index += 1) {
-    if (flockScriptOptions.has(words[index] ?? '')) {
+    const word = words[index] ?? '';
+
+    const inlineValue = word.startsWith(flockCommandPrefix)
+      ? word.slice(flockCommandPrefix.length)
+      : undefined;
+
+    if (inlineValue !== undefined) {
+      return inlineValue;
+    }
+
+    if (flockScriptOptions.has(word)) {
       return words[index + 1];
     }
   }
@@ -258,12 +272,16 @@ const scriptOptionValue = (
   return undefined;
 };
 
-// `flock` takes its script as an option value, either before or after the lock file.
+// `flock` takes its script as an option value, either before or after the lock file, in the option
+// word itself or as the next word.
 const flockScript = (words: readonly string[]): string | undefined => {
-  const fileIndex = optionEnd(words, 1, wrapperValueOptions.flock ?? emptyOptionValues);
+  const valueOptions = wrapperValueOptions.flock ?? emptyOptionValues;
+  const fileIndex = optionEnd(words, 1, valueOptions);
   const beforeFile = scriptOptionValue(words, 1, fileIndex);
+  const afterFileEnd = optionEnd(words, fileIndex + 1, valueOptions);
+  const afterFile = scriptOptionValue(words, fileIndex + 1, afterFileEnd);
 
-  return beforeFile ?? scriptOptionValue(words, fileIndex + 1, fileIndex + 2);
+  return beforeFile ?? afterFile;
 };
 
 // `watch` joins its remaining words and hands them to `sh -c`, so they are the script text.
@@ -452,7 +470,6 @@ class ShellParser {
       unitStarts: [firstCommand],
       groupStarts: [],
       compounds: [],
-      closedCompound: undefined,
       continuesList: false,
       closesSubstitution,
     };
@@ -623,10 +640,6 @@ class ShellParser {
     this.finishWord(state);
     rejectPendingHeredoc(state);
 
-    const compoundStart = state.closedCompound;
-
-    state.closedCompound = undefined;
-
     if (continuesListOnNewline(character, state.continuesList)) {
       this.position += 1;
       this.readPendingHeredocs();
@@ -645,7 +658,7 @@ class ShellParser {
     }
 
     if (isBackground) {
-      this.backgroundUnit(state, compoundStart);
+      this.backgroundUnit(state);
     }
 
     const endsUnit = endsListUnit(character, isBackground);
@@ -674,12 +687,12 @@ class ShellParser {
     return false;
   }
 
-  // A trailing `&` backgrounds the whole pipeline or list unit, not only its last command, and the
-  // whole compound when it follows the compound's closing keyword. A command parsed from a heredoc
-  // body runs when the command that carries the heredoc expands the body, so it joins the
-  // background unit only when that command does.
-  private backgroundUnit(state: ListState, compoundStart: number | undefined): void {
-    const start = compoundStart ?? state.unitStarts.at(-1) ?? 0;
+  // A trailing `&` backgrounds the whole pipeline or list unit, not only its last command. A
+  // compound restores the unit start it opened in when it closes, so the whole compound joins the
+  // unit. A command parsed from a heredoc body runs when the command that carries the heredoc
+  // expands the body, so it joins the background unit only when that command does.
+  private backgroundUnit(state: ListState): void {
+    const start = state.unitStarts.at(-1) ?? 0;
     const unit = this.commands.slice(start);
     const backgrounded = new Set(unit);
 
@@ -756,19 +769,27 @@ class ShellParser {
   }
 
   // A compound keyword runs the commands up to its closer as one unit, so a trailing `&` after the
-  // closer backgrounds the whole compound instead of only the closer's command.
+  // closer backgrounds the whole compound instead of only the closer's command. Closing the
+  // compound restores the unit start it opened in, because a separator inside it moved the unit
+  // start forward.
   private trackCompound(state: ListState, word: string): void {
     const start = this.commands.indexOf(state.command);
-    const closer = compoundClosers[word];
+    const closer = Object.hasOwn(compoundClosers, word) ? compoundClosers[word] : undefined;
 
     if (start === -1) {
       return;
     }
 
     if (closer !== undefined) {
-      state.compounds.push({ closer, start });
+      const unitStart = state.unitStarts.at(-1) ?? start;
+
+      state.compounds.push({ closer, start, unitStart });
     } else if (closingKeywords.has(word) && state.compounds.at(-1)?.closer === word) {
-      state.closedCompound = state.compounds.pop()?.start;
+      const compound = state.compounds.pop();
+
+      if (compound !== undefined) {
+        state.unitStarts[state.unitStarts.length - 1] = compound.unitStart;
+      }
     }
   }
 
