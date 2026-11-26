@@ -47,8 +47,7 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // one. That is why a local reading can sit below its ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 69_213, // target 38,000
-  // The adopted-project reading is 64,351; the 25 above it covers the base branch's ticket tool
-  // description, which names a pull request that closes the ticket.
+  // The adopted-project reading is 64,351, so this ceiling leaves 25 characters of headroom.
   architect: 64_376,
   worker: 29_356, // target 14,000
   reviewer: 24_635, // target 11,000
