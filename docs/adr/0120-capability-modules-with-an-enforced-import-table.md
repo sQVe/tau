@@ -77,7 +77,7 @@ Each line names a module and the I/O modules it may import:
 - `improvement`: `command`, `fileLock`, `git`, `github`, `record`, `tauDirectory`
 - `inbox`: `fileLock`, `hc`, `record`, `wake`
 - `linear`: `command`
-- `piStart`: `command`, `config`, `tauDirectory`
+- `piStart`: `command`, `config`, `git`
 - `record`: `tauDirectory`
 - `reviewBots`: `command`, `config`, `github`
 - `reviewCapture`: `command`, `git`, `github`, `record`, `tauDirectory`
