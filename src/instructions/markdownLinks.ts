@@ -34,7 +34,7 @@ const withoutByteOrderMark = (markdown: string) =>
 const slugOf = (heading: string) =>
   heading.trim().toLowerCase().replaceAll(notSlugCharacter, '').replaceAll(' ', '-');
 
-export const headingSlugs = (headings: readonly string[]): ReadonlySet<string> => {
+const headingSlugs = (headings: readonly string[]): ReadonlySet<string> => {
   const counts = new Map<string, number>();
   const slugs = new Set<string>();
 
@@ -110,7 +110,7 @@ const tokenText = (token: Token): string => {
 
 // A rendered text token may still hold a character reference. Only one that ends with a semicolon
 // is a reference, and a reference inside a code span stays literal.
-const characterReference = /&(?:#(\d{1,8})|#[xX]([\da-fA-F]{1,8})|([A-Za-z][A-Za-z\d]*));/g;
+const characterReference = /&(?:#\d{1,8}|#[xX][\da-fA-F]{1,8}|[A-Za-z][A-Za-z\d]*);/g;
 
 // The HTML decoder remaps a numeric reference in the C1 range to a Windows-1252 letter, which
 // GitHub does not.
