@@ -1171,16 +1171,35 @@ describe('guardToolCall', () => {
     ).toBeUndefined();
   });
 
-  it.each([
-    ['env PATH=', (directory: string) => `env PATH=${directory} sh tool.sh`],
-    ['leading PATH=', (directory: string) => `PATH=${directory} sh tool.sh`],
-  ])('blocks a script resolved through %s', (_label, command) => {
+  it('blocks a script after a positional that looks like an assignment', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('flock FOO=bar sh tool.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('blocks a script resolved through env PATH=', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
     writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(command(pathDirectory)), directory)).toEqual({
+    expect(guard(makeBashEvent(`env PATH=${pathDirectory} sh tool.sh`), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('keeps an env assignment before the command word', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('env FOO=bar sh tool.sh'), directory)).toEqual({
       block: true,
       reason: commitGuardReason,
     });
@@ -1202,7 +1221,9 @@ describe('guardToolCall', () => {
     });
   });
 
-  it('does not persist a standalone PATH assignment', () => {
+  // Only an assignment the shell applies to one command sets its PATH; a standalone or `export`
+  // assignment is not tracked.
+  it('does not apply a PATH assignment of another command to a later command', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 

@@ -70,6 +70,20 @@ type WrapperStep =
   | { kind: 'skip'; next: number }
   | { kind: 'command' };
 
+interface WrapperProgress {
+  positionals: number;
+  sawUnless: boolean;
+}
+
+type WrapperWordKind = 'option' | 'code' | 'assignment' | 'positional' | 'command';
+
+interface WrapperWord {
+  kind: WrapperWordKind;
+  // Where the walk continues; a command word keeps its own index.
+  next: number;
+  code: string;
+}
+
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
 
@@ -581,67 +595,73 @@ const wrapperStep = (
 };
 
 const operandKind = (
+  candidateCount: number,
+  allowedPositionals: number,
   word: string,
-  positionals: number,
-  skipped: number,
-): 'assignment' | 'command' | 'positional' => {
-  if (assignmentPattern.test(word)) {
-    return 'assignment';
+): 'positional' | 'assignment' | 'command' => {
+  if (candidateCount <= allowedPositionals) {
+    return 'positional';
   }
 
-  return positionals > skipped ? 'command' : 'positional';
+  return assignmentPattern.test(word) ? 'assignment' : 'command';
+};
+
+const wrapperWord = (
+  words: string[],
+  index: number,
+  name: string,
+  progress: WrapperProgress,
+): WrapperWord => {
+  const valueOptions = wrapperOptionValues.get(name) ?? new Set<string>();
+  const commandOptions = wrapperCommandOptions.get(name) ?? new Set<string>();
+  const skip = wrapperPositionalSkips.get(name);
+  const word = words[index] ?? '';
+  const skipped = skip === undefined ? 0 : skip.count;
+
+  if (skip !== undefined && takesOptionValue(word, skip.unless)) {
+    progress.sawUnless = true;
+  }
+
+  const step = wrapperStep(words, index, name, valueOptions, commandOptions);
+
+  if (step.kind === 'code') {
+    return { kind: 'code', next: step.next, code: step.code };
+  }
+
+  if (step.kind === 'skip') {
+    return { kind: 'option', next: step.next, code: '' };
+  }
+
+  const allowed = progress.sawUnless ? 0 : skipped;
+  const kind = operandKind(progress.positionals + 1, allowed, word);
+
+  return { kind, next: kind === 'command' ? index : index + 1, code: '' };
 };
 
 // A wrapper permutes its own options around its positional arguments, so one walk finds both the
 // shell code it runs and the wrapped command word.
-// oxlint-disable-next-line complexity -- the walk classifies each wrapper word once.
 const scanWrapper = (words: string[], index: number, name: string): WrapperScan => {
-  const valueOptions = wrapperOptionValues.get(name) ?? new Set<string>();
-  const commandOptions = wrapperCommandOptions.get(name) ?? new Set<string>();
-  const skip = wrapperPositionalSkips.get(name);
   const assignments: string[] = [];
   const codes: string[] = [];
-  const skipped = skip === undefined ? 0 : skip.count;
-  let positionals = 0;
-  let sawUnless = false;
+  const progress: WrapperProgress = { positionals: 0, sawUnless: false };
   let next = index + 1;
 
   while (next < words.length) {
-    const word = words[next] ?? '';
+    const word = wrapperWord(words, next, name, progress);
 
-    sawUnless ||= skip !== undefined && takesOptionValue(word, skip.unless);
-
-    const step = wrapperStep(words, next, name, valueOptions, commandOptions);
-
-    if (step.kind === 'code') {
-      codes.push(step.code);
-      next = step.next;
-
-      continue;
-    }
-
-    if (step.kind === 'skip') {
-      next = step.next;
-
-      continue;
-    }
-
-    const allowed = sawUnless ? 0 : skipped;
-    const operand = operandKind(word, positionals + 1, allowed);
-
-    if (operand === 'assignment') {
-      assignments.push(word);
-      next += 1;
-
-      continue;
-    }
-
-    if (operand === 'command') {
+    if (word.kind === 'command') {
       return { assignments, codes, commandIndex: next };
     }
 
-    positionals += 1;
-    next += 1;
+    if (word.kind === 'code') {
+      codes.push(word.code);
+    } else if (word.kind === 'assignment') {
+      assignments.push(words[next] ?? '');
+    } else if (word.kind === 'positional') {
+      progress.positionals += 1;
+    }
+
+    next = word.next;
   }
 
   return { assignments, codes, commandIndex: undefined };
@@ -986,12 +1006,6 @@ const readPathDirectories = (): string[] => {
   return path.split(delimiter).filter((directory) => directory !== '');
 };
 
-const commandPathDirectories = (
-  command: ShellCommand,
-  directory: string,
-  state: GuardState,
-): string[] => pathDirectoriesFor(commandPathAssignment(command), directory, state);
-
 const recordHeredocBases = (
   command: ShellCommand,
   directory: string,
@@ -1029,7 +1043,7 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
   for (const command of commands) {
     const stack = directoryStack(stacks, command.scope, cwd, bases);
     const directory = directoryFor(stack, command.depth);
-    const pathDirectories = commandPathDirectories(command, directory, state);
+    const pathDirectories = pathDirectoriesFor(commandPathAssignment(command), directory, state);
     const scripts = namedScriptsOf(command, directory, pathDirectories);
 
     recordHeredocBases(command, directory, bases);
