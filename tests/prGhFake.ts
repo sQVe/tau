@@ -46,11 +46,11 @@ type CommandKey =
   | 'pr edit'
   | 'pr comment'
   | 'api'
-  | 'api post'
+  | 'api write'
   | 'api user'
   | 'check-suites';
 
-type WriteKey = 'pr create' | 'pr edit' | 'pr comment' | 'api post';
+type WriteKey = 'pr create' | 'pr edit' | 'pr comment' | 'api write';
 
 type ReadKey = Exclude<CommandKey, WriteKey>;
 
@@ -97,7 +97,7 @@ const writeKeys: ReadonlySet<WriteKey> = new Set<WriteKey>([
   'pr create',
   'pr edit',
   'pr comment',
-  'api post',
+  'api write',
 ]);
 
 const parentOutput = (parent: string | undefined) => {
@@ -121,7 +121,7 @@ const writeOutput = (key: WriteKey, commandArguments: readonly string[]) => {
     return `https://${repository}/pull/${commandArguments[2] ?? ''}#issuecomment-1\n`;
   }
 
-  if (key === 'api post') {
+  if (key === 'api write') {
     const host = argumentAfter(commandArguments, '--hostname') ?? '';
     const endpoint = commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
     const [owner = '', name = '', , pr = ''] = endpoint.split('/').slice(1);
@@ -286,14 +286,16 @@ export const createGhFake = (): GhFake => {
       return 'check-suites';
     }
 
-    return argumentAfter(commandArguments, '--method') === 'POST' ? 'api post' : baseKey;
+    const method = argumentAfter(commandArguments, '--method');
+
+    return method === undefined || method === 'GET' ? baseKey : 'api write';
   };
 
   const recordWrite = async (
     key: WriteKey,
     commandArguments: readonly string[],
   ): Promise<ExecResult> => {
-    const flag = key === 'api post' ? '--input' : '--body-file';
+    const flag = key === 'api write' ? '--input' : '--body-file';
     // The plan appends the real file flag after every option, so a title equal to the flag comes
     // first.
     const flagIndex = commandArguments.lastIndexOf(flag);
