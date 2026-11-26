@@ -58,24 +58,21 @@ describe('parseShellCommands', () => {
   });
 
   it.each([
-    ['sh < commit.sh', [[{ descriptor: undefined, target: 'commit.sh', duplicate: false }]]],
-    ['sh 0< commit.sh', [[{ descriptor: '0', target: 'commit.sh', duplicate: false }]]],
-    ['sh 00< commit.sh', [[{ descriptor: '00', target: 'commit.sh', duplicate: false }]]],
-    ['sh 3< commit.sh', [[{ descriptor: '3', target: 'commit.sh', duplicate: false }]]],
-    [
-      'sh <commit.sh > build.log',
-      [[{ descriptor: undefined, target: 'commit.sh', duplicate: false }]],
-    ],
-    ['sh <> commit.sh', [[{ descriptor: undefined, target: 'commit.sh', duplicate: false }]]],
-    ['sh 3<> commit.sh', [[{ descriptor: '3', target: 'commit.sh', duplicate: false }]]],
-    ['sh <&3', [[{ descriptor: undefined, target: '3', duplicate: true }]]],
-    ['sh 2<&1', [[{ descriptor: '2', target: '1', duplicate: true }]]],
+    ['sh < commit.sh', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
+    ['sh 0< commit.sh', [[{ descriptor: '0', kind: 'file', target: 'commit.sh' }]]],
+    ['sh 00< commit.sh', [[{ descriptor: '00', kind: 'file', target: 'commit.sh' }]]],
+    ['sh 3< commit.sh', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
+    ['sh <commit.sh > build.log', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
+    ['sh <> commit.sh', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
+    ['sh 3<> commit.sh', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
+    ['sh <&3', [[{ descriptor: undefined, kind: 'duplicate', target: '3' }]]],
+    ['sh 2<&1', [[{ descriptor: '2', kind: 'duplicate', target: '1' }]]],
     [
       'sh 3< commit.sh <&3',
       [
         [
-          { descriptor: '3', target: 'commit.sh', duplicate: false },
-          { descriptor: undefined, target: '3', duplicate: true },
+          { descriptor: '3', kind: 'file', target: 'commit.sh' },
+          { descriptor: undefined, kind: 'duplicate', target: '3' },
         ],
       ],
     ],
@@ -83,9 +80,37 @@ describe('parseShellCommands', () => {
     ['sh >> build.log', [[]]],
     ['sh >&2', [[]]],
     ['sh &> build.log', [[]]],
-    ["cat <<'EOF'\nbody\nEOF", [[]]],
-    ["cat <<-'EOF'\n\tbody\n\tEOF", [[]]],
-    ['cat <<< word', [[]]],
+    ["cat <<'EOF'\nbody\nEOF", [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
+    ["cat <<-'EOF'\n\tbody\n\tEOF", [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
+    ['cat <<< word', [[{ descriptor: undefined, kind: 'hereString', target: 'word' }]]],
+    [
+      'sh 3<<EOF < commit.sh\nbody\nEOF',
+      [
+        [
+          { descriptor: '3', kind: 'heredoc', target: '' },
+          { descriptor: undefined, kind: 'file', target: 'commit.sh' },
+        ],
+      ],
+    ],
+    [
+      'sh <2<script.sh',
+      [
+        [
+          { descriptor: undefined, kind: 'file', target: '2' },
+          { descriptor: undefined, kind: 'file', target: 'script.sh' },
+        ],
+      ],
+    ],
+    ['sh >&1<script.sh', [[{ descriptor: undefined, kind: 'file', target: 'script.sh' }]]],
+    [
+      'sh <&3<&4',
+      [
+        [
+          { descriptor: undefined, kind: 'duplicate', target: '3' },
+          { descriptor: undefined, kind: 'duplicate', target: '4' },
+        ],
+      ],
+    ],
   ])('records the redirections that feed standard input: %s', (source, expected) => {
     expect(inputsOf(source)).toEqual(expected);
   });
@@ -251,8 +276,15 @@ describe('parseShellCommands', () => {
 
   it('reads a heredoc body after the line ends', () => {
     expect(parseShellCommands('cat <<EOF\nbody\nEOF\nnext')).toEqual([
-      { words: ['cat'], arguments: ['cat'], inputs: [], heredocs: ['body\n'], depth: 0 },
-      { words: ['next'], arguments: ['next'], inputs: [], heredocs: [], depth: 0 },
+      {
+        words: ['cat'],
+        arguments: ['cat'],
+        inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
+        heredocs: ['body\n'],
+        depth: 0,
+        scope: '',
+      },
+      { words: ['next'], arguments: ['next'], inputs: [], heredocs: [], depth: 0, scope: '' },
     ]);
   });
 
@@ -266,8 +298,15 @@ describe('parseShellCommands', () => {
 
   it('does not treat <<< as a heredoc', () => {
     expect(parseShellCommands('cat <<< word\nnext')).toEqual([
-      { words: ['cat', 'word'], arguments: ['cat'], inputs: [], heredocs: [], depth: 0 },
-      { words: ['next'], arguments: ['next'], inputs: [], heredocs: [], depth: 0 },
+      {
+        words: ['cat', 'word'],
+        arguments: ['cat'],
+        inputs: [{ descriptor: undefined, kind: 'hereString', target: 'word' }],
+        heredocs: [],
+        depth: 0,
+        scope: '',
+      },
+      { words: ['next'], arguments: ['next'], inputs: [], heredocs: [], depth: 0, scope: '' },
     ]);
   });
 
@@ -320,8 +359,28 @@ describe('parseShellCommands', () => {
 
   it('reads an empty heredoc when the source ends after the operator', () => {
     expect(parseShellCommands('cat <<EOF')).toEqual([
-      { words: ['cat'], arguments: ['cat'], inputs: [], heredocs: [''], depth: 0 },
+      {
+        words: ['cat'],
+        arguments: ['cat'],
+        inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
+        heredocs: [''],
+        depth: 0,
+        scope: '',
+      },
     ]);
+  });
+
+  it.each([
+    ['a; b', ['', '']],
+    ['a; $(b); c', ['', '', '0', '']],
+    ['$( $(x) )', ['', '0', '0.1']],
+    ['`a`', ['', '0']],
+    ['cat <<EOF\n$(x)\nEOF', ['', '', '0.0']],
+    ["cat <<'EOF'\nx\nEOF", ['', '']],
+  ])('gives each substitution its own scope: %s', (source, expected) => {
+    const scopes = parseShellCommands(source)?.map(({ scope }) => scope);
+
+    expect(scopes).toEqual(expected);
   });
 
   it('keeps the heredoc body free of a phantom line at the end of the source', () => {

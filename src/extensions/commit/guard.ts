@@ -8,7 +8,7 @@ import type {
   ToolCallEventResult,
 } from '@earendil-works/pi-coding-agent';
 
-import { hasErrorCode } from '../../errors.js';
+import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { readTextWithinSync } from '../../record.js';
 import { parseShellCommands } from '../../shell.js';
 import type { ShellCommand, ShellInput } from '../../shell.js';
@@ -17,7 +17,7 @@ export type NamedFileFacts =
   | { kind: 'missing' }
   | { kind: 'unreadable' }
   | { kind: 'nativeBinary' }
-  | { kind: 'oversize' }
+  | { kind: 'oversize'; head: string }
   | { kind: 'text'; text: string };
 
 export type NamedFileVerdict = 'allow' | 'inspect' | 'block';
@@ -46,6 +46,12 @@ interface GuardState {
 interface InterpreterSources {
   files: string[];
   code: string[];
+}
+
+// A wrapper positional word before the command word, skipped unless one of its options is present.
+interface PositionalSkip {
+  count: number;
+  unless: ReadonlySet<string>;
 }
 
 export const commitGuardReason =
@@ -162,14 +168,20 @@ const shellInterpreters = new Set([
 ]);
 
 // Each wrapper's options that take a separate value word. Without skipping the value, it would
-// look like the command word.
+// look like the command word. A wrapper not in this table hides its command, and the guard then
+// allows it.
 const wrapperOptionValues = new Map<string, ReadonlySet<string>>([
+  ['chrt', new Set()],
   ['command', new Set()],
   ['doas', new Set(['-u', '-C'])],
   ['env', new Set(['-u', '--unset', '-C', '--chdir', '-S', '--split-string', '-P', '--path'])],
   ['exec', new Set(['-a'])],
+  ['flock', new Set()],
+  ['ionice', new Set(['-c', '-n', '-p', '--class', '--classdata'])],
   ['nice', new Set(['-n', '--adjustment'])],
   ['nohup', new Set()],
+  ['setsid', new Set()],
+  ['stdbuf', new Set(['-i', '-o', '-e', '--input', '--output', '--error'])],
   [
     'sudo',
     new Set([
@@ -193,8 +205,10 @@ const wrapperOptionValues = new Map<string, ReadonlySet<string>>([
       '--chroot',
     ]),
   ],
+  ['taskset', new Set(['-c', '--cpu-list'])],
   ['time', new Set(['-f', '--format', '-o', '--output'])],
   ['timeout', new Set(['-s', '--signal', '-k', '--kill-after'])],
+  ['unbuffer', new Set()],
   [
     'xargs',
     new Set([
@@ -223,8 +237,12 @@ const wrapperOptionValues = new Map<string, ReadonlySet<string>>([
   ],
 ]);
 
-// A wrapper positional word before the command word, such as the `timeout` duration.
-const wrapperPositionalSkips = new Map([['timeout', 1]]);
+const wrapperPositionalSkips = new Map<string, PositionalSkip>([
+  ['chrt', { count: 1, unless: new Set(['-p', '--pid']) }],
+  ['flock', { count: 1, unless: new Set() }],
+  ['taskset', { count: 1, unless: new Set(['-c', '--cpu-list']) }],
+  ['timeout', { count: 1, unless: new Set() }],
+]);
 
 const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
 
@@ -249,6 +267,26 @@ const nativeMagics = [
   'MZ',
 ];
 
+// `env` accepts assignments and `-S`, whose value it splits into words, before the program.
+const envTarget = (words: string[]): string | undefined => {
+  const expanded: string[] = [];
+
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index] ?? '';
+
+    if (word === '-S' || word === '--split-string') {
+      expanded.push(...(words[index + 1] ?? '').split(/\s+/u));
+      index += 1;
+    } else {
+      expanded.push(word);
+    }
+  }
+
+  return expanded.find(
+    (word) => word !== '' && !word.startsWith('-') && !assignmentPattern.test(word),
+  );
+};
+
 const shebangInterpreter = (text: string): string | undefined => {
   if (!text.startsWith('#!')) {
     return undefined;
@@ -266,7 +304,7 @@ const shebangInterpreter = (text: string): string | undefined => {
     return commandName(program);
   }
 
-  const target = rest.find((word) => word !== '' && !word.startsWith('-'));
+  const target = envTarget(rest);
 
   return target === undefined ? undefined : commandName(target);
 };
@@ -304,7 +342,7 @@ export const namedFileVerdict = (
   }
 
   if (facts.kind === 'oversize') {
-    return 'block';
+    return checksShebang && !isShellScript(facts.head) ? 'allow' : 'block';
   }
 
   return textVerdict(facts.text, checksShebang);
@@ -312,8 +350,11 @@ export const namedFileVerdict = (
 
 const isOptionWord = (word: string) => word.startsWith('-') || word.startsWith('+');
 
-const isPermissionError = (error: unknown): boolean =>
-  hasErrorCode(error, 'EACCES') || hasErrorCode(error, 'EPERM');
+const isMissingPathError = (error: unknown): boolean =>
+  isMissingFile(error) || hasErrorCode(error, 'ENOTDIR');
+
+const failedFacts = (error: unknown, failClosed: boolean): NamedFileFacts =>
+  !failClosed || isMissingPathError(error) ? { kind: 'missing' } : { kind: 'unreadable' };
 
 const readScriptHeader = (path: string): string => {
   const buffer = Buffer.alloc(maximumScriptHeaderBytes);
@@ -333,25 +374,27 @@ const hasNativeHeader = (head: string) =>
   head.includes('\u0000') &&
   nativeMagics.some((magic) => head.startsWith(magic));
 
-const namedFileFacts = (path: string): NamedFileFacts => {
+const namedFileFacts = (path: string, failClosed: boolean): NamedFileFacts => {
   try {
     if (!statSync(path).isFile()) {
       return { kind: 'missing' };
     }
   } catch (error) {
-    return isPermissionError(error) ? { kind: 'unreadable' } : { kind: 'missing' };
+    return failedFacts(error, failClosed);
   }
 
   try {
-    if (hasNativeHeader(readScriptHeader(path))) {
+    const head = readScriptHeader(path);
+
+    if (hasNativeHeader(head)) {
       return { kind: 'nativeBinary' };
     }
 
     const text = readTextWithinSync(path, maximumScriptBytes);
 
-    return text === undefined ? { kind: 'oversize' } : { kind: 'text', text };
+    return text === undefined ? { kind: 'oversize', head } : { kind: 'text', text };
   } catch (error) {
-    return isPermissionError(error) ? { kind: 'unreadable' } : { kind: 'missing' };
+    return failedFacts(error, failClosed);
   }
 };
 
@@ -381,22 +424,23 @@ const normalizeDescriptor = (descriptor: string | undefined): string =>
   String(Number(descriptor ?? '0'));
 
 // Redirections apply in order, and `<&N` copies the target of descriptor N at that point.
-const effectiveInput = (inputs: ShellInput[]): string | undefined => {
-  const open = new Map<string, string>();
-  let stdin: string | undefined;
+const effectiveInput = (inputs: ShellInput[]): ShellInput | undefined => {
+  const open = new Map<string, ShellInput>();
+  let stdin: ShellInput | undefined;
 
   for (const input of inputs) {
     const descriptor = normalizeDescriptor(input.descriptor);
-    const source = input.duplicate ? open.get(normalizeDescriptor(input.target)) : input.target;
+    const copied = input.kind === 'duplicate' ? open.get(normalizeDescriptor(input.target)) : input;
+    const entry = copied === undefined ? undefined : { ...copied, descriptor: input.descriptor };
 
-    if (source === undefined) {
+    if (entry === undefined) {
       continue;
     }
 
-    open.set(descriptor, source);
+    open.set(descriptor, entry);
 
     if (descriptor === '0') {
-      stdin = source;
+      stdin = entry;
     }
   }
 
@@ -405,27 +449,37 @@ const effectiveInput = (inputs: ShellInput[]): string | undefined => {
 
 const isInterpreter = (word: string) => shellInterpreters.has(commandName(word));
 
+const matchesOption = (word: string, option: string) =>
+  option.startsWith('--')
+    ? word === option || word.startsWith(`${option}=`)
+    : word.startsWith(option);
+
 const skipWrapper = (
   words: string[],
   index: number,
   name: string,
   valueOptions: ReadonlySet<string>,
 ): number => {
+  const skip = wrapperPositionalSkips.get(name);
+  const unless = skip === undefined ? [] : [...skip.unless];
   let next = index + 1;
+  let sawUnless = false;
 
   while (next < words.length) {
     const word = words[next] ?? '';
 
     if (valueOptions.has(word)) {
+      sawUnless ||= unless.includes(word);
       next += 2;
     } else if (isOptionWord(word)) {
+      sawUnless ||= unless.some((option) => matchesOption(word, option));
       next += 1;
     } else {
       break;
     }
   }
 
-  return next + (wrapperPositionalSkips.get(name) ?? 0);
+  return skip === undefined || sawUnless ? next : next + skip.count;
 };
 
 const commandWordIndex = (words: string[]): number | undefined => {
@@ -475,7 +529,7 @@ const interpreterSources = (command: ShellCommand): InterpreterSources => {
   }
 
   const mode = shellMode(command.arguments.slice(index + 1));
-  const input = command.heredocs.length === 0 ? effectiveInput(command.inputs) : undefined;
+  const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
     return { files: [mode.name], code: [] };
@@ -485,7 +539,15 @@ const interpreterSources = (command: ShellCommand): InterpreterSources => {
     return { files: [], code: mode.code === undefined ? [] : [mode.code] };
   }
 
-  return { files: input === undefined ? [] : [input], code: [] };
+  if (stdin === undefined || stdin.kind === 'heredoc') {
+    return { files: [], code: [] };
+  }
+
+  if (stdin.kind === 'hereString') {
+    return { files: [], code: [stdin.target] };
+  }
+
+  return { files: [stdin.target], code: [] };
 };
 
 // A bare word resolves through `PATH`, so only a word with a path separator names a local file.
@@ -515,7 +577,13 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
     return directory;
   }
 
-  return resolve(directory, operand);
+  const target = resolve(directory, operand);
+
+  try {
+    return statSync(target).isDirectory() ? target : directory;
+  } catch {
+    return directory;
+  }
 };
 
 const namedScriptsOf = (command: ShellCommand, directory: string): NamedScript[] => {
@@ -534,20 +602,27 @@ const namedScriptsOf = (command: ShellCommand, directory: string): NamedScript[]
   return scripts;
 };
 
-const scriptFacts = (path: string, state: GuardState): NamedFileFacts | undefined => {
+const scriptFacts = (
+  path: string,
+  state: GuardState,
+  failClosed: boolean,
+): NamedFileFacts | undefined => {
   const cached = state.facts.get(path);
 
   if (cached !== undefined) {
     return cached;
   }
 
-  state.reads += 1;
+  const facts = namedFileFacts(path, failClosed);
 
-  if (state.reads > maximumScriptReads) {
-    return undefined;
+  // Only a candidate that exists is read; a probe that finds nothing costs one stat and no budget.
+  if (facts.kind !== 'missing') {
+    state.reads += 1;
+
+    if (state.reads > maximumScriptReads) {
+      return undefined;
+    }
   }
-
-  const facts = namedFileFacts(path);
 
   state.facts.set(path, facts);
 
@@ -570,8 +645,8 @@ const inspectNamedScript = (
   state: GuardState,
   inspect: (text: string) => boolean,
 ): boolean => {
-  for (const path of candidatePaths(script, state)) {
-    const facts = scriptFacts(path, state);
+  for (const [index, path] of candidatePaths(script, state).entries()) {
+    const facts = scriptFacts(path, state, index === 0);
 
     if (facts === undefined) {
       return true;
@@ -609,6 +684,24 @@ const directoryFor = (directories: string[], depth: number): string => {
   return directories[depth] ?? '';
 };
 
+// Each scope starts at the directory its parent scope is in when the substitution begins.
+const directoryStack = (stacks: Map<string, string[]>, scope: string, cwd: string): string[] => {
+  const existing = stacks.get(scope);
+
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const parentScope = scope.includes('.') ? scope.slice(0, scope.lastIndexOf('.')) : '';
+  const parent = scope === '' ? undefined : stacks.get(parentScope);
+  const base = parent === undefined ? cwd : (parent[parent.length - 1] ?? cwd);
+  const stack = [base];
+
+  stacks.set(scope, stack);
+
+  return stack;
+};
+
 const readPathDirectories = (): string[] => {
   // oxlint-disable-next-line node/no-process-env -- The shell searches the PATH of the running process.
   const path = process.env['PATH'] ?? '';
@@ -635,10 +728,11 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
     createsCommit(text, directory, state, depth + 1);
 
   const scriptCommands = commands.some(runsShell) ? commands : commands.filter(runsGit);
-  const directories = [cwd];
+  const stacks = new Map<string, string[]>();
 
   for (const command of commands) {
-    const directory = directoryFor(directories, command.depth);
+    const stack = directoryStack(stacks, command.scope, cwd);
+    const directory = directoryFor(stack, command.depth);
     const scripts = namedScriptsOf(command, directory);
 
     const blocks = (script: NamedScript) =>
@@ -656,7 +750,7 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
       }
     }
 
-    directories[command.depth] = nextDirectory(command, directory);
+    stack[command.depth] = nextDirectory(command, directory);
   }
 
   return false;

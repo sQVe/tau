@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 
 import type { ExtensionAPI, ToolCallEvent } from '@earendil-works/pi-coding-agent';
@@ -13,6 +13,8 @@ import { commitGuardReason, guardToolCall, namedFileVerdict } from './guard.js';
 import type { NamedFileFacts, NamedFileVerdict } from './guard.js';
 
 const guard = (event: ToolCallEvent, cwd = process.cwd()) => guardToolCall(event, { cwd });
+
+const chmodRestricted = process.getuid?.() === 0 || process.platform === 'win32';
 
 const writeScript = (directory: string, name: string, text: string): string => {
   const path = join(directory, name);
@@ -184,7 +186,7 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('sh missing.sh'), directory)).toBeUndefined();
   });
 
-  it('blocks a script file it cannot read', () => {
+  it.skipIf(chmodRestricted)('blocks a script file it cannot read', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const path = writeScript(directory, 'locked.sh', 'git status\n');
 
@@ -684,7 +686,251 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('sh < commit.sh <<EOF\nbody\nEOF'), directory)).toBeUndefined();
   });
 
-  it('blocks a named file whose stat fails with a permission error', () => {
+  it('blocks an outer script after a failed cd', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('cd missing; sh commit.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('ignores a cd inside a substitution', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'sub/commit.sh', 'git status\n');
+
+    expect(guard(makeBashEvent('echo $(cd sub); sh commit.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('keeps the subshell directory after a substitution cd', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'a/commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'b/commit.sh', 'git status\n');
+
+    expect(guard(makeBashEvent('( cd a; echo $(cd b); sh commit.sh )'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('blocks a script a substitution cds into', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('echo $(cd sub && sh commit.sh)'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('blocks a script file named after a redirection target digit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'script.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('sh <2<script.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('blocks a file input after a heredoc with a descriptor', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('sh 3<<EOF < commit.sh\nbody\nEOF'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('blocks a file input after a heredoc', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('sh <<EOF < commit.sh\nbody\nEOF'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('blocks a here-string that runs a script file', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent("sh <<< './commit.sh'"), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a here-string that does not create a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent("sh <<< 'git status'"), directory)).toBeUndefined();
+  });
+
+  it.each(['#!/usr/bin/env FOO=bar sh', '#!/usr/bin/env -S FOO=bar sh -e'])(
+    'blocks a commit in a file whose env shebang names a shell: %s',
+    (shebang) => {
+      const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+      writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
+
+      expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
+        block: true,
+        reason: commitGuardReason,
+      });
+    },
+  );
+
+  it('allows a commit in a file whose env shebang names another program', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', '#!/usr/bin/env FOO=bar node\ngit commit -m x\n');
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
+  it('allows a large directly executed file whose shebang is not a shell', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', `#!/usr/bin/env node\n${'x'.repeat(1024 * 1024)}`);
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
+  it('blocks a large directly executed file whose shebang is a shell', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'big.sh', `#!/bin/sh\n${'x'.repeat(1024 * 1024)}`);
+
+    expect(guard(makeBashEvent('./big.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('blocks a large file an interpreter runs', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', `#!/usr/bin/env node\n${'x'.repeat(1024 * 1024)}`);
+
+    expect(guard(makeBashEvent('sh tool.js'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('blocks a named path that is a symlink loop', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    symlinkSync('b', join(directory, 'a'));
+    symlinkSync('a', join(directory, 'b'));
+
+    expect(guard(makeBashEvent('sh a'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a named path whose parent is a regular file', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'dir', 'not a directory\n');
+
+    expect(guard(makeBashEvent('sh dir/file'), directory)).toBeUndefined();
+  });
+
+  it.each([
+    'setsid sh commit.sh',
+    'taskset -c 0 sh commit.sh',
+    'stdbuf -oL bash commit.sh',
+    'flock lock sh commit.sh',
+  ])('blocks a script file after another wrapper: %s', (command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(command), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it.skipIf(chmodRestricted)('allows an unreadable PATH entry that finds nothing', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    chmodSync(locked, 0o000);
+    vi.stubEnv('PATH', locked);
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    try {
+      expect(guard(makeBashEvent('sh tool.sh'), directory)).toBeUndefined();
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+  });
+
+  it.skipIf(chmodRestricted)('blocks a PATH candidate after an unreadable PATH entry', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+    const later = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(later, 'tool.sh', 'git commit -m x\n');
+    chmodSync(locked, 0o000);
+    vi.stubEnv('PATH', [locked, later].join(delimiter));
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    try {
+      expect(guard(makeBashEvent('sh tool.sh'), directory)).toEqual({
+        block: true,
+        reason: commitGuardReason,
+      });
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+  });
+
+  it.skipIf(chmodRestricted)('allows a local script before an unreadable PATH entry', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(directory, 'tool.sh', 'git status\n');
+    chmodSync(locked, 0o000);
+    vi.stubEnv('PATH', locked);
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    try {
+      expect(guard(makeBashEvent('sh tool.sh'), directory)).toBeUndefined();
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+  });
+
+  it.skipIf(chmodRestricted)('blocks a named file whose stat fails with a permission error', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const locked = join(directory, 'locked');
 
@@ -766,10 +1012,10 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('sh ./tool.sh'), directory)).toBeUndefined();
   });
 
-  it('counts PATH lookups toward the read cap', () => {
+  it('allows a PATH whose directories find nothing', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    const entries = Array.from({ length: 70 }, (_value, index) =>
+    const entries = Array.from({ length: 100 }, (_value, index) =>
       join(directory, `missing-${index}`),
     );
 
@@ -779,7 +1025,25 @@ describe('guardToolCall', () => {
       vi.unstubAllEnvs();
     });
 
-    expect(guard(makeBashEvent('sh missing.sh'), directory)).toEqual({
+    expect(guard(makeBashEvent('sh missing.sh'), directory)).toBeUndefined();
+  });
+
+  it('counts existing PATH candidates toward the read cap', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+    const names = Array.from({ length: 65 }, (_value, index) => `tool-${index}.sh`);
+
+    for (const name of names) {
+      writeScript(pathDirectory, name, 'echo hello\n');
+    }
+
+    vi.stubEnv('PATH', pathDirectory);
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    expect(guard(makeBashEvent(referencesTo(names)), directory)).toEqual({
       block: true,
       reason: commitGuardReason,
     });
@@ -1003,8 +1267,10 @@ describe('namedFileVerdict', () => {
     [{ kind: 'unreadable' }, false, 'block'],
     [{ kind: 'nativeBinary' }, true, 'allow'],
     [{ kind: 'nativeBinary' }, false, 'block'],
-    [{ kind: 'oversize' }, true, 'block'],
-    [{ kind: 'oversize' }, false, 'block'],
+    [{ kind: 'oversize', head: '#!/usr/bin/env node\n' }, true, 'allow'],
+    [{ kind: 'oversize', head: '#!/bin/sh\n' }, true, 'block'],
+    [{ kind: 'oversize', head: 'git status\n' }, true, 'block'],
+    [{ kind: 'oversize', head: '#!/usr/bin/env node\n' }, false, 'block'],
     [{ kind: 'text', text: '#!/usr/bin/env node\ngit commit -m x\n' }, true, 'allow'],
     [{ kind: 'text', text: '#!/usr/bin/env node\ngit commit -m x\n' }, false, 'inspect'],
     [{ kind: 'text', text: '#!/usr/bin/env node\ngit commit\u0000\n' }, true, 'allow'],
