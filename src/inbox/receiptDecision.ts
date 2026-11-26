@@ -1,6 +1,6 @@
-import { parseSenderLine, senderLine } from '../handoverSender.js';
+import { isSenderTerminal, parseSenderLine, senderLine } from '../handoverSender.js';
 import { isRecord } from '../schema.js';
-import { isUuid } from './protocol.js';
+import { isSessionId, isUuid } from './protocol.js';
 import type { SavableMessageBody } from './protocol.js';
 
 interface ReceiptIdentity {
@@ -37,28 +37,99 @@ export interface SettleFacts {
   mode: string;
 }
 
-export const inboxReceiptVersion = 3;
+interface HandoverQuestionHeading {
+  questionId: string;
+  askerTerminal: string;
+  askerSession: string;
+}
 
-const previousInboxReceiptVersion = 2;
+type QuestionCarrier = SavableMessageBody | InboxReceipt;
 
-type InboxReceiptVersion = typeof previousInboxReceiptVersion | typeof inboxReceiptVersion;
+export const inboxReceiptVersion = 4;
+
+const retiredInboxReceiptVersion = 2;
+
+const handoverQuestionReceiptVersion = 3;
+
+type InboxReceiptVersion =
+  | typeof retiredInboxReceiptVersion
+  | typeof handoverQuestionReceiptVersion
+  | typeof inboxReceiptVersion;
+
+type QuestionReceiptVersion = typeof handoverQuestionReceiptVersion | typeof inboxReceiptVersion;
 
 export type InboxReceipt =
   | (ReceiptIdentity & { family: 'handover' })
   | (ReceiptIdentity & { family: 'answer'; questionId?: string })
   | (ReceiptIdentity & {
-      version: typeof inboxReceiptVersion;
+      version: QuestionReceiptVersion;
       family: 'handover-question';
+      questionId: string;
+    })
+  | (ReceiptIdentity & {
+      version: typeof inboxReceiptVersion;
+      family: 'handover-answer';
       questionId: string;
     });
 
 export const inboxMessageType = 'tau-inbox-message';
 
+const carriedQuestionId = (carrier: QuestionCarrier): string | undefined => {
+  if (carrier.family === 'handover') {
+    return undefined;
+  }
+
+  if ('payload' in carrier) {
+    return carrier.payload.questionId;
+  }
+
+  return carrier.questionId;
+};
+
 const isReceiptVersion = (value: unknown): value is InboxReceiptVersion =>
-  value === previousInboxReceiptVersion || value === inboxReceiptVersion;
+  value === retiredInboxReceiptVersion ||
+  value === handoverQuestionReceiptVersion ||
+  value === inboxReceiptVersion;
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value !== '';
+
+const isQuestionId = (value: unknown): value is string =>
+  typeof value === 'string' && isUuid(value);
+
+const handoverQuestionReceipt = (
+  identity: ReceiptIdentity,
+  questionId: unknown,
+): InboxReceipt | undefined => {
+  if (identity.version === retiredInboxReceiptVersion) {
+    return undefined;
+  }
+
+  if (!isQuestionId(questionId)) {
+    return undefined;
+  }
+
+  const { version, messageId, sessionId } = identity;
+
+  return { version, messageId, sessionId, family: 'handover-question', questionId };
+};
+
+const handoverAnswerReceipt = (
+  identity: ReceiptIdentity,
+  questionId: unknown,
+): InboxReceipt | undefined => {
+  if (identity.version !== inboxReceiptVersion) {
+    return undefined;
+  }
+
+  if (!isQuestionId(questionId)) {
+    return undefined;
+  }
+
+  const { version, messageId, sessionId } = identity;
+
+  return { version, messageId, sessionId, family: 'handover-answer', questionId };
+};
 
 const questionDetails = (questionId: unknown): { questionId?: string } =>
   typeof questionId === 'string' ? { questionId } : {};
@@ -83,15 +154,11 @@ const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined =
     case 'answer':
       return { version, messageId, sessionId, family, ...questionDetails(questionId) };
 
-    case 'handover-question': {
-      if (version !== inboxReceiptVersion) {
-        return undefined;
-      }
+    case 'handover-question':
+      return handoverQuestionReceipt({ version, messageId, sessionId }, questionId);
 
-      const hasQuestionId = typeof questionId === 'string' && isUuid(questionId);
-
-      return hasQuestionId ? { version, messageId, sessionId, family, questionId } : undefined;
-    }
+    case 'handover-answer':
+      return handoverAnswerReceipt({ version, messageId, sessionId }, questionId);
 
     default:
       return undefined;
@@ -107,15 +174,50 @@ export const answeredQuestionId = (message: InboxMessageFact): string | undefine
   return receipt?.family === 'answer' ? receipt.questionId : undefined;
 };
 
+const handoverQuestionHeadingExpression =
+  /^Handover question (\S+) from terminal (\S+), session (\S+):$/u;
+
+const handoverQuestionHeading = (payload: HandoverQuestionHeading): string =>
+  `Handover question ${payload.questionId} from terminal ${payload.askerTerminal}, session ${payload.askerSession}:`;
+
+export const parseHandoverQuestionHeading = (
+  content: unknown,
+): HandoverQuestionHeading | undefined => {
+  if (typeof content !== 'string') {
+    return undefined;
+  }
+
+  const firstLine = content.split(/\r?\n/u)[0] ?? '';
+  const match = handoverQuestionHeadingExpression.exec(firstLine);
+
+  if (match === null) {
+    return undefined;
+  }
+
+  const questionId = match[1] ?? '';
+  const askerTerminal = match[2] ?? '';
+  const askerSession = match[3] ?? '';
+
+  if (!isUuid(questionId) || !isSenderTerminal(askerTerminal) || !isSessionId(askerSession)) {
+    return undefined;
+  }
+
+  return { questionId, askerTerminal, askerSession };
+};
+
 export const messageText = (body: SavableMessageBody): string => {
   if (body.family === 'answer') {
     return body.payload.answer;
   }
 
   if (body.family === 'handover-question') {
-    const { questionId, text, askerTerminal, askerSession } = body.payload;
+    return `${handoverQuestionHeading(body.payload)}\n\n${body.payload.text}`;
+  }
 
-    return `Handover question ${questionId} from terminal ${askerTerminal}, session ${askerSession}:\n\n${text}`;
+  if (body.family === 'handover-answer') {
+    const { questionId, answer } = body.payload;
+
+    return `Handover answer to question ${questionId}:\n\n${answer}`;
   }
 
   const { text, sender } = body.payload;
@@ -139,10 +241,8 @@ export const matchesReceipt = (
   { receipt, content }: ReceiptedMessage,
   body: SavableMessageBody,
 ): boolean => {
-  const keepsQuestion = receipt.family === 'answer' || receipt.family === 'handover-question';
-  const receiptQuestionId = keepsQuestion ? receipt.questionId : undefined;
-  const bodyKeepsQuestion = body.family === 'answer' || body.family === 'handover-question';
-  const bodyQuestionId = bodyKeepsQuestion ? body.payload.questionId : undefined;
+  const receiptQuestionId = carriedQuestionId(receipt);
+  const bodyQuestionId = carriedQuestionId(body);
   const sameQuestion = receiptQuestionId === bodyQuestionId;
   const sameContent = content === messageText(body) || matchesSenderFreePayload(content, body);
 

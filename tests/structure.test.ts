@@ -104,6 +104,8 @@ const pureModules = [
   'src/extensions/fullCheck/mutationVerdict.ts',
   'src/extensions/handBack/handBackDecision.ts',
   'src/extensions/handover/placement.ts',
+  'src/extensions/handoverQuestion/answer/answerDecision.ts',
+  'src/extensions/handoverQuestion/answer/receivedQuestion.ts',
   'src/extensions/handoverQuestion/senderMessages.ts',
   'src/extensions/improvement/recordPassDecision.ts',
   'src/extensions/improvement/recordRequest.ts',
@@ -528,7 +530,18 @@ const versionedRecords = [
   {
     writer: 'src/inbox/store.ts',
     fixtures: 'src/inbox/fixtures/handover',
-    names: ['previous.json', 'version2.json', 'current.json', 'newer.json', 'malformed.json'],
+    names: [
+      'previous.json',
+      'previousAnswer.json',
+      'version2.json',
+      'version2Answer.json',
+      'version3.json',
+      'version3Handover.json',
+      'version3Answer.json',
+      'current.json',
+      'newer.json',
+      'malformed.json',
+    ],
   },
   {
     writer: 'src/improvement/event.ts',

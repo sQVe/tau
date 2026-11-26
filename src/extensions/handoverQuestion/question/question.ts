@@ -10,6 +10,7 @@ import { get } from '../../../hc/hc.js';
 import type { HcRuntime } from '../../../hc/hc.js';
 import { currentInboxPath, ownInboxReady, sendInboxMessage } from '../../../inbox/inbox.js';
 import { findTauRoot } from '../../../tauDirectory.js';
+import { toolResult } from '../toolResult.js';
 import { deleteQuestionRecord, writeQuestionRecord } from './questionRecord.js';
 import type { QuestionRecord } from './questionRecord.js';
 
@@ -88,16 +89,6 @@ const recordOf = (target: QuestionTarget, questionId: string, text: string): Que
   answer: null,
 });
 
-const result = (
-  text: string,
-  details: QuestionOutcome,
-  options: { terminate?: boolean; isError?: boolean } = {},
-): AgentToolResult<QuestionOutcome> => ({
-  content: [{ type: 'text' as const, text }],
-  details,
-  ...options,
-});
-
 const askerInboxReady = async (target: QuestionTarget): Promise<boolean> => {
   const listenerPath = currentInboxPath();
 
@@ -134,7 +125,7 @@ export const askSender = async (
   target.hc.signal?.throwIfAborted();
 
   if (!ready) {
-    return result(inboxRefusal, { status: 'refused', questionId }, { isError: true });
+    return toolResult(inboxRefusal, { status: 'refused', questionId }, { isError: true });
   }
 
   await writeQuestionRecord(root, recordOf(target, questionId, input.question));
@@ -143,7 +134,7 @@ export const askSender = async (
     const sent = await sendQuestion(target, questionId, input.question);
 
     if (sent.status === 'queued') {
-      return result(
+      return toolResult(
         'Question sent. Your turn ends; the answer arrives as a new message.',
         { status: 'sent', questionId },
         { terminate: true },
@@ -153,12 +144,12 @@ export const askSender = async (
     const reason = sent.reason ?? 'The lead may not have received the question.';
     const note = `${reason} Delivery is uncertain. Calling this tool again would create another question.`;
 
-    return result(note, { status: 'unknown', questionId, note }, { terminate: true });
+    return toolResult(note, { status: 'unknown', questionId, note }, { terminate: true });
   } catch (error) {
     await deleteQuestionRecord(root, questionId);
 
     target.hc.signal?.throwIfAborted();
 
-    return result(refusalText(error), { status: 'refused', questionId }, { isError: true });
+    return toolResult(refusalText(error), { status: 'refused', questionId }, { isError: true });
   }
 };

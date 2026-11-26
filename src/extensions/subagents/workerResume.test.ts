@@ -1,6 +1,7 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
+import { inboxReceiptVersion } from '../../inbox/receiptDecision.js';
 import type { Assignment } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { workerPrompt } from './profiles.js';
@@ -208,7 +209,11 @@ it.each([
     branch: [
       user(),
       question(),
-      inboxEntry({ version: 4, family: 'answer', questionId: firstQuestionId }),
+      inboxEntry({
+        version: inboxReceiptVersion + 1,
+        family: 'answer',
+        questionId: firstQuestionId,
+      }),
     ],
     assignment: asked(firstQuestionId),
     sendTaskPrompt: false,

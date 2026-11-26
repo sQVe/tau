@@ -65,15 +65,17 @@ sender, whatever Tau version sent the text.
 ### Keep the saved handover record compatible
 
 Version 2 of the saved inbox record added the optional `sender` field and still reads version 1.
-Version 3 added the `handover-question` family. Both older versions stay readable, as
-[ADR 0053](./0053-version-each-saved-record-format.md) says. A pending retry compares the payload
-without the version, and a retry whose sender differs is a changed message. A receiver on an older
-Tau refuses a frame that carries `sender`; that refusal is accepted and needs no fallback.
+Version 3 added the `handover-question` family. Version 4 added the `handover-answer` family, and
+versions 1 to 3 stay readable, as [ADR 0053](./0053-version-each-saved-record-format.md) says. A
+pending retry compares the payload without the version, and a retry whose sender differs is a
+changed message. A receiver on an older Tau refuses a frame that carries `sender`; that refusal is
+accepted and needs no fallback.
 
-The Pi session receipt moves to version 3 when it gains the `handover-question` family. Tau writes
-that one version for every family. It still reads version 2 for `handover` and `answer`, and it
-skips a version 2 `handover-question` receipt. An older Tau does not replay the original version 3
-inbox file. The downgrade limits under Consequences still apply.
+The Pi session receipt moves to version 4 when it gains the `handover-answer` family. Tau writes
+that one version for every family. It still reads versions 2 and 3 for `handover` and `answer`, and
+versions 3 and 4 for `handover-question`. It skips a version 2 `handover-question` receipt and a
+version 3 `handover-answer` receipt. An older Tau does not replay the original version 4 inbox file.
+The downgrade limits under Consequences still apply.
 
 ### Ask with handover_question
 
@@ -90,6 +92,29 @@ reach the lead, and deleting the record would let a later delivery wake the lead
 asker no longer tracks. The tool ends the turn and does not retry under a fresh ID: the asker's turn
 has to end for the lead to answer it, and a second send could duplicate a question the lead already
 received.
+
+### Answer with handover_answer
+
+Every lead session has `handover_answer`. The lead finds the asker in the saved question message in
+its own transcript, and it refuses a question it never received. That transcript is the only record
+the lead shares with the asker, and it survives a resume.
+
+An answer frame uses the `questionId` as its message ID. A retry of the same answer then reaches the
+inbox dedupe, so it starts no second turn in the asker. A second turn would repeat work the asker
+already did on the first answer.
+
+The asker's accept check owns the authority checks, because its record names the session that asked
+and the lead it asked. It refuses an unknown question, a message ID other than the question ID, a
+question asked from another session, a question sent to another lead session, and an answer that
+differs from a saved one. It marks the record answered before it saves the message, so the turn the
+answer starts sees an answered record. The reverse order would let that turn ask again about a
+question that already has an answer.
+
+The lead asks its user first for an approval-only action, because only the user can approve
+canceling a ticket, publishing a pull request as ready, spending money, or deleting data. A design
+question goes to `architect` `ask`, not `open`: an ask reaches a running architect through its
+inbox, while an open would start a second architect for a question the lead can pass on. When the
+ask refuses twice or cannot answer, the lead asks its user, so the asker is not left waiting.
 
 ### Ask the user when the sender is gone
 
@@ -117,7 +142,7 @@ stall the work.
   transcript drops it.
 - A downgrade is best effort. A version 2 inbox file that this Tau delivered but has not deleted can
   be shown again when the same session resumes on an older Tau. A same-ID retry after cleanup can be
-  shown again on an older Tau. A worker that restarts on an older Tau can miss a version 3 answer
+  shown again on an older Tau. A worker that restarts on an older Tau can miss a version 4 answer
   receipt and keep waiting.
 
 ## Alternatives considered

@@ -2,6 +2,7 @@ import type { RoleKind } from './role.js';
 
 const roleGatedTools = new Map<string, readonly RoleKind[]>([
   ['architect', ['lead']],
+  ['handover_answer', ['lead']],
   ['plan', ['lead']],
 ]);
 

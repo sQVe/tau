@@ -85,7 +85,7 @@ it('sends the lead as sender', async () => {
   ) as unknown;
 
   expect(saved).toEqual({
-    version: 3,
+    version: 4,
     messageId: result.messageId,
     family: 'handover',
     payload: { text: 'Next steps\n', sender },
@@ -107,7 +107,7 @@ it('sends no sender without one', async () => {
   ) as unknown;
 
   expect(saved).toEqual({
-    version: 3,
+    version: 4,
     messageId: result.messageId,
     family: 'handover',
     payload: { text: 'Next steps\n' },

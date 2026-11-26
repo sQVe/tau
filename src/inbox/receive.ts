@@ -76,6 +76,8 @@ const bodyOf = (request: MessageRequest): SavableMessageBody | undefined => {
       return { family: 'answer', payload: request.payload };
     case 'handover-question':
       return { family: 'handover-question', payload: request.payload };
+    case 'handover-answer':
+      return { family: 'handover-answer', payload: request.payload };
     case 'architect-ask':
       return { family: 'handover', payload: { text: request.payload.text } };
     case 'answer-request':
@@ -154,11 +156,11 @@ const receiptOf = (
     sessionId: options.sessionId,
   } as const;
 
-  const keepsQuestion = body.family === 'answer' || body.family === 'handover-question';
+  if (body.family === 'handover') {
+    return { ...identity, family: 'handover' };
+  }
 
-  return keepsQuestion
-    ? { ...identity, family: body.family, questionId: body.payload.questionId }
-    : { ...identity, family: body.family };
+  return { ...identity, family: body.family, questionId: body.payload.questionId };
 };
 
 const wakeOnce = (options: ReceiverOptions, messageId: string, body: SavableMessageBody): void => {

@@ -7,24 +7,21 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { fakeExtensionApi, fakeExtensionContext } from '../../../tests/extensionApi.js';
+import type { FakeExtensionContextOptions } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import {
   advertiseInbox,
+  forgetAcceptCheck,
   savedFiles,
   startHandoverReceiver,
 } from '../../../tests/inboxReceiverHarness.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { acceptChecks } from '../../inbox/inbox.js';
 import handoverQuestionExtension from './handoverQuestion.js';
 import type { QuestionOutcome } from './question/question.js';
 import { questionRecordDirectory, readQuestionRecord } from './question/questionRecord.js';
-
-interface ContextOptions {
-  branch?: unknown;
-  sessionId?: string;
-  cwd?: string;
-}
 
 const senderSession = '33333333-3333-4333-8333-333333333333';
 const senderLine = `Handover sender: terminal lead-1, session ${senderSession}.`;
@@ -43,19 +40,11 @@ const branchWithoutSender = [
   },
 ];
 
-const contextFields = (options: ContextOptions) => ({
-  cwd: options.cwd ?? '/repository',
-  sessionManager: {
-    getBranch: () => options.branch ?? branch,
-    getSessionId: () => options.sessionId ?? 'session-1',
-  },
-});
+const context = (options: FakeExtensionContextOptions = {}): ExtensionContext =>
+  fakeExtensionContext({ ...options, branch: options.branch ?? branch });
 
-const context = (options: ContextOptions = {}): ExtensionContext =>
-  contextFields(options) as unknown as ExtensionContext;
-
-const toolContext = (options: ContextOptions = {}): ExtensionToolContext =>
-  contextFields(options) as unknown as ExtensionToolContext;
+const toolContext = (options: FakeExtensionContextOptions = {}): ExtensionToolContext =>
+  context(options) as ExtensionToolContext;
 
 const question = 'Which option should I use?';
 
@@ -144,6 +133,8 @@ const registeredTool = async (overrides: Partial<ExtensionAPI> = {}) => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  forgetAcceptCheck('handover-question');
+  forgetAcceptCheck('handover-answer');
 });
 
 it('registers the tool once a handover brings a sender', async () => {
@@ -159,21 +150,53 @@ it('registers the tool once a handover brings a sender', async () => {
 
   const handler = fake.handler('before_agent_start');
 
+  const questionCalls = () =>
+    registerTool.mock.calls.filter(([tool]) => tool.name === 'handover_question');
+
   await handler({}, context());
 
-  expect(registerTool).toHaveBeenCalledTimes(1);
+  expect(questionCalls()).toHaveLength(1);
 
-  expect(registerTool.mock.calls[0]?.[0]).toMatchObject({
+  expect(questionCalls()[0]?.[0]).toMatchObject({
     name: 'handover_question',
     exposure: 'model-only',
   });
 
   await handler({}, context());
 
-  expect(registerTool).toHaveBeenCalledTimes(1);
+  expect(questionCalls()).toHaveLength(1);
 });
 
-it('registers no tool when no handover sender starts the turn', async () => {
+it('registers no question tool outside the lead role', async () => {
+  vi.stubEnv('TAU_ROLE', 'worker');
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+  await fake.handler('before_agent_start')({}, context());
+
+  expect(fake.tools.has('handover_question')).toBe(false);
+});
+
+it('registers both accept checks and forgets them after the test', () => {
+  vi.stubEnv('TAU_ROLE', '');
+
+  const fake = fakeExtensionApi();
+
+  handoverQuestionExtension(fake.pi);
+
+  expect(acceptChecks()['handover-question']).toBeTypeOf('function');
+  expect(acceptChecks()['handover-answer']).toBeTypeOf('function');
+
+  onTestFinished(() => {
+    expect(acceptChecks()['handover-question']).toBeUndefined();
+    expect(acceptChecks()['handover-answer']).toBeUndefined();
+  });
+});
+
+it('registers no handover_question tool when no handover sender starts the turn', async () => {
   vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
@@ -190,6 +213,7 @@ it('registers no tool when no handover sender starts the turn', async () => {
   );
 
   expect(extension.tools.has('handover_question')).toBe(false);
+  expect(extension.tools.has('handover_answer')).toBe(true);
   expect(await askerRecords(root)).toEqual([]);
   expect(fake.calls).toHaveLength(0);
 });

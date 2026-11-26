@@ -251,7 +251,7 @@ it('replies queued after saving the record and shows nothing until the startup g
         customType: 'tau-inbox-message',
         content: 'handover text',
         display: true,
-        details: { version: 3, messageId, sessionId, family: 'handover' },
+        details: { version: 4, messageId, sessionId, family: 'handover' },
       },
       { triggerTurn: true },
     ],
@@ -394,8 +394,8 @@ it('shows a message again once, without a turn, after Escape dropped it from the
   expect(optionsOfShown(receiver)).toEqual([{ triggerTurn: true }, { triggerTurn: false }]);
 
   expect(receiver.sendMessage.mock.calls.map(([message]) => message.details)).toEqual([
-    { version: 3, messageId, sessionId, family: 'handover' },
-    { version: 3, messageId, sessionId, family: 'handover' },
+    { version: 4, messageId, sessionId, family: 'handover' },
+    { version: 4, messageId, sessionId, family: 'handover' },
   ]);
 });
 

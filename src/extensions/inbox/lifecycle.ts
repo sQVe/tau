@@ -59,12 +59,14 @@ const familyChecks = () => {
     'answer-request': answerRequest,
     'architect-ask': architectAsk,
     'handover-question': handoverQuestion,
+    'handover-answer': handoverAnswer,
   } = acceptChecks();
 
   return {
     ...(answerRequest === undefined ? {} : { 'answer-request': answerRequest }),
     ...(architectAsk === undefined ? {} : { 'architect-ask': architectAsk }),
     ...(handoverQuestion === undefined ? {} : { 'handover-question': handoverQuestion }),
+    ...(handoverAnswer === undefined ? {} : { 'handover-answer': handoverAnswer }),
   };
 };
 

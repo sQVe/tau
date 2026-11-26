@@ -123,7 +123,7 @@ it('saves one open record, sends one frame, and ends the turn', async () => {
   );
 
   expect(saved).toMatchObject({
-    version: 3,
+    version: 4,
     messageId: questionId,
     family: 'handover-question',
     payload: {
@@ -171,6 +171,7 @@ it('refuses when the asker has no listening inbox', async () => {
   expect(textOf(result)).toContain('ask_user_question');
   expect(frames).toBe(0);
   expect(await askerRecords(root)).toEqual([]);
+  expect(fake.calls).toHaveLength(0);
 });
 
 it('sends nothing and saves nothing when the call is already cancelled', async () => {
@@ -407,7 +408,7 @@ it('refuses an ended sender even when the receiver accepts questions', async () 
   expect(savedFiles(receiver)).toHaveLength(0);
 });
 
-it('refuses when the receiver declines questions', async () => {
+const decliningSender = async () => {
   vi.stubEnv('HC_TERMINAL_ID', askerTerminal);
 
   const root = await createTemporaryRepository(onTestFinished);
@@ -430,6 +431,12 @@ it('refuses when the receiver declines questions', async () => {
   advertiseInbox(fake, senderTerminal, receiver.path);
   await startAskerInbox(fake);
 
+  return { root, receiver, fake, frames: () => frames };
+};
+
+it('refuses when the receiver declines questions', async () => {
+  const { root, receiver, fake, frames } = await decliningSender();
+
   const result = await askSender(targetOf(fake, root, receiver.sessionId), {
     question: questionText,
   });
@@ -438,7 +445,20 @@ it('refuses when the receiver declines questions', async () => {
   expect(result.isError).toBe(true);
   expect(result.terminate).toBeUndefined();
   expect(textOf(result)).toContain('ask_user_question');
-  expect(frames).toBe(1);
+  expect(frames()).toBe(1);
   expect(await askerRecords(root)).toEqual([]);
   expect(savedFiles(receiver)).toHaveLength(0);
+});
+
+it('does not repeat the ask_user_question note in a refusal', async () => {
+  const { root, receiver, fake } = await decliningSender();
+
+  const result = await askSender(targetOf(fake, root, receiver.sessionId), {
+    question: questionText,
+  });
+
+  const mentions = textOf(result).match(/ask_user_question/gu) ?? [];
+
+  expect(result.details.status).toBe('refused');
+  expect(mentions).toHaveLength(1);
 });

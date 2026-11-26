@@ -27,7 +27,7 @@ export interface MessageFrameFields {
 
 const protocolName = 'rpc1';
 
-const savableFamilies = ['handover', 'answer', 'handover-question'] as const;
+const savableFamilies = ['handover', 'answer', 'handover-question', 'handover-answer'] as const;
 
 const families = [...savableFamilies, 'answer-request', 'architect-ask'] as const;
 
@@ -38,6 +38,8 @@ export const inboxLabelKey = 'tau.inbox';
 export const requestByteLimit = 102_400;
 
 export const replyByteLimit = 4096;
+
+export const handoverAnswerCharacterLimit = 32_000;
 
 const uuidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
@@ -68,7 +70,7 @@ const handoverSenderSchema = Type.Object(
   strict,
 );
 
-export const handoverBody = {
+const handoverBody = {
   family: Type.Literal('handover'),
   payload: Type.Object(
     { text: Type.String({ minLength: 1 }), sender: Type.Optional(handoverSenderSchema) },
@@ -76,7 +78,7 @@ export const handoverBody = {
   ),
 };
 
-export const answerBody = {
+const answerBody = {
   family: Type.Literal('answer'),
   payload: Type.Object(
     {
@@ -97,6 +99,18 @@ const handoverQuestionBody = {
       text: Type.String({ minLength: 1, maxLength: 4000 }),
       askerTerminal: Type.String({ pattern: senderTerminalPattern }),
       askerSession: sessionIdSchema,
+    },
+    strict,
+  ),
+};
+
+const handoverAnswerBody = {
+  family: Type.Literal('handover-answer'),
+  payload: Type.Object(
+    {
+      questionId: uuidSchema,
+      senderSession: sessionIdSchema,
+      answer: Type.String({ minLength: 1, maxLength: handoverAnswerCharacterLimit }),
     },
     strict,
   ),
@@ -126,6 +140,7 @@ const savableBodySchema = Type.Union([
   Type.Object(handoverBody, strict),
   Type.Object(answerBody, strict),
   Type.Object(handoverQuestionBody, strict),
+  Type.Object(handoverAnswerBody, strict),
 ]);
 
 const bodySchema = Type.Union([
@@ -141,6 +156,7 @@ type WithBody<Fields extends TProperties> = TUnion<
     TObject<Fields & typeof handoverBody>,
     TObject<Fields & typeof answerBody>,
     TObject<Fields & typeof handoverQuestionBody>,
+    TObject<Fields & typeof handoverAnswerBody>,
   ]
 >;
 
@@ -149,6 +165,7 @@ type WithRequestBody<Fields extends TProperties> = TUnion<
     TObject<Fields & typeof handoverBody>,
     TObject<Fields & typeof answerBody>,
     TObject<Fields & typeof handoverQuestionBody>,
+    TObject<Fields & typeof handoverAnswerBody>,
     TObject<Fields & typeof answerRequestBody>,
     TObject<Fields & typeof architectAskBody>,
   ]
@@ -159,6 +176,7 @@ export const withSavableBody = <Fields extends TProperties>(fields: Fields): Wit
     Type.Object({ ...fields, ...handoverBody }, strict),
     Type.Object({ ...fields, ...answerBody }, strict),
     Type.Object({ ...fields, ...handoverQuestionBody }, strict),
+    Type.Object({ ...fields, ...handoverAnswerBody }, strict),
   ]);
 
 const withBody = <Fields extends TProperties>(fields: Fields): WithRequestBody<Fields> =>
@@ -166,6 +184,7 @@ const withBody = <Fields extends TProperties>(fields: Fields): WithRequestBody<F
     Type.Object({ ...fields, ...handoverBody }, strict),
     Type.Object({ ...fields, ...answerBody }, strict),
     Type.Object({ ...fields, ...handoverQuestionBody }, strict),
+    Type.Object({ ...fields, ...handoverAnswerBody }, strict),
     Type.Object({ ...fields, ...answerRequestBody }, strict),
     Type.Object({ ...fields, ...architectAskBody }, strict),
   ]);

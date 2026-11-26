@@ -11,7 +11,7 @@ const messageId = '11111111-1111-4111-8111-111111111111';
 const sender = { terminal: 'lead', sessionId: '22222222-2222-4222-8222-222222222222' };
 
 const record = {
-  version: 3 as const,
+  version: 4 as const,
   messageId,
   family: 'handover' as const,
   payload: { text: 'handover text', sender },
@@ -25,6 +25,17 @@ const version2Record = {
 };
 
 const currentRecord = {
+  version: 4 as const,
+  messageId,
+  family: 'handover-answer' as const,
+  payload: {
+    questionId: messageId,
+    senderSession: '44444444-4444-4444-8444-444444444444',
+    answer: 'Use option A.',
+  },
+};
+
+const version3Record = {
   version: 3 as const,
   messageId,
   family: 'handover-question' as const,
@@ -34,6 +45,30 @@ const currentRecord = {
     askerTerminal: 'worker',
     askerSession: '44444444-4444-4444-8444-444444444444',
   },
+};
+
+const version3HandoverRecord = {
+  version: 3 as const,
+  messageId,
+  family: 'handover' as const,
+  payload: { text: 'handover text', sender },
+};
+
+const version3AnswerRecord = {
+  version: 3 as const,
+  messageId,
+  family: 'answer' as const,
+  payload: {
+    assignmentId: '22222222-2222-4222-8222-222222222222',
+    questionId: '33333333-3333-4333-8333-333333333333',
+    parentSession: 'lead-session',
+    answer: 'Use 42.',
+  },
+};
+
+const version2AnswerRecord = {
+  ...version3AnswerRecord,
+  version: 2 as const,
 };
 
 const previousRecord = {
@@ -99,6 +134,99 @@ it('reads the frozen version 2 record', async () => {
   });
 });
 
+it('reads the frozen version 3 record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'version3.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version3Record,
+  });
+});
+
+it('reads a version 3 handover record with a sender', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'version3Handover.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version3HandoverRecord,
+  });
+});
+
+it('reads a version 3 answer record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'version3Answer.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version3AnswerRecord,
+  });
+});
+
+it('reads a version 2 answer record', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'version2Answer.json');
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version2AnswerRecord,
+  });
+});
+
+it('reads a version 3 record with the oldest accepted identifiers', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  const boundaryRecord = {
+    ...version3Record,
+    payload: { ...version3Record.payload, askerTerminal: 'worker:1', askerSession: 'a' },
+  };
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path, JSON.stringify(boundaryRecord));
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: boundaryRecord,
+  });
+});
+
+it.each([
+  ['asker session', { askerSession: 'worker/old' }],
+  ['asker terminal', { askerTerminal: 'two words' }],
+])(
+  'reports a version 3 record whose %s breaks the oldest rule as malformed',
+  async (_name, override) => {
+    const directory = directoryFixture();
+    const path = join(directory, `${messageId}.json`);
+
+    mkdirSync(directory, { recursive: true });
+
+    writeFileSync(
+      path,
+      JSON.stringify({ ...version3Record, payload: { ...version3Record.payload, ...override } }),
+    );
+
+    await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+  },
+);
+
+it('reports a version 3 record whose message ID is not a UUID as malformed', async () => {
+  const directory = directoryFixture();
+  const savedId = 'not-a-uuid';
+  const path = join(directory, `${savedId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path, JSON.stringify({ ...version3Record, messageId: savedId }));
+
+  await expect(readMessage(directory, savedId)).resolves.toMatchObject({ kind: 'malformed' });
+});
+
 it('reads the frozen current record', async () => {
   const directory = directoryFixture();
 
@@ -150,9 +278,20 @@ it('reports a version 2 record with the handover-question family as malformed', 
       version: 2,
       messageId,
       family: 'handover-question',
-      payload: currentRecord.payload,
+      payload: version3Record.payload,
     }),
   );
+
+  await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+});
+
+it('reports a version 3 record with the handover-answer family as malformed', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(path, JSON.stringify({ ...currentRecord, version: 3 }));
 
   await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
 });
@@ -163,7 +302,7 @@ it('reports a saved answer-request record as malformed', async () => {
 
   mkdirSync(directory, { recursive: true });
 
-  for (const version of [1, 2, 3]) {
+  for (const version of [1, 2, 3, 4]) {
     writeFileSync(
       path,
       JSON.stringify({
@@ -315,14 +454,18 @@ it('does not run the fence for a message that is already saved', async () => {
   ).resolves.toBe('existing');
 });
 
-it('lists saved records by message ID and skips temporary and foreign names', async () => {
+it('lists a frozen version 3 record and a current record while skipping temporary and foreign names', async () => {
   const directory = directoryFixture();
+  const currentMessageId = '55555555-5555-4555-8555-555555555555';
 
-  await saveMessage(directory, record);
-  writeFileSync(join(directory, `.${messageId}.json.55555555-5555-4555-8555-555555555555`), '{}');
+  fixtureInto(directory, 'version3.json');
+  await saveMessage(directory, { ...record, messageId: currentMessageId });
+  writeFileSync(join(directory, `.${messageId}.json.66666666-6666-4666-8666-666666666666`), '{}');
   writeFileSync(join(directory, 'notes.json'), '{}');
+  writeFileSync(join(directory, 'not-a-uuid.json'), '{}');
+  writeFileSync(join(directory, '..json'), '{}');
 
-  await expect(pendingMessages(directory)).resolves.toEqual([messageId]);
+  await expect(pendingMessages(directory)).resolves.toEqual([messageId, currentMessageId]);
   await expect(pendingMessages(join(directory, 'missing'))).resolves.toEqual([]);
 });
 

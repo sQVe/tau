@@ -20,6 +20,78 @@ it('adds one line that names the QA procedure and the guide only when given a pr
   expect(withoutGuide.some((guideline) => guideline.includes(qaGuidePath))).toBe(false);
 });
 
+it('asks the user for a failed or open-architect design answer before relaying one', () => {
+  const designGuideline = managerGuidelines('lead', options).find((guideline) =>
+    guideline.includes('For a handover question about design'),
+  );
+
+  expect(designGuideline).toBeDefined();
+
+  const text = designGuideline ?? '';
+  const sentences = text.split(/(?<=\.)\s+/u);
+  const failedClause = sentences.find((sentence) => sentence.includes('`failed`')) ?? '';
+  const relayClause = sentences.find((sentence) => sentence.includes("architect's answer")) ?? '';
+
+  const doesNotOpenClause =
+    sentences.find((sentence) => sentence.includes('does not open the architect')) ?? '';
+
+  const unknownClauses = sentences.filter((sentence) => sentence.includes('`unknown`'));
+
+  expect(failedClause).toContain('`Open the architect:`');
+  expect(failedClause).toContain('`ask_user_question`');
+  expect(failedClause).toContain('`handover_answer`');
+  expect(failedClause).not.toContain('`architect` `open`');
+
+  expect(failedClause.indexOf('`ask_user_question`')).toBeLessThan(
+    failedClause.indexOf('`handover_answer`'),
+  );
+
+  expect(relayClause).not.toBe('');
+  expect(sentences.indexOf(failedClause)).toBeLessThan(sentences.indexOf(relayClause));
+
+  expect(doesNotOpenClause).toContain('`Open the architect`');
+
+  expect(sentences.indexOf(doesNotOpenClause)).toBeGreaterThan(sentences.indexOf(relayClause));
+
+  for (const clause of unknownClauses) {
+    expect(sentences.indexOf(clause)).toBeLessThan(sentences.indexOf(relayClause));
+  }
+
+  const firstUnknown = unknownClauses[0] ?? '';
+  const secondUnknown = unknownClauses[1] ?? '';
+
+  expect(firstUnknown).toMatch(/retr/u);
+  expect(firstUnknown).toContain('`askId`');
+  expect(firstUnknown).not.toMatch(/new|different|another/u);
+  expect(firstUnknown).not.toContain('`ask_user_question`');
+
+  expect(secondUnknown).toContain('`ask_user_question`');
+  expect(secondUnknown).toContain('`handover_answer`');
+  expect(secondUnknown).not.toContain('`askId`');
+});
+
+it('names the approval-only and other-question handover rules with their tools', () => {
+  const guidelines = managerGuidelines('lead', options);
+
+  const approvalGuideline =
+    guidelines.find((guideline) => guideline.includes('approval-only action')) ?? '';
+
+  const otherGuideline =
+    guidelines.find((guideline) => guideline.startsWith('Answer any other handover question')) ??
+    '';
+
+  expect(approvalGuideline).toContain('`ask_user_question`');
+  expect(approvalGuideline).toContain('`handover_answer`');
+  expect(approvalGuideline).toContain("user's answer");
+
+  expect(approvalGuideline.indexOf('`ask_user_question`')).toBeLessThan(
+    approvalGuideline.indexOf('`handover_answer`'),
+  );
+
+  expect(otherGuideline).toContain('directly with `handover_answer`');
+  expect(otherGuideline).not.toContain('`ask_user_question`');
+});
+
 it('keeps every lead-only guideline out of the architect set', () => {
   const leadOnly = leadOnlyGuidelines(options);
   const lead = managerGuidelines('lead', options);

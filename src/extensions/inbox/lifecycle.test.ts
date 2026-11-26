@@ -523,42 +523,71 @@ it.each(['', 'architect', 'worker'])(
   },
 );
 
-it('passes a registered handover-question check in a non-worker session', async () => {
-  vi.stubEnv('TAU_ROLE', '');
+const handoverAcceptCases = [
+  {
+    role: '',
+    family: 'handover-question',
+    payload: {
+      questionId: randomUUID(),
+      text: 'Which option should I use?',
+      askerTerminal: 'worker',
+      askerSession: randomUUID(),
+    },
+  },
+  {
+    role: '',
+    family: 'handover-answer',
+    payload: {
+      questionId: randomUUID(),
+      senderSession: randomUUID(),
+      answer: 'Use option A.',
+    },
+  },
+  {
+    role: 'worker',
+    family: 'handover-answer',
+    payload: {
+      questionId: randomUUID(),
+      senderSession: randomUUID(),
+      answer: 'Use option A.',
+    },
+  },
+] as const;
 
-  const harness = startHarness();
-  const sessionId = randomUUID();
-  const messageId = randomUUID();
+it.each(handoverAcceptCases)(
+  'passes a registered $family check in a session with role "$role"',
+  async ({ role, family, payload }) => {
+    vi.stubEnv('TAU_ROLE', role);
 
-  setAcceptCheck('handover-question', async () => 'The question is closed.');
+    const harness = startHarness();
+    const sessionId = randomUUID();
+    const messageId = randomUUID();
 
-  cleanups.push(() => {
-    forgetAcceptCheck('handover-question');
-  });
+    setAcceptCheck(family, async () => 'The question is closed.');
 
-  await harness.start(sessionId);
-  cleanups.push(() => harness.shutdown(sessionId));
+    cleanups.push(() => {
+      forgetAcceptCheck(family);
+    });
 
-  await expect(
-    exchange(socketOf(sessionId), {
-      ...handoverTo(sessionId, messageId),
-      family: 'handover-question',
-      payload: {
-        questionId: randomUUID(),
-        text: 'Which option should I use?',
-        askerTerminal: 'worker',
-        askerSession: randomUUID(),
-      },
-    }),
-  ).resolves.toEqual({
-    protocol: 'rpc1',
-    kind: 'refused',
-    reason: 'The question is closed.',
-    messageId,
-  });
+    await harness.start(sessionId);
+    cleanups.push(() => harness.shutdown(sessionId));
 
-  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
-});
+    await expect(
+      exchange(socketOf(sessionId), {
+        ...handoverTo(sessionId, messageId),
+        family,
+        payload,
+      }),
+    ).resolves.toEqual({
+      protocol: 'rpc1',
+      kind: 'refused',
+      reason: 'The question is closed.',
+      messageId,
+    });
+
+    expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+  },
+);
 
 it('refuses an architect-ask without a registered check and saves nothing', async () => {
   forgetAcceptCheck('architect-ask');

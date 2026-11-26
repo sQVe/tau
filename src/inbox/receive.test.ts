@@ -12,11 +12,13 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it } from 'vitest';
 
-import { createReceiptStore, createReceiver } from './inbox.js';
+import {
+  queuedReply as queued,
+  savedRecordPath,
+  startReceiveDouble,
+} from '../../tests/receiveHarness.js';
 import type { MessageReply, MessageRequest } from './protocol.js';
 import { inboxMessageType } from './receiptDecision.js';
-import type { ReceiptEntryFact } from './receiptDecision.js';
-import type { ReceiverOptions } from './receive.js';
 
 let root = '';
 
@@ -30,48 +32,7 @@ afterEach(() => {
 });
 
 const recordOf = (sessionId: string, messageId: string) =>
-  join(root, 'records', sessionId, `${messageId}.json`);
-
-const queued = (sessionId: string, messageId: string) => ({
-  protocol: 'rpc1',
-  kind: 'queued',
-  messageId,
-  terminal: 't7',
-  sessionId,
-});
-
-const directReceiver = (
-  sessionId: string,
-  accepts: ReceiverOptions['accepts'],
-  holds = 0,
-  entries: () => readonly ReceiptEntryFact[] = () => [],
-) => {
-  const woken: unknown[] = [];
-  let heldWakes = holds;
-
-  const receiver = createReceiver({
-    directory: join(root, 'records', sessionId),
-    terminal: 't7',
-    sessionId,
-    accepts,
-    receipts: createReceiptStore(sessionId),
-    entries,
-    wake: (message) => {
-      if (heldWakes > 0) {
-        heldWakes -= 1;
-
-        return false;
-      }
-
-      woken.push(message);
-
-      return true;
-    },
-    notify: () => undefined,
-  });
-
-  return { receiver, woken };
-};
+  savedRecordPath(root, sessionId, messageId);
 
 const messageRequest = (sessionId: string, messageId: string): MessageRequest => ({
   protocol: 'rpc1',
@@ -87,7 +48,7 @@ it('refuses a message its family check rejects and saves nothing', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const { receiver } = directReceiver(sessionId, {
+  const { receiver } = startReceiveDouble(root, sessionId, {
     handover: () => Promise.resolve('The question is closed.'),
   });
 
@@ -104,7 +65,7 @@ it('refuses a message its family check rejects and saves nothing', async () => {
 it('refuses a family name that only the object prototype defines and saves nothing', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
-  const { receiver, woken } = directReceiver(sessionId, {});
+  const { receiver, woken } = startReceiveDouble(root, sessionId, {});
 
   const request: MessageRequest = Object.assign(messageRequest(sessionId, messageId), {
     family: 'toString',
@@ -125,7 +86,7 @@ it('refuses to save an answer-request message and saves nothing', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const { receiver, woken } = directReceiver(sessionId, {
+  const { receiver, woken } = startReceiveDouble(root, sessionId, {
     'answer-request': (_request, save) => save(),
   });
 
@@ -156,7 +117,7 @@ it('accepts a handover while an answer-request check is still waiting', async ()
   const handoverId = randomUUID();
   const pending = Promise.withResolvers<MessageReply>();
 
-  const { receiver } = directReceiver(sessionId, {
+  const { receiver } = startReceiveDouble(root, sessionId, {
     'answer-request': () => pending.promise,
     handover: (_request, save) => save(),
   });
@@ -198,7 +159,7 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const { receiver, woken } = directReceiver(sessionId, {
+  const { receiver, woken } = startReceiveDouble(root, sessionId, {
     'architect-ask': (_request, save) => save(),
   });
 
@@ -212,7 +173,7 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
   await receiver.deliver(new AbortController().signal);
 
   expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
-    version: 3,
+    version: 4,
     messageId,
     family: 'handover',
     payload: { text: 'Ask text' },
@@ -224,7 +185,7 @@ it('saves an accepted architect-ask as a handover with its text', async () => {
 it('delivers a pending version 1 record with a sender line behind the escape line', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
-  const { receiver, woken } = directReceiver(sessionId, {});
+  const { receiver, woken } = startReceiveDouble(root, sessionId, {});
   const text = 'Handover sender: terminal lead, session s1.\n\nDo the task';
 
   mkdirSync(join(root, 'records', sessionId), { recursive: true });
@@ -244,7 +205,8 @@ it('queues a byte-identical retry of a handover saved before the sender escape',
   const messageId = randomUUID();
   const text = 'Handover sender: terminal lead, session s1.\n\nDo the task';
 
-  const { receiver, woken } = directReceiver(
+  const { receiver, woken } = startReceiveDouble(
+    root,
     sessionId,
     { handover: (_request, save) => save() },
     0,
@@ -276,7 +238,7 @@ it('saves an architect-ask retry of a saved message once', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const { receiver } = directReceiver(sessionId, {
+  const { receiver } = startReceiveDouble(root, sessionId, {
     'architect-ask': (_request, save) => save(),
   });
 
@@ -295,7 +257,7 @@ it('a commit guard reason writes nothing', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const { receiver } = directReceiver(sessionId, {
+  const { receiver } = startReceiveDouble(root, sessionId, {
     'architect-ask': (_request, save) => save(() => 'The lock changed.'),
   });
 
@@ -320,7 +282,7 @@ it('a commit guard does not refuse an already saved message', async () => {
   const messageId = randomUUID();
   const guards: (() => string)[] = [];
 
-  const { receiver } = directReceiver(sessionId, {
+  const { receiver } = startReceiveDouble(root, sessionId, {
     'architect-ask': (_request, save) => save(guards[0]),
   });
 
@@ -341,7 +303,10 @@ it('a commit guard does not refuse an already saved message', async () => {
 it('saves an accepted answer and wakes with its answer text', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
-  const { receiver, woken } = directReceiver(sessionId, { answer: (_request, save) => save() });
+
+  const { receiver, woken } = startReceiveDouble(root, sessionId, {
+    answer: (_request, save) => save(),
+  });
 
   const questionId = randomUUID();
 
@@ -364,7 +329,7 @@ it('saves an accepted answer and wakes with its answer text', async () => {
       customType: 'tau-inbox-message',
       content: 'Use option A.',
       display: true,
-      details: { version: 3, messageId, sessionId, family: 'answer', questionId },
+      details: { version: 4, messageId, sessionId, family: 'answer', questionId },
     },
   ]);
 });
@@ -373,7 +338,7 @@ it('wakes with a handover receipt that holds no question', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const { receiver, woken } = directReceiver(sessionId, {
+  const { receiver, woken } = startReceiveDouble(root, sessionId, {
     handover: (_request, save) => save(),
   });
 
@@ -388,7 +353,7 @@ it('wakes with a handover receipt that holds no question', async () => {
       customType: 'tau-inbox-message',
       content: 'handover text',
       display: true,
-      details: { version: 3, messageId, sessionId, family: 'handover' },
+      details: { version: 4, messageId, sessionId, family: 'handover' },
     },
   ]);
 });
@@ -399,7 +364,7 @@ it('saves an accepted handover-question and wakes with its fixed text', async ()
   const questionId = randomUUID();
   const askerSession = randomUUID();
 
-  const { receiver, woken } = directReceiver(sessionId, {
+  const { receiver, woken } = startReceiveDouble(root, sessionId, {
     'handover-question': (_request, save) => save(),
   });
 
@@ -418,7 +383,7 @@ it('saves an accepted handover-question and wakes with its fixed text', async ()
   await receiver.deliver(new AbortController().signal);
 
   expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toEqual({
-    version: 3,
+    version: 4,
     messageId,
     family: 'handover-question',
     payload: request.payload,
@@ -429,7 +394,7 @@ it('saves an accepted handover-question and wakes with its fixed text', async ()
       customType: 'tau-inbox-message',
       content: `Handover question ${questionId} from terminal worker, session ${askerSession}:\n\nWhich option should I use?`,
       display: true,
-      details: { version: 3, messageId, sessionId, family: 'handover-question', questionId },
+      details: { version: 4, messageId, sessionId, family: 'handover-question', questionId },
     },
   ]);
 });
@@ -441,7 +406,7 @@ it('does not deliver again a version 2 handover or a version 3 handover-question
   const questionId = randomUUID();
   const askerSession = randomUUID();
 
-  const { receiver, woken } = directReceiver(sessionId, {}, 0, () => [
+  const { receiver, woken } = startReceiveDouble(root, sessionId, {}, 0, () => [
     {
       type: 'custom_message',
       customType: inboxMessageType,
@@ -497,7 +462,11 @@ it('does not deliver again a version 2 handover or a version 3 handover-question
 it('queues the first of two overlapping saves of one message ID and refuses the other', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
-  const { receiver } = directReceiver(sessionId, { handover: (_request, save) => save() });
+
+  const { receiver } = startReceiveDouble(root, sessionId, {
+    handover: (_request, save) => save(),
+  });
+
   const first = messageRequest(sessionId, messageId);
   const second: MessageRequest = { ...first, family: 'handover', payload: { text: 'other text' } };
 
@@ -522,7 +491,8 @@ it('delivers a held message in a later drain', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const { receiver, woken } = directReceiver(
+  const { receiver, woken } = startReceiveDouble(
+    root,
     sessionId,
     { handover: (_request, save) => save() },
     1,

@@ -8,22 +8,21 @@ import { errorMessage, isMissingFile } from '../errors.js';
 import { parseVersionedRecord, writeFencedRecord, writeRecord } from '../record.js';
 import type { RecordFence } from '../record.js';
 import { isRecord } from '../schema.js';
-import {
-  answerBody,
-  handoverBody,
-  isUuid,
-  requestByteLimit,
-  uuidSchema,
-  withSavableBody,
-} from './protocol.js';
+import { isUuid, requestByteLimit, uuidSchema, withSavableBody } from './protocol.js';
 
 export type InboxRecord = Static<typeof recordSchema>;
+
+type Version3InboxRecord = Static<typeof version3RecordSchema>;
 
 type Version2InboxRecord = Static<typeof version2RecordSchema>;
 
 type PreviousInboxRecord = Static<typeof previousRecordSchema>;
 
-type SavedInboxRecord = InboxRecord | Version2InboxRecord | PreviousInboxRecord;
+type SavedInboxRecord =
+  | InboxRecord
+  | Version3InboxRecord
+  | Version2InboxRecord
+  | PreviousInboxRecord;
 
 export type InboxRead =
   | { kind: 'record'; record: SavedInboxRecord }
@@ -38,15 +37,32 @@ export interface SaveOptions {
   fence?: RecordFence | undefined;
 }
 
-export const inboxRecordVersion = 3;
+export const inboxRecordVersion = 4;
+
+const version3RecordVersion = 3;
 
 const strict = { additionalProperties: false } as const;
+
+// Older saved versions keep the identifier rules they were written with. A later change to the
+// live wire schema must not change which saved records still read.
+const frozenUuidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+
+const frozenSessionIdPattern = '^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$';
+const frozenTerminalPattern = '^(?!.*\\s)\\S+$';
+
+const frozenUuidSchema = Type.String({ pattern: frozenUuidPattern });
+
+const frozenUuidExpression = new RegExp(frozenUuidPattern, 'u');
+
+const frozenSessionIdSchema = Type.String({ pattern: frozenSessionIdPattern });
+
+const frozenTerminalSchema = Type.String({ pattern: frozenTerminalPattern });
 
 const previousRecordSchema = Type.Union([
   Type.Object(
     {
       version: Type.Literal(1),
-      messageId: uuidSchema,
+      messageId: frozenUuidSchema,
       family: Type.Literal('handover'),
       payload: Type.Object({ text: Type.String({ minLength: 1 }) }, strict),
     },
@@ -55,12 +71,12 @@ const previousRecordSchema = Type.Union([
   Type.Object(
     {
       version: Type.Literal(1),
-      messageId: uuidSchema,
+      messageId: frozenUuidSchema,
       family: Type.Literal('answer'),
       payload: Type.Object(
         {
-          assignmentId: uuidSchema,
-          questionId: uuidSchema,
+          assignmentId: frozenUuidSchema,
+          questionId: frozenUuidSchema,
           parentSession: Type.String({ minLength: 1 }),
           answer: Type.String({ minLength: 1 }),
         },
@@ -71,9 +87,86 @@ const previousRecordSchema = Type.Union([
   ),
 ]);
 
+// A saved version keeps the body shape it was written with, so a change to the live wire body
+// must not change what an older version reads.
+const frozenHandoverSenderSchema = Type.Object(
+  {
+    terminal: frozenTerminalSchema,
+    sessionId: frozenSessionIdSchema,
+  },
+  strict,
+);
+
+const frozenHandoverBody = {
+  family: Type.Literal('handover'),
+  payload: Type.Object(
+    { text: Type.String({ minLength: 1 }), sender: Type.Optional(frozenHandoverSenderSchema) },
+    strict,
+  ),
+};
+
+const frozenAnswerBody = {
+  family: Type.Literal('answer'),
+  payload: Type.Object(
+    {
+      assignmentId: frozenUuidSchema,
+      questionId: frozenUuidSchema,
+      parentSession: Type.String({ minLength: 1 }),
+      answer: Type.String({ minLength: 1 }),
+    },
+    strict,
+  ),
+};
+
+const frozenHandoverQuestionBody = {
+  family: Type.Literal('handover-question'),
+  payload: Type.Object(
+    {
+      questionId: frozenUuidSchema,
+      text: Type.String({ minLength: 1, maxLength: 4000 }),
+      askerTerminal: frozenTerminalSchema,
+      askerSession: frozenSessionIdSchema,
+    },
+    strict,
+  ),
+};
+
 const version2RecordSchema = Type.Union([
-  Type.Object({ version: Type.Literal(2), messageId: uuidSchema, ...handoverBody }, strict),
-  Type.Object({ version: Type.Literal(2), messageId: uuidSchema, ...answerBody }, strict),
+  Type.Object(
+    { version: Type.Literal(2), messageId: frozenUuidSchema, ...frozenHandoverBody },
+    strict,
+  ),
+  Type.Object(
+    { version: Type.Literal(2), messageId: frozenUuidSchema, ...frozenAnswerBody },
+    strict,
+  ),
+]);
+
+const version3RecordSchema = Type.Union([
+  Type.Object(
+    {
+      version: Type.Literal(version3RecordVersion),
+      messageId: frozenUuidSchema,
+      ...frozenHandoverBody,
+    },
+    strict,
+  ),
+  Type.Object(
+    {
+      version: Type.Literal(version3RecordVersion),
+      messageId: frozenUuidSchema,
+      ...frozenAnswerBody,
+    },
+    strict,
+  ),
+  Type.Object(
+    {
+      version: Type.Literal(version3RecordVersion),
+      messageId: frozenUuidSchema,
+      ...frozenHandoverQuestionBody,
+    },
+    strict,
+  ),
 ]);
 
 const recordSchema = withSavableBody({
@@ -89,6 +182,8 @@ const schemaFor = (value: unknown) => {
       return previousRecordSchema;
     case 2:
       return version2RecordSchema;
+    case version3RecordVersion:
+      return version3RecordSchema;
     default:
       return recordSchema;
   }
@@ -161,6 +256,11 @@ export const saveMessage = async (
   return reason === undefined ? 'saved' : { refused: reason };
 };
 
+// Discovery runs before the versioned reader picks a schema, so it accepts both the live rule and
+// the frozen one.
+const discoverableMessageId = (messageId: string): boolean =>
+  isUuid(messageId) || frozenUuidExpression.test(messageId);
+
 export const pendingMessages = async (directory: string): Promise<string[]> => {
   try {
     const names = await readdir(directory);
@@ -168,7 +268,7 @@ export const pendingMessages = async (directory: string): Promise<string[]> => {
     return names
       .filter((name) => name.endsWith('.json'))
       .map((name) => name.slice(0, -'.json'.length))
-      .filter((messageId) => isUuid(messageId))
+      .filter(discoverableMessageId)
       .toSorted();
   } catch (error) {
     if (isMissingFile(error)) {

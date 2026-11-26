@@ -8,6 +8,7 @@ export { socketDirectoryFor } from './endpoint.js';
 
 export {
   encodeMessageFrame,
+  handoverAnswerCharacterLimit,
   inboxLabelKey,
   isUuid,
   requestByteLimit,

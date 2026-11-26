@@ -46,6 +46,32 @@ it.each([
     expected: ['first task'],
   },
   {
+    name: 'ignores a first user message whose content is not a block list',
+    entries: [user({ type: 'text', text: 'first task' })],
+    expected: [],
+  },
+  {
+    name: 'reads only text blocks whose text is a string',
+    entries: [
+      user([
+        { type: 'image', data: 'AAAA', mimeType: 'image/png', text: 'not shown' },
+        { type: 'text', text: 42 },
+        { type: 'text', text: 'first task' },
+      ]),
+    ],
+    expected: ['first task'],
+  },
+  {
+    name: 'joins the text blocks of the first user message',
+    entries: [
+      user([
+        { type: 'text', text: 'first task' },
+        { type: 'text', text: 'second line' },
+      ]),
+    ],
+    expected: ['first task\nsecond line'],
+  },
+  {
     name: 'keeps handover receipts in branch order',
     entries: [
       user('first task'),

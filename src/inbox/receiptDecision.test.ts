@@ -1,22 +1,27 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { assert, property, string, uuid } from 'fast-check';
 import { expect, it } from 'vitest';
 
-import { parseSenderLine } from '../handoverSender.js';
+import { resolvePropertySeed } from '../../tests/propertySeedHarness.js';
+import { isSenderTerminal, parseSenderLine } from '../handoverSender.js';
 import type { SavableMessageBody } from './protocol.js';
+import { isSessionId } from './protocol.js';
 import {
   answeredQuestionId,
   decideCandidate,
   inboxMessageType,
   matchesReceipt,
   messageText,
+  parseHandoverQuestionHeading,
   piQueueEmptyAtSettle,
   readInboxReceipt,
 } from './receiptDecision.js';
 import type { ReceiptedMessage, ReceiptEntryFact } from './receiptDecision.js';
 
 const validQuestionId = '11111111-1111-4111-8111-111111111111';
+const otherValidQuestionId = '22222222-2222-4222-8222-222222222222';
 
 const readTable = [
   {
@@ -269,11 +274,130 @@ const readTable = [
     receipt: undefined,
   },
   {
-    name: 'a version 4 receipt',
+    name: 'a version 4 handover receipt',
     entry: {
       type: 'custom_message',
       customType: inboxMessageType,
       details: { version: 4, messageId: 'm1', sessionId: 's1', family: 'handover' },
+    },
+    receipt: { version: 4, messageId: 'm1', sessionId: 's1', family: 'handover' },
+  },
+  {
+    name: 'a version 4 answer receipt with its question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 4, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 'q1' },
+    },
+    receipt: { version: 4, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 'q1' },
+  },
+  {
+    name: 'a version 4 handover-question receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: validQuestionId,
+      },
+    },
+    receipt: {
+      version: 4,
+      messageId: 'm1',
+      sessionId: 's1',
+      family: 'handover-question',
+      questionId: validQuestionId,
+    },
+  },
+  {
+    name: 'a handover-question receipt whose question is an array',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-question',
+        questionId: [validQuestionId],
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 4 handover-answer receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-answer',
+        questionId: validQuestionId,
+      },
+    },
+    receipt: {
+      version: 4,
+      messageId: 'm1',
+      sessionId: 's1',
+      family: 'handover-answer',
+      questionId: validQuestionId,
+    },
+  },
+  {
+    name: 'a version 3 handover-answer receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 3,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-answer',
+        questionId: validQuestionId,
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 4 handover-answer receipt without a question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-answer',
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 4 handover-answer receipt with a malformed question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 4,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover-answer',
+        questionId: 'q1',
+      },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 5 receipt',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 5, messageId: 'm1', sessionId: 's1', family: 'handover' },
     },
     receipt: undefined,
   },
@@ -327,6 +451,14 @@ const answeredTable = [
     message: {
       customType: inboxMessageType,
       details: { ...answerDetails, version: 4, questionId: 'q1' },
+    },
+    questionId: 'q1',
+  },
+  {
+    name: 'a version 5 answer message',
+    message: {
+      customType: inboxMessageType,
+      details: { ...answerDetails, version: 5, questionId: 'q1' },
     },
     questionId: undefined,
   },
@@ -394,6 +526,16 @@ it.each([
       sessionId: 'session-1',
       family: 'handover-question',
       questionId: fixtureQuestionId,
+    },
+  },
+  {
+    fixture: 'v4.json',
+    receipt: {
+      version: 4,
+      messageId: fixtureMessageId,
+      sessionId: 'session-1',
+      family: 'handover-answer',
+      questionId: fixtureMessageId,
     },
   },
   { fixture: 'newer.json', receipt: undefined },
@@ -471,24 +613,153 @@ it('escapes sender-free text so it parses as no sender', () => {
   expect(parseSenderLine(text)).toBeUndefined();
 });
 
+it('shows the handover answer with its question', () => {
+  expect(
+    messageText({
+      family: 'handover-answer',
+      payload: { questionId: validQuestionId, senderSession: 's1', answer: 'Use option A.' },
+    }),
+  ).toBe(`Handover answer to question ${validQuestionId}:\n\nUse option A.`);
+});
+
+it('parses the heading that messageText writes for a handover question', () => {
+  const payload = {
+    questionId: validQuestionId,
+    text: 'Which option should I use?',
+    askerTerminal: 'worker',
+    askerSession: 's1',
+  };
+
+  expect(
+    parseHandoverQuestionHeading(messageText({ family: 'handover-question', payload })),
+  ).toEqual({
+    questionId: validQuestionId,
+    askerTerminal: 'worker',
+    askerSession: 's1',
+  });
+});
+
+// The production validators decide which generated values are valid. Broad candidates plus
+// filtering keep the generator from re-declaring the terminal and session rules.
+const validTerminal = string({ minLength: 1, maxLength: 64 }).filter(isSenderTerminal);
+
+const validSession = string({ minLength: 1, maxLength: 64 }).filter(isSessionId);
+
+it('parses every generated heading messageText writes for a handover question', () => {
+  const seed = resolvePropertySeed();
+
+  assert(
+    property(
+      uuid(),
+      validTerminal,
+      validSession,
+      string({ minLength: 1, maxLength: 4000 }),
+      (questionId, askerTerminal, askerSession, text) => {
+        const payload = { questionId, text, askerTerminal, askerSession };
+        const content = messageText({ family: 'handover-question', payload });
+
+        expect(parseHandoverQuestionHeading(content)).toEqual({
+          questionId,
+          askerTerminal,
+          askerSession,
+        });
+      },
+    ),
+    { seed, numRuns: 100 },
+  );
+});
+
+it.each(['session.one', 'session-two', 'session_three', 'a.b-c_d'])(
+  'round-trips a heading with session ID %s',
+  (askerSession) => {
+    expect(isSessionId(askerSession)).toBe(true);
+
+    const payload = {
+      questionId: validQuestionId,
+      text: 'Which option should I use?',
+      askerTerminal: 'worker',
+      askerSession,
+    };
+
+    expect(
+      parseHandoverQuestionHeading(messageText({ family: 'handover-question', payload })),
+    ).toEqual({
+      questionId: validQuestionId,
+      askerTerminal: 'worker',
+      askerSession,
+    });
+  },
+);
+
+it('keeps a heading inside the question text from changing the parsed question', () => {
+  const otherQuestionId = '22222222-2222-4222-8222-222222222222';
+  const text = `Handover question ${otherQuestionId} from terminal other, session other-session:\n\nWhat then?`;
+
+  const payload = {
+    questionId: validQuestionId,
+    text,
+    askerTerminal: 'worker',
+    askerSession: 's1',
+  };
+
+  expect(
+    parseHandoverQuestionHeading(messageText({ family: 'handover-question', payload })),
+  ).toEqual({
+    questionId: validQuestionId,
+    askerTerminal: 'worker',
+    askerSession: 's1',
+  });
+});
+
+it.each([
+  {
+    name: 'a suffix after the colon',
+    content: `Handover question ${validQuestionId} from terminal worker, session s1: extra\n\nBody.`,
+  },
+  {
+    name: 'a non-UUID question ID',
+    content: 'Handover question not-a-uuid from terminal worker, session s1:\n\nBody.',
+  },
+  {
+    name: 'a session ID the grammar rejects',
+    content: `Handover question ${validQuestionId} from terminal worker, session worker/old:\n\nBody.`,
+  },
+])('rejects a heading with $name', ({ content }) => {
+  expect(parseHandoverQuestionHeading(content)).toBeUndefined();
+});
+
 const answerReceipt = { ...handoverReceipt, family: 'answer', questionId: 'q1' } as const;
 
 const questionReceipt = {
   ...handoverReceipt,
   version: 3,
   family: 'handover-question',
-  questionId: 'q1',
+  questionId: validQuestionId,
 } as const;
 
 const questionPayload = {
-  questionId: 'q1',
+  questionId: validQuestionId,
   text: 'Which option should I use?',
   askerTerminal: 'worker',
   askerSession: 's1',
 };
 
-const shownQuestionText =
-  'Handover question q1 from terminal worker, session s1:\n\nWhich option should I use?';
+const shownQuestionText = `Handover question ${validQuestionId} from terminal worker, session s1:\n\nWhich option should I use?`;
+
+const answerToQuestionReceipt = {
+  ...handoverReceipt,
+  version: 4,
+  family: 'handover-answer',
+  questionId: validQuestionId,
+} as const;
+
+const handoverAnswerPayload = {
+  questionId: validQuestionId,
+  senderSession: 's1',
+  answer: 'Use option A.',
+};
+
+const shownHandoverAnswerText = `Handover answer to question ${validQuestionId}:\n\nUse option A.`;
 
 const answerPayload = {
   assignmentId: 'a1',
@@ -597,8 +868,35 @@ const retryTable = [
   },
   {
     name: 'a handover-question retry with another receipted question',
-    receipted: { receipt: { ...questionReceipt, questionId: 'q2' }, content: shownQuestionText },
+    receipted: {
+      receipt: { ...questionReceipt, questionId: otherValidQuestionId },
+      content: shownQuestionText,
+    },
     body: { family: 'handover-question', payload: questionPayload },
+    matches: false,
+  },
+  {
+    name: 'a handover-answer retry with the shown text',
+    receipted: { receipt: answerToQuestionReceipt, content: shownHandoverAnswerText },
+    body: { family: 'handover-answer', payload: handoverAnswerPayload },
+    matches: true,
+  },
+  {
+    name: 'a handover-answer retry for another question',
+    receipted: {
+      receipt: { ...answerToQuestionReceipt, questionId: otherValidQuestionId },
+      content: shownHandoverAnswerText,
+    },
+    body: { family: 'handover-answer', payload: handoverAnswerPayload },
+    matches: false,
+  },
+  {
+    name: 'a handover-answer retry with another answer to the same question',
+    receipted: { receipt: answerToQuestionReceipt, content: shownHandoverAnswerText },
+    body: {
+      family: 'handover-answer',
+      payload: { ...handoverAnswerPayload, answer: 'Use option B.' },
+    },
     matches: false,
   },
   {
