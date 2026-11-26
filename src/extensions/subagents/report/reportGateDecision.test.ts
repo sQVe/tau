@@ -194,6 +194,44 @@ it.each([
     },
   },
   {
+    name: 'a declared record ending a sentence with the log path accepts',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true)],
+    configuredArgv: argv,
+    citation: { summary: `Done. The log is ${logPath}.`, evidence: ['a reference'] },
+    expected: {
+      status: 'accept',
+      fullCheck: { owner: declaredFullCheck.owner, logPath, passed: true },
+    },
+  },
+  {
+    name: 'a declared record cited after an earlier copy accepts',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true)],
+    configuredArgv: argv,
+    citation: { summary: `Done. ${logPath}.bak and ${logPath}`, evidence: ['a reference'] },
+    expected: {
+      status: 'accept',
+      fullCheck: { owner: declaredFullCheck.owner, logPath, passed: true },
+    },
+  },
+  {
+    name: 'a declared record embedded after a path character refuses',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true)],
+    configuredArgv: argv,
+    citation: { summary: 'Done.', evidence: [`backup${logPath}`] },
+    expected: { status: 'refuse', message: noCitationMessage },
+  },
+  {
+    name: 'a declared record followed by a path character refuses',
+    declaration: declaredFullCheck,
+    savedRecords: [savedLog(true)],
+    configuredArgv: argv,
+    citation: { summary: 'Done.', evidence: [`${logPath}x`] },
+    expected: { status: 'refuse', message: noCitationMessage },
+  },
+  {
     name: 'undeclared skips a log-less record',
     declaration: null,
     savedRecords: [

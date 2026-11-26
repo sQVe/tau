@@ -66,10 +66,24 @@ const selectNewestLogRecord = (
     (log): log is ValidSavedLog => isValidLog(log) && sameTree(facts.tree, log),
   );
 
-const pathCharacter = /[A-Za-z0-9._/-]/;
+const pathCharacterPattern = /[A-Za-z0-9._/-]/;
 
 const continuesPath = (character: string | undefined): boolean =>
-  character !== undefined && pathCharacter.test(character);
+  character !== undefined && pathCharacterPattern.test(character);
+
+// A cited path may end a sentence, so a period right after it ends the path when no path character
+// follows. A suffix such as `.bak` continues the path instead.
+const endsPath = (text: string, end: number): boolean => {
+  const next = text[end];
+
+  if (!continuesPath(next)) {
+    return true;
+  }
+
+  const sentencePeriod = next === '.' && !continuesPath(text[end + 1]);
+
+  return sentencePeriod;
+};
 
 // A citation is the log path itself, not a path that merely contains it, so a copy such as
 // `<log>.bak` does not stand for the log.
@@ -78,7 +92,7 @@ const citesPath = (text: string, logPath: string): boolean => {
 
   while (start !== -1) {
     const end = start + logPath.length;
-    const standsAlone = !continuesPath(text[start - 1]) && !continuesPath(text[end]);
+    const standsAlone = !continuesPath(text[start - 1]) && endsPath(text, end);
 
     if (standsAlone) {
       return true;
