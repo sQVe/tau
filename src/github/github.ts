@@ -70,7 +70,7 @@ export const requirePullRequestNumber = (action: string, pr: number | undefined)
   }
 
   if (pr < 1) {
-    throw new Error(`pr must be 1 or more, not ${pr}.`);
+    throw new RangeError(`pr must be 1 or more, not ${pr}.`);
   }
 
   return pr;
