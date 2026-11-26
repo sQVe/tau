@@ -569,7 +569,7 @@ it('keeps registered pure modules free of reads and effects', () => {
 const readImportSource = (): string => "import { readFile } from 'node:fs/promises';\n";
 
 const readImportAndDateSource = (): string =>
-  "import { readFile } from 'node:fs/promises';\nconst now = Date();\n";
+  `${readImportSource()}const first = Date();\nconst second = Date();\n`;
 
 const functionPropertySource = (): string => 'const spec = {};\nspec.run = () => 1;\n';
 
@@ -615,10 +615,13 @@ it('keeps a second finding when an exception matches the first', () => {
   expect(
     purityProblems(
       ['src/pure/decide.ts'],
-      { 'src/pure/decide.ts': 'runtime import of node:fs/promises' },
+      { 'src/pure/decide.ts': 'Date()' },
       readImportAndDateSource,
     ),
-  ).toEqual(['src/pure/decide.ts:2: Date()']);
+  ).toEqual([
+    'src/pure/decide.ts:1: runtime import of node:fs/promises',
+    'src/pure/decide.ts:3: Date()',
+  ]);
 });
 
 it('does not let an empty or partial exception reason suppress a finding', () => {
