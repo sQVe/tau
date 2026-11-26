@@ -461,6 +461,7 @@ const judgesHiddenFailure = (scope: CompoundScope, index: number, depth = 0): bo
   }
 
   // A foreground command that runs a script still detaches the script's own backgrounded members.
+  // Exceeding the budget fails closed, because a deeper script may detach a hidden failure.
   if (depth > maximumDepth) {
     return true;
   }

@@ -1,10 +1,14 @@
 import { expect, it } from 'vitest';
 
 import { loggedClose, nohupClose } from '../../../tests/bashGuardCommands.js';
+import { quoteShellArgument } from '../../shell.js';
 import { decideDetachedOutput } from './detachedOutputDecision.js';
 
 const blocks = (command: string): boolean =>
   decideDetachedOutput({ toolName: 'bash', command })?.block === true;
+
+const nestedScript = (depth: number): string =>
+  depth === 0 ? 'true' : `bash -c ${quoteShellArgument(nestedScript(depth - 1))}`;
 
 it('blocks the past nohup close whose stderr went to /dev/null', () => {
   const decision = decideDetachedOutput({ toolName: 'bash', command: nohupClose });
@@ -568,6 +572,21 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a foreground script that detaches a command that logs',
     command: "bash -c 'cmd > /tmp/x.log 2>&1 &'",
+    blocked: false,
+  },
+  {
+    name: 'a foreground script chain at the depth budget',
+    command: nestedScript(5),
+    blocked: false,
+  },
+  {
+    name: 'a foreground script chain deeper than the depth budget',
+    command: nestedScript(6),
+    blocked: true,
+  },
+  {
+    name: 'a nested script that does not parse',
+    command: "bash -c 'cmd \"unterminated'",
     blocked: false,
   },
 ])('decides $name', ({ command, blocked }) => {
