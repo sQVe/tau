@@ -4,6 +4,7 @@ import {
   createSweepFixture,
   MergedListAbortError,
   MissingMergedListSignalError,
+  MissingSessionCwdError,
   rewriteFixtureSession,
 } from './sweepHarness.js';
 
@@ -116,6 +117,6 @@ it('refuses a fixture whose session record has no cwd', () => {
   const content = ['{"type":"session","id":"01a19d7b"}', ''].join('\n');
 
   expect(() => rewriteFixtureSession(content, '/tmp/tau-repository-abc', fixtureHome)).toThrow(
-    'A fixture session has no session record with a cwd on one line.',
+    MissingSessionCwdError,
   );
 });

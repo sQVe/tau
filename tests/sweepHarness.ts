@@ -55,6 +55,13 @@ export class MergedListAbortError extends Error {
   }
 }
 
+export class MissingSessionCwdError extends Error {
+  constructor() {
+    super('A fixture session has no session record with a cwd on one line.');
+    this.name = 'MissingSessionCwdError';
+  }
+}
+
 const fixturePath = (name: string) =>
   join(import.meta.dirname, '..', 'src', 'improvement', 'fixtures', name);
 
@@ -70,7 +77,7 @@ export const rewriteFixtureSession = (
   const rewritten = content.replaceAll('/home/', `${fixtureHome}/`);
 
   if (!sessionRecord.test(rewritten)) {
-    throw new Error('A fixture session has no session record with a cwd on one line.');
+    throw new MissingSessionCwdError();
   }
 
   const cwd = JSON.stringify(repository);

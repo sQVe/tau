@@ -323,7 +323,7 @@ it('a start whose Git cannot run runs no command', async () => {
   });
 
   await expect(startPiSession({ exec: fake.exec, cwd: root }, startRequest(root))).rejects.toThrow(
-    'git rev-parse --git-dir failed:',
+    /^git rev-parse --git-dir failed:/u,
   );
 
   expect(fake.calls).toEqual([]);
