@@ -1,3 +1,5 @@
+import { attachmentSelections } from './linearAttachmentSelection.js';
+import type { AttachmentFields } from './linearAttachmentSelection.js';
 import type { Operation, QueryOperation } from './linearRequestFake.js';
 
 interface FakeComment {
@@ -31,17 +33,30 @@ interface CommentFake {
   limitComments: (count: number) => void;
 }
 
-// Linear returns only the fields a query selects, so the fake follows the attachment selection.
-const selectsMetadata = (query: string) => /nodes\s*\{[^}]*\bmetadata\b/u.test(query);
+// Linear returns only the fields a query selects, so the fake follows the attachment selection. A
+// selection it cannot read fails loudly instead of reporting the wrong fields.
+const attachmentFields = (query: string): AttachmentFields => {
+  if (!/\battachments\b/u.test(query)) {
+    return { metadata: false };
+  }
 
-const attachmentNodes = (issue: Ticket, query: string) => {
+  const selection = attachmentSelections(query)[0];
+
+  if (selection === undefined) {
+    throw new Error(`The fake cannot read the attachment selection from ${query}.`);
+  }
+
+  return selection;
+};
+
+const attachmentNodes = (issue: Ticket, fields: AttachmentFields) => {
   const nodes = [
     ...issue.pullRequests.map((url) => ({ url, metadata: { linkKind: 'closes' } })),
     ...issue.mentions.map((url) => ({ url, metadata: { linkKind: 'links' } })),
     ...issue.plainLinks.map((url) => ({ url, metadata: null })),
   ];
 
-  return selectsMetadata(query) ? nodes : nodes.map(({ url }) => ({ url }));
+  return fields.metadata ? nodes : nodes.map(({ url }) => ({ url }));
 };
 
 export const createCommentFake = (
@@ -123,7 +138,10 @@ export const createCommentFake = (
         creator: issue.creatorId === null ? null : { id: issue.creatorId },
         state: issue.state,
         attachments: {
-          nodes: attachmentNodes(issue, operation.query).slice(0, attachmentLimit()),
+          nodes: attachmentNodes(issue, attachmentFields(operation.query)).slice(
+            0,
+            attachmentLimit(),
+          ),
           pageInfo: {
             hasNextPage:
               issue.pullRequests.length + issue.mentions.length + issue.plainLinks.length >

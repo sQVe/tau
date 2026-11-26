@@ -1,4 +1,6 @@
 import type { Exec } from '../src/command.js';
+import { attachmentSelections } from './linearAttachmentSelection.js';
+import type { AttachmentFields } from './linearAttachmentSelection.js';
 import { createCommentFake } from './linearCommentFake.js';
 import { decode } from './linearRequestFake.js';
 import type {
@@ -43,11 +45,6 @@ interface Fence {
   length: number;
 }
 
-// GraphQL returns only the fields a query selects, so the fake follows each attachment selection.
-interface AttachmentFields {
-  metadata: boolean;
-}
-
 interface FakeProject {
   id: string;
   name: string;
@@ -82,11 +79,6 @@ const teams = new Map([
 const labels = [{ id: 'label-bug', name: 'Bug', teamId: 'team-me' }];
 
 const issueId = (identifier: string) => `id-${identifier}`;
-
-const attachmentSelections = (query: string): AttachmentFields[] =>
-  [
-    ...query.matchAll(/attachments\([^)]*\)\s*\{\s*pageInfo\s*\{[^}]*\}\s*nodes\s*\{([^}]*)\}/gu),
-  ].map((match) => ({ metadata: match[1]!.includes('metadata') }));
 
 // A query the fake does not model fails loudly instead of reporting the wrong fields. A query that
 // selects no attachments keeps the node's attachments without the field.

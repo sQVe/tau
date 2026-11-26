@@ -238,7 +238,7 @@ export const updateComment = async (
 };
 
 const cancelQuery =
-  'query($id: String!) { issue(id: $id) { identifier title state { type name } attachments(first: 100) { nodes { url metadata } pageInfo { hasNextPage } } } }';
+  'query($id: String!) { issue(id: $id) { identifier title state { type name } attachments(first: 100) { pageInfo { hasNextPage } nodes { url metadata } } } }';
 
 const attachmentSchema = Type.Object({
   url: Type.String(),
