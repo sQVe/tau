@@ -76,9 +76,10 @@ it('reports a newer record as unreadable and not as malformed', async () => {
 
   expect(result).toMatchObject({ status: 'unreadable' });
 
-  expect(errorMessage(thrownBy(() => requireRecord(result)))).toContain(
-    'has a newer format than this Tau reads',
-  );
+  const message = errorMessage(thrownBy(() => requireRecord(result)));
+
+  expect(message).toContain('has a newer format than this Tau reads');
+  expect(message).not.toContain('Malformed');
 });
 
 it('refuses to read through a live symlink', async () => {
