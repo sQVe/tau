@@ -31,6 +31,19 @@ interface CommentFake {
   limitComments: (count: number) => void;
 }
 
+// Linear returns only the fields a query selects, so the fake follows the attachment selection.
+const selectsMetadata = (query: string) => /nodes\s*\{[^}]*\bmetadata\b/u.test(query);
+
+const attachmentNodes = (issue: Ticket, query: string) => {
+  const nodes = [
+    ...issue.pullRequests.map((url) => ({ url, metadata: { linkKind: 'closes' } })),
+    ...issue.mentions.map((url) => ({ url, metadata: { linkKind: 'links' } })),
+    ...issue.plainLinks.map((url) => ({ url, metadata: null })),
+  ];
+
+  return selectsMetadata(query) ? nodes : nodes.map(({ url }) => ({ url }));
+};
+
 export const createCommentFake = (
   issues: Map<string, Ticket>,
   attachmentLimit: () => number,
@@ -110,11 +123,7 @@ export const createCommentFake = (
         creator: issue.creatorId === null ? null : { id: issue.creatorId },
         state: issue.state,
         attachments: {
-          nodes: [
-            ...issue.pullRequests.map((url) => ({ url, metadata: { linkKind: 'closes' } })),
-            ...issue.mentions.map((url) => ({ url, metadata: { linkKind: 'links' } })),
-            ...issue.plainLinks.map((url) => ({ url, metadata: null })),
-          ].slice(0, attachmentLimit()),
+          nodes: attachmentNodes(issue, operation.query).slice(0, attachmentLimit()),
           pageInfo: {
             hasNextPage:
               issue.pullRequests.length + issue.mentions.length + issue.plainLinks.length >
