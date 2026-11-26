@@ -1,3 +1,5 @@
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { TSchema } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { expect, it } from 'vitest';
@@ -13,6 +15,7 @@ import {
   schemaMapKeywords,
   schemaValueKeywords,
   strictToolParameters,
+  strictToolRegistration,
   stringEnum,
   unreportedKeys,
 } from './schema.js';
@@ -102,6 +105,14 @@ it.for<[unknown, boolean]>([
   expect(Value.Check(stringEnum(['low', 'high']), value)).toBe(valid);
 });
 
+const isClosed = (value: unknown): boolean =>
+  isRecord(value) && value['additionalProperties'] === false;
+
+const childSchema = (): Record<string, unknown> => ({
+  type: 'object',
+  properties: { value: { type: 'string' } },
+});
+
 it('closes a nested object schema', () => {
   const schema = Type.Object({
     nested: Type.Object({ value: Type.String() }),
@@ -138,6 +149,179 @@ it('leaves an existing false additionalProperties alone', () => {
   expect(strictToolParameters(schema)).toMatchObject({ additionalProperties: false });
 });
 
+it('closes an object schema whose type list includes object', () => {
+  const schema = { type: ['object', 'null'], properties: { value: { type: 'string' } } };
+
+  expect(strictToolParameters(Type.Unsafe<unknown>(schema))).toMatchObject({
+    additionalProperties: false,
+  });
+});
+
+it('closes an object schema that declares properties without a type', () => {
+  const schema = { properties: { value: { type: 'string' } } };
+
+  expect(strictToolParameters(Type.Unsafe<unknown>(schema))).toMatchObject({
+    additionalProperties: false,
+  });
+});
+
+it('closes an object schema under then, else, and contains', () => {
+  const schema: Record<string, unknown> = {
+    type: 'object',
+    // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword, not a promise method.
+    then: childSchema(),
+    else: childSchema(),
+    contains: childSchema(),
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+  const thenChild = isRecord(strict) ? strict['then'] : undefined;
+  const elseChild = isRecord(strict) ? strict['else'] : undefined;
+  const containsChild = isRecord(strict) ? strict['contains'] : undefined;
+
+  expect(thenChild).toMatchObject({ additionalProperties: false });
+  expect(elseChild).toMatchObject({ additionalProperties: false });
+  expect(containsChild).toMatchObject({ additionalProperties: false });
+});
+
+it('leaves an object schema under not and if open', () => {
+  const schema = { type: 'object', not: childSchema(), if: childSchema() };
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+  const notChild = isRecord(strict) ? strict['not'] : undefined;
+  const ifChild = isRecord(strict) ? strict['if'] : undefined;
+
+  expect(strict).toMatchObject({ additionalProperties: false });
+  expect(notChild).toEqual(childSchema());
+  expect(ifChild).toEqual(childSchema());
+});
+
+it('leaves a nested object under not open', () => {
+  const schema = {
+    type: 'object',
+    not: { type: 'object', properties: { nested: { type: 'object', properties: {} } } },
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+  const notChild = isRecord(strict) ? strict['not'] : undefined;
+
+  expect(notChild).toEqual({
+    type: 'object',
+    properties: { nested: { type: 'object', properties: {} } },
+  });
+});
+
+const registrationApi = (registerTool: (tool: unknown) => unknown): ExtensionAPI =>
+  ({ registerTool }) as unknown as ExtensionAPI;
+
+const registerThrough = (api: ExtensionAPI, parameters: TSchema): unknown => {
+  const register = api.registerTool as unknown as (tool: unknown) => unknown;
+
+  return register({ name: 'sample', parameters });
+};
+
+it('closes the parameters of a tool registered through the wrapped API', () => {
+  const registered: unknown[] = [];
+  const api = registrationApi((tool) => registered.push(tool));
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(registered).toMatchObject([
+    {
+      name: 'sample',
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+it('installs the wrapper once per API', () => {
+  const registered: unknown[] = [];
+  const api = registrationApi((tool) => registered.push(tool));
+
+  strictToolRegistration(api);
+  strictToolRegistration(api);
+
+  const wrapper = api.registerTool;
+
+  registerThrough(api, Type.Object({}));
+
+  expect(api.registerTool).toBe(wrapper);
+  expect(registered).toHaveLength(1);
+});
+
+it('installs through an API that intercepts reads of registerTool', () => {
+  const registered: unknown[] = [];
+  const target = registrationApi((tool) => registered.push(tool));
+
+  const api = new Proxy(target, {
+    get: (value, key) => {
+      const properties = value as unknown as Record<PropertyKey, unknown>;
+      const property = properties[key];
+
+      if (key !== 'registerTool' || typeof property !== 'function') {
+        return property;
+      }
+
+      const registerTool = property as (tool: unknown) => unknown;
+
+      return (tool: unknown) => registerTool(tool);
+    },
+  });
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(registered).toMatchObject([
+    {
+      name: 'sample',
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+it('keeps the value the wrapped registration returns', () => {
+  const api = registrationApi(() => 'registered');
+
+  strictToolRegistration(api);
+
+  expect(registerThrough(api, Type.Object({}))).toBe('registered');
+});
+
+it('reports a clear error when registerTool is not a function', () => {
+  const api = {} as unknown as ExtensionAPI;
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not a function.');
+});
+
+it('reports a clear error when registerTool cannot be replaced', () => {
+  const api = registrationApi(() => undefined);
+
+  Object.defineProperty(api, 'registerTool', { configurable: false, writable: false });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+});
+
+it('reports a clear error when registerTool ignores the replacement', () => {
+  const api = new Proxy(
+    registrationApi(() => undefined),
+    { set: () => true },
+  );
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+});
+
 const expectedSchemaMapKeywords = [
   '$defs',
   'definitions',
@@ -163,21 +347,18 @@ const expectedSchemaValueKeywords = [
   'unevaluatedProperties',
 ];
 
-it('lists every subschema keyword in the production sets', () => {
+// Pins the sets so a change to them is a deliberate edit. It does not claim the list is complete.
+it('pins the subschema keyword sets', () => {
   expect([...schemaMapKeywords].toSorted()).toEqual(expectedSchemaMapKeywords);
   expect([...schemaArrayKeywords].toSorted()).toEqual(expectedSchemaArrayKeywords);
   expect([...schemaValueKeywords].toSorted()).toEqual(expectedSchemaValueKeywords);
 });
 
-const isClosed = (value: unknown): boolean =>
-  isRecord(value) && value['additionalProperties'] === false;
+// A schema under `not` or `if` narrows the negation or condition instead, so closing it would
+// accept inputs the tool rejects.
+const unassertedKeywords = new Set(['if', 'not']);
 
-const childSchema = (): Record<string, unknown> => ({
-  type: 'object',
-  properties: { value: { type: 'string' } },
-});
-
-it('closes an object schema under every subschema keyword in the sets', () => {
+it('closes an object schema under every asserted subschema keyword in the sets', () => {
   const schema: Record<string, unknown> = { type: 'object' };
 
   for (const keyword of schemaMapKeywords) {
@@ -194,6 +375,7 @@ it('closes an object schema under every subschema keyword in the sets', () => {
 
   const strict: unknown = strictToolParameters(Type.Unsafe<unknown>(schema));
   const unclosed: string[] = [];
+  const loosened: string[] = [];
 
   for (const keyword of schemaMapKeywords) {
     const entries = isRecord(strict) ? strict[keyword] : undefined;
@@ -212,12 +394,16 @@ it('closes an object schema under every subschema keyword in the sets', () => {
   }
 
   for (const keyword of schemaValueKeywords) {
-    if (!isRecord(strict) || !isClosed(strict[keyword])) {
+    const child = isRecord(strict) ? strict[keyword] : undefined;
+
+    if (unassertedKeywords.has(keyword) && isClosed(child)) {
+      loosened.push(keyword);
+    } else if (!unassertedKeywords.has(keyword) && !isClosed(child)) {
       unclosed.push(keyword);
     }
   }
 
-  expect(unclosed).toEqual([]);
+  expect({ unclosed, loosened }).toEqual({ unclosed: [], loosened: [] });
 });
 
 it('does not rewrite an object value stored in an annotation keyword', () => {

@@ -33,10 +33,13 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
   return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
 };
 
-// Adds additionalProperties: false to every object schema, so Pi refuses an argument the tool does
-// not declare. A map schema keeps its additionalProperties schema, which constrains every key.
-// Every keyword that holds a subschema must appear in one of these sets, or a tool can ship an open
-// schema under it.
+// Adds additionalProperties: false to every object schema in an asserted position, so Pi refuses an
+// argument the tool does not declare. A map schema keeps its additionalProperties schema, which
+// constrains every key. A node counts as an object when its type includes `object`, or when it
+// declares `properties` without a type. A subschema under `not` or `if` narrows the negation or
+// condition instead, so closing it would accept inputs the tool rejects.
+// Add a keyword to one of these sets when a tool schema can hold a subschema under it. A subschema
+// under a keyword outside these sets stays as written, so an object there keeps its keys open.
 export const schemaMapKeywords = new Set([
   '$defs',
   'definitions',
@@ -62,6 +65,24 @@ export const schemaValueKeywords = new Set([
   'unevaluatedProperties',
 ]);
 
+// A subschema under one of these keywords narrows the negation or condition instead of the
+// instance, so closing it there would accept inputs the tool rejects.
+const unassertedKeywords = new Set(['if', 'not']);
+
+const declaresObject = (value: Record<string, unknown>): boolean => {
+  const type = value['type'];
+
+  if (type === 'object') {
+    return true;
+  }
+
+  if (Array.isArray(type) && type.includes('object')) {
+    return true;
+  }
+
+  return type === undefined && 'properties' in value;
+};
+
 const strictSchemaMap = (value: unknown, visit: (child: unknown) => unknown): unknown => {
   if (!isRecord(value)) {
     return value;
@@ -76,9 +97,32 @@ const strictSchemaMap = (value: unknown, visit: (child: unknown) => unknown): un
   return clone;
 };
 
-const strictSchemaValue = (value: unknown): unknown => {
+const strictSchemaChild = (
+  key: string,
+  child: unknown,
+  closesObjects: boolean,
+  visit: (value: unknown, closesObjects: boolean) => unknown,
+): unknown => {
+  if (schemaMapKeywords.has(key)) {
+    return strictSchemaMap(child, (entry) => visit(entry, closesObjects));
+  }
+
+  if (schemaArrayKeywords.has(key)) {
+    return Array.isArray(child) ? child.map((entry) => visit(entry, closesObjects)) : child;
+  }
+
+  if (schemaValueKeywords.has(key)) {
+    const childClosesObjects = closesObjects && !unassertedKeywords.has(key);
+
+    return visit(child, childClosesObjects);
+  }
+
+  return child;
+};
+
+const strictSchemaValue = (value: unknown, closesObjects = true): unknown => {
   if (Array.isArray(value)) {
-    return value.map(strictSchemaValue);
+    return value.map((item) => strictSchemaValue(item, closesObjects));
   }
 
   if (!isRecord(value)) {
@@ -88,18 +132,10 @@ const strictSchemaValue = (value: unknown): unknown => {
   const clone: Record<PropertyKey, unknown> = { ...value };
 
   for (const key of Object.keys(value)) {
-    const child = value[key];
-
-    if (schemaMapKeywords.has(key)) {
-      clone[key] = strictSchemaMap(child, strictSchemaValue);
-    } else if (schemaArrayKeywords.has(key)) {
-      clone[key] = Array.isArray(child) ? child.map(strictSchemaValue) : child;
-    } else if (schemaValueKeywords.has(key)) {
-      clone[key] = strictSchemaValue(child);
-    }
+    clone[key] = strictSchemaChild(key, value[key], closesObjects, strictSchemaValue);
   }
 
-  if (value['type'] === 'object') {
+  if (closesObjects && declaresObject(value)) {
     const additionalProperties = value['additionalProperties'];
 
     if (additionalProperties === undefined || additionalProperties === true) {
@@ -117,6 +153,36 @@ export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Sc
 
 const installedApis = new WeakSet<ExtensionAPI>();
 
+const notWritableMessage =
+  'Cannot install strict tool parameters: registerTool is not writable on this API.';
+
+const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
+  if (typeof pi.registerTool !== 'function') {
+    throw new TypeError('Cannot install strict tool parameters: registerTool is not a function.');
+  }
+
+  const registered = pi.registerTool.bind(pi);
+
+  const wrapper: ExtensionAPI['registerTool'] = (tool) => {
+    // oxlint-disable-next-line typescript/no-confusing-void-expression -- the installed API may return a value at runtime, and the wrapper must keep it.
+    return registered({ ...tool, parameters: strictToolParameters(tool.parameters) });
+  };
+
+  try {
+    pi.registerTool = wrapper;
+  } catch (error) {
+    throw new Error(notWritableMessage, { cause: error });
+  }
+
+  const installed: unknown = Object.getOwnPropertyDescriptor(pi, 'registerTool')?.value;
+
+  if (installed !== wrapper) {
+    throw new Error(notWritableMessage);
+  }
+
+  return wrapper;
+};
+
 // Wraps `registerTool` once per API. Every tool registered through that API after this call has
 // strict parameters, including tools that another extension registers.
 export const strictToolRegistration = (pi: ExtensionAPI): void => {
@@ -124,14 +190,8 @@ export const strictToolRegistration = (pi: ExtensionAPI): void => {
     return;
   }
 
+  installWrapper(pi);
   installedApis.add(pi);
-
-  const registerTool = pi.registerTool.bind(pi);
-
-  pi.registerTool = (tool) => {
-    // oxlint-disable-next-line typescript/no-confusing-void-expression -- the installed API may return a value at runtime, and the wrapper must keep it.
-    return registerTool({ ...tool, parameters: strictToolParameters(tool.parameters) });
-  };
 };
 
 export const stringEnum = <const Values extends readonly string[]>(
