@@ -48,7 +48,7 @@
   "dependencies": {
     "@voidzero-dev/vite-plus-core": "0.3.0",
     "@xmldom/xmldom": "0.9.12",
-    "cc-safety-net": "2.4.1",
+    "cc-safety-net": "2.8.2",
     "entities": "9.0.0",
     "marked": "18.0.11",
     "minimatch": "11.0.3",
