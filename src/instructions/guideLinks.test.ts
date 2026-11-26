@@ -54,6 +54,27 @@ const table: {
     expected: { kind: 'valid' },
   },
   {
+    name: 'a fragment to a heading with a numeric character reference',
+    files: [
+      ['shared/rules.md', '# R&#101;lease\n'],
+      ['shared/coding.md', '[release](./rules.md#release)\n'],
+    ],
+    expected: { kind: 'valid' },
+  },
+  {
+    name: 'a fragment that names the old C1 letter of a numeric reference heading',
+    files: [
+      ['shared/rules.md', '# A &#131;B\n'],
+      ['shared/coding.md', '[old](./rules.md#a-%C6%92b)\n'],
+    ],
+    expected: {
+      kind: 'broken',
+      path: 'shared/coding.md',
+      target: './rules.md#a-%C6%92b',
+      problem: 'missing-heading',
+    },
+  },
+  {
     name: 'a link to a non-Markdown file',
     files: [
       ['shared/data.txt', '[not Markdown](./gone.md)\n'],
@@ -164,6 +185,19 @@ const table: {
       kind: 'broken',
       path: 'shared/rules.md',
       target: '#missing',
+      problem: 'missing-heading',
+    },
+  },
+  {
+    name: 'a fragment that names the raw text of a character reference',
+    files: [
+      ['shared/rules.md', '# R&#101;lease\n'],
+      ['shared/coding.md', '[bad](./rules.md#r101lease)\n'],
+    ],
+    expected: {
+      kind: 'broken',
+      path: 'shared/coding.md',
+      target: './rules.md#r101lease',
       problem: 'missing-heading',
     },
   },

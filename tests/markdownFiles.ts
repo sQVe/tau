@@ -90,6 +90,13 @@ const isSetextHeading = (lines: readonly string[], index: number) => {
   return startsBlock && paragraphLine.test(line) && setextUnderline.test(next);
 };
 
+const rawHeadingLink = /\[([^\]]*)\]\([^)]*\)/g;
+
+// A heading taken from the source still holds link destinations and code span backticks, which
+// rendered text would not.
+const slugTextOfRawHeading = (rawHeading: string) =>
+  rawHeading.replaceAll(rawHeadingLink, '$1').replaceAll('`', '');
+
 const headingsOf = (markdown: string) => {
   const lines = withoutFences(markdown.replace(frontmatter, '')).split('\n');
 
@@ -97,10 +104,10 @@ const headingsOf = (markdown: string) => {
     const [, atx] = atxHeading.exec(line) ?? [];
 
     if (atx !== undefined) {
-      return [atx];
+      return [slugTextOfRawHeading(atx)];
     }
 
-    return isSetextHeading(lines, index) ? [line.trim()] : [];
+    return isSetextHeading(lines, index) ? [slugTextOfRawHeading(line.trim())] : [];
   });
 };
 
