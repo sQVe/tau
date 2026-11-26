@@ -1,4 +1,4 @@
-import { array, assert, integer, property } from 'fast-check';
+import { array, assert, boolean, constant, integer, oneof, property, string } from 'fast-check';
 import { expect, it } from 'vitest';
 
 import { resolvePropertySeed } from '../../../../tests/propertySeedHarness.ts';
@@ -42,6 +42,9 @@ const targetWithoutBase: PublicationTargetFacts = {
 };
 
 const tokenWithoutBase = publicationToken(targetWithoutBase, files);
+
+const sentinelBaseTarget: PublicationTargetFacts = { ...targetWithoutBase, base: 'absent' };
+const sentinelBaseToken = publicationToken(sentinelBaseTarget, files);
 
 const refusal = (reason: string): PublicationDecision => ({ kind: 'refuse', reason });
 
@@ -106,6 +109,16 @@ const table: {
   {
     name: 'refuses a token for an empty base when the base is absent',
     facts: { token: tokenWithoutBase, target: { ...targetWithoutBase, base: '' }, files },
+    expected: targetRefusal,
+  },
+  {
+    name: 'refuses a token for a base named absent when the base is absent',
+    facts: { token: tokenWithoutBase, target: sentinelBaseTarget, files },
+    expected: targetRefusal,
+  },
+  {
+    name: 'refuses a token for an absent base when the base is named absent',
+    facts: { token: sentinelBaseToken, target: targetWithoutBase, files },
     expected: targetRefusal,
   },
   {
@@ -213,6 +226,79 @@ it('publishes its own files and refuses any changed byte or file set', () => {
         });
 
         expect(setDecision.kind).toBe('refuse');
+      }
+    }),
+    { seed, numRuns: 100 },
+  );
+});
+
+const generatedPr = oneof(constant(undefined), integer({ min: 1, max: 10_000 }));
+
+const generatedBase = oneof(
+  constant(undefined),
+  constant(''),
+  constant('absent'),
+  string({ maxLength: 8 }),
+);
+
+const generatedHead = oneof(
+  constant(undefined),
+  constant(''),
+  constant('absent'),
+  string({ maxLength: 8 }),
+);
+
+const generatedDraft = oneof(constant(undefined), boolean());
+
+const targetOf = (facts: {
+  pr?: number | undefined;
+  base?: string | undefined;
+  head?: string | undefined;
+  draft?: boolean | undefined;
+}): PublicationTargetFacts => ({
+  kind: 'pullRequest',
+  repository: 'github.com/sQVe/tau',
+  directory: '/repo/.tau/pr/run-1',
+  ...(facts.pr === undefined ? {} : { pr: facts.pr }),
+  ...(facts.base === undefined ? {} : { base: facts.base }),
+  ...(facts.head === undefined ? {} : { head: facts.head }),
+  ...(facts.draft === undefined ? {} : { draft: facts.draft }),
+});
+
+it('changes the token when any one target fact changes or is absent', () => {
+  const seed = resolvePropertySeed();
+
+  assert(
+    property(generatedPr, generatedBase, generatedHead, generatedDraft, (pr, base, head, draft) => {
+      const planned = targetOf({
+        ...(pr === undefined ? {} : { pr }),
+        ...(base === undefined ? {} : { base }),
+        ...(head === undefined ? {} : { head }),
+        ...(draft === undefined ? {} : { draft }),
+      });
+
+      const plannedToken = publicationToken(planned, files);
+
+      const changed = [
+        targetOf({ ...planned, pr: (pr ?? 0) + 1 }),
+        targetOf({ ...planned, base: `${base ?? ''}x` }),
+        targetOf({ ...planned, head: `${head ?? ''}x` }),
+        targetOf({ ...planned, draft: draft !== true }),
+      ];
+
+      for (const next of changed) {
+        expect(publicationToken(next, files)).not.toBe(plannedToken);
+      }
+
+      const absent = [
+        pr === undefined ? undefined : targetOf({ ...planned, pr: undefined }),
+        base === undefined ? undefined : targetOf({ ...planned, base: undefined }),
+        head === undefined ? undefined : targetOf({ ...planned, head: undefined }),
+        draft === undefined ? undefined : targetOf({ ...planned, draft: undefined }),
+      ].filter((next): next is PublicationTargetFacts => next !== undefined);
+
+      for (const next of absent) {
+        expect(publicationToken(next, files)).not.toBe(plannedToken);
       }
     }),
     { seed, numRuns: 100 },
