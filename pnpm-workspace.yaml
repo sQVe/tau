@@ -6,7 +6,7 @@ allowBuilds:
   esbuild: true
   protobufjs: false
 overrides:
-  vite: npm:@voidzero-dev/vite-plus-core@0.3.0
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.3
 # Vite+ uses its own version for the Vite-compatible core.
 peerDependencyRules:
   allowedVersions:
