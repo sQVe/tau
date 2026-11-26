@@ -44,7 +44,7 @@ const withoutFrontmatter = (markdown: string) => markdown.replace(frontmatter, '
 const headingSlugs = (headings: readonly string[]): ReadonlySet<string> => {
   const slugger = new Slugger();
 
-  return new Set(headings.map((heading) => slugger.slug(heading.trim())));
+  return new Set(headings.map((heading) => slugger.slug(heading)));
 };
 
 export const decodedComponent = (text: string): string | undefined => {
@@ -195,16 +195,20 @@ export const walkMarkdownTokens = (
 
 const htmlComment = /<!--[\s\S]*?-->/g;
 const anchorElement = /<a\b[^>]*>/gi;
-const anchorAttribute = /(?:^|\s)(?:name|id)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+const anchorAttribute = /(?:^|\s)(?:name|id)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/gi;
+const surroundingQuotes = /^["']|["']$/g;
+
+const attributeName = (attribute: string) =>
+  attribute.slice(attribute.indexOf('=') + 1).replaceAll(surroundingQuotes, '');
 
 const anchorNamesOf = (html: string): string[] => {
   const names: string[] = [];
 
   for (const element of html.replaceAll(htmlComment, '').matchAll(anchorElement)) {
     for (const attribute of element[0].matchAll(anchorAttribute)) {
-      const name = attribute[1] ?? attribute[2] ?? attribute[3];
+      const name = attributeName(attribute[0]);
 
-      if (name !== undefined && name !== '') {
+      if (name !== '') {
         names.push(name);
       }
     }
@@ -215,10 +219,6 @@ const anchorNamesOf = (html: string): string[] => {
 
 const collectAnchors = (tokens: readonly Token[], anchors: string[]): void => {
   for (const token of tokens) {
-    if (token.type === 'code') {
-      continue;
-    }
-
     if (token.type === 'html') {
       anchors.push(...anchorNamesOf(tokenText(token)));
 

@@ -462,6 +462,21 @@ const anchorTable: { name: string; markdown: string; expected: readonly string[]
     expected: ['first', 'second'],
   },
   {
+    name: 'reads an unquoted anchor attribute',
+    markdown: '<a name=plain></a>\n',
+    expected: ['plain'],
+  },
+  {
+    name: 'reads a single-quoted anchor attribute',
+    markdown: "<a name='single'></a>\n",
+    expected: ['single'],
+  },
+  {
+    name: 'reads no anchor from an empty anchor attribute',
+    markdown: '<a name=""></a>\n',
+    expected: [],
+  },
+  {
     name: 'reads no anchor from an anchor element inside an HTML comment',
     markdown: '<!-- <a name="commented"></a> -->\n',
     expected: [],
