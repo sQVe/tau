@@ -29,24 +29,32 @@ interface SchemaChild {
   value: unknown;
 }
 
-// JSON Schema treats a node as an object when its type includes `object` or when it declares
-// `properties`. This predicate is written from that rule, not from the production helper, so a gap
-// in production shows up here instead of being copied.
-const isOpenObject = (value: Record<string, unknown>): boolean => {
+// JSON Schema treats a node as an object when its type includes `object`, or when it declares
+// `properties` or `patternProperties` without a type. This predicate is written from that rule, not
+// from the production helper, so a gap in production shows up here instead of being copied.
+const isObjectNode = (value: Record<string, unknown>): boolean => {
   const type = value['type'];
 
   const isObjectType = type === 'object';
   const isObjectTypeList = Array.isArray(type) && type.includes('object');
-  const declaresProperties = 'properties' in value;
-  const isObjectNode = isObjectType || isObjectTypeList || declaresProperties;
+  const declaresKeys = 'properties' in value || 'patternProperties' in value;
+  const declaresTypelessKeys = type === undefined && declaresKeys;
 
+  return isObjectType || isObjectTypeList || declaresTypelessKeys;
+};
+
+const isOpenObject = (value: Record<string, unknown>): boolean => {
   const additionalProperties = value['additionalProperties'];
 
   const hasDefaultAdditionalProperties =
     additionalProperties === undefined || additionalProperties === true;
 
-  return isObjectNode && hasDefaultAdditionalProperties;
+  return isObjectNode(value) && hasDefaultAdditionalProperties;
 };
+
+// Production leaves every object under `not` or `if` open, because closing one would accept inputs
+// the tool rejects.
+const unassertedKeywords = new Set(['if', 'not']);
 
 const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChild[] => {
   const children: SchemaChild[] = [];
@@ -60,7 +68,7 @@ const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChi
       for (const [index, entry] of child.entries()) {
         children.push({ path: `${path}/${key}/${index}`, value: entry });
       }
-    } else if (schemaValueKeywords.has(key)) {
+    } else if (schemaValueKeywords.has(key) && !unassertedKeywords.has(key)) {
       children.push({ path: `${path}/${key}`, value: child });
     }
   }
@@ -263,8 +271,26 @@ it('reports a patternProperties object without a closed additionalProperties', (
 it.each([
   { name: 'a type list that includes object', schema: { type: ['object', 'null'] } },
   { name: 'properties without a type', schema: { properties: {} } },
+  { name: 'patternProperties without a type', schema: { patternProperties: {} } },
 ])('reports $name as an open object', ({ schema }) => {
   expect(objectProblems('sample', schema, '')).toEqual(['sample parameters']);
+});
+
+it('accepts an object schema under not and if', () => {
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    not: { type: 'object' },
+    if: { properties: { value: { type: 'string' } } },
+  };
+
+  expect(objectProblems('sample', schema, '')).toEqual([]);
+});
+
+it('accepts properties on a node whose declared type is not an object', () => {
+  const schema = { type: 'string', properties: { value: { type: 'string' } } };
+
+  expect(objectProblems('sample', schema, '')).toEqual([]);
 });
 
 it('refuses an undeclared handover start field', async () => {
