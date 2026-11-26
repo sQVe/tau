@@ -8,7 +8,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
 import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
-import { isRecord } from '../src/schema.js';
+import {
+  isRecord,
+  schemaArrayKeywords,
+  schemaMapKeywords,
+  schemaValueKeywords,
+} from '../src/schema.js';
 import { skillTools } from '../src/skillTools.js';
 import tauRegistration from '../src/tau/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -22,6 +27,7 @@ interface Registration {
 interface SchemaChild {
   path: string;
   value: unknown;
+  closesNode: boolean;
 }
 
 // JSON Schema treats a node as an object when its type includes `object`, or when it declares
@@ -47,9 +53,9 @@ const isOpenObject = (value: Record<string, unknown>): boolean => {
   return isObjectNode(value) && hasDefaultAdditionalProperties;
 };
 
-// Spelled out here rather than read from production, so a keyword production misses makes this
-// oracle walk a node production leaves open and the test fails.
-const schemaMapKeywords: ReadonlySet<string> = new Set([
+// Spelled out here rather than read from production, so a keyword production changes fails the pin
+// below and forces this oracle to walk it too.
+const localMapKeywords: ReadonlySet<string> = new Set([
   '$defs',
   'definitions',
   'dependencies',
@@ -58,14 +64,9 @@ const schemaMapKeywords: ReadonlySet<string> = new Set([
   'properties',
 ]);
 
-const schemaArrayKeywords: ReadonlySet<string> = new Set([
-  'allOf',
-  'anyOf',
-  'oneOf',
-  'prefixItems',
-]);
+const localArrayKeywords: ReadonlySet<string> = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
 
-const schemaValueKeywords: ReadonlySet<string> = new Set([
+const localValueKeywords: ReadonlySet<string> = new Set([
   'additionalItems',
   'additionalProperties',
   'contains',
@@ -80,51 +81,57 @@ const schemaValueKeywords: ReadonlySet<string> = new Set([
 ]);
 
 // Production leaves every object under `not` or `if` open, because closing one would accept inputs
-// the tool rejects. A `then` or `else` branch lists only the conditioned properties, so closing it
-// would reject the others.
-const unassertedKeywords = new Set(['else', 'if', 'not', 'then']);
+// the tool rejects. A `then` or `else` branch lists only the conditioned properties, so closing the
+// branch node would reject the others while an object nested below it is still asserted.
+const unassertedKeywords = new Set(['if', 'not']);
+const branchKeywords = new Set(['else', 'then']);
 
-// An `allOf` branch combines with its siblings, so closing it would require that one branch to
+// An `allOf` branch combines with its siblings, so closing the branch node would require it to
 // declare every property.
-const unassertedArrayKeywords = new Set(['allOf']);
+const branchArrayKeywords = new Set(['allOf']);
 
 const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChild[] => {
   const children: SchemaChild[] = [];
 
   for (const [key, child] of Object.entries(value)) {
-    if (schemaMapKeywords.has(key) && isRecord(child)) {
+    if (localMapKeywords.has(key) && isRecord(child)) {
       for (const [name, entry] of Object.entries(child)) {
-        children.push({ path: `${path}/${key}/${name}`, value: entry });
+        children.push({ path: `${path}/${key}/${name}`, value: entry, closesNode: true });
       }
-    } else if (schemaArrayKeywords.has(key) && Array.isArray(child)) {
-      if (unassertedArrayKeywords.has(key)) {
-        continue;
-      }
+    } else if (localArrayKeywords.has(key) && Array.isArray(child)) {
+      const closesNode = !branchArrayKeywords.has(key);
 
       for (const [index, entry] of child.entries()) {
-        children.push({ path: `${path}/${key}/${index}`, value: entry });
+        children.push({ path: `${path}/${key}/${index}`, value: entry, closesNode });
       }
-    } else if (schemaValueKeywords.has(key) && !unassertedKeywords.has(key)) {
-      children.push({ path: `${path}/${key}`, value: child });
+    } else if (localValueKeywords.has(key) && !unassertedKeywords.has(key)) {
+      children.push({ path: `${path}/${key}`, value: child, closesNode: !branchKeywords.has(key) });
     }
   }
 
   return children;
 };
 
-const objectProblems = (toolName: string, value: unknown, path: string): string[] => {
+const objectProblems = (
+  toolName: string,
+  value: unknown,
+  path: string,
+  closesNode = true,
+): string[] => {
   if (Array.isArray(value)) {
-    return value.flatMap((item, index) => objectProblems(toolName, item, `${path}/${index}`));
+    return value.flatMap((item, index) =>
+      objectProblems(toolName, item, `${path}/${index}`, closesNode),
+    );
   }
 
   if (!isRecord(value)) {
     return [];
   }
 
-  const own = isOpenObject(value) ? [`${toolName} parameters${path}`] : [];
+  const own = closesNode && isOpenObject(value) ? [`${toolName} parameters${path}`] : [];
 
   const nested = schemaChildren(value, path).flatMap((child) =>
-    objectProblems(toolName, child.value, child.path),
+    objectProblems(toolName, child.value, child.path, child.closesNode),
   );
 
   return [...own, ...nested];
@@ -188,8 +195,8 @@ const toolsOf = async (registration: Registration): Promise<Tool[]> => {
 };
 
 // The Tau root and worker entry points register these tools synchronously. A tool registered only
-// for another role, such as `architect_answer` under TAU_ROLE=architect, or from an event handler,
-// such as `handover_question` from `before_agent_start`, is outside this collection.
+// for another role, such as the `architect` answer tool under TAU_ROLE=architect, or from an event
+// handler, such as `handover_question` from `before_agent_start`, is outside this collection.
 const registeredTools = async (): Promise<{ registration: string; tools: Tool[] }[]> => {
   const all: { registration: string; tools: Tool[] }[] = [];
 
@@ -203,6 +210,12 @@ const registeredTools = async (): Promise<{ registration: string; tools: Tool[] 
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+it('pins the local schema keyword sets to the production sets', () => {
+  expect([...localMapKeywords].toSorted()).toEqual([...schemaMapKeywords].toSorted());
+  expect([...localArrayKeywords].toSorted()).toEqual([...schemaArrayKeywords].toSorted());
+  expect([...localValueKeywords].toSorted()).toEqual([...schemaValueKeywords].toSorted());
 });
 
 it('enumerates the Tau root and every worker entry point', async () => {
@@ -328,6 +341,19 @@ it('accepts an object schema under not, if, then, else, and allOf', () => {
   };
 
   expect(objectProblems('sample', schema, '')).toEqual([]);
+});
+
+it('reports a loose object nested under a branch but not the branch node', () => {
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    properties: { detail: {} },
+    allOf: [{ properties: { detail: { type: 'object', properties: {} } } }],
+  };
+
+  expect(objectProblems('sample', schema, '')).toEqual([
+    'sample parameters/allOf/0/properties/detail',
+  ]);
 });
 
 it('accepts properties on a node whose declared type is not an object', () => {
