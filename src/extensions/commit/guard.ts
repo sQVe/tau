@@ -283,37 +283,27 @@ const envSplitStringOptions = wrapperCommandOptions.get('env') ?? new Set<string
 
 const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
 
-// The letters of a short-option word, or undefined for another word.
-const shortOptionLetters = (word: string): string | undefined => {
-  const match = /^[-+]([A-Za-z]*)$/u.exec(word);
+// A letter of an enabled short option: the word starts with `-`, its letters parse, and no `o` or
+// `O` precedes the letter, because that letter then belongs to the option's value.
+const enabledLetterIndex = (word: string, letter: string): number => {
+  const match = /^-([A-Za-z]*)([\s\S]*)$/u.exec(word);
 
-  return match === null ? undefined : (match[1] ?? '');
-};
+  if (match === null) {
+    return -1;
+  }
 
-// A letter after an `o` or `O` belongs to that option's value, as in `-onoclobber`.
-const optionLetterIndex = (letters: string, letter: string): number => {
+  const letters = match[1] ?? '';
   const index = letters.indexOf(letter);
 
   return index !== -1 && /[oO]/u.test(letters.slice(0, index)) ? -1 : index;
 };
 
 // An option with `c`, such as `-c` or `-lc`, puts the code in an argument, not in a file.
-const isInlineCodeWord = (word: string): boolean => {
-  const letters = shortOptionLetters(word);
-
-  return letters !== undefined && optionLetterIndex(letters, 'c') !== -1;
-};
+const isInlineCodeWord = (word: string): boolean => enabledLetterIndex(word, 'c') !== -1;
 
 // An option that makes the shell read its code from standard input; `+s` disables one instead.
-const isStdinOptionWord = (word: string): boolean => {
-  if (word === '--stdin') {
-    return true;
-  }
-
-  const letters = shortOptionLetters(word);
-
-  return word.startsWith('-') && letters !== undefined && optionLetterIndex(letters, 's') !== -1;
-};
+const isStdinOptionWord = (word: string): boolean =>
+  word === '--stdin' || enabledLetterIndex(word, 's') !== -1;
 
 const assignmentPattern = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 
@@ -574,20 +564,14 @@ const codeOperand = (words: string[], start: number): string | undefined => {
 // A short-option word can carry its code after the `c`, as in `-c'git commit'`. A `c` after an
 // `o` or `O` letter belongs to that option's value, as in `-onoclobber`.
 const attachedInlineCode = (word: string): string | undefined => {
-  const match = /^[-+]([A-Za-z]*)([\s\S]*)$/u.exec(word);
-
-  if (match === null) {
-    return undefined;
-  }
-
-  const letters = match[1] ?? '';
-  const index = optionLetterIndex(letters, 'c');
+  const index = enabledLetterIndex(word, 'c');
 
   if (index === -1) {
     return undefined;
   }
 
-  const code = letters.slice(index + 1) + (match[2] ?? '');
+  const [, letters = '', tail = ''] = /^-([A-Za-z]*)([\s\S]*)$/u.exec(word) ?? [];
+  const code = letters.slice(index + 1) + tail;
 
   return code === '' ? undefined : code;
 };

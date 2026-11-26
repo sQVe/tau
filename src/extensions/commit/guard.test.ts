@@ -1034,6 +1034,14 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent("bash -c'git commit -m x\necho done'"), directory);
   });
 
+  it('blocks a script file after a disabled inline-code option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('bash +c commit.sh'), directory);
+  });
+
   it('blocks a script file after a disabled shell option', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
