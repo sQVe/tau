@@ -170,6 +170,11 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
     markdown: '[![i](./i.png)][a] [x](./x.md)\n\n[a]: ./d.md\n',
     expected: ['./i.png', './x.md', './d.md'],
   },
+  {
+    name: 'reads no target from a leading frontmatter block',
+    markdown: '---\ndescription: [x](./x.md)\n---\n\n[a](./a.md)\n',
+    expected: ['./a.md'],
+  },
 ];
 
 it.for(targetTable)('$name', ({ markdown, expected }) => {
