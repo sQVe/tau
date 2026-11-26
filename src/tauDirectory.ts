@@ -313,9 +313,7 @@ export const rejectTauSymlinks = async (root: string, path: string): Promise<voi
   await rejectParsedSymlinks(root, parseSegments(path));
 };
 
-// Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
-// `.tau/.gitignore` has another hard link, since either could send writes outside the repository,
-// or when Git would not ignore files in it. Changes nothing, so a read can run it.
+// Refuses a `.tau` that exists but is not a directory.
 const rejectTauFile = async (root: string) => {
   const path = join(root, '.tau');
   const entry = await existingEntry(path);
@@ -325,6 +323,9 @@ const rejectTauFile = async (root: string) => {
   }
 };
 
+// Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
+// `.tau/.gitignore` has another hard link, since either could send writes outside the repository,
+// or when Git would not ignore files in it. Changes nothing, so a read can run it.
 const checkTauDirectoryWith = async (
   root: string,
   path: string,
@@ -364,6 +365,7 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
 
   await rejectParsedSymlinks(root, segments);
   await rejectLinkedIgnoreFile(root);
+  await rejectTauFile(root);
 
   if (await isBareRoot(root, bareProbes)) {
     await rejectLaterExceptions(root);
@@ -372,7 +374,6 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
     await rejectTracked(root, ['.tau', ...segments].join('/'));
   }
 
-  await rejectTauFile(root);
   await mkdir(join(root, '.tau'), { recursive: true });
   await ignoreTauDirectory(root);
   await checkTauDirectoryWith(root, path, bareProbes);

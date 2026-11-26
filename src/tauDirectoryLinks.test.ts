@@ -14,7 +14,7 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished as afterThisTest } from 'vitest';
 import type { TestContext } from 'vitest';
 
-import { createTemporaryRepository } from '../tests/gitRepository.js';
+import { createTemporaryBareRoot, createTemporaryRepository } from '../tests/gitRepository.js';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
   checkTauDirectory,
@@ -182,6 +182,14 @@ it('ensureTauDirectory refuses a .tau that is a regular file and leaves it untou
 
   await expect(ensureTauDirectory(root, 'workers')).rejects.toThrow('is not a directory');
   await expect(readFile(path, 'utf8')).resolves.toBe('text\n');
+});
+
+it('ensureTauDirectory refuses a .tau that is a regular file in a bare root', async () => {
+  const bare = await createTemporaryBareRoot(afterThisTest);
+
+  await writeFile(join(bare, '.tau'), 'text\n');
+
+  await expect(ensureTauDirectory(bare, 'workers')).rejects.toThrow('is not a directory');
 });
 
 it('checkTauDirectory refuses a .tau that is a regular file', async () => {
