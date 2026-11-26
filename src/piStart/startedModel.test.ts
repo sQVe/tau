@@ -111,11 +111,6 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
     }),
     expected: { kind: 'match', model: 'default' },
   },
-  {
-    name: 'an argv that could not be read',
-    facts: facts({ argv: undefined }),
-    expected: { kind: 'unreadable' },
-  },
 ])('decides $name', ({ facts: startedFacts, expected }) => {
   expect(decideStartedModel(startedFacts)).toEqual(expected);
 });

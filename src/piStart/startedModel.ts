@@ -5,8 +5,7 @@ export interface RequestedModel {
 
 export interface StartedModelFacts {
   requested: RequestedModel;
-  // Undefined means no Pi foreground process was readable.
-  argv: readonly string[] | undefined;
+  argv: readonly string[];
 }
 
 export type StartedModelDecision =
@@ -68,10 +67,6 @@ const displayModel = ({ provider, id }: RequestedModel): string => {
 };
 
 export const decideStartedModel = (facts: StartedModelFacts): StartedModelDecision => {
-  if (facts.argv === undefined) {
-    return { kind: 'unreadable' };
-  }
-
   const started = startedReference(facts.argv);
 
   if (started === 'unreadable') {

@@ -1,5 +1,4 @@
 import { stat } from 'node:fs/promises';
-import { basename } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { Type } from 'typebox';
@@ -11,6 +10,7 @@ import { parseModelReference } from '../config/models.js';
 import { isMissingFile, toError } from '../errors.js';
 import { isGitRepository } from '../git.js';
 import { piArguments } from './piArguments.js';
+import { piArgv } from './startedArgv.js';
 import { decideStartedModel } from './startedModel.js';
 import type { RequestedModel, StartedModelDecision } from './startedModel.js';
 
@@ -91,7 +91,8 @@ type TerminalReply = (
 
 export const launchTimeoutMilliseconds = 30_000;
 
-const readbackIntervalMilliseconds = 100;
+const readbackInitialIntervalMilliseconds = 100;
+const readbackMaxIntervalMilliseconds = 1000;
 
 const splitReplySchema = Type.Object({
   pane: Type.String(),
@@ -121,11 +122,14 @@ const requestedModelOf = (model: string | undefined): RequestedModel => {
   return parseModelReference(model) ?? { provider: undefined, id: model };
 };
 
+const stillRunningHint = (terminal: string): string =>
+  `It may still be running; check it with hc get ${terminal} before you start another.`;
+
 const unreadableModelError = (terminal: string, cause?: unknown): Error => {
   const options = cause === undefined ? undefined : { cause };
 
   return new Error(
-    `The started model on terminal ${terminal} is unknown. It may still be running; check it with hc get ${terminal} before you start another.`,
+    `The started model on terminal ${terminal} is unknown. ${stillRunningHint(terminal)}`,
     options,
   );
 };
@@ -135,7 +139,7 @@ const mismatchModelError = (
   decision: Extract<StartedModelDecision, { kind: 'mismatch' }>,
 ): Error =>
   new Error(
-    `The started Pi on terminal ${terminal} runs ${decision.started}, but the request asked for ${decision.requested}. It may still be running; check it with hc get ${terminal} before you start another.`,
+    `The started Pi on terminal ${terminal} runs ${decision.started}, but the request asked for ${decision.requested}. ${stillRunningHint(terminal)}`,
   );
 
 const cancellationError = (signal: AbortSignal | undefined): Error => {
@@ -144,137 +148,6 @@ const cancellationError = (signal: AbortSignal | undefined): Error => {
   return reason instanceof Error
     ? reason
     : new Error('The started model readback was cancelled.', { cause: reason });
-};
-
-const executableNames = (name: string, suffixes: readonly string[]): string[] => [
-  name,
-  ...suffixes.map((suffix) => `${name}.${suffix}`),
-];
-
-const piExecutableSuffixes = ['cmd', 'js', 'exe'];
-
-const piExecutableNames = new Set(executableNames('pi', piExecutableSuffixes));
-
-const runtimeExecutables = new Set([
-  ...executableNames('node', ['exe']),
-  ...executableNames('bun', ['exe']),
-]);
-
-const isPiExecutable = (argument: string | undefined): boolean =>
-  argument !== undefined && piExecutableNames.has(basename(argument));
-
-const carriesPath = (argument: string): boolean =>
-  argument.includes('/') || argument.includes('\\');
-
-const hasExecutableSuffix = (argument: string): boolean =>
-  piExecutableSuffixes.some((suffix) => argument.endsWith(`.${suffix}`));
-
-const isPathShaped = (argument: string): boolean =>
-  carriesPath(argument) || hasExecutableSuffix(argument);
-
-// An inline-program flag supplies the program itself, so no script follows it.
-const inlineProgramRuntimeFlags = new Set(['--eval', '-e', '--print', '-p']);
-
-// A long inline-program flag may carry its program after `=`, as in `--eval=code`.
-const isInlineProgramFlag = (argument: string): boolean => {
-  if (inlineProgramRuntimeFlags.has(argument)) {
-    return true;
-  }
-
-  const equalsIndex = argument.indexOf('=');
-
-  if (equalsIndex === -1) {
-    return false;
-  }
-
-  const flagName = argument.slice(0, equalsIndex);
-
-  return flagName.startsWith('--') && inlineProgramRuntimeFlags.has(flagName);
-};
-
-// A partial allowlist of runtime flags that take a separate value, so the next argument is a flag
-// value and not the script. A bare Pi name counts only when it is the first candidate after the
-// skipped values; a later Pi name needs a path separator or an executable suffix.
-const valueTakingRuntimeFlags = new Set([
-  '--conditions',
-  '-C',
-  '--dns-result-order',
-  '--env-file',
-  '--experimental-loader',
-  '--icu-data-dir',
-  '--import',
-  '--inspect-port',
-  '--loader',
-  '--max-http-header-size',
-  '--max-old-space-size',
-  '--openssl-config',
-  '--preload',
-  '--redirect-warnings',
-  '--require',
-  '-r',
-  '--title',
-  '--tls-cipher-list',
-  '--watch-path',
-]);
-
-// Returns the index of the argument after the flag and after its value when the flag takes one.
-const skipRuntimeFlagValue = (argument: string, index: number): number =>
-  valueTakingRuntimeFlags.has(argument) ? index + 2 : index + 1;
-
-// The script is the first argument after the runtime once the known flag values are skipped. A
-// later Pi name counts only when it carries a path separator or an executable suffix.
-const scriptArgument = (argv: readonly string[]): string | undefined => {
-  let isFirstCandidate = true;
-  let index = 1;
-
-  while (index < argv.length) {
-    const argument = argv[index];
-
-    if (argument === undefined) {
-      return undefined;
-    }
-
-    if (argument.startsWith('-')) {
-      if (isInlineProgramFlag(argument)) {
-        return undefined;
-      }
-
-      index = skipRuntimeFlagValue(argument, index);
-
-      continue;
-    }
-
-    const isScript = isFirstCandidate || isPathShaped(argument);
-
-    if (isPiExecutable(argument) && isScript) {
-      return argument;
-    }
-
-    isFirstCandidate = false;
-    index += 1;
-  }
-
-  return undefined;
-};
-
-const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined => {
-  if (argv === undefined) {
-    return undefined;
-  }
-
-  const [first] = argv;
-
-  if (isPiExecutable(first)) {
-    return argv;
-  }
-
-  const runtime = first === undefined ? undefined : basename(first);
-
-  if (runtime === undefined || !runtimeExecutables.has(runtime)) {
-    return undefined;
-  }
-
-  return isPiExecutable(scriptArgument(argv)) ? argv : undefined;
 };
 
 // Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
@@ -325,6 +198,7 @@ const readStartedModel = async (
 ): Promise<string> => {
   const requested = requestedModelOf(model);
   const deadline = Date.now() + launchTimeoutMilliseconds;
+  let interval = readbackInitialIntervalMilliseconds;
 
   for (;;) {
     let argv: readonly string[] | undefined;
@@ -360,12 +234,15 @@ const readStartedModel = async (
       throw unreadableModelError(terminal);
     }
 
-    if (Date.now() >= deadline) {
+    const remaining = deadline - Date.now();
+
+    if (remaining <= 0) {
       throw unreadableModelError(terminal);
     }
 
     // oxlint-disable-next-line no-await-in-loop -- the poll needs a pause between reads.
-    await sleep(readbackIntervalMilliseconds);
+    await sleep(Math.min(interval, remaining));
+    interval = Math.min(interval * 2, readbackMaxIntervalMilliseconds);
   }
 };
 
