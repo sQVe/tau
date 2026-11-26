@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import type * as Vitest from 'vitest/node';
 
+import { chaiDisplayCut } from './testNames.ts';
 import { normalizeVitestOptions } from './vitestOptions.ts';
 
 const [binaryPath, fileCountArgument, ...argumentsList] = process.argv.slice(2);
@@ -23,7 +24,13 @@ if (argumentsList.length < fileCount) {
 }
 
 const files = argumentsList.slice(0, fileCount).map((file) => resolve(process.cwd(), file));
-const runnerArguments = argumentsList.slice(fileCount);
+const [displayCutArgument, ...runnerArguments] = argumentsList.slice(fileCount);
+const displayCut = Number(displayCutArgument);
+
+if (!Number.isSafeInteger(displayCut) || displayCut < 0) {
+  throw new Error('The focused runner requires a non-negative display cut.');
+}
+
 const projectRequire = createRequire(binaryPath);
 // oxlint-disable-next-line typescript/no-unsafe-assignment -- Node's require is untyped; this loads the resolved package's public Vitest API.
 const { startVitest, parseCLI }: typeof Vitest = projectRequire('vitest/node');
@@ -40,13 +47,17 @@ if ('reporter' in normalizedOptions && Array.isArray(normalizedOptions.reporter)
 }
 
 // Vitest renders an `it.each` "$name" through chai's display cut and stores that rendered name, so
-// an exact filter on the name written in the table would never match.
+// an exact filter on the name written in the table would never match. Raise the cut just enough for
+// the longest requested name, and leave it alone for a run that cannot need it.
 const withoutDisplayCut = <Test extends { chaiConfig?: { truncateThreshold?: number } }>(
   test: Test,
-): Test => ({
-  ...test,
-  chaiConfig: { ...test.chaiConfig, truncateThreshold: 0 },
-});
+  requiredCut: number,
+): Test => {
+  const configured = test.chaiConfig?.truncateThreshold ?? chaiDisplayCut;
+  const truncateThreshold = configured === 0 ? 0 : Math.max(configured, requiredCut);
+
+  return { ...test, chaiConfig: { ...test.chaiConfig, truncateThreshold } };
+};
 
 try {
   const context = await startVitest('test', [], normalizedOptions, {
@@ -62,13 +73,13 @@ try {
             : [configuredReporters];
 
           reporters.push([reporterPath, { files }]);
-          config.test = withoutDisplayCut(config.test ?? {});
+          config.test = withoutDisplayCut(config.test ?? {}, displayCut);
           config.test.reporters = reporters;
 
           // An inline project resolves its own test config, so it needs the same cut removed.
           for (const project of config.test.projects ?? []) {
             if (typeof project === 'object' && 'test' in project) {
-              project.test = withoutDisplayCut(project.test ?? {});
+              project.test = withoutDisplayCut(project.test ?? {}, displayCut);
             }
           }
         },

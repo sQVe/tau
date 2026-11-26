@@ -30,6 +30,12 @@ describe('matchesRequestedName', () => {
       matches: true,
     },
     {
+      name: 'a decision-table name inside a title',
+      registered: "outer > handles 'a declared record accepts'",
+      requested: 'outer > handles a declared record accepts',
+      matches: true,
+    },
+    {
       name: 'the name Vitest registers',
       registered: "'a declared record accepts'",
       requested: "'a declared record accepts'",
@@ -50,6 +56,11 @@ describe('matchesRequestedName', () => {
   ])('$name matches $matches', ({ registered, requested, matches }) => {
     expect(matchesRequestedName(registered, requested)).toBe(matches);
   });
+
+  // Chai's rendering leaves no marker that separates a table value from a quoted token.
+  it('accepts a title that quotes its last token, as a chai-rendered name', () => {
+    expect(matchesRequestedName("returns 'ok'", 'returns ok')).toBe(true);
+  });
 });
 
 const matchesPattern = (pattern: string, name: string) => new RegExp(pattern).test(name);
@@ -67,37 +78,30 @@ describe('requestedNamePattern', () => {
         'outer "works"',
       ],
     },
+    {
+      name: 'outer > handles works',
+      registered: ['outer > handles works', "outer > handles 'works'", "outer > 'handles works'"],
+    },
   ])('accepts each registered form of $name', ({ name, registered }) => {
-    const pattern = requestedNamePattern([name], nameSeparator('4.1.11'));
+    const pattern = requestedNamePattern([name]);
 
     expect(registered.filter((candidate) => !matchesPattern(pattern, candidate))).toEqual([]);
     expect(matchesPattern(pattern, 'other works')).toBe(false);
     expect(matchesPattern(pattern, `${name} again`)).toBe(false);
   });
 
-  it('accepts a wrapped name at every Vitest 5 separator', () => {
-    const pattern = requestedNamePattern(['outer > works'], nameSeparator('5.0.1'));
-
-    expect(matchesPattern(pattern, "'outer > works'")).toBe(true);
-    expect(matchesPattern(pattern, "outer > 'works'")).toBe(true);
-    expect(matchesPattern(pattern, "outer '>' works")).toBe(false);
-  });
-
   it('escapes regular expression characters in the requested name', () => {
-    const pattern = requestedNamePattern(['adds (item) [1]'], nameSeparator('4.1.11'));
+    const pattern = requestedNamePattern(['adds (item) [1]']);
 
     expect(matchesPattern(pattern, 'adds (item) [1]')).toBe(true);
     expect(matchesPattern(pattern, 'adds item 1')).toBe(false);
   });
 
-  it('keeps the first segment when the separator is empty', () => {
-    const pattern = requestedNamePattern(['works'], '');
-
-    expect(matchesPattern(pattern, 'works')).toBe(true);
-    expect(matchesPattern(pattern, "'works'")).toBe(true);
+  it('matches no name when none is requested', () => {
+    expect(matchesPattern(requestedNamePattern([]), 'works')).toBe(false);
   });
 
-  it('matches no name when none is requested', () => {
-    expect(matchesPattern(requestedNamePattern([], nameSeparator('4.1.11')), 'works')).toBe(false);
+  it('uses one separator per Vitest major', () => {
+    expect([nameSeparator('4.1.11'), nameSeparator('5.0.1')]).toEqual([' ', ' > ']);
   });
 });

@@ -132,6 +132,9 @@ const reportedInputs = (before: InputHash, after: InputHash): ObservationResult[
   return { before: before.hash, after: after.hash, ...(error === undefined ? {} : { error }) };
 };
 
+const isSelectedName = (behavior: Behavior, fullname: string): boolean =>
+  testNames(behavior).some((name) => matchesRequestedName(fullname, name));
+
 const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =>
   report.kind === 'fail' &&
   testNames(behavior).every((name) => {
@@ -168,7 +171,7 @@ const selectedThrownErrorType = (cwd: string, behavior: Behavior, report: Runner
   const selectedFailures = report.failures.filter(
     (failure) =>
       failure.attribution === undefined &&
-      testNames(behavior).some((name) => matchesRequestedName(failure.fullname, name)) &&
+      isSelectedName(behavior, failure.fullname) &&
       behavior.files.some((file) => resolve(cwd, failure.file) === resolve(cwd, file)),
   );
 

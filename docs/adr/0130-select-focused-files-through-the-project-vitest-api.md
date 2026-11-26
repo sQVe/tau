@@ -36,10 +36,12 @@ test execution outside Pi, while preserving Tau's timeout and cancellation contr
 
 A focused run also selects tests by name. Vitest renders an `it.each` `$name` value through chai's
 display, which wraps the value in quotes and cuts it at a configured length, so the name it
-registers is not the name written in the table. The entry disables that cut, and Tau accepts a
-requested name whether or not the registered name carries the display quotes. Both the `-t` pattern
-and the report selection use that one rule. Older versions keep the CLI path, and a project declared
-by path or glob keeps its own test config, so the display cut still applies there.
+registers is not the name written in the table. The entry raises that cut to fit the longest
+requested name and leaves it alone for a run whose names fit chai's default, and Tau accepts a
+requested name whether or not the registered name carries the display quotes. The `-t` pattern, the
+report selection, and the observation layer share that one rule. Older versions keep the CLI path,
+and a project declared by path or glob keeps its own test config, so the display cut still applies
+there.
 
 The TypeScript entry ships with Tau's source and uses Node's native TypeScript support. It needs no
 separate build artifact. Affected and full runs keep the CLI boundary because they do not need exact

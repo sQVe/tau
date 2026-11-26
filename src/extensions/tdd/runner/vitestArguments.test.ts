@@ -167,8 +167,19 @@ describe('runTests', () => {
       const nameFilter: unknown[] = ['-t', expect.any(String)];
       const entry: unknown = expect.stringMatching(/\/vitestFocused\.ts$/);
 
+      const displayCut = '40';
+
       const expected = focusedEntry
-        ? [entry, '/fake/vitest.js', '2', 'src/a.test.ts', '-b.test.ts', ...options, ...nameFilter]
+        ? [
+            entry,
+            '/fake/vitest.js',
+            '2',
+            'src/a.test.ts',
+            '-b.test.ts',
+            displayCut,
+            ...options,
+            ...nameFilter,
+          ]
         : ['/fake/vitest.js', ...options, 'src/a.test.ts', './-b.test.ts', ...nameFilter];
 
       expect(spawn).toHaveBeenCalledOnce();
@@ -265,6 +276,42 @@ describe('runTests', () => {
     expect(pattern.test('adds another item')).toBe(false);
   });
 
+  it('raises the display cut to fit the longest requested name', async () => {
+    let captured: string[] = [];
+
+    const report = {
+      numTotalTests: 0,
+      numFailedTests: 0,
+      numPassedTests: 0,
+      testResults: [],
+    };
+
+    const deps = makeDeps({
+      resolveVitest: () => ({ path: '/fake/vitest.js', version: '4.1.11' }),
+      spawn: async (command, argumentsList) => {
+        captured = argumentsList;
+        await writeFile(outputFileFrom(argumentsList), JSON.stringify(report));
+
+        return fakeSpawn({})(command, argumentsList, { cwd: '/repo', timeoutMs: 30_000 });
+      },
+    });
+
+    const name = 'a declared record cited with trailing punctuation accepts';
+
+    await runTests(
+      {
+        scope: 'focused',
+        verificationArgv,
+        cwd: '/repo',
+        files: ['src/a.test.ts'],
+        testNames: [name],
+      },
+      deps,
+    );
+
+    expect(captured).toContain(String(name.length + 2));
+  });
+
   it('passes no options beyond the fixed reporter arguments and the output file', async () => {
     let captured: string[] = [];
 
@@ -289,7 +336,7 @@ describe('runTests', () => {
       deps,
     );
 
-    expect(captured.slice(4, 9)).toEqual([
+    expect(captured.slice(5, 10)).toEqual([
       'run',
       '--reporter=json',
       '--reporter=default',
