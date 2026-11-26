@@ -376,9 +376,49 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     command: 'cmd 2>/dev/null &&\n  other',
     blocked: false,
   },
+  {
+    name: 'a detached and-list before a backgrounded brace compound',
+    command: 'a 2>/dev/null && { b; } &',
+    blocked: true,
+  },
+  {
+    name: 'a backgrounded brace compound before an and-list',
+    command: '{ b 2>/dev/null; } && c &',
+    blocked: true,
+  },
+  {
+    name: 'a detached and-list after a separator before a brace compound',
+    command: 'a; b 2>/dev/null && { c; } &',
+    blocked: true,
+  },
+  {
+    name: 'a detached flock script given inline',
+    command: "flock --command='cmd 2>/dev/null' /tmp/lock &",
+    blocked: true,
+  },
+  {
+    name: 'a detached flock script after the lock file and its options',
+    command: "flock /tmp/lock -w 5 -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a compound whose member is named like an Object property',
+    command: 'if true; then :; constructor; touch x 2>/dev/null; fi &',
+    blocked: true,
+  },
 ])('decides $name', ({ command, blocked }) => {
   expect(blocks(command)).toBe(blocked);
 });
+
+it.each(['constructor', 'toString', '__proto__'])(
+  'treats the %s command name as an ordinary command',
+  (name) => {
+    expect(() => decideDetachedOutput({ toolName: 'bash', command: `${name} -x &` })).not.toThrow();
+
+    expect(blocks(`${name} -x &`)).toBe(false);
+    expect(blocks(`${name} 2>/dev/null &`)).toBe(true);
+  },
+);
 
 it('ignores another tool name', () => {
   expect(decideDetachedOutput({ toolName: 'read', command: 'cmd 2>/dev/null &' })).toBeUndefined();

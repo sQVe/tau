@@ -79,6 +79,14 @@ const table: { command: string; refused: boolean }[] = [
   { command: "hc send t1 'unterminated", refused: false },
 ];
 
+it.each(['constructor', 'toString', '__proto__'])(
+  'treats the %s command name as an ordinary command',
+  (name) => {
+    expect(() => typesIntoTerminal(`${name} -x`)).not.toThrow();
+    expect(typesIntoTerminal(`${name} -x`)).toBe(false);
+  },
+);
+
 it('refuses hc send and hc keys only in command position', () => {
   const decided = table.map(({ command }) => ({ command, refused: typesIntoTerminal(command) }));
 
