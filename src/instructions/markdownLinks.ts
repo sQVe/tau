@@ -31,6 +31,11 @@ const tokenizer = new Marked({
 const withoutByteOrderMark = (markdown: string) =>
   markdown.startsWith('\uFEFF') ? markdown.slice(1) : markdown;
 
+// GitHub renders a leading frontmatter block as a table, so it holds no heading.
+const frontmatter = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/;
+
+const withoutFrontmatter = (markdown: string) => markdown.replace(frontmatter, '');
+
 const slugOf = (heading: string) =>
   heading.trim().toLowerCase().replaceAll(notSlugCharacter, '').replaceAll(' ', '-');
 
@@ -198,7 +203,11 @@ export const readMarkdownLinks = (markdown: string): MarkdownLinks => {
   const targets: string[] = [];
   const headings: string[] = [];
 
-  collectLinks(tokenizer.lexer(withoutByteOrderMark(markdown)), targets, headings);
+  collectLinks(
+    tokenizer.lexer(withoutFrontmatter(withoutByteOrderMark(markdown))),
+    targets,
+    headings,
+  );
 
   return { targets, slugs: headingSlugs(headings) };
 };

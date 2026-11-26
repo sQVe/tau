@@ -329,6 +329,16 @@ const slugTable: { name: string; markdown: string; expected: readonly string[] }
     markdown: '# &#38;amp; B',
     expected: ['amp-b'],
   },
+  {
+    name: 'ignores a leading frontmatter block',
+    markdown: '---\ntitle: Notes\n---\n\n# Real\n',
+    expected: ['real'],
+  },
+  {
+    name: 'ignores a leading frontmatter block with CRLF line endings',
+    markdown: '---\r\ntitle: Notes\r\n---\r\n\r\n# Real\r\n',
+    expected: ['real'],
+  },
 ];
 
 it.for(slugTable)('$name', ({ markdown, expected }) => {
