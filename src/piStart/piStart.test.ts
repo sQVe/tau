@@ -836,6 +836,32 @@ it.each([
     argv: ['node', 'pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
   },
   {
+    name: 'a bare pi after a loader flag',
+    argv: [
+      'node',
+      '--loader',
+      'tsx',
+      'pi',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
+  },
+  {
+    name: 'a bare pi after a memory flag',
+    argv: [
+      'node',
+      '--max-old-space-size',
+      '4096',
+      'pi',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
+  },
+  {
     name: 'a bun pi path',
     argv: ['bun', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
   },
@@ -884,6 +910,8 @@ it.each<[string, readonly string[] | undefined]>([
   ['a non-Pi argv', ['bash']],
   ['a node command with a trailing pi argument', ['node', '/path/tool.js', 'pi']],
   ['a node command with a flag value of pi', ['node', '--title', 'pi', '/path/tool.js']],
+  ['a node command with a Pi-named flag value', ['node', '--require', './pi.js', 'main.js']],
+  ['a bare pi argument after an unknown value-taking flag', ['node', '--stack-size', '2000', 'pi']],
 ])('a start retries a model read that first returns %s', async (_shape, firstRead) => {
   const fake = launchWithForeground([
     'pi',

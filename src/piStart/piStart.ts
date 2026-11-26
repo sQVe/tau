@@ -169,24 +169,67 @@ const carriesPath = (argument: string): boolean =>
 const hasExecutableSuffix = (argument: string): boolean =>
   piExecutableSuffixes.some((suffix) => argument.endsWith(`.${suffix}`));
 
-// The script is the first argument after the runtime, or a later argument that names a path or an
-// executable. A bare Pi name later in the arguments is more likely a flag value.
-const isPiScriptAt = (argv: readonly string[], index: number): boolean => {
-  const argument = argv[index];
+const isPathShaped = (argument: string): boolean =>
+  carriesPath(argument) || hasExecutableSuffix(argument);
 
-  if (argument === undefined || !isPiExecutable(argument)) {
-    return false;
+// Runtime flags that take a separate value, so the next argument is a flag value and not the
+// script. The list holds the supported Node and Bun flags; an unknown value-taking flag falls
+// back to the heuristic: a path-shaped Pi name is accepted and a bare one is rejected.
+const valueTakingRuntimeFlags = new Set([
+  '--conditions',
+  '-C',
+  '--dns-result-order',
+  '--env-file',
+  '--eval',
+  '-e',
+  '--experimental-loader',
+  '--icu-data-dir',
+  '--import',
+  '--inspect-port',
+  '--loader',
+  '--max-http-header-size',
+  '--max-old-space-size',
+  '--openssl-config',
+  '--preload',
+  '--print',
+  '-p',
+  '--redirect-warnings',
+  '--require',
+  '-r',
+  '--title',
+  '--tls-cipher-list',
+  '--watch-path',
+]);
+
+// The script is the first argument after the runtime once the known flag values are skipped. A
+// later Pi name counts only when it carries a path separator or an executable suffix.
+const scriptArgument = (argv: readonly string[]): string | undefined => {
+  let isFirstCandidate = true;
+
+  for (let index = 1; index < argv.length; index += 1) {
+    const argument = argv[index];
+
+    if (argument === undefined) {
+      return undefined;
+    }
+
+    if (argument.startsWith('-')) {
+      index += valueTakingRuntimeFlags.has(argument) ? 1 : 0;
+
+      continue;
+    }
+
+    const isScript = isFirstCandidate || isPathShaped(argument);
+
+    if (isPiExecutable(argument) && isScript) {
+      return argument;
+    }
+
+    isFirstCandidate = false;
   }
 
-  if (index === 1) {
-    return true;
-  }
-
-  return carriesPath(argument) || hasExecutableSuffix(argument);
+  return undefined;
 };
-
-const scriptArgument = (argv: readonly string[]): string | undefined =>
-  argv.slice(1).find((_argument, offset) => isPiScriptAt(argv, offset + 1));
 
 const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined => {
   if (argv === undefined) {
