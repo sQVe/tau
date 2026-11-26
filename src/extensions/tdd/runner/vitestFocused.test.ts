@@ -117,39 +117,20 @@ describe('focused Vitest entry', { timeout: 30_000 }, () => {
     expect(summary).toMatchObject({ total: { lines: { pct: 50 } } });
   });
 
-  it('selects a decision-table test by a name past the display cut', async () => {
+  it.for([
+    { name: 'the root config', configuration: undefined },
+    {
+      name: 'an inline project',
+      configuration:
+        "export default { test: { projects: [{ test: { name: 'one', include: ['value.test.ts'] } }] } };",
+    },
+  ])('selects a decision-table name past the cut in $name', async ({ configuration }) => {
     const cwd = await createProject();
     const name = 'a declared record cited with trailing punctuation accepts';
 
-    await writeFile(
-      join(cwd, 'value.test.ts'),
-      `import { it } from 'vitest';\nit.each([{ name: ${JSON.stringify(name)} }])('$name', () => {});`,
-    );
-
-    const result = await runTests({
-      scope: 'focused',
-      verificationArgv,
-      cwd,
-      files: ['value.test.ts'],
-      testNames: [name],
-    });
-
-    expect(result).toMatchObject({
-      kind: 'pass',
-      tests: [{ fullname: `'${name}'`, status: 'passed' }],
-    });
-
-    expect('tests' in result && result.tests).toHaveLength(1);
-  });
-
-  it('selects a decision-table name past the cut inside an inline project', async () => {
-    const cwd = await createProject();
-    const name = 'a declared record cited with trailing punctuation accepts';
-
-    await writeFile(
-      join(cwd, 'vitest.config.mjs'),
-      "export default { test: { projects: [{ test: { name: 'one', include: ['value.test.ts'] } }] } };",
-    );
+    if (configuration !== undefined) {
+      await writeFile(join(cwd, 'vitest.config.mjs'), configuration);
+    }
 
     await writeFile(
       join(cwd, 'value.test.ts'),

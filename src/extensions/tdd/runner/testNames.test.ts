@@ -90,6 +90,13 @@ describe('requestedNamePattern', () => {
     expect(matchesPattern(pattern, 'adds item 1')).toBe(false);
   });
 
+  it('keeps the first segment when the separator is empty', () => {
+    const pattern = requestedNamePattern(['works'], '');
+
+    expect(matchesPattern(pattern, 'works')).toBe(true);
+    expect(matchesPattern(pattern, "'works'")).toBe(true);
+  });
+
   it('matches no name when none is requested', () => {
     expect(matchesPattern(requestedNamePattern([], nameSeparator('4.1.11')), 'works')).toBe(false);
   });

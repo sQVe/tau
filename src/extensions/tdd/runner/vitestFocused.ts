@@ -67,8 +67,7 @@ try {
 
           // An inline project resolves its own test config, so it needs the same cut removed.
           for (const project of config.test.projects ?? []) {
-            // oxlint-disable-next-line typescript/no-unnecessary-condition -- A JavaScript config can hold a null project.
-            if (typeof project === 'object' && project !== null && 'test' in project) {
+            if (typeof project === 'object' && 'test' in project) {
               project.test = withoutDisplayCut(project.test ?? {});
             }
           }
