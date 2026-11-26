@@ -1,6 +1,20 @@
-interface ShellRedirection {
+type ShellRedirectionOperator =
+  | '<'
+  | '>'
+  | '>>'
+  | '>|'
+  | '<>'
+  | '>&'
+  | '<&'
+  | '&>'
+  | '&>>'
+  | '<<'
+  | '<<-'
+  | '<<<';
+
+export interface ShellRedirection {
   fileDescriptor: number | undefined;
-  operator: string;
+  operator: ShellRedirectionOperator;
   target: string;
 }
 
@@ -11,8 +25,6 @@ export interface ShellCommand {
   arguments: string[];
   heredocs: string[];
   background: boolean;
-  // The index of the first command of this command's pipeline or list unit.
-  unit: number;
   // The index of the first command inside this command's group, set only on the command that
   // closes the group.
   group: number | undefined;
@@ -33,7 +45,9 @@ interface ListState {
   wordCommandStart: number;
   heredocOperator: { stripsTabs: boolean } | undefined;
   redirectionTarget: boolean;
-  pendingRedirection: { fileDescriptor: number | undefined; operator: string } | undefined;
+  pendingRedirection:
+    | { fileDescriptor: number | undefined; operator: ShellRedirectionOperator }
+    | undefined;
   depth: number;
   // The first command index of the pipeline or list unit at each nesting depth.
   unitStarts: number[];
@@ -53,6 +67,7 @@ const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const multiCharacterSeparators = new Set(['&&', '||', '|&']);
 const listContinuationOperators = new Set(['&&', '||', '|&', '|']);
 const longestRedirection = '<<<';
+const doubledRedirectionOperators = ['<>', '<&', '>>', '>&', '>|'] as const;
 
 const separatorLength = (character: string, next: string): number =>
   multiCharacterSeparators.has(character + next) ? 2 : 1;
@@ -171,7 +186,7 @@ class ShellParser {
     const firstCommand = this.commands.length;
 
     const state: ListState = {
-      command: this.startCommand(firstCommand),
+      command: this.startCommand(),
       word: undefined,
       wordQuoted: false,
       wordCommandStart: 0,
@@ -353,6 +368,7 @@ class ShellParser {
 
     if (continuesListOnNewline(character, state.continuesList)) {
       this.position += 1;
+      this.readPendingHeredocs();
 
       return false;
     }
@@ -373,10 +389,8 @@ class ShellParser {
 
     const endsUnit = endsListUnit(character, isBackground);
     const commandIndex = this.commands.length;
-    const startsUnit = endsUnit || character === '(';
-    const unit = startsUnit ? commandIndex : (state.unitStarts.at(-1) ?? commandIndex);
 
-    state.command = this.startCommand(unit);
+    state.command = this.startCommand();
     state.redirectionTarget = false;
     state.pendingRedirection = undefined;
     state.continuesList = continuesListAfter(operator);
@@ -399,7 +413,9 @@ class ShellParser {
     return false;
   }
 
-  // A trailing `&` backgrounds the whole pipeline or list unit, not only its last command.
+  // A trailing `&` backgrounds the whole pipeline or list unit, not only its last command. A
+  // command parsed from a heredoc body is produced by expanding the redirection, not by running a
+  // member of that pipeline, so it stays in the foreground.
   private backgroundUnit(state: ListState): void {
     const start = state.unitStarts.at(-1) ?? 0;
 
@@ -428,7 +444,6 @@ class ShellParser {
     }
 
     state.command.group = groupStart;
-    state.command.unit = state.unitStarts.at(-1) ?? groupStart;
 
     return false;
   }
@@ -486,13 +501,12 @@ class ShellParser {
     return '$`"\\'.includes(next) ? next : `\\${next}`;
   }
 
-  private startCommand(unit: number): ShellCommand {
+  private startCommand(): ShellCommand {
     const command: ShellCommand = {
       words: [],
       arguments: [],
       heredocs: [],
       background: false,
-      unit,
       group: undefined,
       redirections: [],
     };
@@ -503,8 +517,6 @@ class ShellParser {
   }
 
   private offsetCommand(command: ShellCommand, base: number): void {
-    command.unit += base;
-
     if (command.group !== undefined) {
       command.group += base;
     }
@@ -615,6 +627,10 @@ class ShellParser {
       this.offsetCommand(command, base);
     }
 
+    for (const command of innerParser.heredocBodyCommands) {
+      this.heredocBodyCommands.add(command);
+    }
+
     this.commands.push(...innerParser.commands);
 
     return `\`${inner}\``;
@@ -628,7 +644,7 @@ class ShellParser {
 
   // Consume one redirection operator. Returns heredoc options when the operator starts a heredoc.
   private readRedirection(): {
-    operator: string;
+    operator: ShellRedirectionOperator;
     heredoc: { stripsTabs: boolean } | undefined;
   } {
     const rest = this.source.slice(this.position, this.position + longestRedirection.length);
@@ -647,8 +663,9 @@ class ShellParser {
       return { operator: stripsTabs ? '<<-' : '<<', heredoc: { stripsTabs } };
     }
 
-    const doubled = /^[<>][<>&|]/.test(rest);
-    const operator = doubled ? rest.slice(0, 2) : rest.charAt(0);
+    const doubled = doubledRedirectionOperators.find((candidate) => rest.startsWith(candidate));
+    const single = rest.startsWith('<') ? '<' : '>';
+    const operator: ShellRedirectionOperator = doubled ?? single;
 
     this.position += operator.length;
 

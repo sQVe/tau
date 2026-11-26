@@ -17,9 +17,6 @@ const backgroundsOf = (source: string): boolean[] | undefined =>
     ?.filter(({ arguments: commandArguments }) => commandArguments.length > 0)
     .map(({ background }) => background);
 
-const unitsOf = (source: string): number[] | undefined =>
-  parseShellCommands(source)?.map(({ unit }) => unit);
-
 const groupsOf = (source: string): (number | undefined)[] | undefined =>
   parseShellCommands(source)?.map(({ group }) => group);
 
@@ -82,24 +79,8 @@ describe('parseShellCommands', () => {
     expect(backgroundsOf('( a; b & )')).toEqual([false, true]);
   });
 
-  it.each([
-    ['a group and its closing redirections', '( cmd ) > out', [0, 1, 0]],
-    ['a group with a list separator', '( a; b ) > out', [0, 1, 2, 0]],
-    ['a plain list', 'cmd; other', [0, 1]],
-  ])('records the unit index for %s', (_name, source, expected) => {
-    expect(unitsOf(source)).toEqual(expected);
-  });
-
   it('records the group start on the command that closes the group', () => {
     expect(groupsOf('( a; b ) > out')).toEqual([undefined, undefined, undefined, 1]);
-  });
-
-  it('gives a continuation the outer list unit', () => {
-    expect(unitsOf('( cmd ) | next')).toEqual([0, 1, 0, 0]);
-  });
-
-  it('offsets the unit of a backtick command into the outer list', () => {
-    expect(unitsOf('echo `git commit`')).toEqual([0, 1]);
   });
 
   it('offsets the group of a backtick group into the outer list', () => {
@@ -342,7 +323,6 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         heredocs: ['body\n'],
         background: false,
-        unit: 0,
         redirections: [],
       },
       {
@@ -350,9 +330,23 @@ describe('parseShellCommands', () => {
         arguments: ['next'],
         heredocs: [],
         background: false,
-        unit: 1,
         redirections: [],
       },
+    ]);
+  });
+
+  it('reads a heredoc body after a continued line', () => {
+    const commands = parseShellCommands('cat <<EOF &&\nbody\nEOF\nnext');
+
+    expect(commands?.[0]?.heredocs).toEqual(['body\n']);
+    expect(commands?.map(({ words }) => words)).toEqual([['cat'], ['next']]);
+  });
+
+  it('keeps a heredoc body command inside a backtick out of the background unit', () => {
+    expect(backgroundsOf('echo `cat <<EOF\n$(touch x 2>/dev/null)\nEOF` &')).toEqual([
+      true,
+      true,
+      false,
     ]);
   });
 
@@ -371,7 +365,6 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         heredocs: [],
         background: false,
-        unit: 0,
         redirections: [{ fileDescriptor: undefined, operator: '<<<', target: 'word' }],
       },
       {
@@ -379,7 +372,6 @@ describe('parseShellCommands', () => {
         arguments: ['next'],
         heredocs: [],
         background: false,
-        unit: 1,
         redirections: [],
       },
     ]);
@@ -439,7 +431,6 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         heredocs: [''],
         background: false,
-        unit: 0,
         redirections: [],
       },
     ]);
