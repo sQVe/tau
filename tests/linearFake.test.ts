@@ -149,7 +149,7 @@ test('refuses an attachment selection whose shape it does not model', async () =
   ]);
 
   expect(result.code).toBe(1);
-  expect(result.stderr).toContain('attachment selections');
+  expect(result.stderr).toContain('cannot read attachment selection 0');
   expect(fake.writes()).toEqual([]);
 });
 
