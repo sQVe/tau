@@ -23,8 +23,8 @@ metadata:
     conflicts without fixing them. Resolve only threads the viewer started.
 - A request to draft only, investigate only, or approve first limits this skill. Follow it.
 - Follow the [tracker skill's write approvals](../tracker/SKILL.md#hard-rules). Leave approval of
-  writes to people to the `pr_feedback` tool's `post` confirmation; step 8 adds the other-author
-  ask.
+  thread replies to the `pr_feedback` tool's `post` confirmation. Step 8 previews the conversation
+  comment with `ask_user_question` and adds the other-author ask.
 - Rebase and force-push only as steps 2 and 7 say. Run every stack command through the
   [stack skill](../stack/SKILL.md).
 - Never rerun a check, or add retries, skips, or longer timeouts, to make a failure pass.
@@ -158,7 +158,12 @@ metadata:
    - Author mode, review summaries and conversation comments: post one PR comment only for what a
      person raised there. Answer a person's question. Give the reason for a person's finding you
      judged Not worth changing or Incorrect. Cite the issue for a person's finding you tracked. Link
-     each source comment.
+     each source comment. Call `pr` `prepare` once and use its directory as `$prdir`. Save the
+     comment as `$prdir/comment.md`, then dry run with `kind: 'comment'`, `repository`, `pr`,
+     `directory`, and `file: 'comment.md'`. Fix every finding and dry run again. Show the comment in
+     an `ask_user_question` preview under the [Hard rules](../tracker/SKILL.md#hard-rules) before
+     publishing, because it is a comment to people. Publish with `pr` `publish`, the token, and the
+     same inputs, and report the returned `url`.
    - Post nothing outside a thread for a bot's finding, whether you fixed, declined, or tracked it.
      Post nothing for a person's finding you fixed, because the pushed commit shows the fix. List
      these findings in step 10's report.
@@ -167,7 +172,8 @@ metadata:
      to edit or skip.
    - Apply any requested edits or skips before the post call. A skipped thread stays open. Write the
      remaining drafts and the resolves from step 9 to `replies.json` in the `directory` that the
-     script returned, using the tool's format.
+     script returned, using the tool's format. Leave its `comment` field null, because step 8
+     published the conversation comment with `pr` `publish`.
 
 9. Post and resolve with the `pr_feedback` tool's `post`. Pass the PR's head after step 7's push as
    `head`, or the script's `headRefOid` when the round did not push.
