@@ -29,8 +29,8 @@ export interface ShellCommand {
   // closes the group.
   group: number | undefined;
   // The shell process that runs the command, as a dotted path from the top-level shell. A command
-  // substitution, backtick, or expanding heredoc body starts a child shell, so an `exec` there does
-  // not change the descriptors of the shell that contains it.
+  // substitution, backtick, expanding heredoc body, pipeline element, or backgrounded unit starts a
+  // child shell, so an `exec` there does not change the descriptors of the shell that contains it.
   shellId: string;
   redirections: ShellRedirection[];
 }
@@ -40,6 +40,11 @@ interface PendingHeredoc {
   delimiter: string;
   expands: boolean;
   stripsTabs: boolean;
+}
+
+interface PipelineElement {
+  start: number;
+  parentShellId: string | undefined;
 }
 
 interface ListState {
@@ -57,6 +62,9 @@ interface ListState {
   unitStarts: number[];
   // The first command index of the group at each nesting depth.
   groupStarts: number[];
+  // The first command index of the pipeline element at each nesting depth, and the shell that
+  // contains the pipeline once a pipe starts one.
+  elements: PipelineElement[];
   // The open compound keywords, with the first command index of the unit that encloses each.
   compounds: { closer: string; unitStart: number }[];
   continuesList: boolean;
@@ -142,7 +150,9 @@ export const wrapperValueOptions: Readonly<Record<string, ReadonlySet<string>>> 
     '--type',
     '--user',
   ]),
-  time: new Set(['-f', '-o', '--format', '--output']),
+  // `time` is the bash reserved word, which takes only the `-p` flag. The value options `-f`, `-o`,
+  // `--format`, and `--output` belong to the external `time` binary, which is a different command.
+  time: new Set(),
   timeout: new Set(['-k', '-s', '--kill-after', '--signal']),
   watch: new Set(['-n', '-q', '--equexit', '--interval']),
   xargs: new Set([
@@ -363,10 +373,19 @@ const compoundClosers: Readonly<Record<string, string>> = {
 
 const closingKeywords: ReadonlySet<string> = new Set(['}', 'done', 'esac', 'fi']);
 
+// The reserved word `time` takes only the `-p` flag. `optionEnd` consumes flag words, so a value
+// word such as the external binary's `-o` file ends the options instead of being skipped.
+const afterTimeOptions = (words: readonly string[], index: number): number => {
+  const timeOptions = wrapperValueOptions.time ?? emptyOptionValues;
+
+  return afterWrapper(words, optionEnd(words, index + 1, timeOptions), timeOptions, 0);
+};
+
 // The first compound word a command runs, after its leading keywords. Only a reserved word can sit
 // before a compound opener: bash treats a brace after `sudo`, `chroot`, or `env` as that wrapper's
-// argument, so a wrapper does not start a compound. `time` is a reserved word and keeps its options.
-const compoundWordAt = (words: readonly string[]): { index: number; word: string } | undefined => {
+// argument, so a wrapper does not start a compound. `time` is a reserved word and keeps only its
+// flag.
+const compoundWordAt = (words: readonly string[]): number | undefined => {
   let index = 0;
 
   while (index < words.length) {
@@ -374,7 +393,7 @@ const compoundWordAt = (words: readonly string[]): { index: number; word: string
     const name = commandNameOf(word);
 
     if (Object.hasOwn(compoundClosers, word) || closingKeywords.has(word)) {
-      return { index, word };
+      return index;
     }
 
     if (commandKeywords.has(word) || assignmentPattern.test(word)) {
@@ -387,9 +406,7 @@ const compoundWordAt = (words: readonly string[]): { index: number; word: string
       return undefined;
     }
 
-    const timeOptions = wrapperValueOptions.time ?? emptyOptionValues;
-
-    index = afterWrapper(words, optionEnd(words, index + 1, timeOptions), timeOptions, 0);
+    index = afterTimeOptions(words, index);
   }
 
   return undefined;
@@ -411,9 +428,7 @@ export const runsRedirectionsOnlyExec = (words: readonly string[]): boolean => {
     if (commandKeywords.has(word) || assignmentPattern.test(word)) {
       index += 1;
     } else if (name === 'time') {
-      const timeOptions = wrapperValueOptions.time ?? emptyOptionValues;
-
-      index = afterWrapper(words, optionEnd(words, index + 1, timeOptions), timeOptions, 0);
+      index = afterTimeOptions(words, index);
     } else if (shellQualifierNames.has(name)) {
       const afterOptions = optionEnd(words, index + 1, emptyOptionValues);
       const options = words.slice(index + 1, afterOptions);
@@ -552,10 +567,14 @@ class ShellParser {
     this.shellId = shellId;
   }
 
-  private childShellId(): string {
+  private childShellIdOf(parentShellId: string): string {
     this.childShells += 1;
 
-    return `${this.shellId}.${this.childShells}`;
+    return `${parentShellId}.${this.childShells}`;
+  }
+
+  private childShellId(): string {
+    return this.childShellIdOf(this.shellId);
   }
 
   // A substitution runs in a child shell. The parser keeps its position, so only the commands it
@@ -589,6 +608,7 @@ class ShellParser {
       depth: 0,
       unitStarts: [firstCommand],
       groupStarts: [],
+      elements: [{ start: firstCommand, parentShellId: undefined }],
       compounds: [],
       continuesList: false,
       closesSubstitution,
@@ -771,18 +791,15 @@ class ShellParser {
     const length = separatorLength(character, next);
     const operator = this.source.slice(this.position, this.position + length);
     const isBackground = isBackgroundSeparator(character, length);
-
-    // Bash applies `|&` as `2>&1` after the command's own redirections.
-    if (operator === '|&') {
-      state.command.redirections.push({ fileDescriptor: 2, operator: '>&', target: '1' });
-    }
-
-    if (isBackground) {
-      this.backgroundUnit(state);
-    }
-
-    const endsUnit = endsListUnit(character, isBackground);
     const commandIndex = this.commands.length;
+
+    const endsUnit = this.applySeparatorPipeline(
+      state,
+      character,
+      operator,
+      isBackground,
+      commandIndex,
+    );
 
     state.command = this.startCommand();
     state.redirectionTarget = false;
@@ -800,6 +817,7 @@ class ShellParser {
       state.depth += 1;
       state.unitStarts.push(commandIndex);
       state.groupStarts.push(commandIndex);
+      state.elements.push({ start: commandIndex, parentShellId: undefined });
     } else if (character === ')') {
       return this.closeGroup(state);
     }
@@ -807,21 +825,96 @@ class ShellParser {
     return false;
   }
 
+  // Returns whether this separator ends the background unit. A pipe starts a new pipeline element,
+  // and a list operator or unit end restores the shell that contains the pipeline.
+  private applySeparatorPipeline(
+    state: ListState,
+    character: string,
+    operator: string,
+    isBackground: boolean,
+    commandIndex: number,
+  ): boolean {
+    // Bash applies `|&` as `2>&1` after the command's own redirections.
+    if (operator === '|&') {
+      state.command.redirections.push({ fileDescriptor: 2, operator: '>&', target: '1' });
+    }
+
+    const endsUnit = endsListUnit(character, isBackground);
+
+    if (endsUnit || operator === '&&' || operator === '||') {
+      this.endPipeline(state, commandIndex);
+    }
+
+    if (isBackground) {
+      this.backgroundUnit(state);
+    }
+
+    if (operator === '|' || operator === '|&') {
+      this.startPipelineElement(state, commandIndex);
+    }
+
+    return endsUnit;
+  }
+
+  // A pipeline runs each element in its own subshell, so an `exec` in one element never changes the
+  // descriptors of another element or of the shell that contains the pipeline.
+  private startPipelineElement(state: ListState, commandIndex: number): void {
+    const element = state.elements.at(-1);
+
+    if (element === undefined) {
+      return;
+    }
+
+    if (element.parentShellId === undefined) {
+      element.parentShellId = this.shellId;
+
+      const elementShellId = this.childShellIdOf(element.parentShellId);
+
+      for (const command of this.commands.slice(element.start)) {
+        command.shellId = `${elementShellId}${command.shellId.slice(this.shellId.length)}`;
+      }
+    }
+
+    element.start = commandIndex;
+    this.shellId = this.childShellIdOf(element.parentShellId);
+  }
+
+  private endPipeline(state: ListState, commandIndex: number): void {
+    const element = state.elements.at(-1);
+
+    if (element === undefined) {
+      return;
+    }
+
+    if (element.parentShellId !== undefined) {
+      this.shellId = element.parentShellId;
+    }
+
+    element.parentShellId = undefined;
+    element.start = commandIndex;
+  }
+
   // A trailing `&` backgrounds the whole pipeline or list unit, not only its last command. A
   // compound restores the unit start it opened in when it closes, so the whole compound joins the
   // unit. A command parsed from a heredoc body runs when the command that carries the heredoc
-  // expands the body, so it joins the background unit only when that command does.
+  // expands the body, so it joins the background unit only when that command does. The unit runs in
+  // a subshell, so its commands move under one child shell and an `exec` in the unit cannot reach a
+  // command outside it.
   private backgroundUnit(state: ListState): void {
     const start = state.unitStarts.at(-1) ?? 0;
     const unit = this.commands.slice(start);
     const backgrounded = new Set(unit);
+    const unitShellId = this.childShellId();
 
     for (const command of unit) {
       const owner = this.heredocOwners.get(command);
 
-      if (owner === undefined || backgrounded.has(owner)) {
-        command.background = true;
+      if (owner !== undefined && !backgrounded.has(owner)) {
+        continue;
       }
+
+      command.background = true;
+      command.shellId = `${unitShellId}${command.shellId.slice(this.shellId.length)}`;
     }
   }
 
@@ -840,6 +933,12 @@ class ShellParser {
 
     if (state.unitStarts.length > 1) {
       state.unitStarts.pop();
+    }
+
+    const element = state.elements.pop();
+
+    if (element?.parentShellId !== undefined) {
+      this.shellId = element.parentShellId;
     }
 
     state.command.group = groupStart;
@@ -923,7 +1022,7 @@ class ShellParser {
 
     const leading = compoundWordAt(state.command.arguments);
 
-    if (leading === undefined || leading.index !== wordIndex) {
+    if (leading === undefined || leading !== wordIndex) {
       return;
     }
 

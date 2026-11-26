@@ -27,6 +27,11 @@ const backgroundsOf = (source: string): boolean[] | undefined =>
 const groupsOf = (source: string): (number | undefined)[] | undefined =>
   parseShellCommands(source)?.map(({ group }) => group);
 
+const shellIdsOf = (source: string): string[] | undefined =>
+  parseShellCommands(source)
+    ?.filter(({ arguments: commandArguments }) => commandArguments.length > 0)
+    .map(({ shellId }) => shellId);
+
 describe('parseShellCommands', () => {
   it.each([
     ['git commit>out', [['git', 'commit', 'out']]],
@@ -94,6 +99,20 @@ describe('parseShellCommands', () => {
     expect(groupsOf('echo `( a )`')).toEqual([undefined, undefined, undefined, 2]);
   });
 
+  it('gives each pipeline element its own child shell', () => {
+    expect(shellIdsOf('a | b | c; d')).toEqual(['0.1', '0.2', '0.3', '0']);
+  });
+
+  it('gives a backgrounded unit its own child shell and keeps its members together', () => {
+    expect(shellIdsOf('{ exec 2>/dev/null; cmd & } &')).toEqual(['0.2', '0.2.1', '0.2']);
+  });
+
+  it('gives a command substitution and a backtick their own child shells', () => {
+    expect(shellIdsOf('echo $(true)')).toEqual(['0', '0.1']);
+    expect(shellIdsOf('echo `true`')).toEqual(['0', '0.1']);
+    expect(shellIdsOf('echo $(true $(false))')).toEqual(['0', '0.1', '0.1.1']);
+  });
+
   it.each([
     ['a pipeline with |&', 'printf example 2>/dev/null |& cat', [false, false]],
     ['a pipeline with |& and a trailing ampersand', 'cmd 2>/dev/null |& cat &', [true, true]],
@@ -134,7 +153,7 @@ describe('parseShellCommands', () => {
     [
       'a timed brace compound after a time output option',
       'time -o /tmp/x.log { a; } &',
-      [true, true],
+      [false, true],
     ],
     ['a wrapper before a brace argument', 'sudo { a; } &', [false, true]],
     ['an env assignment before a brace argument', 'env FOO=1 { a; } &', [false, true]],
@@ -623,9 +642,14 @@ it.each([
   { name: 'a negated exec', words: ['!', 'exec'], runs: true },
   { name: 'a timed exec', words: ['time', 'exec'], runs: true },
   {
-    name: 'a timed exec after a time option',
-    words: ['time', '-o', '/tmp/x.log', 'exec'],
+    name: 'a timed exec after the portability flag',
+    words: ['time', '-p', 'exec'],
     runs: true,
+  },
+  {
+    name: 'a timed exec after an external time output option',
+    words: ['time', '-o', '/tmp/x.log', 'exec'],
+    runs: false,
   },
   { name: 'a command-qualified exec', words: ['command', 'exec'], runs: true },
   { name: 'a builtin-qualified exec', words: ['builtin', 'exec'], runs: true },
