@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { expect, it } from 'vitest';
 
 import { publishedUrl, verifiedCopyArguments } from './publishExecution.js';
@@ -63,14 +65,14 @@ it('rewrites every file argument to a unique verified copy', () => {
 
   expect(result.commandArguments).toEqual([
     '--body-file',
-    `${directory}/0-body.md`,
+    join(directory, '0-body.md'),
     '--input',
-    `${directory}/2-body.md`,
+    join(directory, '2-body.md'),
   ]);
 
   expect(result.copies).toEqual([
-    { path: `${directory}/0-body.md`, bytes: first.bytes },
-    { path: `${directory}/2-body.md`, bytes: second.bytes },
+    { path: join(directory, '0-body.md'), bytes: first.bytes },
+    { path: join(directory, '2-body.md'), bytes: second.bytes },
   ]);
 });
 
@@ -87,7 +89,7 @@ it('refuses a file flag whose value the plan did not verify', () => {
 });
 
 it('refuses a command that names no file', () => {
-  expect(() => verifiedCopyArguments(['gh', 'pr', 'view'], [first], directory)).toThrow(
+  expect(() => verifiedCopyArguments(['pr', 'view', '7'], [first], directory)).toThrow(
     'The publication command names no file to read.',
   );
 });

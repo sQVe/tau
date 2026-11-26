@@ -10,6 +10,21 @@ import {
 
 const setUp = () => setUpPublication(onTestFinished);
 
+const reviewWrite = (contents: string) => ({
+  key: 'api post',
+  commandArguments: [
+    'api',
+    '--hostname',
+    'github.com',
+    '--method',
+    'POST',
+    'repos/sQVe/tau/pulls/7/reviews',
+    '--input',
+    expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
+  ],
+  contents: Buffer.from(contents),
+});
+
 const submittedReview = `${JSON.stringify(
   {
     commit_id: 'abc123',
@@ -42,22 +57,7 @@ it('posts a submitted review with inline comments in one call', async () => {
 
   const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
-  expect(fake.writes).toEqual([
-    {
-      key: 'api post',
-      commandArguments: [
-        'api',
-        '--hostname',
-        'github.com',
-        '--method',
-        'POST',
-        'repos/sQVe/tau/pulls/7/reviews',
-        '--input',
-        expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
-      ],
-      contents: Buffer.from(submittedReview),
-    },
-  ]);
+  expect(fake.writes).toEqual([reviewWrite(submittedReview)]);
 
   expect(published.url).toBe('https://github.com/sQVe/tau/pull/7#pullrequestreview-1');
   expect(publishedCommands(fake)).toEqual(['api --hostname']);
@@ -111,22 +111,7 @@ it('posts a pending review without an event in one call', async () => {
 
   await run({ ...request, action: 'publish', token: dryRun.token });
 
-  expect(fake.writes).toEqual([
-    {
-      key: 'api post',
-      commandArguments: [
-        'api',
-        '--hostname',
-        'github.com',
-        '--method',
-        'POST',
-        'repos/sQVe/tau/pulls/7/reviews',
-        '--input',
-        expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
-      ],
-      contents: Buffer.from(pendingReview),
-    },
-  ]);
+  expect(fake.writes).toEqual([reviewWrite(pendingReview)]);
 
   expect(fake.calls).toHaveLength(1);
 });
@@ -177,22 +162,7 @@ it('posts a review comment that carries only position', async () => {
   const dryRun = await run(request);
   const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
-  expect(fake.writes).toEqual([
-    {
-      key: 'api post',
-      commandArguments: [
-        'api',
-        '--hostname',
-        'github.com',
-        '--method',
-        'POST',
-        'repos/sQVe/tau/pulls/7/reviews',
-        '--input',
-        expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
-      ],
-      contents: Buffer.from(contents),
-    },
-  ]);
+  expect(fake.writes).toEqual([reviewWrite(contents)]);
 
   expect(published.url).toBe('https://github.com/sQVe/tau/pull/7#pullrequestreview-1');
 });
