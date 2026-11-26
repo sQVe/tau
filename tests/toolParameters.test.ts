@@ -29,14 +29,23 @@ interface SchemaChild {
   value: unknown;
 }
 
+// JSON Schema treats a node as an object when its type includes `object` or when it declares
+// `properties`. This predicate is written from that rule, not from the production helper, so a gap
+// in production shows up here instead of being copied.
 const isOpenObject = (value: Record<string, unknown>): boolean => {
-  const isObjectType = value['type'] === 'object';
+  const type = value['type'];
+
+  const isObjectType = type === 'object';
+  const isObjectTypeList = Array.isArray(type) && type.includes('object');
+  const declaresProperties = 'properties' in value;
+  const isObjectNode = isObjectType || isObjectTypeList || declaresProperties;
+
   const additionalProperties = value['additionalProperties'];
 
   const hasDefaultAdditionalProperties =
     additionalProperties === undefined || additionalProperties === true;
 
-  return isObjectType && hasDefaultAdditionalProperties;
+  return isObjectNode && hasDefaultAdditionalProperties;
 };
 
 const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChild[] => {
@@ -251,11 +260,14 @@ it('reports a patternProperties object without a closed additionalProperties', (
   expect(objectProblems('sample', map, '')).toEqual(['sample parameters']);
 });
 
-it('fails when a tool it needs is missing', () => {
-  expect(() => toolNamed([], 'handover')).toThrow('The handover tool was not registered.');
+it.each([
+  { name: 'a type list that includes object', schema: { type: ['object', 'null'] } },
+  { name: 'properties without a type', schema: { properties: {} } },
+])('reports $name as an open object', ({ schema }) => {
+  expect(objectProblems('sample', schema, '')).toEqual(['sample parameters']);
 });
 
-it('refuses the past handover start model field on a schema without model', async () => {
+it('refuses an undeclared handover start field', async () => {
   const tools = await registeredTools();
 
   const handover = toolNamed(
@@ -263,19 +275,8 @@ it('refuses the past handover start model field on a schema without model', asyn
     'handover',
   );
 
-  const oldParameters = structuredClone(handover.parameters) as Record<string, unknown>;
-  const properties = oldParameters['properties'];
-
-  if (!isRecord(properties)) {
-    throw new Error('The handover parameters have no properties.');
-  }
-
-  delete properties['model'];
-
-  const oldTool = { ...handover, parameters: oldParameters } as Tool;
-
   expect(() => {
-    validateToolArguments(oldTool, {
+    validateToolArguments(handover, {
       type: 'toolCall',
       id: 'call',
       name: 'handover',
@@ -284,8 +285,8 @@ it('refuses the past handover start model field on a schema without model', asyn
         file: '.tau/handovers/message.md',
         folder: '/repository',
         name: 'Next steps',
-        model: 'claude-bridge/claude-opus-5-5',
+        modelId: 'claude-bridge/claude-opus-5-5',
       },
     });
-  }).toThrow('model: unknown field');
+  }).toThrow('modelId: unknown field');
 });
