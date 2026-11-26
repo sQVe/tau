@@ -18,6 +18,8 @@ const optionsIn = (cwd: string, overrides: Partial<CommandOptions> = {}): Comman
   environment: {},
   deadlineMilliseconds: 5000,
   signal: undefined,
+  // The stop grace is the only wall clock in a stop, so the tests bound it inside the test budget.
+  stopGraceMilliseconds: 500,
   ...overrides,
 });
 
@@ -101,6 +103,27 @@ it('stops the process group at the deadline', async () => {
     optionsIn(cwd, {
       argv: ['sh', '-c', 'echo $$ > group; sleep 30 & wait'],
       deadlineMilliseconds: 200,
+    }),
+  );
+
+  const groupId = await readGroupId(groupPath);
+
+  killGroupInCleanup(groupId);
+
+  expect(outcome).toEqual({ kind: 'stopped', reason: 'deadline' });
+  expect(await groupState(groupId)).toBe('gone');
+});
+
+// A group that ignores SIGTERM needs the escalation, which is the one wall clock in a stop.
+it('stops a process group that ignores SIGTERM within the stop grace it is given', async () => {
+  const cwd = temporaryCommandDirectory();
+  const groupPath = join(cwd, 'group');
+
+  const outcome = await runCommand(
+    optionsIn(cwd, {
+      argv: ['sh', '-c', 'trap "" TERM; echo $$ > group; sleep 30 & wait'],
+      deadlineMilliseconds: 200,
+      stopGraceMilliseconds: 300,
     }),
   );
 

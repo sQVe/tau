@@ -7,6 +7,9 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { groupState } from '../../process/process.js';
 import { defaultIdleLimitMilliseconds, runCheck } from './run.js';
 
+// The stop grace is the only wall clock in a stop, so the tests bound it well inside the test budget.
+const testStopGraceMilliseconds = 500;
+
 const waitForGroupExit = async (groupId: number): Promise<void> => {
   while ((await groupState(groupId)) !== 'gone') {
     await new Promise((resolve) => {
@@ -34,6 +37,7 @@ it('returns only after the command group is recorded, even when the command exit
       recorded = true;
     },
     idleLimitMilliseconds: defaultIdleLimitMilliseconds,
+    stopGraceMilliseconds: testStopGraceMilliseconds,
     output: 'combined',
   });
 
@@ -65,6 +69,7 @@ it('settles a cancelled run of a command that cannot spawn without signalling pr
     signal: controller.signal,
     onStarted: async () => {},
     idleLimitMilliseconds: defaultIdleLimitMilliseconds,
+    stopGraceMilliseconds: testStopGraceMilliseconds,
     output: 'combined',
   });
 
@@ -105,6 +110,7 @@ it('returns only after a background process in the command group has gone', asyn
     signal: undefined,
     onStarted: async () => {},
     idleLimitMilliseconds: defaultIdleLimitMilliseconds,
+    stopGraceMilliseconds: testStopGraceMilliseconds,
     output: 'combined',
   });
 
@@ -125,6 +131,7 @@ it('stops a command that prints once and then goes silent, and reports the hang'
     signal: undefined,
     onStarted: async () => {},
     idleLimitMilliseconds: 300,
+    stopGraceMilliseconds: testStopGraceMilliseconds,
     output: 'combined',
   });
 
@@ -145,6 +152,7 @@ it('does not stop a command that keeps writing output', async () => {
     signal: undefined,
     onStarted: async () => {},
     idleLimitMilliseconds: 400,
+    stopGraceMilliseconds: testStopGraceMilliseconds,
     output: 'combined',
   });
 
@@ -163,6 +171,7 @@ it('keeps separately captured stdout parseable and stderr in the command log', a
     signal: undefined,
     onStarted: async () => {},
     idleLimitMilliseconds: 4000,
+    stopGraceMilliseconds: testStopGraceMilliseconds,
     output: 'report',
   });
 
@@ -171,6 +180,23 @@ it('keeps separately captured stdout parseable and stderr in the command log', a
   expect(result).toMatchObject({ passed: true, idle: false, tail: 'diagnostic' });
   expect(stdout).toEqual({ status: 'ok' });
   expect(await readFile(result.logPath, 'utf8')).toBe('diagnostic\n');
+});
+
+// A command that ignores SIGTERM needs the escalation, which is the one wall clock in a stop.
+it('stops a command that ignores SIGTERM within the stop grace it is given', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+
+  const result = await runCheck({
+    root,
+    argv: [process.execPath, '-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
+    signal: undefined,
+    onStarted: async () => {},
+    idleLimitMilliseconds: 300,
+    stopGraceMilliseconds: 300,
+    output: 'combined',
+  });
+
+  expect(result).toMatchObject({ passed: false, idle: true });
 });
 
 it('sends no signal to the group after an idle stop returns', async () => {
@@ -197,6 +223,7 @@ it('sends no signal to the group after an idle stop returns', async () => {
     signal: undefined,
     onStarted: async () => {},
     idleLimitMilliseconds: 300,
+    stopGraceMilliseconds: testStopGraceMilliseconds,
     output: 'combined',
   });
 

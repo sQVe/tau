@@ -28,6 +28,8 @@ export interface CheckOptions {
   idleLimitMilliseconds: number;
   output: CheckOutput;
   checksPath?: string;
+  // How long a stopped command group may ignore SIGTERM before SIGKILL.
+  stopGraceMilliseconds?: number;
 }
 
 const tailLineCount = 40;
@@ -45,7 +47,7 @@ const newLogPath = async (root: string, checksPath: string): Promise<string> => 
   return join(directory, `${stamp}-${process.pid}.log`);
 };
 
-const killGraceMilliseconds = 5000;
+const defaultStopGraceMilliseconds = 5000;
 
 const millisecondsPerMinute = 60_000;
 const idleLimitMinutes = 2;
@@ -65,6 +67,7 @@ export const runCheck = async ({
   idleLimitMilliseconds,
   output,
   checksPath = 'checks',
+  stopGraceMilliseconds = defaultStopGraceMilliseconds,
 }: CheckOptions): Promise<CheckResult> => {
   const writesStdoutFile = output === 'report';
   const logPath = await newLogPath(root, checksPath);
@@ -104,7 +107,7 @@ export const runCheck = async ({
         let stopping: Promise<void> | undefined;
 
         const stop = () => {
-          stopping ??= stopGroup(child, killGraceMilliseconds);
+          stopping ??= stopGroup(child, stopGraceMilliseconds);
         };
 
         let lastSize = 0;
