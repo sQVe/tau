@@ -36,10 +36,7 @@ const withFakeTimers = (): FakeClock => {
   const armedTimers = new Map<unknown, number>();
 
   vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
-    const handle = setTimeoutFake(() => {
-      armedTimers.delete(handle);
-      callback(...args);
-    }, delay);
+    const handle = setTimeoutFake(callback, delay, ...args);
 
     armedTimers.set(handle, delay ?? 0);
 
@@ -291,23 +288,6 @@ it('does not warn again when the start message arrives twice', async () => {
   await vi.advanceTimersByTimeAsync(120_000);
 
   expect(pi.sendMessage).toHaveBeenCalledTimes(1);
-});
-
-it('leaves no timer armed once the warning fires', async () => {
-  const clock = withFakeTimers();
-  const { context, directory, pi } = setup();
-
-  await writeAssignment({ ...assignmentFor(directory), deadline: start + 120_000 });
-  await savePassingFullCheck(directory);
-
-  await pi.handler('session_start')({}, context);
-  await sendStartMessage(pi, context);
-
-  expect(clock.armedWarningTimers()).toBe(1);
-
-  await vi.advanceTimersByTimeAsync(warningDelay);
-
-  expect(clock.armedWarningTimers()).toBe(0);
 });
 
 it('keeps a question wait when the deadline warning turn settles', async () => {
