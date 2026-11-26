@@ -167,7 +167,11 @@ const inputKind = (
     return kind;
   }
 
-  if (kind === 'outputDuplicate' && isStdinDescriptor(descriptor) && /^\d+$/u.test(word)) {
+  if (
+    kind === 'outputDuplicate' &&
+    isStdinDescriptor(descriptor) &&
+    isUnquotedDigitWord(word, false)
+  ) {
     return 'duplicate';
   }
 
@@ -317,6 +321,10 @@ class ShellParser {
         state.heredocOperator = redirection;
         state.pendingRedirection = undefined;
       } else {
+        if (state.pendingRedirection !== undefined) {
+          state.redirectionDescriptor = undefined;
+        }
+
         state.pendingRedirection = redirection;
       }
     } else if (character === '&' && next === '>') {
@@ -422,7 +430,7 @@ class ShellParser {
     }
 
     if (heredocOperator !== undefined) {
-      this.finishHeredocDelimiter(state, word);
+      this.finishHeredocDelimiter(state, word, heredocOperator.stripsTabs);
     } else if (
       redirectionFollows &&
       state.pendingRedirection === undefined &&
@@ -441,7 +449,7 @@ class ShellParser {
     state.wordQuoted = false;
   }
 
-  private finishHeredocDelimiter(state: ListState, word: string): void {
+  private finishHeredocDelimiter(state: ListState, word: string, stripsTabs: boolean): void {
     this.commands.splice(state.wordCommandStart);
 
     state.command.inputs.push({
@@ -454,7 +462,7 @@ class ShellParser {
       command: state.command,
       delimiter: word,
       expands: !state.wordQuoted,
-      stripsTabs: state.heredocOperator?.stripsTabs ?? false,
+      stripsTabs,
     });
 
     state.heredocOperator = undefined;

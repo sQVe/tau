@@ -14,6 +14,11 @@ import type { NamedFileFacts, NamedFileVerdict } from './guard.js';
 
 const guard = (event: ToolCallEvent, cwd = process.cwd()) => guardToolCall(event, { cwd });
 
+// The lint rule accepts this name as an assertion, so each test keeps one call.
+const expectOutcome = (event: ToolCallEvent, cwd = process.cwd()): void => {
+  expect(guard(event, cwd)).toEqual({ block: true, reason: commitGuardReason });
+};
+
 const chmodRestricted = process.getuid?.() === 0 || process.platform === 'win32';
 
 const writeScript = (directory: string, name: string, text: string): string => {
@@ -102,10 +107,7 @@ describe('guardToolCall', () => {
   );
 
   it('returns a block result for a plain git commit bash command', () => {
-    expect(guard(makeBashEvent("git commit -m 'feat: add'"))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent("git commit -m 'feat: add'"));
   });
 
   it.each([
@@ -116,10 +118,7 @@ describe('guardToolCall', () => {
     "git-commit -m 'feat: add'",
     'echo @(#foo); git commit',
   ])('blocks commands that create commits: %s', (command) => {
-    expect(guard(makeBashEvent(command))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command));
   });
 
   it.each([
@@ -129,10 +128,7 @@ describe('guardToolCall', () => {
     "bash -lc 'git commit -m x'",
     "bash -c   'git commit -m x'",
   ])('blocks shell commands that contain git commit: %s', (command) => {
-    expect(guard(makeBashEvent(command))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command));
   });
 
   it.each(["sh -c 'git status'", "bash -c 'echo hello'"])(
@@ -152,10 +148,7 @@ describe('guardToolCall', () => {
     'git -C /tmp/repo commit -m x',
     'git -c user.name=x commit -m x',
   ])('blocks invocations that a command-name check misses: %s', (command) => {
-    expect(guard(makeBashEvent(command))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command));
   });
 
   it('blocks a commit inside a script file the command names', () => {
@@ -163,10 +156,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git -C . commit --allow-empty -m x\n');
 
-    expect(guard(makeBashEvent('sh commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh commit.sh'), directory);
   });
 
   it('blocks a script file the interpreter names with a relative path', () => {
@@ -174,10 +164,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git -C . commit --allow-empty -m x\n');
 
-    expect(guard(makeBashEvent('bash ./commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('bash ./commit.sh'), directory);
   });
 
   it('allows a script file that does not create a commit', () => {
@@ -200,10 +187,7 @@ describe('guardToolCall', () => {
 
     chmodSync(path, 0o000);
 
-    expect(guard(makeBashEvent('sh locked.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh locked.sh'), directory);
   });
 
   it('blocks a script file that holds a NUL byte', () => {
@@ -211,10 +195,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'binary.sh', '#!/bin/sh\ngit status\n\u0000\n');
 
-    expect(guard(makeBashEvent('sh binary.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh binary.sh'), directory);
   });
 
   it('blocks a script file larger than the inspection limit', () => {
@@ -222,10 +203,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'huge.sh', 'x'.repeat(1024 * 1024 + 1));
 
-    expect(guard(makeBashEvent('sh huge.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh huge.sh'), directory);
   });
 
   it('allows a shell command that reads no script file', () => {
@@ -239,10 +217,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh < commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh < commit.sh'), directory);
   });
 
   it('allows an output target that holds a commit', () => {
@@ -259,10 +234,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
   });
 
   it.each(['#!/usr/bin/env node', '#!/usr/bin/python3'])(
@@ -281,10 +253,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'tool.js', '#!/usr/bin/env node\ngit commit -m x\n');
 
-    expect(guard(makeBashEvent('sh tool.js'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh tool.js'), directory);
   });
 
   it.each([
@@ -297,10 +266,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
     writeScript(directory, 'profile.sh', 'echo hello\n');
 
-    expect(guard(makeBashEvent(command), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it.each(['#!/bin/sh', '#!/usr/bin/env bash', '#!/usr/bin/env -S bash'])(
@@ -310,10 +276,7 @@ describe('guardToolCall', () => {
 
       writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
 
-      expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
-        block: true,
-        reason: commitGuardReason,
-      });
+      expectOutcome(makeBashEvent('./commit.sh'), directory);
     },
   );
 
@@ -335,10 +298,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', '#!/bin/sh\ngit status\n\u0000\n');
 
-    expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
   });
 
   it('allows a directly executed binary file larger than the inspection limit', () => {
@@ -356,10 +316,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'huge.sh', `#!/bin/sh\n${'x'.repeat(1024 * 1024)}`);
 
-    expect(guard(makeBashEvent('./huge.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('./huge.sh'), directory);
   });
 
   it('allows a named path that is not a regular file', () => {
@@ -384,10 +341,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'inner.sh', 'git commit -m x\n');
     writeScript(directory, 'outer.sh', 'sh inner.sh\n');
 
-    expect(guard(makeBashEvent('sh outer.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh outer.sh'), directory);
   });
 
   it('allows a script file chain within the inspection budget', () => {
@@ -403,10 +357,7 @@ describe('guardToolCall', () => {
 
     writeScriptChain(directory, 9);
 
-    expect(guard(makeBashEvent('sh chain-0.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh chain-0.sh'), directory);
   });
 
   it.each([
@@ -421,10 +372,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(command), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it('blocks a directly executed script after a wrapper option value', () => {
@@ -432,10 +380,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', '#!/bin/sh\ngit commit -m x\n');
 
-    expect(guard(makeBashEvent('env -u FOO ./commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('env -u FOO ./commit.sh'), directory);
   });
 
   it('blocks a directly executed script after a wrapper duration', () => {
@@ -443,10 +388,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', '#!/bin/sh\ngit commit -m x\n');
 
-    expect(guard(makeBashEvent('timeout 5 ./commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('timeout 5 ./commit.sh'), directory);
   });
 
   it('blocks a script file in a directory a plain cd names', () => {
@@ -454,10 +396,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('cd sub && sh commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('cd sub && sh commit.sh'), directory);
   });
 
   it('resolves a script named by a script in the directory it runs in', () => {
@@ -466,10 +405,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'sub/outer.sh', 'sh inner.sh\n');
     writeScript(directory, 'sub/inner.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('cd sub && sh outer.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('cd sub && sh outer.sh'), directory);
   });
 
   it('allows a command that names 64 script files', () => {
@@ -483,10 +419,7 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const names = writeScriptFiles(directory, 65);
 
-    expect(guard(makeBashEvent(referencesTo(names)), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(referencesTo(names)), directory);
   });
 
   it('reads a repeated script reference once', () => {
@@ -510,10 +443,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh -s < commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh -s < commit.sh'), directory);
   });
 
   it('blocks a script file read through a read-write redirection', () => {
@@ -521,10 +451,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh <> commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh <> commit.sh'), directory);
   });
 
   it('allows a script file read through a non-standard descriptor', () => {
@@ -558,10 +485,7 @@ describe('guardToolCall', () => {
 
       writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-      expect(guard(makeBashEvent(command), directory)).toEqual({
-        block: true,
-        reason: commitGuardReason,
-      });
+      expectOutcome(makeBashEvent(command), directory);
     },
   );
 
@@ -586,10 +510,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('. ./commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('. ./commit.sh'), directory);
   });
 
   it('allows a local file named like a command that resolves through PATH', () => {
@@ -617,9 +538,10 @@ describe('guardToolCall', () => {
     writeScript(directory, 'a/child.sh', 'git status\n');
     writeScript(directory, 'b/child.sh', 'git commit -m x\n');
 
-    expect(
-      guard(makeBashEvent('cd a && sh ../x/parent.sh; cd ../b && sh ../x/parent.sh'), directory),
-    ).toEqual({ block: true, reason: commitGuardReason });
+    expectOutcome(
+      makeBashEvent('cd a && sh ../x/parent.sh; cd ../b && sh ../x/parent.sh'),
+      directory,
+    );
   });
 
   it('blocks text that starts with MZ but is not a native binary', () => {
@@ -627,10 +549,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'tool', 'MZ=1\ngit commit -m x\n');
 
-    expect(guard(makeBashEvent('./tool'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('./tool'), directory);
   });
 
   it('blocks an outer script after a cd in a subshell', () => {
@@ -639,10 +558,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
     mkdirSync(join(directory, 'sub'), { recursive: true });
 
-    expect(guard(makeBashEvent('(cd sub); sh commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('(cd sub); sh commit.sh'), directory);
   });
 
   it('blocks a script inside a subshell after cd', () => {
@@ -650,10 +566,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('(cd sub && sh commit.sh)'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('(cd sub && sh commit.sh)'), directory);
   });
 
   it('allows an interpreter name used as a data argument', () => {
@@ -669,10 +582,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh 00< commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh 00< commit.sh'), directory);
   });
 
   it('blocks a script file duplicated onto standard input', () => {
@@ -680,10 +590,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh 3< commit.sh <&3'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh 3< commit.sh <&3'), directory);
   });
 
   it('allows a script file input replaced by a heredoc', () => {
@@ -699,10 +606,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('cd missing; sh commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('cd missing; sh commit.sh'), directory);
   });
 
   it('ignores a cd inside a substitution', () => {
@@ -711,10 +615,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
     writeScript(directory, 'sub/commit.sh', 'git status\n');
 
-    expect(guard(makeBashEvent('echo $(cd sub); sh commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('echo $(cd sub); sh commit.sh'), directory);
   });
 
   it('keeps the subshell directory after a substitution cd', () => {
@@ -723,10 +624,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'a/commit.sh', 'git commit -m x\n');
     writeScript(directory, 'b/commit.sh', 'git status\n');
 
-    expect(guard(makeBashEvent('( cd a; echo $(cd b); sh commit.sh )'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('( cd a; echo $(cd b); sh commit.sh )'), directory);
   });
 
   it('blocks a script a substitution cds into', () => {
@@ -734,10 +632,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('echo $(cd sub && sh commit.sh)'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('echo $(cd sub && sh commit.sh)'), directory);
   });
 
   it.each([
@@ -750,10 +645,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git status\n');
     writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(command), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it('blocks a heredoc on a cd command whose body runs a script from the starting directory', () => {
@@ -762,10 +654,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
     writeScript(directory, 'sub/commit.sh', 'git status\n');
 
-    expect(guard(makeBashEvent('cd sub <<EOF\n$(./commit.sh)\nEOF'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('cd sub <<EOF\n$(./commit.sh)\nEOF'), directory);
   });
 
   it('allows a heredoc on a cd command whose body runs a script only in the new directory', () => {
@@ -783,10 +672,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
     writeScript(directory, 'sub/commit.sh', 'git status\n');
 
-    expect(guard(makeBashEvent('cd sub <<EOF\n$(./commit.sh)\nEOF\ntrue'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('cd sub <<EOF\n$(./commit.sh)\nEOF\ntrue'), directory);
   });
 
   it('resolves a redirection-only heredoc after a cd in the new directory', () => {
@@ -795,10 +681,7 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git status\n');
     writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('cd sub; <<EOF\n$(./commit.sh)\nEOF'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('cd sub; <<EOF\n$(./commit.sh)\nEOF'), directory);
   });
 
   it.each([
@@ -821,10 +704,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(command), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it('allows inline code after flock that does not create a commit', () => {
@@ -842,10 +722,7 @@ describe('guardToolCall', () => {
   it('reads a short option with its value attached as shell code', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    expect(guard(makeBashEvent("flock lock -c'git commit -m x'"), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent("flock lock -c'git commit -m x'"), directory);
   });
 
   it('allows a trailing shell-code option with no value', () => {
@@ -869,10 +746,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent("flock -c './commit.sh' lock"), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent("flock -c './commit.sh' lock"), directory);
   });
 
   it('blocks a script file fed through a duplicated stdin descriptor', () => {
@@ -880,10 +754,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh 3< commit.sh 0>&3'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh 3< commit.sh 0>&3'), directory);
   });
 
   it('allows a script file fed to a non-stdin descriptor', () => {
@@ -899,10 +770,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'script.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh <2<script.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh <2<script.sh'), directory);
   });
 
   it('blocks a file input after a heredoc with a descriptor', () => {
@@ -910,10 +778,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh 3<<EOF < commit.sh\nbody\nEOF'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh 3<<EOF < commit.sh\nbody\nEOF'), directory);
   });
 
   it('blocks a file input after a heredoc', () => {
@@ -921,10 +786,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh <<EOF < commit.sh\nbody\nEOF'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh <<EOF < commit.sh\nbody\nEOF'), directory);
   });
 
   it('blocks a here-string that runs a script file', () => {
@@ -932,10 +794,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent("sh <<< './commit.sh'"), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent("sh <<< './commit.sh'"), directory);
   });
 
   it('allows a here-string that does not create a commit', () => {
@@ -951,10 +810,7 @@ describe('guardToolCall', () => {
 
       writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
 
-      expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
-        block: true,
-        reason: commitGuardReason,
-      });
+      expectOutcome(makeBashEvent('./commit.sh'), directory);
     },
   );
 
@@ -967,10 +823,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(command), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it('allows a split string that does not create a commit', () => {
@@ -987,10 +840,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
 
-    expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
   });
 
   it('allows a commit in a file whose env option names another program', () => {
@@ -1011,10 +861,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(command), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it.each([
@@ -1029,10 +876,7 @@ describe('guardToolCall', () => {
       writeScript(directory, fixture, 'git commit -m x\n');
     }
 
-    expect(guard(makeBashEvent(command), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it('allows inline code after bash -c that does not create a commit', () => {
@@ -1062,10 +906,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('env -S sh commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('env -S sh commit.sh'), directory);
   });
 
   it('keeps the argument boundary of a quoted trailing word', () => {
@@ -1089,10 +930,7 @@ describe('guardToolCall', () => {
 
       writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
 
-      expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
-        block: true,
-        reason: commitGuardReason,
-      });
+      expectOutcome(makeBashEvent('./commit.sh'), directory);
     },
   );
 
@@ -1111,10 +949,7 @@ describe('guardToolCall', () => {
     writeScript(processDirectory, 'tool.sh', 'git commit -m x\n');
     withExactPath(processDirectory);
 
-    expect(guard(makeBashEvent('PATH=$PATH . tool.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('PATH=$PATH . tool.sh'), directory);
   });
 
   it('keeps the process PATH entries for a tilde assignment', () => {
@@ -1124,10 +959,7 @@ describe('guardToolCall', () => {
     writeScript(processDirectory, 'tool.sh', 'git commit -m x\n');
     withExactPath(processDirectory);
 
-    expect(guard(makeBashEvent('PATH=~/bin sh tool.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('PATH=~/bin sh tool.sh'), directory);
   });
 
   it('searches the process PATH entries for an unexpanded mixed assignment', () => {
@@ -1138,12 +970,7 @@ describe('guardToolCall', () => {
     writeScript(processDirectory, 'tool.sh', 'git commit -m x\n');
     withExactPath(processDirectory);
 
-    expect(
-      guard(makeBashEvent(`PATH=${pathDirectory}${delimiter}$PATH . tool.sh`), directory),
-    ).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(`PATH=${pathDirectory}${delimiter}$PATH . tool.sh`), directory);
   });
 
   it('uses the last PATH assignment before the command word', () => {
@@ -1153,10 +980,7 @@ describe('guardToolCall', () => {
 
     writeScript(second, 'tool.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(`PATH=${first} PATH=${second} sh tool.sh`), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(`PATH=${first} PATH=${second} sh tool.sh`), directory);
   });
 
   it('allows when only the first PATH assignment resolves the command', () => {
@@ -1171,15 +995,21 @@ describe('guardToolCall', () => {
     ).toBeUndefined();
   });
 
+  it('resolves a relative PATH entry against the command directory', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'bin/tool.sh', 'git commit -m x\n');
+    withExactPath('bin');
+
+    expectOutcome(makeBashEvent('sh tool.sh'), directory);
+  });
+
   it('blocks a script after a positional that looks like an assignment', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     writeScript(directory, 'tool.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('flock FOO=bar sh tool.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('flock FOO=bar sh tool.sh'), directory);
   });
 
   it('blocks a script resolved through env PATH=', () => {
@@ -1188,10 +1018,7 @@ describe('guardToolCall', () => {
 
     writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(`env PATH=${pathDirectory} sh tool.sh`), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(`env PATH=${pathDirectory} sh tool.sh`), directory);
   });
 
   it('keeps a PATH assignment after another env assignment', () => {
@@ -1200,12 +1027,7 @@ describe('guardToolCall', () => {
 
     writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(`env FOO=bar PATH=${pathDirectory} sh tool.sh`), directory)).toEqual(
-      {
-        block: true,
-        reason: commitGuardReason,
-      },
-    );
+    expectOutcome(makeBashEvent(`env FOO=bar PATH=${pathDirectory} sh tool.sh`), directory);
   });
 
   it('uses the last PATH assignment among env assignments', () => {
@@ -1215,12 +1037,7 @@ describe('guardToolCall', () => {
 
     writeScript(second, 'tool.sh', 'git commit -m x\n');
 
-    expect(
-      guard(makeBashEvent(`env PATH=${first} FOO=bar PATH=${second} sh tool.sh`), directory),
-    ).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(`env PATH=${first} FOO=bar PATH=${second} sh tool.sh`), directory);
   });
 
   it.each([
@@ -1233,10 +1050,7 @@ describe('guardToolCall', () => {
     writeScript(processDirectory, 'tool.sh', 'git commit -m x\n');
     withExactPath(processDirectory);
 
-    expect(guard(makeBashEvent(command(join(directory, 'unused'))), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command(join(directory, 'unused'))), directory);
   });
 
   // Only an assignment the shell applies to one command sets its PATH; a standalone or `export`
@@ -1258,10 +1072,7 @@ describe('guardToolCall', () => {
 
     writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(`PATH=${pathDirectory} sh tool.sh`), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(`PATH=${pathDirectory} sh tool.sh`), directory);
   });
 
   it('allows a bare name a leading PATH assignment does not resolve', () => {
@@ -1280,10 +1091,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'big.sh', `git commit -m x\n${'x'.repeat(1024 * 1024)}`);
 
-    expect(guard(makeBashEvent('./big.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('./big.sh'), directory);
   });
 
   it('blocks a large file an interpreter runs', () => {
@@ -1291,10 +1099,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'tool.js', `#!/usr/bin/env node\n${'x'.repeat(1024 * 1024)}`);
 
-    expect(guard(makeBashEvent('sh tool.js'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh tool.js'), directory);
   });
 
   it('blocks a named path that is a symlink loop', () => {
@@ -1303,10 +1108,7 @@ describe('guardToolCall', () => {
     symlinkSync('b', join(directory, 'a'));
     symlinkSync('a', join(directory, 'b'));
 
-    expect(guard(makeBashEvent('sh a'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh a'), directory);
   });
 
   it('allows a named path whose parent is a regular file', () => {
@@ -1337,10 +1139,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent(command), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it.skipIf(chmodRestricted)('allows an unreadable PATH entry that finds nothing', () => {
@@ -1367,10 +1166,7 @@ describe('guardToolCall', () => {
     withExactPath(locked, later);
 
     try {
-      expect(guard(makeBashEvent('sh tool.sh'), directory)).toEqual({
-        block: true,
-        reason: commitGuardReason,
-      });
+      expectOutcome(makeBashEvent('sh tool.sh'), directory);
     } finally {
       chmodSync(locked, 0o755);
     }
@@ -1388,10 +1184,7 @@ describe('guardToolCall', () => {
       withExactPath(later);
 
       try {
-        expect(guard(makeBashEvent(`sh tool.sh; sh ${script}`), directory)).toEqual({
-          block: true,
-          reason: commitGuardReason,
-        });
+        expectOutcome(makeBashEvent(`sh tool.sh; sh ${script}`), directory);
       } finally {
         chmodSync(script, 0o644);
       }
@@ -1421,10 +1214,7 @@ describe('guardToolCall', () => {
     chmodSync(locked, 0o000);
 
     try {
-      expect(guard(makeBashEvent('sh locked/commit.sh'), directory)).toEqual({
-        block: true,
-        reason: commitGuardReason,
-      });
+      expectOutcome(makeBashEvent('sh locked/commit.sh'), directory);
     } finally {
       chmodSync(locked, 0o755);
     }
@@ -1435,10 +1225,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent("cd sub && sh -c './commit.sh'"), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent("cd sub && sh -c './commit.sh'"), directory);
   });
 
   it('blocks a directly executed script after an assignment word', () => {
@@ -1446,10 +1233,7 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('FOO=1 ./commit.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('FOO=1 ./commit.sh'), directory);
   });
 
   it('blocks an interpreter operand found through PATH', () => {
@@ -1457,12 +1241,9 @@ describe('guardToolCall', () => {
     const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
     writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
-    withPath(pathDirectory);
+    withExactPath(pathDirectory);
 
-    expect(guard(makeBashEvent('sh tool.sh'), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent('sh tool.sh'), directory);
   });
 
   it('allows an interpreter operand found nowhere', () => {
@@ -1518,10 +1299,7 @@ describe('guardToolCall', () => {
 
     withExactPath(pathDirectory);
 
-    expect(guard(makeBashEvent(referencesTo(names)), directory)).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(referencesTo(names)), directory);
   });
 
   it('does not block pipe-to-grep patterns mentioning commit', () => {
@@ -1542,27 +1320,18 @@ describe('guardToolCall', () => {
     'git commit-tree $tree -p HEAD -m x',
     "git update-ref HEAD $(git commit-tree $tree -p HEAD -m 'feat: x')",
   ])('blocks plumbing commands that create commits: %s', (command) => {
-    expect(guard(makeBashEvent(command))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command));
   });
 
   it.each(['g\\it c\\ommit -m x', 'git co""mmit -m x', "g''it commit -m x", 'git \\commit -m x'])(
     'blocks git commit with shell escapes or empty quotes: %s',
     (command) => {
-      expect(guard(makeBashEvent(command))).toEqual({
-        block: true,
-        reason: commitGuardReason,
-      });
+      expectOutcome(makeBashEvent(command));
     },
   );
 
   it('blocks a commit split across a line continuation', () => {
-    expect(guard(makeBashEvent("git \\\n  commit -m 'feat: x'"))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent("git \\\n  commit -m 'feat: x'"));
   });
 
   it.each([
@@ -1601,10 +1370,7 @@ describe('guardToolCall', () => {
     "git rebase -x 'git commit --amend --no-edit' HEAD~1",
     "git submodule foreach 'git commit -m y'",
   ])('blocks commit commands the shell executes: %s', (command) => {
-    expect(guard(makeBashEvent(command))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command));
   });
 
   it.each([
@@ -1667,10 +1433,7 @@ describe('guardToolCall', () => {
     'git --config-env=alias.ab=NAME status',
     'git --config-env alias.ab=NAME status',
   ])('blocks parsed commands that run git commit: %s', (command) => {
-    expect(guard(makeBashEvent(command))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command));
   });
 
   it.each([
@@ -1682,10 +1445,7 @@ describe('guardToolCall', () => {
     "echo <<; echo 'git commit'",
     'echo ${x git commit',
   ])('blocks unparseable input that mentions git commit: %s', (command) => {
-    expect(guard(makeBashEvent(command))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command));
   });
 
   it.each(["echo $'abc", 'echo `abc', 'echo "abc', 'echo $(abc', "echo $'abc\\"])(
@@ -1718,19 +1478,13 @@ describe('guardToolCall', () => {
   it('blocks git commit in backticks inside an unquoted heredoc body', () => {
     const command = 'cat <<EOF\nRun `git commit` now.\nEOF';
 
-    expect(guard(makeBashEvent(command))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(command));
   });
 
   it('allows nesting up to the inspection budget and blocks deeper nesting', () => {
     expect(guard(makeBashEvent(nest(8)))).toBeUndefined();
 
-    expect(guard(makeBashEvent(nest(9)))).toEqual({
-      block: true,
-      reason: commitGuardReason,
-    });
+    expectOutcome(makeBashEvent(nest(9)));
   });
 });
 

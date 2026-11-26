@@ -896,7 +896,7 @@ const candidatePaths = ({ name, checksShebang, cwd, pathDirectories }: NamedScri
     return [local];
   }
 
-  return [local, ...pathDirectories.map((directory) => resolve(directory, name))];
+  return [local, ...pathDirectories.map((directory) => resolve(cwd, directory, name))];
 };
 
 const inspectNamedScript = (

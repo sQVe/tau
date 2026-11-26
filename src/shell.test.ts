@@ -113,6 +113,7 @@ describe('parseShellCommands', () => {
     ],
     ['sh 3< commit.sh 2>&3', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
     ['sh 3< commit.sh >&2', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
+    ['sh 0< >&1', [[]]],
     [
       'sh <&3<&4',
       [
