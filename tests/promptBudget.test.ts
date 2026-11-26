@@ -42,10 +42,12 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 
 // Each ceiling caps a session at its larger measured size, the empty folder or the adopted project.
 // The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
-// ceiling.
+// ceiling. CI measures the pull request merged into its base branch, so a ceiling must also cover the
+// prompt text the base branch adds after the branch's last merge; measure that merge before lowering
+// one.
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 69_213, // target 38,000
-  architect: 64_351, // measured locally; lower CI readings are the local-versus-CI difference
+  architect: 64_376,
   worker: 29_356, // target 14,000
   reviewer: 24_635, // target 11,000
   checker: 24_788,
