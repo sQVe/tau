@@ -22,6 +22,9 @@ const attachmentsBeforePageInfo =
 const childAttachmentsWithoutArguments =
   'query($id: String!) { issue(id: $id) { children { nodes { identifier attachments { nodes { url } } } } } }';
 
+const modeledIssueAndChildWithoutArguments =
+  'query($id: String!) { issue(id: $id) { attachments(first: 100) { pageInfo { hasNextPage } nodes { url metadata } } children { nodes { identifier attachments { nodes { url } } } } } }';
+
 const refusedCalls: [string, string, string[]][] = [
   ['another executable', 'not-linear', ['api', 'query { team(id: "ME") { id } }']],
   ['an unknown query', 'linear', ['api', 'query { definitelyNotALinearField }']],
@@ -141,16 +144,29 @@ test('refuses an update input field of the wrong type and leaves the issue uncha
 });
 
 test.each([
-  { name: 'nodes before page info', query: attachmentsBeforePageInfo },
-  { name: 'an attachment selection without arguments', query: childAttachmentsWithoutArguments },
-])('refuses $name it does not model', async ({ query }) => {
+  {
+    name: 'nodes before page info',
+    query: attachmentsBeforePageInfo,
+    expected: 'cannot read attachment selection 0',
+  },
+  {
+    name: 'an only attachment selection without arguments',
+    query: childAttachmentsWithoutArguments,
+    expected: 'cannot read attachment selection 0',
+  },
+  {
+    name: 'a child attachment selection without arguments',
+    query: modeledIssueAndChildWithoutArguments,
+    expected: 'cannot read attachment selection 1',
+  },
+])('refuses $name', async ({ query, expected }) => {
   const fake = createLinearFake();
   fake.addIssue({ title: 'Ticket', pullRequests: ['https://github.com/me/repo/pull/1'] });
 
   const result = await fake.exec('linear', ['api', query, '--variable', 'id=ME-1']);
 
   expect(result.code).toBe(1);
-  expect(result.stderr).toContain('cannot read attachment selection');
+  expect(result.stderr).toContain(expected);
   expect(fake.writes()).toEqual([]);
 });
 
