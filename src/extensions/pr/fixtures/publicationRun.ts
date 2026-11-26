@@ -1,0 +1,58 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+
+import type { onTestFinished } from 'vitest';
+
+import type { GhFake } from '../../../../tests/prGhFake.js';
+import type { PrInput } from '../tool.js';
+import { createPublicationTool } from './publicationRepository.js';
+
+export type PublicationRun = (input: PrInput) => Promise<Record<string, unknown>>;
+
+export const publicationRepository = 'github.com/sQVe/tau';
+
+export const setUpPublication = (
+  registerCleanup: typeof onTestFinished,
+): ReturnType<typeof createPublicationTool> => createPublicationTool(registerCleanup);
+
+export const preparePublicationRun = async (run: PublicationRun): Promise<string> => {
+  const { directory } = await run({ action: 'prepare' });
+
+  return String(directory);
+};
+
+export const writeRunFile = async (
+  directory: string,
+  file: string,
+  contents: string,
+): Promise<string> => {
+  const path = join(directory, file);
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, contents);
+
+  return path;
+};
+
+export const dryRunPullRequest = (directory: string) =>
+  ({
+    action: 'dryRun',
+    kind: 'pullRequest',
+    repository: publicationRepository,
+    directory,
+    base: 'main',
+    head: 'feature',
+    draft: true,
+  }) as const;
+
+export const publishedCommands = (fake: GhFake): string[] =>
+  fake.calls.map((call) => call.commandArguments.slice(0, 2).join(' '));
+
+export const publishedFilePath = (fake: GhFake, index = 0): string => {
+  const commandArguments =
+    fake.writes[index]?.commandArguments ?? fake.calls[index]?.commandArguments ?? [];
+
+  const flag = commandArguments.includes('--input') ? '--input' : '--body-file';
+
+  return commandArguments[commandArguments.indexOf(flag) + 1] ?? '';
+};

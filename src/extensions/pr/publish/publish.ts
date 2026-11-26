@@ -1,5 +1,6 @@
-import { readFile } from 'node:fs/promises';
-import { isAbsolute, join, normalize } from 'node:path';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, isAbsolute, join, normalize } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -67,6 +68,14 @@ interface PublicationTarget {
   repository: Repository;
   directory: string;
   request: PublicationRequest;
+}
+
+interface PullRequestFiles {
+  title: string;
+  bodyFile: RunFile;
+  files: RunFile[];
+  findings: PublicationFinding[];
+  repositoryTarget: string;
 }
 
 export const publicationKindSchema = Type.Union(
@@ -268,8 +277,8 @@ const reviewFindings = (file: RunFile, review: Static<typeof reviewSchema>): Rev
   );
 };
 
-const readPullRequest = async (target: PublicationTarget): Promise<PublicationPlan> => {
-  const { action, directory, repository, request } = target;
+const readPullRequestFiles = async (target: PublicationTarget): Promise<PullRequestFiles> => {
+  const { directory, repository } = target;
   const titleFile = await readPublicationFile(directory, titleFileName);
   const bodyFile = await readPublicationFile(directory, bodyFileName);
   const title = titleFile.text.trim();
@@ -278,34 +287,54 @@ const readPullRequest = async (target: PublicationTarget): Promise<PublicationPl
     throw new Error(`${titleFileName} must not be empty.`);
   }
 
-  const files = [titleFile, bodyFile];
-  const findings = files.flatMap(fileFindings);
-  const repositoryTarget = formatRepository(repository);
-
-  if (request.pr !== undefined) {
-    const pr = requirePullRequestNumber(action, request.pr);
-
-    const commandArguments = [
-      'pr',
-      'edit',
-      String(pr),
-      '--repo',
-      repositoryTarget,
-      '--title',
-      title,
-      '--body-file',
-      bodyFile.path,
-    ];
-
-    const facts: PublicationTargetFacts = {
-      kind: 'pullRequest',
-      repository: repositoryTarget,
-      directory,
-      pr,
-    };
-
-    return { target: facts, files, commandArguments, findings };
+  if (/[\r\n]/u.test(title)) {
+    throw new Error(`${titleFileName} must contain one line.`);
   }
+
+  const files = [titleFile, bodyFile];
+
+  return {
+    title,
+    bodyFile,
+    files,
+    findings: files.flatMap(fileFindings),
+    repositoryTarget: formatRepository(repository),
+  };
+};
+
+const readPullRequestEdit = async (target: PublicationTarget): Promise<PublicationPlan> => {
+  const { action, directory, request } = target;
+
+  const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
+
+  const pr = requirePullRequestNumber(action, request.pr);
+
+  const commandArguments = [
+    'pr',
+    'edit',
+    String(pr),
+    '--repo',
+    repositoryTarget,
+    '--title',
+    title,
+    '--body-file',
+    bodyFile.path,
+  ];
+
+  const facts: PublicationTargetFacts = {
+    kind: 'pullRequest',
+    repository: repositoryTarget,
+    directory,
+    pr,
+  };
+
+  return { target: facts, files, commandArguments, findings };
+};
+
+const readPullRequestCreate = async (target: PublicationTarget): Promise<PublicationPlan> => {
+  const { action, directory, request } = target;
+
+  const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
 
   const base = requireText(action, 'base', request.base);
   const head = requireText(action, 'head', request.head);
@@ -339,6 +368,9 @@ const readPullRequest = async (target: PublicationTarget): Promise<PublicationPl
 
   return { target: facts, files, commandArguments, findings };
 };
+
+const readPullRequest = (target: PublicationTarget): Promise<PublicationPlan> =>
+  target.request.pr === undefined ? readPullRequestCreate(target) : readPullRequestEdit(target);
 
 const readComment = async (target: PublicationTarget): Promise<PublicationPlan> => {
   const { action, directory, repository, request } = target;
@@ -384,6 +416,14 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
 
   const review = parseReview(file);
 
+  const missingPosition = (review.comments ?? []).findIndex(
+    (comment) => comment.line === undefined && comment.position === undefined,
+  );
+
+  if (missingPosition !== -1) {
+    throw new Error(`${reviewFileName} comments[${missingPosition}] needs line or position.`);
+  }
+
   const facts: PublicationTargetFacts = {
     kind: 'review',
     repository: formatRepository(repository),
@@ -422,6 +462,52 @@ const reviewUrl = (stdout: string): string | null => {
 const publishedUrl = (kind: PublicationKind, stdout: string): string | null =>
   kind === 'review' ? reviewUrl(stdout) : firstUrlLine(stdout);
 
+const privateDirectoryMode = 0o700;
+const privateFileMode = 0o600;
+const fileArgumentFlags = new Set(['--body-file', '--input']);
+
+const fileArgumentIndex = (commandArguments: readonly string[]): number => {
+  const index = commandArguments.findIndex((argument) => fileArgumentFlags.has(argument));
+
+  if (index === -1) {
+    throw new Error('The publication command names no file to read.');
+  }
+
+  return index + 1;
+};
+
+// gh reads the file when it runs, so the verified bytes go to a private copy that cannot change
+// between the token check and the read.
+const runWithVerifiedBytes = async (
+  runtime: CommandRuntime,
+  plan: PublicationPlan,
+): Promise<string> => {
+  const index = fileArgumentIndex(plan.commandArguments);
+  const source = plan.files.find((file) => file.path === plan.commandArguments[index]);
+
+  if (source === undefined) {
+    throw new Error('The publication command reads a file the plan did not verify.');
+  }
+
+  const directory = await mkdtemp(join(tmpdir(), 'tau-publish-'));
+
+  try {
+    await chmod(directory, privateDirectoryMode);
+
+    const path = join(directory, basename(source.path));
+
+    await writeFile(path, source.bytes, { mode: privateFileMode });
+
+    const commandArguments = [...plan.commandArguments];
+
+    commandArguments[index] = path;
+
+    return await run(runtime, commandArguments);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+};
+
 // Reads the files a publish would send, reports the prose findings, and pins their bytes.
 export const readPublication = async (
   root: string,
@@ -453,7 +539,7 @@ export const publishPublication = async (
     throw new Error(decision.reason);
   }
 
-  const stdout = await run(runtime, plan.commandArguments);
+  const stdout = await runWithVerifiedBytes(runtime, plan);
   const url = publishedUrl(target.kind, stdout);
 
   return { kind: target.kind, files: plan.files.map((file) => file.file), url };

@@ -117,7 +117,8 @@ const writeOutput = (key: WriteKey, commandArguments: readonly string[]) => {
 
   if (key === 'api post') {
     const host = argumentAfter(commandArguments, '--hostname') ?? '';
-    const [owner = '', name = '', , pr = ''] = (commandArguments[5] ?? '').split('/').slice(1);
+    const endpoint = commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
+    const [owner = '', name = '', , pr = ''] = endpoint.split('/').slice(1);
 
     return JSON.stringify({
       id: 1,

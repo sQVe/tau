@@ -1,51 +1,25 @@
-import { link, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { access, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import type { GhFake } from '../../../../tests/prGhFake.js';
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { createPublicationTool } from '../fixtures/publicationRepository.js';
-import type { PrInput } from '../tool.js';
+import {
+  dryRunPullRequest,
+  preparePublicationRun as prepareRun,
+  publicationRepository as repository,
+  publishedCommands,
+  publishedFilePath,
+  setUpPublication,
+  writeRunFile,
+} from '../fixtures/publicationRun.js';
 
-const repository = 'github.com/sQVe/tau';
-
-const setUp = () => createPublicationTool(onTestFinished);
-
-const prepareRun = async (run: (input: PrInput) => Promise<Record<string, unknown>>) => {
-  const { directory } = await run({ action: 'prepare' });
-
-  return String(directory);
-};
-
-const writeRunFile = async (directory: string, file: string, contents: string) => {
-  const path = join(directory, file);
-
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, contents);
-
-  return path;
-};
-
-const dryRunPullRequest = (directory: string) =>
-  ({
-    action: 'dryRun',
-    kind: 'pullRequest',
-    repository,
-    directory,
-    base: 'main',
-    head: 'feature',
-    draft: true,
-  }) as const;
-
-const publishedCommands = (fake: GhFake) =>
-  fake.calls.map((call) => call.commandArguments.slice(0, 2).join(' '));
+const setUp = () => setUpPublication(onTestFinished);
 
 it('publishes a new pull request with the approved title, body, base, head, and draft', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
-  const body = await writeRunFile(directory, 'body.md', 'Adds it.\n');
-
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
 
   const dryRun = await run(dryRunPullRequest(directory));
@@ -74,7 +48,7 @@ it('publishes a new pull request with the approved title, body, base, head, and 
         '--title',
         'Add a feature',
         '--body-file',
-        body,
+        expect.stringMatching(/tau-publish-[^/]+\/body\.md$/u),
         '--draft',
       ],
       contents: Buffer.from('Adds it.\n'),
@@ -88,8 +62,7 @@ it('publishes a new pull request with the approved title, body, base, head, and 
 it('publishes an edited pull request with the approved title and body', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
-  const body = await writeRunFile(directory, 'body.md', 'Adds it.\n');
-
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
 
   const request = {
@@ -116,7 +89,7 @@ it('publishes an edited pull request with the approved title and body', async ()
         '--title',
         'Add a feature',
         '--body-file',
-        body,
+        expect.stringMatching(/tau-publish-[^/]+\/body\.md$/u),
       ],
       contents: Buffer.from('Adds it.\n'),
     },
@@ -126,169 +99,11 @@ it('publishes an edited pull request with the approved title and body', async ()
   expect(publishedCommands(fake)).toEqual(['pr edit']);
 });
 
-it('publishes a comment file under bots', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-  const file = await writeRunFile(directory, 'bots/0.md', 'Looks good.\n');
-
-  const request = {
-    action: 'dryRun',
-    kind: 'comment',
-    repository,
-    directory,
-    pr: 1,
-    file: 'bots/0.md',
-  } as const;
-
-  const dryRun = await run(request);
-
-  const published = await run({ ...request, action: 'publish', token: String(dryRun['token']) });
-
-  expect(fake.writes).toEqual([
-    {
-      key: 'pr comment',
-      commandArguments: [
-        'pr',
-        'comment',
-        '1',
-        '--repo',
-        'github.com/sQVe/tau',
-        '--body-file',
-        file,
-      ],
-      contents: Buffer.from('Looks good.\n'),
-    },
-  ]);
-
-  expect(published['url']).toBe('https://github.com/sQVe/tau/pull/1#issuecomment-1');
-  expect(publishedCommands(fake)).toEqual(['pr comment']);
-});
-
-const submittedReview = `${JSON.stringify(
-  {
-    commit_id: 'abc123',
-    event: 'COMMENT',
-    body: 'Please fix the naming.',
-    comments: [{ path: 'src/a.ts', line: 3, side: 'RIGHT', body: 'Use a clearer name.' }],
-  },
-  null,
-  2,
-)}\n`;
-
-it('posts a submitted review with inline comments in one call', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-  const file = await writeRunFile(directory, 'review.json', submittedReview);
-  const request = { action: 'dryRun', kind: 'review', repository, directory, pr: 7 } as const;
-  const dryRun = await run(request);
-
-  const published = await run({ ...request, action: 'publish', token: String(dryRun['token']) });
-
-  expect(fake.writes).toEqual([
-    {
-      key: 'api post',
-      commandArguments: [
-        'api',
-        '--hostname',
-        'github.com',
-        '--method',
-        'POST',
-        'repos/sQVe/tau/pulls/7/reviews',
-        '--input',
-        file,
-      ],
-      contents: Buffer.from(submittedReview),
-    },
-  ]);
-
-  expect(published['url']).toBe('https://github.com/sQVe/tau/pull/7#pullrequestreview-1');
-  expect(publishedCommands(fake)).toEqual(['api --hostname']);
-});
-
-const longReviewBody =
-  'This review body explains the purpose of the change, the scope it covers, the limits a reader should know, the checks that ran, the evidence behind each claim, and the decisions the author made, so a reviewer can follow it without asking for more context.';
-
-it('reports review findings per prose field, not over the JSON', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-  const commentBody = 'The naming here is unclear \u2014 please rename it.';
-
-  await writeRunFile(
-    directory,
-    'review.json',
-    `${JSON.stringify(
-      { body: longReviewBody, comments: [{ path: 'src/a.ts', line: 3, body: commentBody }] },
-      null,
-      2,
-    )}\n`,
-  );
-
-  const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
-
-  expect(dryRun['findings']).toEqual([
-    {
-      file: 'review.json',
-      field: 'body',
-      rule: 'longSentence',
-      line: 1,
-      excerpt: `${longReviewBody.slice(0, 100)}...`,
-    },
-    {
-      file: 'review.json',
-      field: 'comments[0].body',
-      rule: 'emDash',
-      line: 1,
-      excerpt: commentBody,
-    },
-  ]);
-
-  expect(JSON.stringify(dryRun['findings'])).not.toContain('commit_id');
-  expect(fake.calls).toEqual([]);
-});
-
-const pendingReview = `${JSON.stringify(
-  {
-    commit_id: 'abc123',
-    comments: [{ path: 'src/a.ts', line: 3, side: 'RIGHT', body: 'Use a clearer name.' }],
-  },
-  null,
-  2,
-)}\n`;
-
-it('posts a pending review without an event in one call', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-  await writeRunFile(directory, 'review.json', pendingReview);
-
-  const request = { action: 'dryRun', kind: 'review', repository, directory, pr: 7 } as const;
-  const dryRun = await run(request);
-
-  await run({ ...request, action: 'publish', token: String(dryRun['token']) });
-
-  expect(fake.writes).toEqual([
-    {
-      key: 'api post',
-      commandArguments: [
-        'api',
-        '--hostname',
-        'github.com',
-        '--method',
-        'POST',
-        'repos/sQVe/tau/pulls/7/reviews',
-        '--input',
-        join(directory, 'review.json'),
-      ],
-      contents: Buffer.from(pendingReview),
-    },
-  ]);
-
-  expect(fake.calls).toHaveLength(1);
-});
-
 it('creates a pull request without --draft when draft is false', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
-  const body = await writeRunFile(directory, 'body.md', 'Adds it.\n');
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
 
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
 
@@ -309,7 +124,7 @@ it('creates a pull request without --draft when draft is false', async () => {
     '--title',
     'Add a feature',
     '--body-file',
-    body,
+    expect.stringMatching(/tau-publish-[^/]+\/body\.md$/u),
   ]);
 });
 
@@ -339,6 +154,20 @@ it('refuses a dry run or publish that lacks a required input', async () => {
   expect(fake.calls).toEqual([]);
 });
 
+it('refuses a title.md that holds a line break', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\nover two lines\n');
+
+  await expect(run(dryRunPullRequest(directory))).rejects.toThrow(
+    'title.md must contain one line.',
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('refuses a whitespace-only title.md at the dry run', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
@@ -354,7 +183,8 @@ it('refuses a whitespace-only title.md at the dry run', async () => {
 it('trims base and head and refuses a whitespace-only value', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
-  const body = await writeRunFile(directory, 'body.md', 'Adds it.\n');
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
 
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
 
@@ -385,7 +215,7 @@ it('trims base and head and refuses a whitespace-only value', async () => {
     '--title',
     'Add a feature',
     '--body-file',
-    body,
+    expect.stringMatching(/tau-publish-[^/]+\/body\.md$/u),
     '--draft',
   ]);
 });
@@ -501,7 +331,8 @@ it('refuses to publish when a file changed after the dry run and sends nothing',
 it('returns the em dash finding from the dry run and publishes with it', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
-  const body = await writeRunFile(directory, 'body.md', 'Adds it \u2014 now.\n');
+
+  await writeRunFile(directory, 'body.md', 'Adds it \u2014 now.\n');
 
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
 
@@ -516,124 +347,60 @@ it('returns the em dash finding from the dry run and publishes with it', async (
 
   expect(fake.writes).toHaveLength(1);
   expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it \u2014 now.\n'));
-  expect(fake.writes[0]?.commandArguments).toContain(body);
+  expect(fake.writes[0]?.commandArguments.join(' ')).toMatch(/tau-publish-[^/]+\/body\.md/u);
 });
 
-it('names the review.json field that is not valid', async () => {
+it('publishes the verified bytes when the file changes after the token check', async () => {
+  let directory = '';
+  let publishedPath = '';
+  let fileMode = 0;
+  let directoryMode = 0;
+
+  const { fake, run } = await createPublicationTool(onTestFinished, {
+    wrapExec: (exec) => async (command, commandArguments, options) => {
+      publishedPath = commandArguments[commandArguments.indexOf('--body-file') + 1] ?? '';
+      fileMode = (await stat(publishedPath)).mode;
+      directoryMode = (await stat(dirname(publishedPath))).mode;
+      await writeFile(join(directory, 'body.md'), 'Changed after the token check.\n');
+
+      return exec(command, commandArguments, options);
+    },
+  });
+
+  directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  const request = { ...dryRunPullRequest(directory), pr: 7 };
+  const dryRun = await run(request);
+
+  await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+
+  expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it.\n'));
+  expect(fileMode & 0o777).toBe(0o600);
+  expect(directoryMode & 0o777).toBe(0o700);
+  await expect(access(publishedPath)).rejects.toThrow(/ENOENT/u);
+});
+
+it('removes the verified copy when the publish fails', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
 
-  await writeRunFile(directory, 'review.json', '{"event":"MERGE"}\n');
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  const request = { ...dryRunPullRequest(directory), pr: 7 };
+  const dryRun = await run(request);
+
+  fake.failCommand('pr edit', 'boom');
 
   await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow(/review\.json .*\/event/u);
+    run({ ...request, action: 'publish', token: String(dryRun['token']) }),
+  ).rejects.toThrow(/gh pr edit .* failed: boom/u);
 
-  expect(fake.calls).toEqual([]);
-});
+  const publishedPath = publishedFilePath(fake);
 
-it('refuses a comment file that is an absolute path', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-  const file = await writeRunFile(directory, 'comment.md', 'Looks good.\n');
-
-  await expect(
-    run({ action: 'dryRun', kind: 'comment', repository, directory, pr: 7, file }),
-  ).rejects.toThrow('The comment file must be relative to the run directory');
-
-  expect(fake.calls).toEqual([]);
-});
-
-it('refuses a comment file that climbs out of the run directory', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-
-  await expect(
-    run({
-      action: 'dryRun',
-      kind: 'comment',
-      repository,
-      directory,
-      pr: 7,
-      file: '../body.md',
-    }),
-  ).rejects.toThrow('The comment file must stay in the run directory');
-
-  expect(fake.calls).toEqual([]);
-});
-
-it('refuses a comment file path with a backslash', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-
-  await expect(
-    run({
-      action: 'dryRun',
-      kind: 'comment',
-      repository,
-      directory,
-      pr: 7,
-      file: 'bots\\0.md',
-    }),
-  ).rejects.toThrow('The comment file must not contain a backslash');
-
-  expect(fake.calls).toEqual([]);
-});
-
-it('refuses a comment file that is a directory', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-  const path = join(directory, 'bots');
-
-  await mkdir(path);
-
-  await expect(
-    run({ action: 'dryRun', kind: 'comment', repository, directory, pr: 7, file: 'bots' }),
-  ).rejects.toThrow(`not a regular file: ${path}`);
-
-  expect(fake.calls).toEqual([]);
-});
-
-it('refuses a comment file that is a symlink', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-  const outside = temporaryDirectory(onTestFinished, 'tau-pr-outside-');
-
-  await writeFile(join(outside, 'comment.md'), 'Looks good.\n');
-  await symlink(join(outside, 'comment.md'), join(directory, 'comment.md'));
-
-  await expect(
-    run({
-      action: 'dryRun',
-      kind: 'comment',
-      repository,
-      directory,
-      pr: 7,
-      file: 'comment.md',
-    }),
-  ).rejects.toThrow('through a symlink');
-
-  expect(fake.calls).toEqual([]);
-});
-
-it('refuses a comment file with another hard link', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-  const outside = temporaryDirectory(onTestFinished, 'tau-pr-outside-');
-
-  await writeFile(join(outside, 'comment.md'), 'Looks good.\n');
-  await link(join(outside, 'comment.md'), join(directory, 'comment.md'));
-
-  await expect(
-    run({
-      action: 'dryRun',
-      kind: 'comment',
-      repository,
-      directory,
-      pr: 7,
-      file: 'comment.md',
-    }),
-  ).rejects.toThrow('another hard link');
-
-  expect(fake.calls).toEqual([]);
+  expect(publishedPath).toMatch(/tau-publish-/u);
+  await expect(access(publishedPath)).rejects.toThrow(/ENOENT/u);
 });

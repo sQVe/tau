@@ -6,6 +6,7 @@ import { createGhFake } from '../../../../tests/prGhFake.js';
 import type { GhFake } from '../../../../tests/prGhFake.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../../tests/toolContext.js';
+import type { Exec } from '../../../command.js';
 import { createPrTool } from '../tool.js';
 import type { PrInput } from '../tool.js';
 
@@ -68,7 +69,11 @@ const toolContext = (root: string) =>
 // calls the pr tool in it.
 export const createPublicationTool = async (
   registerCleanup: RegisterCleanup,
-  { origin = 'sQVe/tau', remote = false }: { origin?: string; remote?: boolean } = {},
+  {
+    origin = 'sQVe/tau',
+    remote = false,
+    wrapExec,
+  }: { origin?: string; remote?: boolean; wrapExec?: (exec: Exec) => Exec } = {},
 ): Promise<{
   root: string;
   forkPoint: string;
@@ -86,7 +91,7 @@ export const createPublicationTool = async (
   fake.repositories[`github.com/${origin}`] = { defaultBranch: 'main' };
 
   const run = async (input: PrInput) => {
-    const tool = createPrTool(fake.exec, { agentDirectory });
+    const tool = createPrTool(wrapExec?.(fake.exec) ?? fake.exec, { agentDirectory });
     const result = await tool.execute('call', input, undefined, undefined, toolContext(root));
 
     return result.details;
