@@ -112,13 +112,14 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 
 8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.
    Name any Linear edits the update replaced.
-   - For a read-only review or "no changes", report the findings without acting on them. Act only if
-     the user approves changing that scope.
+   - The read-only guard decides before every action in this step, the posting route included. For a
+     read-only review or "no changes", report the findings without acting on them. Draft, preview,
+     or post nothing until the user approves changing that scope.
    - When the lead will batch first-review fixes under its worker-run guideline, return the findings
      to the lead for that batch instead of starting triage here.
    - When the user asks to comment on another person's pull request, follow
      [post review](post-review.md). Judge ownership from the destination pull request, not from the
-     capture. This route takes precedence over the other actions in this step.
+     capture. This route takes precedence over the triage actions in this step.
    - After the lead's one fix review, start [triage-findings](../triage-findings/SKILL.md) once in
      its post-fix phase. Give it the new findings and the first-review findings that the batch did
      not settle. Include their report references. Do this even if the fix review has no findings.
