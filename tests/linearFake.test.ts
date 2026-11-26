@@ -19,6 +19,9 @@ const issuesWithoutPageInfo =
 const attachmentsBeforePageInfo =
   'query($id: String!) { issue(id: $id) { attachments(first: 100) { nodes { url } pageInfo { hasNextPage } } } }';
 
+const childAttachmentsWithoutArguments =
+  'query($id: String!) { issue(id: $id) { children { nodes { identifier attachments { nodes { url } } } } } }';
+
 const refusedCalls: [string, string, string[]][] = [
   ['another executable', 'not-linear', ['api', 'query { team(id: "ME") { id } }']],
   ['an unknown query', 'linear', ['api', 'query { definitelyNotALinearField }']],
@@ -137,19 +140,17 @@ test('refuses an update input field of the wrong type and leaves the issue uncha
   expect(issue.sortOrder).toBe(3);
 });
 
-test('refuses an attachment selection whose shape it does not model', async () => {
+test.each([
+  { name: 'nodes before page info', query: attachmentsBeforePageInfo },
+  { name: 'an attachment selection without arguments', query: childAttachmentsWithoutArguments },
+])('refuses $name it does not model', async ({ query }) => {
   const fake = createLinearFake();
   fake.addIssue({ title: 'Ticket', pullRequests: ['https://github.com/me/repo/pull/1'] });
 
-  const result = await fake.exec('linear', [
-    'api',
-    attachmentsBeforePageInfo,
-    '--variable',
-    'id=ME-1',
-  ]);
+  const result = await fake.exec('linear', ['api', query, '--variable', 'id=ME-1']);
 
   expect(result.code).toBe(1);
-  expect(result.stderr).toContain('cannot read attachment selection 0');
+  expect(result.stderr).toContain('cannot read attachment selection');
   expect(fake.writes()).toEqual([]);
 });
 
