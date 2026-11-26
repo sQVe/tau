@@ -45,6 +45,15 @@ export const dryRunPullRequest = (directory: string) =>
     draft: true,
   }) as const;
 
+export const dryRunPullRequestEdit = (directory: string) =>
+  ({
+    action: 'dryRun',
+    kind: 'pullRequest',
+    repository: publicationRepository,
+    directory,
+    pr: 7,
+  }) as const;
+
 export const publishedCommands = (fake: GhFake): string[] =>
   fake.calls.map((call) => call.commandArguments.slice(0, 2).join(' '));
 

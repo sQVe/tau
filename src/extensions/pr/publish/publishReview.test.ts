@@ -11,7 +11,7 @@ import {
 const setUp = () => setUpPublication(onTestFinished);
 
 const reviewWrite = (contents: string) => ({
-  key: 'api post',
+  key: 'api write',
   commandArguments: [
     'api',
     '--hostname',
@@ -216,6 +216,48 @@ it('accepts an APPROVE review without a body', async () => {
   const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
 
   expect(dryRun.findings).toEqual([]);
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses start_line without line', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(
+    directory,
+    'review.json',
+    `${JSON.stringify({
+      event: 'COMMENT',
+      body: 'Please fix the naming.',
+      comments: [{ path: 'src/a.ts', body: 'Use a clearer name.', start_line: 2 }],
+    })}\n`,
+  );
+
+  await expect(
+    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
+  ).rejects.toThrow('review.json comments[0] needs line when start_line is set.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses start_side without start_line', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(
+    directory,
+    'review.json',
+    `${JSON.stringify({
+      event: 'COMMENT',
+      body: 'Please fix the naming.',
+      comments: [{ path: 'src/a.ts', line: 3, body: 'Use a clearer name.', start_side: 'RIGHT' }],
+    })}\n`,
+  );
+
+  await expect(
+    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
+  ).rejects.toThrow('review.json comments[0] needs start_line when start_side is set.');
+
   expect(fake.calls).toEqual([]);
 });
 

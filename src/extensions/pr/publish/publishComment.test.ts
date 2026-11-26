@@ -157,3 +157,43 @@ it('refuses a comment file with another hard link', async () => {
 
   expect(fake.calls).toEqual([]);
 });
+
+it('refuses a comment path whose parent is a file', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+
+  await expect(
+    run({
+      action: 'dryRun',
+      kind: 'comment',
+      repository,
+      directory,
+      pr: 7,
+      file: 'body.md/inside.md',
+    }),
+  ).rejects.toThrow('No body.md/inside.md at');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a whitespace-only comment file', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'bots/0.md', '  \n');
+
+  await expect(
+    run({
+      action: 'dryRun',
+      kind: 'comment',
+      repository,
+      directory,
+      pr: 7,
+      file: 'bots/0.md',
+    }),
+  ).rejects.toThrow('bots/0.md must not be empty.');
+
+  expect(fake.calls).toEqual([]);
+});

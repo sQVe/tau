@@ -43,18 +43,13 @@ interface RunFile extends PublicationFile {
   text: string;
 }
 
-interface FileFinding {
+interface PublicationFinding {
   file: string;
+  field?: string;
   rule: ProseRule;
   line: number;
   excerpt: string;
 }
-
-interface ReviewFinding extends FileFinding {
-  field: string;
-}
-
-type PublicationFinding = FileFinding | ReviewFinding;
 
 interface PublicationPlan {
   target: PublicationTargetFacts;
@@ -246,7 +241,7 @@ const parseReview = (file: RunFile): Static<typeof reviewSchema> => {
   return value;
 };
 
-const fileFindings = (file: RunFile): FileFinding[] =>
+const fileFindings = (file: RunFile): PublicationFinding[] =>
   checkProse(file.text).map((finding) => ({
     file: file.file,
     rule: finding.rule,
@@ -254,7 +249,10 @@ const fileFindings = (file: RunFile): FileFinding[] =>
     excerpt: finding.excerpt,
   }));
 
-const reviewFindings = (file: RunFile, review: Static<typeof reviewSchema>): ReviewFinding[] => {
+const reviewFindings = (
+  file: RunFile,
+  review: Static<typeof reviewSchema>,
+): PublicationFinding[] => {
   const sources: { field: string; text: string }[] = [];
 
   if (review.body !== undefined) {
@@ -301,12 +299,24 @@ const readPullRequestFiles = async (target: PublicationTarget): Promise<PullRequ
   };
 };
 
+const rejectCreateInput = (action: string, name: string, value: unknown) => {
+  if (value === undefined) {
+    return;
+  }
+
+  throw new Error(`${action} cannot take ${name} with pr. Omit ${name} or pr.`);
+};
+
 const readPullRequestEdit = async (target: PublicationTarget): Promise<PublicationPlan> => {
   const { action, directory, request } = target;
 
   const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
 
   const pr = requirePullRequestNumber(action, request.pr);
+
+  rejectCreateInput(action, 'base', request.base);
+  rejectCreateInput(action, 'head', request.head);
+  rejectCreateInput(action, 'draft', request.draft);
 
   const commandArguments = [
     'pr',
@@ -375,6 +385,11 @@ const readComment = async (target: PublicationTarget): Promise<PublicationPlan> 
   const { action, directory, repository, request } = target;
   const pr = requirePullRequestNumber(action, request.pr);
   const file = await readPublicationFile(directory, requireCommentFile(action, request.file));
+
+  if (file.text.trim() === '') {
+    throw new Error(`${file.file} must not be empty.`);
+  }
+
   const repositoryTarget = formatRepository(repository);
 
   const commandArguments = [
@@ -419,6 +434,18 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
   ];
 
   const review = parseReview(file);
+
+  for (const [index, comment] of (review.comments ?? []).entries()) {
+    if (comment.start_line !== undefined && comment.line === undefined) {
+      throw new Error(`${reviewFileName} comments[${index}] needs line when start_line is set.`);
+    }
+
+    if (comment.start_side !== undefined && comment.start_line === undefined) {
+      throw new Error(
+        `${reviewFileName} comments[${index}] needs start_line when start_side is set.`,
+      );
+    }
+  }
 
   const missingPosition = (review.comments ?? []).findIndex(
     (comment) => comment.line === undefined && comment.position === undefined,

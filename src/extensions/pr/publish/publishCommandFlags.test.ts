@@ -2,6 +2,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import {
   dryRunPullRequest,
+  dryRunPullRequestEdit,
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
   setUpPublication,
@@ -70,10 +71,7 @@ it('classifies every flag of a create command', async () => {
 it('classifies every flag of an edit command', async () => {
   const flags = await publishedFlags(
     { 'body.md': 'Adds it.\n', 'title.md': 'Add a feature\n' },
-    (directory) => ({
-      ...dryRunPullRequest(directory),
-      pr: 7,
-    }),
+    (directory) => dryRunPullRequestEdit(directory),
   );
 
   expect(flags.length).toBeGreaterThan(0);

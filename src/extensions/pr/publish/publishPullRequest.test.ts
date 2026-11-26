@@ -6,6 +6,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { createPublicationTool } from '../fixtures/publicationRepository.js';
 import {
   dryRunPullRequest,
+  dryRunPullRequestEdit,
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
   publishedCommands,
@@ -268,7 +269,7 @@ it('refuses to publish a token from another pull request and sends nothing', asy
   await writeRunFile(directory, 'body.md', 'Adds it.\n');
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
 
-  const request = { ...dryRunPullRequest(directory), pr: 7 };
+  const request = dryRunPullRequestEdit(directory);
   const dryRun = await run(request);
 
   await expect(run({ ...request, action: 'publish', pr: 8, token: dryRun.token })).rejects.toThrow(
@@ -374,7 +375,7 @@ it('publishes the verified bytes when the file changes after the token check', a
   await writeRunFile(directory, 'body.md', 'Adds it.\n');
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
 
-  const request = { ...dryRunPullRequest(directory), pr: 7 };
+  const request = dryRunPullRequestEdit(directory);
   const dryRun = await run(request);
 
   await run({ ...request, action: 'publish', token: dryRun.token });
@@ -392,7 +393,7 @@ it('removes the verified copy when the publish fails and names the run file', as
   await writeRunFile(directory, 'body.md', 'Adds it.\n');
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
 
-  const request = { ...dryRunPullRequest(directory), pr: 7 };
+  const request = dryRunPullRequestEdit(directory);
   const dryRun = await run(request);
 
   fake.failCommand('pr edit', 'boom');
@@ -469,4 +470,40 @@ it.skipIf(isRoot)('keeps the publish result when the private copy cannot be remo
   const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
   expect(published.url).toBe('https://github.com/sQVe/tau/pull/8');
+});
+
+const createInputValues = { base: 'main', head: 'feature', draft: true } as const;
+
+it.each(['base', 'head', 'draft'] as const)('refuses %s together with pr', async (name) => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  const request = { action: 'dryRun', kind: 'pullRequest', repository, directory, pr: 7 } as const;
+  const createInput = { [name]: createInputValues[name] };
+
+  await expect(run({ ...request, ...createInput })).rejects.toThrow(
+    `dryRun cannot take ${name} with pr.`,
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a create input on publish too', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  const request = { action: 'dryRun', kind: 'pullRequest', repository, directory, pr: 7 } as const;
+  const dryRun = await run(request);
+
+  await expect(
+    run({ ...request, action: 'publish', token: dryRun.token, base: 'main' }),
+  ).rejects.toThrow('publish cannot take base with pr.');
+
+  expect(fake.calls).toEqual([]);
 });
