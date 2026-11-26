@@ -532,6 +532,7 @@ const versionedRecords = [
     fixtures: 'src/inbox/fixtures/handover',
     names: [
       'previous.json',
+      'previousAnswer.json',
       'version2.json',
       'version2Answer.json',
       'version3.json',
