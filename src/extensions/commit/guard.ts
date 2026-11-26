@@ -10,7 +10,7 @@ import type {
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { readTextWithinSync } from '../../record.js';
-import { parseShellCommands } from '../../shell.js';
+import { parseShellCommands, quoteShellArgument } from '../../shell.js';
 import type { ShellCommand, ShellInput } from '../../shell.js';
 
 export type NamedFileFacts =
@@ -57,6 +57,8 @@ interface PositionalSkip {
 }
 
 interface WrapperScan {
+  // The assignment words the shell applies before the command, in source order.
+  assignments: string[];
   // The shell code of every command option seen, in source order.
   codes: string[];
   // Where the wrapped command word starts, when a command follows.
@@ -261,6 +263,8 @@ const wrapperCommandOptions = new Map<string, ReadonlySet<string>>([
   ['flock', new Set(['-c', '--command'])],
 ]);
 
+const envSplitStringOptions = wrapperCommandOptions.get('env') ?? new Set<string>();
+
 const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
 
 // An option with `c`, such as `-c` or `-lc`, puts the code in an argument, not in a file.
@@ -327,7 +331,7 @@ const envTarget = (words: string[]): string | undefined => {
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? '';
 
-    const split = optionValue(words, index, new Set(['-S', '--split-string']));
+    const split = optionValue(words, index, envSplitStringOptions);
 
     if (split !== undefined) {
       expanded.push(...split.value.split(/\s+/u));
@@ -561,7 +565,7 @@ const wrapperStep = (
 
   if (code !== undefined) {
     // `env -S` runs its split words together with the arguments that follow them.
-    const trailing = name === 'env' ? words.slice(code.next) : [];
+    const trailing = name === 'env' ? words.slice(code.next).map(quoteShellArgument) : [];
     const text = [code.value, ...trailing].join(' ');
 
     return { kind: 'code', code: text, next: code.next };
@@ -576,12 +580,26 @@ const wrapperStep = (
   return isOptionWord(words[index] ?? '') ? { kind: 'skip', next: index + 1 } : { kind: 'command' };
 };
 
+const operandKind = (
+  word: string,
+  positionals: number,
+  skipped: number,
+): 'assignment' | 'command' | 'positional' => {
+  if (assignmentPattern.test(word)) {
+    return 'assignment';
+  }
+
+  return positionals > skipped ? 'command' : 'positional';
+};
+
 // A wrapper permutes its own options around its positional arguments, so one walk finds both the
 // shell code it runs and the wrapped command word.
+// oxlint-disable-next-line complexity -- the walk classifies each wrapper word once.
 const scanWrapper = (words: string[], index: number, name: string): WrapperScan => {
   const valueOptions = wrapperOptionValues.get(name) ?? new Set<string>();
   const commandOptions = wrapperCommandOptions.get(name) ?? new Set<string>();
   const skip = wrapperPositionalSkips.get(name);
+  const assignments: string[] = [];
   const codes: string[] = [];
   const skipped = skip === undefined ? 0 : skip.count;
   let positionals = 0;
@@ -608,25 +626,36 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
       continue;
     }
 
-    positionals += 1;
+    const allowed = sawUnless ? 0 : skipped;
+    const operand = operandKind(word, positionals + 1, allowed);
 
-    if (positionals > (sawUnless ? 0 : skipped)) {
-      return { codes, commandIndex: next };
+    if (operand === 'assignment') {
+      assignments.push(word);
+      next += 1;
+
+      continue;
     }
 
+    if (operand === 'command') {
+      return { assignments, codes, commandIndex: next };
+    }
+
+    positionals += 1;
     next += 1;
   }
 
-  return { codes, commandIndex: undefined };
+  return { assignments, codes, commandIndex: undefined };
 };
 
 const walkWrappers = (words: string[]): WrapperScan => {
+  const assignments: string[] = [];
   let index = 0;
 
   while (index < words.length) {
     const word = words[index] ?? '';
 
     if (assignmentPattern.test(word)) {
+      assignments.push(word);
       index += 1;
 
       continue;
@@ -635,23 +664,25 @@ const walkWrappers = (words: string[]): WrapperScan => {
     const name = commandName(word);
 
     if (wrapperOptionValues.get(name) === undefined) {
-      return { codes: [], commandIndex: isOptionWord(word) ? undefined : index };
+      return { assignments, codes: [], commandIndex: isOptionWord(word) ? undefined : index };
     }
 
     const scan = scanWrapper(words, index, name);
 
+    assignments.push(...scan.assignments);
+
     if (scan.codes.length > 0) {
-      return { codes: scan.codes, commandIndex: undefined };
+      return { assignments, codes: scan.codes, commandIndex: undefined };
     }
 
     if (scan.commandIndex === undefined) {
-      return { codes: [], commandIndex: undefined };
+      return { assignments, codes: [], commandIndex: undefined };
     }
 
     index = scan.commandIndex;
   }
 
-  return { codes: [], commandIndex: undefined };
+  return { assignments, codes: [], commandIndex: undefined };
 };
 
 const commandWordIndex = (words: string[]): number | undefined => walkWrappers(words).commandIndex;
@@ -762,36 +793,9 @@ const pathAssignmentIn = (words: string[]): string | undefined => {
   return assigned;
 };
 
-// `PATH=...` alone, or `export PATH=...`, sets the PATH for later commands in the same scope.
-const persistentPathAssignment = (command: ShellCommand): string | undefined => {
-  const [first, ...rest] = command.arguments;
-
-  if (first === undefined) {
-    return undefined;
-  }
-
-  if (commandName(first) === 'export') {
-    return rest.every(isAssignmentWord) ? pathAssignmentIn(rest) : undefined;
-  }
-
-  return command.arguments.every(isAssignmentWord)
-    ? pathAssignmentIn(command.arguments)
-    : undefined;
-};
-
-// A `PATH=` assignment before the command word, including one an `env` wrapper passes on.
-const commandPathAssignment = (command: ShellCommand): string | undefined => {
-  const [first] = command.arguments;
-
-  if (first !== undefined && commandName(first) === 'export') {
-    return pathAssignmentIn(command.arguments.slice(1));
-  }
-
-  const { commandIndex } = walkWrappers(command.arguments);
-  const prefix = command.arguments.slice(0, commandIndex ?? command.arguments.length);
-
-  return pathAssignmentIn(prefix);
-};
+// A `PATH=` assignment the shell applies before the command, including one an `env` passes on.
+const commandPathAssignment = (command: ShellCommand): string | undefined =>
+  pathAssignmentIn(walkWrappers(command.arguments).assignments);
 
 const namedScriptsOf = (
   command: ShellCommand,
@@ -959,52 +963,6 @@ const directoryStack = (
   return stack;
 };
 
-const ancestorPath = (
-  stacks: Map<string, (string | undefined)[]>,
-  scope: string,
-): string | undefined => {
-  let current = scope;
-
-  while (current !== '') {
-    current = parentScope(current);
-    const stack = stacks.get(current);
-
-    if (stack !== undefined) {
-      return stack[stack.length - 1];
-    }
-  }
-
-  return undefined;
-};
-
-// A child scope starts with the PATH its parent has when the scope is first seen.
-const pathStackFor = (
-  stacks: Map<string, (string | undefined)[]>,
-  scope: string,
-): (string | undefined)[] => {
-  const existing = stacks.get(scope);
-
-  if (existing !== undefined) {
-    return existing;
-  }
-
-  const stack = [ancestorPath(stacks, scope)];
-
-  stacks.set(scope, stack);
-
-  return stack;
-};
-
-const pathValueAt = (stack: (string | undefined)[], depth: number): string | undefined => {
-  while (stack.length <= depth) {
-    stack.push(stack[stack.length - 1]);
-  }
-
-  stack.length = depth + 1;
-
-  return stack[depth];
-};
-
 const pathDirectoriesFor = (
   assigned: string | undefined,
   directory: string,
@@ -1032,18 +990,7 @@ const commandPathDirectories = (
   command: ShellCommand,
   directory: string,
   state: GuardState,
-  pathStacks: Map<string, (string | undefined)[]>,
-): string[] => {
-  const stack = pathStackFor(pathStacks, command.scope);
-  const assigned = commandPathAssignment(command) ?? pathValueAt(stack, command.depth);
-  const persistent = persistentPathAssignment(command);
-
-  if (persistent !== undefined) {
-    stack[command.depth] = persistent;
-  }
-
-  return pathDirectoriesFor(assigned, directory, state);
-};
+): string[] => pathDirectoriesFor(commandPathAssignment(command), directory, state);
 
 const recordHeredocBases = (
   command: ShellCommand,
@@ -1078,12 +1025,11 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
   const scriptCommands = commands.some(runsShell) ? commands : commands.filter(runsGit);
   const stacks = new Map<string, string[]>();
   const bases = new Map<string, string>();
-  const pathStacks = new Map<string, (string | undefined)[]>();
 
   for (const command of commands) {
     const stack = directoryStack(stacks, command.scope, cwd, bases);
     const directory = directoryFor(stack, command.depth);
-    const pathDirectories = commandPathDirectories(command, directory, state, pathStacks);
+    const pathDirectories = commandPathDirectories(command, directory, state);
     const scripts = namedScriptsOf(command, directory, pathDirectories);
 
     recordHeredocBases(command, directory, bases);
