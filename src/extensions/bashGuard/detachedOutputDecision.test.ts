@@ -121,6 +121,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a nested backgrounded group whose only real command logs',
+    command: '( ( cmd > /tmp/x.log 2>&1 ) & ) >/dev/null 2>&1',
+    blocked: false,
+  },
+  {
     name: 'a |& pipeline discarding stderr',
     command: 'cmd 2>/dev/null |& cat &',
     blocked: false,

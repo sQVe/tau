@@ -94,7 +94,7 @@ describe('parseShellCommands', () => {
     expect(groupsOf('( a; b ) > out')).toEqual([undefined, undefined, undefined, 1]);
   });
 
-  it('gives a continuation the closed group unit', () => {
+  it('gives a continuation the outer list unit', () => {
     expect(unitsOf('( cmd ) | next')).toEqual([0, 1, 0, 0]);
   });
 

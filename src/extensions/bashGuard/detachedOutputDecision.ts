@@ -23,9 +23,9 @@ interface Streams {
 // Whether a reader sees a compound's failure, whether a command inside it throws stderr away, and
 // whether the command's own redirection does.
 interface CompoundFacts {
-  shows: boolean;
-  discards: boolean;
-  ownDiscards: boolean;
+  readonly shows: boolean;
+  readonly discards: boolean;
+  readonly ownDiscards: boolean;
 }
 
 interface CompoundScope {
@@ -158,8 +158,8 @@ const scriptOf = (command: ShellCommand): string | undefined => {
   return commandFlagIndex === -1 ? undefined : command.arguments[commandFlagIndex + 1];
 };
 
-const encloses = (command: ShellCommand, closingIndex: number, index: number): boolean =>
-  command.group !== undefined && command.group <= index && index < closingIndex;
+const encloses = (group: number | undefined, closingIndex: number, index: number): boolean =>
+  group !== undefined && group <= index && index < closingIndex;
 
 const enclosingStreams = (
   commands: readonly ShellCommand[],
@@ -168,7 +168,7 @@ const enclosingStreams = (
 ): Streams => {
   const enclosing = commands
     .map((command, closingIndex) => ({ command, closingIndex }))
-    .filter(({ command, closingIndex }) => encloses(command, closingIndex, index))
+    .filter(({ command, closingIndex }) => encloses(command.group, closingIndex, index))
     .toSorted((left, right) => (left.command.group ?? 0) - (right.command.group ?? 0));
 
   return enclosing.reduce((streams, { command }) => streamsOf(command, streams), inherited);
@@ -295,7 +295,7 @@ const innermostGroupOf = (
   for (const [closingIndex, command] of commands.entries()) {
     const start = command.group;
 
-    if (start === undefined || start > index || index >= closingIndex) {
+    if (start === undefined || !encloses(start, closingIndex, index)) {
       continue;
     }
 
@@ -312,14 +312,13 @@ const innermostGroupOf = (
 const insideBackgroundedGroup = (commands: readonly ShellCommand[], index: number): boolean =>
   innermostGroupOf(commands, index)?.background === true;
 
-const hidesFailure = (commands: readonly ShellCommand[], index: number): boolean => {
-  const command = commands[index];
+const hidesFailure = (scope: CompoundScope, index: number): boolean => {
+  const command = scope.commands[index];
 
   if (command === undefined || !command.background) {
     return false;
   }
 
-  const scope = compoundScope(commands, emptyStreams);
   const enclosing = enclosingOf(scope, index);
   const own = streamsOf(command, enclosing);
   const script = scriptOf(command);
@@ -332,6 +331,21 @@ const hidesFailure = (commands: readonly ShellCommand[], index: number): boolean
   }
 
   return discardsStderr(own) && !showsStderr(own);
+};
+
+// A command the parser creates at an opening parenthesis has no arguments and closes no group, so
+// judging it would read the enclosing redirections as its own.
+const isJudgedCommand = (command: ShellCommand): boolean =>
+  command.group !== undefined || command.arguments.length > 0;
+
+const judgesHiddenFailure = (scope: CompoundScope, index: number): boolean => {
+  const command = scope.commands[index];
+
+  if (command === undefined || !isJudgedCommand(command)) {
+    return false;
+  }
+
+  return !insideBackgroundedGroup(scope.commands, index) && hidesFailure(scope, index);
 };
 
 const blockReason =
@@ -348,9 +362,9 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
     return undefined;
   }
 
-  return commands.some(
-    (_command, index) => !insideBackgroundedGroup(commands, index) && hidesFailure(commands, index),
-  )
+  const scope = compoundScope(commands, emptyStreams);
+
+  return commands.some((_command, index) => judgesHiddenFailure(scope, index))
     ? { block: true, reason: blockReason }
     : undefined;
 };
