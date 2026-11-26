@@ -322,7 +322,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/improvement/writeDecision.ts': ['node:path'],
   'src/inbox/protocol.ts': ['typebox', 'typebox/value'],
   'src/instructions/guideLinks.ts': ['node:path'],
-  'src/instructions/markdownLinks.ts': ['marked'],
+  'src/instructions/markdownLinks.ts': ['entities', 'marked'],
   'src/instructions/stommeGuides/stommeGuidesDecision.ts': ['node:path', 'smol-toml'],
   'src/instructions/syncRecord.ts': ['smol-toml'],
   'src/prose.ts': ['marked'],

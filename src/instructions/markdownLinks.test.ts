@@ -170,6 +170,11 @@ const targetTable: { name: string; markdown: string; expected: readonly string[]
     markdown: '[![i](./i.png)][a] [x](./x.md)\n\n[a]: ./d.md\n',
     expected: ['./i.png', './x.md', './d.md'],
   },
+  {
+    name: 'reads no target from a leading frontmatter block',
+    markdown: '---\ndescription: [x](./x.md)\n---\n\n[a](./a.md)\n',
+    expected: ['./a.md'],
+  },
 ];
 
 it.for(targetTable)('$name', ({ markdown, expected }) => {
@@ -263,6 +268,81 @@ const slugTable: { name: string; markdown: string; expected: readonly string[] }
     name: 'drops emphasis, escapes, images, and HTML from a slug',
     markdown: '# _Emph_ and **bold** ![img](x.png) <b>tag</b> \\_x\\_\n',
     expected: ['emph-and-bold--tag-_x_'],
+  },
+  {
+    name: 'decodes a numeric character reference in a heading',
+    markdown: '# R&#101;lease',
+    expected: ['release'],
+  },
+  {
+    name: 'decodes a named character reference in a heading',
+    markdown: '# A &amp; B',
+    expected: ['a--b'],
+  },
+  {
+    name: 'keeps an escaped link in a heading as literal text',
+    markdown: '# \\[Label](sample)',
+    expected: ['labelsample'],
+  },
+  {
+    name: 'keeps link markup inside a code span in a heading',
+    markdown: '# Run `[link](./x.md)` now',
+    expected: ['run-linkxmd-now'],
+  },
+  {
+    name: 'strips a numeric reference in the C1 range instead of reading a letter',
+    markdown: '# A &#131;B',
+    expected: ['a-b'],
+  },
+  {
+    name: 'strips a hex reference in the C1 range instead of reading a letter',
+    markdown: '# A&#x83;B',
+    expected: ['ab'],
+  },
+  {
+    name: 'reads a hex reference with an uppercase X',
+    markdown: '# A&#X83;B',
+    expected: ['ab'],
+  },
+  {
+    name: 'keeps a named reference without a semicolon as written',
+    markdown: '# A &amp B',
+    expected: ['a-amp-b'],
+  },
+  {
+    name: 'keeps an escaped named reference as written',
+    markdown: '# A \\&amp; B',
+    expected: ['a-amp-b'],
+  },
+  {
+    name: 'keeps a named reference inside a code span as written',
+    markdown: '# Code `&amp;` here',
+    expected: ['code-amp-here'],
+  },
+  {
+    name: 'keeps a numeric reference longer than eight digits as written',
+    markdown: '# A &#000000065;B',
+    expected: ['a-000000065b'],
+  },
+  {
+    name: 'keeps a hex reference longer than eight digits as written',
+    markdown: '# A &#x000000065;B',
+    expected: ['a-x000000065b'],
+  },
+  {
+    name: 'decodes a numeric reference once and leaves the rest as text',
+    markdown: '# &#38;amp; B',
+    expected: ['amp-b'],
+  },
+  {
+    name: 'ignores a leading frontmatter block',
+    markdown: '---\ntitle: Notes\n---\n\n# Real\n',
+    expected: ['real'],
+  },
+  {
+    name: 'ignores a leading frontmatter block with CRLF line endings',
+    markdown: '---\r\ntitle: Notes\r\n---\r\n\r\n# Real\r\n',
+    expected: ['real'],
   },
 ];
 

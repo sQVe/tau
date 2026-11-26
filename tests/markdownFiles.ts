@@ -4,8 +4,8 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import {
   decodedComponent,
-  headingSlugs,
   readDestination,
+  readMarkdownLinks,
 } from '../src/instructions/markdownLinks.js';
 
 export type DocumentProblemKind =
@@ -55,10 +55,6 @@ const inlineLink =
 const htmlCommentBlock = /^ {0,3}<!--[\s\S]*?(?:-->|(?![\s\S]))/gm;
 
 const referenceDefinition = /^ {0,3}\[[^\]]+\]:[ \t]*(?:<([^>\n]*)>|(\S+))/gm;
-const atxHeading = /^ {0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/;
-const setextUnderline = /^ {0,3}(?:=+|-+)[ \t]*$/;
-const paragraphLine = /^ {0,3}(?![#>|*+-]|\d+[.)][ \t])\S/;
-const frontmatter = /^---\n[\s\S]*?\n---\n/;
 const notPathCharacter = /[\s<>*?$~{}[\]:@|"'=,()]/;
 
 // The changelog records history, so it may name paths that no longer exist.
@@ -78,31 +74,6 @@ const linkTargets = (markdown: string) =>
   [...markdown.matchAll(inlineLink), ...markdown.matchAll(referenceDefinition)].map(
     (match) => match[1] ?? match[2] ?? '',
   );
-
-// A Setext underline needs a one-line paragraph above it, so a `---` rule after a list or a blank
-// line stays a rule. A heading line ends the block before it like a blank line does.
-const isSetextHeading = (lines: readonly string[], index: number) => {
-  const line = lines[index] ?? '';
-  const previous = lines[index - 1] ?? '';
-  const next = lines[index + 1] ?? '';
-  const startsBlock = previous.trim() === '' || atxHeading.test(previous);
-
-  return startsBlock && paragraphLine.test(line) && setextUnderline.test(next);
-};
-
-const headingsOf = (markdown: string) => {
-  const lines = withoutFences(markdown.replace(frontmatter, '')).split('\n');
-
-  return lines.flatMap((line, index) => {
-    const [, atx] = atxHeading.exec(line) ?? [];
-
-    if (atx !== undefined) {
-      return [atx];
-    }
-
-    return isSetextHeading(lines, index) ? [line.trim()] : [];
-  });
-};
 
 const targetProblem = (
   file: string,
@@ -133,7 +104,7 @@ const targetProblem = (
   const fragment = decodedComponent(destination.fragment);
   const targetMarkdown = destination.path === '' ? markdown : files.readMarkdown(targetFile);
 
-  if (fragment !== undefined && headingSlugs(headingsOf(targetMarkdown)).has(fragment)) {
+  if (fragment !== undefined && readMarkdownLinks(targetMarkdown).slugs.has(fragment)) {
     return undefined;
   }
 

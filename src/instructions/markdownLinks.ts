@@ -1,3 +1,4 @@
+import { decodeHTMLStrict, decodeXML } from 'entities';
 import { Marked, Tokenizer } from 'marked';
 import type { Token, Tokens } from 'marked';
 
@@ -13,7 +14,6 @@ export type Destination =
 
 const externalTarget = /^[a-z][a-z\d+.-]*:/i;
 
-const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
 const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 
 const tokenizer = new Marked({
@@ -31,16 +31,15 @@ const tokenizer = new Marked({
 const withoutByteOrderMark = (markdown: string) =>
   markdown.startsWith('\uFEFF') ? markdown.slice(1) : markdown;
 
-const slugOf = (heading: string) =>
-  heading
-    .replaceAll(headingLink, '$1')
-    .replaceAll('`', '')
-    .trim()
-    .toLowerCase()
-    .replaceAll(notSlugCharacter, '')
-    .replaceAll(' ', '-');
+// GitHub renders a leading frontmatter block as a table, so it holds no heading.
+const frontmatter = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/;
 
-export const headingSlugs = (headings: readonly string[]): ReadonlySet<string> => {
+const withoutFrontmatter = (markdown: string) => markdown.replace(frontmatter, '');
+
+const slugOf = (heading: string) =>
+  heading.trim().toLowerCase().replaceAll(notSlugCharacter, '').replaceAll(' ', '-');
+
+const headingSlugs = (headings: readonly string[]): ReadonlySet<string> => {
   const counts = new Map<string, number>();
   const slugs = new Set<string>();
 
@@ -108,6 +107,24 @@ const targetOf = (token: Token): string | undefined => {
   return typeof value === 'string' ? value : undefined;
 };
 
+const tokenText = (token: Token): string => {
+  const text: unknown = 'text' in token ? token.text : undefined;
+
+  return typeof text === 'string' ? text : '';
+};
+
+// A rendered text token may still hold a character reference. Only one that ends with a semicolon
+// is a reference, and a reference inside a code span stays literal.
+const characterReference = /&(?:#\d{1,8}|#[xX][\da-fA-F]{1,8}|[A-Za-z][A-Za-z\d]*);/g;
+
+// The HTML decoder remaps a numeric reference in the C1 range to a Windows-1252 letter, which
+// GitHub does not.
+const decodedReference = (reference: string): string =>
+  reference.includes('#') ? decodeXML(reference) : decodeHTMLStrict(reference);
+
+const decodedTokenText = (token: Token): string =>
+  tokenText(token).replaceAll(characterReference, (reference) => decodedReference(reference));
+
 const renderedText = (tokens: readonly Token[]): string =>
   tokens
     .map((token) => {
@@ -115,10 +132,12 @@ const renderedText = (tokens: readonly Token[]): string =>
         return '';
       }
 
-      if (token.type === 'text' || token.type === 'codespan' || token.type === 'escape') {
-        const text: unknown = token.text;
+      if (token.type === 'text') {
+        return decodedTokenText(token);
+      }
 
-        return typeof text === 'string' ? text : '';
+      if (token.type === 'codespan' || token.type === 'escape') {
+        return tokenText(token);
       }
 
       const children: readonly Token[] | undefined = 'tokens' in token ? token.tokens : undefined;
@@ -184,7 +203,11 @@ export const readMarkdownLinks = (markdown: string): MarkdownLinks => {
   const targets: string[] = [];
   const headings: string[] = [];
 
-  collectLinks(tokenizer.lexer(withoutByteOrderMark(markdown)), targets, headings);
+  collectLinks(
+    tokenizer.lexer(withoutFrontmatter(withoutByteOrderMark(markdown))),
+    targets,
+    headings,
+  );
 
   return { targets, slugs: headingSlugs(headings) };
 };
