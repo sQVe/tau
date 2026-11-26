@@ -20,7 +20,7 @@ import { isWorkerProcess } from '../../role/role.js';
 import type { Wake } from '../../wake/wake.js';
 import { holdsArrival } from './arrivalDecision.js';
 import type { ArrivalFacts } from './arrivalDecision.js';
-import { ownsTerminal } from './ownerDecision.js';
+import { ownsTerminal, noOwnerNotice, ownerWaitDelay } from './ownerDecision.js';
 import type { StartupGate } from './startup.js';
 
 export interface InboxLifecycleDependencies {
@@ -39,6 +39,7 @@ interface Generation {
   sessionId: string;
   drain: Promise<void>;
   receiver: Receiver | undefined;
+  ownerWait: ReturnType<typeof setTimeout> | undefined;
 }
 
 const signalState = (signal: AbortSignal | undefined): ArrivalFacts['signal'] => {
@@ -107,28 +108,21 @@ export const registerInboxLifecycle = (
     await started?.stop();
   };
 
-  const advertise = async (current: Generation, context: ExtensionContext): Promise<void> => {
-    const terminal = dependencies.terminal();
-
-    if (terminal === undefined) {
-      return;
+  const notifyStartFailure = (
+    current: Generation,
+    context: ExtensionContext,
+    error: unknown,
+  ): void => {
+    if (!current.controller.signal.aborted) {
+      notifyError(context, `Tau inbox could not start: ${errorMessage(error)}`);
     }
+  };
 
-    const [snapshot, processGroup] = await Promise.all([
-      get(hc, terminal),
-      dependencies.processGroup(),
-    ]);
-
-    if (current.controller.signal.aborted) {
-      return;
-    }
-
-    const foregroundPid = snapshot.foreground?.pid;
-
-    if (!ownsTerminal({ foregroundPid, processGroup })) {
-      return;
-    }
-
+  const startListener = async (
+    current: Generation,
+    context: ExtensionContext,
+    terminal: string,
+  ): Promise<void> => {
     const receiver = createReceiver({
       directory: join(dependencies.inboxDirectory(), current.sessionId),
       terminal,
@@ -176,7 +170,58 @@ export const registerInboxLifecycle = (
     await started;
   };
 
+  const advertise = async (
+    current: Generation,
+    context: ExtensionContext,
+    attempt = 0,
+  ): Promise<void> => {
+    const terminal = dependencies.terminal();
+
+    if (terminal === undefined) {
+      return;
+    }
+
+    const [snapshot, processGroup] = await Promise.all([
+      get(hc, terminal),
+      dependencies.processGroup(),
+    ]);
+
+    if (current.controller.signal.aborted) {
+      return;
+    }
+
+    const foregroundPid = snapshot.foreground?.pid;
+
+    if (ownsTerminal({ foregroundPid, processGroup })) {
+      await startListener(current, context, terminal);
+      requestDrain(current, context);
+
+      return;
+    }
+
+    const delay = ownerWaitDelay(attempt);
+
+    if (delay === undefined) {
+      context.ui.notify(noOwnerNotice({ terminal, foregroundPid }), 'warning');
+
+      return;
+    }
+
+    current.ownerWait = setTimeout(() => {
+      current.ownerWait = undefined;
+
+      advertise(current, context, attempt + 1).catch((error: unknown) => {
+        notifyStartFailure(current, context, error);
+      });
+    }, delay);
+  };
+
   const endGeneration = (): void => {
+    if (generation?.ownerWait !== undefined) {
+      clearTimeout(generation.ownerWait);
+      generation.ownerWait = undefined;
+    }
+
     generation?.controller.abort();
     generation = undefined;
   };
@@ -196,6 +241,7 @@ export const registerInboxLifecycle = (
       sessionId: context.sessionManager.getSessionId(),
       drain: endedDrain,
       receiver: undefined,
+      ownerWait: undefined,
     };
 
     generation = current;
@@ -203,12 +249,8 @@ export const registerInboxLifecycle = (
     try {
       await advertise(current, context);
     } catch (error) {
-      notifyError(context, `Tau inbox could not start: ${errorMessage(error)}`);
-
-      return;
+      notifyStartFailure(current, context, error);
     }
-
-    requestDrain(current, context);
   });
 
   pi.on('agent_end', (_event, context) => {
