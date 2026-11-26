@@ -64,8 +64,9 @@ const permissionQuestion = new RegExp(permissionPattern, 'i');
 
 const secondPersonQuestion = /\b(?:can|could|would|will) you\b/i;
 
-const prefixAction =
-  /\b(?:can|could|would|will) you\b[^.!?\n]*\b(?:run|delete|remove|check|open|set|do|fix|update|add|create|verify|apply|sign|merge|push|close|install|restart|try)\b/i;
+const prefixAction = new RegExp(`${secondPersonQuestion.source}[^.!?\\n]*\\b${actionVerb}\\b`, 'i');
+
+const prefixClause = /[,;]\s+(?:and|but|so|then)\b|\band\b/i;
 
 const userAction = new RegExp(
   [
@@ -196,6 +197,12 @@ const sentenceStart = (text: string, phraseIndex: number): number => {
   return start;
 };
 
+const keepsPrefix = (prefix: string): boolean => {
+  const prefixQuestion = secondPersonQuestion.test(prefix) && prefixClause.test(prefix);
+
+  return userAction.test(prefix) || prefixAction.test(prefix) || prefixQuestion;
+};
+
 const choiceSpan = (question: string): ChoiceSpan | undefined => {
   const phrase = decisionPhrase.exec(question);
 
@@ -237,7 +244,7 @@ const choiceSpan = (question: string): ChoiceSpan | undefined => {
 
   const prefixStart = sentenceStart(question, phrase.index);
   const prefix = question.slice(prefixStart, phrase.index);
-  const start = userAction.test(prefix) || prefixAction.test(prefix) ? phrase.index : prefixStart;
+  const start = keepsPrefix(prefix) ? phrase.index : prefixStart;
 
   return { start, end };
 };

@@ -75,6 +75,28 @@ const table: { name: string; facts: HandBackFacts; expected: HandBackDecision }[
     expected: settle('no-hand-back'),
   },
   {
+    name: 'reminds for a second-person action before a named choice',
+    facts: leadTurn({
+      finalText: 'Could you check which format, the table or the cards, looks better?',
+    }),
+    expected: remind,
+  },
+  {
+    name: 'reminds for a second-person confirmation before a named choice',
+    facts: leadTurn({
+      finalText: 'Could you confirm which format, the table or the cards, looks better?',
+    }),
+    expected: remind,
+  },
+  {
+    name: 'reminds for a compound status and choice question',
+    facts: leadTurn({
+      finalText:
+        'Could you tell me whether the tests passed, and which layout, the table or the cards, looks better?',
+    }),
+    expected: remind,
+  },
+  {
     name: 'settles for a named choice after a colon',
     facts: leadTurn({
       finalText: 'Which format should I use for reports: the table or the cards?',
