@@ -1,5 +1,5 @@
-import { attachmentFields } from './linearRequestFake.js';
-import type { AttachmentFields, Operation, QueryOperation } from './linearRequestFake.js';
+import { attachmentFields, attachmentPage } from './linearRequestFake.js';
+import type { Operation, QueryOperation } from './linearRequestFake.js';
 
 interface FakeComment {
   id: string;
@@ -31,16 +31,6 @@ interface CommentFake {
   respond: (operation: CommentOperation | Extract<Operation, { kind: 'cancel' }>) => unknown;
   limitComments: (count: number) => void;
 }
-
-const attachmentNodes = (issue: Ticket, fields: AttachmentFields) => {
-  const nodes = [
-    ...issue.pullRequests.map((url) => ({ url, metadata: { linkKind: 'closes' } })),
-    ...issue.mentions.map((url) => ({ url, metadata: { linkKind: 'links' } })),
-    ...issue.plainLinks.map((url) => ({ url, metadata: null })),
-  ];
-
-  return fields.metadata ? nodes : nodes.map(({ url }) => ({ url }));
-};
 
 export const createCommentFake = (
   issues: Map<string, Ticket>,
@@ -120,17 +110,7 @@ export const createCommentFake = (
         assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
         creator: issue.creatorId === null ? null : { id: issue.creatorId },
         state: issue.state,
-        attachments: {
-          nodes: attachmentNodes(issue, attachmentFields(operation.query)).slice(
-            0,
-            attachmentLimit(),
-          ),
-          pageInfo: {
-            hasNextPage:
-              issue.pullRequests.length + issue.mentions.length + issue.plainLinks.length >
-              attachmentLimit(),
-          },
-        },
+        attachments: attachmentPage(issue, attachmentFields(operation.query), attachmentLimit()),
         comments: {
           nodes: matches.slice(0, limit),
           pageInfo: { hasNextPage: matches.length > limit },

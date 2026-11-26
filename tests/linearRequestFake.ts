@@ -54,6 +54,26 @@ interface IssueInput {
   subIssueSortOrder?: number;
 }
 
+export interface AttachmentFields {
+  metadata: boolean;
+}
+
+export interface AttachmentSources {
+  pullRequests: readonly string[];
+  mentions: readonly string[];
+  plainLinks: readonly string[];
+}
+
+export interface AttachmentNode {
+  url: string;
+  metadata?: { linkKind: string } | null;
+}
+
+export interface AttachmentPage {
+  pageInfo: { hasNextPage: boolean };
+  nodes: AttachmentNode[];
+}
+
 export interface QueryVariables {
   commentCreate: { issue: string; body: string };
   commentUpdate: { id: string; body: string };
@@ -97,10 +117,6 @@ export type Operation =
   | { kind: 'relation'; action: 'add' | 'delete'; identifier: string; blocker: string }
   | QueryOperation;
 
-export interface AttachmentFields {
-  metadata: boolean;
-}
-
 const attachmentSelection =
   /attachments\([^)]*\)\s*\{\s*(?:pageInfo\s*\{[^}]*\}\s*nodes\s*\{([^}]*)\}|nodes\s*\{([^}]*)\}\s*pageInfo\s*\{[^}]*\})\s*\}/gu;
 
@@ -128,6 +144,33 @@ export const attachmentFields = (query: string, index = 0): AttachmentFields => 
   }
 
   return selection;
+};
+
+// A linked pull request either closes the issue, only mentions it, or arrives without Linear's
+// record of either.
+export const attachmentNodes = (
+  issue: AttachmentSources,
+  fields: AttachmentFields,
+): AttachmentNode[] => [
+  ...issue.pullRequests.map((url) => ({
+    url,
+    ...(fields.metadata ? { metadata: { linkKind: 'closes' } } : {}),
+  })),
+  ...issue.mentions.map((url) => ({
+    url,
+    ...(fields.metadata ? { metadata: { linkKind: 'links' } } : {}),
+  })),
+  ...issue.plainLinks.map((url) => ({ url, ...(fields.metadata ? { metadata: null } : {}) })),
+];
+
+export const attachmentPage = (
+  issue: AttachmentSources,
+  fields: AttachmentFields,
+  limit: number,
+): AttachmentPage => {
+  const nodes = attachmentNodes(issue, fields);
+
+  return { pageInfo: { hasNextPage: nodes.length > limit }, nodes: nodes.slice(0, limit) };
 };
 
 const coerceVariable = (text: string): unknown => {

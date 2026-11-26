@@ -1,6 +1,6 @@
 import type { Exec } from '../src/command.js';
 import { createCommentFake } from './linearCommentFake.js';
-import { attachmentFields, decode } from './linearRequestFake.js';
+import { attachmentFields, attachmentNodes, decode } from './linearRequestFake.js';
 import type {
   AttachmentFields,
   FakeCall,
@@ -113,20 +113,6 @@ const savedDescription = (description: string) => {
 
   return lines.join('\n');
 };
-
-// A linked pull request either closes the issue, only mentions it, or arrives without Linear's
-// record of either.
-const attachmentNodes = (issue: FakeIssue, fields: AttachmentFields) => [
-  ...issue.pullRequests.map((url) => ({
-    url,
-    ...(fields.metadata ? { metadata: { linkKind: 'closes' } } : {}),
-  })),
-  ...issue.mentions.map((url) => ({
-    url,
-    ...(fields.metadata ? { metadata: { linkKind: 'links' } } : {}),
-  })),
-  ...issue.plainLinks.map((url) => ({ url, ...(fields.metadata ? { metadata: null } : {}) })),
-];
 
 const childNode = (
   issue: FakeIssue,
