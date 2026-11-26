@@ -100,33 +100,65 @@ const toolSize = (tool: ToolDefinition): number =>
 const toolsSize = (tools: ToolDefinition[]): number =>
   tools.reduce((total, tool) => total + toolSize(tool), 0);
 
-const loadTools = async (
-  role: RoleKind,
-  agentDirectory: string,
-  registerExtensions: (pi: ExtensionAPI) => Promise<void> = tauRegistration,
-) => {
+const stubRoleEnvironment = (role: RoleKind, agentDirectory: string): void => {
   const tauRole = role === 'lead' ? undefined : role;
-  vi.stubEnv('TAU_ROLE', tauRole);
   const workerRecord = role === 'worker' ? 'worker-record' : '';
+  const terminalId = role === 'worker' ? workerTerminal : 'manager';
+
+  vi.stubEnv('TAU_ROLE', tauRole);
   vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
-  const terminalId = role === 'worker' ? workerTerminal : 'manager';
   vi.stubEnv('HC_TERMINAL_ID', terminalId);
+  // A caller's handover sender must not register its lead-only tool in a measurement.
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+};
 
-  const fake = fakeExtensionApi();
+const withRoleEnvironment = async <T>(
+  role: RoleKind,
+  agentDirectory: string,
+  action: () => Promise<T>,
+): Promise<T> => {
+  stubRoleEnvironment(role, agentDirectory);
 
   try {
-    await registerExtensions(fake.pi);
-
-    if (role === 'worker') {
-      workerExtension(fake.pi);
-    }
-
-    return fake;
+    return await action();
   } finally {
     vi.unstubAllEnvs();
   }
 };
+
+const withRegisteredSession = async <T>(
+  role: RoleKind,
+  agentDirectory: string,
+  action: (fake: ReturnType<typeof fakeExtensionApi>) => Promise<T>,
+  registerExtensions: (pi: ExtensionAPI) => Promise<void> = tauRegistration,
+): Promise<T> =>
+  withRoleEnvironment(role, agentDirectory, async () => {
+    const fake = fakeExtensionApi();
+
+    await registerExtensions(fake.pi);
+
+    return action(fake);
+  });
+
+const loadTools = async (
+  role: RoleKind,
+  agentDirectory: string,
+  registerExtensions: (pi: ExtensionAPI) => Promise<void> = tauRegistration,
+) =>
+  withRegisteredSession(
+    role,
+    agentDirectory,
+    async (fake) => {
+      if (role === 'worker') {
+        workerExtension(fake.pi);
+      }
+
+      return fake;
+    },
+    registerExtensions,
+  );
 
 const failRegistration = async (): Promise<void> => {
   throw new Error('registration failed');
@@ -138,37 +170,36 @@ const roleOptions = {
   qaGuidePath,
 };
 
-const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) => {
-  const fake = await loadTools(role, agentDirectory);
+const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) =>
+  withRegisteredSession(role, agentDirectory, async (fake) => {
+    const event = {
+      systemPromptOptions: { appendSystemPrompt: '', selectedTools: [...fake.tools.keys()] },
+    };
 
-  const event = {
-    systemPromptOptions: { appendSystemPrompt: '', selectedTools: [...fake.tools.keys()] },
-  };
+    for (const handler of fake.handlers.get('before_agent_start') ?? []) {
+      await handler(
+        event as never,
+        {
+          cwd: agentDirectory,
+          sessionManager: { getBranch: () => [], getSessionId: () => 'session-1' },
+        } as unknown as ExtensionContext,
+      );
+    }
 
-  for (const handler of fake.handlers.get('before_agent_start') ?? []) {
-    await handler(
-      event as never,
-      {
-        cwd: agentDirectory,
-        sessionManager: { getBranch: () => [], getSessionId: () => 'session-1' },
-      } as unknown as ExtensionContext,
-    );
-  }
+    const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt, agentDirectory);
+    const guidelines = managerGuidelines(role, roleOptions);
+    const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
 
-  const prompt = measuredPrompt(event.systemPromptOptions.appendSystemPrompt, agentDirectory);
-  const guidelines = managerGuidelines(role, roleOptions);
-  const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
+    if (missingGuidelines.length > 0) {
+      throw new Error(
+        `${role} prompt lacks ${missingGuidelines.length} of ${guidelines.length} delegation guidelines`,
+      );
+    }
 
-  if (missingGuidelines.length > 0) {
-    throw new Error(
-      `${role} prompt lacks ${missingGuidelines.length} of ${guidelines.length} delegation guidelines`,
-    );
-  }
+    const tools = [...fake.tools.values()];
 
-  const tools = [...fake.tools.values()];
-
-  return { tools, size: prompt.length + toolsSize(tools), prompt };
-};
+    return { tools, size: prompt.length + toolsSize(tools), prompt };
+  });
 
 const loadoutFor = (profileName: string, directory: string): Loadout => {
   const profile = resolveProfile(directory, directory, true, profileName);
@@ -496,23 +527,23 @@ describe('prompt budget', () => {
   });
 
   it('keeps the question tool within its budget for a lead with a handover sender', async () => {
-    const fake = await loadTools('lead', directory);
+    const questionTool = await withRegisteredSession('lead', directory, async (fake) => {
+      const context = {
+        cwd: directory,
+        sessionManager: {
+          getBranch: () => senderBranch,
+          getSessionId: () => 'session-1',
+        },
+      } as unknown as ExtensionContext;
 
-    const context = {
-      cwd: directory,
-      sessionManager: {
-        getBranch: () => senderBranch,
-        getSessionId: () => 'session-1',
-      },
-    } as unknown as ExtensionContext;
+      const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: [] } };
 
-    const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: [] } };
+      for (const handler of fake.handlers.get('before_agent_start') ?? []) {
+        await handler(event as never, context);
+      }
 
-    for (const handler of fake.handlers.get('before_agent_start') ?? []) {
-      await handler(event as never, context);
-    }
-
-    const questionTool = fake.tools.get('handover_question');
+      return fake.tools.get('handover_question');
+    });
 
     expect(questionTool).toBeDefined();
 
@@ -608,6 +639,8 @@ describe('prompt budget', () => {
       PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
       TAU_ROLE: process.env.TAU_ROLE,
       TAU_WORKER_RECORD: process.env.TAU_WORKER_RECORD,
+      TAU_HANDOVER_SENDER_TERMINAL: process.env.TAU_HANDOVER_SENDER_TERMINAL,
+      TAU_HANDOVER_SENDER_SESSION: process.env.TAU_HANDOVER_SENDER_SESSION,
     };
 
     await expect(loadTools('worker', directory, failRegistration)).rejects.toThrow(
@@ -619,6 +652,8 @@ describe('prompt budget', () => {
       PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
       TAU_ROLE: process.env.TAU_ROLE,
       TAU_WORKER_RECORD: process.env.TAU_WORKER_RECORD,
+      TAU_HANDOVER_SENDER_TERMINAL: process.env.TAU_HANDOVER_SENDER_TERMINAL,
+      TAU_HANDOVER_SENDER_SESSION: process.env.TAU_HANDOVER_SENDER_SESSION,
     }).toEqual(before);
   });
 });
