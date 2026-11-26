@@ -117,7 +117,7 @@ export const startHandover = async (
     session: undefined,
     bareRoot: request.bareRoot,
     environment,
-    readForegroundArgv: (terminal) => foregroundArgv(runtime, terminal),
+    readForegroundArgv: (terminal, signal) => foregroundArgv({ ...runtime, signal }, terminal),
   });
 
   const parsed = parseJson('herdr-app do', started.reply);

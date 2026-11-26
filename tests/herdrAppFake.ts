@@ -23,9 +23,11 @@ export interface HerdrAppFakeOptions {
 
 // The reader a piStart request takes, so a test never imports the hc module from src/piStart.
 export const foregroundReaderFor =
-  (runtime: CommandRuntime): ((terminal: string) => Promise<readonly string[] | undefined>) =>
-  (terminal) =>
-    foregroundArgv(runtime, terminal);
+  (
+    runtime: CommandRuntime,
+  ): ((terminal: string, signal: AbortSignal) => Promise<readonly string[] | undefined>) =>
+  (terminal, signal) =>
+    foregroundArgv({ ...runtime, signal }, terminal);
 
 export const listedSpace = (
   id: string,

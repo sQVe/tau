@@ -224,7 +224,8 @@ const launchArchitect = (
     session: prepared.session,
     bareRoot: prepared.bareRoot,
     environment: prepared.environment,
-    readForegroundArgv: (terminal: string) => foregroundArgv(request.hc, terminal),
+    readForegroundArgv: (terminal: string, signal: AbortSignal) =>
+      foregroundArgv({ ...request.hc, signal }, terminal),
     argvWrapper: (argv: string[]): string[] => fence.wrapArgv(argv),
   };
 

@@ -1,12 +1,17 @@
+import { expect } from 'vitest';
+
 import type {
   launchPiSession,
   launchPiSessionRightOf,
   startPiSession,
 } from '../src/piStart/piStart.js';
-import type { ExecCall, ExecFake } from './execFake.js';
+import type { ExecFake } from './execFake.js';
 import { foregroundReaderFor } from './herdrAppFake.js';
 
-export type ForegroundReader = (terminal: string) => Promise<readonly string[] | undefined>;
+export type ForegroundReader = (
+  terminal: string,
+  signal: AbortSignal,
+) => Promise<readonly string[] | undefined>;
 
 type StartRequest = Parameters<typeof startPiSession>[1];
 type LaunchRequest = Parameters<typeof launchPiSession>[1];
@@ -18,10 +23,10 @@ export const readerFor = <Key extends string>(
   root: string,
 ): ForegroundReader => foregroundReaderFor({ exec: fake.exec, cwd: root });
 
-export const readbackCall = (terminal: string): ExecCall => ({
+export const readbackCall = (terminal: string): Record<string, unknown> => ({
   command: 'hc',
   commandArguments: ['get', '--json', '--', terminal],
-  signal: undefined,
+  signal: expect.any(AbortSignal),
 });
 
 const commonRequest = (root: string, readForegroundArgv: ForegroundReader): CommonRequest => ({

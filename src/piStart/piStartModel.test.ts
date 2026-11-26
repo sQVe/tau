@@ -264,6 +264,37 @@ it.each<[string, readonly string[] | undefined]>([
   expect(reads).toBe(2);
 });
 
+it('a start retries a model read that fails once before answering', async () => {
+  const fake = launchWithForeground([
+    'pi',
+    '--provider',
+    'morph',
+    '--model',
+    'morph-dsv41flash-1017',
+  ]);
+
+  const root = await createTemporaryRepository(onTestFinished);
+  let reads = 0;
+
+  const reader = async (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    if (reads === 1) {
+      throw new Error('the terminal is not registered yet');
+    }
+
+    return ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
+  };
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
+  );
+
+  expect(result.model).toBe('morph/morph-dsv41flash-1017');
+  expect(reads).toBe(2);
+});
+
 it('a start fails when the terminal runs another model', async () => {
   const fake = launchWithForeground([
     'pi',
@@ -374,6 +405,80 @@ it('an abort during the backoff pause ends the call before the next read', async
 
     expect(outcome).toBe(cancellation);
     expect(reads).toBe(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('aborts an in-flight model read when the readback budget expires', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  let readSignal: AbortSignal | undefined;
+
+  const reader = (
+    _terminal: string,
+    signal?: AbortSignal,
+  ): Promise<readonly string[] | undefined> => {
+    readSignal = signal;
+
+    return neverResolves;
+  };
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const opening = startPiSession(
+      { exec: fake.exec, cwd: root },
+      startRequest(root, reader),
+    ).catch((error: unknown) => error);
+
+    await vi.waitFor(() => {
+      expect(fake.calls).toHaveLength(1);
+    });
+
+    await vi.waitFor(() => {
+      expect(readSignal).toBeDefined();
+    });
+
+    await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
+
+    expect(await opening).toBeInstanceOf(Error);
+    expect(readSignal?.aborted).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('bounds the launch and the readback with one timeout', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  let launched = false;
+
+  const fake = createExecFake<'launch'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'launch' : undefined),
+    handlerFor: () => () => {
+      vi.setSystemTime(Date.now() + 20_000);
+      launched = true;
+
+      return succeededResult('{"space":"sp-1","tab":"tb-1","terminal":"t-space"}');
+    },
+  });
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const opening = startPiSession(
+      { exec: fake.exec, cwd: root },
+      startRequest(root, neverReads),
+    ).catch((error: unknown) => error);
+
+    await vi.waitFor(() => {
+      expect(launched).toBe(true);
+    });
+
+    const waiting = vi.advanceTimersByTimeAsync(10_000).then(() => 'waiting' as const);
+    const outcome = await Promise.race([opening, waiting]);
+
+    expect(outcome).toBeInstanceOf(Error);
   } finally {
     vi.useRealTimers();
   }
