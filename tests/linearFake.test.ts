@@ -22,7 +22,7 @@ const attachmentsBeforePageInfo =
 const childAttachmentsWithoutArguments =
   'query($id: String!) { issue(id: $id) { children { nodes { identifier attachments { nodes { url } } } } } }';
 
-const modeledIssueAndChildWithoutArguments =
+const issueAttachmentsThenChildAttachmentsWithoutArguments =
   'query($id: String!) { issue(id: $id) { attachments(first: 100) { pageInfo { hasNextPage } nodes { url metadata } } children { nodes { identifier attachments { nodes { url } } } } } }';
 
 const refusedCalls: [string, string, string[]][] = [
@@ -150,13 +150,13 @@ test.each([
     expected: 'cannot read attachment selection 0',
   },
   {
-    name: 'an only attachment selection without arguments',
+    name: 'a lone child attachment selection without arguments',
     query: childAttachmentsWithoutArguments,
     expected: 'cannot read attachment selection 0',
   },
   {
-    name: 'a child attachment selection without arguments',
-    query: modeledIssueAndChildWithoutArguments,
+    name: 'a child attachment selection without arguments after a modeled issue selection',
+    query: issueAttachmentsThenChildAttachmentsWithoutArguments,
     expected: 'cannot read attachment selection 1',
   },
 ])('refuses $name', async ({ query, expected }) => {
