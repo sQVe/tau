@@ -135,13 +135,23 @@ it.each([
     expected: { status: 'malformed', line: 2, problem: { kind: 'element' } },
   },
   {
-    name: 'reports a star bullet without a space as an element attempt',
-    text: ['https://app.test/teams', '*Account status: visible: broken'].join('\n'),
+    name: 'reports a spaced star bullet as an element attempt',
+    text: ['https://app.test/teams', '* Form: visible: matches'].join('\n'),
     expected: { status: 'malformed', line: 2, problem: { kind: 'element' } },
   },
   {
-    name: 'reports a plus bullet without a space as an element attempt',
-    text: ['https://app.test/teams', '+Account status: visible: broken'].join('\n'),
+    name: 'reports an unspaced star bullet as an element attempt',
+    text: ['https://app.test/teams', '*Form: visible: matches'].join('\n'),
+    expected: { status: 'malformed', line: 2, problem: { kind: 'element' } },
+  },
+  {
+    name: 'reports a spaced plus bullet as an element attempt',
+    text: ['https://app.test/teams', '+ Form: visible: matches'].join('\n'),
+    expected: { status: 'malformed', line: 2, problem: { kind: 'element' } },
+  },
+  {
+    name: 'reports an unspaced plus bullet as an element attempt',
+    text: ['https://app.test/teams', '+Form: visible: matches'].join('\n'),
     expected: { status: 'malformed', line: 2, problem: { kind: 'element' } },
   },
 ])('$name', ({ text, expected }) => {

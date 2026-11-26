@@ -68,13 +68,15 @@ const parseElement = (content: string, line: number): ElementParse => {
   return { status: 'parsed', element: { element, expectedState, verdict } };
 };
 
+const nonDashBulletPattern = /^[*+]/u;
+
 const readLine = (trimmed: string): InventoryLine => {
   if (trimmed === '' || trimmed.startsWith('#')) {
     return { kind: 'skip' };
   }
 
-  if (trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.startsWith('+')) {
-    const item = /^[-*+]\s+(.*)$/u.exec(trimmed);
+  if (trimmed.startsWith('-') || nonDashBulletPattern.test(trimmed)) {
+    const item = /^-\s+(.*)$/u.exec(trimmed);
 
     return item === null
       ? { kind: 'malformed', problem: { kind: 'element' } }
