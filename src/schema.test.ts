@@ -173,7 +173,7 @@ it('closes an object schema that declares patternProperties without a type', () 
   });
 });
 
-it('closes an object schema under then, else, and contains', () => {
+it('closes an object schema under contains but not under then or else', () => {
   const schema: Record<string, unknown> = {
     type: 'object',
     // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword, not a promise method.
@@ -187,9 +187,26 @@ it('closes an object schema under then, else, and contains', () => {
   const elseChild = isRecord(strict) ? strict['else'] : undefined;
   const containsChild = isRecord(strict) ? strict['contains'] : undefined;
 
-  expect(thenChild).toMatchObject({ additionalProperties: false });
-  expect(elseChild).toMatchObject({ additionalProperties: false });
+  expect(thenChild).toEqual(childSchema());
+  expect(elseChild).toEqual(childSchema());
   expect(containsChild).toMatchObject({ additionalProperties: false });
+});
+
+it('keeps a then, else, or allOf subschema from rejecting a declared argument', () => {
+  const schema = {
+    type: 'object',
+    properties: { mode: { type: 'string' }, detail: { type: 'string' } },
+    if: { properties: { mode: { const: 'a' } } },
+    // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword, not a promise method.
+    then: { type: 'object', properties: { mode: { type: 'string' } } },
+    else: { type: 'object', properties: { detail: { type: 'string' } } },
+    allOf: [{ type: 'object', properties: { detail: { type: 'string' } } }],
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { mode: 'a', detail: 'b' })).toBe(true);
+  expect(Value.Check(strict, { mode: 'a', detail: 'b', extra: 1 })).toBe(false);
 });
 
 it('leaves an object schema under not and if open', () => {
@@ -363,8 +380,13 @@ it('pins the subschema keyword sets', () => {
 });
 
 // A schema under `not` or `if` narrows the negation or condition instead, so closing it would
-// accept inputs the tool rejects.
-const unassertedKeywords = new Set(['if', 'not']);
+// accept inputs the tool rejects. A `then` or `else` branch lists only the conditioned properties,
+// so closing it would reject the others.
+const unassertedKeywords = new Set(['else', 'if', 'not', 'then']);
+
+// An `allOf` branch combines with its siblings, so closing it would require that one branch to
+// declare every property.
+const unassertedArrayKeywords = new Set(['allOf']);
 
 it('closes an object schema under every asserted subschema keyword in the sets', () => {
   const schema: Record<string, unknown> = { type: 'object' };
@@ -396,7 +418,13 @@ it('closes an object schema under every asserted subschema keyword in the sets',
   for (const keyword of schemaArrayKeywords) {
     const entries = isRecord(strict) ? strict[keyword] : undefined;
 
-    if (!Array.isArray(entries) || !entries.every((entry) => isClosed(entry))) {
+    if (!Array.isArray(entries)) {
+      unclosed.push(keyword);
+    } else if (unassertedArrayKeywords.has(keyword)) {
+      if (entries.some((entry) => isClosed(entry))) {
+        loosened.push(keyword);
+      }
+    } else if (!entries.every((entry) => isClosed(entry))) {
       unclosed.push(keyword);
     }
   }

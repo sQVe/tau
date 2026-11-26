@@ -37,10 +37,12 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // argument the tool does not declare. A map schema keeps its additionalProperties schema, which
 // constrains every key. A node counts as an object when its type includes `object`, or when it
 // declares `properties` or `patternProperties` without a type. A subschema under `not` or `if`
-// narrows the negation or condition instead, so closing it would accept inputs the tool rejects.
-// Add a keyword to one of these sets when a tool schema can hold a subschema under it. A subschema
-// under a keyword outside these sets stays as written, so an object there keeps its keys open.
-export const schemaMapKeywords = new Set([
+// narrows the negation or condition instead, so closing it would accept inputs the tool rejects. A
+// subschema under `then`, `else`, or `allOf` combines with sibling schemas, so closing it would
+// reject arguments the tool declares. Add a keyword to one of these sets when a tool schema can
+// hold a subschema under it. A subschema under a keyword outside these sets stays as written, so an
+// object there keeps its keys open.
+export const schemaMapKeywords: ReadonlySet<string> = new Set([
   '$defs',
   'definitions',
   'dependencies',
@@ -49,9 +51,14 @@ export const schemaMapKeywords = new Set([
   'properties',
 ]);
 
-export const schemaArrayKeywords = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
+export const schemaArrayKeywords: ReadonlySet<string> = new Set([
+  'allOf',
+  'anyOf',
+  'oneOf',
+  'prefixItems',
+]);
 
-export const schemaValueKeywords = new Set([
+export const schemaValueKeywords: ReadonlySet<string> = new Set([
   'additionalItems',
   'additionalProperties',
   'contains',
@@ -66,8 +73,13 @@ export const schemaValueKeywords = new Set([
 ]);
 
 // A subschema under one of these keywords narrows the negation or condition instead of the
-// instance, so closing it there would accept inputs the tool rejects.
-const unassertedKeywords = new Set(['if', 'not']);
+// instance, so closing it there would accept inputs the tool rejects. A `then` or `else` branch
+// usually lists only the conditioned properties, so closing it would reject the others.
+const unassertedKeywords = new Set(['else', 'if', 'not', 'then']);
+
+// An `allOf` branch combines with its siblings, so closing it would require that one branch to
+// declare every property.
+const unassertedArrayKeywords = new Set(['allOf']);
 
 const declaresObject = (value: Record<string, unknown>): boolean => {
   const type = value['type'];
@@ -110,7 +122,9 @@ const strictSchemaChild = (
   }
 
   if (schemaArrayKeywords.has(key)) {
-    return Array.isArray(child) ? child.map((entry) => visit(entry, closesObjects)) : child;
+    const childClosesObjects = closesObjects && !unassertedArrayKeywords.has(key);
+
+    return Array.isArray(child) ? child.map((entry) => visit(entry, childClosesObjects)) : child;
   }
 
   if (schemaValueKeywords.has(key)) {
