@@ -137,6 +137,11 @@ it('throws when gh fails', async () => {
 const acceptedPullRequestNumbers: { rule: string; pr: number; expected: number }[] = [
   { rule: 'returns a pull request number of 1', pr: 1, expected: 1 },
   { rule: 'returns a larger pull request number', pr: 9999, expected: 9999 },
+  {
+    rule: 'returns the largest safe pull request number',
+    pr: Number.MAX_SAFE_INTEGER,
+    expected: Number.MAX_SAFE_INTEGER,
+  },
 ];
 
 it.each(acceptedPullRequestNumbers)('$rule', ({ pr, expected }) => {
@@ -193,7 +198,19 @@ const refusedPullRequestNumbers: {
   },
 ];
 
+const thrownBy = (action: () => void): unknown => {
+  try {
+    action();
+  } catch (error) {
+    return error;
+  }
+
+  return undefined;
+};
+
 it.each(refusedPullRequestNumbers)('$rule', ({ pr, error, errorClass }) => {
-  expect(() => requirePullRequestNumber('publish', pr)).toThrow(error);
-  expect(() => requirePullRequestNumber('publish', pr)).toThrow(errorClass);
+  const thrown = thrownBy(() => requirePullRequestNumber('publish', pr));
+
+  expect(thrown).toBeInstanceOf(errorClass);
+  expect(thrown).toHaveProperty('message', error);
 });
