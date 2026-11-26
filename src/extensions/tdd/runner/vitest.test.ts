@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'v
 
 import { suiteCleanup, temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
-import { fakeSpawn, makeDeps, runTests } from '../fixtures/vitestRunner.js';
+import { fakeSpawn, makeDeps, nameFilterFrom, runTests } from '../fixtures/vitestRunner.js';
 import { thrownErrorType } from '../observation.js';
 import { maximumFailures } from './constants.js';
 import { defaultSpawn, maximumTotalBytes } from './process.js';
@@ -32,7 +32,6 @@ describe('runTests', () => {
     async (version) => {
       const separator = version.startsWith('5.') ? ' > ' : ' ';
       const fullname = ['outer suite', 'inner [group]', 'works (exact)'].join(separator);
-      const filter = `^(?:${fullname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})$`;
 
       // Vitest 5.0.1 still joins JSON fullName with spaces; CLI filtering uses " > ".
       // https://github.com/vitest-dev/vitest/blob/v5.0.1/packages/vitest/src/node/reporters/json.ts
@@ -91,9 +90,14 @@ describe('runTests', () => {
 
       expect(spawn).toHaveBeenCalledExactlyOnceWith(
         nodeExecutable(),
-        expect.arrayContaining(['/fake/vitest.js', '-t', filter]),
+        expect.arrayContaining(['/fake/vitest.js', '-t', expect.any(String)]),
         expect.objectContaining({ cwd: '/repo' }),
       );
+
+      const pattern = new RegExp(nameFilterFrom(spawn.mock.calls[0]?.[1] ?? []));
+
+      expect(pattern.test(fullname)).toBe(true);
+      expect(pattern.test(`${fullname} suffix`)).toBe(false);
 
       expect(result).toMatchObject({
         kind: 'fail',
@@ -160,7 +164,11 @@ describe('runTests', () => {
 
       expect(result).toHaveProperty('message', expect.stringContaining('Do not restructure tests'));
       expect(spawn).toHaveBeenCalledTimes(1);
-      expect(spawn.mock.calls[0]?.[1]).toContain('^(?:wrong nested name)$');
+
+      const pattern = new RegExp(nameFilterFrom(spawn.mock.calls[0]?.[1] ?? []));
+
+      expect(pattern.test('wrong nested name')).toBe(true);
+      expect(pattern.test(expectedMessage)).toBe(false);
     },
   );
 

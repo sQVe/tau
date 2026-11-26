@@ -17,6 +17,7 @@ import {
   resolutionFailure,
 } from './resolution.js';
 import type { ResolveVitest } from './resolution.js';
+import { nameSeparator, requestedNamePattern } from './testNames.js';
 import type {
   RunTestsInput,
   RunnerResult,
@@ -83,9 +84,6 @@ const scopedPaths = (input: RunTestsInput): string[] => {
 
 const isAborted = (input: RunTestsInput): boolean => input.signal?.aborted === true;
 
-const exactNamePattern = (testNames: readonly string[]) =>
-  `^(?:${testNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
-
 const reportReporterPath = fileURLToPath(new URL('./vitestReportReporter.ts', import.meta.url));
 
 const buildArguments = (
@@ -121,7 +119,7 @@ const buildArguments = (
     }
 
     if (input.scope === 'focused') {
-      runnerArguments.push('-t', exactNamePattern(input.testNames));
+      runnerArguments.push('-t', requestedNamePattern(input.testNames, nameSeparator(version)));
     }
   }
 

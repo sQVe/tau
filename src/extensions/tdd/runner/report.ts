@@ -2,6 +2,7 @@ import { isAbsolute, relative } from 'node:path';
 
 import { isRecord } from '../../../schema.js';
 import { capMessage, maximumFailures } from './constants.js';
+import { matchesRequestedName, nameSeparator } from './testNames.js';
 import type { RunnerResult, RunTestsInput, TestFailure, TestResult } from './types.js';
 
 type VitestAssertionStatus = TestResult['status'] | 'pending' | 'disabled';
@@ -150,12 +151,7 @@ export const parseReport = (text: string): VitestReport | null => {
   }
 };
 
-// Vitest 5 joins nested test names with ` > `; earlier versions use a space.
-const arrowSeparatorMajor = 5;
 const maximumCandidates = 5;
-
-const nameSeparator = (version: string) =>
-  Number.parseInt(version, 10) >= arrowSeparatorMajor ? ' > ' : ' ';
 
 export const assertionFullName = (assertion: VitestAssertionResult, version: string): string => {
   // Vitest 5 filters with " > " but its Jest-compatible JSON fullName still uses spaces.
@@ -180,7 +176,7 @@ const selects = (testNames: readonly string[] | undefined) => {
     return () => true;
   }
 
-  return (fullname: string) => testNames.includes(fullname);
+  return (fullname: string) => testNames.some((name) => matchesRequestedName(fullname, name));
 };
 
 const toTestResult = (

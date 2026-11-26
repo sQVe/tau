@@ -117,6 +117,31 @@ describe('focused Vitest entry', { timeout: 30_000 }, () => {
     expect(summary).toMatchObject({ total: { lines: { pct: 50 } } });
   });
 
+  it('selects a decision-table test by a name past the display cut', async () => {
+    const cwd = await createProject();
+    const name = 'a declared record cited with trailing punctuation accepts';
+
+    await writeFile(
+      join(cwd, 'value.test.ts'),
+      `import { it } from 'vitest';\nit.each([{ name: ${JSON.stringify(name)} }])('$name', () => {});`,
+    );
+
+    const result = await runTests({
+      scope: 'focused',
+      verificationArgv,
+      cwd,
+      files: ['value.test.ts'],
+      testNames: [name],
+    });
+
+    expect(result).toMatchObject({
+      kind: 'pass',
+      tests: [{ fullname: `'${name}'`, status: 'passed' }],
+    });
+
+    expect('tests' in result && result.tests).toHaveLength(1);
+  });
+
   it('does not start an unrelated browser provider for a selected node test', async () => {
     const cwd = await createProject();
 

@@ -195,6 +195,7 @@ const pureModules = [
   'src/extensions/tdd/runner/report.ts',
   'src/extensions/tdd/runner/rustAttribution.ts',
   'src/extensions/tdd/runner/rustDepInfo.ts',
+  'src/extensions/tdd/runner/testNames.ts',
   'src/extensions/tdd/runner/vitestOptions.ts',
   'src/extensions/tdd/runner/vitestSelection.ts',
   'src/extensions/tdd/runner/vitestVersion.ts',

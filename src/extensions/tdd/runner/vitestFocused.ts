@@ -39,6 +39,15 @@ if ('reporter' in normalizedOptions && Array.isArray(normalizedOptions.reporter)
   normalizedOptions.reporter.push(reporterPath);
 }
 
+// Vitest renders an `it.each` "$name" through chai's display cut and stores that rendered name, so
+// an exact filter on the name written in the table would never match.
+const withoutDisplayCut = <Test extends { chaiConfig?: { truncateThreshold?: number } }>(
+  test: Test,
+): Test => ({
+  ...test,
+  chaiConfig: { ...test.chaiConfig, truncateThreshold: 0 },
+});
+
 try {
   const context = await startVitest('test', [], normalizedOptions, {
     plugins: [
@@ -53,8 +62,15 @@ try {
             : [configuredReporters];
 
           reporters.push([reporterPath, { files }]);
-          config.test ??= {};
+          config.test = withoutDisplayCut(config.test ?? {});
           config.test.reporters = reporters;
+
+          // An inline project resolves its own test config, so it needs the same cut removed.
+          for (const project of config.test.projects ?? []) {
+            if (typeof project === 'object' && 'test' in project) {
+              project.test = withoutDisplayCut(project.test ?? {});
+            }
+          }
         },
       },
     ],

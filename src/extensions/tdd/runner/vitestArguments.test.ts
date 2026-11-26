@@ -4,7 +4,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { suiteCleanup, temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
-import { fakeSpawn, makeDeps, outputFileFrom, runTests } from '../fixtures/vitestRunner.js';
+import {
+  fakeSpawn,
+  makeDeps,
+  nameFilterFrom,
+  outputFileFrom,
+  runTests,
+} from '../fixtures/vitestRunner.js';
 import type { SpawnCommand } from './types.js';
 
 const verificationArgv = defaultTddConfig.verificationArgv;
@@ -158,7 +164,7 @@ describe('runTests', () => {
         expect.stringMatching(/^--outputFile=/),
       ];
 
-      const nameFilter = ['-t', '^(?:adds \\(item\\)|removes item)$'];
+      const nameFilter: unknown[] = ['-t', expect.any(String)];
       const entry: unknown = expect.stringMatching(/\/vitestFocused\.ts$/);
 
       const expected = focusedEntry
@@ -167,6 +173,15 @@ describe('runTests', () => {
 
       expect(spawn).toHaveBeenCalledOnce();
       expect(spawn.mock.calls[0]![1]).toEqual(expected);
+
+      const pattern = new RegExp(nameFilterFrom(spawn.mock.calls[0]![1]));
+
+      expect(['adds (item)', 'removes item'].map((name) => pattern.test(name))).toEqual([
+        true,
+        true,
+      ]);
+
+      expect(pattern.test('adds another item')).toBe(false);
     },
   );
 
@@ -243,8 +258,11 @@ describe('runTests', () => {
 
     expect(captured).toContain('src/a.test.ts');
     expect(captured).toContain('src/b.test.ts');
-    expect(captured).toContain('-t');
-    expect(captured).toContain('^(?:adds item)$');
+
+    const pattern = new RegExp(nameFilterFrom(captured));
+
+    expect(pattern.test('adds item')).toBe(true);
+    expect(pattern.test('adds another item')).toBe(false);
   });
 
   it('passes no options beyond the fixed reporter arguments and the output file', async () => {
