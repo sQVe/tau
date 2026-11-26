@@ -1,4 +1,4 @@
-import { parseShellCommands, shellScriptOf } from '../../shell.js';
+import { commandNameOf, commandWords, parseShellCommands, shellScriptOf } from '../../shell.js';
 import type { ShellCommand, ShellRedirection } from '../../shell.js';
 
 export interface DetachedOutputFacts {
@@ -149,6 +149,59 @@ const discardsStderr = (streams: Streams): boolean => {
 const encloses = (group: number | undefined, closingIndex: number, index: number): boolean =>
   group !== undefined && group <= index && index < closingIndex;
 
+const innermostGroupOf = (
+  commands: readonly ShellCommand[],
+  index: number,
+): ShellCommand | undefined => {
+  let innermost: { command: ShellCommand; start: number } | undefined;
+
+  for (const [closingIndex, command] of commands.entries()) {
+    const start = command.group;
+
+    if (start === undefined || !encloses(start, closingIndex, index)) {
+      continue;
+    }
+
+    if (innermost === undefined || start > innermost.start) {
+      innermost = { command, start };
+    }
+  }
+
+  return innermost?.command;
+};
+
+// `exec` with only redirections changes the shell's own descriptors for the commands that follow
+// it in the same shell scope.
+const runsRedirectionsOnlyExec = (command: ShellCommand): boolean => {
+  const { words, lookup } = commandWords(command.arguments);
+  const runsExec = command.arguments.some((word) => commandNameOf(word) === 'exec');
+  const runsNoCommand = !lookup && words.length === 0;
+  const changesDescriptors = command.redirections.length > 0;
+
+  return runsExec && runsNoCommand && changesDescriptors;
+};
+
+const applyExecRedirections = (
+  commands: readonly ShellCommand[],
+  index: number,
+  inherited: Streams,
+  from: number,
+): Streams => {
+  const shell = innermostGroupOf(commands, index);
+  let streams = inherited;
+
+  for (let earlier = from; earlier < index; earlier += 1) {
+    const command = commands[earlier];
+    const sameShell = innermostGroupOf(commands, earlier) === shell;
+
+    if (command !== undefined && sameShell && runsRedirectionsOnlyExec(command)) {
+      streams = streamsOf(command, streams);
+    }
+  }
+
+  return streams;
+};
+
 const enclosingStreams = (
   commands: readonly ShellCommand[],
   index: number,
@@ -164,7 +217,12 @@ const enclosingStreams = (
     })
     .toSorted((left, right) => (left.command.group ?? 0) - (right.command.group ?? 0));
 
-  return enclosing.reduce((streams, { command }) => streamsOf(command, streams), inherited);
+  const withGroups = enclosing.reduce(
+    (streams, { command }) => streamsOf(command, streams),
+    inherited,
+  );
+
+  return applyExecRedirections(commands, index, withGroups, from);
 };
 
 const compoundScope = (
@@ -306,27 +364,6 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
   return { shows: showsStderr(own), discards: false, ownDiscards };
 };
 
-const innermostGroupOf = (
-  commands: readonly ShellCommand[],
-  index: number,
-): ShellCommand | undefined => {
-  let innermost: { command: ShellCommand; start: number } | undefined;
-
-  for (const [closingIndex, command] of commands.entries()) {
-    const start = command.group;
-
-    if (start === undefined || !encloses(start, closingIndex, index)) {
-      continue;
-    }
-
-    if (innermost === undefined || start > innermost.start) {
-      innermost = { command, start };
-    }
-  }
-
-  return innermost?.command;
-};
-
 // A backgrounded group is judged as a whole, so its members are not judged again. A command
 // backgrounded inside a foreground group still carries its own hidden failure.
 const insideBackgroundedGroup = (commands: readonly ShellCommand[], index: number): boolean =>
@@ -368,7 +405,7 @@ const judgesHiddenFailure = (scope: CompoundScope, index: number): boolean => {
 };
 
 const blockReason =
-  'This bash command detaches a process and sends its stderr to /dev/null, so a failure would be hidden. Write the output to a log file, such as `> /tmp/<name>.log 2>&1`, then read the log and the exit status before reporting the effect.';
+  'This bash command detaches a process and discards or closes its stderr, so a failure would be hidden. Write the output to a log file, such as `> /tmp/<name>.log 2>&1`, then read the log and the exit status before reporting the effect.';
 
 export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutputDecision => {
   if (facts.toolName !== 'bash' || typeof facts.command !== 'string') {

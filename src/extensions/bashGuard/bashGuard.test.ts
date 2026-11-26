@@ -22,3 +22,16 @@ it('blocks a detached nohup command that discards its stderr', async () => {
 it('allows a detached setsid command whose effect writes a log', async () => {
   expect(await toolCall(loggedClose)).toBeUndefined();
 });
+
+it('ignores a tool call that is not bash', async () => {
+  const fake = fakeExtensionApi();
+
+  bashGuard(fake.pi);
+
+  const result = await fake.handler('tool_call')(
+    { toolName: 'read', input: { path: '/tmp/file' } },
+    {} as never,
+  );
+
+  expect(result).toBeUndefined();
+});

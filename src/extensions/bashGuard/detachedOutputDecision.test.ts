@@ -402,6 +402,46 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a detached command flock runs after the lock file and its options',
+    command: "flock /tmp/lock -w 5 sh -c 'cmd 2>/dev/null' &",
+    blocked: true,
+  },
+  {
+    name: 'a detached command after an exec that discards stderr',
+    command: 'exec 2>/dev/null; nohup herdr-app do space.close --confirmed &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after an exec that logs stderr',
+    command: 'exec 2>/tmp/x.log; cmd &',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after an exec that discards stderr inside a group',
+    command: '( exec 2>/dev/null; cmd & )',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after a discarded exec in another group',
+    command: '( exec 2>/dev/null ); cmd &',
+    blocked: false,
+  },
+  {
+    name: 'a negated compound that discards stderr',
+    command: '! { cmd 2>/dev/null; } &',
+    blocked: true,
+  },
+  {
+    name: 'a timed compound that discards stderr',
+    command: 'time { cmd 2>/dev/null; } &',
+    blocked: true,
+  },
+  {
+    name: 'a heredoc body command read after its owner is backgrounded',
+    command: 'cat <<EOF &\n$(grep x 2>/dev/null)\nEOF',
+    blocked: true,
+  },
+  {
     name: 'a compound whose member is named like an Object property',
     command: 'if true; then :; constructor; touch x 2>/dev/null; fi &',
     blocked: true,
