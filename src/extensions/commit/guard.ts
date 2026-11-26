@@ -1,5 +1,5 @@
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
-import { delimiter, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 
 import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
 import type {
@@ -31,6 +31,8 @@ interface NamedScript {
   cwd: string;
   // The entries a bare name is looked up in.
   pathDirectories: string[];
+  // A `.` or `source` operand resolves through PATH before the working directory.
+  pathFirst: boolean;
 }
 
 type ShellMode =
@@ -49,6 +51,7 @@ interface GuardState {
 interface InterpreterSources {
   files: string[];
   code: string[];
+  pathFirst?: boolean;
 }
 
 // A wrapper positional word before the command word, skipped unless one of its options is present.
@@ -105,6 +108,7 @@ const gitCommitPattern = /\bgit\b[^;|&\n]*(?<![\w/-])commit(?![\w/])|\bgit-commi
 // source, every word and heredoc body in that source is parsed as a script too, because piped data
 // such as `echo 'git commit' | sh` becomes code.
 const shellRunnerNames = new Set([
+  '.',
   'ash',
   'bash',
   'csh',
@@ -116,6 +120,7 @@ const shellRunnerNames = new Set([
   'mksh',
   'msh',
   'sh',
+  'source',
   'ssh',
   'su',
   'tcsh',
@@ -192,7 +197,8 @@ const scriptsOf = (commands: ShellCommand[]) =>
 const maximumScriptDepth = 8;
 
 const bytesPerKibibyte = 1024;
-const maximumScriptBytes = bytesPerKibibyte * bytesPerKibibyte;
+const bytesPerMebibyte = bytesPerKibibyte * bytesPerKibibyte;
+const maximumScriptBytes = bytesPerMebibyte;
 
 // 512 bytes hold a shebang and an executable header.
 const maximumScriptHeaderBytes = 512;
@@ -422,6 +428,14 @@ const optionValue = (
   return clusterValue(words, index, word, options);
 };
 
+// `env -S` splits its value with the shell's own word rules, so a quoted value stays one word.
+const splitStringWords = (value: string): string[] => {
+  const commands = parseShellCommands(value);
+  const words = commands?.flatMap((command) => command.words);
+
+  return words ?? value.split(/\s+/u);
+};
+
 // `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
 // before the program.
 const envTarget = (words: string[]): string[] | undefined => {
@@ -434,10 +448,11 @@ const envTarget = (words: string[]): string[] | undefined => {
     const split = optionValue(words, index, envSplitStringOptions);
 
     if (split !== undefined) {
-      expanded.push(...split.value.split(/\s+/u));
-      index = split.next - 1;
+      const value = [split.value, ...words.slice(split.next)].join(' ');
 
-      continue;
+      expanded.push(...splitStringWords(value));
+
+      break;
     }
 
     const option = [...valueOptions].find((candidate) => matchesOption(word, candidate));
@@ -895,6 +910,13 @@ const commandWord = ({ arguments: words }: ShellCommand): string | undefined => 
   return index === undefined ? undefined : words[index];
 };
 
+// A `.` or `source` operand resolves through PATH before the working directory.
+const searchesPathFirst = (word: string): boolean => {
+  const name = commandName(word);
+
+  return name === '.' || name === 'source';
+};
+
 // An interpreter runs a file or inline code only from the executable position, so data such as
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
@@ -918,7 +940,7 @@ const interpreterSources = (command: ShellCommand): InterpreterSources => {
   const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
-    return { files: [mode.name], code: [] };
+    return { files: [mode.name], code: [], pathFirst: searchesPathFirst(shell.word) };
   }
 
   if (mode.kind === 'inline') {
@@ -950,16 +972,24 @@ const directScriptName = (command: ShellCommand): string | undefined => {
 const isPlainDirectoryWord = (word: string) =>
   !isOptionWord(word) && !directorySyntaxPattern.test(word);
 
-// Only a literal `cd` changes the directory of the commands after it in the same list.
+const isAssignmentWord = (word: string): boolean => assignmentPattern.test(word);
+
+// Only a literal `cd` changes the directory of the commands after it in the same list. Options and
+// assignment words around the operand do not change which directory it names.
 const nextDirectory = (command: ShellCommand, directory: string): string => {
   const words = command.arguments.slice(leadingWordCount(command.arguments));
-  const [name, operand] = words;
+  const nameIndex = words.findIndex((word) => !isAssignmentWord(word));
+  const name = nameIndex === -1 ? undefined : words[nameIndex];
 
-  if (words.length !== 2 || name === undefined || operand === undefined) {
+  if (name === undefined || commandName(name) !== 'cd') {
     return directory;
   }
 
-  if (commandName(name) !== 'cd' || !isPlainDirectoryWord(operand)) {
+  const operand = words
+    .slice(nameIndex + 1)
+    .find((word) => !isAssignmentWord(word) && !isOptionWord(word));
+
+  if (operand === undefined || !isPlainDirectoryWord(operand)) {
     return directory;
   }
 
@@ -974,8 +1004,6 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
 
 const isExpandablePathEntry = (entry: string): boolean =>
   !directorySyntaxPattern.test(entry) && !entry.startsWith('~');
-
-const isAssignmentWord = (word: string): boolean => assignmentPattern.test(word);
 
 const pathAssignmentIn = (words: string[]): string | undefined => {
   let assigned: string | undefined;
@@ -1005,17 +1033,26 @@ const namedScriptsOf = (
   pathDirectories: string[],
   sources: InterpreterSources,
 ): NamedScript[] => {
+  const pathFirst = sources.pathFirst ?? false;
+
   const scripts = sources.files.map((name) => ({
     name,
     checksShebang: false,
     cwd: directory,
     pathDirectories,
+    pathFirst,
   }));
 
   const directName = directScriptName(command);
 
   if (directName !== undefined) {
-    scripts.push({ name: directName, checksShebang: true, cwd: directory, pathDirectories });
+    scripts.push({
+      name: directName,
+      checksShebang: true,
+      cwd: directory,
+      pathDirectories,
+      pathFirst: false,
+    });
   }
 
   return scripts;
@@ -1054,21 +1091,50 @@ const scriptFacts = (path: string, state: GuardState, failClosed: boolean): Name
 
   const facts = readFileFacts(path, failClosed);
 
-  state.reads += 1;
+  // A native binary is not parsed, so only a script costs budget.
+  if (facts.kind !== 'nativeBinary') {
+    state.reads += 1;
+  }
+
   state.facts.set(key, facts);
 
   return facts;
 };
 
 // A shell looks up a bare interpreter operand through PATH when the local file is missing.
-const candidatePaths = ({ name, checksShebang, cwd, pathDirectories }: NamedScript): string[] => {
+// A leading `~` names a path under HOME, as the shell expands it.
+const expandHome = (name: string): string | undefined => {
+  if (name !== '~' && !name.startsWith('~/')) {
+    return undefined;
+  }
+
+  const home = gitEnvironment().HOME;
+
+  return home === undefined ? undefined : join(home, name.slice(1));
+};
+
+const candidatePaths = ({
+  name,
+  checksShebang,
+  cwd,
+  pathDirectories,
+  pathFirst,
+}: NamedScript): string[] => {
+  const home = expandHome(name);
+
+  if (home !== undefined) {
+    return [home];
+  }
+
   const local = resolve(cwd, name);
 
   if (checksShebang || name.includes('/')) {
     return [local];
   }
 
-  return [local, ...pathDirectories.map((directory) => resolve(cwd, directory, name))];
+  const searched = pathDirectories.map((directory) => resolve(cwd, directory, name));
+
+  return pathFirst ? [...searched, local] : [local, ...searched];
 };
 
 const inspectNamedScript = (
@@ -1174,9 +1240,10 @@ const pathDirectoriesFor = (
   assigned: string | undefined,
   directory: string,
   state: GuardState,
+  inherited: string[] | undefined,
 ): string[] => {
   if (assigned === undefined) {
-    return state.pathDirectories;
+    return inherited ?? state.pathDirectories;
   }
 
   const entries = assigned.split(delimiter).filter((entry) => entry !== '');
@@ -1204,7 +1271,13 @@ const recordHeredocBases = (
   }
 };
 
-const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0): boolean => {
+const createsCommit = (
+  source: string,
+  cwd: string,
+  state: GuardState,
+  depth = 0,
+  inheritedPath?: string[],
+): boolean => {
   if (depth > maximumScriptDepth) {
     return true;
   }
@@ -1219,8 +1292,8 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
     return true;
   }
 
-  const inspect = (directory: string, text: string) =>
-    createsCommit(text, directory, state, depth + 1);
+  const inspect = (directory: string, text: string, pathDirectories: string[]) =>
+    createsCommit(text, directory, state, depth + 1, pathDirectories);
 
   const scriptCommands = commands.some(runsShell) ? commands : commands.filter(runsGit);
   const stacks = new Map<string, string[]>();
@@ -1230,13 +1303,22 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
     const stack = directoryStack(stacks, command.scope, cwd, bases);
     const directory = directoryFor(stack, command.depth);
     const sources = interpreterSources(command);
-    const pathDirectories = pathDirectoriesFor(commandPathAssignment(command), directory, state);
+
+    const pathDirectories = pathDirectoriesFor(
+      commandPathAssignment(command),
+      directory,
+      state,
+      inheritedPath,
+    );
+
     const scripts = namedScriptsOf(command, directory, pathDirectories, sources);
 
     recordHeredocBases(command, directory, bases);
 
     const blocks = (script: NamedScript) =>
-      inspectNamedScript(script, state, (text) => inspect(script.cwd, text));
+      inspectNamedScript(script, state, (text) =>
+        inspect(script.cwd, text, script.pathDirectories),
+      );
 
     if (scripts.some(blocks)) {
       return true;
@@ -1247,7 +1329,7 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
     if (inline.length > 0 || scriptCommands.includes(command)) {
       const texts = [...scriptsOf([command]), ...inline];
 
-      if (texts.some((text) => text !== source && inspect(directory, text))) {
+      if (texts.some((text) => text !== source && inspect(directory, text, pathDirectories))) {
         return true;
       }
     }

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 
 import type { ExtensionAPI, ToolCallEvent } from '@earendil-works/pi-coding-agent';
@@ -394,6 +394,68 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('cd sub && sh commit.sh'), directory);
   });
 
+  it.each([
+    ['a -P option', 'cd -P sub && sh commit.sh'],
+    ['a -- separator', 'cd -- sub && sh commit.sh'],
+    ['an assignment prefix', 'FOO=bar cd sub && sh commit.sh'],
+  ])('blocks a script file in a directory cd names with %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it.each([
+    ['an interpreter operand', 'sh ~/commit.sh'],
+    ['a direct execution', '~/commit.sh'],
+  ])('blocks a script file under HOME named by %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const home = temporaryDirectory(onTestFinished, 'tau-commit-guard-home-');
+
+    writeScript(home, 'commit.sh', '#!/bin/sh\ngit commit -m x\n');
+    vi.stubEnv('HOME', home);
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it.each([
+    ['a quoted assignment', 'env -S "FOO=\'a b\' sh commit.sh"'],
+    ['a plain string', "env -S 'sh commit.sh'"],
+  ])('blocks code an env -S string names with %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('passes a PATH assignment to a nested script', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const bin = temporaryDirectory(onTestFinished, 'tau-commit-guard-bin-');
+
+    writeScript(directory, 'outer.sh', 'sh tool.sh\n');
+    writeScript(bin, 'tool.sh', 'git commit -m x\n');
+    withExactPath();
+
+    expectOutcome(makeBashEvent(`PATH=${bin} sh outer.sh`), directory);
+  });
+
+  it('blocks when a sourced name resolves to a committing file in PATH', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(directory, 'tool.sh', 'echo hello\n');
+    writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
+    withExactPath(pathDirectory);
+
+    expectOutcome(makeBashEvent('. tool.sh'), directory);
+  });
+
   it('resolves a script named by a script in the directory it runs in', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -427,6 +489,21 @@ describe('guardToolCall', () => {
     expect(
       guard(makeBashEvent(`${referencesTo(names)}; sh missing.sh`), directory),
     ).toBeUndefined();
+  });
+
+  it('does not charge a native binary to the read budget', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const binary = readFileSync('/bin/true');
+
+    const names = Array.from({ length: 65 }, (_value, index) => {
+      const name = `tool-${index}`;
+
+      writeFileSync(join(directory, name), binary);
+
+      return `./${name}`;
+    });
+
+    expect(guard(makeBashEvent(names.join('; ')), directory)).toBeUndefined();
   });
 
   it('reads a repeated script reference once', () => {
@@ -932,6 +1009,14 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
+  it('blocks a commit in a file whose env -S shebang has a quoted assignment', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', "#!/usr/bin/env -S FOO='a b' sh\ngit commit -m x\n");
 
     expectOutcome(makeBashEvent('./commit.sh'), directory);
   });
