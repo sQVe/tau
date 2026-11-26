@@ -85,6 +85,9 @@ type TerminalReply = (
 };
 
 export const launchTimeoutMilliseconds = 30_000;
+// A launch that used its whole budget still leaves a window to read the model, so a slow launch is
+// not reported as an unknown model.
+const readbackMinimumMilliseconds = 5_000;
 
 const splitReplySchema = Type.Object({
   pane: Type.String(),
@@ -276,7 +279,7 @@ const launch = async (
     terminal: launched.terminal,
     model: request.model,
     signal: runtime.signal,
-    deadline,
+    deadline: Math.max(deadline, Date.now() + readbackMinimumMilliseconds),
   });
 
   return { ...launched, model };
@@ -375,7 +378,7 @@ export const startPiSession = async (
     terminal,
     model: request.model,
     signal: runtime.signal,
-    deadline,
+    deadline: Math.max(deadline, Date.now() + readbackMinimumMilliseconds),
   });
 
   return { reply, target, terminal, model };

@@ -479,6 +479,35 @@ it('bounds the launch and the readback with one timeout', async () => {
     const outcome = await Promise.race([opening, waiting]);
 
     expect(outcome).toBeInstanceOf(Error);
+
+    expect((outcome as Error).message).toContain(
+      'The started model on terminal t-space is unknown',
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('a slow successful launch still leaves a window to read the model', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const fake = createHerdrAppFake({
+    beforeReply: (key) => {
+      if (key === 'tab.new' || key === 'space.new') {
+        vi.setSystemTime(Date.now() + launchTimeoutMilliseconds);
+      }
+    },
+  });
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const result = await startPiSession(
+      { exec: fake.exec, cwd: root },
+      startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
+    );
+
+    expect(result.model).toBe('morph/morph-dsv41flash-1017');
   } finally {
     vi.useRealTimers();
   }

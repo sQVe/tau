@@ -1,0 +1,81 @@
+import { expect, it, vi } from 'vitest';
+
+import { readStartedModel, readbackFailureBudgetMilliseconds } from './startedModelReadback.js';
+
+vi.mock(import('node:timers/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+  const { globalTimerDelay } = await import('../../../tests/timerFake.js');
+
+  return { ...original, setTimeout: globalTimerDelay };
+});
+
+it('clears the read timer and abort listener when a read throws synchronously', async () => {
+  const controller = new AbortController();
+  const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
+  let reads = 0;
+
+  const read = (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    throw new Error('read failed');
+  };
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const reading = readStartedModel({
+      readForegroundArgv: read,
+      terminal: 't-new',
+      model: undefined,
+      signal: controller.signal,
+      deadline: Date.now() + 30_000,
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(reads).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
+    expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+
+    controller.abort(new Error('cancelled'));
+
+    expect(await reading).toBeInstanceOf(Error);
+  } finally {
+    removeListener.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+it('reports a permanent read failure without polling the whole budget', async () => {
+  const failure = new Error('spawn hc ENOENT');
+  let reads = 0;
+
+  const read = (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    return Promise.reject(failure);
+  };
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  try {
+    const reading = readStartedModel({
+      readForegroundArgv: read,
+      terminal: 't-new',
+      model: undefined,
+      signal: undefined,
+      deadline: Date.now() + 30_000,
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(readbackFailureBudgetMilliseconds + 1_000);
+
+    const outcome = await Promise.race([reading, Promise.resolve('waiting' as const)]);
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toContain('spawn hc ENOENT');
+    expect((outcome as Error).cause).toBe(failure);
+    expect(reads).toBeLessThan(10);
+  } finally {
+    vi.useRealTimers();
+  }
+});

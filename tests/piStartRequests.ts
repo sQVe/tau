@@ -5,7 +5,7 @@ import type {
   launchPiSessionRightOf,
   startPiSession,
 } from '../src/piStart/piStart.js';
-import type { ExecFake } from './execFake.js';
+import type { ExecCall, ExecFake } from './execFake.js';
 import { foregroundReaderFor } from './herdrAppFake.js';
 
 export type ForegroundReader = (
@@ -23,10 +23,12 @@ export const readerFor = <Key extends string>(
   root: string,
 ): ForegroundReader => foregroundReaderFor({ exec: fake.exec, cwd: root });
 
-export const readbackCall = (terminal: string): Record<string, unknown> => ({
+const anyAbortSignal: unknown = expect.any(AbortSignal);
+
+export const readbackCall = (terminal: string): ExecCall => ({
   command: 'hc',
   commandArguments: ['get', '--json', '--', terminal],
-  signal: expect.any(AbortSignal),
+  signal: anyAbortSignal as AbortSignal,
 });
 
 const commonRequest = (root: string, readForegroundArgv: ForegroundReader): CommonRequest => ({

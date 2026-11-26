@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { parseModelReference } from '../../config/models.js';
-import { toError } from '../../errors.js';
+import { errorMessage, toError } from '../../errors.js';
 import { piArgv } from '../startedArgv.js';
 import { decideStartedModel } from './startedModel.js';
 import type { RequestedModel, StartedModelDecision } from './startedModel.js';
@@ -19,8 +19,19 @@ export interface StartedModelReadRequest {
   deadline: number;
 }
 
+// Records a failed read. A failure that outlasts the failure budget is not a terminal that has
+// not registered yet, so it stops the readback.
+interface ReadFailures {
+  error: unknown;
+  since: number | undefined;
+}
+
 const readbackInitialIntervalMilliseconds = 100;
 const readbackMaxIntervalMilliseconds = 1000;
+
+// A read that keeps failing is not a terminal that has not registered yet, so stop polling after
+// this window and report the failure instead of the whole readback budget.
+export const readbackFailureBudgetMilliseconds = 5_000;
 
 const requestedModelOf = (model: string | undefined): RequestedModel => {
   if (model === undefined) {
@@ -35,9 +46,10 @@ const stillRunningHint = (terminal: string): string =>
 
 const unreadableModelError = (terminal: string, cause?: unknown): Error => {
   const options = cause === undefined ? undefined : { cause };
+  const failure = cause === undefined ? '' : ` A read failed: ${errorMessage(cause)}.`;
 
   return new Error(
-    `The started model on terminal ${terminal} is unknown. ${stillRunningHint(terminal)}`,
+    `The started model on terminal ${terminal} is unknown.${failure} ${stillRunningHint(terminal)}`,
     options,
   );
 };
@@ -78,6 +90,7 @@ const pauseBeforeRead = async (
 
 // Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
 // launch budget. The read gets its own signal, so the command is cancelled when the budget expires.
+// A synchronous throw from the read must clear the timer and the listener it already registered.
 const readWithinBudget = (
   read: (signal: AbortSignal) => Promise<readonly string[] | undefined>,
   remaining: number,
@@ -98,6 +111,11 @@ const readWithinBudget = (
       resolve(undefined);
     }, remaining);
 
+    const settle = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
     if (signal?.aborted === true) {
       onAbort();
 
@@ -106,31 +124,46 @@ const readWithinBudget = (
 
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    void read(readSignal.signal).then(
-      (argv) => {
-        clearTimeout(timer);
-        signal?.removeEventListener('abort', onAbort);
-        resolve(argv);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        signal?.removeEventListener('abort', onAbort);
-        reject(toError(error));
-      },
-    );
+    try {
+      void read(readSignal.signal).then(
+        (argv) => {
+          settle();
+          resolve(argv);
+        },
+        (error: unknown) => {
+          settle();
+          reject(toError(error));
+        },
+      );
+    } catch (error) {
+      settle();
+      reject(toError(error));
+    }
   });
+
+const noteReadFailure = (failures: ReadFailures, error: unknown, now: number): boolean => {
+  failures.error ??= error;
+  failures.since ??= now;
+
+  return now - failures.since >= readbackFailureBudgetMilliseconds;
+};
 
 export const readStartedModel = async (request: StartedModelReadRequest): Promise<string> => {
   const { readForegroundArgv, terminal, model, signal, deadline } = request;
   const requested = requestedModelOf(model);
+
+  const failures: ReadFailures = {
+    error: undefined,
+    since: undefined,
+  };
+
   let interval = readbackInitialIntervalMilliseconds;
-  let readError: unknown;
 
   for (;;) {
     const remaining = deadline - Date.now();
 
     if (remaining <= 0) {
-      throw unreadableModelError(terminal, readError);
+      throw unreadableModelError(terminal, failures.error);
     }
 
     let argv: readonly string[] | undefined;
@@ -142,12 +175,18 @@ export const readStartedModel = async (request: StartedModelReadRequest): Promis
         remaining,
         signal,
       );
+
+      failures.error = undefined;
+      failures.since = undefined;
     } catch (error) {
       if (signal?.aborted === true) {
         throw cancellationError(signal);
       }
 
-      readError = error;
+      if (noteReadFailure(failures, error, Date.now())) {
+        throw unreadableModelError(terminal, failures.error);
+      }
+
       argv = undefined;
     }
 
@@ -170,7 +209,7 @@ export const readStartedModel = async (request: StartedModelReadRequest): Promis
     const remainingAfterRead = deadline - Date.now();
 
     if (remainingAfterRead <= 0) {
-      throw unreadableModelError(terminal, readError);
+      throw unreadableModelError(terminal, failures.error);
     }
 
     // oxlint-disable-next-line no-await-in-loop -- the poll needs a pause between reads.
