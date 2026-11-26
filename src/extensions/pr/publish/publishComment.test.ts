@@ -42,7 +42,7 @@ it('publishes a comment file under bots', async () => {
         '--repo',
         'github.com/sQVe/tau',
         '--body-file',
-        expect.stringMatching(/tau-publish-[^/]+\/0\.md$/u),
+        expect.stringMatching(/tau-publish-[^/]+\/\d+-0\.md$/u),
       ],
       contents: Buffer.from('Looks good.\n'),
     },

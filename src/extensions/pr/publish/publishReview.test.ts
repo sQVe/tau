@@ -53,7 +53,7 @@ it('posts a submitted review with inline comments in one call', async () => {
         'POST',
         'repos/sQVe/tau/pulls/7/reviews',
         '--input',
-        expect.stringMatching(/tau-publish-[^/]+\/review\.json$/u),
+        expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
       ],
       contents: Buffer.from(submittedReview),
     },
@@ -122,7 +122,7 @@ it('posts a pending review without an event in one call', async () => {
         'POST',
         'repos/sQVe/tau/pulls/7/reviews',
         '--input',
-        expect.stringMatching(/tau-publish-[^/]+\/review\.json$/u),
+        expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
       ],
       contents: Buffer.from(pendingReview),
     },
@@ -148,6 +148,19 @@ it('refuses a review comment with neither line nor position and names its index'
     run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
   ).rejects.toThrow('review.json comments[1] needs line or position.');
 
+  expect(fake.calls).toEqual([]);
+});
+
+it('accepts a reply comment without a location', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+  const review = { comments: [{ path: 'src/a.ts', body: 'Agreed.', in_reply_to: 101 }] };
+
+  await writeRunFile(directory, 'review.json', `${JSON.stringify(review, null, 2)}\n`);
+
+  const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
+
+  expect(dryRun['findings']).toEqual([]);
   expect(fake.calls).toEqual([]);
 });
 

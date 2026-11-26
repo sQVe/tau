@@ -7,8 +7,8 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../../command.js';
-import { outputPreviewLength } from '../../../command.js';
-import { parseRepository, requirePullRequestNumber, run } from '../../../github/github.js';
+import { outputPreviewLength, runCommand } from '../../../command.js';
+import { label, parseRepository, requirePullRequestNumber } from '../../../github/github.js';
 import type { Repository } from '../../../github/github.js';
 import { formatRepository } from '../../../github/repositoryTargetDecisions.js';
 import { checkProse } from '../../../prose.js';
@@ -76,6 +76,16 @@ interface PullRequestFiles {
   files: RunFile[];
   findings: PublicationFinding[];
   repositoryTarget: string;
+}
+
+interface VerifiedCopy {
+  path: string;
+  bytes: Uint8Array;
+}
+
+interface VerifiedCommand {
+  commandArguments: string[];
+  copies: VerifiedCopy[];
 }
 
 export const publicationKindSchema = Type.Union(
@@ -417,7 +427,10 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
   const review = parseReview(file);
 
   const missingPosition = (review.comments ?? []).findIndex(
-    (comment) => comment.line === undefined && comment.position === undefined,
+    (comment) =>
+      comment.in_reply_to === undefined &&
+      comment.line === undefined &&
+      comment.position === undefined,
   );
 
   if (missingPosition !== -1) {
@@ -466,14 +479,46 @@ const privateDirectoryMode = 0o700;
 const privateFileMode = 0o600;
 const fileArgumentFlags = new Set(['--body-file', '--input']);
 
-const fileArgumentIndex = (commandArguments: readonly string[]): number => {
-  const index = commandArguments.findIndex((argument) => fileArgumentFlags.has(argument));
+// Rewrites every file argument to a unique copy below directory, so equal basenames cannot collide.
+export const verifiedCopyArguments = (
+  commandArguments: readonly string[],
+  files: readonly (PublicationFile & { path: string })[],
+  directory: string,
+): VerifiedCommand => {
+  const rewritten = [...commandArguments];
+  const copies: VerifiedCopy[] = [];
+  let found = false;
 
-  if (index === -1) {
+  for (const [index, argument] of commandArguments.entries()) {
+    if (!fileArgumentFlags.has(argument)) {
+      continue;
+    }
+
+    found = true;
+
+    const sourcePath = commandArguments[index + 1];
+
+    if (sourcePath === undefined) {
+      throw new Error(`The publication command has no file after ${argument}.`);
+    }
+
+    const source = files.find((file) => file.path === sourcePath);
+
+    if (source === undefined) {
+      throw new Error('The publication command reads a file the plan did not verify.');
+    }
+
+    const path = join(directory, `${index}-${basename(source.path)}`);
+
+    rewritten[index + 1] = path;
+    copies.push({ path, bytes: source.bytes });
+  }
+
+  if (!found) {
     throw new Error('The publication command names no file to read.');
   }
 
-  return index + 1;
+  return { commandArguments: rewritten, copies };
 };
 
 // gh reads the file when it runs, so the verified bytes go to a private copy that cannot change
@@ -482,29 +527,24 @@ const runWithVerifiedBytes = async (
   runtime: CommandRuntime,
   plan: PublicationPlan,
 ): Promise<string> => {
-  const index = fileArgumentIndex(plan.commandArguments);
-  const source = plan.files.find((file) => file.path === plan.commandArguments[index]);
-
-  if (source === undefined) {
-    throw new Error('The publication command reads a file the plan did not verify.');
-  }
-
   const directory = await mkdtemp(join(tmpdir(), 'tau-publish-'));
 
   try {
     await chmod(directory, privateDirectoryMode);
 
-    const path = join(directory, basename(source.path));
+    const { commandArguments, copies } = verifiedCopyArguments(
+      plan.commandArguments,
+      plan.files,
+      directory,
+    );
 
-    await writeFile(path, source.bytes, { mode: privateFileMode });
+    await Promise.all(
+      copies.map((copy) => writeFile(copy.path, copy.bytes, { mode: privateFileMode })),
+    );
 
-    const commandArguments = [...plan.commandArguments];
-
-    commandArguments[index] = path;
-
-    return await run(runtime, commandArguments);
+    return await runCommand(runtime, 'gh', commandArguments, label(plan.commandArguments));
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
   }
 };
 

@@ -1,4 +1,4 @@
-import { access, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -48,7 +48,7 @@ it('publishes a new pull request with the approved title, body, base, head, and 
         '--title',
         'Add a feature',
         '--body-file',
-        expect.stringMatching(/tau-publish-[^/]+\/body\.md$/u),
+        expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
         '--draft',
       ],
       contents: Buffer.from('Adds it.\n'),
@@ -89,7 +89,7 @@ it('publishes an edited pull request with the approved title and body', async ()
         '--title',
         'Add a feature',
         '--body-file',
-        expect.stringMatching(/tau-publish-[^/]+\/body\.md$/u),
+        expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
       ],
       contents: Buffer.from('Adds it.\n'),
     },
@@ -124,7 +124,7 @@ it('creates a pull request without --draft when draft is false', async () => {
     '--title',
     'Add a feature',
     '--body-file',
-    expect.stringMatching(/tau-publish-[^/]+\/body\.md$/u),
+    expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
   ]);
 });
 
@@ -215,7 +215,7 @@ it('trims base and head and refuses a whitespace-only value', async () => {
     '--title',
     'Add a feature',
     '--body-file',
-    expect.stringMatching(/tau-publish-[^/]+\/body\.md$/u),
+    expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
     '--draft',
   ]);
 });
@@ -347,7 +347,7 @@ it('returns the em dash finding from the dry run and publishes with it', async (
 
   expect(fake.writes).toHaveLength(1);
   expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it \u2014 now.\n'));
-  expect(fake.writes[0]?.commandArguments.join(' ')).toMatch(/tau-publish-[^/]+\/body\.md/u);
+  expect(fake.writes[0]?.commandArguments.join(' ')).toMatch(/tau-publish-[^/]+\/\d+-body\.md/u);
 });
 
 it('publishes the verified bytes when the file changes after the token check', async () => {
@@ -383,7 +383,7 @@ it('publishes the verified bytes when the file changes after the token check', a
   await expect(access(publishedPath)).rejects.toThrow(/ENOENT/u);
 });
 
-it('removes the verified copy when the publish fails', async () => {
+it('removes the verified copy when the publish fails and names the run file', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
 
@@ -395,12 +395,47 @@ it('removes the verified copy when the publish fails', async () => {
 
   fake.failCommand('pr edit', 'boom');
 
-  await expect(
-    run({ ...request, action: 'publish', token: String(dryRun['token']) }),
-  ).rejects.toThrow(/gh pr edit .* failed: boom/u);
+  const failure: unknown = await run({
+    ...request,
+    action: 'publish',
+    token: String(dryRun['token']),
+  }).catch((error: unknown) => error);
+
+  expect(String(failure)).toContain(`--body-file ${join(directory, 'body.md')}`);
+  expect(String(failure)).not.toContain('tau-publish-');
 
   const publishedPath = publishedFilePath(fake);
 
   expect(publishedPath).toMatch(/tau-publish-/u);
   await expect(access(publishedPath)).rejects.toThrow(/ENOENT/u);
+});
+
+it('keeps the publish result when the private copy cannot be removed', async () => {
+  let privateDirectory = '';
+
+  const { run } = await createPublicationTool(onTestFinished, {
+    wrapExec: (exec) => async (command, commandArguments, options) => {
+      privateDirectory = dirname(
+        commandArguments[commandArguments.indexOf('--body-file') + 1] ?? '',
+      );
+
+      await chmod(privateDirectory, 0o500);
+
+      return exec(command, commandArguments, options);
+    },
+  });
+
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'body.md', 'Adds it.\n');
+  await writeRunFile(directory, 'title.md', 'Add a feature\n');
+
+  const request = dryRunPullRequest(directory);
+  const dryRun = await run(request);
+  const published = await run({ ...request, action: 'publish', token: String(dryRun['token']) });
+
+  expect(published['url']).toBe('https://github.com/sQVe/tau/pull/8');
+
+  await chmod(privateDirectory, 0o700);
+  await rm(privateDirectory, { recursive: true, force: true });
 });
