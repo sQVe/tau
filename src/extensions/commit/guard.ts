@@ -283,38 +283,36 @@ const envSplitStringOptions = wrapperCommandOptions.get('env') ?? new Set<string
 
 const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
 
-// An option with `c`, such as `-c` or `-lc`, puts the code in an argument, not in a file. A `c`
-// after an `o` or `O` letter belongs to that option's value, as in `-onoclobber`.
-const isInlineCodeWord = (word: string): boolean => {
+// The letters of a short-option word, or undefined for another word.
+const shortOptionLetters = (word: string): string | undefined => {
   const match = /^[-+]([A-Za-z]*)$/u.exec(word);
 
-  if (match === null) {
-    return false;
-  }
-
-  const letters = match[1] ?? '';
-  const index = letters.indexOf('c');
-
-  return index !== -1 && !/[oO]/u.test(letters.slice(0, index));
+  return match === null ? undefined : (match[1] ?? '');
 };
 
-// An option that makes the shell read its code from standard input. A `s` after an `o` or `O`
-// letter belongs to that option's value, as in `-Onocasematch`.
+// A letter after an `o` or `O` belongs to that option's value, as in `-onoclobber`.
+const optionLetterIndex = (letters: string, letter: string): number => {
+  const index = letters.indexOf(letter);
+
+  return index !== -1 && /[oO]/u.test(letters.slice(0, index)) ? -1 : index;
+};
+
+// An option with `c`, such as `-c` or `-lc`, puts the code in an argument, not in a file.
+const isInlineCodeWord = (word: string): boolean => {
+  const letters = shortOptionLetters(word);
+
+  return letters !== undefined && optionLetterIndex(letters, 'c') !== -1;
+};
+
+// An option that makes the shell read its code from standard input; `+s` disables one instead.
 const isStdinOptionWord = (word: string): boolean => {
   if (word === '--stdin') {
     return true;
   }
 
-  const match = /^[-+]([A-Za-z]*)$/u.exec(word);
+  const letters = shortOptionLetters(word);
 
-  if (match === null) {
-    return false;
-  }
-
-  const letters = match[1] ?? '';
-  const index = letters.indexOf('s');
-
-  return index !== -1 && !/[oO]/u.test(letters.slice(0, index));
+  return word.startsWith('-') && letters !== undefined && optionLetterIndex(letters, 's') !== -1;
 };
 
 const assignmentPattern = /^[A-Za-z_][A-Za-z0-9_]*=/u;
@@ -583,9 +581,9 @@ const attachedInlineCode = (word: string): string | undefined => {
   }
 
   const letters = match[1] ?? '';
-  const index = letters.indexOf('c');
+  const index = optionLetterIndex(letters, 'c');
 
-  if (index === -1 || /[oO]/u.test(letters.slice(0, index))) {
+  if (index === -1) {
     return undefined;
   }
 
