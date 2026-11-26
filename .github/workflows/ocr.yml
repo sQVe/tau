@@ -9,6 +9,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    uses: sQVe/stomme/.github/workflows/ocr-review.yml@961e6c74507ea648afb067fbf357ab43eb3f4891 # main at 961e6c7, before the next release
+    uses: sQVe/stomme/.github/workflows/ocr-review.yml@bc077c19d6b378f7d4867037fc4696fcb8fc13dc # v0.2.5
     secrets:
       model-token: ${{ secrets.MORPH_API_KEY }}
