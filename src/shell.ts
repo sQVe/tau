@@ -47,8 +47,20 @@ interface PipelineElement {
   parentShellId: string | undefined;
 }
 
+interface OpenCompound {
+  closer: string;
+  // The first command index of the unit that encloses the compound.
+  unitStart: number;
+  // The command index where the compound opens, which is the start of its group.
+  start: number;
+  // A `case` compound moves from its header to a pattern and then to the pattern's command list.
+  caseState: 'header' | 'pattern' | 'command' | undefined;
+}
+
 interface ListState {
   command: ShellCommand;
+  // The index of `command` in the parser's command list.
+  commandIndex: number;
   word: string | undefined;
   wordQuoted: boolean;
   wordCommandStart: number;
@@ -66,7 +78,7 @@ interface ListState {
   // contains the pipeline once a pipe starts one.
   elements: PipelineElement[];
   // The open compound keywords, with the first command index of the unit that encloses each.
-  compounds: { closer: string; unitStart: number }[];
+  compounds: OpenCompound[];
   continuesList: boolean;
   closesSubstitution: boolean;
 }
@@ -188,11 +200,30 @@ const wrapperArguments: Readonly<Record<string, number>> = {
 const scriptWrapperNames: ReadonlySet<string> = new Set(['flock', 'watch']);
 const flockScriptOptions: ReadonlySet<string> = new Set(['-c', '--command']);
 
+// The external `time` binary takes these value options. A bare `time` is the bash reserved word,
+// which takes only `-p`, so the two forms need different option tables.
+const externalTimeValueOptions: ReadonlySet<string> = new Set(['-f', '-o', '--format', '--output']);
+
 const emptyOptionValues: ReadonlySet<string> = new Set();
 const assignmentPattern = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 // `command -v` and `command -V`, also combined with `-p`, describe the command instead of running
 // it.
 const lookupOptionPattern = /^-p*[vV][pvV]*$/u;
+
+const namesInsteadOfRuns = (options: readonly string[]): boolean =>
+  options.some((option) => lookupOptionPattern.test(option));
+
+// The reserved word `time` takes only `-p`, and `--` ends its options. Any other dash word is the
+// command it runs, so it must not be skipped as an option.
+const afterReservedTime = (words: readonly string[], index: number): number => {
+  let next = index + 1;
+
+  while (words[next] === '-p' || words[next] === '--') {
+    next += 1;
+  }
+
+  return next;
+};
 
 const optionEnd = (
   words: readonly string[],
@@ -229,6 +260,21 @@ const afterWrapper = (
   return optionEnd(words, afterOptions + fixedArguments, valueOptions);
 };
 
+// A wrapper's options differ by name, and the external `time` binary needs its own value options.
+const wrapperValueOptionsOf = (word: string): ReadonlySet<string> | undefined => {
+  const name = commandNameOf(word);
+
+  if (!Object.hasOwn(wrapperValueOptions, name)) {
+    return undefined;
+  }
+
+  if (name !== 'time') {
+    return wrapperValueOptions[name];
+  }
+
+  return word === name ? wrapperValueOptions.time : externalTimeValueOptions;
+};
+
 // Walks the leading assignments, keywords, and wrappers to the command they run.
 const commandStart = (words: readonly string[]): CommandStart => {
   const wrappers: { name: string; index: number }[] = [];
@@ -238,20 +284,19 @@ const commandStart = (words: readonly string[]): CommandStart => {
   while (index < words.length) {
     const word = words[index] ?? '';
     const name = commandNameOf(word);
-
-    const valueOptions = Object.hasOwn(wrapperValueOptions, name)
-      ? wrapperValueOptions[name]
-      : undefined;
+    const valueOptions = wrapperValueOptionsOf(word);
 
     if (commandKeywords.has(word) || assignmentPattern.test(word)) {
       index += 1;
+    } else if (name === 'time' && word === name) {
+      index = afterReservedTime(words, index);
     } else if (valueOptions === undefined) {
       break;
     } else {
       const afterOptions = optionEnd(words, index + 1, valueOptions);
       const options = words.slice(index + 1, afterOptions);
 
-      lookup ||= name === 'command' && options.some((option) => lookupOptionPattern.test(option));
+      lookup ||= name === 'command' && namesInsteadOfRuns(options);
       wrappers.push({ name, index });
       index = afterWrapper(words, afterOptions, valueOptions, wrapperArguments[name] ?? 0);
     }
@@ -268,10 +313,46 @@ export const commandWords = (words: readonly string[]): CommandWords => {
   return { words: words.slice(index), lookup };
 };
 
-const shellOptionScript = (words: readonly string[]): string | undefined => {
-  const optionIndex = words.findIndex((word) => /^-[a-z]*c[a-z]*$/u.test(word));
+// A shell option word may take the next word as its value, as `-o pipefail` and `--rcfile file` do.
+const shellValueOptions: ReadonlySet<string> = new Set([
+  '-O',
+  '-o',
+  '--init-file',
+  '--rcfile',
+  '+O',
+  '+o',
+]);
 
-  return optionIndex === -1 ? undefined : words[optionIndex + 1];
+const startsLikeOption = (word: string): boolean => word.startsWith('-') || word.startsWith('+');
+
+const isShellOptionWord = (word: string): boolean => word.length > 1 && startsLikeOption(word);
+
+// A shell runs a `-c` script only when `-c` is an option. A positional operand names a script file
+// instead, so the scan stops there and after `--`.
+const shellOptionScript = (words: readonly string[]): string | undefined => {
+  let index = 0;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+
+    if (word === '--' || !isShellOptionWord(word)) {
+      return undefined;
+    }
+
+    if (shellValueOptions.has(word)) {
+      index += 2;
+
+      continue;
+    }
+
+    if (/^-[a-zA-Z]*c[a-zA-Z]*$/u.test(word)) {
+      return words[index + 1];
+    }
+
+    index += 1;
+  }
+
+  return undefined;
 };
 
 const flockCommandPrefix = '--command=';
@@ -353,6 +434,8 @@ export const quoteShellArgument = (argument: string): string =>
 const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const multiCharacterSeparators = new Set(['&&', '||', '|&']);
+const caseTerminatorLength = 2;
+const caseFallthroughLength = 3;
 const listContinuationOperators = new Set(['&&', '||', '|&', '|']);
 const longestRedirection = '<<<';
 const doubledRedirectionOperators = ['<>', '<&', '>>', '>&', '>|'] as const;
@@ -373,14 +456,6 @@ const compoundClosers: Readonly<Record<string, string>> = {
 
 const closingKeywords: ReadonlySet<string> = new Set(['}', 'done', 'esac', 'fi']);
 
-// The reserved word `time` takes only the `-p` flag. `optionEnd` consumes flag words, so a value
-// word such as the external binary's `-o` file ends the options instead of being skipped.
-const afterTimeOptions = (words: readonly string[], index: number): number => {
-  const timeOptions = wrapperValueOptions.time ?? emptyOptionValues;
-
-  return afterWrapper(words, optionEnd(words, index + 1, timeOptions), timeOptions, 0);
-};
-
 // The first compound word a command runs, after its leading keywords. Only a reserved word can sit
 // before a compound opener: bash treats a brace after `sudo`, `chroot`, or `env` as that wrapper's
 // argument, so a wrapper does not start a compound. `time` is a reserved word and keeps only its
@@ -390,7 +465,6 @@ const compoundWordAt = (words: readonly string[]): number | undefined => {
 
   while (index < words.length) {
     const word = words[index] ?? '';
-    const name = commandNameOf(word);
 
     if (Object.hasOwn(compoundClosers, word) || closingKeywords.has(word)) {
       return index;
@@ -402,11 +476,11 @@ const compoundWordAt = (words: readonly string[]): number | undefined => {
       continue;
     }
 
-    if (name !== 'time') {
+    if (word !== 'time') {
       return undefined;
     }
 
-    index = afterTimeOptions(words, index);
+    index = afterReservedTime(words, index);
   }
 
   return undefined;
@@ -427,14 +501,13 @@ export const runsRedirectionsOnlyExec = (words: readonly string[]): boolean => {
 
     if (commandKeywords.has(word) || assignmentPattern.test(word)) {
       index += 1;
-    } else if (name === 'time') {
-      index = afterTimeOptions(words, index);
+    } else if (word === 'time') {
+      index = afterReservedTime(words, index);
     } else if (shellQualifierNames.has(name)) {
       const afterOptions = optionEnd(words, index + 1, emptyOptionValues);
       const options = words.slice(index + 1, afterOptions);
-      const isLookup = options.some((option) => lookupOptionPattern.test(option));
 
-      if (isLookup) {
+      if (namesInsteadOfRuns(options)) {
         return false;
       }
 
@@ -599,6 +672,7 @@ class ShellParser {
 
     const state: ListState = {
       command: this.startCommand(),
+      commandIndex: this.commands.length - 1,
       word: undefined,
       wordQuoted: false,
       wordCommandStart: 0,
@@ -788,6 +862,11 @@ class ShellParser {
     }
 
     const next = this.source.charAt(this.position + 1);
+
+    if (this.readCaseSeparator(state, character, next)) {
+      return false;
+    }
+
     const length = separatorLength(character, next);
     const operator = this.source.slice(this.position, this.position + length);
     const isBackground = isBackgroundSeparator(character, length);
@@ -801,9 +880,7 @@ class ShellParser {
       commandIndex,
     );
 
-    state.command = this.startCommand();
-    state.redirectionTarget = false;
-    state.pendingRedirection = undefined;
+    this.restartCommand(state);
     state.continuesList = continuesListAfter(operator);
     this.position += length;
 
@@ -823,6 +900,86 @@ class ShellParser {
     }
 
     return false;
+  }
+
+  private restartCommand(state: ListState): void {
+    state.command = this.startCommand();
+    state.commandIndex = this.commands.length - 1;
+    state.redirectionTarget = false;
+    state.pendingRedirection = undefined;
+  }
+
+  private setCaseState(state: ListState, caseState: 'pattern' | 'command'): void {
+    const compound = state.compounds.at(-1);
+
+    if (compound?.caseState !== undefined) {
+      compound.caseState = caseState;
+    }
+  }
+
+  // A `case` pattern ends with `)` and a pattern's command list ends with `;;`, `;&`, or `;;&`.
+  // None of these closes an enclosing group or ends a pipeline element.
+  private readCaseSeparator(state: ListState, character: string, next: string): boolean {
+    const caseState = state.compounds.at(-1)?.caseState;
+
+    if (caseState === 'pattern') {
+      return this.readCasePatternToken(state, character);
+    }
+
+    if (caseState !== 'command') {
+      return false;
+    }
+
+    const endsPatternList = next === ';' || next === '&';
+    const isCaseTerminator = character === ';' && endsPatternList;
+
+    if (!isCaseTerminator) {
+      return false;
+    }
+
+    this.endCasePatternCommands(state);
+
+    return true;
+  }
+
+  private readCasePatternToken(state: ListState, character: string): boolean {
+    const isPatternPunctuation = character === '(' || character === '|';
+
+    if (isPatternPunctuation) {
+      this.position += 1;
+
+      if (character === '(') {
+        this.restartCommand(state);
+      }
+
+      return true;
+    }
+
+    if (character !== ')') {
+      return false;
+    }
+
+    this.position += 1;
+    this.restartCommand(state);
+    state.continuesList = false;
+    this.setCaseState(state, 'command');
+
+    return true;
+  }
+
+  private endCasePatternCommands(state: ListState): void {
+    const commandIndex = this.commands.length;
+
+    const terminatorLength = this.source.startsWith(';;&', this.position)
+      ? caseFallthroughLength
+      : caseTerminatorLength;
+
+    this.endPipeline(state, commandIndex);
+    state.unitStarts[state.unitStarts.length - 1] = commandIndex;
+    this.restartCommand(state);
+    state.continuesList = false;
+    this.setCaseState(state, 'pattern');
+    this.position += terminatorLength;
   }
 
   // Returns whether this separator ends the background unit. A pipe starts a new pipeline element,
@@ -963,6 +1120,7 @@ class ShellParser {
 
         if (!wordQuoted) {
           this.trackCompound(state, word, wordIndex);
+          this.noteCaseWord(state, word);
         }
       }
 
@@ -994,8 +1152,10 @@ class ShellParser {
 
     if (closer !== undefined) {
       const unitStart = state.unitStarts.at(-1) ?? start;
+      const caseState = word === 'case' ? 'header' : undefined;
 
-      state.compounds.push({ closer, unitStart });
+      state.compounds.push({ closer, unitStart, start, caseState });
+      state.elements.push({ start, parentShellId: undefined });
 
       return;
     }
@@ -1006,8 +1166,25 @@ class ShellParser {
 
     const compound = state.compounds.pop();
 
-    if (compound !== undefined) {
-      state.unitStarts[state.unitStarts.length - 1] = compound.unitStart;
+    if (compound === undefined) {
+      return;
+    }
+
+    state.unitStarts[state.unitStarts.length - 1] = compound.unitStart;
+    state.command.group = compound.start;
+
+    const element = state.elements.pop();
+
+    if (element?.parentShellId !== undefined) {
+      this.shellId = element.parentShellId;
+    }
+  }
+
+  private noteCaseWord(state: ListState, word: string): void {
+    const compound = state.compounds.at(-1);
+
+    if (compound?.caseState === 'header' && word === 'in') {
+      compound.caseState = 'pattern';
     }
   }
 
@@ -1026,13 +1203,7 @@ class ShellParser {
       return;
     }
 
-    const start = this.commands.indexOf(state.command);
-
-    if (start === -1) {
-      return;
-    }
-
-    this.applyCompound(state, word, start);
+    this.applyCompound(state, word, state.commandIndex);
   }
 
   private readDoubleQuotedEscape(): string {

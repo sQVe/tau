@@ -103,6 +103,28 @@ describe('parseShellCommands', () => {
     expect(shellIdsOf('a | b | c; d')).toEqual(['0.1', '0.2', '0.3', '0']);
   });
 
+  it('keeps a compound pipeline element in its own child shell', () => {
+    expect(shellIdsOf('a | { b; c; }')).toEqual(['0.1', '0.2', '0.2', '0.2']);
+    expect(shellIdsOf('a | { b && c; }')).toEqual(['0.1', '0.2', '0.2', '0.2']);
+    expect(shellIdsOf('a | { b\nc; }')).toEqual(['0.1', '0.2', '0.2', '0.2']);
+    expect(shellIdsOf('{ a; b; } | cat')).toEqual(['0.1', '0.1', '0.1', '0.2']);
+  });
+
+  it('keeps an exec in a compound pipeline element out of the parent shell', () => {
+    expect(shellIdsOf('a | { exec 2>/dev/null; b; }')).toEqual(['0.1', '0.2', '0.2', '0.2']);
+  });
+
+  it('keeps a case pattern paren from closing an enclosing group', () => {
+    expect(groupsOf('( case x in a) b ;; esac )')).toEqual([undefined, undefined, undefined, 1, 1]);
+  });
+
+  it('reads a case inside a command substitution', () => {
+    const commands = parseShellCommands('echo $(case x in a) b ;; c) d ;; esac)');
+
+    expect(commands?.map(({ words }) => words)).toContainEqual(['b']);
+    expect(commands?.map(({ words }) => words)).toContainEqual(['d']);
+  });
+
   it('gives a backgrounded unit its own child shell and keeps its members together', () => {
     expect(shellIdsOf('{ exec 2>/dev/null; cmd & } &')).toEqual(['0.2', '0.2.1', '0.2']);
   });
@@ -153,6 +175,11 @@ describe('parseShellCommands', () => {
     [
       'a timed brace compound after a time output option',
       'time -o /tmp/x.log { a; } &',
+      [false, true],
+    ],
+    [
+      'an external time before a brace argument',
+      '/usr/bin/time -o /tmp/x.log { a; } &',
       [false, true],
     ],
     ['a wrapper before a brace argument', 'sudo { a; } &', [false, true]],
@@ -584,6 +611,36 @@ describe('commandWords and shellScriptOf', () => {
     expect(shellScriptOf(words)).toBe('cmd');
   });
 
+  it('reads the -c script only before a shell operand', () => {
+    expect(shellScriptOf(['bash', 'script.sh', '-c', 'hc send'])).toBeUndefined();
+    expect(shellScriptOf(['sh', '--', 'script', '-c', 'hc send'])).toBeUndefined();
+    expect(shellScriptOf(['bash', '-x', 'script.sh', '-c', 'hc send'])).toBeUndefined();
+    expect(shellScriptOf(['bash', '-o', 'pipefail', '-c', 'cmd'])).toBe('cmd');
+    expect(shellScriptOf(['bash', '--rcfile', '/tmp/rc', '-c', 'cmd'])).toBe('cmd');
+    expect(shellScriptOf(['bash', '-lc', 'cmd'])).toBe('cmd');
+  });
+
+  it('reads the command the external time binary runs', () => {
+    expect(commandWords(['/usr/bin/time', '-o', '/tmp/log', 'hc', 'send']).words).toEqual([
+      'hc',
+      'send',
+    ]);
+
+    expect(shellScriptOf(['/usr/bin/time', '-o', '/tmp/log', 'sh', '-c', 'cmd'])).toBe('cmd');
+  });
+
+  it('treats only -p and -- as the reserved time word options', () => {
+    expect(commandWords(['time', '-p', 'hc', 'send']).words).toEqual(['hc', 'send']);
+    expect(commandWords(['time', '--', 'hc', 'send']).words).toEqual(['hc', 'send']);
+
+    expect(commandWords(['time', '-o', '/tmp/log', 'hc', 'send']).words).toEqual([
+      '-o',
+      '/tmp/log',
+      'hc',
+      'send',
+    ]);
+  });
+
   it('reads a flock script option before and after the lock file', () => {
     expect(shellScriptOf(['flock', '-c', 'cmd 2>/dev/null', '/tmp/lock'])).toBe('cmd 2>/dev/null');
     expect(shellScriptOf(['flock', '/tmp/lock', '-c', 'cmd 2>/dev/null'])).toBe('cmd 2>/dev/null');
@@ -648,7 +705,7 @@ it.each([
   },
   {
     name: 'a timed exec after an external time output option',
-    words: ['time', '-o', '/tmp/x.log', 'exec'],
+    words: ['/usr/bin/time', '-o', '/tmp/x.log', 'exec'],
     runs: false,
   },
   { name: 'a command-qualified exec', words: ['command', 'exec'], runs: true },
