@@ -149,12 +149,12 @@ for (const verb of ['read', 'write'] as const) {
   }
 }
 
-it('rejectLinkedFile rethrows an lstat error other than a missing file', async () => {
+it('rejectLinkedFile treats a path through a file as missing', async () => {
   const parent = join(temporaryDirectory(afterThisTest, 'tau-linked-file-'), 'plain.md');
 
   await writeFile(parent, 'text\n');
 
-  await expect(rejectLinkedFile(join(parent, 'file.md'), 'read')).rejects.toThrow('ENOTDIR');
+  await expect(rejectLinkedFile(join(parent, 'file.md'), 'read')).resolves.toBeUndefined();
 });
 
 it('rejectLinkedEntries accepts a directory with a subdirectory and a plain file', async () => {
@@ -214,14 +214,12 @@ it('existingEntry reports a symbolic link itself and does not follow it', async 
   expect(entry?.isFile()).toBe(false);
 });
 
-it('existingEntry throws an error that is not a missing file', async () => {
+it('existingEntry treats a path through a file as missing', async () => {
   const directory = temporaryDirectory(afterThisTest, 'tau-entry-');
 
   await writeFile(join(directory, 'file.txt'), 'text\n');
 
-  await expect(existingEntry(join(directory, 'file.txt', 'child'))).rejects.toMatchObject({
-    code: 'ENOTDIR',
-  });
+  await expect(existingEntry(join(directory, 'file.txt', 'child'))).resolves.toBeUndefined();
 });
 
 it('check refuses a .tau/.gitignore that is not a regular file', async ({ onTestFinished }) => {

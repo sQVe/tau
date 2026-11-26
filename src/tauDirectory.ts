@@ -11,7 +11,7 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
-import { isMissingFile } from './errors.ts';
+import { isMissingFile, isMissingPath } from './errors.ts';
 import { currentBareProbeCache, findCheckoutRoot, isBareRoot, readGit, runGit } from './git.ts';
 import type { BareProbe, GitOptions, ProbeCache } from './git.ts';
 
@@ -52,7 +52,7 @@ const writtenPaths = (segments: readonly string[]) => [
 
 export const existingEntry = (path: string): Promise<Stats | undefined> =>
   lstat(path).catch((error: unknown) => {
-    if (isMissingFile(error)) {
+    if (isMissingPath(error)) {
       return undefined;
     }
 
@@ -77,7 +77,7 @@ export const isSymlink = async (path: string): Promise<boolean> => {
 // writer forever. A directory always has several links.
 export const rejectLinkedFile = async (path: string, verb: 'read' | 'write'): Promise<void> => {
   const stats = await lstat(path).catch((error: unknown) => {
-    if (isMissingFile(error)) {
+    if (isMissingPath(error)) {
       return undefined;
     }
 
