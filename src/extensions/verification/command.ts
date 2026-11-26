@@ -4,7 +4,11 @@ import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 
 import { errorMessage } from '../../errors.js';
-import { defaultStopGraceMilliseconds, stopGroup } from '../../process/process.js';
+import {
+  checkStopGraceMilliseconds,
+  defaultStopGraceMilliseconds,
+  stopGroup,
+} from '../../process/process.js';
 
 export interface CommandOptions {
   argv: readonly string[];
@@ -56,10 +60,8 @@ const checkCommandOptions = (options: CommandOptions): void => {
 
   const { stopGraceMilliseconds } = options;
 
-  if (stopGraceMilliseconds !== undefined && !isPositiveSafeInteger(stopGraceMilliseconds)) {
-    throw new RangeError(
-      `The stop grace must be a positive safe integer, got ${stopGraceMilliseconds}.`,
-    );
+  if (stopGraceMilliseconds !== undefined) {
+    checkStopGraceMilliseconds(stopGraceMilliseconds);
   }
 };
 

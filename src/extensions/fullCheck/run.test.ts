@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -238,6 +239,8 @@ it('refuses a stop grace that is not a positive safe integer', async () => {
 
     await expect(outcome).rejects.toThrow(message);
   }
+
+  expect(existsSync(join(root, '.tau'))).toBe(false);
 });
 
 it('sends no signal to the group after an idle stop returns', async () => {

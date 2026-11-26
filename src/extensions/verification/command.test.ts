@@ -227,22 +227,26 @@ it('refuses an invalid deadline or an empty argv', async () => {
   );
 
   expect(existsSync(logPath)).toBe(false);
+});
 
-  const graceCases = [
+it('refuses a stop grace that is not a positive safe integer', async () => {
+  const cwd = temporaryCommandDirectory();
+
+  const cases = [
     { stopGraceMilliseconds: 0, message: 'got 0.' },
     { stopGraceMilliseconds: -1, message: 'got -1.' },
     { stopGraceMilliseconds: Number.NaN, message: 'got NaN.' },
     { stopGraceMilliseconds: 1.5, message: 'got 1.5.' },
   ];
 
-  for (const { stopGraceMilliseconds, message } of graceCases) {
-    const graceLogPath = join(cwd, `grace-${String(stopGraceMilliseconds)}.log`);
+  for (const { stopGraceMilliseconds, message } of cases) {
+    const logPath = join(cwd, `grace-${String(stopGraceMilliseconds)}.log`);
 
-    await expect(
-      runCommand(optionsIn(cwd, { logPath: graceLogPath, stopGraceMilliseconds })),
-    ).rejects.toThrow(message);
+    await expect(runCommand(optionsIn(cwd, { logPath, stopGraceMilliseconds }))).rejects.toThrow(
+      message,
+    );
 
-    expect(existsSync(graceLogPath)).toBe(false);
+    expect(existsSync(logPath)).toBe(false);
   }
 });
 

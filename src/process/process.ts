@@ -115,6 +115,15 @@ export const stopGroup = async (child: ChildProcess, graceMilliseconds: number):
 
 export const defaultStopGraceMilliseconds = 5000;
 
+// A grace of zero or NaN would escalate at once or never, so a caller rejects it where it enters.
+export const checkStopGraceMilliseconds = (stopGraceMilliseconds: number): void => {
+  if (!Number.isSafeInteger(stopGraceMilliseconds) || stopGraceMilliseconds <= 0) {
+    throw new RangeError(
+      `The stop grace must be a positive safe integer, got ${stopGraceMilliseconds}.`,
+    );
+  }
+};
+
 // The shell waits for one line on stdin, then becomes the command. If this process dies before it
 // sends the line, stdin closes and the shell exits without starting the command.
 const startGate = 'read -r gate || exit 1; exec "$0" "$@"';

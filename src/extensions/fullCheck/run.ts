@@ -3,7 +3,12 @@ import { fstatSync } from 'node:fs';
 import { open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { defaultStopGraceMilliseconds, groupState, stopGroup } from '../../process/process.js';
+import {
+  checkStopGraceMilliseconds,
+  defaultStopGraceMilliseconds,
+  groupState,
+  stopGroup,
+} from '../../process/process.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
 import { commandIsIdle } from './idleDecision.js';
 
@@ -33,16 +38,6 @@ export interface CheckOptions {
 }
 
 const tailLineCount = 40;
-
-const isPositiveSafeInteger = (value: number): boolean => Number.isSafeInteger(value) && value > 0;
-
-const checkStopGrace = (stopGraceMilliseconds: number): void => {
-  if (!isPositiveSafeInteger(stopGraceMilliseconds)) {
-    throw new RangeError(
-      `The stop grace must be a positive safe integer, got ${stopGraceMilliseconds}.`,
-    );
-  }
-};
 
 export const readTail = async (logPath: string): Promise<string> => {
   const text = await readFile(logPath, 'utf8');
@@ -77,7 +72,7 @@ export const runCheck = async ({
   checksPath = 'checks',
   stopGraceMilliseconds = defaultStopGraceMilliseconds,
 }: CheckOptions): Promise<CheckResult> => {
-  checkStopGrace(stopGraceMilliseconds);
+  checkStopGraceMilliseconds(stopGraceMilliseconds);
 
   const writesStdoutFile = output === 'report';
   const logPath = await newLogPath(root, checksPath);
