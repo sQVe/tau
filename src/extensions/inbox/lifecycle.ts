@@ -174,11 +174,11 @@ export const registerInboxLifecycle = (
     current: Generation,
     context: ExtensionContext,
     attempt = 0,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const terminal = dependencies.terminal();
 
     if (terminal === undefined) {
-      return;
+      return false;
     }
 
     const [snapshot, processGroup] = await Promise.all([
@@ -187,7 +187,7 @@ export const registerInboxLifecycle = (
     ]);
 
     if (current.controller.signal.aborted) {
-      return;
+      return false;
     }
 
     const foregroundPid = snapshot.foreground?.pid;
@@ -195,7 +195,7 @@ export const registerInboxLifecycle = (
     if (ownsTerminal({ foregroundPid, processGroup })) {
       await startListener(current, context, terminal);
 
-      return;
+      return true;
     }
 
     const delay = ownerWaitDelay(attempt);
@@ -203,16 +203,24 @@ export const registerInboxLifecycle = (
     if (delay === undefined) {
       context.ui.notify(noOwnerNotice({ terminal, foregroundPid }), 'warning');
 
-      return;
+      return false;
     }
 
     current.ownerWait = setTimeout(() => {
       current.ownerWait = undefined;
 
-      advertise(current, context, attempt + 1).catch((error: unknown) => {
-        notifyStartFailure(current, context, error);
-      });
+      advertise(current, context, attempt + 1)
+        .then((started) => {
+          if (started) {
+            requestDrain(current, context);
+          }
+        })
+        .catch((error: unknown) => {
+          notifyStartFailure(current, context, error);
+        });
     }, delay);
+
+    return false;
   };
 
   const endGeneration = (): void => {
@@ -246,7 +254,11 @@ export const registerInboxLifecycle = (
     generation = current;
 
     try {
-      await advertise(current, context);
+      const started = await advertise(current, context);
+
+      if (!started) {
+        return;
+      }
     } catch (error) {
       notifyStartFailure(current, context, error);
 

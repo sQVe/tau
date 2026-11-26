@@ -12,8 +12,10 @@ import { forgetAcceptCheck } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import { releaseInbox, setAcceptCheck, advertiseLabel } from '../../inbox/inbox.js';
+import { saveMessage } from '../../inbox/store.js';
 import { createWake } from '../../wake/wake.js';
 import { registerInboxLifecycle } from './lifecycle.js';
+import { ownerWaitDelay } from './ownerDecision.js';
 import { createStartupGate } from './startup.js';
 
 interface HcState {
@@ -35,7 +37,20 @@ interface HarnessOptions {
 
 const raceWaitMilliseconds = 200;
 const foregroundProcessGroup = 100;
-const ownerWaitMilliseconds = 20_000;
+
+const ownerWaitMilliseconds = (() => {
+  let total = 0;
+  let attempt = 0;
+  let delay = ownerWaitDelay(attempt);
+
+  while (delay !== undefined) {
+    total += delay;
+    attempt += 1;
+    delay = ownerWaitDelay(attempt);
+  }
+
+  return total;
+})();
 
 const useFakeTimers = (): void => {
   vi.useFakeTimers({
@@ -964,20 +979,20 @@ it('advertises its inbox once the terminal reports this process in the foregroun
     });
   });
 
+  expect(harness.notices).toEqual([]);
+
   await expect(exchange(socketOf(sessionId), handoverTo(sessionId))).resolves.toMatchObject({
     kind: 'queued',
     sessionId,
   });
-
-  expect(harness.notices).toEqual([]);
 });
 
 it.each([
-  { name: 'another process', foregroundPid: 400 },
-  { name: 'no process', foregroundPid: null },
+  { name: 'another process', foregroundPid: 400, reports: 'terminal t7 reports pid 400' },
+  { name: 'no process', foregroundPid: null, reports: 'hc reports no foreground process' },
 ])(
   'reports once that it has no inbox when the terminal reports $name in the foreground',
-  async ({ foregroundPid }) => {
+  async ({ foregroundPid, reports }) => {
     useFakeTimers();
 
     const harness = startHarness({ state: hcState({ foregroundPid }) });
@@ -986,13 +1001,15 @@ it.each([
     await harness.start(sessionId);
     cleanups.push(() => harness.shutdown(sessionId));
 
-    await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
-
-    expect(harness.notices).toEqual([expect.stringContaining('Tau inbox is off')]);
+    expect(harness.notices).toEqual([]);
 
     await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
 
-    expect(harness.notices).toEqual([expect.stringContaining('Tau inbox is off')]);
+    expect(harness.notices).toEqual([expect.stringContaining(reports)]);
+
+    await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
+
+    expect(harness.notices).toHaveLength(1);
     expect(Object.fromEntries(harness.state.labels)).toEqual({});
     expect(existsSync(socketOf(sessionId))).toBe(false);
   },
@@ -1009,6 +1026,8 @@ it('drops the owner wait of a session start replaced before the terminal reports
   await harness.start(second);
   cleanups.push(() => harness.shutdown(second));
 
+  expect(vi.getTimerCount()).toBe(1);
+
   harness.state.foregroundPid = foregroundProcessGroup;
   await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
   vi.useRealTimers();
@@ -1020,6 +1039,35 @@ it('drops the owner wait of a session start replaced before the terminal reports
   });
 
   expect(existsSync(socketOf(first))).toBe(false);
+});
+
+it('delivers a message saved before the terminal reported this process in the foreground', async () => {
+  useFakeTimers();
+
+  const harness = startHarness({ state: hcState({ foregroundPid: 400 }) });
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  await saveMessage(join(root, 'records', sessionId), {
+    version: 3,
+    messageId,
+    family: 'handover',
+    payload: { text: 'earlier text', sender: { terminal: 'lead', sessionId: randomUUID() } },
+  });
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+  await harness.discover(sessionId);
+
+  expect(harness.sendMessage).not.toHaveBeenCalled();
+
+  harness.state.foregroundPid = foregroundProcessGroup;
+  await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
+  vi.useRealTimers();
+
+  await vi.waitFor(() => {
+    expect(harness.sendMessage).toHaveBeenCalledTimes(1);
+  });
 });
 
 it('reports that the inbox could not start when the terminal read fails', async () => {

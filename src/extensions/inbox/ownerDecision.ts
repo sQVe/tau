@@ -9,10 +9,10 @@ export interface OwnerNoticeFacts {
 }
 
 const firstWaitMilliseconds = 500;
-const secondWaitMilliseconds = 1000;
-const thirdWaitMilliseconds = 2000;
-const fourthWaitMilliseconds = 3000;
-const fifthWaitMilliseconds = 4000;
+const secondWaitMilliseconds = 1_000;
+const thirdWaitMilliseconds = 2_000;
+const fourthWaitMilliseconds = 3_000;
+const fifthWaitMilliseconds = 4_000;
 
 const ownerWaitDelaysMilliseconds = [
   firstWaitMilliseconds,
