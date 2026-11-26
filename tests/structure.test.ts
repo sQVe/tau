@@ -10,6 +10,7 @@ import type {
   BindingRestElement,
   BlockStatement,
   CallExpression,
+  Class,
   Expression,
   Function,
   MemberExpression,
@@ -480,6 +481,13 @@ const declareFunctions = (bindings: BindingScopes, statements: readonly Statemen
   }
 };
 
+// A class declaration is not hoisted, so it binds its name only after the declaration.
+const declareClass = (bindings: BindingScopes, node: Class): void => {
+  if (node.id !== null) {
+    bindings.declare(node.id.name, 'function');
+  }
+};
+
 const globalObjects = new Set(['global', 'globalThis', 'process', 'self', 'window']);
 
 const rootName = (node: Expression): string | undefined => {
@@ -665,6 +673,9 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
     VariableDeclaration: (node) => {
       declareVariables(bindings, node);
     },
+    ClassDeclaration: (node) => {
+      declareClass(bindings, node);
+    },
     ImportDeclaration: (node) => {
       checkImport(path, registry, node, at);
     },
@@ -835,6 +846,15 @@ const classPropertySource = (): string => 'const install = (api) => {\n  api.run
 const aliasedClassPropertySource = (): string =>
   'const handler = class {};\nconst install = (api) => {\n  api.run = handler;\n};\n';
 
+const classDeclarationPropertySource = (): string =>
+  'class Handler {}\nconst install = (api) => {\n  api.run = Handler;\n};\n';
+
+const endedBlockClassSource = (): string =>
+  'const install = (api) => {\n  {\n    class Handler {}\n    Handler;\n  }\n  api.run = Handler;\n};\n';
+
+const lateClassSource = (): string =>
+  'const install = (api) => {\n  api.run = Handler;\n};\nclass Handler {}\n';
+
 const importedFunctionPropertySource = (): string =>
   "import { api } from './rules.js';\napi.run = () => 1;\n";
 
@@ -893,6 +913,17 @@ it('reports a class assigned to a property of a parameter', () => {
   expect(impurities('src/pure/decide.ts', aliasedClassPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:3: assigns a function to a property',
   ]);
+});
+
+it('reports a class declaration assigned to a property of a parameter', () => {
+  expect(impurities('src/pure/decide.ts', classDeclarationPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:3: assigns a function to a property',
+  ]);
+});
+
+it('does not report a class declaration that has not run or has left its block', () => {
+  expect(impurities('src/pure/decide.ts', endedBlockClassSource(), testRegistry)).toEqual([]);
+  expect(impurities('src/pure/decide.ts', lateClassSource(), testRegistry)).toEqual([]);
 });
 
 it('reports a function assigned to a property of a global or of a nested member chain', () => {
