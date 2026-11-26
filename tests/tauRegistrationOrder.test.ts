@@ -8,7 +8,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import type { QuestionRecord } from '../src/extensions/handoverQuestion/question/questionRecord.js';
-import { writeQuestionRecord } from '../src/extensions/handoverQuestion/question/questionRecord.js';
+import {
+  readQuestionRecord,
+  writeQuestionRecord,
+} from '../src/extensions/handoverQuestion/question/questionRecord.js';
 import { readLiveLockHolder } from '../src/fileLock/fileLock.js';
 import { socketDirectoryFor, socketPathFor } from '../src/inbox/endpoint.js';
 import { acceptChecks } from '../src/inbox/inbox.js';
@@ -16,7 +19,7 @@ import type { MessageReply, MessageRequest } from '../src/inbox/protocol.js';
 import tauRegistration from '../src/tau/tau.js';
 import { succeededResult } from './execFake.js';
 import { fakeExtensionApi } from './extensionApi.js';
-import { openRecord } from './fixtures/answerRecord.js';
+import { openRecord, questionId } from './fixtures/answerRecord.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { forgetAcceptCheck } from './inboxReceiverHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -76,7 +79,6 @@ const registrationsFrom = (
 ): Registration[] =>
   registered.filter((entry) => entry.name === name && entry.stack.includes(file));
 
-const answerQuestionId = '11111111-1111-4111-8111-111111111111';
 const answerSenderSession = '33333333-3333-4333-8333-333333333333';
 
 const answerRecord = (sessionId: string): QuestionRecord => ({
@@ -88,12 +90,12 @@ const answerRecord = (sessionId: string): QuestionRecord => ({
 const answerRequest = (sessionId: string): MessageRequest => ({
   protocol: 'rpc1',
   kind: 'message',
-  messageId: answerQuestionId,
+  messageId: questionId,
   targetTerminal: 't-worker',
   targetSessionId: sessionId,
   family: 'handover-answer',
   payload: {
-    questionId: answerQuestionId,
+    questionId,
     senderSession: answerSenderSession,
     answer: 'Use option A.',
   },
@@ -226,6 +228,115 @@ it('inbox closes before the lock frees', async ({ onTestFinished }) => {
   expect(await readLiveLockHolder(lockPath)).toBeUndefined();
 });
 
+it('keeps the session directory while the inbox shuts down', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-answer-shutdown-');
+  const outside = temporaryDirectory(onTestFinished, 'tau-outside-repository-');
+  const sessionId = randomUUID();
+  const processGroup = 100;
+  const processCwd = vi.spyOn(process, 'cwd').mockReturnValue(outside);
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+  vi.stubEnv('TAU_ROLE', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+  vi.stubEnv('HC_TERMINAL_ID', 't-worker');
+
+  onTestFinished(() => {
+    processCwd.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  const fake = fakeExtensionApi({
+    exec: async (command) => {
+      if (command === 'ps') {
+        return succeededResult(`${String(processGroup)}\n`);
+      }
+
+      const labels = { 'tau.inbox': 'rpc1:/tmp/unused.sock' };
+      const foreground = { pid: processGroup, name: 'pi', argv: ['pi'], cwd: root };
+      const terminal = { address: 't-worker', state: 'live', foreground, labels };
+
+      return succeededResult(JSON.stringify(terminal));
+    },
+  });
+
+  const registered = recordRegistrations(fake);
+
+  await tauRegistration(fake.pi);
+
+  const handoverStart = requireRegistration(
+    registrationsFrom(registered, 'session_start', 'handoverQuestion/handoverQuestion.ts')[0],
+    'the handover question session start',
+  );
+
+  const inboxStart = requireRegistration(
+    registrationsFrom(registered, 'session_start', 'extensions/inbox/lifecycle.ts')[0],
+    'the inbox session start',
+  );
+
+  const inboxShutdown = requireRegistration(
+    registrationsFrom(registered, 'session_shutdown', 'extensions/inbox/lifecycle.ts')[0],
+    'the inbox session shutdown',
+  );
+
+  const beforeInboxShutdown = registered.filter(
+    (entry) => entry.name === 'session_shutdown' && entry.index < inboxShutdown.index,
+  );
+
+  await writeQuestionRecord(root, answerRecord(sessionId));
+
+  const check = acceptChecks()['handover-answer'];
+
+  if (check === undefined) {
+    throw new Error('Tau registered no handover-answer check.');
+  }
+
+  const request = answerRequest(sessionId);
+
+  const queued: MessageReply = {
+    protocol: 'rpc1',
+    kind: 'queued',
+    messageId: questionId,
+    terminal: 't-worker',
+    sessionId,
+  };
+
+  const save = () => Promise.resolve(queued);
+
+  const context = {
+    cwd: root,
+    ui: { notify: vi.fn<(message: string, level?: string) => void>() },
+    shutdown: vi.fn<() => void>(),
+    isProjectTrusted: (): boolean => true,
+    sessionManager: {
+      getSessionFile: () => join(root, 'answer-session.jsonl'),
+      getSessionId: () => sessionId,
+      getEntries: () => [],
+    },
+  } as unknown as ExtensionContext;
+
+  onTestFinished(async () => {
+    await inboxShutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
+  });
+
+  expect(handoverStart.index).toBeLessThan(inboxStart.index);
+
+  await handoverStart.handler({ type: 'session_start', reason: 'startup' } as never, context);
+  await inboxStart.handler({ type: 'session_start', reason: 'startup' } as never, context);
+
+  for (const shutdown of beforeInboxShutdown) {
+    await shutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
+  }
+
+  expect(await check(request, save)).toEqual(queued);
+
+  expect(await readQuestionRecord(root, questionId)).toEqual({
+    kind: 'record',
+    record: { ...answerRecord(sessionId), state: 'answered', answer: 'Use option A.' },
+  });
+});
+
 it('sets the session directory before the inbox accepts answers', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-answer-order-');
@@ -291,7 +402,7 @@ it('sets the session directory before the inbox accepts answers', async ({ onTes
   const queued: MessageReply = {
     protocol: 'rpc1',
     kind: 'queued',
-    messageId: answerQuestionId,
+    messageId: questionId,
     terminal: 't-worker',
     sessionId,
   };

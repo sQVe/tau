@@ -1,6 +1,6 @@
 import type { QuestionRecord } from '../../src/extensions/handoverQuestion/question/questionRecord.js';
 
-const questionId = '11111111-1111-4111-8111-111111111111';
+export const questionId = '11111111-1111-4111-8111-111111111111';
 
 const recordFields = {
   version: 1 as const,

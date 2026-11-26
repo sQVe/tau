@@ -178,10 +178,13 @@ it('refuses to delete through a linked parent directory', async () => {
 it('refuses to delete a record path that is a directory', async () => {
   const root = await createProject();
   const directory = await ensureTauDirectory(root, 'handoverQuestions');
+  const path = join(directory, `${questionId}.json`);
 
-  await mkdir(join(directory, `${questionId}.json`));
+  await mkdir(path);
 
   await expect(deleteQuestionRecord(root, questionId)).rejects.toBeInstanceOf(Error);
+
+  expect(existsSync(path)).toBe(true);
 });
 
 it('refuses a record that fails the schema and keeps the existing record', async () => {

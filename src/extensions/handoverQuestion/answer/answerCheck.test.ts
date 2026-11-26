@@ -7,6 +7,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { answeredRecord, openRecord } from '../../../../tests/fixtures/answerRecord.js';
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { isMissingFile } from '../../../errors.js';
 import type { AcceptCheck } from '../../../inbox/inbox.js';
 import { createReceiver } from '../../../inbox/inbox.js';
 import type { MessageReply, MessageRequest } from '../../../inbox/protocol.js';
@@ -98,8 +99,12 @@ it('marks the record answered and starts the turn with the answer text', async (
 const recordBytes = async (root: string): Promise<string | undefined> => {
   try {
     return await readFile(join(questionRecordDirectory(root), `${questionId}.json`), 'utf8');
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
   }
 };
 

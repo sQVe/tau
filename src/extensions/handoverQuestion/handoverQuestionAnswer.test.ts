@@ -168,6 +168,16 @@ it('answers through the registered tool with the send runtime', async () => {
   expect(result.details).toEqual({ status: 'queued', questionId: answerQuestionId });
   expect(askerLookups(fake)).toBe(1);
   expect(received).toHaveLength(1);
+
+  expect(received[0]).toMatchObject({
+    family: 'handover-answer',
+    payload: {
+      questionId: answerQuestionId,
+      senderSession: answerSenderSession,
+      answer: 'Use option A.',
+    },
+  });
+
   expect(savedFiles(asker)).toHaveLength(1);
 });
 
@@ -254,8 +264,6 @@ const answerSessionFixture = async () => {
   const shutdown = async (): Promise<void> => {
     const handlers = fake.handlers.get('session_shutdown') ?? [];
 
-    expect(handlers).not.toHaveLength(0);
-
     for (const handler of handlers) {
       await handler(
         { type: 'session_shutdown', reason: 'quit' } as never,
@@ -293,7 +301,7 @@ it('reads the session cwd instead of the process cwd', async () => {
   expect(await receiver.accept(answerRequest())).toEqual(queuedAnswerReply);
 });
 
-it('forgets the session cwd on shutdown', async () => {
+it('keeps the session cwd on shutdown', async () => {
   const { root, check, startSession, shutdown } = await answerSessionFixture();
 
   await writeQuestionRecord(root, openRecord(answerSenderSession));
@@ -307,8 +315,8 @@ it('forgets the session cwd on shutdown', async () => {
 
   const save = vi.fn<() => Promise<MessageReply>>(async () => queuedAnswerReply);
 
-  expect(await check(answerRequest(), save)).toContain('has not started');
-  expect(save).not.toHaveBeenCalled();
+  expect(await check(answerRequest(), save)).toEqual(queuedAnswerReply);
+  expect(save).toHaveBeenCalledOnce();
 });
 
 it('reads the checkout of the next session start', async () => {

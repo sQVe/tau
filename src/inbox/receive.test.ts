@@ -16,7 +16,7 @@ import {
   queuedReply as queued,
   savedRecordPath,
   startReceiveDouble,
-} from './fixtures/receiveDouble.js';
+} from '../../tests/receiveHarness.js';
 import type { MessageReply, MessageRequest } from './protocol.js';
 import { inboxMessageType } from './receiptDecision.js';
 

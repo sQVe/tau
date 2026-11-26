@@ -3,12 +3,12 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import {
   queuedReply as queued,
   savedRecordPath as recordOf,
   startReceiveDouble,
-} from './fixtures/receiveDouble.js';
+} from '../../tests/receiveHarness.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import type { MessageRequest } from './protocol.js';
 import { inboxMessageType } from './receiptDecision.js';
 import type { ReceiptEntryFact } from './receiptDecision.js';

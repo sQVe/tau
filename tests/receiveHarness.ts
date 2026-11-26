@@ -1,10 +1,10 @@
 import { join } from 'node:path';
 
-import type { MessageReply } from '../protocol.js';
-import type { ReceiptEntryFact } from '../receiptDecision.js';
-import { createReceiptStore } from '../receipts.js';
-import { createReceiver } from '../receive.js';
-import type { Receiver, ReceiverOptions } from '../receive.js';
+import type { MessageReply } from '../src/inbox/protocol.js';
+import type { ReceiptEntryFact } from '../src/inbox/receiptDecision.js';
+import { createReceiptStore } from '../src/inbox/receipts.js';
+import { createReceiver } from '../src/inbox/receive.js';
+import type { Receiver, ReceiverOptions } from '../src/inbox/receive.js';
 
 export const queuedReply = (sessionId: string, messageId: string): MessageReply => ({
   protocol: 'rpc1',

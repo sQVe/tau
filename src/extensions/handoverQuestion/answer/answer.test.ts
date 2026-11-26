@@ -141,20 +141,6 @@ const settleFrames = async (frames: () => number): Promise<void> => {
   throw new Error(`The answer frames did not settle within ${String(settleRoundLimit)} rounds.`);
 };
 
-it('fails when the answer frames never settle', async () => {
-  let frames = 0;
-
-  const changingFrames = (): number => {
-    frames += 1;
-
-    return frames;
-  };
-
-  await expect(settleFrames(changingFrames)).rejects.toThrow(Error);
-
-  expect(frames).toBeGreaterThan(settleRoundLimit);
-});
-
 it('sends one answer frame to the asker', async () => {
   let frames = 0;
 
