@@ -29,7 +29,6 @@ const isTable = (token: Token): boolean => token.type === 'table';
 
 const isHeading = (token: Token): token is Tokens.Heading => token.type === 'heading';
 
-// A heading's raw text keeps its closing hashes and link syntax, so its parsed label is tested.
 const headingLabel = (token: Tokens.Heading): string => markdownTokenText(token.tokens);
 
 const blockTextOf = (token: Token): string => (isHeading(token) ? headingLabel(token) : token.raw);
