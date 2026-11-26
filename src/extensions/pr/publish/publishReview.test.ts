@@ -81,8 +81,24 @@ it('reports review findings per prose field, not over the JSON', async () => {
   const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
 
   expect(dryRun.findings).toEqual([
-    expect.objectContaining({ file: 'review.json', field: 'body', rule: 'longSentence' }),
-    expect.objectContaining({ file: 'review.json', field: 'comments[0].body', rule: 'emDash' }),
+    expect.objectContaining({
+      file: 'review.json',
+      field: 'body',
+      rule: 'longSentence',
+      line: 1,
+    }),
+    expect.objectContaining({
+      file: 'review.json',
+      field: 'comments[0].body',
+      rule: 'emDash',
+      line: 1,
+      excerpt: commentBody,
+    }),
+  ]);
+
+  expect(dryRun.findings.map((finding) => finding.excerpt)).toEqual([
+    expect.stringMatching(/^This review body explains the purpose/u),
+    commentBody,
   ]);
 
   expect(JSON.stringify(dryRun['findings'])).not.toContain('commit_id');
@@ -169,6 +185,38 @@ it('refuses a COMMENT review without a body', async () => {
     run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
   ).rejects.toThrow('review.json needs a body for a COMMENT event.');
 
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a REQUEST_CHANGES review without a body', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(
+    directory,
+    'review.json',
+    `${JSON.stringify({
+      event: 'REQUEST_CHANGES',
+      comments: [{ path: 'src/a.ts', line: 3, body: 'Fine.' }],
+    })}\n`,
+  );
+
+  await expect(
+    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
+  ).rejects.toThrow('review.json needs a body for a REQUEST_CHANGES event.');
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('accepts an APPROVE review without a body', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'review.json', `${JSON.stringify({ event: 'APPROVE' })}\n`);
+
+  const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
+
+  expect(dryRun.findings).toEqual([]);
   expect(fake.calls).toEqual([]);
 });
 

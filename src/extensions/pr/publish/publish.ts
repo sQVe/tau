@@ -397,6 +397,9 @@ const readComment = async (target: PublicationTarget): Promise<PublicationPlan> 
   return { target: facts, files: [file], commandArguments, findings: fileFindings(file) };
 };
 
+const needsBody = (event: string | undefined): event is 'COMMENT' | 'REQUEST_CHANGES' =>
+  event === 'COMMENT' || event === 'REQUEST_CHANGES';
+
 const readReview = async (target: PublicationTarget): Promise<PublicationPlan> => {
   const { action, directory, repository, request } = target;
   const pr = requirePullRequestNumber(action, request.pr);
@@ -425,8 +428,8 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
     throw new Error(`${reviewFileName} comments[${missingPosition}] needs line or position.`);
   }
 
-  if (review.event === 'COMMENT' && (review.body ?? '').trim() === '') {
-    throw new Error(`${reviewFileName} needs a body for a COMMENT event.`);
+  if (needsBody(review.event) && (review.body ?? '').trim() === '') {
+    throw new Error(`${reviewFileName} needs a body for a ${review.event} event.`);
   }
 
   const facts: PublicationTargetFacts = {
