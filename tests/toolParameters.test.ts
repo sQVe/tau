@@ -8,6 +8,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
 import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
+import {
+  isRecord,
+  schemaArrayKeywords,
+  schemaMapKeywords,
+  schemaValueKeywords,
+} from '../src/schema.js';
 import { skillTools } from '../src/skillTools.js';
 import tauRegistration from '../src/tau/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -18,16 +24,41 @@ interface Registration {
   environment: Readonly<Record<string, string | undefined>>;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+interface SchemaChild {
+  path: string;
+  value: unknown;
+}
 
-const isMapSchema = (value: Record<string, unknown>): boolean => {
-  const patternProperties = value['patternProperties'];
+const isOpenObject = (value: Record<string, unknown>): boolean => {
+  const isObjectType = value['type'] === 'object';
+  const additionalProperties = value['additionalProperties'];
 
-  return isRecord(patternProperties) && Object.keys(patternProperties).length > 0;
+  const hasDefaultAdditionalProperties =
+    additionalProperties === undefined || additionalProperties === true;
+
+  return isObjectType && hasDefaultAdditionalProperties;
 };
 
-// A map schema constrains every key through patternProperties, so it needs no closed object.
+const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChild[] => {
+  const children: SchemaChild[] = [];
+
+  for (const [key, child] of Object.entries(value)) {
+    if (schemaMapKeywords.has(key) && isRecord(child)) {
+      for (const [name, entry] of Object.entries(child)) {
+        children.push({ path: `${path}/${key}/${name}`, value: entry });
+      }
+    } else if (schemaArrayKeywords.has(key) && Array.isArray(child)) {
+      for (const [index, entry] of child.entries()) {
+        children.push({ path: `${path}/${key}/${index}`, value: entry });
+      }
+    } else if (schemaValueKeywords.has(key)) {
+      children.push({ path: `${path}/${key}`, value: child });
+    }
+  }
+
+  return children;
+};
+
 const objectProblems = (toolName: string, value: unknown, path: string): string[] => {
   if (Array.isArray(value)) {
     return value.flatMap((item, index) => objectProblems(toolName, item, `${path}/${index}`));
@@ -37,13 +68,10 @@ const objectProblems = (toolName: string, value: unknown, path: string): string[
     return [];
   }
 
-  const own =
-    value['type'] === 'object' && value['additionalProperties'] !== false && !isMapSchema(value)
-      ? [`${toolName} parameters${path}`]
-      : [];
+  const own = isOpenObject(value) ? [`${toolName} parameters${path}`] : [];
 
-  const nested = Object.entries(value).flatMap(([key, child]) =>
-    objectProblems(toolName, child, `${path}/${key}`),
+  const nested = schemaChildren(value, path).flatMap((child) =>
+    objectProblems(toolName, child.value, child.path),
   );
 
   return [...own, ...nested];
@@ -106,13 +134,15 @@ const toolsOf = async (registration: Registration): Promise<Tool[]> => {
   }
 };
 
-const registeredTools = async (): Promise<{ registration: string; tools: Tool[] }[]> =>
-  Promise.all(
-    (await registrations()).map(async (registration) => ({
-      registration: registration.name,
-      tools: await toolsOf(registration),
-    })),
-  );
+const registeredTools = async (): Promise<{ registration: string; tools: Tool[] }[]> => {
+  const all: { registration: string; tools: Tool[] }[] = [];
+
+  for (const registration of await registrations()) {
+    all.push({ registration: registration.name, tools: await toolsOf(registration) });
+  }
+
+  return all;
+};
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -181,19 +211,43 @@ it('reports a loose nested object with its tool and path', () => {
     },
   };
 
-  expect(objectProblems('sample', loose, '')).toEqual([
-    'sample parameters/properties/outer',
-    'sample parameters/properties/schemaValue',
-  ]);
+  expect(objectProblems('sample', loose, '')).toEqual(['sample parameters/properties/outer']);
 });
 
-it('passes a map schema that uses patternProperties', () => {
+it.each([
+  { name: 'an undefined additionalProperties', additionalProperties: undefined, problem: true },
+  { name: 'a true additionalProperties', additionalProperties: true, problem: true },
+  { name: 'a false additionalProperties', additionalProperties: false, problem: false },
+  {
+    name: 'a schema-valued additionalProperties',
+    additionalProperties: { type: 'string' },
+    problem: false,
+  },
+])('decides $name', ({ additionalProperties, problem }) => {
+  const schema = { type: 'object', additionalProperties };
+  const expected = problem ? ['sample parameters'] : [];
+
+  expect(objectProblems('sample', schema, '')).toEqual(expected);
+});
+
+it('ignores an object value in an annotation keyword', () => {
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    default: { type: 'object' },
+    examples: [{ type: 'object' }],
+  };
+
+  expect(objectProblems('sample', schema, '')).toEqual([]);
+});
+
+it('reports a patternProperties object without a closed additionalProperties', () => {
   const map = {
     type: 'object',
     patternProperties: { '^[a-z]+$': { type: 'string' } },
   };
 
-  expect(objectProblems('sample', map, '')).toEqual([]);
+  expect(objectProblems('sample', map, '')).toEqual(['sample parameters']);
 });
 
 it('fails when a tool it needs is missing', () => {

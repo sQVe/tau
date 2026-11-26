@@ -1,3 +1,4 @@
+import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { expect, it } from 'vitest';
 
@@ -5,8 +6,10 @@ import {
   anyItem,
   anyKey,
   findUnknownKeys,
+  isRecord,
   newerRecordVersion,
   reportedId,
+  strictToolParameters,
   stringEnum,
   unreportedKeys,
 } from './schema.js';
@@ -94,4 +97,57 @@ it.for<[unknown, boolean]>([
   [1, false],
 ])('accepts only the listed strings in a string enum: %j', ([value, valid]) => {
   expect(Value.Check(stringEnum(['low', 'high']), value)).toBe(valid);
+});
+
+it('closes a nested object schema', () => {
+  const schema = Type.Object({
+    nested: Type.Object({ value: Type.String() }),
+  });
+
+  expect(strictToolParameters(schema)).toMatchObject({
+    additionalProperties: false,
+    properties: {
+      nested: {
+        additionalProperties: false,
+        properties: { value: { type: 'string' } },
+      },
+    },
+  });
+});
+
+it('keeps a schema-valued additionalProperties on a map schema', () => {
+  const schema = Type.Object({
+    values: Type.Object({}, { additionalProperties: Type.String() }),
+  });
+
+  expect(strictToolParameters(schema)).toMatchObject({
+    properties: {
+      values: {
+        additionalProperties: { type: 'string' },
+      },
+    },
+  });
+});
+
+it('leaves an existing false additionalProperties alone', () => {
+  const schema = Type.Object({ value: Type.String() }, { additionalProperties: false });
+  const result: unknown = strictToolParameters(schema);
+  const additionalProperties = isRecord(result) ? result['additionalProperties'] : undefined;
+
+  expect(additionalProperties).toBe(false);
+});
+
+it('does not rewrite an object value stored in an annotation keyword', () => {
+  const schema = Type.Object(
+    { value: Type.String() },
+    { default: { type: 'object' }, examples: [{ type: 'object' }], const: { type: 'object' } },
+  );
+
+  expect(strictToolParameters(schema)).toEqual(
+    expect.objectContaining({
+      default: { type: 'object' },
+      examples: [{ type: 'object' }],
+      const: { type: 'object' },
+    }),
+  );
 });

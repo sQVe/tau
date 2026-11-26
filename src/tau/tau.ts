@@ -40,17 +40,13 @@ import toolResultRedactionExtension from '../extensions/toolResultRedaction/tool
 import trackerExtension from '../extensions/tracker/tracker.js';
 import verificationExtension from '../extensions/verification/verification.js';
 import webAccessExtension from '../extensions/webAccess.js';
-import { strictToolParameters } from '../schema.js';
+import { strictToolRegistration } from '../schema.js';
 
 const skillsDirectory = fileURLToPath(new URL('../skills/', import.meta.url));
 const checkoutDirectory = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
 export default async function tauRegistration(pi: ExtensionAPI): Promise<void> {
-  const registerTool = pi.registerTool.bind(pi);
-
-  pi.registerTool = (tool) => {
-    registerTool({ ...tool, parameters: strictToolParameters(tool.parameters) });
-  };
+  strictToolRegistration(pi);
 
   // Must be the first session_start handler, so a refused start runs no other handler.
   sessionLockExtension(pi);

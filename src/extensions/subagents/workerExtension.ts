@@ -35,7 +35,7 @@ import type { InstructionSection } from '../../instructions/instructions.js';
 import { registerLanguageRules } from '../../instructions/languageRules/languageRules.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../../role/role.js';
-import { strictToolParameters } from '../../schema.js';
+import { strictToolRegistration } from '../../schema.js';
 import { skillTools } from '../../skillTools.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { createWake } from '../../wake/wake.js';
@@ -441,11 +441,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     return;
   }
 
-  const registerTool = pi.registerTool.bind(pi);
-
-  pi.registerTool = (tool) => {
-    registerTool({ ...tool, parameters: strictToolParameters(tool.parameters) });
-  };
+  strictToolRegistration(pi);
 
   const state: WorkerState = {
     hc: { exec: pi.exec.bind(pi), connect, cwd: process.cwd() },

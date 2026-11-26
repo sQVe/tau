@@ -1,3 +1,4 @@
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { TSchema, TUnsafe } from 'typebox';
 import { Value } from 'typebox/value';
@@ -34,6 +35,32 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 
 // Adds additionalProperties: false to every object schema, so Pi refuses an argument the tool does
 // not declare. A map schema keeps its additionalProperties schema, which constrains every key.
+export const schemaMapKeywords = new Set(['$defs', 'patternProperties', 'properties']);
+export const schemaArrayKeywords = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
+
+export const schemaValueKeywords = new Set([
+  'additionalProperties',
+  'else',
+  'if',
+  'items',
+  'not',
+  'then',
+]);
+
+const strictSchemaMap = (value: unknown, visit: (child: unknown) => unknown): unknown => {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const clone: Record<PropertyKey, unknown> = { ...value };
+
+  for (const key of Object.keys(value)) {
+    clone[key] = visit(value[key]);
+  }
+
+  return clone;
+};
+
 const strictSchemaValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map(strictSchemaValue);
@@ -46,7 +73,15 @@ const strictSchemaValue = (value: unknown): unknown => {
   const clone: Record<PropertyKey, unknown> = { ...value };
 
   for (const key of Object.keys(value)) {
-    clone[key] = strictSchemaValue(value[key]);
+    const child = value[key];
+
+    if (schemaMapKeywords.has(key)) {
+      clone[key] = strictSchemaMap(child, strictSchemaValue);
+    } else if (schemaArrayKeywords.has(key)) {
+      clone[key] = Array.isArray(child) ? child.map(strictSchemaValue) : child;
+    } else if (schemaValueKeywords.has(key)) {
+      clone[key] = strictSchemaValue(child);
+    }
   }
 
   if (value['type'] === 'object') {
@@ -63,6 +98,25 @@ const strictSchemaValue = (value: unknown): unknown => {
 export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Schema => {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the clone keeps every schema field and only adds additionalProperties to object nodes.
   return strictSchemaValue(schema) as Schema;
+};
+
+const installedApis = new WeakSet<ExtensionAPI>();
+
+// Wraps `registerTool` once per API. Every tool registered through that API after this call has
+// strict parameters, including tools that another extension registers.
+export const strictToolRegistration = (pi: ExtensionAPI): void => {
+  if (installedApis.has(pi)) {
+    return;
+  }
+
+  installedApis.add(pi);
+
+  const registerTool = pi.registerTool.bind(pi);
+
+  pi.registerTool = (tool) => {
+    // oxlint-disable-next-line typescript/no-confusing-void-expression -- the installed API may return a value at runtime, and the wrapper must keep it.
+    return registerTool({ ...tool, parameters: strictToolParameters(tool.parameters) });
+  };
 };
 
 export const stringEnum = <const Values extends readonly string[]>(
