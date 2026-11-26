@@ -1,6 +1,11 @@
 import { posix } from 'node:path';
 
-import { decodedComponent, readDestination, readMarkdownLinks } from './markdownLinks.js';
+import {
+  decodedComponent,
+  namesFragment,
+  readDestination,
+  readMarkdownLinks,
+} from './markdownLinks.js';
 import type { MarkdownLinks } from './markdownLinks.js';
 
 export type LinkProblem = 'undecodable' | 'leaves-folder' | 'not-synced' | 'missing-heading';
@@ -70,7 +75,7 @@ const targetCheck = (
     return { kind: 'unreadable', path: resolved, error: parsed.error };
   }
 
-  return parsed.links.slugs.has(slug)
+  return namesFragment(parsed.links, slug)
     ? { kind: 'valid' }
     : { kind: 'broken', path, target, problem: 'missing-heading' };
 };

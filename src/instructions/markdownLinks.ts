@@ -1,10 +1,12 @@
 import { decodeHTMLStrict, decodeXML } from 'entities';
+import Slugger from 'github-slugger';
 import { Marked, Tokenizer } from 'marked';
 import type { Token, Tokens } from 'marked';
 
 export interface MarkdownLinks {
   targets: readonly string[];
   slugs: ReadonlySet<string>;
+  anchors: ReadonlySet<string>;
 }
 
 export type Destination =
@@ -12,9 +14,10 @@ export type Destination =
   | { kind: 'undecodable' }
   | { kind: 'local'; path: string; fragment: string | undefined };
 
-const externalTarget = /^[a-z][a-z\d+.-]*:/i;
+export const namesFragment = (links: MarkdownLinks, fragment: string): boolean =>
+  links.slugs.has(fragment) || links.anchors.has(fragment);
 
-const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
+const externalTarget = /^[a-z][a-z\d+.-]*:/i;
 
 const tokenizer = new Marked({
   tokenizer: {
@@ -36,28 +39,12 @@ const frontmatter = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/;
 
 const withoutFrontmatter = (markdown: string) => markdown.replace(frontmatter, '');
 
-const slugOf = (heading: string) =>
-  heading.trim().toLowerCase().replaceAll(notSlugCharacter, '').replaceAll(' ', '-');
-
+// GitHub builds heading anchors with github-slugger, so a hand-written filter for the characters
+// it drops disagrees with the anchors GitHub generates.
 const headingSlugs = (headings: readonly string[]): ReadonlySet<string> => {
-  const counts = new Map<string, number>();
-  const slugs = new Set<string>();
+  const slugger = new Slugger();
 
-  for (const heading of headings) {
-    const base = slugOf(heading);
-    let slug = base;
-
-    while (slugs.has(slug)) {
-      const count = (counts.get(base) ?? 0) + 1;
-
-      counts.set(base, count);
-      slug = `${base}-${count}`;
-    }
-
-    slugs.add(slug);
-  }
-
-  return slugs;
+  return new Set(headings.map((heading) => slugger.slug(heading.trim())));
 };
 
 export const decodedComponent = (text: string): string | undefined => {
@@ -206,6 +193,42 @@ export const walkMarkdownTokens = (
   }
 };
 
+const htmlComment = /<!--[\s\S]*?-->/g;
+const anchorElement = /<a\b[^>]*>/gi;
+const anchorAttribute = /(?:^|\s)(?:name|id)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+
+const anchorNamesOf = (html: string): string[] => {
+  const names: string[] = [];
+
+  for (const element of html.replaceAll(htmlComment, '').matchAll(anchorElement)) {
+    for (const attribute of element[0].matchAll(anchorAttribute)) {
+      const name = attribute[1] ?? attribute[2] ?? attribute[3];
+
+      if (name !== undefined && name !== '') {
+        names.push(name);
+      }
+    }
+  }
+
+  return names;
+};
+
+const collectAnchors = (tokens: readonly Token[], anchors: string[]): void => {
+  for (const token of tokens) {
+    if (token.type === 'code') {
+      continue;
+    }
+
+    if (token.type === 'html') {
+      anchors.push(...anchorNamesOf(tokenText(token)));
+
+      continue;
+    }
+
+    collectAnchors(childrenOf(token), anchors);
+  }
+};
+
 const collectLinks = (tokens: readonly Token[], targets: string[], headings: string[]): void => {
   walkMarkdownTokens(
     tokens,
@@ -227,14 +250,13 @@ const collectLinks = (tokens: readonly Token[], targets: string[], headings: str
 };
 
 export const readMarkdownLinks = (markdown: string): MarkdownLinks => {
+  const tokens = tokenizer.lexer(withoutFrontmatter(withoutByteOrderMark(markdown)));
   const targets: string[] = [];
   const headings: string[] = [];
+  const anchors: string[] = [];
 
-  collectLinks(
-    tokenizer.lexer(withoutFrontmatter(withoutByteOrderMark(markdown))),
-    targets,
-    headings,
-  );
+  collectLinks(tokens, targets, headings);
+  collectAnchors(tokens, anchors);
 
-  return { targets, slugs: headingSlugs(headings) };
+  return { targets, slugs: headingSlugs(headings), anchors: new Set(anchors) };
 };

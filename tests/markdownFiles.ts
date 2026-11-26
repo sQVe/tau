@@ -4,6 +4,7 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import {
   decodedComponent,
+  namesFragment,
   readDestination,
   readMarkdownLinks,
 } from '../src/instructions/markdownLinks.js';
@@ -103,8 +104,9 @@ const targetProblem = (
 
   const fragment = decodedComponent(destination.fragment);
   const targetMarkdown = destination.path === '' ? markdown : files.readMarkdown(targetFile);
+  const links = readMarkdownLinks(targetMarkdown);
 
-  if (fragment !== undefined && readMarkdownLinks(targetMarkdown).slugs.has(fragment)) {
+  if (fragment !== undefined && namesFragment(links, fragment)) {
     return undefined;
   }
 

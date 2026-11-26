@@ -375,6 +375,11 @@ const slugTable: { name: string; markdown: string; expected: readonly string[] }
     expected: ['labelsample'],
   },
   {
+    name: 'strips a fraction character the way GitHub does',
+    markdown: '# A &frac12; B',
+    expected: ['a--b'],
+  },
+  {
     name: 'keeps link markup inside a code span in a heading',
     markdown: '# Run `[link](./x.md)` now',
     expected: ['run-linkxmd-now'],
@@ -438,4 +443,36 @@ const slugTable: { name: string; markdown: string; expected: readonly string[] }
 
 it.for(slugTable)('$name', ({ markdown, expected }) => {
   expect([...readMarkdownLinks(markdown).slugs]).toEqual(expected);
+});
+
+const anchorTable: { name: string; markdown: string; expected: readonly string[] }[] = [
+  {
+    name: 'reads the name of an anchor element',
+    markdown: '<a name="custom-anchor"></a>\n',
+    expected: ['custom-anchor'],
+  },
+  {
+    name: 'reads the id of an anchor element',
+    markdown: 'Text <a id="custom-anchor"></a> more\n',
+    expected: ['custom-anchor'],
+  },
+  {
+    name: 'reads the name and the id of one anchor element',
+    markdown: '<a id="first" name="second"></a>\n',
+    expected: ['first', 'second'],
+  },
+  {
+    name: 'reads no anchor from an anchor element inside an HTML comment',
+    markdown: '<!-- <a name="commented"></a> -->\n',
+    expected: [],
+  },
+  {
+    name: 'reads no anchor from an anchor element inside a code span or a fence',
+    markdown: '`<a name="span"></a>`\n\n```\n<a name="fenced"></a>\n```\n',
+    expected: [],
+  },
+];
+
+it.for(anchorTable)('$name', ({ markdown, expected }) => {
+  expect([...readMarkdownLinks(markdown).anchors]).toEqual(expected);
 });
