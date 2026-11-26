@@ -132,15 +132,11 @@ const startAnswerFixture = async (onTestFinished: SuiteCleanup) => {
 
   const execFake = createExecFake<'hc' | 'ps'>({
     keyOf: (command) => {
-      if (command === 'hc') {
-        return 'hc';
+      if (command !== 'hc' && command !== 'ps') {
+        return undefined;
       }
 
-      if (command === 'ps') {
-        return 'ps';
-      }
-
-      return undefined;
+      return command;
     },
     handlerFor: (key) => {
       if (key === 'ps') {
@@ -427,14 +423,12 @@ it('queues an answer before the inbox closes, then withdraws its socket and labe
 
   expect(existsSync(socketPath)).toBe(false);
 
-  expect(calls).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        command: 'hc',
-        commandArguments: ['label', '--json', '--', 't-worker', `${inboxLabelKey}=`],
-      }),
-    ]),
-  );
+  const labelRemoval: unknown = expect.objectContaining({
+    command: 'hc',
+    commandArguments: ['label', '--json', '--', 't-worker', `${inboxLabelKey}=`],
+  });
+
+  expect(calls).toContainEqual(labelRemoval);
 });
 
 it('sets the session directory before the inbox accepts answers', async ({ onTestFinished }) => {
