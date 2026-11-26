@@ -144,20 +144,30 @@ it('reports a clear error when registerTool ignores the replacement', () => {
   }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
 });
 
-it('reports a clear error when reading registerTool throws a TypeError', () => {
+it('reports a read failure with its own message and cause', () => {
+  const failure = new TypeError('the getter failed');
   const api = {} as ExtensionAPI;
 
   Object.defineProperty(api, 'registerTool', {
     configurable: true,
     get: () => {
-      throw new TypeError('the getter failed');
+      throw failure;
     },
     set: () => undefined,
   });
 
-  expect(() => {
+  let thrown: unknown;
+
+  try {
     strictToolRegistration(api);
-  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown).toMatchObject({
+    message: 'Cannot install strict tool parameters: registerTool is not readable on this API.',
+    cause: failure,
+  });
 });
 
 it('binds the registerTool it read once', () => {
@@ -188,7 +198,7 @@ it('binds the registerTool it read once', () => {
   expect(registered).toHaveLength(1);
 });
 
-it('reports a clear error when reading registerTool back throws', () => {
+it('reports a read failure when reading registerTool back throws', () => {
   const api = {} as ExtensionAPI;
   let assigned: unknown;
 
@@ -208,5 +218,5 @@ it('reports a clear error when reading registerTool back throws', () => {
 
   expect(() => {
     strictToolRegistration(api);
-  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+  }).toThrow('Cannot install strict tool parameters: registerTool is not readable on this API.');
 });

@@ -189,6 +189,9 @@ const installedApis = new WeakSet<ExtensionAPI>();
 const notWritableMessage =
   'Cannot install strict tool parameters: registerTool is not writable on this API.';
 
+const notReadableMessage =
+  'Cannot install strict tool parameters: registerTool is not readable on this API.';
+
 const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   const host: RegisterToolHost = pi;
   let current: ExtensionAPI['registerTool'] | undefined;
@@ -198,7 +201,7 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   try {
     current = host.registerTool;
   } catch (error) {
-    throw new Error(notWritableMessage, { cause: error });
+    throw new Error(notReadableMessage, { cause: error });
   }
 
   if (typeof current !== 'function') {
@@ -225,7 +228,7 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   try {
     readBack = descriptor?.get?.call(pi);
   } catch (error) {
-    throw new Error(notWritableMessage, { cause: error });
+    throw new Error(notReadableMessage, { cause: error });
   }
 
   if (installed !== wrapper && readBack !== wrapper) {
