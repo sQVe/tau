@@ -15,7 +15,7 @@ import {
 } from './fixtures/workerExtensionHarness.js';
 
 interface FakeClock {
-  armedWarningTimers: () => number;
+  warningTimersNotCleared: () => number;
 }
 
 vi.mock(import('node:fs/promises'), { spy: true });
@@ -25,8 +25,8 @@ const warningDelay = deadlineWarningDelay(start + 120_000, start);
 const outputIdleMilliseconds = 100;
 
 // Git arms a timer to drain a child's streams when the child exits, and the extension's scan runs
-// git without a test awaiting it, so a count of every timer also counts git's. Count the timer the
-// warning arms, which is the only one this test arms with that delay.
+// git without a test awaiting it, so a count of every timer also counts git's. Count the timers
+// armed with the warning's delay that production has not cleared yet.
 const withFakeTimers = (): FakeClock => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   vi.setSystemTime(start);
@@ -53,7 +53,7 @@ const withFakeTimers = (): FakeClock => {
   });
 
   return {
-    armedWarningTimers: () =>
+    warningTimersNotCleared: () =>
       [...armedTimers.values()].filter((delay) => delay === warningDelay).length,
   };
 };
@@ -148,7 +148,7 @@ it('shows no warning when the worker reports before the warning time', async () 
   // A timer that belongs to git's stream drain, not to the warning: the count must ignore it.
   setTimeout(() => undefined, outputIdleMilliseconds);
 
-  expect(clock.armedWarningTimers()).toBe(0);
+  expect(clock.warningTimersNotCleared()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
 
@@ -188,11 +188,11 @@ it('shows no warning after session_shutdown', async () => {
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
 
-  expect(clock.armedWarningTimers()).toBe(1);
+  expect(clock.warningTimersNotCleared()).toBe(1);
 
   pi.handler('session_shutdown')({}, context);
 
-  expect(clock.armedWarningTimers()).toBe(0);
+  expect(clock.warningTimersNotCleared()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
   await flushAsync();
@@ -213,7 +213,7 @@ it('shows no warning when the assignment already has a report before the start',
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
 
-  expect(clock.armedWarningTimers()).toBe(0);
+  expect(clock.warningTimersNotCleared()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
 
@@ -277,7 +277,7 @@ it('does not warn again when the start message arrives twice', async () => {
   await sendStartMessage(pi, context);
   await sendStartMessage(pi, context);
 
-  expect(clock.armedWarningTimers()).toBe(1);
+  expect(clock.warningTimersNotCleared()).toBe(1);
 
   await vi.advanceTimersByTimeAsync(30_000);
 
