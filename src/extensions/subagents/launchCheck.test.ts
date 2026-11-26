@@ -75,7 +75,7 @@ it('resolves a blank url that applyQaSettings fills', async () => {
   expect(parameters.url).toBe(address);
 });
 
-it('refuses a whitespace-only qa url and passes no url to applyQaSettings', async () => {
+it('normalizes a whitespace-only qa url to no url before applyQaSettings', async () => {
   const root = temporaryDirectory(onTestFinished, 'tau-launch-check-');
 
   expect(await launchRefusalMessage(() => launch(root, 'Test the form.', '   '))).toBe(

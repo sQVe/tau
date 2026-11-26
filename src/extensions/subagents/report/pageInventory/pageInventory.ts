@@ -73,8 +73,8 @@ const readLine = (trimmed: string): InventoryLine => {
     return { kind: 'skip' };
   }
 
-  if (trimmed.startsWith('-')) {
-    const item = /^-\s+(.*)$/u.exec(trimmed);
+  if (trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.startsWith('+')) {
+    const item = /^[-*+]\s+(.*)$/u.exec(trimmed);
 
     return item === null
       ? { kind: 'malformed', problem: { kind: 'element' } }

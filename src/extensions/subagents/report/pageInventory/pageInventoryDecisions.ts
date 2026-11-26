@@ -151,16 +151,25 @@ export const elementLabels = (pages: readonly PageInventoryPage[]): ReadonlySet<
   return new Set(labels);
 };
 
+const isKnownElementLabel = (label: string, knownElements: ReadonlySet<string>): boolean =>
+  knownElements.has(label);
+
+const opensSectionBlock = (text: string): boolean => text.endsWith(':');
+
+const isLaterSectionLabel = (index: number): boolean => index > decisionsIndex;
+
+// A later section label ends findings. An earlier one ends them only when it opens its own block.
+// A label that matches an inventory element is a finding, not a boundary.
 const isSectionItem = (item: Tokens.ListItem, knownElements: ReadonlySet<string>): boolean => {
   const text = firstInlineText(item)?.trim() ?? '';
   const index = sectionIndex(text);
   const label = markdownText(text.split(elementSeparator)[0] ?? '').toLowerCase();
 
-  if (index === -1 || knownElements.has(label)) {
+  if (index === -1 || isKnownElementLabel(label, knownElements)) {
     return false;
   }
 
-  return text.endsWith(':') || index > decisionsIndex;
+  return opensSectionBlock(text) || isLaterSectionLabel(index);
 };
 
 const isSectionLabel = (token: Token, knownElements: ReadonlySet<string>): boolean => {

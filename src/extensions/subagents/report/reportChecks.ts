@@ -70,7 +70,25 @@ const readPageInventory = async (directory: string): Promise<PageInventoryFile> 
       return { path, read: { status: 'tooLarge' } };
     }
 
-    const text = await handle.readFile('utf8');
+    const buffer = Buffer.alloc(pageInventoryLimitBytes + 1);
+    let total = 0;
+
+    while (total < buffer.length) {
+      // oxlint-disable-next-line no-await-in-loop -- One bounded read depends on the bytes read before.
+      const { bytesRead } = await handle.read(buffer, total, buffer.length - total, total);
+
+      if (bytesRead === 0) {
+        break;
+      }
+
+      total += bytesRead;
+    }
+
+    if (total > pageInventoryLimitBytes) {
+      return { path, read: { status: 'tooLarge' } };
+    }
+
+    const text = buffer.subarray(0, total).toString('utf8');
 
     return { path, read: parsePageInventory(text) };
   } catch (error) {

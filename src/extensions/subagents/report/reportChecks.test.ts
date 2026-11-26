@@ -25,6 +25,8 @@ const inventorySwap = vi.hoisted(() => ({
   original: undefined as string | undefined,
 }));
 
+const inventoryGrow = vi.hoisted(() => ({ path: undefined as string | undefined }));
+
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
 
@@ -38,7 +40,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
       if (typeof target === 'string' && failure.path === target && error !== undefined) {
         return {
           stat: async () => ({ isFile: () => true, size: 0 }),
-          readFile: async () => {
+          read: async () => {
             throw error;
           },
           close: async () => undefined,
@@ -46,6 +48,23 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
       }
 
       const handle = await actual.open(...parameters);
+
+      if (typeof target === 'string' && inventoryGrow.path === target) {
+        const originalStat = handle.stat.bind(handle);
+
+        Object.defineProperty(handle, 'stat', {
+          value: async () => {
+            const file = await originalStat();
+
+            inventoryGrow.path = undefined;
+            await actual.appendFile(target, 'x'.repeat(1_048_577));
+
+            return file;
+          },
+        });
+
+        return handle;
+      }
 
       if (
         typeof target !== 'string' ||
@@ -305,6 +324,29 @@ it('reads the inventory through the handle it checked', async () => {
   ).toEqual({ status: 'accept', fullCheck: null });
 
   expect((await stat(inventoryPath)).isDirectory()).toBe(true);
+});
+
+it('refuses an inventory that grows after the stat', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const inventoryPath = join(root, 'page-inventory.md');
+
+  await writeFile(join(root, '.gitignore'), '.tau/\n');
+  await writeFile(inventoryPath, fixture('account-settings-inventory.md'));
+
+  inventoryGrow.path = inventoryPath;
+
+  onTestFinished(() => {
+    inventoryGrow.path = undefined;
+  });
+
+  expect(
+    await checkReport(
+      qaFacts(root, {
+        summary: fixture('account-settings-summary.md'),
+        evidence: [inventoryPath],
+      }),
+    ),
+  ).toEqual({ status: 'refuse', message: inventoryTooLargeMessage(inventoryPath) });
 });
 
 it('refuses a symlink-loop inventory as unreadable', async () => {

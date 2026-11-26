@@ -10,6 +10,7 @@ import {
   unresolvedMessage,
 } from './fixtures/pageInventoryTestHelpers.js';
 import { decidePageInventoryGate } from './pageInventoryDecision.js';
+import { unresolvedElementMessage } from './pageInventoryRefusal.js';
 
 it.each([
   {
@@ -34,8 +35,11 @@ it.each([
     },
     expected: {
       status: 'refuse',
-      message:
-        'Report refused: page-inventory.md marks Your inbox card as unsure, but the summary\'s Decisions section has no finding whose label before the first ": " is "Your inbox card". Write the finding as "- Your inbox card: <finding>".',
+      message: unresolvedElementMessage({
+        element: 'Your inbox card',
+        expectedState: 'visible',
+        verdict: 'unsure',
+      }),
     },
   },
   {
@@ -144,8 +148,11 @@ it.each([
     },
     expected: {
       status: 'refuse',
-      message:
-        'Report refused: page-inventory.md marks Save as contradicts, but the summary\'s Decisions section has no finding whose label before the first ": " is "Save". Write the finding as "- Save: <finding>".',
+      message: unresolvedElementMessage({
+        element: 'Save',
+        expectedState: 'visible',
+        verdict: 'contradicts',
+      }),
     },
   },
   {

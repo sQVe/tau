@@ -185,8 +185,8 @@ const childrenOf = (token: Token): readonly Token[] => {
   return 'tokens' in token ? token.tokens : [];
 };
 
-// Visits every token except code and html. Return false to skip the token's children.
-// The optional after visit runs after the token's children.
+// Visits every token except code and html. Return false to skip the token's children and its
+// optional after visit.
 export const walkMarkdownTokens = (
   tokens: readonly Token[],
   visit: (token: Token) => boolean | undefined,

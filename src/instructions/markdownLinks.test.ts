@@ -55,6 +55,32 @@ it('skips children when the visit returns false', () => {
   expect(types).toEqual(['blockquote']);
 });
 
+it('skips after when the visit returns false', () => {
+  const events: string[] = [];
+
+  walkMarkdownTokens(
+    Lexer.lex('> item\n\nparagraph'),
+    (token) => {
+      events.push(`visit:${token.type}`);
+
+      return token.type === 'blockquote' ? false : undefined;
+    },
+    (token) => {
+      events.push(`after:${token.type}`);
+    },
+  );
+
+  expect(events).toEqual([
+    'visit:blockquote',
+    'visit:space',
+    'after:space',
+    'visit:paragraph',
+    'visit:text',
+    'after:text',
+    'after:paragraph',
+  ]);
+});
+
 it('skips code and html tokens', () => {
   const types: string[] = [];
 

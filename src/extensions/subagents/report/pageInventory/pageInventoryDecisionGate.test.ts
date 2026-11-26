@@ -13,6 +13,8 @@ import {
   elementBeforePageMessage,
   inventoryEmptyMessage,
   inventoryMissingMessage,
+  inventoryNotRegularMessage,
+  inventoryTooLargeMessage,
   inventoryUncitedMessage,
   inventoryUnreadableMessage,
   malformedElementMessage,
@@ -65,6 +67,28 @@ it.each([
       evidence: [],
     },
     expected: { status: 'refuse', message: inventoryUnreadableMessage(inventoryPath) },
+  },
+  {
+    name: 'refuses a non-regular inventory',
+    facts: {
+      profile: 'qa',
+      appUrl: true,
+      read: { status: 'notRegular' as const },
+      summary: summaryWith('None', true),
+      evidence: [],
+    },
+    expected: { status: 'refuse', message: inventoryNotRegularMessage(inventoryPath) },
+  },
+  {
+    name: 'refuses an oversized inventory',
+    facts: {
+      profile: 'qa',
+      appUrl: true,
+      read: { status: 'tooLarge' as const },
+      summary: summaryWith('None', true),
+      evidence: [],
+    },
+    expected: { status: 'refuse', message: inventoryTooLargeMessage(inventoryPath) },
   },
   {
     name: 'refuses an inventory the report does not cite',

@@ -134,6 +134,16 @@ it.each([
     text: ['https://app.test/teams', '-Account status: visible: broken'].join('\n'),
     expected: { status: 'malformed', line: 2, problem: { kind: 'element' } },
   },
+  {
+    name: 'reports a star bullet without a space as an element attempt',
+    text: ['https://app.test/teams', '*Account status: visible: broken'].join('\n'),
+    expected: { status: 'malformed', line: 2, problem: { kind: 'element' } },
+  },
+  {
+    name: 'reports a plus bullet without a space as an element attempt',
+    text: ['https://app.test/teams', '+Account status: visible: broken'].join('\n'),
+    expected: { status: 'malformed', line: 2, problem: { kind: 'element' } },
+  },
 ])('$name', ({ text, expected }) => {
   expect(parsePageInventory(text)).toEqual(expected);
 });
