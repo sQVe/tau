@@ -102,22 +102,14 @@ it('reports a type error from list as compile-error with the compiler message', 
 
   expectOutcome(result, { kind: 'compile-error' });
   expect(message).toContain('error[E0308]');
-});
 
-it('names the build error in the message of an outcome assertion', async ({ onTestFinished }) => {
-  const crate = await createCrate(onTestFinished, 'assertion-message', {
-    'Cargo.toml': cargoPackage('probe_assertion_message'),
-    'src/lib.rs': 'pub fn broken() -> i32 { "not an int" }\n',
-  });
-
-  const result = await run(focusedInput(crate, ['tests::adds']));
-
-  const expectMismatchedOutcome = () => {
+  expect(() => {
     expectOutcome(result, { kind: 'no-tests-collected' });
-  };
+  }).toThrow('cargo nextest list');
 
-  expect(expectMismatchedOutcome).toThrow('cargo nextest list');
-  expect(expectMismatchedOutcome).toThrow('error[E0308]');
+  expect(() => {
+    expectOutcome(result, { kind: 'no-tests-collected' });
+  }).toThrow('error[E0308]');
 });
 
 it('reports the Cargo error and keeps an out-of-date Cargo.lock when cargoLocked is set', async ({
