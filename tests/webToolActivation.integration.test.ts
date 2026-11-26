@@ -1,47 +1,38 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
-import { expect, it } from 'vitest';
+import { beforeAll, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
 
 import { bundledProfileDirectory, parseProfile } from '../src/extensions/subagents/profiles.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
 import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
+import { createWebAccessExtension } from './webAccessExtensionHarness.js';
 
 const webToolNames = ['fetch_content', 'get_search_content', 'web_search'];
 
 const registerSuiteCleanup = suiteCleanup();
-const fixtureDirectory = temporaryDirectory(registerSuiteCleanup, 'tau-web-config-');
-const configDirectory = join(fixtureDirectory, 'config');
-const webAccessExtension = join(fixtureDirectory, 'webAccess.mjs');
 
-// pi-web-access keeps the config path from its first load, and another file in this worker may
-// load it first. A distinct URL gives this file its own instance, which reads this config.
-const webAccessUrl = pathToFileURL(
-  resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
-);
+let extensionPaths: string[];
 
-webAccessUrl.search = `?instance=${encodeURIComponent(fixtureDirectory)}`;
+beforeAll(() => {
+  const fixtureDirectory = temporaryDirectory(registerSuiteCleanup, 'tau-web-config-');
+  const configDirectory = join(fixtureDirectory, 'config');
 
-mkdirSync(configDirectory, { recursive: true });
-isolateWebAccessConfig(configDirectory, registerSuiteCleanup);
+  mkdirSync(configDirectory, { recursive: true });
+  isolateWebAccessConfig(configDirectory, registerSuiteCleanup);
 
-// Without the setting, pi-web-access activates the web tools eagerly for a model that cannot add
-// tools mid-conversation, which skips the web_enable flow these tests cover.
-writeFileSync(
-  join(configDirectory, 'web-search.json'),
-  JSON.stringify({ toolActivation: 'dynamic' }),
-);
+  // Without the setting, pi-web-access activates the web tools eagerly for a model that cannot add
+  // tools mid-conversation, which skips the web_enable flow these tests cover.
+  writeFileSync(
+    join(configDirectory, 'web-search.json'),
+    JSON.stringify({ toolActivation: 'dynamic' }),
+  );
 
-writeFileSync(
-  webAccessExtension,
-  `export { default } from ${JSON.stringify(webAccessUrl.href)};\n`,
-);
-
-const extensionPaths = [webAccessExtension];
+  extensionPaths = [createWebAccessExtension(fixtureDirectory)];
+});
 
 const createDirectory = (registerCleanup: TestContext['onTestFinished']) =>
   temporaryDirectory(registerCleanup, 'tau-web-activation-');
