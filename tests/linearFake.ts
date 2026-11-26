@@ -91,12 +91,11 @@ const attachmentSelections = (query: string): AttachmentFields[] =>
 // A query the fake does not model fails loudly instead of reporting the wrong fields. A query that
 // selects no attachments keeps the node's attachments without the field.
 const attachmentSelection = (query: string, index: number): AttachmentFields => {
-  const selections = attachmentSelections(query);
-
-  if (selections.length === 0) {
+  if (!query.includes('attachments(')) {
     return { metadata: false };
   }
 
+  const selections = attachmentSelections(query);
   const selection = selections[index];
 
   if (selection === undefined) {

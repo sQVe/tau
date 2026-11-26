@@ -41,10 +41,13 @@ export interface StartPick {
 
 // Linear attaches a pull request that only mentions the issue too, and that one did not land the
 // issue's work.
+const isClosing = (request: PickPullRequest, state: 'MERGED' | 'OPEN'): boolean =>
+  request.closes && request.state === state;
+
 const hasClosingPullRequest = (
   requests: readonly PickPullRequest[],
   state: 'MERGED' | 'OPEN',
-): boolean => requests.some((request) => request.closes && request.state === state);
+): boolean => requests.some((request) => isClosing(request, state));
 
 export const hasClosingMergedPullRequest = (requests: readonly PickPullRequest[]): boolean =>
   hasClosingPullRequest(requests, 'MERGED');
@@ -103,7 +106,7 @@ export const decidePick = (facts: {
       .filter((blocker) => blockerState(blocker) === 'open')
       .flatMap((blocker) =>
         blocker.pullRequests
-          .filter((request) => request.closes && request.state === 'OPEN')
+          .filter((request) => isClosing(request, 'OPEN'))
           .map((request) => request.url),
       ) ?? [];
 

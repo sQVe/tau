@@ -203,7 +203,7 @@ it('reads the remote default branch when origin/HEAD is stale', async () => {
   });
 });
 
-it.each(['pullRequests', 'mentions'])(
+it.each(['pullRequests', 'mentions'] as const)(
   'returns the open blocker URL and the slice links from %s',
   async (field) => {
     const { root, fake, read } = await setUp();

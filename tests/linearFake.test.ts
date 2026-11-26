@@ -16,6 +16,9 @@ const createWithoutTitle =
 const issuesWithoutPageInfo =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
 
+const attachmentsBeforePageInfo =
+  'query($id: String!) { issue(id: $id) { attachments(first: 100) { nodes { url } pageInfo { hasNextPage } } } }';
+
 const refusedCalls: [string, string, string[]][] = [
   ['another executable', 'not-linear', ['api', 'query { team(id: "ME") { id } }']],
   ['an unknown query', 'linear', ['api', 'query { definitelyNotALinearField }']],
@@ -132,6 +135,22 @@ test('refuses an update input field of the wrong type and leaves the issue uncha
   expect(issue.title).toBe('Keep');
   expect(issue.description).toBe('Body');
   expect(issue.sortOrder).toBe(3);
+});
+
+test('refuses an attachment selection whose shape it does not model', async () => {
+  const fake = createLinearFake();
+  fake.addIssue({ title: 'Ticket', pullRequests: ['https://github.com/me/repo/pull/1'] });
+
+  const result = await fake.exec('linear', [
+    'api',
+    attachmentsBeforePageInfo,
+    '--variable',
+    'id=ME-1',
+  ]);
+
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain('attachment selections');
+  expect(fake.writes()).toEqual([]);
 });
 
 test('an override or failure does not rescue an unsupported call', async () => {
