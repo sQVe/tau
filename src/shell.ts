@@ -32,7 +32,9 @@ export interface ShellCommand {
 
 type Redirection =
   | { kind: 'heredoc'; stripsTabs: boolean }
-  | { kind: 'input' | 'inputOutput' | 'duplicate' | 'hereString' | 'output' };
+  | {
+      kind: 'input' | 'inputOutput' | 'duplicate' | 'hereString' | 'output' | 'outputDuplicate';
+    };
 
 interface PendingHeredoc {
   command: ShellCommand;
@@ -148,13 +150,25 @@ const decodeAnsiCText = (body: string): string => {
   return decoded.split('\u0000', 1)[0] ?? '';
 };
 
-const inputKind = (kind: Redirection['kind']): ShellInputKind | undefined => {
+// `0>&N` feeds standard input from descriptor N, while every other `>&` form is output.
+const isStdinDescriptor = (descriptor: string | undefined): boolean =>
+  descriptor !== undefined && Number(descriptor) === 0;
+
+const inputKind = (
+  kind: Redirection['kind'],
+  descriptor: string | undefined,
+  word: string,
+): ShellInputKind | undefined => {
   if (kind === 'input' || kind === 'inputOutput') {
     return 'file';
   }
 
   if (kind === 'duplicate' || kind === 'hereString') {
     return kind;
+  }
+
+  if (kind === 'outputDuplicate' && isStdinDescriptor(descriptor) && /^\d+$/u.test(word)) {
+    return 'duplicate';
   }
 
   return undefined;
@@ -171,7 +185,7 @@ const recordWord = (state: ListState, word: string) => {
     return;
   }
 
-  const kind = inputKind(redirection.kind);
+  const kind = inputKind(redirection.kind, state.redirectionDescriptor, word);
 
   if (kind !== undefined) {
     state.command.inputs.push({ descriptor: state.redirectionDescriptor, kind, target: word });
@@ -615,6 +629,12 @@ class ShellParser {
       this.position += '<&'.length;
 
       return { kind: 'duplicate' };
+    }
+
+    if (rest.startsWith('>&')) {
+      this.position += '>&'.length;
+
+      return { kind: 'outputDuplicate' };
     }
 
     const doubled = /^[<>][<>&|]/.test(rest);

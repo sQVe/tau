@@ -103,6 +103,17 @@ describe('parseShellCommands', () => {
     ],
     ['sh >&1<script.sh', [[{ descriptor: undefined, kind: 'file', target: 'script.sh' }]]],
     [
+      'sh 3< commit.sh 0>&3',
+      [
+        [
+          { descriptor: '3', kind: 'file', target: 'commit.sh' },
+          { descriptor: '0', kind: 'duplicate', target: '3' },
+        ],
+      ],
+    ],
+    ['sh 3< commit.sh 2>&3', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
+    ['sh 3< commit.sh >&2', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
+    [
       'sh <&3<&4',
       [
         [
@@ -303,6 +314,32 @@ describe('parseShellCommands', () => {
     expect(parseShellCommands('cat <<EOF\n\tEOF\nEOF\nnext')?.[0]?.heredocs).toEqual([
       { body: '\tEOF\n', scope: '0' },
     ]);
+  });
+
+  it.each([
+    ['(a)', [['a', 1]]],
+    ['((a))', [['a', 2]]],
+    [
+      '(a) (b)',
+      [
+        ['a', 1],
+        ['b', 1],
+      ],
+    ],
+    [
+      '(a; b) c',
+      [
+        ['a', 1],
+        ['b', 1],
+        ['c', 0],
+      ],
+    ],
+  ])('records the parenthesis depth: %s', (source, expected) => {
+    const depths = parseShellCommands(source)
+      ?.filter(({ words }) => words.length > 0)
+      .map(({ words, depth }) => [words[0], depth]);
+
+    expect(depths).toEqual(expected);
   });
 
   it('records the scope of each expanding heredoc body on its owner', () => {

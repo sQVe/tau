@@ -875,6 +875,25 @@ describe('guardToolCall', () => {
     });
   });
 
+  it('blocks a script file fed through a duplicated stdin descriptor', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('sh 3< commit.sh 0>&3'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a script file fed to a non-stdin descriptor', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('sh 3< commit.sh 2>&3'), directory)).toBeUndefined();
+  });
+
   it('blocks a script file named after a redirection target digit', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -939,6 +958,89 @@ describe('guardToolCall', () => {
     },
   );
 
+  it.each([
+    ['env -S', "env -S 'git commit -m x'"],
+    ['env -S with a script', "env -S 'sh commit.sh'"],
+    ['env --split-string=', "env --split-string='git commit -m x'"],
+  ])('blocks inline code after %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(command), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a split string that does not create a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent("env -S 'git status'"), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['#!/usr/bin/env -u FOO sh', '#!/usr/bin/env -u FOO sh'],
+    ['#!/usr/bin/env --chdir=/ sh', '#!/usr/bin/env --chdir=/ sh'],
+  ])('blocks a commit in a file with an env option: %s', (_label, shebang) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
+
+    expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a commit in a file whose env option names another program', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', '#!/usr/bin/env -u FOO node\ngit commit -m x\n');
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['xargs -e', 'xargs -e sh commit.sh'],
+    ['xargs -i', 'xargs -i sh commit.sh'],
+    ['xargs -l', 'xargs -l sh commit.sh'],
+    ['xargs -I', 'xargs -I {} sh commit.sh'],
+  ])('blocks a script file after %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(command), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it.each([
+    ['bash -c --', "bash -c -- 'git commit -m x'", undefined],
+    ['bash -c -x', "bash -c -x 'git commit -m x'", undefined],
+    ['bash -c -- with a script', 'bash -c -- ./commit.sh', 'commit.sh'],
+    ['bash -c -x with a script', 'bash -c -x ./commit.sh', 'commit.sh'],
+  ])('blocks inline code after %s', (_label, command, fixture) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    if (fixture !== undefined) {
+      writeScript(directory, fixture, 'git commit -m x\n');
+    }
+
+    expect(guard(makeBashEvent(command), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows inline code after bash -c that does not create a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent("bash -c 'git status'"), directory)).toBeUndefined();
+  });
+
   it('allows a commit in a file whose env shebang names another program', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -955,10 +1057,33 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
   });
 
-  it('blocks a large directly executed file whose shebang is a shell', () => {
+  it('uses a leading PATH assignment for the probe', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(`PATH=${pathDirectory} sh tool.sh`), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a bare name a leading PATH assignment does not resolve', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+    const processDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(processDirectory, 'tool.sh', 'git commit -m x\n');
+    withExactPath(processDirectory);
+
+    expect(guard(makeBashEvent(`PATH=${pathDirectory} sh tool.sh`), directory)).toBeUndefined();
+  });
+
+  it('blocks a large directly executed file with no shebang', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    writeScript(directory, 'big.sh', `#!/bin/sh\n${'x'.repeat(1024 * 1024)}`);
+    writeScript(directory, 'big.sh', `git commit -m x\n${'x'.repeat(1024 * 1024)}`);
 
     expect(guard(makeBashEvent('./big.sh'), directory)).toEqual({
       block: true,

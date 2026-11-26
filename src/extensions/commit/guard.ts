@@ -28,6 +28,8 @@ interface NamedScript {
   checksShebang: boolean;
   // Resolves the name and the scripts it names, as the shell's working directory does.
   cwd: string;
+  // The entries a bare name is looked up in.
+  pathDirectories: string[];
 }
 
 type ShellMode =
@@ -229,12 +231,9 @@ const wrapperOptionValues = new Map<string, ReadonlySet<string>>([
       '-d',
       '--delimiter',
       '-E',
-      '-e',
       '-I',
-      '-i',
       '-J',
       '-L',
-      '-l',
       '-n',
       '--max-args',
       '-P',
@@ -258,6 +257,7 @@ const wrapperPositionalSkips = new Map<string, PositionalSkip>([
 
 // A wrapper option whose value the wrapper runs as a shell command.
 const wrapperCommandOptions = new Map<string, ReadonlySet<string>>([
+  ['env', new Set(['-S', '--split-string'])],
   ['flock', new Set(['-c', '--command'])],
 ]);
 
@@ -284,8 +284,17 @@ const nativeMagics = [
   'MZ',
 ];
 
-// `env` accepts assignments and `-S`, whose value it splits into words, before the program.
+// A long option matches exactly or with `=value`. A short option also matches with its value
+// attached, as getopt reads `-command` as `-c` with the value `ommand`.
+const matchesOption = (word: string, option: string) =>
+  option.startsWith('--')
+    ? word === option || word.startsWith(`${option}=`)
+    : word.startsWith(option);
+
+// `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
+// before the program.
 const envTarget = (words: string[]): string | undefined => {
+  const valueOptions = wrapperOptionValues.get('env') ?? new Set<string>();
   const expanded: string[] = [];
 
   for (let index = 0; index < words.length; index += 1) {
@@ -294,9 +303,21 @@ const envTarget = (words: string[]): string | undefined => {
     if (word === '-S' || word === '--split-string') {
       expanded.push(...(words[index + 1] ?? '').split(/\s+/u));
       index += 1;
-    } else {
-      expanded.push(word);
+
+      continue;
     }
+
+    const option = [...valueOptions].find((candidate) => matchesOption(word, candidate));
+
+    if (option !== undefined) {
+      if (word === option) {
+        index += 1;
+      }
+
+      continue;
+    }
+
+    expanded.push(word);
   }
 
   return expanded.find(
@@ -387,9 +408,7 @@ const readScriptHeader = (path: string): string => {
 };
 
 const hasNativeHeader = (head: string) =>
-  !head.startsWith('#!') &&
-  head.includes('\u0000') &&
-  nativeMagics.some((magic) => head.startsWith(magic));
+  head.includes('\u0000') && nativeMagics.some((magic) => head.startsWith(magic));
 
 const namedFileFacts = (path: string, failClosed: boolean): NamedFileFacts => {
   try {
@@ -415,12 +434,38 @@ const namedFileFacts = (path: string, failClosed: boolean): NamedFileFacts => {
   }
 };
 
+// A shell takes its code from the first operand after its options, so `-c --` and `-c -x` still
+// name the code word.
+const codeOperand = (words: string[], start: number): string | undefined => {
+  let index = start;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+
+    if (optionValueNames.has(word)) {
+      index += 2;
+
+      continue;
+    }
+
+    if (word === '--' || isOptionWord(word)) {
+      index += 1;
+
+      continue;
+    }
+
+    return word;
+  }
+
+  return undefined;
+};
+
 const shellMode = (words: string[]): ShellMode => {
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? '';
 
     if (inlineCodePattern.test(word)) {
-      return { kind: 'inline', code: words[index + 1] };
+      return { kind: 'inline', code: codeOperand(words, index + 1) };
     }
 
     if (stdinOptionPattern.test(word)) {
@@ -465,13 +510,6 @@ const effectiveInput = (inputs: ShellInput[]): ShellInput | undefined => {
 };
 
 const isInterpreter = (word: string) => shellInterpreters.has(commandName(word));
-
-// A long option matches exactly or with `=value`. A short option also matches with its value
-// attached, as getopt reads `-command` as `-c` with the value `ommand`.
-const matchesOption = (word: string, option: string) =>
-  option.startsWith('--')
-    ? word === option || word.startsWith(`${option}=`)
-    : word.startsWith(option);
 
 const optionValue = (
   words: string[],
@@ -694,17 +732,51 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
   }
 };
 
-const namedScriptsOf = (command: ShellCommand, directory: string): NamedScript[] => {
+// A leading `PATH=` assignment replaces the entries a bare name is looked up in for that command.
+const commandPathDirectories = (
+  command: ShellCommand,
+  directory: string,
+  state: GuardState,
+): string[] => {
+  for (const word of command.arguments) {
+    const equalsIndex = word.indexOf('=');
+
+    if (equalsIndex === -1 || !assignmentPattern.test(word)) {
+      break;
+    }
+
+    if (word.slice(0, equalsIndex) !== 'PATH') {
+      continue;
+    }
+
+    return word
+      .slice(equalsIndex + 1)
+      .split(delimiter)
+      .filter((entry) => entry !== '')
+      .map((entry) => resolve(directory, entry));
+  }
+
+  return state.pathDirectories;
+};
+
+const namedScriptsOf = (
+  command: ShellCommand,
+  directory: string,
+  state: GuardState,
+): NamedScript[] => {
+  const pathDirectories = commandPathDirectories(command, directory, state);
+
   const scripts = interpreterSources(command).files.map((name) => ({
     name,
     checksShebang: false,
     cwd: directory,
+    pathDirectories,
   }));
 
   const directName = directScriptName(command);
 
   if (directName !== undefined) {
-    scripts.push({ name: directName, checksShebang: true, cwd: directory });
+    scripts.push({ name: directName, checksShebang: true, cwd: directory, pathDirectories });
   }
 
   return scripts;
@@ -742,14 +814,14 @@ const scriptFacts = (
 };
 
 // A shell looks up a bare interpreter operand through PATH when the local file is missing.
-const candidatePaths = ({ name, checksShebang, cwd }: NamedScript, state: GuardState): string[] => {
+const candidatePaths = ({ name, checksShebang, cwd, pathDirectories }: NamedScript): string[] => {
   const local = resolve(cwd, name);
 
   if (checksShebang || name.includes('/')) {
     return [local];
   }
 
-  return [local, ...state.pathDirectories.map((directory) => resolve(directory, name))];
+  return [local, ...pathDirectories.map((directory) => resolve(directory, name))];
 };
 
 const inspectNamedScript = (
@@ -757,7 +829,7 @@ const inspectNamedScript = (
   state: GuardState,
   inspect: (text: string) => boolean,
 ): boolean => {
-  for (const [index, path] of candidatePaths(script, state).entries()) {
+  for (const [index, path] of candidatePaths(script).entries()) {
     const facts = scriptFacts(path, state, index === 0);
 
     if (facts === undefined) {
@@ -899,7 +971,7 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
   for (const command of commands) {
     const stack = directoryStack(stacks, command.scope, cwd, bases);
     const directory = directoryFor(stack, command.depth);
-    const scripts = namedScriptsOf(command, directory);
+    const scripts = namedScriptsOf(command, directory, state);
 
     recordHeredocBases(command, directory, bases);
 
