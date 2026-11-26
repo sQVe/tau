@@ -398,7 +398,7 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
       const assignsFunction =
         node.right.type === 'ArrowFunctionExpression' || node.right.type === 'FunctionExpression';
 
-      // Replacing a property on a value the module did not create changes the caller's behavior.
+      // Assigning a function to a property mutates the object, so the rule counts it as an effect.
       if (assignsFunction && node.left.type === 'MemberExpression') {
         at(node.start, 'assigns a function to a property');
       }
@@ -542,7 +542,7 @@ const purityProblems = (
       return findings;
     }
 
-    const suppressed = findings.findIndex((finding) => finding.endsWith(exception));
+    const suppressed = findings.findIndex((finding) => finding.endsWith(`: ${exception}`));
 
     if (suppressed === -1) {
       return [...findings, `${path}: unused exception ${exception}`];
@@ -567,6 +567,11 @@ it('keeps registered pure modules free of reads and effects', () => {
 });
 
 const readImportSource = (): string => "import { readFile } from 'node:fs/promises';\n";
+
+const readImportAndDateSource = (): string =>
+  "import { readFile } from 'node:fs/promises';\nconst now = Date();\n";
+
+const functionPropertySource = (): string => 'const spec = {};\nspec.run = () => 1;\n';
 
 it('applies each pure module exception to one finding and reports a stale exception', () => {
   const modules = ['src/pure/decide.ts'];
@@ -603,6 +608,36 @@ it('applies each pure module exception to one finding and reports a stale except
   ).toEqual([
     'src/pure/decide.ts:1: runtime import of node:fs/promises',
     'src/pure/other.ts: exception for an unregistered module',
+  ]);
+});
+
+it('keeps a second finding when an exception matches the first', () => {
+  expect(
+    purityProblems(
+      ['src/pure/decide.ts'],
+      { 'src/pure/decide.ts': 'runtime import of node:fs/promises' },
+      readImportAndDateSource,
+    ),
+  ).toEqual(['src/pure/decide.ts:2: Date()']);
+});
+
+it('does not let an empty or partial exception reason suppress a finding', () => {
+  const modules = ['src/pure/decide.ts'];
+
+  expect(purityProblems(modules, { 'src/pure/decide.ts': '' }, readImportSource)).toEqual([
+    'src/pure/decide.ts:1: runtime import of node:fs/promises',
+    'src/pure/decide.ts: unused exception ',
+  ]);
+
+  expect(
+    purityProblems(
+      modules,
+      { 'src/pure/decide.ts': 'a function to a property' },
+      functionPropertySource,
+    ),
+  ).toEqual([
+    'src/pure/decide.ts:2: assigns a function to a property',
+    'src/pure/decide.ts: unused exception a function to a property',
   ]);
 });
 

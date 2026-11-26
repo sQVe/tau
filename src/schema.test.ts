@@ -172,38 +172,41 @@ it('lists every subschema keyword in the production sets', () => {
 const isClosed = (value: unknown): boolean =>
   isRecord(value) && value['additionalProperties'] === false;
 
+const childSchema = (): Record<string, unknown> => ({
+  type: 'object',
+  properties: { value: { type: 'string' } },
+});
+
 it('closes an object schema under every subschema keyword in the sets', () => {
-  const child = { type: 'object', properties: { value: { type: 'string' } } };
   const schema: Record<string, unknown> = { type: 'object' };
 
   for (const keyword of schemaMapKeywords) {
-    schema[keyword] = { child };
+    schema[keyword] = { child: childSchema() };
   }
 
   for (const keyword of schemaArrayKeywords) {
-    schema[keyword] = [child];
+    schema[keyword] = [childSchema()];
   }
 
   for (const keyword of schemaValueKeywords) {
-    schema[keyword] = child;
+    schema[keyword] = childSchema();
   }
 
   const strict: unknown = strictToolParameters(Type.Unsafe<unknown>(schema));
   const unclosed: string[] = [];
 
   for (const keyword of schemaMapKeywords) {
-    const entries = isRecord(strict) && isRecord(strict[keyword]) ? strict[keyword] : undefined;
+    const entries = isRecord(strict) ? strict[keyword] : undefined;
 
-    if (entries === undefined || !isClosed(entries['child'])) {
+    if (!isRecord(entries) || !isClosed(entries['child'])) {
       unclosed.push(keyword);
     }
   }
 
   for (const keyword of schemaArrayKeywords) {
-    const entries =
-      isRecord(strict) && Array.isArray(strict[keyword]) ? strict[keyword] : undefined;
+    const entries = isRecord(strict) ? strict[keyword] : undefined;
 
-    if (entries === undefined || !entries.every((entry) => isClosed(entry))) {
+    if (!Array.isArray(entries) || !entries.every((entry) => isClosed(entry))) {
       unclosed.push(keyword);
     }
   }
