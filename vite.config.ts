@@ -223,6 +223,8 @@ export default defineConfig({
               assertFunctionNames: [
                 'expect',
                 'expectCleanSuite',
+                'expectOutcome',
+                'expectUnknownNoRed',
                 'runPiWorkerScenario',
                 'hangs',
                 'passes',
