@@ -45,6 +45,10 @@ folder, and replies before the sender reports success.
 - A Pi advertises and serves its inbox only when it is in the foreground process group of its
   `HC_TERMINAL_ID` terminal: hc's `foreground.pid` equals the Pi's process group ID. A Pi started
   from a session's shell tool, which runs detached, starts none, while `pnpm exec pi` works.
+- A start that finds no foreground process, or another one, rechecks on a growing delay for ten
+  seconds and then advertises. hc can report the foreground after Pi's session start, as it does for
+  a session started in a background tab. A Pi still outside the foreground after the last check
+  serves no inbox and shows one notice that names the process hc reports and how to turn it on.
 - One Tau load per process serves the inbox. Each load claims the inbox in its session start and
   releases it at its own session shutdown, even when withdrawal fails. The claim lives with the
   session lifecycle because a session owns the socket and label it protects. A load that Pi discards
@@ -140,6 +144,8 @@ from variables, source the shell parser rejects, and a direct `hc connect` call 
 - A lost event subscription delays a report until it reconnects or until session start.
 - A sender that read the label before shutdown cleared it can still reach the old socket until the
   socket closes.
+- A session that never becomes its terminal's foreground process shows one notice and has no inbox
+  until it restarts.
 
 ## Alternatives considered
 
@@ -167,3 +173,8 @@ purpose, and the accident happens in Tau's own bash calls, where a guard is enou
 
 Rejected because it adds a second source of worker state and a delay, while the event stream already
 reports the label and finish changes Tau needs.
+
+### Wait for the foreground process without a limit
+
+Rejected because a Pi started from another Pi's shell tool never becomes the foreground process, so
+it would check its terminal for the whole session and never tell the user why it has no inbox.

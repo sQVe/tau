@@ -35,6 +35,13 @@ interface HarnessOptions {
 
 const raceWaitMilliseconds = 200;
 const foregroundProcessGroup = 100;
+const ownerWaitMilliseconds = 20_000;
+
+const useFakeTimers = (): void => {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'],
+  });
+};
 
 let root = '';
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -46,6 +53,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
+
   for (const cleanup of cleanups.splice(0).toReversed()) {
     await cleanup();
   }
@@ -852,6 +861,8 @@ it('keeps a replacement label that another process writes between the shutdown r
 });
 
 it("keeps the foreground session's label when a second Pi on its terminal starts and exits", async () => {
+  useFakeTimers();
+
   const state = hcState({ foregroundPid: 100 });
   const parent = startHarness({ state, processGroup: 100 });
   const child = startHarness({ state, processGroup: 200 });
@@ -931,8 +942,10 @@ it('starts no inbox when the session ends while the label is written', async () 
   expect(harness.notices).toEqual([]);
 });
 
-it('starts no inbox when the terminal reports no foreground process', async () => {
-  const harness = startHarness({ state: hcState({ foregroundPid: null }) });
+it('advertises its inbox once the terminal reports this process in the foreground', async () => {
+  useFakeTimers();
+
+  const harness = startHarness({ state: hcState({ foregroundPid: 400 }) });
   const sessionId = randomUUID();
 
   await harness.start(sessionId);
@@ -940,7 +953,73 @@ it('starts no inbox when the terminal reports no foreground process', async () =
 
   expect(Object.fromEntries(harness.state.labels)).toEqual({});
   expect(existsSync(socketOf(sessionId))).toBe(false);
+
+  harness.state.foregroundPid = foregroundProcessGroup;
+  await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
+  vi.useRealTimers();
+
+  await vi.waitFor(() => {
+    expect(Object.fromEntries(harness.state.labels)).toEqual({
+      'tau.inbox': `rpc1:${socketOf(sessionId)}`,
+    });
+  });
+
+  await expect(exchange(socketOf(sessionId), handoverTo(sessionId))).resolves.toMatchObject({
+    kind: 'queued',
+    sessionId,
+  });
+
   expect(harness.notices).toEqual([]);
+});
+
+it.each([
+  { name: 'another process', foregroundPid: 400 },
+  { name: 'no process', foregroundPid: null },
+])(
+  'reports once that it has no inbox when the terminal reports $name in the foreground',
+  async ({ foregroundPid }) => {
+    useFakeTimers();
+
+    const harness = startHarness({ state: hcState({ foregroundPid }) });
+    const sessionId = randomUUID();
+
+    await harness.start(sessionId);
+    cleanups.push(() => harness.shutdown(sessionId));
+
+    await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
+
+    expect(harness.notices).toEqual([expect.stringContaining('Tau inbox is off')]);
+
+    await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
+
+    expect(harness.notices).toEqual([expect.stringContaining('Tau inbox is off')]);
+    expect(Object.fromEntries(harness.state.labels)).toEqual({});
+    expect(existsSync(socketOf(sessionId))).toBe(false);
+  },
+);
+
+it('drops the owner wait of a session start replaced before the terminal reports it', async () => {
+  useFakeTimers();
+
+  const harness = startHarness({ state: hcState({ foregroundPid: 400 }) });
+  const first = randomUUID();
+  const second = randomUUID();
+
+  await harness.start(first);
+  await harness.start(second);
+  cleanups.push(() => harness.shutdown(second));
+
+  harness.state.foregroundPid = foregroundProcessGroup;
+  await vi.advanceTimersByTimeAsync(ownerWaitMilliseconds);
+  vi.useRealTimers();
+
+  await vi.waitFor(() => {
+    expect(Object.fromEntries(harness.state.labels)).toEqual({
+      'tau.inbox': `rpc1:${socketOf(second)}`,
+    });
+  });
+
+  expect(existsSync(socketOf(first))).toBe(false);
 });
 
 it('reports that the inbox could not start when the terminal read fails', async () => {
