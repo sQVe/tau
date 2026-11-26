@@ -319,6 +319,10 @@ const takesShellOptionValue = (word: string): boolean =>
 
 const namesShellScript = (word: string): boolean => /^-[a-zA-Z]*c[a-zA-Z]*$/u.test(word);
 
+// `--` only ends option parsing, so it never names the script. The script word comes after it.
+const afterOptionTerminator = (words: readonly string[], index: number): number =>
+  words[index] === '--' ? index + 1 : index;
+
 // A shell runs a `-c` script only when `-c` is an option. A positional operand names a script file
 // instead, so the scan stops there and after `--`. A flag word can set `c` and take a value at once,
 // as `-co pipefail` does, so the scan remembers `c` until it reaches the script word.
@@ -330,7 +334,10 @@ const shellOptionScript = (words: readonly string[]): string | undefined => {
     const word = words[index] ?? '';
 
     if (word === '--' || !isShellOptionWord(word)) {
-      return namesScript ? word : undefined;
+      const scriptIndex = afterOptionTerminator(words, index);
+      const script = words[scriptIndex];
+
+      return namesScript ? script : undefined;
     }
 
     const consumesValue = takesShellOptionValue(word);
@@ -345,7 +352,9 @@ const shellOptionScript = (words: readonly string[]): string | undefined => {
     }
 
     if (namesScriptHere) {
-      return words[index + 1];
+      const scriptIndex = afterOptionTerminator(words, index + 1);
+
+      return words[scriptIndex];
     }
 
     index += 1;
@@ -484,6 +493,9 @@ const compoundWordAt = (words: readonly string[]): number | undefined => {
 
   return undefined;
 };
+
+const closesCasePattern = (compound: OpenCompound | undefined, word: string): boolean =>
+  compound?.caseState === 'pattern' && compound.closer === word;
 
 // The shell builtins that run the command after them in the current shell. A wrapper such as `env`
 // or `sudo` starts a child process instead, so the `exec` it runs does not change this shell.
@@ -1146,7 +1158,7 @@ class ShellParser {
   ): void {
     const compound = state.compounds.at(-1);
     const isCasePattern = compound?.caseState === 'pattern';
-    const isCaseCloser = isCasePattern && !wordQuoted && compound.closer === word;
+    const isCaseCloser = !wordQuoted && closesCasePattern(compound, word);
 
     if (isCasePattern && !isCaseCloser) {
       return;
@@ -1236,7 +1248,7 @@ class ShellParser {
     }
 
     const top = state.compounds.at(-1);
-    const closesPatternList = top?.caseState === 'pattern' && top.closer === word;
+    const closesPatternList = closesCasePattern(top, word);
 
     if (closesPatternList) {
       this.applyCompound(state, word, state.commandIndex);

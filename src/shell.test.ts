@@ -679,6 +679,12 @@ describe('commandWords and shellScriptOf', () => {
     expect(shellScriptOf(['bash', '-cO', 'pipefail', 'cmd'])).toBe('cmd');
   });
 
+  it('reads the script after an option terminator that never names the script', () => {
+    expect(shellScriptOf(['bash', '-co', 'pipefail', '--', 'cmd'])).toBe('cmd');
+    expect(shellScriptOf(['bash', '-c', '--', 'cmd'])).toBe('cmd');
+    expect(shellScriptOf(['bash', '-c', '--'])).toBeUndefined();
+  });
+
   it('reads the command the external time binary runs', () => {
     expect(commandWords(['/usr/bin/time', '-o', '/tmp/log', 'hc', 'send']).words).toEqual([
       'hc',
