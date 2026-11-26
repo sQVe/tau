@@ -58,16 +58,20 @@ export class MergedListAbortError extends Error {
 const fixturePath = (name: string) =>
   join(import.meta.dirname, '..', 'src', 'improvement', 'fixtures', name);
 
+const sessionRecord = /("type":"session"[^\n]*?"cwd":)"[^"]*"/u;
+
 // A fixture session names the developer's home, so its paths move under the fixture home. The
 // session cwd must name the repository after that rewrite, not before.
 export const rewriteFixtureSession = (
   content: string,
   repository: string,
   fixtureHome: string,
-): string =>
-  content
-    .replaceAll('/home/', `${fixtureHome}/`)
-    .replace(/"cwd":"[^"]*"/u, `"cwd":${JSON.stringify(repository)}`);
+): string => {
+  const rewritten = content.replaceAll('/home/', `${fixtureHome}/`);
+  const cwd = JSON.stringify(repository);
+
+  return rewritten.replace(sessionRecord, (_record, prefix: string) => `${prefix}${cwd}`);
+};
 
 export const eventHash = (repository: string, number: number): string =>
   createHash('sha256').update(`${repository}#${number}`).digest('hex').slice(0, 32);

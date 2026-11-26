@@ -91,18 +91,30 @@ it('rejects a gated merged call aborted with a non-Error reason', async () => {
   await expect(call).rejects.toBeInstanceOf(MergedListAbortError);
 });
 
-it('keeps the session cwd at a repository outside a home path', () => {
-  const repository = '/tmp/tau-repository-abc';
+it.each(['/tmp/tau-repository-abc', '/home/sqve/tmp/tau-repository-abc'])(
+  'keeps the session cwd at the repository %s',
+  (repository) => {
+    expect(rewriteFixtureSession(fixtureSession, repository, fixtureHome)).toBe(
+      expectedSession(repository),
+    );
+  },
+);
 
-  expect(rewriteFixtureSession(fixtureSession, repository, fixtureHome)).toBe(
-    expectedSession(repository),
-  );
-});
+it('moves a tool cwd before the session record and keeps the session cwd at the repository', () => {
+  const content = [
+    '{"type":"message","arguments":{"cwd":"/home/sqve/code/personal/tau/me-1023"}}',
+    '{"type":"session","cwd":"/home/sqve/code/personal/tau/me-1023"}',
+    '',
+  ].join('\n');
 
-it('keeps the session cwd at a repository under a home path', () => {
   const repository = '/home/sqve/tmp/tau-repository-abc';
+  const movedCwd = `${fixtureHome}/sqve/code/personal/tau/me-1023`;
 
-  expect(rewriteFixtureSession(fixtureSession, repository, fixtureHome)).toBe(
-    expectedSession(repository),
+  expect(rewriteFixtureSession(content, repository, fixtureHome)).toBe(
+    [
+      `{"type":"message","arguments":{"cwd":${JSON.stringify(movedCwd)}}}`,
+      `{"type":"session","cwd":${JSON.stringify(repository)}}`,
+      '',
+    ].join('\n'),
   );
 });
