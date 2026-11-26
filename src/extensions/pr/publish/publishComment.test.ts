@@ -5,6 +5,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import {
+  foreignInputOf,
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
   publishedCommands,
@@ -42,7 +43,7 @@ it('publishes a comment file under bots', async () => {
         '--repo',
         'github.com/sQVe/tau',
         '--body-file',
-        expect.stringMatching(/tau-publish-[^/]+\/\d+-0\.md$/u),
+        expect.stringMatching(/tau-publish-[^/\\]+[\\/]\d+-0\.md$/u),
       ],
       contents: Buffer.from('Looks good.\n'),
     },
@@ -213,7 +214,7 @@ it.each(['base', 'head', 'draft'] as const)(
   async (name) => {
     const { fake, run } = await setUp();
     const directory = await prepareRun(run);
-    const foreignInput = { [name]: name === 'draft' ? true : 'main' };
+    const foreignInput = foreignInputOf(name);
 
     await expect(run({ ...commentRequest(directory), ...foreignInput })).rejects.toThrow(
       `dryRun with kind comment cannot take ${name}.`,
@@ -230,7 +231,7 @@ it.each(['base', 'head', 'draft'] as const)('refuses %s for a comment in publish
   await writeRunFile(directory, 'comment.md', 'Looks good.\n');
 
   const dryRun = await run(commentRequest(directory));
-  const foreignInput = { [name]: name === 'draft' ? true : 'main' };
+  const foreignInput = foreignInputOf(name);
 
   await expect(
     run({ ...commentRequest(directory), action: 'publish', token: dryRun.token, ...foreignInput }),

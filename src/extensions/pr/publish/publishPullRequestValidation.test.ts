@@ -103,7 +103,7 @@ it('trims base and head and refuses a whitespace-only value', async () => {
     '--title',
     'Add a feature',
     '--body-file',
-    expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
+    expect.stringMatching(/tau-publish-[^/\\]+[\\/]\d+-body\.md$/u),
     '--draft',
   ]);
 });
@@ -302,7 +302,7 @@ it.each(['base', 'head', 'draft'] as const)('refuses %s together with pr', async
   const { fake, run } = await setUp();
   const directory = await preparePullRequestRun(run);
 
-  const request = { action: 'dryRun', kind: 'pullRequest', repository, directory, pr: 7 } as const;
+  const request = dryRunPullRequestEdit(directory);
   const createInput = { [name]: createInputValues[name] };
 
   await expect(run({ ...request, ...createInput })).rejects.toThrow(
@@ -316,7 +316,7 @@ it('refuses a create input on publish too', async () => {
   const { fake, run } = await setUp();
   const directory = await preparePullRequestRun(run);
 
-  const request = { action: 'dryRun', kind: 'pullRequest', repository, directory, pr: 7 } as const;
+  const request = dryRunPullRequestEdit(directory);
   const dryRun = await run(request);
 
   await expect(

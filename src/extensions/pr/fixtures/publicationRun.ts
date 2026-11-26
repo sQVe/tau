@@ -34,6 +34,16 @@ export const writeRunFile = async (
   return path;
 };
 
+export const foreignInputOf = (
+  name: 'base' | 'head' | 'draft' | 'file',
+): Record<string, boolean | string> => {
+  if (name === 'draft') {
+    return { draft: true };
+  }
+
+  return name === 'file' ? { file: 'comment.md' } : { [name]: 'main' };
+};
+
 export const dryRunPullRequest = (directory: string) =>
   ({
     action: 'dryRun',

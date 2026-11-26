@@ -9,34 +9,9 @@ import {
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 import type { PrInput } from '../tool.js';
-import { fileArgumentFlags, valueFlags } from './publishExecution.js';
-
-const booleanFlags: ReadonlySet<string> = new Set(['--draft']);
+import { commandFlags, flagKind } from './publishExecution.js';
 
 const setUp = () => setUpPublication(onTestFinished);
-
-const flagsOf = (commandArguments: readonly string[]): string[] => {
-  const flags: string[] = [];
-
-  for (let index = 0; index < commandArguments.length; index += 1) {
-    const argument = commandArguments[index] ?? '';
-
-    if (!argument.startsWith('--')) {
-      continue;
-    }
-
-    flags.push(argument);
-
-    if (valueFlags.has(argument) || fileArgumentFlags.has(argument)) {
-      index += 1;
-    }
-  }
-
-  return flags;
-};
-
-const classified = (flag: string): boolean =>
-  valueFlags.has(flag) || fileArgumentFlags.has(flag) || booleanFlags.has(flag);
 
 const publishedFlags = async (
   files: Record<string, string>,
@@ -53,10 +28,20 @@ const publishedFlags = async (
 
   await run({ ...request(directory), action: 'publish', token: dryRun.token });
 
-  return flagsOf(fake.calls[0]?.commandArguments ?? []);
+  return commandFlags(fake.calls[0]?.commandArguments ?? []);
 };
 
-const unclassifiedFlags = (flags: string[]): string[] => flags.filter((flag) => !classified(flag));
+const unclassifiedFlags = (flags: string[]): string[] =>
+  flags.filter((flag) => flagKind(flag) === undefined);
+
+it('reports an unexpected flag right after --title', async () => {
+  const flags = await publishedFlags(
+    { 'body.md': 'Adds it.\n', 'title.md': '--unexpected\n' },
+    (directory) => dryRunPullRequest(directory),
+  );
+
+  expect(unclassifiedFlags(flags)).toEqual(['--unexpected']);
+});
 
 it('classifies every flag of a create command', async () => {
   const flags = await publishedFlags(

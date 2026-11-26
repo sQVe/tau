@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { isAbsolute, join, normalize } from 'node:path';
 
 import { Type } from 'typebox';
@@ -16,6 +16,7 @@ import { describeSchemaProblem } from '../../../schema.js';
 import { climbsOut, existingEntry, rejectLinkedFile } from '../../../tauDirectory.js';
 import {
   bodyFileName,
+  requireValue,
   reviewFileName,
   runDirectoryPath,
   runName,
@@ -103,18 +104,6 @@ const reviewSchema = Type.Object(
 
 const repositoryPath = (repository: Repository) => `${repository.owner}/${repository.name}`;
 
-export const requireValue = <ValueType>(
-  action: string,
-  name: string,
-  value: ValueType | undefined,
-): ValueType => {
-  if (value === undefined) {
-    throw new Error(`${action} needs ${name}.`);
-  }
-
-  return value;
-};
-
 const requireText = (action: string, name: string, value: string | undefined): string => {
   const text = requireValue(action, name, value).trim();
 
@@ -191,14 +180,24 @@ const readPublicationFile = async (directory: string, file: string): Promise<Run
     throw new Error(`No ${file} at ${path}. Write it there first.`);
   }
 
-  if (!entry.isFile()) {
-    throw new Error(`Refusing to read a path that is not a regular file: ${path}`);
+  // A pipe opens without a writer only in non-blocking mode. The type check and the read use one
+  // handle, and O_NOFOLLOW refuses a symlink swapped in after the checks.
+  const flags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
+  const handle = await open(path, flags);
+
+  try {
+    const stats = await handle.stat();
+
+    if (!stats.isFile()) {
+      throw new Error(`Refusing to read a path that is not a regular file: ${path}`);
+    }
+
+    const bytes = await handle.readFile();
+
+    return { file, path, bytes, text: bytes.toString('utf8') };
+  } finally {
+    await handle.close();
   }
-
-  // O_NOFOLLOW keeps a symlink swapped in after the checks from being followed.
-  const bytes = await readFile(path, { flag: constants.O_RDONLY | constants.O_NOFOLLOW });
-
-  return { file, path, bytes, text: bytes.toString('utf8') };
 };
 
 const requireCommentFile = (action: string, file: string | undefined): string => {
@@ -423,6 +422,10 @@ const rejectReviewComments = (review: Static<typeof reviewSchema>) => {
   for (const [index, comment] of (review.comments ?? []).entries()) {
     if (comment.body.trim() === '') {
       throw new Error(`${reviewFileName} comments[${index}] needs a body.`);
+    }
+
+    if (comment.line !== undefined && comment.position !== undefined) {
+      throw new Error(`${reviewFileName} comments[${index}] cannot take both line and position.`);
     }
 
     if (comment.start_line !== undefined && comment.line === undefined) {

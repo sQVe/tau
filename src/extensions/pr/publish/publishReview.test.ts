@@ -1,6 +1,7 @@
 import { expect, it, onTestFinished } from 'vitest';
 
 import {
+  foreignInputOf,
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
   publishedCommands,
@@ -9,6 +10,9 @@ import {
 } from '../fixtures/publicationRun.js';
 
 const setUp = () => setUpPublication(onTestFinished);
+
+const reviewRequest = (directory: string) =>
+  ({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }) as const;
 
 const reviewWrite = (contents: string) => ({
   key: 'api write',
@@ -20,7 +24,7 @@ const reviewWrite = (contents: string) => ({
     'POST',
     'repos/sQVe/tau/pulls/7/reviews',
     '--input',
-    expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
+    expect.stringMatching(/tau-publish-[^/\\]+[\\/]\d+-review\.json$/u),
   ],
   contents: Buffer.from(contents),
 });
@@ -52,7 +56,7 @@ it('posts a submitted review with inline comments in one call', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
   await writeRunFile(directory, 'review.json', submittedReview);
-  const request = { action: 'dryRun', kind: 'review', repository, directory, pr: 7 } as const;
+  const request = reviewRequest(directory);
   const dryRun = await run(request);
 
   const published = await run({ ...request, action: 'publish', token: dryRun.token });
@@ -78,7 +82,7 @@ it('reports review findings per prose field, not over the JSON', async () => {
     )}\n`,
   );
 
-  const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
+  const dryRun = await run(reviewRequest(directory));
 
   expect(dryRun.findings).toEqual([
     expect.objectContaining({
@@ -109,7 +113,7 @@ it('posts a pending review without an event in one call', async () => {
   const directory = await prepareRun(run);
   await writeRunFile(directory, 'review.json', pendingReview);
 
-  const request = { action: 'dryRun', kind: 'review', repository, directory, pr: 7 } as const;
+  const request = reviewRequest(directory);
   const dryRun = await run(request);
 
   await run({ ...request, action: 'publish', token: dryRun.token });
@@ -132,9 +136,9 @@ it('refuses a review comment with neither line nor position and names its index'
 
   await writeRunFile(directory, 'review.json', `${JSON.stringify(review, null, 2)}\n`);
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow('review.json comments[1] needs line or position.');
+  await expect(run(reviewRequest(directory))).rejects.toThrow(
+    'review.json comments[1] needs line or position.',
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -146,9 +150,9 @@ it('refuses a reply comment as an unknown field', async () => {
 
   await writeRunFile(directory, 'review.json', `${JSON.stringify(review, null, 2)}\n`);
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow(/review\.json has a bad field: \/comments\/0\/in_reply_to/u);
+  await expect(run(reviewRequest(directory))).rejects.toThrow(
+    /review\.json has a bad field: \/comments\/0\/in_reply_to/u,
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -161,7 +165,7 @@ it('posts a review comment that carries only position', async () => {
 
   await writeRunFile(directory, 'review.json', contents);
 
-  const request = { action: 'dryRun', kind: 'review', repository, directory, pr: 7 } as const;
+  const request = reviewRequest(directory);
   const dryRun = await run(request);
   const published = await run({ ...request, action: 'publish', token: dryRun.token });
 
@@ -180,9 +184,9 @@ it('refuses a COMMENT review without a body', async () => {
     `${JSON.stringify({ event: 'COMMENT', comments: [{ path: 'src/a.ts', line: 3, body: 'Fine.' }] })}\n`,
   );
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow('review.json needs a body for a COMMENT event.');
+  await expect(run(reviewRequest(directory))).rejects.toThrow(
+    'review.json needs a body for a COMMENT event.',
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -200,9 +204,9 @@ it('refuses a REQUEST_CHANGES review without a body', async () => {
     })}\n`,
   );
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow('review.json needs a body for a REQUEST_CHANGES event.');
+  await expect(run(reviewRequest(directory))).rejects.toThrow(
+    'review.json needs a body for a REQUEST_CHANGES event.',
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -213,7 +217,7 @@ it('accepts an APPROVE review without a body', async () => {
 
   await writeRunFile(directory, 'review.json', `${JSON.stringify({ event: 'APPROVE' })}\n`);
 
-  const dryRun = await run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 });
+  const dryRun = await run(reviewRequest(directory));
 
   expect(dryRun.findings).toEqual([]);
   expect(fake.calls).toEqual([]);
@@ -233,9 +237,30 @@ it('refuses a review comment with a blank body', async () => {
     })}\n`,
   );
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow('review.json comments[0] needs a body.');
+  await expect(run(reviewRequest(directory))).rejects.toThrow(
+    'review.json comments[0] needs a body.',
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a review comment that sets both line and position', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(
+    directory,
+    'review.json',
+    `${JSON.stringify({
+      event: 'COMMENT',
+      body: 'Please fix the naming.',
+      comments: [{ path: 'src/a.ts', line: 3, position: 2, body: 'Use a clearer name.' }],
+    })}\n`,
+  );
+
+  await expect(run(reviewRequest(directory))).rejects.toThrow(
+    'review.json comments[0] cannot take both line and position.',
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -254,9 +279,9 @@ it('refuses start_line without line', async () => {
     })}\n`,
   );
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow('review.json comments[0] needs line when start_line is set.');
+  await expect(run(reviewRequest(directory))).rejects.toThrow(
+    'review.json comments[0] needs line when start_line is set.',
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -275,9 +300,9 @@ it('refuses start_side without start_line', async () => {
     })}\n`,
   );
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow('review.json comments[0] needs start_line when start_side is set.');
+  await expect(run(reviewRequest(directory))).rejects.toThrow(
+    'review.json comments[0] needs start_line when start_side is set.',
+  );
 
   expect(fake.calls).toEqual([]);
 });
@@ -288,9 +313,7 @@ it('refuses review.json that is not JSON', async () => {
 
   await writeRunFile(directory, 'review.json', '{');
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow(/review\.json is not JSON/u);
+  await expect(run(reviewRequest(directory))).rejects.toThrow(/review\.json is not JSON/u);
 
   expect(fake.calls).toEqual([]);
 });
@@ -301,22 +324,17 @@ it('names the review.json field that is not valid', async () => {
 
   await writeRunFile(directory, 'review.json', '{"event":"MERGE"}\n');
 
-  await expect(
-    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
-  ).rejects.toThrow(/review\.json .*\/event/u);
+  await expect(run(reviewRequest(directory))).rejects.toThrow(/review\.json .*\/event/u);
 
   expect(fake.calls).toEqual([]);
 });
-
-const reviewRequest = (directory: string) =>
-  ({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }) as const;
 
 it.each(['file', 'base', 'head', 'draft'] as const)(
   'refuses %s for a review in the dry run',
   async (name) => {
     const { fake, run } = await setUp();
     const directory = await prepareRun(run);
-    const foreignInput = { [name]: name === 'draft' ? true : 'main' };
+    const foreignInput = foreignInputOf(name);
 
     await expect(run({ ...reviewRequest(directory), ...foreignInput })).rejects.toThrow(
       `dryRun with kind review cannot take ${name}.`,
@@ -335,7 +353,7 @@ it.each(['file', 'base', 'head', 'draft'] as const)(
     await writeRunFile(directory, 'review.json', `${JSON.stringify({ event: 'APPROVE' })}\n`);
 
     const dryRun = await run(reviewRequest(directory));
-    const foreignInput = { [name]: name === 'draft' ? true : 'main' };
+    const foreignInput = foreignInputOf(name);
 
     await expect(
       run({ ...reviewRequest(directory), action: 'publish', token: dryRun.token, ...foreignInput }),

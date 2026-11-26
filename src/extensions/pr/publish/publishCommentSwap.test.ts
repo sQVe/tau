@@ -1,7 +1,9 @@
+import { execFile } from 'node:child_process';
 import { rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import {
@@ -10,6 +12,8 @@ import {
   setUpPublication,
   writeRunFile,
 } from '../fixtures/publicationRun.js';
+
+const runFile = promisify(execFile);
 
 const hooks: { swap: { path: string; run: () => Promise<void> } | undefined } = {
   swap: undefined,
@@ -20,7 +24,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
   return {
     ...original,
-    readFile: (async (...parameters: Parameters<typeof original.readFile>) => {
+    open: async (...parameters: Parameters<typeof original.open>) => {
       const swap = hooks.swap;
 
       if (swap !== undefined && parameters[0] === swap.path) {
@@ -28,9 +32,13 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
         await swap.run();
       }
 
-      return original.readFile(...parameters);
-    }) as typeof original.readFile,
+      return original.open(...parameters);
+    },
   };
+});
+
+afterEach(() => {
+  hooks.swap = undefined;
 });
 
 it('refuses a comment file swapped for a symlink after the link check', async () => {
@@ -53,6 +61,28 @@ it('refuses a comment file swapped for a symlink after the link check', async ()
   await expect(
     run({ action: 'dryRun', kind: 'comment', repository, directory, pr: 7, file: 'comment.md' }),
   ).rejects.toThrow(/ELOOP/u);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a comment file swapped for a FIFO after the check', async () => {
+  const { fake, run } = await setUpPublication(onTestFinished);
+  const directory = await prepareRun(run);
+  const file = join(directory, 'comment.md');
+
+  await writeRunFile(directory, 'comment.md', 'Looks good.\n');
+
+  hooks.swap = {
+    path: file,
+    run: async () => {
+      await rm(file);
+      await runFile('mkfifo', [file]);
+    },
+  };
+
+  await expect(
+    run({ action: 'dryRun', kind: 'comment', repository, directory, pr: 7, file: 'comment.md' }),
+  ).rejects.toThrow('Refusing to read a path that is not a regular file');
 
   expect(fake.calls).toEqual([]);
 });

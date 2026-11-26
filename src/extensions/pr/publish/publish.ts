@@ -1,9 +1,10 @@
 import type { CommandRuntime } from '../../../command.js';
 import { formatRepository } from '../../../github/repositoryTargetDecisions.js';
+import { requireValue } from '../prRun.js';
 import { decidePublication, publicationToken } from './publishDecisions.js';
 import { publishedUrl, runWithVerifiedBytes } from './publishExecution.js';
 import type { PublicationKind } from './publishKind.js';
-import { planPublication, publicationTarget, requireValue } from './publishPlan.js';
+import { planPublication, publicationTarget } from './publishPlan.js';
 import type { PublicationFinding, PublishRequest } from './publishPlan.js';
 
 export interface DryRunResult {

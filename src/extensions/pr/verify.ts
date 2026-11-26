@@ -13,7 +13,7 @@ import {
 } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import { existingEntry, rejectLinkedFile } from '../../tauDirectory.js';
-import { bodyFileName, runDirectoryPath, runName } from './prRun.js';
+import { bodyFileName, requireValue, runDirectoryPath, runName } from './prRun.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 
@@ -87,26 +87,18 @@ const readPublished = async (
   };
 };
 
-const requireValue = <Value>(name: string, value: Value | undefined): Value => {
-  if (value === undefined) {
-    throw new Error(`verify needs ${name}.`);
-  }
-
-  return value;
-};
-
 // Reads the run's body.md, local HEAD, and the published pull request, and writes nothing.
 export const readVerify = async (
   runtime: CommandRuntime,
   root: string,
   request: VerifyRequest,
 ): Promise<VerifyResult> => {
-  const repository = parseRepository(requireValue('repository', request.repository));
+  const repository = parseRepository(requireValue('verify', 'repository', request.repository));
   const pr = requirePullRequestNumber('verify', request.pr);
-  const directory = requireValue('directory', request.directory);
-  const title = requireValue('title', request.title);
-  const base = requireValue('base', request.base);
-  const draft = requireValue('draft', request.draft);
+  const directory = requireValue('verify', 'directory', request.directory);
+  const title = requireValue('verify', 'title', request.title);
+  const base = requireValue('verify', 'base', request.base);
+  const draft = requireValue('verify', 'draft', request.draft);
   const body = await readBody(root, directory);
   const head = await readGit(root, ['rev-parse', 'HEAD']);
   const expected: PullRequestFields = { title, body, base, draft, head };

@@ -9,6 +9,18 @@ export const titleFileName = 'title.md';
 export const bodyFileName = 'body.md';
 export const reviewFileName = 'review.json';
 
+export const requireValue = <ValueType>(
+  action: string,
+  name: string,
+  value: ValueType | undefined,
+): ValueType => {
+  if (value === undefined) {
+    throw new Error(`${action} needs ${name}.`);
+  }
+
+  return value;
+};
+
 // Resolves the run directory name after the ignore and link checks both readers share.
 export const runName = async (root: string, directory: string, label: string): Promise<string> => {
   const name = requireTauChild(root, runPath, runPrefix, directory, label);

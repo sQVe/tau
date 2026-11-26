@@ -22,9 +22,9 @@ export interface VerifiedCommand {
 const privateDirectoryMode = 0o700;
 const privateFileMode = 0o600;
 
-export const fileArgumentFlags: ReadonlySet<string> = new Set(['--body-file', '--input']);
+const fileArgumentFlags: ReadonlySet<string> = new Set(['--body-file', '--input']);
 
-export const valueFlags: ReadonlySet<string> = new Set([
+const valueFlags: ReadonlySet<string> = new Set([
   '--repo',
   '--title',
   '--base',
@@ -32,6 +32,46 @@ export const valueFlags: ReadonlySet<string> = new Set([
   '--hostname',
   '--method',
 ]);
+
+const booleanFlags: ReadonlySet<string> = new Set(['--draft']);
+
+export const flagKind = (flag: string): 'boolean' | 'file' | 'value' | undefined => {
+  if (valueFlags.has(flag)) {
+    return 'value';
+  }
+
+  if (fileArgumentFlags.has(flag)) {
+    return 'file';
+  }
+
+  return booleanFlags.has(flag) ? 'boolean' : undefined;
+};
+
+// Lists the flags a command carries. A flag right after a value or file flag is still listed, so an
+// unexpected one cannot hide behind a title.
+export const commandFlags = (commandArguments: readonly string[]): string[] => {
+  const flags: string[] = [];
+
+  for (let index = 0; index < commandArguments.length; index += 1) {
+    const argument = commandArguments[index] ?? '';
+
+    if (!argument.startsWith('--')) {
+      continue;
+    }
+
+    flags.push(argument);
+
+    const kind = flagKind(argument);
+    const next = commandArguments[index + 1] ?? '';
+    const skipsNext = kind === 'value' || kind === 'file';
+
+    if (skipsNext && !next.startsWith('--')) {
+      index += 1;
+    }
+  }
+
+  return flags;
+};
 
 // Rewrites every file argument to a unique copy below directory, so equal basenames cannot collide.
 export const verifiedCopyArguments = (
@@ -51,13 +91,15 @@ export const verifiedCopyArguments = (
       continue;
     }
 
-    if (valueFlags.has(argument)) {
+    const kind = flagKind(argument);
+
+    if (kind === 'value') {
       skipValue = true;
 
       continue;
     }
 
-    if (!fileArgumentFlags.has(argument)) {
+    if (kind !== 'file') {
       continue;
     }
 
