@@ -42,8 +42,7 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 
 // Each ceiling caps a session at its larger measured size, the empty folder or the adopted project.
 // The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
-// ceiling. The merge with main re-measured every ceiling, and the started-model readback raised the
-// lead one by the model literals in the architect open and handover start descriptions.
+// ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 69_213, // target 38,000
   architect: 64_351, // measured locally; lower CI readings are the local-versus-CI difference
