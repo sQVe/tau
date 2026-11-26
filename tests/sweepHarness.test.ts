@@ -4,9 +4,25 @@ import {
   createSweepFixture,
   MergedListAbortError,
   MissingMergedListSignalError,
+  rewriteFixtureSession,
 } from './sweepHarness.js';
 
 const mergedCommand = ['pr', 'list'];
+
+const fixtureSession = [
+  '{"type":"session","cwd":"/home/sqve/code/personal/tau/me-1023"}',
+  '{"type":"message","arguments":{"cwd":"/home/sqve/code/personal/tau/me-1023"}}',
+  '',
+].join('\n');
+
+const fixtureHome = '/tmp/tau-sweep-xyz/fixture-home';
+
+const expectedSession = (repository: string): string =>
+  [
+    `{"type":"session","cwd":${JSON.stringify(repository)}}`,
+    `{"type":"message","arguments":{"cwd":${JSON.stringify(`${fixtureHome}/sqve/code/personal/tau/me-1023`)}}}`,
+    '',
+  ].join('\n');
 
 const turn = (): Promise<'pending'> =>
   new Promise((resolve) => {
@@ -73,4 +89,20 @@ it('rejects a gated merged call aborted with a non-Error reason', async () => {
   controller.abort('stopped');
 
   await expect(call).rejects.toBeInstanceOf(MergedListAbortError);
+});
+
+it('keeps the session cwd at a repository outside a home path', () => {
+  const repository = '/tmp/tau-repository-abc';
+
+  expect(rewriteFixtureSession(fixtureSession, repository, fixtureHome)).toBe(
+    expectedSession(repository),
+  );
+});
+
+it('keeps the session cwd at a repository under a home path', () => {
+  const repository = '/home/sqve/tmp/tau-repository-abc';
+
+  expect(rewriteFixtureSession(fixtureSession, repository, fixtureHome)).toBe(
+    expectedSession(repository),
+  );
 });

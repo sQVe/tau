@@ -58,6 +58,17 @@ export class MergedListAbortError extends Error {
 const fixturePath = (name: string) =>
   join(import.meta.dirname, '..', 'src', 'improvement', 'fixtures', name);
 
+// A fixture session names the developer's home, so its paths move under the fixture home. The
+// session cwd must name the repository after that rewrite, not before.
+export const rewriteFixtureSession = (
+  content: string,
+  repository: string,
+  fixtureHome: string,
+): string =>
+  content
+    .replaceAll('/home/', `${fixtureHome}/`)
+    .replace(/"cwd":"[^"]*"/u, `"cwd":${JSON.stringify(repository)}`);
+
 export const eventHash = (repository: string, number: number): string =>
   createHash('sha256').update(`${repository}#${number}`).digest('hex').slice(0, 32);
 
@@ -128,10 +139,7 @@ export const createSweepFixture = async (
   const writeFixtureSession = (name: string, fixtureName: string): string => {
     const content = readFileSync(fixturePath(fixtureName), 'utf8');
     const fixtureHome = join(agentDirectory, 'fixture-home');
-
-    const rewritten = content
-      .replace(/"cwd":"[^"]*"/u, `"cwd":${JSON.stringify(repository)}`)
-      .replaceAll('/home/', `${fixtureHome}/`);
+    const rewritten = rewriteFixtureSession(content, repository, fixtureHome);
 
     return writeSession(name, rewritten);
   };
