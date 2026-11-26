@@ -1,7 +1,12 @@
 import { Marked } from 'marked';
 import type { Token, Tokens } from 'marked';
 
-import { markdownTokenText, walkMarkdownTokens } from '../../../instructions/markdownLinks.js';
+import {
+  isMarkdownHeading,
+  isMarkdownTable,
+  markdownTokenText,
+  walkMarkdownTokens,
+} from '../../../instructions/markdownLinks.js';
 
 export const decisionsSectionName = 'Decisions';
 
@@ -12,10 +17,12 @@ export const handoverSectionNames = [
   'Concerns',
 ] as const;
 
+export type HandoverSectionName = (typeof handoverSectionNames)[number];
+
 const markdown = new Marked();
 
 // Matches one block of inline text, such as a paragraph or a list item's text, not a document.
-export const fragmentHasHeading = (text: string, name: string): boolean =>
+export const fragmentHasHeading = (text: string, name: HandoverSectionName): boolean =>
   new RegExp(`^[\\s#*>-]*${name}\\**\\s*(?::|\\(|$)`, 'im').test(text);
 
 // Only a heading, paragraph, or block text token is tested, and its inline children are skipped, so
@@ -25,15 +32,12 @@ const blockTextTypes: ReadonlySet<string> = new Set(['heading', 'paragraph', 'te
 
 const isBlockText = (token: Token): boolean => blockTextTypes.has(token.type);
 
-const isTable = (token: Token): boolean => token.type === 'table';
-
-const isHeading = (token: Token): token is Tokens.Heading => token.type === 'heading';
-
 const headingLabel = (token: Tokens.Heading): string => markdownTokenText(token.tokens);
 
-const blockTextOf = (token: Token): string => (isHeading(token) ? headingLabel(token) : token.raw);
+const blockTextOf = (token: Token): string =>
+  isMarkdownHeading(token) ? headingLabel(token) : token.raw;
 
-export const summaryHasHeading = (summary: string, name: string): boolean => {
+export const summaryHasHeading = (summary: string, name: HandoverSectionName): boolean => {
   let found = false;
 
   walkMarkdownTokens(markdown.lexer(summary), (token) => {
@@ -43,7 +47,7 @@ export const summaryHasHeading = (summary: string, name: string): boolean => {
       return false;
     }
 
-    if (isTable(token)) {
+    if (isMarkdownTable(token)) {
       return false;
     }
 

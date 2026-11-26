@@ -2,6 +2,7 @@ import { Lexer } from 'marked';
 import type { Token, Tokens } from 'marked';
 
 import {
+  isMarkdownHeading,
   isMarkdownList,
   markdownTokenText,
   walkMarkdownTokens,
@@ -50,8 +51,6 @@ type DecisionsFound =
 
 const unresolvedVerdicts: ReadonlySet<PageVerdict> = new Set(['contradicts', 'unsure']);
 
-const isHeading = (token: Token): token is Tokens.Heading => token.type === 'heading';
-
 const isBlockquote = (token: Token): token is Tokens.Blockquote =>
   token.type === 'blockquote' && 'tokens' in token && Array.isArray(token.tokens);
 
@@ -92,7 +91,9 @@ const decisionsStart = (token: Token): DecisionsStart | undefined => {
   const text = blockInlineText(token);
 
   if (text !== undefined && isDecisionsText(text)) {
-    return isHeading(token) ? { kind: 'heading', depth: token.depth } : { kind: 'paragraph' };
+    return isMarkdownHeading(token)
+      ? { kind: 'heading', depth: token.depth }
+      : { kind: 'paragraph' };
   }
 
   if (isBlockquote(token)) {
@@ -193,7 +194,7 @@ const endsDecisions = (
   depth: number | undefined,
   knownElements: ReadonlySet<string>,
 ): boolean => {
-  if (isHeading(token)) {
+  if (isMarkdownHeading(token)) {
     return isSectionLabel(token, knownElements) || endsAtOrAbove(token, depth);
   }
 
@@ -248,7 +249,7 @@ const findDecisionsStart = (tokens: readonly Token[]): DecisionsFound | undefine
       continue;
     }
 
-    if (start.kind === 'heading' && isHeading(token)) {
+    if (start.kind === 'heading' && isMarkdownHeading(token)) {
       return { kind: 'heading', index, token, start };
     }
 
