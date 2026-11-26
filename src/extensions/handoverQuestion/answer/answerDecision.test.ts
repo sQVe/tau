@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 
+import { answeredRecord, openRecord } from '../../../../tests/fixtures/answerRecord.js';
 import type { AnswerFacts } from './answerDecision.js';
 import { decideAnswer } from './answerDecision.js';
-import { answeredRecord, openRecord } from './fixtures/answerRecord.js';
 
 const questionId = '11111111-1111-4111-8111-111111111111';
 const targetSessionId = '22222222-2222-4222-8222-222222222222';

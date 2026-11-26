@@ -1,10 +1,19 @@
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import type * as protocol from './protocol.js';
 import { deleteMessage, pendingMessages, readMessage, saveMessage } from './store.js';
+
+// A saved record can carry an ID the live rule no longer accepts, so the live rule rejects every
+// ID here and discovery must fall back to the frozen historical rule.
+vi.mock(import('./protocol.js'), async (importOriginal) => {
+  const actual = await importOriginal<typeof protocol>();
+
+  return { ...actual, isUuid: () => false };
+});
 
 const messageId = '11111111-1111-4111-8111-111111111111';
 
@@ -64,6 +73,11 @@ const version3AnswerRecord = {
     parentSession: 'lead-session',
     answer: 'Use 42.',
   },
+};
+
+const version2AnswerRecord = {
+  ...version3AnswerRecord,
+  version: 2 as const,
 };
 
 const previousRecord = {
@@ -164,6 +178,68 @@ it('reads a version 3 answer record', async () => {
     kind: 'record',
     record: version3AnswerRecord,
   });
+});
+
+it('reads a version 2 answer record', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path, JSON.stringify(version2AnswerRecord));
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: version2AnswerRecord,
+  });
+});
+
+it('reads a version 3 record with the oldest accepted identifiers', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  const boundaryRecord = {
+    ...version3Record,
+    payload: { ...version3Record.payload, askerTerminal: 'worker:1', askerSession: 'a' },
+  };
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path, JSON.stringify(boundaryRecord));
+
+  await expect(readMessage(directory, messageId)).resolves.toEqual({
+    kind: 'record',
+    record: boundaryRecord,
+  });
+});
+
+it.each([
+  ['asker session', { askerSession: 'worker/old' }],
+  ['asker terminal', { askerTerminal: 'two words' }],
+])(
+  'reports a version 3 record whose %s breaks the oldest rule as malformed',
+  async (_name, override) => {
+    const directory = directoryFixture();
+    const path = join(directory, `${messageId}.json`);
+
+    mkdirSync(directory, { recursive: true });
+
+    writeFileSync(
+      path,
+      JSON.stringify({ ...version3Record, payload: { ...version3Record.payload, ...override } }),
+    );
+
+    await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+  },
+);
+
+it('reports a version 3 record whose message ID is not a UUID as malformed', async () => {
+  const directory = directoryFixture();
+  const savedId = 'not-a-uuid';
+  const path = join(directory, `${savedId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path, JSON.stringify({ ...version3Record, messageId: savedId }));
+
+  await expect(readMessage(directory, savedId)).resolves.toMatchObject({ kind: 'malformed' });
 });
 
 it('reads the frozen current record', async () => {
@@ -391,6 +467,16 @@ it('does not run the fence for a message that is already saved', async () => {
   await expect(
     saveMessage(directory, record, { fence: { check: () => 'Not now.' } }),
   ).resolves.toBe('existing');
+});
+
+it('lists a frozen record while the live UUID rule rejects every ID', async () => {
+  const directory = directoryFixture();
+
+  fixtureInto(directory, 'version3.json');
+  writeFileSync(join(directory, 'not-a-uuid.json'), '{}');
+  writeFileSync(join(directory, '..json'), '{}');
+
+  await expect(pendingMessages(directory)).resolves.toEqual([messageId]);
 });
 
 it('lists saved records by message ID and skips temporary and foreign names', async () => {

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { answeredRecord, openRecord } from '../../../../tests/fixtures/answerRecord.js';
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import type { AcceptCheck } from '../../../inbox/inbox.js';
@@ -16,7 +17,6 @@ import {
   writeQuestionRecord,
 } from '../question/questionRecord.js';
 import { handoverAnswerCheck } from './answerCheck.js';
-import { answeredRecord, openRecord } from './fixtures/answerRecord.js';
 
 type Save = Parameters<AcceptCheck>[1];
 

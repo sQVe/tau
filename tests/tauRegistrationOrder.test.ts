@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import { architectLockPath } from '../src/extensions/architect/lock.js';
 import type { QuestionRecord } from '../src/extensions/handoverQuestion/question/questionRecord.js';
@@ -16,6 +16,7 @@ import type { MessageReply, MessageRequest } from '../src/inbox/protocol.js';
 import tauRegistration from '../src/tau/tau.js';
 import { succeededResult } from './execFake.js';
 import { fakeExtensionApi } from './extensionApi.js';
+import { openRecord } from './fixtures/answerRecord.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { forgetAcceptCheck } from './inboxReceiverHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -79,16 +80,9 @@ const answerQuestionId = '11111111-1111-4111-8111-111111111111';
 const answerSenderSession = '33333333-3333-4333-8333-333333333333';
 
 const answerRecord = (sessionId: string): QuestionRecord => ({
-  version: 1,
-  questionId: answerQuestionId,
+  ...openRecord(answerSenderSession),
   askerTerminal: 't-worker',
   askerSession: sessionId,
-  senderTerminal: 'lead-1',
-  senderSession: answerSenderSession,
-  text: 'Which option should I use?',
-  askedAt: '2026-11-18T12:00:00.000Z',
-  state: 'open',
-  answer: null,
 });
 
 const answerRequest = (sessionId: string): MessageRequest => ({
@@ -103,6 +97,13 @@ const answerRequest = (sessionId: string): MessageRequest => ({
     senderSession: answerSenderSession,
     answer: 'Use option A.',
   },
+});
+
+// Both tests register the process-wide handover checks, and setup can fail before a test can
+// register its own cleanup.
+afterEach(() => {
+  forgetAcceptCheck('handover-answer');
+  forgetAcceptCheck('handover-question');
 });
 
 it('inbox closes before the lock frees', async ({ onTestFinished }) => {
@@ -239,6 +240,11 @@ it('sets the session directory before the inbox accepts answers', async ({ onTes
   vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
   vi.stubEnv('HC_TERMINAL_ID', 't-worker');
 
+  onTestFinished(() => {
+    processCwd.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
   const fake = fakeExtensionApi({
     exec: async (command) => {
       if (command === 'ps') {
@@ -305,8 +311,6 @@ it('sets the session directory before the inbox accepts answers', async ({ onTes
   } as unknown as ExtensionContext;
 
   onTestFinished(async () => {
-    processCwd.mockRestore();
-    vi.unstubAllEnvs();
     forgetAcceptCheck('handover-answer');
     forgetAcceptCheck('handover-question');
     await inboxShutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);

@@ -7,7 +7,8 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { fakeExtensionApi, fakeExtensionContext } from '../../../tests/extensionApi.js';
+import type { FakeExtensionContextOptions } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import {
@@ -21,12 +22,6 @@ import { acceptChecks } from '../../inbox/inbox.js';
 import handoverQuestionExtension from './handoverQuestion.js';
 import type { QuestionOutcome } from './question/question.js';
 import { questionRecordDirectory, readQuestionRecord } from './question/questionRecord.js';
-
-interface ContextOptions {
-  branch?: unknown;
-  sessionId?: string;
-  cwd?: string;
-}
 
 const senderSession = '33333333-3333-4333-8333-333333333333';
 const senderLine = `Handover sender: terminal lead-1, session ${senderSession}.`;
@@ -45,20 +40,11 @@ const branchWithoutSender = [
   },
 ];
 
-const contextFields = (options: ContextOptions) => ({
-  cwd: options.cwd ?? '/repository',
-  sessionManager: {
-    getBranch: () => options.branch ?? branch,
-    getEntries: () => [],
-    getSessionId: () => options.sessionId ?? 'session-1',
-  },
-});
+const context = (options: FakeExtensionContextOptions = {}): ExtensionContext =>
+  fakeExtensionContext({ ...options, branch: options.branch ?? branch });
 
-const context = (options: ContextOptions = {}): ExtensionContext =>
-  contextFields(options) as unknown as ExtensionContext;
-
-const toolContext = (options: ContextOptions = {}): ExtensionToolContext =>
-  contextFields(options) as unknown as ExtensionToolContext;
+const toolContext = (options: FakeExtensionContextOptions = {}): ExtensionToolContext =>
+  context(options) as ExtensionToolContext;
 
 const question = 'Which option should I use?';
 
@@ -147,6 +133,8 @@ const registeredTool = async (overrides: Partial<ExtensionAPI> = {}) => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  forgetAcceptCheck('handover-question');
+  forgetAcceptCheck('handover-answer');
 });
 
 it('registers the tool once a handover brings a sender', async () => {
@@ -192,18 +180,20 @@ it('registers no question tool outside the lead role', async () => {
   expect(fake.tools.has('handover_question')).toBe(false);
 });
 
-it('registers the handover-question accept check', () => {
+it('registers both accept checks and forgets them after the test', () => {
   vi.stubEnv('TAU_ROLE', '');
 
   const fake = fakeExtensionApi();
 
   handoverQuestionExtension(fake.pi);
 
-  onTestFinished(() => {
-    forgetAcceptCheck('handover-question');
-  });
-
   expect(acceptChecks()['handover-question']).toBeTypeOf('function');
+  expect(acceptChecks()['handover-answer']).toBeTypeOf('function');
+
+  onTestFinished(() => {
+    expect(acceptChecks()['handover-question']).toBeUndefined();
+    expect(acceptChecks()['handover-answer']).toBeUndefined();
+  });
 });
 
 it('registers no tool when no handover sender starts the turn', async () => {

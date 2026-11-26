@@ -39,6 +39,8 @@ export const requestByteLimit = 102_400;
 
 export const replyByteLimit = 4096;
 
+export const handoverAnswerCharacterLimit = 32_000;
+
 const uuidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
 const uuidExpression = new RegExp(uuidPattern, 'u');
@@ -68,7 +70,7 @@ const handoverSenderSchema = Type.Object(
   strict,
 );
 
-export const handoverBody = {
+const handoverBody = {
   family: Type.Literal('handover'),
   payload: Type.Object(
     { text: Type.String({ minLength: 1 }), sender: Type.Optional(handoverSenderSchema) },
@@ -76,7 +78,7 @@ export const handoverBody = {
   ),
 };
 
-export const answerBody = {
+const answerBody = {
   family: Type.Literal('answer'),
   payload: Type.Object(
     {
@@ -89,7 +91,7 @@ export const answerBody = {
   ),
 };
 
-export const handoverQuestionBody = {
+const handoverQuestionBody = {
   family: Type.Literal('handover-question'),
   payload: Type.Object(
     {
@@ -108,7 +110,7 @@ const handoverAnswerBody = {
     {
       questionId: uuidSchema,
       senderSession: sessionIdSchema,
-      answer: Type.String({ minLength: 1, maxLength: 32_000 }),
+      answer: Type.String({ minLength: 1, maxLength: handoverAnswerCharacterLimit }),
     },
     strict,
   ),

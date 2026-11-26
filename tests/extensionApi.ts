@@ -24,6 +24,13 @@ interface FakeExtensionApi {
   sendMessage: Mock<ExtensionAPI['sendMessage']>;
 }
 
+export interface FakeExtensionContextOptions {
+  branch?: readonly unknown[];
+  entries?: readonly unknown[];
+  sessionId?: string;
+  cwd?: string;
+}
+
 // Records what an extension registers so a test can drive its handlers without a Pi session.
 export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}): FakeExtensionApi => {
   const handlers = new Map<string, Handler[]>();
@@ -71,6 +78,17 @@ export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}): FakeExt
 
   return { pi, handlers, handler, tools, commands, messageRenderers, sendUserMessage, sendMessage };
 };
+
+// Builds only the context fields an extension reads from cwd and the session manager.
+export const fakeExtensionContext = (options: FakeExtensionContextOptions = {}): ExtensionContext =>
+  ({
+    cwd: options.cwd ?? '/repository',
+    sessionManager: {
+      getBranch: () => options.branch ?? [],
+      getEntries: () => options.entries ?? [],
+      getSessionId: () => options.sessionId ?? 'session-1',
+    },
+  }) as unknown as ExtensionContext;
 
 export const appendedSystemPrompt = (
   handlers: Map<string, Handler[]>,

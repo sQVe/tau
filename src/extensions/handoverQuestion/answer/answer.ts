@@ -4,7 +4,11 @@ import type { Static } from 'typebox';
 
 import { errorMessage } from '../../../errors.js';
 import type { HcRuntime } from '../../../hc/hc.js';
-import { sendInboxMessage, uuidSchema } from '../../../inbox/inbox.js';
+import {
+  handoverAnswerCharacterLimit,
+  sendInboxMessage,
+  uuidSchema,
+} from '../../../inbox/inbox.js';
 import type { InboxSendResult } from '../../../inbox/inbox.js';
 import { toolResult } from '../toolResult.js';
 import { receivedQuestion } from './receivedQuestion.js';
@@ -24,7 +28,7 @@ export const answerParameters = Type.Object({
   questionId: uuidSchema,
   answer: Type.String({
     minLength: 1,
-    maxLength: 32_000,
+    maxLength: handoverAnswerCharacterLimit,
     description: 'The answer to the handover question.',
   }),
 });
@@ -37,7 +41,7 @@ export const answerToolDescription = [
   'For a design question, call architect ask first.',
 ].join(' ');
 
-const unreachable = 'Tell the user the asker cannot be reached.';
+const notSent = 'Nothing was queued.';
 
 const notReceivedReason = (questionId: string): string =>
   `This session never received handover question ${questionId}.`;
@@ -76,7 +80,7 @@ export const answerQuestion = async (
       target: received.askerTerminal,
       sessionId: received.askerSession,
       messageId: input.questionId,
-      refusal: unreachable,
+      refusal: notSent,
       body: {
         family: 'handover-answer',
         payload: {

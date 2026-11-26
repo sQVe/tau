@@ -90,7 +90,7 @@ const registerAnswerTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
       }
 
       return answerQuestion(
-        { hc: { ...hc, signal }, entries: context.sessionManager.getEntries(), leadSession },
+        { hc: { ...hc, signal }, entries: context.sessionManager.getBranch(), leadSession },
         parameters,
       );
     },

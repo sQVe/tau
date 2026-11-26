@@ -7,7 +7,9 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { fakeExtensionApi, fakeExtensionContext } from '../../../tests/extensionApi.js';
+import type { FakeExtensionContextOptions } from '../../../tests/extensionApi.js';
+import { openRecord } from '../../../tests/fixtures/answerRecord.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import {
@@ -20,36 +22,95 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { acceptChecks, createReceiptStore, createReceiver } from '../../inbox/inbox.js';
 import type { MessageReply, MessageRequest } from '../../inbox/protocol.js';
 import handoverQuestionExtension from './handoverQuestion.js';
-import type { QuestionRecord } from './question/questionRecord.js';
 import { writeQuestionRecord } from './question/questionRecord.js';
 
-interface ContextOptions {
-  entries?: readonly SessionEntry[];
-  sessionId?: string;
-  cwd?: string;
-}
+const context = (options: FakeExtensionContextOptions = {}): ExtensionContext =>
+  fakeExtensionContext(options);
 
-const contextFields = (options: ContextOptions) => ({
-  cwd: options.cwd ?? '/repository',
-  sessionManager: {
-    getBranch: () => [],
-    getEntries: () => options.entries ?? [],
-    getSessionId: () => options.sessionId ?? 'session-1',
-  },
-});
-
-const context = (options: ContextOptions = {}): ExtensionContext =>
-  contextFields(options) as unknown as ExtensionContext;
-
-const toolContext = (options: ContextOptions = {}): ExtensionToolContext =>
-  contextFields(options) as unknown as ExtensionToolContext;
+const toolContext = (options: FakeExtensionContextOptions = {}): ExtensionToolContext =>
+  fakeExtensionContext(options) as ExtensionToolContext;
 
 const answerQuestionId = '11111111-1111-4111-8111-111111111111';
+const otherLeadSession = '44444444-4444-4444-8444-444444444444';
 const answerAskerSession = '22222222-2222-4222-8222-222222222222';
 const answerSenderSession = '33333333-3333-4333-8333-333333333333';
 
+const receivedEntry = (leadSession: string): SessionEntry =>
+  ({
+    type: 'custom_message',
+    customType: 'tau-inbox-message',
+    content: `Handover question ${answerQuestionId} from terminal worker-1, session ${answerAskerSession}:\n\nWhich option should I use?`,
+    display: true,
+    details: {
+      version: 4,
+      messageId: answerQuestionId,
+      sessionId: leadSession,
+      family: 'handover-question',
+      questionId: answerQuestionId,
+    },
+  }) as unknown as SessionEntry;
+
+const startAnswerTool = async () => {
+  vi.stubEnv('TAU_ROLE', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
+  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
+
+  const root = temporaryDirectory(onTestFinished, 'tau-handover-answer-');
+  const received: MessageRequest[] = [];
+
+  const asker = await startHandoverReceiver(onTestFinished, root, 'worker-1', {
+    sessionId: answerAskerSession,
+    accepts: {
+      'handover-answer': (request, save) => {
+        received.push(request);
+
+        return save();
+      },
+    },
+  });
+
+  const fake = createHcFake();
+
+  advertiseInbox(fake, 'worker-1', asker.path);
+
+  const extension = fakeExtensionApi({ exec: fake.exec });
+
+  handoverQuestionExtension(extension.pi);
+
+  const tool = extension.tools.get('handover_answer');
+
+  if (tool === undefined) {
+    throw new Error('Expected the handover_answer tool to be registered.');
+  }
+
+  return { asker, fake, received, tool };
+};
+
+// The send resolves the asker with `hc get` before it opens any socket, so no lookup means no
+// transport attempt.
+const askerLookups = (fake: ReturnType<typeof createHcFake>): number =>
+  fake.calls.filter(
+    (call) =>
+      call.command === 'hc' &&
+      call.commandArguments[0] === 'get' &&
+      call.commandArguments.at(-1) === 'worker-1',
+  ).length;
+
 afterEach(() => {
   vi.unstubAllEnvs();
+  forgetAcceptCheck('handover-question');
+  forgetAcceptCheck('handover-answer');
+});
+
+it('forgets both accept checks after the test', () => {
+  vi.stubEnv('TAU_ROLE', '');
+
+  handoverQuestionExtension(fakeExtensionApi().pi);
+
+  onTestFinished(() => {
+    expect(acceptChecks()['handover-question']).toBeUndefined();
+    expect(acceptChecks()['handover-answer']).toBeUndefined();
+  });
 });
 
 it('refuses to answer without a saved session ID', async () => {
@@ -76,82 +137,73 @@ it('refuses to answer without a saved session ID', async () => {
   ).rejects.toThrow('no saved Pi session ID');
 });
 
-it('looks up the question with a saved session ID', async () => {
-  vi.stubEnv('TAU_ROLE', '');
-
-  const fake = fakeExtensionApi();
-
-  handoverQuestionExtension(fake.pi);
-
-  const tool = fake.tools.get('handover_answer');
-
-  if (tool === undefined) {
-    throw new Error('Expected the handover_answer tool to be registered.');
-  }
-
-  const questionId = '11111111-1111-4111-8111-111111111111';
-
-  const result = await tool.execute(
-    'call-1',
-    { questionId, answer: 'Use option A.' },
-    undefined,
-    undefined,
-    toolContext({ sessionId: 'session-1' }),
-  );
-
-  expect(result.details).toMatchObject({ status: 'refused', questionId });
-});
-
-it('answers through the registered tool with the send runtime', async () => {
-  vi.stubEnv('TAU_ROLE', '');
-  vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
-  vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
-
-  const root = temporaryDirectory(onTestFinished, 'tau-handover-answer-');
-
-  const asker = await startHandoverReceiver(onTestFinished, root, 'worker-1', {
-    sessionId: answerAskerSession,
-    accepts: { 'handover-answer': (_request, save) => save() },
-  });
-
-  const fake = createHcFake();
-
-  advertiseInbox(fake, 'worker-1', asker.path);
-
-  const extension = fakeExtensionApi({ exec: fake.exec });
-
-  handoverQuestionExtension(extension.pi);
-
-  const tool = extension.tools.get('handover_answer');
-
-  if (tool === undefined) {
-    throw new Error('Expected the handover_answer tool to be registered.');
-  }
-
-  const received: SessionEntry = {
-    type: 'custom_message',
-    customType: 'tau-inbox-message',
-    content: `Handover question ${answerQuestionId} from terminal worker-1, session ${answerAskerSession}:\n\nWhich option should I use?`,
-    display: true,
-    details: {
-      version: 4,
-      messageId: answerQuestionId,
-      sessionId: answerSenderSession,
-      family: 'handover-question',
-      questionId: answerQuestionId,
-    },
-  } as unknown as SessionEntry;
+it('refuses a question a different lead session received without sending', async () => {
+  const { asker, fake, received, tool } = await startAnswerTool();
 
   const result = await tool.execute(
     'call-1',
     { questionId: answerQuestionId, answer: 'Use option A.' },
     undefined,
     undefined,
-    toolContext({ entries: [received], sessionId: answerSenderSession }),
+    toolContext({ branch: [receivedEntry(otherLeadSession)], sessionId: answerSenderSession }),
+  );
+
+  expect(result.isError).toBe(true);
+
+  expect(result.details).toMatchObject({
+    status: 'refused',
+    questionId: answerQuestionId,
+    reason: expect.stringContaining('never received') as string,
+  });
+
+  expect(askerLookups(fake)).toBe(0);
+  expect(received).toEqual([]);
+  expect(savedFiles(asker)).toEqual([]);
+});
+
+it('answers through the registered tool with the send runtime', async () => {
+  const { asker, fake, received, tool } = await startAnswerTool();
+
+  const result = await tool.execute(
+    'call-1',
+    { questionId: answerQuestionId, answer: 'Use option A.' },
+    undefined,
+    undefined,
+    toolContext({ branch: [receivedEntry(answerSenderSession)], sessionId: answerSenderSession }),
   );
 
   expect(result.details).toEqual({ status: 'queued', questionId: answerQuestionId });
+  expect(askerLookups(fake)).toBe(1);
+  expect(received).toHaveLength(1);
   expect(savedFiles(asker)).toHaveLength(1);
+});
+
+it('refuses a question received only on another branch', async () => {
+  const { asker, fake, received, tool } = await startAnswerTool();
+
+  const result = await tool.execute(
+    'call-1',
+    { questionId: answerQuestionId, answer: 'Use option A.' },
+    undefined,
+    undefined,
+    toolContext({
+      entries: [receivedEntry(answerSenderSession)],
+      branch: [],
+      sessionId: answerSenderSession,
+    }),
+  );
+
+  expect(result.isError).toBe(true);
+
+  expect(result.details).toMatchObject({
+    status: 'refused',
+    questionId: answerQuestionId,
+    reason: expect.stringContaining('never received') as string,
+  });
+
+  expect(askerLookups(fake)).toBe(0);
+  expect(received).toEqual([]);
+  expect(savedFiles(asker)).toEqual([]);
 });
 
 const answerRequest = (): MessageRequest => ({
@@ -166,19 +218,6 @@ const answerRequest = (): MessageRequest => ({
     senderSession: answerSenderSession,
     answer: 'Use option A.',
   },
-});
-
-const openAnswerRecord = (): QuestionRecord => ({
-  version: 1,
-  questionId: answerQuestionId,
-  askerTerminal: 'worker-1',
-  askerSession: answerAskerSession,
-  senderTerminal: 'lead-1',
-  senderSession: answerSenderSession,
-  text: 'Which option should I use?',
-  askedAt: '2026-11-18T12:00:00.000Z',
-  state: 'open',
-  answer: null,
 });
 
 const queuedAnswerReply: MessageReply = {
@@ -200,7 +239,6 @@ const answerSessionFixture = async () => {
 
   onTestFinished(() => {
     processCwd.mockRestore();
-    forgetAcceptCheck('handover-answer');
   });
 
   const fake = fakeExtensionApi();
@@ -243,7 +281,7 @@ it('reads the session cwd instead of the process cwd', async () => {
     'This session has not started, so it cannot accept a handover answer.',
   );
 
-  await writeQuestionRecord(root, openAnswerRecord());
+  await writeQuestionRecord(root, openRecord(answerSenderSession));
   await startSession('startup', root);
 
   const inboxRoot = temporaryDirectory(onTestFinished, 'tau-answer-inbox-');
@@ -265,7 +303,7 @@ it('reads the session cwd instead of the process cwd', async () => {
 it('forgets the session cwd on shutdown', async () => {
   const { root, check, startSession, shutdown } = await answerSessionFixture();
 
-  await writeQuestionRecord(root, openAnswerRecord());
+  await writeQuestionRecord(root, openRecord(answerSenderSession));
   await startSession('startup', root);
 
   expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toEqual(
@@ -284,7 +322,7 @@ it('reads the checkout of the next session start', async () => {
   const { root: firstRoot, check, startSession } = await answerSessionFixture();
   const secondRoot = await createTemporaryRepository(onTestFinished);
 
-  await writeQuestionRecord(firstRoot, openAnswerRecord());
+  await writeQuestionRecord(firstRoot, openRecord(answerSenderSession));
   await startSession('startup', firstRoot);
 
   expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toEqual(
@@ -297,7 +335,7 @@ it('reads the checkout of the next session start', async () => {
     `This session asked no handover question ${answerQuestionId}.`,
   );
 
-  await writeQuestionRecord(secondRoot, openAnswerRecord());
+  await writeQuestionRecord(secondRoot, openRecord(answerSenderSession));
 
   expect(await check(answerRequest(), () => Promise.resolve(queuedAnswerReply))).toEqual(
     queuedAnswerReply,

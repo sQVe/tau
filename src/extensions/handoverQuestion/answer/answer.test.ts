@@ -2,6 +2,7 @@ import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { failedResult } from '../../../../tests/execFake.js';
+import { answeredRecord, openRecord } from '../../../../tests/fixtures/answerRecord.js';
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import {
@@ -18,7 +19,6 @@ import type { QuestionRecord } from '../question/questionRecord.js';
 import { writeQuestionRecord } from '../question/questionRecord.js';
 import { answerQuestion } from './answer.js';
 import { handoverAnswerCheck } from './answerCheck.js';
-import { answeredRecord, openRecord } from './fixtures/answerRecord.js';
 
 const questionId = '11111111-1111-4111-8111-111111111111';
 const otherQuestionId = '44444444-4444-4444-8444-444444444444';
@@ -121,17 +121,39 @@ const advanceRetryWindow = async (milliseconds: number): Promise<void> => {
   }
 };
 
+const settleRoundLimit = 100;
+
 const settleFrames = async (frames: () => number): Promise<void> => {
   let quiet = 0;
 
-  while (quiet < 3) {
+  for (let round = 0; round < settleRoundLimit; round += 1) {
     const before = frames();
 
     await yieldToIo();
 
     quiet = frames() === before ? quiet + 1 : 0;
+
+    if (quiet >= 3) {
+      return;
+    }
   }
+
+  throw new Error(`The answer frames did not settle within ${String(settleRoundLimit)} rounds.`);
 };
+
+it('fails when the answer frames never settle', async () => {
+  let frames = 0;
+
+  const changingFrames = (): number => {
+    frames += 1;
+
+    return frames;
+  };
+
+  await expect(settleFrames(changingFrames)).rejects.toThrow(Error);
+
+  expect(frames).toBeGreaterThan(settleRoundLimit);
+});
 
 it('sends one answer frame to the asker', async () => {
   let frames = 0;
@@ -259,10 +281,6 @@ it('reports a cancellation that arrives where a refusal would otherwise return',
     frames += 1;
   });
 
-  const fake = createHcFake();
-
-  advertiseInbox(fake, askerTerminal, asker.path);
-
   const controller = new AbortController();
 
   const hc: HcRuntime = {
@@ -349,9 +367,13 @@ it('refuses an answer the asker sent to another lead session', async () => {
     { questionId, answer },
   );
 
+  const reason = reasonOf(result);
+
   expect(result.isError).toBe(true);
   expect(result.details).toMatchObject({ status: 'refused', questionId });
-  expect(reasonOf(result)).toContain('another lead session');
+  expect(reason).toContain('another lead session');
+  expect(reason).toContain('Nothing was queued.');
+  expect(reason).not.toContain('cannot be reached');
   expect(savedFiles(asker)).toEqual([]);
 });
 
