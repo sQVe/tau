@@ -51,7 +51,7 @@
     "cc-safety-net": "2.8.2",
     "entities": "9.0.0",
     "github-slugger": "2.0.0",
-    "marked": "18.0.11",
+    "marked": "18.2.1",
     "minimatch": "11.0.9",
     "pi-web-access": "0.48.0",
     "smol-toml": "1.9.1"
