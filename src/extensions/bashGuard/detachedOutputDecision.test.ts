@@ -167,14 +167,19 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
-    name: 'a detached group whose first command logs and a later one inherits the discard',
+    name: 'a detached group whose last command inherits the discard',
     command:
       '( herdr-app do space.close --confirmed > /tmp/x.log 2>&1; sleep 1 ) >/dev/null 2>&1 &',
+    blocked: true,
+  },
+  {
+    name: 'a detached group whose last command logs',
+    command: '( close; true > /tmp/x.log 2>&1 ) >/dev/null 2>&1 &',
     blocked: false,
   },
   {
-    name: 'a detached group whose first command inherits the discarded stderr',
-    command: '( close; true > /tmp/x.log 2>&1 ) >/dev/null 2>&1 &',
+    name: 'a detached command backgrounded inside a foreground group',
+    command: '( cmd 2>/dev/null & )',
     blocked: true,
   },
   {

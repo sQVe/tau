@@ -13,7 +13,7 @@ export interface ShellCommand {
   background: boolean;
   // The index of the first command of this command's pipeline or list unit.
   unit: number;
-  // The index of the command that opened this command's group, set only on the command that
+  // The index of the first command inside this command's group, set only on the command that
   // closes the group.
   group: number | undefined;
   redirections: ShellRedirection[];
@@ -382,7 +382,7 @@ class ShellParser {
     state.continuesList = continuesListAfter(operator);
     this.position += length;
 
-    if (endsUnit && state.groupStarts.length === 0) {
+    if (endsUnit) {
       state.unitStarts[state.unitStarts.length - 1] = commandIndex;
     }
 
@@ -419,18 +419,16 @@ class ShellParser {
 
     const groupStart = state.groupStarts.pop();
 
-    if (groupStart !== undefined) {
-      state.command.group = groupStart;
-      state.command.unit = groupStart;
+    if (groupStart === undefined) {
+      return false;
     }
 
     if (state.unitStarts.length > 1) {
       state.unitStarts.pop();
     }
 
-    if (groupStart !== undefined && state.unitStarts.length > 0) {
-      state.unitStarts[state.unitStarts.length - 1] = groupStart;
-    }
+    state.command.group = groupStart;
+    state.command.unit = state.unitStarts.at(-1) ?? groupStart;
 
     return false;
   }

@@ -74,12 +74,17 @@ describe('parseShellCommands', () => {
     expect(backgroundsOf('cmd 2>/dev/null | cat &')).toEqual([true, true]);
     expect(backgroundsOf('cmd 2>/dev/null & cat')).toEqual([true, false]);
     expect(backgroundsOf('cmd && other &')).toEqual([true, true]);
+    expect(backgroundsOf('cmd 2>/dev/null && ( other ) &')).toEqual([true, true]);
     expect(backgroundsOf('cmd; other &')).toEqual([false, true]);
   });
 
+  it('backgrounds only the command that ends a list inside a foreground group', () => {
+    expect(backgroundsOf('( a; b & )')).toEqual([false, true]);
+  });
+
   it.each([
-    ['a group and its closing redirections', '( cmd ) > out', [0, 1, 1]],
-    ['a group with a list separator', '( a; b ) > out', [0, 1, 2, 1]],
+    ['a group and its closing redirections', '( cmd ) > out', [0, 1, 0]],
+    ['a group with a list separator', '( a; b ) > out', [0, 1, 2, 0]],
     ['a plain list', 'cmd; other', [0, 1]],
   ])('records the unit index for %s', (_name, source, expected) => {
     expect(unitsOf(source)).toEqual(expected);
@@ -90,11 +95,15 @@ describe('parseShellCommands', () => {
   });
 
   it('gives a continuation the closed group unit', () => {
-    expect(unitsOf('( cmd ) | next')).toEqual([0, 1, 1, 1]);
+    expect(unitsOf('( cmd ) | next')).toEqual([0, 1, 0, 0]);
   });
 
   it('offsets the unit of a backtick command into the outer list', () => {
     expect(unitsOf('echo `git commit`')).toEqual([0, 1]);
+  });
+
+  it('offsets the group of a backtick group into the outer list', () => {
+    expect(groupsOf('echo `( a )`')).toEqual([undefined, undefined, undefined, 2]);
   });
 
   it.each([

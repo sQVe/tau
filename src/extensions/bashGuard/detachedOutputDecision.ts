@@ -28,6 +28,14 @@ interface CompoundFacts {
   ownDiscards: boolean;
 }
 
+interface CompoundScope {
+  commands: readonly ShellCommand[];
+  inherited: Streams;
+  enclosingByIndex: Map<number, Streams>;
+}
+
+type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
+
 const shellNames = new Set(['sh', 'bash', 'dash', 'zsh']);
 const devNull = '/dev/null';
 const maximumDepth = 4;
@@ -166,84 +174,111 @@ const enclosingStreams = (
   return enclosing.reduce((streams, { command }) => streamsOf(command, streams), inherited);
 };
 
-// A command shows its failure when its own redirections, over the streams it inherits, end stderr in
-// a visible file. A group shows it when its first command does, and a script when its last command
-// does. A command that redirects anything but leaves stderr discarded hides the failure.
-const compoundFacts = (
-  commands: readonly ShellCommand[],
-  index: number,
-  inherited: Streams,
+const compoundScope = (commands: readonly ShellCommand[], inherited: Streams): CompoundScope => ({
+  commands,
+  inherited,
+  enclosingByIndex: new Map(),
+});
+
+const enclosingOf = (scope: CompoundScope, index: number): Streams => {
+  const cached = scope.enclosingByIndex.get(index);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const enclosing = enclosingStreams(scope.commands, index, scope.inherited);
+
+  scope.enclosingByIndex.set(index, enclosing);
+
+  return enclosing;
+};
+
+const noFacts: CompoundFacts = { shows: false, discards: false, ownDiscards: false };
+const failClosedFacts: CompoundFacts = { shows: false, discards: true, ownDiscards: false };
+
+const groupFacts = (
+  factsOf: CompoundFactsOf,
+  scope: CompoundScope,
+  closingIndex: number,
   depth: number,
 ): CompoundFacts => {
-  const groupFacts = (closingIndex: number, groupInherited: Streams): CompoundFacts => {
-    const closing = commands[closingIndex];
-    const groupStart = closing?.group;
+  const closing = scope.commands[closingIndex];
+  const groupStart = closing?.group;
 
-    if (closing === undefined || groupStart === undefined) {
-      return { shows: false, discards: false, ownDiscards: false };
-    }
-
-    const members = commands
-      .map((command, memberIndex) => ({ command, index: memberIndex }))
-      .filter(({ index: memberIndex }) => memberIndex >= groupStart && memberIndex < closingIndex);
-
-    const first = members.find(({ command }) => command.arguments.length > 0);
-
-    const shows =
-      first === undefined
-        ? showsStderr(streamsOf(closing, groupInherited))
-        : compoundFacts(commands, first.index, groupInherited, depth + 1).shows;
-
-    const discards = members.some(({ index: memberIndex }) => {
-      const member = compoundFacts(commands, memberIndex, groupInherited, depth + 1);
-
-      return member.discards || member.ownDiscards;
-    });
-
-    return { shows, discards, ownDiscards: false };
-  };
-
-  const scriptFacts = (script: string, scriptInherited: Streams): CompoundFacts => {
-    const scriptCommands = parseShellCommands(script) ?? [];
-    const lastIndex = scriptCommands.findLastIndex((command) => command.arguments.length > 0);
-
-    const shows =
-      lastIndex === -1
-        ? showsStderr(scriptInherited)
-        : compoundFacts(scriptCommands, lastIndex, scriptInherited, depth + 1).shows;
-
-    const discards = scriptCommands.some((_command, scriptIndex) => {
-      const member = compoundFacts(scriptCommands, scriptIndex, scriptInherited, depth + 1);
-
-      return member.discards || member.ownDiscards;
-    });
-
-    return { shows, discards, ownDiscards: false };
-  };
-
-  if (depth > maximumDepth) {
-    return { shows: false, discards: true, ownDiscards: false };
+  if (closing === undefined || groupStart === undefined) {
+    return noFacts;
   }
 
-  const command = commands[index];
+  const members = scope.commands
+    .map((command, memberIndex) => ({ command, index: memberIndex }))
+    .filter(({ index: memberIndex }) => memberIndex >= groupStart && memberIndex < closingIndex);
+
+  const last = members.findLast(({ command }) => command.arguments.length > 0);
+
+  const shows =
+    last === undefined
+      ? showsStderr(streamsOf(closing, scope.inherited))
+      : factsOf(scope, last.index, depth + 1).shows;
+
+  const discards = members.some(({ index: memberIndex }) => {
+    const member = factsOf(scope, memberIndex, depth + 1);
+
+    return member.discards || member.ownDiscards;
+  });
+
+  return { shows, discards, ownDiscards: false };
+};
+
+const scriptFacts = (
+  factsOf: CompoundFactsOf,
+  script: string,
+  scriptInherited: Streams,
+  depth: number,
+): CompoundFacts => {
+  const commands = parseShellCommands(script) ?? [];
+  const scope = compoundScope(commands, scriptInherited);
+  const lastIndex = commands.findLastIndex((command) => command.arguments.length > 0);
+
+  const shows =
+    lastIndex === -1 ? showsStderr(scriptInherited) : factsOf(scope, lastIndex, depth + 1).shows;
+
+  const discards = commands.some((_command, scriptIndex) => {
+    const member = factsOf(scope, scriptIndex, depth + 1);
+
+    return member.discards || member.ownDiscards;
+  });
+
+  return { shows, discards, ownDiscards: false };
+};
+
+// A command shows its failure when its own redirections, over the streams it inherits, end stderr in
+// a visible file. A compound shows it when its last non-empty command does. A command that redirects
+// anything but leaves stderr discarded hides the failure.
+//
+// Exceeding the budget fails closed: the compound is treated as discarding, because the parser
+// cannot rule out a hidden failure. Group nesting consumes the same budget as script nesting.
+const compoundFacts = (scope: CompoundScope, index: number, depth: number): CompoundFacts => {
+  if (depth > maximumDepth) {
+    return failClosedFacts;
+  }
+
+  const command = scope.commands[index];
 
   if (command === undefined) {
-    return { shows: false, discards: false, ownDiscards: false };
+    return noFacts;
   }
 
-  const enclosing = enclosingStreams(commands, index, inherited);
+  const enclosing = enclosingOf(scope, index);
   const own = streamsOf(command, enclosing);
   const ownDiscards = command.redirections.length > 0 && discardsStderr(own);
   const script = scriptOf(command);
 
-  if (script !== undefined) {
-    const nested = scriptFacts(script, own);
-
-    return { shows: nested.shows, discards: nested.discards, ownDiscards };
-  }
-
-  if (command.group !== undefined) {
-    const nested = groupFacts(index, enclosing);
+  if (script !== undefined || command.group !== undefined) {
+    const nested =
+      script === undefined
+        ? groupFacts(compoundFacts, compoundScope(scope.commands, enclosing), index, depth)
+        : scriptFacts(compoundFacts, script, own, depth);
 
     return { shows: nested.shows, discards: nested.discards, ownDiscards };
   }
@@ -251,8 +286,31 @@ const compoundFacts = (
   return { shows: showsStderr(own), discards: false, ownDiscards };
 };
 
-const insideGroup = (commands: readonly ShellCommand[], index: number): boolean =>
-  commands.some((command, closingIndex) => encloses(command, closingIndex, index));
+const innermostGroupOf = (
+  commands: readonly ShellCommand[],
+  index: number,
+): ShellCommand | undefined => {
+  let innermost: { command: ShellCommand; start: number } | undefined;
+
+  for (const [closingIndex, command] of commands.entries()) {
+    const start = command.group;
+
+    if (start === undefined || start > index || index >= closingIndex) {
+      continue;
+    }
+
+    if (innermost === undefined || start > innermost.start) {
+      innermost = { command, start };
+    }
+  }
+
+  return innermost?.command;
+};
+
+// A backgrounded group is judged as a whole, so its members are not judged again. A command
+// backgrounded inside a foreground group still carries its own hidden failure.
+const insideBackgroundedGroup = (commands: readonly ShellCommand[], index: number): boolean =>
+  innermostGroupOf(commands, index)?.background === true;
 
 const hidesFailure = (commands: readonly ShellCommand[], index: number): boolean => {
   const command = commands[index];
@@ -261,19 +319,13 @@ const hidesFailure = (commands: readonly ShellCommand[], index: number): boolean
     return false;
   }
 
-  const enclosing = enclosingStreams(commands, index, emptyStreams);
+  const scope = compoundScope(commands, emptyStreams);
+  const enclosing = enclosingOf(scope, index);
   const own = streamsOf(command, enclosing);
   const script = scriptOf(command);
 
-  if (script !== undefined) {
-    const facts = compoundFacts(commands, index, enclosing, 0);
-    const ownHidden = facts.ownDiscards && !facts.shows;
-
-    return facts.discards || ownHidden;
-  }
-
-  if (command.group !== undefined) {
-    const facts = compoundFacts(commands, index, enclosing, 0);
+  if (script !== undefined || command.group !== undefined) {
+    const facts = compoundFacts(scope, index, 0);
     const ownHidden = facts.ownDiscards && !facts.shows;
 
     return facts.discards || ownHidden;
@@ -297,7 +349,7 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
   }
 
   return commands.some(
-    (_command, index) => !insideGroup(commands, index) && hidesFailure(commands, index),
+    (_command, index) => !insideBackgroundedGroup(commands, index) && hidesFailure(commands, index),
   )
     ? { block: true, reason: blockReason }
     : undefined;
