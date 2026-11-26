@@ -4,7 +4,7 @@ import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 
 import { errorMessage } from '../../errors.js';
-import { stopGroup } from '../../process/process.js';
+import { defaultStopGraceMilliseconds, stopGroup } from '../../process/process.js';
 
 export interface CommandOptions {
   argv: readonly string[];
@@ -31,8 +31,6 @@ interface CommandState {
   startFailure: Promise<string> | undefined;
 }
 
-const defaultStopGraceMilliseconds = 5000;
-
 const largestTimerDelayMilliseconds = 2_147_483_647;
 
 const isPositiveSafeInteger = (value: number): boolean => Number.isSafeInteger(value) && value > 0;
@@ -53,6 +51,14 @@ const checkCommandOptions = (options: CommandOptions): void => {
   if (options.deadlineMilliseconds > largestTimerDelayMilliseconds) {
     throw new RangeError(
       `The deadline must be at most ${largestTimerDelayMilliseconds} ms, got ${options.deadlineMilliseconds}.`,
+    );
+  }
+
+  const { stopGraceMilliseconds } = options;
+
+  if (stopGraceMilliseconds !== undefined && !isPositiveSafeInteger(stopGraceMilliseconds)) {
+    throw new RangeError(
+      `The stop grace must be a positive safe integer, got ${stopGraceMilliseconds}.`,
     );
   }
 };

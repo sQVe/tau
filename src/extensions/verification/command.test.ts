@@ -118,6 +118,7 @@ it('stops the process group at the deadline', async () => {
 it('stops a process group that ignores SIGTERM within the stop grace it is given', async () => {
   const cwd = temporaryCommandDirectory();
   const groupPath = join(cwd, 'group');
+  const started = Date.now();
 
   const outcome = await runCommand(
     optionsIn(cwd, {
@@ -133,6 +134,9 @@ it('stops a process group that ignores SIGTERM within the stop grace it is given
 
   expect(outcome).toEqual({ kind: 'stopped', reason: 'deadline' });
   expect(await groupState(groupId)).toBe('gone');
+
+  // The 300 ms grace ends the stop, not the 5 s default.
+  expect(Date.now() - started).toBeLessThan(3000);
 });
 
 it('stops the process group on cancel', async () => {
@@ -223,6 +227,23 @@ it('refuses an invalid deadline or an empty argv', async () => {
   );
 
   expect(existsSync(logPath)).toBe(false);
+
+  const graceCases = [
+    { stopGraceMilliseconds: 0, message: 'got 0.' },
+    { stopGraceMilliseconds: -1, message: 'got -1.' },
+    { stopGraceMilliseconds: Number.NaN, message: 'got NaN.' },
+    { stopGraceMilliseconds: 1.5, message: 'got 1.5.' },
+  ];
+
+  for (const { stopGraceMilliseconds, message } of graceCases) {
+    const graceLogPath = join(cwd, `grace-${String(stopGraceMilliseconds)}.log`);
+
+    await expect(
+      runCommand(optionsIn(cwd, { logPath: graceLogPath, stopGraceMilliseconds })),
+    ).rejects.toThrow(message);
+
+    expect(existsSync(graceLogPath)).toBe(false);
+  }
 });
 
 it('accepts the largest timer delay', async () => {

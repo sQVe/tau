@@ -113,7 +113,7 @@ export const stopGroup = async (child: ChildProcess, graceMilliseconds: number):
   }
 };
 
-const groupStopGraceMilliseconds = 5000;
+export const defaultStopGraceMilliseconds = 5000;
 
 // The shell waits for one line on stdin, then becomes the command. If this process dies before it
 // sends the line, stdin closes and the shell exits without starting the command.
@@ -164,7 +164,7 @@ export const execInGroup: GroupExec = async (command, commandArguments, options)
   let stopping: Promise<void> | undefined;
 
   const stop = () => {
-    stopping ??= stopGroup(child, groupStopGraceMilliseconds);
+    stopping ??= stopGroup(child, defaultStopGraceMilliseconds);
   };
 
   // Writing to a shell that already exited fails, and the exit status reports that instead.

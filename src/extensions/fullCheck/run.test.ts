@@ -185,18 +185,59 @@ it('keeps separately captured stdout parseable and stderr in the command log', a
 // A command that ignores SIGTERM needs the escalation, which is the one wall clock in a stop.
 it('stops a command that ignores SIGTERM within the stop grace it is given', async () => {
   const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+  const started = Date.now();
+  let groupId = 0;
 
   const result = await runCheck({
     root,
     argv: [process.execPath, '-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
     signal: undefined,
-    onStarted: async () => {},
+    onStarted: async (startedGroupId) => {
+      groupId = startedGroupId;
+
+      onTestFinished(() => {
+        try {
+          process.kill(-startedGroupId, 'SIGKILL');
+        } catch {
+          // The group has already stopped.
+        }
+      });
+    },
     idleLimitMilliseconds: 300,
     stopGraceMilliseconds: 300,
     output: 'combined',
   });
 
   expect(result).toMatchObject({ passed: false, idle: true });
+  expect(await groupState(groupId)).toBe('gone');
+
+  // The 300 ms grace ends the stop, not the 5 s default.
+  expect(Date.now() - started).toBeLessThan(3000);
+});
+
+it('refuses a stop grace that is not a positive safe integer', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+
+  const cases = [
+    { stopGraceMilliseconds: 0, message: 'got 0.' },
+    { stopGraceMilliseconds: -1, message: 'got -1.' },
+    { stopGraceMilliseconds: Number.NaN, message: 'got NaN.' },
+    { stopGraceMilliseconds: 1.5, message: 'got 1.5.' },
+  ];
+
+  for (const { stopGraceMilliseconds, message } of cases) {
+    const outcome = runCheck({
+      root,
+      argv: [process.execPath, '-e', ''],
+      signal: undefined,
+      onStarted: async () => {},
+      idleLimitMilliseconds: 300,
+      stopGraceMilliseconds,
+      output: 'combined',
+    });
+
+    await expect(outcome).rejects.toThrow(message);
+  }
 });
 
 it('sends no signal to the group after an idle stop returns', async () => {
