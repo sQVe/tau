@@ -82,6 +82,17 @@ it('reads no foreground argv from a terminal that is not registered yet', async 
   expect(await foregroundArgv(runtimeOf(fake), 't7')).toBeUndefined();
 });
 
+it('keeps a foreground read failure that is not a missing terminal', async () => {
+  const fake = createHcFake();
+
+  fake.reply('get', 'not-json');
+
+  const failure = await foregroundArgv(runtimeOf(fake), 't7').catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'malformed' });
+});
+
 const abortedExecError = (): Error => {
   const error = new Error('The operation was aborted');
 

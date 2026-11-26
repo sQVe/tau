@@ -27,6 +27,9 @@ import {
   startPiSessionRightOf,
 } from './piStart.js';
 
+const terminalOf = (result: Awaited<ReturnType<typeof startPiSession>>): string | undefined =>
+  'terminal' in result ? result.terminal : undefined;
+
 it('a space start opens one tab with the argv as JSON', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
@@ -109,7 +112,6 @@ it('a space start without a terminal in its reply returns no terminal', async ()
   );
 
   expect(result).toEqual({ reply: '{"ok":true}', target: { name: 'ticket-1' } });
-  expect(result.terminal).toBeUndefined();
   expect(fake.calls).toHaveLength(1);
 });
 
@@ -185,7 +187,7 @@ it('a bare repository starts a session without the caller naming it bare', async
     startRequest(root, readerFor(fake, root), { bareRoot: false }),
   );
 
-  expect(result.terminal).toBe('t-new');
+  expect(terminalOf(result)).toBe('t-new');
   expect(fake.calls).toHaveLength(2);
 });
 
@@ -198,7 +200,7 @@ it('a bare root layout starts a session', async () => {
     startRequest(root, readerFor(fake, root), { bareRoot: false }),
   );
 
-  expect(result.terminal).toBe('t-new');
+  expect(terminalOf(result)).toBe('t-new');
   expect(fake.calls).toHaveLength(2);
 });
 
@@ -215,7 +217,7 @@ it('a linked worktree starts a session', async () => {
     startRequest(worktree, readerFor(fake, repository)),
   );
 
-  expect(result.terminal).toBe('t-new');
+  expect(terminalOf(result)).toBe('t-new');
   expect(fake.calls).toHaveLength(2);
 });
 
@@ -327,7 +329,7 @@ it('a folder inside a checkout starts a session', async () => {
     startRequest(root, readerFor(fake, root), { folder }),
   );
 
-  expect(result.terminal).toBe('t-new');
+  expect(terminalOf(result)).toBe('t-new');
   expect(fake.calls).toHaveLength(2);
 });
 
@@ -373,10 +375,25 @@ it('a folder that is not a Git checkout refuses before the resolver runs', async
   expect(fake.calls).toEqual([]);
 });
 
-const paneAppFake = (splitReply: string): ExecFake<'split'> =>
-  createExecFake<'split'>({
-    keyOf: (command) => (command === 'herdr-app' ? 'split' : undefined),
-    handlerFor: () => () => succeededResult(splitReply),
+const paneAppFake = (splitReply: string): ExecFake<'split' | 'get'> =>
+  createExecFake<'split' | 'get'>({
+    keyOf: (command, commandArguments) => {
+      if (command === 'herdr-app') {
+        return 'split';
+      }
+
+      return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
+    },
+    handlerFor: (key) => () =>
+      key === 'get'
+        ? succeededResult(
+            JSON.stringify({
+              address: 't-new',
+              state: 'live',
+              foreground: { pid: 1, name: 'pi', argv: ['pi'], cwd: '' },
+            }),
+          )
+        : succeededResult(splitReply),
   });
 
 it('a pane start splits to the right of the requested pane once', async () => {
@@ -393,15 +410,17 @@ it('a pane start splits to the right of the requested pane once', async () => {
       session: undefined,
       bareRoot: false,
       environment: { TAU_ROLE: 'architect' },
+      readForegroundArgv: readerFor(fake, root),
     },
   );
 
   expect(result).toEqual({
     reply: '{"pane":"p-new","terminal":"t-new"}',
     terminal: 't-new',
+    model: 'default',
   });
 
-  expect(fake.calls).toHaveLength(1);
+  expect(fake.calls).toHaveLength(2);
   expect(fake.calls[0]?.command).toBe('herdr-app');
 
   expect(fake.calls[0]?.commandArguments).toEqual([
@@ -434,6 +453,7 @@ it('a pane split reply without a pane ends the start', async () => {
         session: undefined,
         bareRoot: false,
         environment: undefined,
+        readForegroundArgv: readerFor(fake, root),
       },
     ),
   ).rejects.toThrow('herdr-app do pane.split printed unexpected output');
@@ -504,7 +524,7 @@ it('a split reply that is not JSON rejects with the command context and no secon
   expect(fake.calls).toHaveLength(1);
 });
 
-it('a split Herdr reports successful stays successful when the signal aborts during the call', async () => {
+it('a split that succeeds before the signal aborts is not reported as a split failure', async () => {
   const controller = new AbortController();
 
   const fake = createExecFake<'split'>({
@@ -518,16 +538,14 @@ it('a split Herdr reports successful stays successful when the signal aborts dur
 
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await startPiSessionRightOf(
+  const failure = await startPiSessionRightOf(
     { exec: fake.exec, cwd: root, signal: controller.signal },
-    paneRequest(root, readerFor(fake, root)),
-  );
+    paneRequest(root, async () => ['pi']),
+  ).catch((error: unknown) => error);
 
-  expect(result).toEqual({
-    reply: '{"pane":"p-new","terminal":"t-new"}',
-    terminal: 't-new',
-  });
-
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('cancelled during the split');
+  expect((failure as Error).message).not.toContain('pane.split failed');
   expect(fake.calls).toHaveLength(1);
 });
 
@@ -619,6 +637,23 @@ it('a launch in a folder that is not a Git checkout runs no command', async () =
     ),
   ).rejects.toThrow(`start folder is not a Git checkout: ${folder}`);
 
+  expect(fake.calls).toEqual([]);
+});
+
+it('a launch aborted at the checkout probe rejects with an Error for a non-Error reason', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+
+  controller.abort('cancelled during the checkout probe');
+
+  const failure = await launchPiSession(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    launchRequest(root, readerFor(fake, root)),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).cause).toBe('cancelled during the checkout probe');
   expect(fake.calls).toEqual([]);
 });
 

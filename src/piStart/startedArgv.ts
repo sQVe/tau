@@ -14,8 +14,10 @@ const runtimeExecutables = new Set([
   ...executableNames('bun', ['exe']),
 ]);
 
+const baseName = (argument: string): string => basename(argument.replaceAll('\\', '/'));
+
 const isPiExecutable = (argument: string | undefined): boolean =>
-  argument !== undefined && piExecutableNames.has(basename(argument));
+  argument !== undefined && piExecutableNames.has(baseName(argument));
 
 const carriesPath = (argument: string): boolean =>
   argument.includes('/') || argument.includes('\\');
@@ -122,7 +124,7 @@ export const piArgv = (argv: readonly string[] | undefined): readonly string[] |
     return argv;
   }
 
-  const runtime = first === undefined ? undefined : basename(first);
+  const runtime = first === undefined ? undefined : baseName(first);
 
   if (runtime === undefined || !runtimeExecutables.has(runtime)) {
     return undefined;

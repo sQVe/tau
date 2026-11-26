@@ -36,6 +36,66 @@ it.each<{ name: string; argv: readonly string[] | undefined; expected: unknown }
     expected: ['bun.exe', '/path/pi.cmd', ...modelArguments],
   },
   {
+    name: 'a Windows pi.cmd path',
+    argv: ['C:\\Users\\x\\pi.cmd', ...modelArguments],
+    expected: ['C:\\Users\\x\\pi.cmd', ...modelArguments],
+  },
+  {
+    name: 'a node Windows pi path',
+    argv: ['node', 'C:\\tools\\pi', ...modelArguments],
+    expected: ['node', 'C:\\tools\\pi', ...modelArguments],
+  },
+  {
+    name: 'a Windows node.exe pi path',
+    argv: ['C:\\tools\\node.exe', 'C:\\tools\\pi.cmd', ...modelArguments],
+    expected: ['C:\\tools\\node.exe', 'C:\\tools\\pi.cmd', ...modelArguments],
+  },
+  {
+    name: 'a node pi path with a leading flag',
+    argv: ['node', '--experimental-strip-types', '/path/pi', ...modelArguments],
+    expected: ['node', '--experimental-strip-types', '/path/pi', ...modelArguments],
+  },
+  {
+    name: 'a node pi path after a value-taking flag',
+    argv: ['node', '--stack-size', '2000', '/path/pi', ...modelArguments],
+    expected: ['node', '--stack-size', '2000', '/path/pi', ...modelArguments],
+  },
+  {
+    name: 'a node pi.js script after a value-taking flag',
+    argv: ['node', '--stack-size', '2000', 'pi.js', ...modelArguments],
+    expected: ['node', '--stack-size', '2000', 'pi.js', ...modelArguments],
+  },
+  {
+    name: 'a bare pi after an attached flag',
+    argv: ['node', '--require=./setup.js', 'pi', ...modelArguments],
+    expected: ['node', '--require=./setup.js', 'pi', ...modelArguments],
+  },
+  {
+    name: 'a bare pi after a loader flag',
+    argv: ['node', '--loader', 'tsx', 'pi', ...modelArguments],
+    expected: ['node', '--loader', 'tsx', 'pi', ...modelArguments],
+  },
+  {
+    name: 'a bare pi after a memory flag',
+    argv: ['node', '--max-old-space-size', '4096', 'pi', ...modelArguments],
+    expected: ['node', '--max-old-space-size', '4096', 'pi', ...modelArguments],
+  },
+  {
+    name: 'a bun pi path',
+    argv: ['bun', '/path/pi', ...modelArguments],
+    expected: ['bun', '/path/pi', ...modelArguments],
+  },
+  {
+    name: 'a bun.exe pi path',
+    argv: ['bun.exe', '/path/pi', ...modelArguments],
+    expected: ['bun.exe', '/path/pi', ...modelArguments],
+  },
+  {
+    name: 'a node.exe pi.cmd path',
+    argv: ['node.exe', '/usr/local/bin/pi.cmd', ...modelArguments],
+    expected: ['node.exe', '/usr/local/bin/pi.cmd', ...modelArguments],
+  },
+  {
     name: 'no argv',
     argv: undefined,
     expected: undefined,
@@ -48,6 +108,46 @@ it.each<{ name: string; argv: readonly string[] | undefined; expected: unknown }
   {
     name: 'a node command with a trailing pi argument',
     argv: ['node', '/path/tool.js', 'pi'],
+    expected: undefined,
+  },
+  {
+    name: 'a node command with a flag value of pi',
+    argv: ['node', '--title', 'pi', '/path/tool.js'],
+    expected: undefined,
+  },
+  {
+    name: 'a node command with a Pi-named flag value',
+    argv: ['node', '--require', './pi.js', 'main.js'],
+    expected: undefined,
+  },
+  {
+    name: 'a node eval command with a trailing pi',
+    argv: ['node', '-e', 'code', 'pi'],
+    expected: undefined,
+  },
+  {
+    name: 'a node print command with a trailing pi',
+    argv: ['node', '--print', 'code', 'pi'],
+    expected: undefined,
+  },
+  {
+    name: 'a node long eval command with a trailing pi',
+    argv: ['node', '--eval', 'code', 'pi'],
+    expected: undefined,
+  },
+  {
+    name: 'a node short print command with a trailing pi',
+    argv: ['node', '-p', 'code', 'pi'],
+    expected: undefined,
+  },
+  {
+    name: 'a node long eval command with an inline code value and a trailing pi',
+    argv: ['node', '--eval=code', 'pi'],
+    expected: undefined,
+  },
+  {
+    name: 'a node long print command with an inline code value and a trailing pi',
+    argv: ['node', '--print=code', 'pi'],
     expected: undefined,
   },
   {

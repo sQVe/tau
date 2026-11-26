@@ -67,3 +67,21 @@ it('fails a command it does not model instead of answering it', async () => {
   expect(result).toMatchObject({ code: 1, stdout: '' });
   expect(result.stderr).toContain('pane.swap');
 });
+
+it('reports a terminal it did not start as not_found', async () => {
+  const fake = createHerdrAppFake();
+  const result = await fake.exec('hc', ['get', '--json', '--', 't-missing'], undefined);
+
+  expect(result.code).toBe(3);
+  expect(JSON.parse(result.stderr)).toMatchObject({ error: { kind: 'not_found' } });
+});
+
+it('records no foreground for a reply that carried no --argv', async () => {
+  const fake = createHerdrAppFake();
+
+  await fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1'], undefined);
+
+  const result = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(result.code).toBe(3);
+});

@@ -5,7 +5,7 @@ import type { TSchema } from 'typebox';
 
 import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
-import { isMissingFile } from '../errors.js';
+import { errorMessage, isMissingFile } from '../errors.js';
 import { isGitRepository } from '../git.js';
 import { piArguments } from './piArguments.js';
 import { readStartedModel } from './startedModel/startedModelReadback.js';
@@ -41,7 +41,7 @@ export interface PiStartRequest extends PiStartBaseRequest {
   target: PiStartTarget | PiStartTargetResolver;
 }
 
-export interface PiStartRightOfRequest extends PiSessionRequest {
+export interface PiStartRightOfRequest extends PiReadbackRequest {
   pane: string;
   bareRoot: boolean;
 }
@@ -83,6 +83,11 @@ type TerminalReply = (
   terminal: string | undefined;
   error: unknown;
 };
+
+interface StartedReply {
+  space?: unknown;
+  tab?: unknown;
+}
 
 export const launchTimeoutMilliseconds = 30_000;
 // A launch that used its whole budget still leaves a window to read the model, so a slow launch is
@@ -237,6 +242,67 @@ const replyTerminal = (reply: string): string | undefined => {
   }
 };
 
+const isStartedReply = (value: unknown): value is StartedReply =>
+  typeof value === 'object' && value !== null;
+
+const replyField = (reply: string, field: keyof StartedReply): string | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(reply);
+
+    if (!isStartedReply(parsed)) {
+      return undefined;
+    }
+
+    const value = parsed[field];
+
+    return typeof value === 'string' && value !== '' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+// The readback runs after the tab exists, so a failure must still name the tab a caller can stop.
+const startedTabError = (reply: string, terminal: string, error: unknown): Error => {
+  const space = replyField(reply, 'space');
+  const tab = replyField(reply, 'tab');
+  const places: string[] = [];
+
+  if (space !== undefined) {
+    places.push(`space ${space}`);
+  }
+
+  if (tab !== undefined) {
+    places.push(`tab ${tab}`);
+  }
+
+  const where = places.length === 0 ? '' : ` (${places.join(', ')})`;
+
+  return new Error(
+    `${errorMessage(error)} The started terminal ${terminal}${where} is still running; stop it with hc kill ${terminal} if you do not want to keep it.`,
+    { cause: error },
+  );
+};
+
+const readStartedTerminalModel = async (
+  request: PiReadbackRequest,
+  reply: string,
+  terminal: string,
+  deadline: number,
+  signal: AbortSignal | undefined,
+): Promise<string> => {
+  try {
+    return await readStartedModel({
+      readForegroundArgv: request.readForegroundArgv,
+      terminal,
+      model: request.model,
+      signal,
+      deadline: readbackDeadline(deadline),
+    });
+  } catch (error) {
+    throw startedTabError(reply, terminal, error);
+  }
+};
+
 const launch = async (
   runtime: CommandRuntime,
   command: LaunchCommand,
@@ -277,15 +343,19 @@ const launch = async (
     return launched;
   }
 
-  const model = await readStartedModel({
-    readForegroundArgv: request.readForegroundArgv,
-    terminal: launched.terminal,
-    model: request.model,
-    signal: runtime.signal,
-    deadline: readbackDeadline(deadline),
-  });
+  try {
+    const model = await readStartedModel({
+      readForegroundArgv: request.readForegroundArgv,
+      terminal: launched.terminal,
+      model: request.model,
+      signal: runtime.signal,
+      deadline: readbackDeadline(deadline),
+    });
 
-  return { ...launched, model };
+    return { ...launched, model };
+  } catch (error) {
+    return { ...launched, error };
+  }
 };
 
 const terminalFromReply = (
@@ -314,11 +384,21 @@ const isTargetResolver = (
   target: PiStartTarget | PiStartTargetResolver,
 ): target is PiStartTargetResolver => typeof target === 'function';
 
+// The abort signal's reason may be a plain value, which would reject with a non-Error.
+const normalizeLaunchCancellation = (signal: AbortSignal | undefined, error: unknown): unknown =>
+  signal?.aborted === true && !(error instanceof Error)
+    ? new Error('The Pi launch was cancelled.', { cause: error })
+    : error;
+
 export const launchPiSession = async (
   runtime: CommandRuntime,
   request: PiLaunchRequest,
 ): Promise<PiLaunchResult> => {
-  await requireCheckout(runtime, request.folder, request.bareRoot);
+  try {
+    await requireCheckout(runtime, request.folder, request.bareRoot);
+  } catch (error) {
+    throw normalizeLaunchCancellation(runtime.signal, error);
+  }
 
   return launch(
     runtime,
@@ -336,7 +416,11 @@ export const launchPiSessionRightOf = async (
   runtime: CommandRuntime,
   request: PiLaunchRightOfRequest,
 ): Promise<PiLaunchResult> => {
-  await requireCheckout(runtime, request.folder, request.bareRoot);
+  try {
+    await requireCheckout(runtime, request.folder, request.bareRoot);
+  } catch (error) {
+    throw normalizeLaunchCancellation(runtime.signal, error);
+  }
 
   return launch(
     runtime,
@@ -353,7 +437,10 @@ export const launchPiSessionRightOf = async (
 export const startPiSession = async (
   runtime: CommandRuntime,
   request: PiStartRequest,
-): Promise<{ reply: string; target: PiStartTarget; terminal?: string; model?: string }> => {
+): Promise<
+  | { reply: string; target: PiStartTarget }
+  | { reply: string; target: PiStartTarget; terminal: string; model: string }
+> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
   const target = isTargetResolver(request.target) ? await request.target() : request.target;
@@ -376,13 +463,7 @@ export const startPiSession = async (
     return { reply, target };
   }
 
-  const model = await readStartedModel({
-    readForegroundArgv: request.readForegroundArgv,
-    terminal,
-    model: request.model,
-    signal: runtime.signal,
-    deadline: readbackDeadline(deadline),
-  });
+  const model = await readStartedTerminalModel(request, reply, terminal, deadline, runtime.signal);
 
   return { reply, target, terminal, model };
 };
@@ -390,8 +471,10 @@ export const startPiSession = async (
 export const startPiSessionRightOf = async (
   runtime: CommandRuntime,
   request: PiStartRightOfRequest,
-): Promise<{ reply: string; terminal?: string }> => {
+): Promise<{ reply: string; terminal: string; model: string }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
+
+  const deadline = Date.now() + launchTimeoutMilliseconds;
 
   const reply = await runCommand(
     runtime,
@@ -404,5 +487,9 @@ export const startPiSessionRightOf = async (
 
   checkOutput('herdr-app do pane.split', splitReplySchema, created);
 
-  return { reply, terminal: created.terminal };
+  const terminal = created.terminal;
+
+  const model = await readStartedTerminalModel(request, reply, terminal, deadline, runtime.signal);
+
+  return { reply, terminal, model };
 };

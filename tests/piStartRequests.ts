@@ -5,13 +5,11 @@ import type {
   launchPiSessionRightOf,
   startPiSession,
 } from '../src/piStart/piStart.js';
+import type { ReadForegroundArgv } from '../src/piStart/startedModel/startedModelReadback.js';
 import type { ExecCall, ExecFake } from './execFake.js';
 import { foregroundReaderFor } from './herdrAppFake.js';
 
-export type ForegroundReader = (
-  terminal: string,
-  signal: AbortSignal,
-) => Promise<readonly string[] | undefined>;
+export type ForegroundReader = ReadForegroundArgv;
 
 type StartRequest = Parameters<typeof startPiSession>[1];
 type LaunchRequest = Parameters<typeof launchPiSession>[1];

@@ -173,7 +173,12 @@ export const createHerdrAppFake = (
           const foreground = startedForegrounds.get(address);
 
           return foreground === undefined
-            ? failedResult(`unknown terminal: ${address}`)
+            ? failedResult(
+                JSON.stringify({
+                  error: { kind: 'not_found', message: `unknown terminal: ${address}` },
+                }),
+                3,
+              )
             : succeededResult(foregroundReply(address, foreground));
         };
       }
@@ -192,7 +197,7 @@ export const createHerdrAppFake = (
     if (result.code === 0 && command === 'herdr-app') {
       const terminal = terminalFromReply(result.stdout);
 
-      if (terminal !== undefined) {
+      if (terminal !== undefined && argumentAfter(commandArguments, '--argv') !== undefined) {
         startedForegrounds.set(terminal, foregroundFromLaunch(commandArguments));
       }
     }

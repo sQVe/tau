@@ -51,6 +51,9 @@ const launchWithForeground = (
   });
 };
 
+const modelOf = (result: Awaited<ReturnType<typeof startPiSession>>): string | undefined =>
+  'model' in result ? result.model : undefined;
+
 it('a start returns the model its terminal runs', async () => {
   const fake = launchWithForeground([
     'pi',
@@ -67,129 +70,13 @@ it('a start returns the model its terminal runs', async () => {
     startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
   );
 
-  expect(result.model).toBe('morph/morph-dsv41flash-1017');
+  expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
 });
 
 it.each([
   {
-    name: 'a pi path',
-    argv: ['/usr/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
     name: 'a node pi path',
     argv: ['node', '/usr/local/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a node pi path with a leading flag',
-    argv: [
-      'node',
-      '--experimental-strip-types',
-      '/path/pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a node pi path with a value-taking flag before the script',
-    argv: [
-      'node',
-      '--loader',
-      'tsx',
-      '/path/pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a node pi path after a value-taking flag',
-    argv: [
-      'node',
-      '--stack-size',
-      '2000',
-      '/path/pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a node pi.js script after a value-taking flag',
-    argv: [
-      'node',
-      '--stack-size',
-      '2000',
-      'pi.js',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a bare pi script after the runtime',
-    argv: ['node', 'pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a bare pi after an attached flag',
-    argv: [
-      'node',
-      '--require=./setup.js',
-      'pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a bare pi after a loader flag',
-    argv: [
-      'node',
-      '--loader',
-      'tsx',
-      'pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a bare pi after a memory flag',
-    argv: [
-      'node',
-      '--max-old-space-size',
-      '4096',
-      'pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
-  },
-  {
-    name: 'a bun pi path',
-    argv: ['bun', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a bun.exe pi path',
-    argv: ['bun.exe', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-  },
-  {
-    name: 'a node.exe pi.cmd path',
-    argv: [
-      'node.exe',
-      '/usr/local/bin/pi.cmd',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ],
   },
 ])('a start reads the model from $name', async ({ argv }) => {
   const fake = launchWithForeground(argv);
@@ -210,60 +97,43 @@ it.each([
 
     const result = await opening;
 
-    expect(result.model).toBe('morph/morph-dsv41flash-1017');
+    expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
   } finally {
     vi.useRealTimers();
   }
 });
 
-it.each<[string, readonly string[] | undefined]>([
-  ['undefined', undefined],
-  ['a non-Pi argv', ['bash']],
-  ['a node command with a trailing pi argument', ['node', '/path/tool.js', 'pi']],
-  ['a node command with a flag value of pi', ['node', '--title', 'pi', '/path/tool.js']],
-  ['a node command with a Pi-named flag value', ['node', '--require', './pi.js', 'main.js']],
-  ['a bare pi argument after an unknown value-taking flag', ['node', '--stack-size', '2000', 'pi']],
-  ['a node eval command with a trailing pi', ['node', '-e', 'code', 'pi']],
-  ['a node eval command with a path-shaped pi after the code', ['node', '-e', 'code', '/path/pi']],
-  ['a node print command with a trailing pi', ['node', '--print', 'code', 'pi']],
-  ['a node long eval command with a trailing pi', ['node', '--eval', 'code', 'pi']],
-  ['a node short print command with a trailing pi', ['node', '-p', 'code', 'pi']],
-  [
-    'a node long eval command with an inline code value and a trailing pi',
-    ['node', '--eval=code', 'pi'],
-  ],
-  [
-    'a node long print command with an inline code value and a trailing pi',
-    ['node', '--print=code', 'pi'],
-  ],
-])('a start retries a model read that first returns %s', async (_shape, firstRead) => {
-  const fake = launchWithForeground([
-    'pi',
-    '--provider',
-    'morph',
-    '--model',
-    'morph-dsv41flash-1017',
-  ]);
+it.each<[string, readonly string[] | undefined]>([['a non-Pi argv', ['bash']]])(
+  'a start retries a model read that first returns %s',
+  async (_shape, firstRead) => {
+    const fake = launchWithForeground([
+      'pi',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ]);
 
-  const root = await createTemporaryRepository(onTestFinished);
-  let reads = 0;
+    const root = await createTemporaryRepository(onTestFinished);
+    let reads = 0;
 
-  const reader = async (): Promise<readonly string[] | undefined> => {
-    reads += 1;
+    const reader = async (): Promise<readonly string[] | undefined> => {
+      reads += 1;
 
-    return reads === 1
-      ? firstRead
-      : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
-  };
+      return reads === 1
+        ? firstRead
+        : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
+    };
 
-  const result = await startPiSession(
-    { exec: fake.exec, cwd: root },
-    startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
-  );
+    const result = await startPiSession(
+      { exec: fake.exec, cwd: root },
+      startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
+    );
 
-  expect(result.model).toBe('morph/morph-dsv41flash-1017');
-  expect(reads).toBe(2);
-});
+    expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
+    expect(reads).toBe(2);
+  },
+);
 
 it('a start retries a model read that fails once before answering', async () => {
   const fake = launchWithForeground([
@@ -292,7 +162,7 @@ it('a start retries a model read that fails once before answering', async () => 
     startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
   );
 
-  expect(result.model).toBe('morph/morph-dsv41flash-1017');
+  expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
   expect(reads).toBe(2);
 });
 
@@ -351,7 +221,10 @@ it('a start keeps reading a terminal that is not registered yet past the failure
     const result = await opening;
 
     expect(result).not.toBeInstanceOf(Error);
-    expect((result as { model?: string }).model).toBe('morph/morph-dsv41flash-1017');
+
+    expect(modelOf(result as Awaited<ReturnType<typeof startPiSession>>)).toBe(
+      'morph/morph-dsv41flash-1017',
+    );
   } finally {
     vi.useRealTimers();
   }
@@ -431,7 +304,11 @@ it('an abort during the model readback ends the call', async () => {
 
   controller.abort(cancellation);
 
-  expect(await opening).toBe(cancellation);
+  const failure = await opening;
+
+  expect(failure).toMatchObject({ cause: cancellation });
+  expect((failure as Error).message).toContain('cancelled during the readback');
+  expect((failure as Error).message).toContain('t-new');
 });
 
 it('an abort during the backoff pause ends the call before the next read', async () => {
@@ -465,7 +342,8 @@ it('an abort during the backoff pause ends the call before the next read', async
     const stillWaiting = vi.advanceTimersByTimeAsync(0).then(() => 'still waiting' as const);
     const outcome = await Promise.race([opening, stillWaiting]);
 
-    expect(outcome).toBe(cancellation);
+    expect(outcome).toMatchObject({ cause: cancellation });
+    expect((outcome as Error).message).toContain('cancelled during the pause');
     expect(reads).toBe(1);
   } finally {
     vi.useRealTimers();
@@ -569,7 +447,7 @@ it('a slow successful launch still leaves a window to read the model', async () 
       startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
     );
 
-    expect(result.model).toBe('morph/morph-dsv41flash-1017');
+    expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
   } finally {
     vi.useRealTimers();
   }
@@ -614,6 +492,21 @@ it('a launch returns the model its terminal runs', async () => {
   expect(result.model).toBe('a/architect');
 });
 
+it('a launch returns a readback mismatch as its error', async () => {
+  const fake = launchWithForeground(['pi', '--provider', 'a', '--model', 'architect']);
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await launchPiSession(
+    { exec: fake.exec, cwd: root },
+    { ...launchRequest(root, readerFor(fake, root)), model: 'other/model' },
+  );
+
+  expect(result.terminal).toBe('t-new');
+  expect(result.model).toBeUndefined();
+  expect(result.error).toBeInstanceOf(Error);
+  expect((result.error as Error).message).toContain('other/model');
+});
+
 it('a right-of launch returns the model its terminal runs', async () => {
   const fake = launchWithForeground(
     ['pi', '--provider', 'a', '--model', 'architect'],
@@ -655,7 +548,7 @@ it('a start reports the model when its terminal shows the Pi foreground late', a
     startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
   );
 
-  expect(result.model).toBe('morph/morph-dsv41flash-1017');
+  expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
   expect(reads).toBe(3);
 });
 

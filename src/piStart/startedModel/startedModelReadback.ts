@@ -26,9 +26,6 @@ interface ReadFailure {
   since: number;
 }
 
-// Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
-// launch budget. The read gets its own signal, so the command is cancelled when the budget expires.
-// A synchronous throw from the read must clear the timer and the listener it already registered.
 type ReadWithinBudget =
   | { readonly kind: 'read'; readonly argv: readonly string[] | undefined }
   | { readonly kind: 'timeout' };
@@ -101,6 +98,9 @@ const pauseBeforeRead = async (
   }
 };
 
+// Each read shares one deadline with the whole readback, so a slow terminal cannot extend the
+// launch budget. The read gets its own signal, so the command is cancelled when the budget expires.
+// A synchronous throw from the read must clear the timer and the listener it already registered.
 const readWithinBudget = (
   read: (signal: AbortSignal) => Promise<readonly string[] | undefined>,
   remaining: number,
