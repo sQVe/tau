@@ -1,23 +1,8 @@
 import { expect, it, vi } from 'vitest';
 
 import tauRegistration from '../src/tau/tau.js';
-import { nohupClose } from './bashGuardCommands.js';
+import { blockedOutputReason, nohupClose } from './bashGuardCommands.js';
 import { fakeExtensionApi } from './extensionApi.js';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-const blocksDetachedOutput = (value: unknown): boolean => {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  const reason = value['reason'];
-
-  return (
-    value['block'] === true && typeof reason === 'string' && reason.includes('/tmp/<name>.log')
-  );
-};
 
 it.each(['lead', 'architect', 'worker'] as const)(
   'registers the detached output guard for the %s role',
@@ -43,7 +28,10 @@ it.each(['lead', 'architect', 'worker'] as const)(
     );
 
     expect(
-      results.some((result) => result.status === 'fulfilled' && blocksDetachedOutput(result.value)),
+      results.some(
+        (result) =>
+          result.status === 'fulfilled' && blockedOutputReason(result.value) !== undefined,
+      ),
     ).toBe(true);
   },
 );
