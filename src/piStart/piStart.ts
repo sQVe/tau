@@ -175,6 +175,23 @@ const isPathShaped = (argument: string): boolean =>
 // An inline-program flag supplies the program itself, so no script follows it.
 const inlineProgramRuntimeFlags = new Set(['--eval', '-e', '--print', '-p']);
 
+// A long inline-program flag may carry its program after `=`, as in `--eval=code`.
+const isInlineProgramFlag = (argument: string): boolean => {
+  if (inlineProgramRuntimeFlags.has(argument)) {
+    return true;
+  }
+
+  const equalsIndex = argument.indexOf('=');
+
+  if (equalsIndex === -1) {
+    return false;
+  }
+
+  const flagName = argument.slice(0, equalsIndex);
+
+  return flagName.startsWith('--') && inlineProgramRuntimeFlags.has(flagName);
+};
+
 // A partial allowlist of runtime flags that take a separate value, so the next argument is a flag
 // value and not the script. A bare Pi name counts only when it is the first candidate after the
 // skipped values; a later Pi name needs a path separator or an executable suffix.
@@ -218,7 +235,7 @@ const scriptArgument = (argv: readonly string[]): string | undefined => {
     }
 
     if (argument.startsWith('-')) {
-      if (inlineProgramRuntimeFlags.has(argument)) {
+      if (isInlineProgramFlag(argument)) {
         return undefined;
       }
 

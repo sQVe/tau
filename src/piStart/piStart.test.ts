@@ -836,6 +836,18 @@ it.each([
     argv: ['node', 'pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
   },
   {
+    name: 'a bare pi after an attached flag',
+    argv: [
+      'node',
+      '--require=./setup.js',
+      'pi',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
+  },
+  {
     name: 'a bare pi after a loader flag',
     argv: [
       'node',
@@ -915,6 +927,16 @@ it.each<[string, readonly string[] | undefined]>([
   ['a node eval command with a trailing pi', ['node', '-e', 'code', 'pi']],
   ['a node eval command with a path-shaped pi after the code', ['node', '-e', 'code', '/path/pi']],
   ['a node print command with a trailing pi', ['node', '--print', 'code', 'pi']],
+  ['a node long eval command with a trailing pi', ['node', '--eval', 'code', 'pi']],
+  ['a node short print command with a trailing pi', ['node', '-p', 'code', 'pi']],
+  [
+    'a node long eval command with an inline code value and a trailing pi',
+    ['node', '--eval=code', 'pi'],
+  ],
+  [
+    'a node long print command with an inline code value and a trailing pi',
+    ['node', '--print=code', 'pi'],
+  ],
 ])('a start retries a model read that first returns %s', async (_shape, firstRead) => {
   const fake = launchWithForeground([
     'pi',
