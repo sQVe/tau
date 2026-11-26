@@ -75,6 +75,7 @@ export const handoverAnswerCheck =
       return save();
     }
 
+    // The turn started by inbox delivery must see the answered record.
     await writeQuestionRecord(found.root, decision.answered);
 
     return savedOrRestored(found.root, decision.open, save);

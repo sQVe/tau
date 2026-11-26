@@ -147,10 +147,8 @@ it('reads the frozen version 3 record', async () => {
 
 it('reads a version 3 handover record with a sender', async () => {
   const directory = directoryFixture();
-  const path = join(directory, `${messageId}.json`);
 
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(path, JSON.stringify(version3HandoverRecord));
+  fixtureInto(directory, 'version3Handover.json');
 
   await expect(readMessage(directory, messageId)).resolves.toEqual({
     kind: 'record',
@@ -160,10 +158,8 @@ it('reads a version 3 handover record with a sender', async () => {
 
 it('reads a version 3 answer record', async () => {
   const directory = directoryFixture();
-  const path = join(directory, `${messageId}.json`);
 
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(path, JSON.stringify(version3AnswerRecord));
+  fixtureInto(directory, 'version3Answer.json');
 
   await expect(readMessage(directory, messageId)).resolves.toEqual({
     kind: 'record',
@@ -173,10 +169,8 @@ it('reads a version 3 answer record', async () => {
 
 it('reads a version 2 answer record', async () => {
   const directory = directoryFixture();
-  const path = join(directory, `${messageId}.json`);
 
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(path, JSON.stringify(version2AnswerRecord));
+  fixtureInto(directory, 'version2Answer.json');
 
   await expect(readMessage(directory, messageId)).resolves.toEqual({
     kind: 'record',

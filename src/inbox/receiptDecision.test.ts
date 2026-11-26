@@ -21,6 +21,7 @@ import {
 import type { ReceiptedMessage, ReceiptEntryFact } from './receiptDecision.js';
 
 const validQuestionId = '11111111-1111-4111-8111-111111111111';
+const otherValidQuestionId = '22222222-2222-4222-8222-222222222222';
 
 const readTable = [
   {
@@ -616,9 +617,9 @@ it('shows the handover answer with its question', () => {
   expect(
     messageText({
       family: 'handover-answer',
-      payload: { questionId: 'q1', senderSession: 's1', answer: 'Use option A.' },
+      payload: { questionId: validQuestionId, senderSession: 's1', answer: 'Use option A.' },
     }),
-  ).toBe('Handover answer to question q1:\n\nUse option A.');
+  ).toBe(`Handover answer to question ${validQuestionId}:\n\nUse option A.`);
 });
 
 it('parses the heading that messageText writes for a handover question', () => {
@@ -733,33 +734,32 @@ const questionReceipt = {
   ...handoverReceipt,
   version: 3,
   family: 'handover-question',
-  questionId: 'q1',
+  questionId: validQuestionId,
 } as const;
 
 const questionPayload = {
-  questionId: 'q1',
+  questionId: validQuestionId,
   text: 'Which option should I use?',
   askerTerminal: 'worker',
   askerSession: 's1',
 };
 
-const shownQuestionText =
-  'Handover question q1 from terminal worker, session s1:\n\nWhich option should I use?';
+const shownQuestionText = `Handover question ${validQuestionId} from terminal worker, session s1:\n\nWhich option should I use?`;
 
 const answerToQuestionReceipt = {
   ...handoverReceipt,
   version: 4,
   family: 'handover-answer',
-  questionId: 'q1',
+  questionId: validQuestionId,
 } as const;
 
 const handoverAnswerPayload = {
-  questionId: 'q1',
+  questionId: validQuestionId,
   senderSession: 's1',
   answer: 'Use option A.',
 };
 
-const shownHandoverAnswerText = 'Handover answer to question q1:\n\nUse option A.';
+const shownHandoverAnswerText = `Handover answer to question ${validQuestionId}:\n\nUse option A.`;
 
 const answerPayload = {
   assignmentId: 'a1',
@@ -868,7 +868,10 @@ const retryTable = [
   },
   {
     name: 'a handover-question retry with another receipted question',
-    receipted: { receipt: { ...questionReceipt, questionId: 'q2' }, content: shownQuestionText },
+    receipted: {
+      receipt: { ...questionReceipt, questionId: otherValidQuestionId },
+      content: shownQuestionText,
+    },
     body: { family: 'handover-question', payload: questionPayload },
     matches: false,
   },
@@ -881,7 +884,7 @@ const retryTable = [
   {
     name: 'a handover-answer retry for another question',
     receipted: {
-      receipt: { ...answerToQuestionReceipt, questionId: 'q2' },
+      receipt: { ...answerToQuestionReceipt, questionId: otherValidQuestionId },
       content: shownHandoverAnswerText,
     },
     body: { family: 'handover-answer', payload: handoverAnswerPayload },

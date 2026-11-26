@@ -196,7 +196,7 @@ it('registers both accept checks and forgets them after the test', () => {
   });
 });
 
-it('registers no tool when no handover sender starts the turn', async () => {
+it('registers no handover_question tool when no handover sender starts the turn', async () => {
   vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_TERMINAL', '');
   vi.stubEnv('TAU_HANDOVER_SENDER_SESSION', '');
@@ -213,6 +213,7 @@ it('registers no tool when no handover sender starts the turn', async () => {
   );
 
   expect(extension.tools.has('handover_question')).toBe(false);
+  expect(extension.tools.has('handover_answer')).toBe(true);
   expect(await askerRecords(root)).toEqual([]);
   expect(fake.calls).toHaveLength(0);
 });

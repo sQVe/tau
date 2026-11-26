@@ -1,14 +1,9 @@
 import { join } from 'node:path';
 
-import type {
-  ExtensionContext,
-  ExtensionToolContext,
-  SessionEntry,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionToolContext, SessionEntry } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi, fakeExtensionContext } from '../../../tests/extensionApi.js';
-import type { FakeExtensionContextOptions } from '../../../tests/extensionApi.js';
 import { openRecord } from '../../../tests/fixtures/answerRecord.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
@@ -24,12 +19,6 @@ import type { MessageReply, MessageRequest } from '../../inbox/protocol.js';
 import { messageText } from '../../inbox/receiptDecision.js';
 import handoverQuestionExtension from './handoverQuestion.js';
 import { writeQuestionRecord } from './question/questionRecord.js';
-
-const context = (options: FakeExtensionContextOptions = {}): ExtensionContext =>
-  fakeExtensionContext(options);
-
-const toolContext = (options: FakeExtensionContextOptions = {}): ExtensionToolContext =>
-  fakeExtensionContext(options) as ExtensionToolContext;
 
 const answerQuestionId = '11111111-1111-4111-8111-111111111111';
 const otherLeadSession = '44444444-4444-4444-8444-444444444444';
@@ -130,7 +119,7 @@ it('refuses to answer without a saved session ID', async () => {
       { questionId: '11111111-1111-4111-8111-111111111111', answer: 'Use option A.' },
       undefined,
       undefined,
-      toolContext({ sessionId: '' }),
+      fakeExtensionContext({ sessionId: '' }) as ExtensionToolContext,
     ),
   ).rejects.toThrow('no saved Pi session ID');
 });
@@ -143,7 +132,10 @@ it('refuses a question a different lead session received without sending', async
     { questionId: answerQuestionId, answer: 'Use option A.' },
     undefined,
     undefined,
-    toolContext({ branch: [receivedEntry(otherLeadSession)], sessionId: answerSenderSession }),
+    fakeExtensionContext({
+      branch: [receivedEntry(otherLeadSession)],
+      sessionId: answerSenderSession,
+    }) as ExtensionToolContext,
   );
 
   expect(result.isError).toBe(true);
@@ -167,7 +159,10 @@ it('answers through the registered tool with the send runtime', async () => {
     { questionId: answerQuestionId, answer: 'Use option A.' },
     undefined,
     undefined,
-    toolContext({ branch: [receivedEntry(answerSenderSession)], sessionId: answerSenderSession }),
+    fakeExtensionContext({
+      branch: [receivedEntry(answerSenderSession)],
+      sessionId: answerSenderSession,
+    }) as ExtensionToolContext,
   );
 
   expect(result.details).toEqual({ status: 'queued', questionId: answerQuestionId });
@@ -184,11 +179,11 @@ it('refuses a question received only on another branch', async () => {
     { questionId: answerQuestionId, answer: 'Use option A.' },
     undefined,
     undefined,
-    toolContext({
+    fakeExtensionContext({
       entries: [receivedEntry(answerSenderSession)],
       branch: [],
       sessionId: answerSenderSession,
-    }),
+    }) as ExtensionToolContext,
   );
 
   expect(result.isError).toBe(true);
@@ -252,7 +247,7 @@ const answerSessionFixture = async () => {
   const startSession = async (reason: 'startup' | 'resume', cwd: string): Promise<void> => {
     await fake.handler('session_start')(
       { type: 'session_start', reason },
-      context({ cwd, sessionId: answerAskerSession }),
+      fakeExtensionContext({ cwd, sessionId: answerAskerSession }),
     );
   };
 
@@ -264,7 +259,7 @@ const answerSessionFixture = async () => {
     for (const handler of handlers) {
       await handler(
         { type: 'session_shutdown', reason: 'quit' } as never,
-        context({ cwd: root, sessionId: answerAskerSession }),
+        fakeExtensionContext({ cwd: root, sessionId: answerAskerSession }),
       );
     }
   };

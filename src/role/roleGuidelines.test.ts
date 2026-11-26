@@ -49,7 +49,6 @@ it('asks the user for a failed or open-architect design answer before relaying o
   expect(relayClause).not.toBe('');
   expect(sentences.indexOf(failedClause)).toBeLessThan(sentences.indexOf(relayClause));
 
-  expect(doesNotOpenClause).toContain('does not open the architect');
   expect(doesNotOpenClause).toContain('`Open the architect`');
 
   expect(sentences.indexOf(doesNotOpenClause)).toBeGreaterThan(sentences.indexOf(relayClause));

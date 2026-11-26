@@ -533,7 +533,10 @@ const versionedRecords = [
     names: [
       'previous.json',
       'version2.json',
+      'version2Answer.json',
       'version3.json',
+      'version3Handover.json',
+      'version3Answer.json',
       'current.json',
       'newer.json',
       'malformed.json',
