@@ -9,18 +9,17 @@ import {
 
 const mergedCommand = ['pr', 'list'];
 
-const fixtureSession = [
-  '{"type":"session","cwd":"/home/sqve/code/personal/tau/me-1023"}',
-  '{"type":"message","arguments":{"cwd":"/home/sqve/code/personal/tau/me-1023"}}',
-  '',
-].join('\n');
-
+const developerCwd = '/home/sqve/code/personal/tau/me-1023';
+const sessionRecord = `{"type":"session","cwd":${JSON.stringify(developerCwd)}}`;
+const messageRecord = `{"type":"message","arguments":{"cwd":${JSON.stringify(developerCwd)}}}`;
+const fixtureSession = [sessionRecord, messageRecord, ''].join('\n');
 const fixtureHome = '/tmp/tau-sweep-xyz/fixture-home';
+const movedCwd = `${fixtureHome}/sqve/code/personal/tau/me-1023`;
 
 const expectedSession = (repository: string): string =>
   [
     `{"type":"session","cwd":${JSON.stringify(repository)}}`,
-    `{"type":"message","arguments":{"cwd":${JSON.stringify(`${fixtureHome}/sqve/code/personal/tau/me-1023`)}}}`,
+    `{"type":"message","arguments":{"cwd":${JSON.stringify(movedCwd)}}}`,
     '',
   ].join('\n');
 
@@ -101,14 +100,8 @@ it.each(['/tmp/tau-repository-abc', '/home/sqve/tmp/tau-repository-abc'])(
 );
 
 it('moves a tool cwd before the session record and keeps the session cwd at the repository', () => {
-  const content = [
-    '{"type":"message","arguments":{"cwd":"/home/sqve/code/personal/tau/me-1023"}}',
-    '{"type":"session","cwd":"/home/sqve/code/personal/tau/me-1023"}',
-    '',
-  ].join('\n');
-
+  const content = [messageRecord, sessionRecord, ''].join('\n');
   const repository = '/home/sqve/tmp/tau-repository-abc';
-  const movedCwd = `${fixtureHome}/sqve/code/personal/tau/me-1023`;
 
   expect(rewriteFixtureSession(content, repository, fixtureHome)).toBe(
     [
@@ -116,5 +109,13 @@ it('moves a tool cwd before the session record and keeps the session cwd at the 
       `{"type":"session","cwd":${JSON.stringify(repository)}}`,
       '',
     ].join('\n'),
+  );
+});
+
+it('refuses a fixture whose session record has no cwd', () => {
+  const content = ['{"type":"session","id":"01a19d7b"}', ''].join('\n');
+
+  expect(() => rewriteFixtureSession(content, '/tmp/tau-repository-abc', fixtureHome)).toThrow(
+    'A fixture session has no session record with a cwd on one line.',
   );
 });

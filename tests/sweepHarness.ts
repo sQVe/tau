@@ -68,6 +68,11 @@ export const rewriteFixtureSession = (
   fixtureHome: string,
 ): string => {
   const rewritten = content.replaceAll('/home/', `${fixtureHome}/`);
+
+  if (!sessionRecord.test(rewritten)) {
+    throw new Error('A fixture session has no session record with a cwd on one line.');
+  }
+
   const cwd = JSON.stringify(repository);
 
   return rewritten.replace(sessionRecord, (_record, prefix: string) => `${prefix}${cwd}`);
