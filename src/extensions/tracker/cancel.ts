@@ -8,7 +8,7 @@ import { run } from '../../linear/linear.js';
 import { isWorkerProcess } from '../../role/role.js';
 import { approvedPreviewLines, approvesCancel } from './approvedPreview.js';
 import { decideCancel, decideConfirmedCancel } from './cancelDecision.js';
-import type { PullRequestEvidence } from './cancelDecision.js';
+import type { ClosingPullRequestEvidence } from './cancelDecision.js';
 import { readCancellation } from './linear.js';
 
 export interface CancelDetails {
@@ -21,7 +21,7 @@ const readPullRequests = async (exec: Exec, context: ExtensionContext, urls: str
 
   const pullRequestEvidence = urls
     .filter(isPullRequestUrl)
-    .map(async (url): Promise<PullRequestEvidence> => {
+    .map(async (url): Promise<ClosingPullRequestEvidence> => {
       try {
         return { url, state: await readPullRequestState(runtime, url) };
       } catch (error) {
@@ -34,7 +34,14 @@ const readPullRequests = async (exec: Exec, context: ExtensionContext, urls: str
 
 const readGuardedCancellation = async (exec: Exec, context: ExtensionContext, ticket: string) => {
   const issue = await readCancellation(exec, context.cwd, ticket);
-  const urls = issue.attachments.nodes.map((attachment) => attachment.url);
+
+  // Linear attaches a pull request that only mentions the ticket too, and that one does not show the
+  // ticket's work landed.
+  const closing = issue.attachments.nodes.filter(
+    (attachment) => attachment.metadata?.linkKind === 'closes',
+  );
+
+  const urls = closing.map((attachment) => attachment.url);
   const pullRequests = await readPullRequests(exec, context, urls);
   const decision = decideCancel(issue.state.type, pullRequests);
   const identifier = issue.identifier;

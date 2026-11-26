@@ -15,6 +15,8 @@ interface Ticket {
   creatorId: string | null;
   state: Readonly<{ type: string; name: string }>;
   pullRequests: string[];
+  mentions: string[];
+  plainLinks: string[];
 }
 
 type CommentOperation = Extract<
@@ -108,8 +110,16 @@ export const createCommentFake = (
         creator: issue.creatorId === null ? null : { id: issue.creatorId },
         state: issue.state,
         attachments: {
-          nodes: issue.pullRequests.slice(0, attachmentLimit()).map((url) => ({ url })),
-          pageInfo: { hasNextPage: issue.pullRequests.length > attachmentLimit() },
+          nodes: [
+            ...issue.pullRequests.map((url) => ({ url, metadata: { linkKind: 'closes' } })),
+            ...issue.mentions.map((url) => ({ url, metadata: { linkKind: 'links' } })),
+            ...issue.plainLinks.map((url) => ({ url, metadata: null })),
+          ].slice(0, attachmentLimit()),
+          pageInfo: {
+            hasNextPage:
+              issue.pullRequests.length + issue.mentions.length + issue.plainLinks.length >
+              attachmentLimit(),
+          },
         },
         comments: {
           nodes: matches.slice(0, limit),

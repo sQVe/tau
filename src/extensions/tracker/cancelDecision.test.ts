@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { decideCancel, decideConfirmedCancel } from './cancelDecision.js';
-import type { PullRequestEvidence } from './cancelDecision.js';
+import type { ClosingPullRequestEvidence } from './cancelDecision.js';
 
 it.each([
   { label: 'same preview', title: 'Work', state: 'In Progress', kind: 'cancel', reason: '' },
@@ -36,7 +36,7 @@ const failed = { url: 'https://github.com/a/b/pull/2', error: 'network error' };
 const cases: {
   label: string;
   state: string;
-  pullRequests: PullRequestEvidence[];
+  pullRequests: ClosingPullRequestEvidence[];
   kind: string;
   reason?: string;
 }[] = [
