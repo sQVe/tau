@@ -82,7 +82,12 @@ export interface QueryVariables {
 }
 
 export type QueryOperation = {
-  [Name in QueryName]: { kind: 'query'; name: Name; variables: QueryVariables[Name] };
+  [Name in QueryName]: {
+    kind: 'query';
+    name: Name;
+    variables: QueryVariables[Name];
+    query: string;
+  };
 }[QueryName];
 
 export type Operation =
@@ -326,7 +331,7 @@ const decodeQuery = (call: FakeCall): Operation => {
     }
   }
 
-  return { kind: 'query', name: contract.name, variables } as QueryOperation;
+  return { kind: 'query', name: contract.name, variables, query } as QueryOperation;
 };
 
 const decodeIssueCommand = (call: FakeCall): Operation => {

@@ -20,7 +20,10 @@ const slice = (identifier: string, overrides: Partial<PickSlice> = {}): PickSlic
 it.each([
   {
     name: 'skips a merged child for the first ready child',
-    slices: [slice('ME-1', { pullRequests: [{ url: 'merged', state: 'MERGED' }] }), slice('ME-2')],
+    slices: [
+      slice('ME-1', { pullRequests: [{ url: 'merged', state: 'MERGED', closes: true }] }),
+      slice('ME-2'),
+    ],
     container: true,
     chosen: 'ME-2',
     statuses: ['merged', 'ready'],
@@ -76,7 +79,9 @@ it.each([
     name: 'leaves the base for the open blocker chain',
     slices: [
       slice('ME-1', {
-        blockers: [{ identifier: 'ME-0', pullRequests: [{ url: 'open', state: 'OPEN' }] }],
+        blockers: [
+          { identifier: 'ME-0', pullRequests: [{ url: 'open', state: 'OPEN', closes: true }] },
+        ],
       }),
     ],
     container: false,
@@ -93,8 +98,8 @@ it.each([
           {
             identifier: 'ME-0',
             pullRequests: [
-              { url: 'closed', state: 'CLOSED' },
-              { url: 'open', state: 'OPEN' },
+              { url: 'closed', state: 'CLOSED', closes: true },
+              { url: 'open', state: 'OPEN', closes: true },
             ],
           },
         ],
@@ -114,8 +119,8 @@ it.each([
           {
             identifier: 'ME-0',
             pullRequests: [
-              { url: 'open', state: 'OPEN' },
-              { url: 'merged', state: 'MERGED' },
+              { url: 'open', state: 'OPEN', closes: true },
+              { url: 'merged', state: 'MERGED', closes: true },
             ],
           },
         ],
@@ -127,6 +132,48 @@ it.each([
     base: 'origin/main',
     open: [],
   },
+  {
+    name: 'does not read a merged mention as landed work',
+    slices: [slice('ME-1', { pullRequests: [{ url: 'mention', state: 'MERGED', closes: false }] })],
+    container: false,
+    chosen: 'ME-1',
+    statuses: ['ready'],
+    base: 'origin/main',
+    open: [],
+  },
+  {
+    name: 'does not read a blocker merged mention as a merged blocker',
+    slices: [
+      slice('ME-1', {
+        blockers: [
+          {
+            identifier: 'ME-0',
+            pullRequests: [{ url: 'mention', state: 'MERGED', closes: false }],
+          },
+        ],
+      }),
+    ],
+    container: false,
+    chosen: undefined,
+    statuses: ['blocked'],
+    base: 'origin/main',
+    open: [],
+  },
+  {
+    name: 'keeps an open mention in the blocker chain',
+    slices: [
+      slice('ME-1', {
+        blockers: [
+          { identifier: 'ME-0', pullRequests: [{ url: 'mention', state: 'OPEN', closes: false }] },
+        ],
+      }),
+    ],
+    container: false,
+    chosen: 'ME-1',
+    statuses: ['ready'],
+    base: null,
+    open: ['mention'],
+  },
 ])('$name', ({ slices, container, chosen, statuses, base, open }) => {
   const result = decidePick({ slices, container, defaultBranch: 'main' });
 
@@ -135,4 +182,16 @@ it.each([
   expect(result.base).toBe(base);
   expect(result.openBlockerPullRequests).toEqual(open);
   expect(result.reason).not.toBe('');
+});
+
+it('keeps a slice pull request that only mentions it in the chosen links', () => {
+  const mention = { url: 'mention', state: 'OPEN', closes: false };
+
+  const result = decidePick({
+    slices: [slice('ME-1', { pullRequests: [mention] })],
+    container: false,
+    defaultBranch: 'main',
+  });
+
+  expect(result.chosen?.pullRequests).toEqual(['mention']);
 });

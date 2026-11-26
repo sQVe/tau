@@ -4,6 +4,7 @@ import type { Static } from 'typebox';
 import type { Exec } from '../../command.js';
 import { isPullRequestUrl, readPullRequestState } from '../../github/github.js';
 import { api, run } from '../../linear/linear.js';
+import { hasMergedPullRequest } from './startPickDecisions.js';
 import type { PickPullRequest } from './startPickDecisions.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
@@ -29,10 +30,7 @@ const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
 
 const attachmentSchema = Type.Object({
   url: Type.String(),
-  metadata: Type.Union([
-    Type.Object({ linkKind: Type.Optional(Type.Union([Type.String(), Type.Null()])) }),
-    Type.Null(),
-  ]),
+  metadata: Type.Object({ linkKind: Type.Optional(Type.Union([Type.String(), Type.Null()])) }),
 });
 
 type Attachment = Static<typeof attachmentSchema>;
@@ -97,9 +95,9 @@ const issuePullRequestsSchema = Type.Object({
 
 type ChildNode = Static<typeof childSchema>;
 
-// Linear marks a pull request that fixes an issue as `closes`. One that only mentions the issue
-// did not land its work.
-const closesIssue = (attachment: Attachment) => attachment.metadata?.linkKind === 'closes';
+// Linear records how a pull request refers to the issue: it closes the issue, or it only mentions
+// it. Only a closing pull request can prove the issue's work landed.
+const closesIssue = (attachment: Attachment) => attachment.metadata.linkKind === 'closes';
 
 const readPullRequests = async (
   exec: Exec,
@@ -108,11 +106,11 @@ const readPullRequests = async (
   states: Map<string, Promise<string>>,
 ) => {
   const runtime = { exec, cwd, signal: undefined };
-  const urls = attachments.filter(closesIssue).map((attachment) => attachment.url);
-  const pullRequests = urls.filter(isPullRequestUrl);
+  const pullRequests = attachments.filter((attachment) => isPullRequestUrl(attachment.url));
 
   return Promise.all(
-    pullRequests.map(async (url) => {
+    pullRequests.map(async (attachment) => {
+      const { url } = attachment;
       let state = states.get(url);
 
       if (state === undefined) {
@@ -120,7 +118,7 @@ const readPullRequests = async (
         states.set(url, state);
       }
 
-      return { url, state: await state };
+      return { url, state: await state, closes: closesIssue(attachment) };
     }),
   );
 };
@@ -170,7 +168,7 @@ const toChild = async (
     sortOrder: node.subIssueSortOrder,
     completed: node.state.type === 'completed',
     canceled: node.state.type === 'canceled',
-    merged: pullRequests.some((request) => request.state === 'MERGED'),
+    merged: hasMergedPullRequest(pullRequests),
     assignee: node.assignee?.id ?? null,
     creator: node.creator?.id ?? null,
     blockedBy: node.inverseRelations.nodes
@@ -226,7 +224,7 @@ export const readContainer = async (
     viewer: viewer.id,
     identifier: issue.identifier,
     completed: issue.state.type === 'completed',
-    merged: pullRequests.some((request) => request.state === 'MERGED'),
+    merged: hasMergedPullRequest(pullRequests),
     branchName: issue.branchName,
     canceled: issue.state.type === 'canceled',
     blockedBy: issue.inverseRelations.nodes

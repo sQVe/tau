@@ -33,6 +33,7 @@ interface FakeIssue {
   state: Readonly<{ type: StateType; name: string }>;
   pullRequests: string[];
   mentions: string[];
+  plainLinks: string[];
   blockedBy: string[];
   inverseRelations: { type: string; identifier: string }[];
 }
@@ -40,6 +41,11 @@ interface FakeIssue {
 interface Fence {
   character: string;
   length: number;
+}
+
+// GraphQL returns only the fields a query selects, so the fake follows each attachment selection.
+interface AttachmentFields {
+  metadata: boolean;
 }
 
 interface FakeProject {
@@ -76,6 +82,14 @@ const teams = new Map([
 const labels = [{ id: 'label-bug', name: 'Bug', teamId: 'team-me' }];
 
 const issueId = (identifier: string) => `id-${identifier}`;
+
+const attachmentSelections = (query: string): AttachmentFields[] =>
+  [
+    ...query.matchAll(/attachments\([^)]*\)\s*\{\s*pageInfo\s*\{[^}]*\}\s*nodes\s*\{([^}]*)\}/gu),
+  ].map((match) => ({ metadata: match[1]!.includes('metadata') }));
+
+const attachmentSelection = (query: string, index: number): AttachmentFields =>
+  attachmentSelections(query)[index] ?? { metadata: false };
 
 // Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
 const openingFence = (line: string): Fence | undefined => {
@@ -114,12 +128,23 @@ const savedDescription = (description: string) => {
 
 // Linear reports how a linked pull request refers to an issue: it closes the issue, or it only
 // mentions it.
-const attachmentNodes = (issue: FakeIssue) => [
-  ...issue.pullRequests.map((url) => ({ url, metadata: { linkKind: 'closes' } })),
-  ...issue.mentions.map((url) => ({ url, metadata: { linkKind: 'links' } })),
+const attachmentNodes = (issue: FakeIssue, fields: { metadata: boolean }) => [
+  ...issue.pullRequests.map((url) => ({
+    url,
+    ...(fields.metadata ? { metadata: { linkKind: 'closes' } } : {}),
+  })),
+  ...issue.mentions.map((url) => ({
+    url,
+    ...(fields.metadata ? { metadata: { linkKind: 'links' } } : {}),
+  })),
+  ...issue.plainLinks.map((url) => ({ url, ...(fields.metadata ? { metadata: {} } : {}) })),
 ];
 
-const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
+const childNode = (
+  issue: FakeIssue,
+  project: { name: string } | null,
+  fields: AttachmentFields,
+) => ({
   identifier: issue.identifier,
   branchName: issue.branchName,
   title: issue.title,
@@ -131,7 +156,7 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   creator: issue.creatorId === null ? null : { id: issue.creatorId },
   assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
   state: issue.state,
-  attachments: { nodes: attachmentNodes(issue) },
+  attachments: { nodes: attachmentNodes(issue, fields) },
   inverseRelations: {
     nodes: [
       ...issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
@@ -183,6 +208,7 @@ export const createLinearFake = (): LinearFake => {
       state: { type: 'started', name: 'In Progress' },
       pullRequests: [],
       mentions: [],
+      plainLinks: [],
       blockedBy: [],
       inverseRelations: [],
       ...issue,
@@ -227,7 +253,9 @@ export const createLinearFake = (): LinearFake => {
     };
   };
 
-  const containerData = (identifier: string) => {
+  const containerData = (identifier: string, query: string) => {
+    const issueFields = attachmentSelection(query, 0);
+    const childFields = attachmentSelection(query, 1);
     const issue = issues.get(identifier);
 
     if (issue === undefined) {
@@ -240,13 +268,15 @@ export const createLinearFake = (): LinearFake => {
     return {
       viewer: { id: 'user-viewer' },
       issue: {
-        ...pagedNode(childNode(issue, project(issue.projectId))),
+        ...pagedNode(childNode(issue, project(issue.projectId), issueFields)),
         id: issueId(identifier),
         team: team(issue.teamId),
         project: project(issue.projectId),
         children: {
           pageInfo: { hasNextPage: children.length < allChildren.length },
-          nodes: children.map((child) => pagedNode(childNode(child, project(child.projectId)))),
+          nodes: children.map((child) =>
+            pagedNode(childNode(child, project(child.projectId), childFields)),
+          ),
         },
       },
     };
@@ -448,7 +478,7 @@ export const createLinearFake = (): LinearFake => {
       }
 
       case 'container': {
-        return containerData(operation.variables.id);
+        return containerData(operation.variables.id, operation.query);
       }
 
       case 'issuePullRequests': {
@@ -458,13 +488,14 @@ export const createLinearFake = (): LinearFake => {
           return { issue: null };
         }
 
-        const { attachments } = pagedNode(childNode(issue, project(issue.projectId)));
+        const fields = attachmentSelection(operation.query, 0);
+        const { attachments } = pagedNode(childNode(issue, project(issue.projectId), fields));
 
         return { issue: { attachments } };
       }
 
       case 'ticket': {
-        return containerData(operation.variables.id);
+        return containerData(operation.variables.id, operation.query);
       }
 
       case 'routing': {

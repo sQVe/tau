@@ -100,6 +100,61 @@ it('does not read a mention-only merged pull request as merged', async () => {
   expect(fake.writes()).toEqual([]);
 });
 
+it('does not read a merged pull request without a link kind as merged', async () => {
+  const { fake, read } = await setUp();
+
+  fake.addIssue({
+    identifier: 'ME-2',
+    title: 'Plain link',
+    state: { type: 'backlog', name: 'Backlog' },
+    plainLinks: ['https://github.com/me/repo/pull/2'],
+  });
+
+  fake.mergedPullRequests.add('https://github.com/me/repo/pull/2');
+
+  const result = await read('ME-2');
+
+  expect(result.details).toMatchObject({
+    pick: { chosen: { identifier: 'ME-2' }, slices: [{ identifier: 'ME-2', status: 'ready' }] },
+  });
+
+  expect(fake.writes()).toEqual([]);
+});
+
+it('keeps a slice mention-only PR for the stack while it resumes on an open blocker PR', async () => {
+  const { fake, read } = await setUp();
+  const slicePullRequest = 'https://github.com/me/repo/pull/1';
+  const blockerPullRequest = 'https://github.com/me/repo/pull/2';
+
+  fake.addIssue({
+    identifier: 'ME-1',
+    title: 'Resumed',
+    blockedBy: ['ME-2'],
+    mentions: [slicePullRequest],
+  });
+
+  fake.addIssue({ identifier: 'ME-2', title: 'Blocker', pullRequests: [blockerPullRequest] });
+
+  const result = await read('ME-1');
+
+  expect(result.details).toMatchObject({
+    pick: {
+      chosen: { identifier: 'ME-1', pullRequests: [slicePullRequest] },
+      base: null,
+      openBlockerPullRequests: [blockerPullRequest],
+      slices: [
+        {
+          identifier: 'ME-1',
+          status: 'ready',
+          blockers: [{ identifier: 'ME-2', state: 'open', pullRequests: [blockerPullRequest] }],
+        },
+      ],
+    },
+  });
+
+  expect(fake.writes()).toEqual([]);
+});
+
 it.each([
   { kind: 'child', stateType: 'completed', status: 'completedWithoutMergedPr' },
   { kind: 'child', stateType: 'canceled', status: 'canceled' },

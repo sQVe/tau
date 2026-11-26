@@ -1,6 +1,7 @@
 export interface PickPullRequest {
   url: string;
   state: string;
+  closes: boolean;
 }
 
 interface PickBlocker {
@@ -38,8 +39,13 @@ export interface StartPick {
   defaultBranch: string;
 }
 
+// Linear attaches a pull request that only mentions the issue too, and that one did not land the
+// issue's work.
+export const hasMergedPullRequest = (requests: readonly PickPullRequest[]): boolean =>
+  requests.some((request) => request.closes && request.state === 'MERGED');
+
 const blockerState = (blocker: PickBlocker): 'merged' | 'open' | 'other' => {
-  if (blocker.pullRequests.some((request) => request.state === 'MERGED')) {
+  if (hasMergedPullRequest(blocker.pullRequests)) {
     return 'merged';
   }
 
@@ -51,7 +57,7 @@ const blockerState = (blocker: PickBlocker): 'merged' | 'open' | 'other' => {
 };
 
 const sliceStatus = (slice: PickSlice): StartPick['slices'][number]['status'] => {
-  if (slice.pullRequests.some((request) => request.state === 'MERGED')) {
+  if (hasMergedPullRequest(slice.pullRequests)) {
     return 'merged';
   }
 
