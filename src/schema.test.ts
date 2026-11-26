@@ -214,6 +214,7 @@ it('leaves an object nested under a dependent schema open', () => {
   const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
 
   expect(Value.Check(strict, { credit_card: 'x', address: { city: 'a', extra: 1 } })).toBe(true);
+  expect(Value.Check(strict, { credit_card: 'x', address: { city: 1 } })).toBe(false);
 });
 
 it('closes an object schema whose type list includes object', () => {
