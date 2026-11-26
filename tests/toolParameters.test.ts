@@ -12,6 +12,7 @@ import {
   isRecord,
   schemaArrayKeywords,
   schemaMapKeywords,
+  schemaUnassertedKeywords,
   schemaValueKeywords,
 } from '../src/schema.js';
 import { skillTools } from '../src/skillTools.js';
@@ -80,32 +81,35 @@ const localValueKeywords: ReadonlySet<string> = new Set([
   'unevaluatedProperties',
 ]);
 
-// Production leaves every object under `not` or `if` open, because closing one would accept inputs
-// the tool rejects. A `then` or `else` branch lists only the conditioned properties, so closing the
-// branch node would reject the others while an object nested below it is still asserted.
-const unassertedKeywords = new Set(['if', 'not']);
-const branchKeywords = new Set(['else', 'then']);
-
-// An `allOf` branch combines with its siblings, so closing the branch node would require it to
-// declare every property.
-const branchArrayKeywords = new Set(['allOf']);
+// Production leaves every object under a keyword that narrows the instance or combines with sibling
+// schemas open, because closing one could accept an input the negation rejects or reject a value a
+// sibling declares.
+const localUnassertedKeywords: ReadonlySet<string> = new Set([
+  'allOf',
+  'else',
+  'if',
+  'not',
+  'then',
+]);
 
 const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChild[] => {
   const children: SchemaChild[] = [];
 
   for (const [key, child] of Object.entries(value)) {
+    if (localUnassertedKeywords.has(key)) {
+      continue;
+    }
+
     if (localMapKeywords.has(key) && isRecord(child)) {
       for (const [name, entry] of Object.entries(child)) {
         children.push({ path: `${path}/${key}/${name}`, value: entry, closesNode: true });
       }
     } else if (localArrayKeywords.has(key) && Array.isArray(child)) {
-      const closesNode = !branchArrayKeywords.has(key);
-
       for (const [index, entry] of child.entries()) {
-        children.push({ path: `${path}/${key}/${index}`, value: entry, closesNode });
+        children.push({ path: `${path}/${key}/${index}`, value: entry, closesNode: true });
       }
-    } else if (localValueKeywords.has(key) && !unassertedKeywords.has(key)) {
-      children.push({ path: `${path}/${key}`, value: child, closesNode: !branchKeywords.has(key) });
+    } else if (localValueKeywords.has(key)) {
+      children.push({ path: `${path}/${key}`, value: child, closesNode: true });
     }
   }
 
@@ -216,6 +220,7 @@ it('pins the local schema keyword sets to the production sets', () => {
   expect([...localMapKeywords].toSorted()).toEqual([...schemaMapKeywords].toSorted());
   expect([...localArrayKeywords].toSorted()).toEqual([...schemaArrayKeywords].toSorted());
   expect([...localValueKeywords].toSorted()).toEqual([...schemaValueKeywords].toSorted());
+  expect([...localUnassertedKeywords].toSorted()).toEqual([...schemaUnassertedKeywords].toSorted());
 });
 
 it('enumerates the Tau root and every worker entry point', async () => {
@@ -343,7 +348,7 @@ it('accepts an object schema under not, if, then, else, and allOf', () => {
   expect(objectProblems('sample', schema, '')).toEqual([]);
 });
 
-it('reports a loose object nested under a branch but not the branch node', () => {
+it('accepts a loose object nested under a branch', () => {
   const schema = {
     type: 'object',
     additionalProperties: false,
@@ -351,9 +356,7 @@ it('reports a loose object nested under a branch but not the branch node', () =>
     allOf: [{ properties: { detail: { type: 'object', properties: {} } } }],
   };
 
-  expect(objectProblems('sample', schema, '')).toEqual([
-    'sample parameters/allOf/0/properties/detail',
-  ]);
+  expect(objectProblems('sample', schema, '')).toEqual([]);
 });
 
 it('accepts properties on a node whose declared type is not an object', () => {

@@ -13,6 +13,7 @@ import {
   reportedId,
   schemaArrayKeywords,
   schemaMapKeywords,
+  schemaUnassertedKeywords,
   schemaValueKeywords,
   strictToolParameters,
   strictToolRegistration,
@@ -210,7 +211,7 @@ it('keeps a then, else, or allOf subschema from rejecting a declared argument', 
   expect(Value.Check(strict, { mode: 'a', detail: 'b', extra: 1 })).toBe(false);
 });
 
-it('closes an object nested under an allOf branch while the branch stays open', () => {
+it('keeps an object nested under an allOf branch open', () => {
   const schema = {
     type: 'object',
     properties: { detail: {} },
@@ -223,31 +224,74 @@ it('closes an object nested under an allOf branch while the branch stays open', 
 
   const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
 
-  expect(Value.Check(strict, { detail: { note: 'a' } })).toBe(true);
-  expect(Value.Check(strict, { detail: { note: 'a', extra: 1 } })).toBe(false);
+  expect(Value.Check(strict, { detail: { note: 'a', extra: 1 } })).toBe(true);
 });
 
 it.each([
   { name: 'then', branch: 'then', mode: 'a' },
   { name: 'else', branch: 'else', mode: 'b' },
-])(
-  'closes an object nested under a $name branch while the branch stays open',
-  ({ branch, mode }) => {
-    const schema = {
-      type: 'object',
-      properties: { mode: { type: 'string' }, detail: {} },
-      if: { properties: { mode: { const: 'a' } } },
-      [branch]: {
-        properties: { detail: { type: 'object', properties: { note: { type: 'string' } } } },
+])('keeps an object nested under a $name branch open', ({ branch, mode }) => {
+  const schema = {
+    type: 'object',
+    properties: { mode: { type: 'string' }, detail: {} },
+    if: { properties: { mode: { const: 'a' } } },
+    [branch]: {
+      properties: { detail: { type: 'object', properties: { note: { type: 'string' } } } },
+    },
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { mode, detail: { note: 'a', extra: 1 } })).toBe(true);
+});
+
+// The branch usually refines an object that the enclosing schema declares more fully. Both
+// subschemas combine, so closing the branch's copy would reject the properties only the enclosing
+// schema declares.
+it('keeps the nested object of a branch open to the properties the enclosing schema declares', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      detail: {
+        type: 'object',
+        properties: { note: { type: 'string' }, other: { type: 'string' } },
       },
-    };
+    },
+    allOf: [
+      { properties: { detail: { type: 'object', properties: { note: { type: 'string' } } } } },
+    ],
+  };
 
-    const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
 
-    expect(Value.Check(strict, { mode, detail: { note: 'a' } })).toBe(true);
-    expect(Value.Check(strict, { mode, detail: { note: 'a', extra: 1 } })).toBe(false);
-  },
-);
+  expect(Value.Check(strict, { detail: { note: 'a', other: 'b' } })).toBe(true);
+  expect(Value.Check(strict, { detail: { note: 'a', extra: 'b' } })).toBe(false);
+});
+
+it.each([
+  { name: 'then', branch: 'then', mode: 'a' },
+  { name: 'else', branch: 'else', mode: 'b' },
+])('keeps a $name branch nested object open to the enclosing properties', ({ branch, mode }) => {
+  const schema = {
+    type: 'object',
+    properties: {
+      mode: { type: 'string' },
+      detail: {
+        type: 'object',
+        properties: { note: { type: 'string' }, other: { type: 'string' } },
+      },
+    },
+    if: { properties: { mode: { const: 'a' } } },
+    [branch]: {
+      properties: { detail: { type: 'object', properties: { note: { type: 'string' } } } },
+    },
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { mode, detail: { note: 'a', other: 'b' } })).toBe(true);
+  expect(Value.Check(strict, { mode, detail: { note: 'a', extra: 'b' } })).toBe(false);
+});
 
 it('leaves an object schema under not and if open', () => {
   const schema = { type: 'object', not: childSchema(), if: childSchema() };
@@ -417,16 +461,9 @@ it('pins the subschema keyword sets', () => {
   expect([...schemaMapKeywords].toSorted()).toEqual(expectedSchemaMapKeywords);
   expect([...schemaArrayKeywords].toSorted()).toEqual(expectedSchemaArrayKeywords);
   expect([...schemaValueKeywords].toSorted()).toEqual(expectedSchemaValueKeywords);
+
+  expect([...schemaUnassertedKeywords].toSorted()).toEqual(['allOf', 'else', 'if', 'not', 'then']);
 });
-
-// A schema under `not` or `if` narrows the negation or condition instead, so closing it would
-// accept inputs the tool rejects. A `then` or `else` branch lists only the conditioned properties,
-// so closing it would reject the others.
-const unassertedKeywords = new Set(['else', 'if', 'not', 'then']);
-
-// An `allOf` branch combines with its siblings, so closing it would require that one branch to
-// declare every property.
-const unassertedArrayKeywords = new Set(['allOf']);
 
 it('closes an object schema under every asserted subschema keyword in the sets', () => {
   const schema: Record<string, unknown> = { type: 'object' };
@@ -460,7 +497,7 @@ it('closes an object schema under every asserted subschema keyword in the sets',
 
     if (!Array.isArray(entries)) {
       unclosed.push(keyword);
-    } else if (unassertedArrayKeywords.has(keyword)) {
+    } else if (schemaUnassertedKeywords.has(keyword)) {
       if (entries.some((entry) => isClosed(entry))) {
         loosened.push(keyword);
       }
@@ -472,9 +509,9 @@ it('closes an object schema under every asserted subschema keyword in the sets',
   for (const keyword of schemaValueKeywords) {
     const child = isRecord(strict) ? strict[keyword] : undefined;
 
-    if (unassertedKeywords.has(keyword) && isClosed(child)) {
+    if (schemaUnassertedKeywords.has(keyword) && isClosed(child)) {
       loosened.push(keyword);
-    } else if (!unassertedKeywords.has(keyword) && !isClosed(child)) {
+    } else if (!schemaUnassertedKeywords.has(keyword) && !isClosed(child)) {
       unclosed.push(keyword);
     }
   }

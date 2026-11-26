@@ -44,11 +44,11 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // constrains every key. A node counts as an object when its type includes `object`, or when it
 // declares `properties` or `patternProperties` without a type. A subschema under `not` or `if`
 // narrows the negation or condition instead, so closing anything inside it would accept inputs the
-// tool rejects. The node under `then`, `else`, or `allOf` combines with sibling schemas, so closing
-// that node would reject arguments the tool declares, but an object nested inside the branch is
-// still asserted when the branch applies. Add a keyword to one of these sets when a tool schema can
-// hold a subschema under it. A subschema under a keyword outside these sets stays as written, so an
-// object there keeps its keys open.
+// tool rejects. A subschema under `then`, `else`, or `allOf` combines with sibling schemas, so
+// closing anything below it could reject an argument the tool declares; the whole subtree stays as
+// written. Add a keyword to one of these sets when a tool schema can hold a subschema under it. A
+// subschema under a keyword outside these sets stays as written, so an object there keeps its keys
+// open.
 export const schemaMapKeywords: ReadonlySet<string> = new Set([
   '$defs',
   'definitions',
@@ -79,16 +79,16 @@ export const schemaValueKeywords: ReadonlySet<string> = new Set([
   'unevaluatedProperties',
 ]);
 
-// A subschema under one of these keywords narrows the negation or condition instead of the
-// instance, so closing anything inside it would accept inputs the tool rejects.
-const unassertedKeywords = new Set(['if', 'not']);
-
-// A `then` or `else` branch usually lists only the conditioned properties, so closing the branch
-// node would reject the others. An `allOf` branch combines with its siblings, so closing it would
-// require that one branch to declare every property. An object nested below the branch is still
-// asserted when the branch applies, so only the branch node itself stays open.
-const branchKeywords = new Set(['else', 'then']);
-const branchArrayKeywords = new Set(['allOf']);
+// A subschema under one of these keywords narrows the instance instead of asserting it, or combines
+// with sibling schemas. Closing any object below one of them could accept an input the negation or
+// condition rejects, or reject a value a sibling declares, so the whole subtree stays as written.
+export const schemaUnassertedKeywords: ReadonlySet<string> = new Set([
+  'allOf',
+  'else',
+  'if',
+  'not',
+  'then',
+]);
 
 const assertedStrictness: SchemaStrictness = { closeNode: true, closeDescendants: true };
 const unassertedStrictness: SchemaStrictness = { closeNode: false, closeDescendants: false };
@@ -97,11 +97,6 @@ const unassertedStrictness: SchemaStrictness = { closeNode: false, closeDescenda
 const descendantStrictness = (strictness: SchemaStrictness): SchemaStrictness => ({
   closeNode: strictness.closeDescendants,
   closeDescendants: strictness.closeDescendants,
-});
-
-const branchStrictness = (inherited: SchemaStrictness): SchemaStrictness => ({
-  closeNode: false,
-  closeDescendants: inherited.closeDescendants,
 });
 
 const declaresObject = (value: Record<string, unknown>): boolean => {
@@ -145,26 +140,22 @@ const strictSchemaChild = (
   strictness: SchemaStrictness,
   visit: (value: unknown, strictness: SchemaStrictness) => unknown,
 ): unknown => {
+  if (schemaUnassertedKeywords.has(key)) {
+    return visit(child, unassertedStrictness);
+  }
+
   if (schemaMapKeywords.has(key)) {
     return strictSchemaMap(child, strictness, visit);
   }
 
   if (schemaArrayKeywords.has(key)) {
     const nested = descendantStrictness(strictness);
-    const childStrictness = branchArrayKeywords.has(key) ? branchStrictness(nested) : nested;
 
-    return Array.isArray(child) ? child.map((entry) => visit(entry, childStrictness)) : child;
+    return Array.isArray(child) ? child.map((entry) => visit(entry, nested)) : child;
   }
 
   if (schemaValueKeywords.has(key)) {
-    if (unassertedKeywords.has(key)) {
-      return visit(child, unassertedStrictness);
-    }
-
-    const nested = descendantStrictness(strictness);
-    const childStrictness = branchKeywords.has(key) ? branchStrictness(nested) : nested;
-
-    return visit(child, childStrictness);
+    return visit(child, descendantStrictness(strictness));
   }
 
   return child;
