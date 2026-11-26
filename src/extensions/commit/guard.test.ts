@@ -417,11 +417,16 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(referencesTo(names)), directory);
   });
 
-  it('blocks the file past the read cap without reading it', () => {
+  it('allows a missing script after the read cap is reached', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-    const names = writeScriptFiles(directory, 65);
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+    const names = writeScriptFiles(directory, 64);
 
-    expectOutcome(makeBashEvent(referencesTo(names)), directory);
+    withExactPath(pathDirectory);
+
+    expect(
+      guard(makeBashEvent(`${referencesTo(names)}; sh missing.sh`), directory),
+    ).toBeUndefined();
   });
 
   it('reads a repeated script reference once', () => {
@@ -896,9 +901,31 @@ describe('guardToolCall', () => {
   });
 
   it.each([
+    ['env busybox sh', '#!/usr/bin/env busybox sh'],
+    ['env -S busybox sh', '#!/usr/bin/env -S busybox sh'],
+    ['busybox hush', '#!/bin/busybox hush'],
+  ])('blocks a commit in a file with a %s shebang', (_label, shebang) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
+  it('allows a commit in a file whose busybox applet is not a shell', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', '#!/usr/bin/env busybox cat\ngit commit -m x\n');
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
+  it.each([
     ['fish', '#!/usr/bin/env fish'],
     ['csh', '#!/bin/csh'],
     ['busybox sh', '#!/bin/busybox sh'],
+    ['tcsh', '#!/bin/tcsh'],
+    ['yash', '#!/bin/yash'],
   ])('blocks a commit in a file with a %s shebang', (_label, shebang) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1112,6 +1139,21 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     expect(guard(makeBashEvent("sh -c'git status'"), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['fish', "echo 'git commit -m x' | fish"],
+    ['csh', 'cat <<EOF | csh\ngit commit -m x\nEOF'],
+  ])('blocks piped code for %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('allows piped data that does not create a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('echo hi | fish'), directory)).toBeUndefined();
   });
 
   it.each([

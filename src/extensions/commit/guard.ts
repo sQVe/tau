@@ -101,13 +101,17 @@ const gitCommitPattern = /\bgit\b[^;|&\n]*(?<![\w/-])commit(?![\w/])|\bgit-commi
 const shellRunnerNames = new Set([
   'ash',
   'bash',
+  'csh',
   'dash',
   'eval',
+  'fish',
   'ksh',
   'mksh',
   'sh',
   'ssh',
   'su',
+  'tcsh',
+  'yash',
   'zsh',
 ]);
 
@@ -196,8 +200,10 @@ const shellInterpreters = new Set([
   'csh',
   'dash',
   'fish',
+  'hush',
   'ksh',
   'mksh',
+  'msh',
   'sh',
   'source',
   'tcsh',
@@ -410,7 +416,7 @@ const optionValue = (
 
 // `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
 // before the program.
-const envTarget = (words: string[]): string | undefined => {
+const envTarget = (words: string[]): string[] | undefined => {
   const valueOptions = wrapperOptionValues.get('env') ?? new Set<string>();
   const expanded: string[] = [];
 
@@ -439,9 +445,28 @@ const envTarget = (words: string[]): string | undefined => {
     expanded.push(word);
   }
 
-  return expanded.find(
+  const index = expanded.findIndex(
     (word) => word !== '' && !word.startsWith('-') && !assignmentPattern.test(word),
   );
+
+  return index === -1 ? undefined : expanded.slice(index);
+};
+
+// A busybox applet names the shell it runs, such as `sh` in `busybox sh`.
+const appletInterpreter = (words: string[]): string | undefined => {
+  const [program, ...rest] = words;
+
+  if (program === undefined) {
+    return undefined;
+  }
+
+  const name = commandName(program);
+
+  if (name !== 'busybox') {
+    return name;
+  }
+
+  return rest[0] === undefined ? name : commandName(rest[0]);
 };
 
 const shebangInterpreter = (text: string): string | undefined => {
@@ -459,17 +484,13 @@ const shebangInterpreter = (text: string): string | undefined => {
 
   const name = commandName(program);
 
-  if (name === 'busybox') {
-    return rest[0] === undefined ? name : commandName(rest[0]);
-  }
-
   if (name !== 'env') {
-    return name;
+    return appletInterpreter([program, ...rest]);
   }
 
   const target = envTarget(rest);
 
-  return target === undefined ? undefined : commandName(target);
+  return target === undefined ? undefined : appletInterpreter(target);
 };
 
 const isShellScript = (text: string): boolean => {
@@ -992,18 +1013,31 @@ const scriptFacts = (
     return cached;
   }
 
-  // Reaching the cap fails closed without reading, so one call never reads more than the budget.
+  // A stat is not a read, so a path that does not exist costs no budget.
+  try {
+    if (!statSync(path).isFile()) {
+      const missing: NamedFileFacts = { kind: 'missing' };
+
+      state.facts.set(key, missing);
+
+      return missing;
+    }
+  } catch (error) {
+    const failed = failedFacts(error, failClosed);
+
+    state.facts.set(key, failed);
+
+    return failed;
+  }
+
+  // Reaching the cap fails closed without reading an existing file.
   if (state.reads >= maximumScriptReads) {
     return undefined;
   }
 
   const facts = namedFileFacts(path, failClosed);
 
-  // Only a candidate that exists is read; a probe that finds nothing costs one stat and no budget.
-  if (facts.kind !== 'missing') {
-    state.reads += 1;
-  }
-
+  state.reads += 1;
   state.facts.set(key, facts);
 
   return facts;
