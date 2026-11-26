@@ -103,37 +103,36 @@ it.each([
   }
 });
 
-it.each<[string, readonly string[] | undefined]>([['a non-Pi argv', ['bash']]])(
-  'a start retries a model read that first returns %s',
-  async (_shape, firstRead) => {
-    const fake = launchWithForeground([
-      'pi',
-      '--provider',
-      'morph',
-      '--model',
-      'morph-dsv41flash-1017',
-    ]);
+it('a start retries a model read that first returns a non-Pi argv', async () => {
+  const firstRead = ['bash'];
 
-    const root = await createTemporaryRepository(onTestFinished);
-    let reads = 0;
+  const fake = launchWithForeground([
+    'pi',
+    '--provider',
+    'morph',
+    '--model',
+    'morph-dsv41flash-1017',
+  ]);
 
-    const reader = async (): Promise<readonly string[] | undefined> => {
-      reads += 1;
+  const root = await createTemporaryRepository(onTestFinished);
+  let reads = 0;
 
-      return reads === 1
-        ? firstRead
-        : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
-    };
+  const reader = async (): Promise<readonly string[] | undefined> => {
+    reads += 1;
 
-    const result = await startPiSession(
-      { exec: fake.exec, cwd: root },
-      startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
-    );
+    return reads === 1
+      ? firstRead
+      : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
+  };
 
-    expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
-    expect(reads).toBe(2);
-  },
-);
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
+  );
+
+  expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
+  expect(reads).toBe(2);
+});
 
 it('a start retries a model read that fails once before answering', async () => {
   const fake = launchWithForeground([
@@ -307,7 +306,11 @@ it('an abort during the model readback ends the call', async () => {
   const failure = await opening;
 
   expect(failure).toMatchObject({ cause: cancellation });
-  expect((failure as Error).message).toContain('cancelled during the readback');
+
+  expect((failure as Error).message).toContain(
+    'cancelled during the readback. The started terminal',
+  );
+
   expect((failure as Error).message).toContain('t-new');
 });
 
@@ -505,6 +508,7 @@ it('a launch returns a readback mismatch as its error', async () => {
   expect(result.model).toBeUndefined();
   expect(result.error).toBeInstanceOf(Error);
   expect((result.error as Error).message).toContain('other/model');
+  expect((result.error as Error).message).toContain('hc kill t-new');
 });
 
 it('a right-of launch returns the model its terminal runs', async () => {

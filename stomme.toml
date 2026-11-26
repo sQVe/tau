@@ -538,7 +538,7 @@ imports = ["command", "errors"]
 [modules.piStart]
 entry = "src/piStart/piStart.ts"
 public = ["src/piStart/herdrPane.ts", "src/piStart/piArguments.ts"]
-imports = ["command", "config", "errors", "git"]
+imports = ["command", "config", "errors", "git", "schema"]
 
 [modules.process]
 entry = "src/process/process.ts"

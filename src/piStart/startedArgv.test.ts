@@ -56,7 +56,7 @@ it.each<{ name: string; argv: readonly string[] | undefined; expected: unknown }
     expected: ['node', '--experimental-strip-types', '/path/pi', ...modelArguments],
   },
   {
-    name: 'a node pi path after a value-taking flag',
+    name: 'a node pi path after a stack-size flag',
     argv: ['node', '--stack-size', '2000', '/path/pi', ...modelArguments],
     expected: ['node', '--stack-size', '2000', '/path/pi', ...modelArguments],
   },

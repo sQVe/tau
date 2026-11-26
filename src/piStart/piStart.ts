@@ -7,6 +7,7 @@ import { checkOutput, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { errorMessage, isMissingFile } from '../errors.js';
 import { isGitRepository } from '../git.js';
+import { isRecord } from '../schema.js';
 import { piArguments } from './piArguments.js';
 import { readStartedModel } from './startedModel/startedModelReadback.js';
 import type { ReadForegroundArgv } from './startedModel/startedModelReadback.js';
@@ -46,11 +47,6 @@ export interface PiStartRightOfRequest extends PiReadbackRequest {
   bareRoot: boolean;
 }
 
-interface PiLaunchRightOfRequest extends PiReadbackRequest {
-  pane: string;
-  bareRoot: boolean;
-}
-
 interface LaunchPlacement {
   command: string;
   destinationFlag: string;
@@ -65,7 +61,8 @@ export interface PiLaunchResult {
   aborted: boolean;
   reply: string | undefined;
   terminal: string | undefined;
-  // Undefined means no readback happened, so the started model is unknown.
+  // Undefined means no readback happened, or it failed and `error` carries the failure. A launch
+  // can set `error` while `terminal` is live, so a caller must read both fields.
   model: string | undefined;
   error: unknown;
 }
@@ -83,11 +80,6 @@ type TerminalReply = (
   terminal: string | undefined;
   error: unknown;
 };
-
-interface StartedReply {
-  space?: unknown;
-  tab?: unknown;
-}
 
 export const launchTimeoutMilliseconds = 30_000;
 // A launch that used its whole budget still leaves a window to read the model, so a slow launch is
@@ -183,6 +175,20 @@ const isGitCheckout = async (folder: string, bareRoot: boolean): Promise<boolean
   return bareRoot || (await isGitRepository(folder));
 };
 
+// The abort signal's reason may be a plain value, which would reject with a non-Error.
+const normalizeLaunchCancellation = (signal: AbortSignal | undefined, error: unknown): unknown =>
+  signal?.aborted === true && !(error instanceof Error)
+    ? new Error('The Pi launch was cancelled.', { cause: error })
+    : error;
+
+const throwIfLaunchCancelled = (signal: AbortSignal | undefined): void => {
+  try {
+    signal?.throwIfAborted();
+  } catch (error) {
+    throw normalizeLaunchCancellation(signal, error);
+  }
+};
+
 const requireCheckout = async (
   runtime: CommandRuntime,
   folder: string,
@@ -192,7 +198,7 @@ const requireCheckout = async (
     throw new Error(`start folder is not a Git checkout: ${folder}`);
   }
 
-  runtime.signal?.throwIfAborted();
+  throwIfLaunchCancelled(runtime.signal);
 };
 
 const launchResult = (
@@ -242,14 +248,11 @@ const replyTerminal = (reply: string): string | undefined => {
   }
 };
 
-const isStartedReply = (value: unknown): value is StartedReply =>
-  typeof value === 'object' && value !== null;
-
-const replyField = (reply: string, field: keyof StartedReply): string | undefined => {
+const replyField = (reply: string, field: 'space' | 'tab'): string | undefined => {
   try {
     const parsed: unknown = JSON.parse(reply);
 
-    if (!isStartedReply(parsed)) {
+    if (!isRecord(parsed)) {
       return undefined;
     }
 
@@ -276,9 +279,11 @@ const startedTabError = (reply: string, terminal: string, error: unknown): Error
   }
 
   const where = places.length === 0 ? '' : ` (${places.join(', ')})`;
+  const reason = errorMessage(error).replace(/[.!?]$/u, '');
+  const reasonPrefix = reason === '' ? '' : `${reason}. `;
 
   return new Error(
-    `${errorMessage(error)} The started terminal ${terminal}${where} is still running; stop it with hc kill ${terminal} if you do not want to keep it.`,
+    `${reasonPrefix}The started terminal ${terminal}${where} is still running; stop it with hc kill ${terminal} if you do not want to keep it.`,
     { cause: error },
   );
 };
@@ -344,13 +349,13 @@ const launch = async (
   }
 
   try {
-    const model = await readStartedModel({
-      readForegroundArgv: request.readForegroundArgv,
-      terminal: launched.terminal,
-      model: request.model,
-      signal: runtime.signal,
-      deadline: readbackDeadline(deadline),
-    });
+    const model = await readStartedTerminalModel(
+      request,
+      launched.reply ?? '',
+      launched.terminal,
+      deadline,
+      runtime.signal,
+    );
 
     return { ...launched, model };
   } catch (error) {
@@ -384,21 +389,11 @@ const isTargetResolver = (
   target: PiStartTarget | PiStartTargetResolver,
 ): target is PiStartTargetResolver => typeof target === 'function';
 
-// The abort signal's reason may be a plain value, which would reject with a non-Error.
-const normalizeLaunchCancellation = (signal: AbortSignal | undefined, error: unknown): unknown =>
-  signal?.aborted === true && !(error instanceof Error)
-    ? new Error('The Pi launch was cancelled.', { cause: error })
-    : error;
-
 export const launchPiSession = async (
   runtime: CommandRuntime,
   request: PiLaunchRequest,
 ): Promise<PiLaunchResult> => {
-  try {
-    await requireCheckout(runtime, request.folder, request.bareRoot);
-  } catch (error) {
-    throw normalizeLaunchCancellation(runtime.signal, error);
-  }
+  await requireCheckout(runtime, request.folder, request.bareRoot);
 
   return launch(
     runtime,
@@ -414,13 +409,9 @@ export const launchPiSession = async (
 
 export const launchPiSessionRightOf = async (
   runtime: CommandRuntime,
-  request: PiLaunchRightOfRequest,
+  request: PiStartRightOfRequest,
 ): Promise<PiLaunchResult> => {
-  try {
-    await requireCheckout(runtime, request.folder, request.bareRoot);
-  } catch (error) {
-    throw normalizeLaunchCancellation(runtime.signal, error);
-  }
+  await requireCheckout(runtime, request.folder, request.bareRoot);
 
   return launch(
     runtime,
@@ -446,7 +437,7 @@ export const startPiSession = async (
   const target = isTargetResolver(request.target) ? await request.target() : request.target;
 
   // The resolver awaits, so the signal can abort after the checkout check above.
-  runtime.signal?.throwIfAborted();
+  throwIfLaunchCancelled(runtime.signal);
 
   const deadline = Date.now() + launchTimeoutMilliseconds;
 

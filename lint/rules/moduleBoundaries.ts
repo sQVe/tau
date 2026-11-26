@@ -201,7 +201,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   instructions: ['errors'],
   judgeSchema: [],
   linear: ['command', 'errors'],
-  piStart: ['command', 'config', 'errors', 'git'],
+  piStart: ['command', 'config', 'errors', 'git', 'schema'],
   process: ['errors'],
   prose: [],
   questionGate: ['errors', 'judgeSchema', 'schema'],

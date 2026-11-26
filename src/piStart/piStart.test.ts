@@ -657,6 +657,61 @@ it('a launch aborted at the checkout probe rejects with an Error for a non-Error
   expect(fake.calls).toEqual([]);
 });
 
+it('a start aborted at the checkout probe rejects with an Error for a non-Error reason', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+
+  controller.abort('cancelled during the start checkout probe');
+
+  const failure = await startPiSession(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    startRequest(root, readerFor(fake, root)),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).cause).toBe('cancelled during the start checkout probe');
+  expect(fake.calls).toEqual([]);
+});
+
+it('a right-of start aborted at the checkout probe rejects with an Error for a non-Error reason', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+
+  controller.abort('cancelled during the split checkout probe');
+
+  const failure = await startPiSessionRightOf(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    paneRequest(root, readerFor(fake, root)),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).cause).toBe('cancelled during the split checkout probe');
+  expect(fake.calls).toEqual([]);
+});
+
+it('a start whose resolver aborts with a non-Error reason rejects with an Error', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+
+  const failure = await startPiSession(
+    { exec: fake.exec, cwd: root, signal: controller.signal },
+    startRequest(root, readerFor(fake, root), {
+      target: async () => {
+        controller.abort('cancelled during resolution');
+
+        return { space: 'resolved-space' };
+      },
+    }),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).cause).toBe('cancelled during resolution');
+  expect(fake.calls).toEqual([]);
+});
+
 it('a right-of launch in a folder that is not a Git checkout runs no command', async () => {
   const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
   const root = await createTemporaryRepository(onTestFinished);
