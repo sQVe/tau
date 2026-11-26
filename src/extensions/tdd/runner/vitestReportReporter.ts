@@ -5,6 +5,8 @@ type ReporterAttempt =
   | { specifier: string; kind: 'missing' }
   | { specifier: string; kind: 'failed'; errorCode: string | undefined };
 
+type FailedAttempt = Exclude<ReporterAttempt, { kind: 'found' }>;
+
 type LoadModule = (specifier: string) => unknown;
 
 // The project's own Vitest loads this file, so a bare import resolves from the project root and
@@ -42,32 +44,25 @@ const attemptJsonReporter = (load: LoadModule, specifier: string): ReporterAttem
   }
 };
 
-const failureDetail = (attempt: ReporterAttempt): string => {
-  if (attempt.kind === 'missing') {
-    return `${attempt.specifier}: no JSON reporter export`;
-  }
-
-  if (attempt.kind === 'failed') {
-    return `${attempt.specifier}: load failed (${attempt.errorCode ?? 'no error code'})`;
-  }
-
-  return attempt.specifier;
-};
+const failureDetail = (attempt: FailedAttempt): string =>
+  attempt.kind === 'missing'
+    ? `${attempt.specifier}: no JSON reporter export`
+    : `${attempt.specifier}: load failed (${attempt.errorCode ?? 'no error code'})`;
 
 export const loadJsonReporter = (load: LoadModule): unknown => {
-  const attempts: ReporterAttempt[] = [];
+  const failures: FailedAttempt[] = [];
 
   for (const specifier of reporterSpecifiers) {
     const attempt = attemptJsonReporter(load, specifier);
 
-    attempts.push(attempt);
-
     if (attempt.kind === 'found') {
       return attempt.reporter;
     }
+
+    failures.push(attempt);
   }
 
-  const details = attempts.map(failureDetail);
+  const details = failures.map(failureDetail);
 
   throw new Error(
     `Tau's Vitest report reporter found no JSON reporter in the Vitest installed for ${process.cwd()} (${details.join('; ')}). Reinstall Vitest for this project.`,

@@ -166,29 +166,40 @@ describe('loadJsonReporter', () => {
         'vitest/node: no JSON reporter export',
         'vitest/reporters: no JSON reporter export',
       ],
+      forbidden: [],
     },
     {
       name: 'the export is not a constructor',
       outcomes: { 'vitest/node': { JsonReporter: 'not a function' } },
       details: ['vitest/node: no JSON reporter export'],
+      forbidden: [],
     },
     {
       name: 'an entry fails to load with a code',
       outcomes: { 'vitest/node': { error: codedError('ERR_MODULE_NOT_FOUND') } },
       details: ['vitest/node: load failed (ERR_MODULE_NOT_FOUND)'],
+      forbidden: [],
     },
     {
       name: 'an entry fails to load without a code',
       outcomes: { 'vitest/node': { error: new Error('a message that must not reach the user') } },
       details: ['vitest/node: load failed (no error code)'],
+      forbidden: ['a message that must not reach the user'],
     },
-  ])('names why no entry supplies the JSON reporter when $name', ({ outcomes, details }) => {
-    const message = failureMessageFrom(outcomesToLoad(outcomes));
+  ])(
+    'names why no entry supplies the JSON reporter when $name',
+    ({ outcomes, details, forbidden }) => {
+      const message = failureMessageFrom(outcomesToLoad(outcomes));
 
-    for (const detail of details) {
-      expect(message).toContain(detail);
-    }
-  });
+      for (const detail of details) {
+        expect(message).toContain(detail);
+      }
+
+      for (const text of forbidden) {
+        expect(message).not.toContain(text);
+      }
+    },
+  );
 });
 
 describe('report reporter', () => {
