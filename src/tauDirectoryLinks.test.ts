@@ -174,12 +174,22 @@ it('isSymlink reports a path through a file as not a link', async () => {
   await expect(isSymlink(join(directory, 'plain.md', 'file.md'))).resolves.toBe(false);
 });
 
-it('ensureTauDirectory refuses a .tau that is a regular file without a raw ENOTDIR', async () => {
+it('ensureTauDirectory refuses a .tau that is a regular file and leaves it untouched', async () => {
+  const root = await createTemporaryRepository(afterThisTest);
+  const path = join(root, '.tau');
+
+  await writeFile(path, 'text\n');
+
+  await expect(ensureTauDirectory(root, 'workers')).rejects.toThrow('is not a directory');
+  await expect(readFile(path, 'utf8')).resolves.toBe('text\n');
+});
+
+it('checkTauDirectory refuses a .tau that is a regular file', async () => {
   const root = await createTemporaryRepository(afterThisTest);
 
   await writeFile(join(root, '.tau'), 'text\n');
 
-  await expect(ensureTauDirectory(root, 'workers')).rejects.toThrow('is not a directory');
+  await expect(checkTauDirectory(root, 'workers')).rejects.toThrow('is not a directory');
 });
 
 it('rejectLinkedFile treats a path through a file as missing', async () => {

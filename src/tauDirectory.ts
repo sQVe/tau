@@ -316,6 +316,15 @@ export const rejectTauSymlinks = async (root: string, path: string): Promise<voi
 // Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
 // `.tau/.gitignore` has another hard link, since either could send writes outside the repository,
 // or when Git would not ignore files in it. Changes nothing, so a read can run it.
+const rejectTauFile = async (root: string) => {
+  const path = join(root, '.tau');
+  const entry = await existingEntry(path);
+
+  if (entry !== undefined && !entry.isDirectory()) {
+    throw new Error(`Tau directory ${path} is not a directory.`);
+  }
+};
+
 const checkTauDirectoryWith = async (
   root: string,
   path: string,
@@ -325,6 +334,7 @@ const checkTauDirectoryWith = async (
 
   await rejectParsedSymlinks(root, segments);
   await rejectLinkedIgnoreFile(root);
+  await rejectTauFile(root);
   await rejectLaterExceptions(root);
 
   if (await isBareRoot(root, bareProbes)) {
@@ -344,8 +354,8 @@ export const checkTauDirectory = (root: string, path: string): Promise<void> =>
   checkTauDirectoryWith(root, path, currentBareProbeCache());
 
 // Creates `<root>/.tau/<path>` and makes Git ignore everything in `.tau/`. Refuses before it
-// creates anything when a path it would write through is a symlink, when `.tau/.gitignore` has
-// another hard link, or when Git tracks
+// creates anything when a path it would write through is a symlink, when `.tau` is not a directory,
+// when `.tau/.gitignore` has another link, or when Git tracks
 // `.tau/.gitignore` or a file in the target. Refuses before it creates the target when Git would
 // not ignore it. A path swapped between the check and the write can still escape.
 export const ensureTauDirectory = async (root: string, path: string): Promise<string> => {
@@ -362,14 +372,8 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
     await rejectTracked(root, ['.tau', ...segments].join('/'));
   }
 
-  const tauPath = join(root, '.tau');
-  const tauEntry = await existingEntry(tauPath);
-
-  if (tauEntry !== undefined && !tauEntry.isDirectory()) {
-    throw new Error(`Tau directory ${tauPath} is not a directory.`);
-  }
-
-  await mkdir(tauPath, { recursive: true });
+  await rejectTauFile(root);
+  await mkdir(join(root, '.tau'), { recursive: true });
   await ignoreTauDirectory(root);
   await checkTauDirectoryWith(root, path, bareProbes);
 
