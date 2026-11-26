@@ -309,7 +309,8 @@ const readPullRequest = async (target: PublicationTarget): Promise<PublicationPl
 
   const base = requireText(action, 'base', request.base);
   const head = requireText(action, 'head', request.head);
-  const draft = request.draft === true ? ['--draft'] : [];
+  const isDraft = request.draft === true;
+  const draft = isDraft ? ['--draft'] : [];
 
   const commandArguments = [
     'pr',
@@ -333,7 +334,7 @@ const readPullRequest = async (target: PublicationTarget): Promise<PublicationPl
     directory,
     base,
     head,
-    draft: request.draft === true,
+    draft: isDraft,
   };
 
   return { target: facts, files, commandArguments, findings };

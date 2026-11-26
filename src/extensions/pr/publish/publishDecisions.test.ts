@@ -33,6 +33,16 @@ const createTarget: PublicationTargetFacts = {
 
 const createToken = publicationToken(createTarget, files);
 
+const targetWithoutBase: PublicationTargetFacts = {
+  kind: 'pullRequest',
+  repository: 'github.com/sQVe/tau',
+  directory: '/repo/.tau/pr/run-1',
+  head: 'feature',
+  draft: false,
+};
+
+const tokenWithoutBase = publicationToken(targetWithoutBase, files);
+
 const refusal = (reason: string): PublicationDecision => ({ kind: 'refuse', reason });
 
 const targetRefusal = refusal(
@@ -89,6 +99,16 @@ const table: {
     expected: targetRefusal,
   },
   {
+    name: 'publishes when the repository differs only in case',
+    facts: { token, target: { ...target, repository: 'github.com/sqve/tau' }, files },
+    expected: { kind: 'publish' },
+  },
+  {
+    name: 'refuses a token for an empty base when the base is absent',
+    facts: { token: tokenWithoutBase, target: { ...targetWithoutBase, base: '' }, files },
+    expected: targetRefusal,
+  },
+  {
     name: 'refuses a token for another kind',
     facts: { token, target: { ...target, kind: 'comment' }, files },
     expected: targetRefusal,
@@ -115,7 +135,7 @@ const table: {
   },
   {
     name: 'refuses a token without the version',
-    facts: { token: token.slice('v2:'.length), target, files },
+    facts: { token: token.slice(token.indexOf(':') + 1), target, files },
     expected: refusal('The token is not from dryRun. Nothing was published. Run dryRun again.'),
   },
   {

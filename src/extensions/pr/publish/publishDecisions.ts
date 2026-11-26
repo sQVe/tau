@@ -8,7 +8,7 @@ export interface PublicationFile {
 // The facts that choose where a publication goes. Text that comes from a file, such as the title,
 // stays out so a changed file is named as the changed file.
 export interface PublicationTargetFacts {
-  kind: string;
+  kind: 'pullRequest' | 'comment' | 'review';
   repository: string;
   directory: string;
   pr?: number;
@@ -35,12 +35,15 @@ const differentTarget =
 const digestOf = (content: Uint8Array | string): string =>
   createHash('sha256').update(content).digest('hex');
 
+const absentPart = 'absent';
+
+// Absence gets a bare word that no JSON value equals, and JSON keeps a number apart from its text.
 const optionalPart = (value: number | string | boolean | undefined): string =>
-  value === undefined ? '' : String(value);
+  value === undefined ? absentPart : JSON.stringify(value);
 
 const targetParts = (target: PublicationTargetFacts): string[] => [
   target.kind,
-  target.repository,
+  target.repository.toLowerCase(),
   target.directory,
   optionalPart(target.pr),
   optionalPart(target.base),
