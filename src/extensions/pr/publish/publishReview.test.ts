@@ -165,6 +165,38 @@ it('refuses a reply comment as an unknown field', async () => {
   expect(fake.calls).toEqual([]);
 });
 
+it('posts a review comment that carries only position', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+  const review = { comments: [{ path: 'src/a.ts', position: 3, body: 'Fine.' }] };
+  const contents = `${JSON.stringify(review, null, 2)}\n`;
+
+  await writeRunFile(directory, 'review.json', contents);
+
+  const request = { action: 'dryRun', kind: 'review', repository, directory, pr: 7 } as const;
+  const dryRun = await run(request);
+  const published = await run({ ...request, action: 'publish', token: dryRun.token });
+
+  expect(fake.writes).toEqual([
+    {
+      key: 'api post',
+      commandArguments: [
+        'api',
+        '--hostname',
+        'github.com',
+        '--method',
+        'POST',
+        'repos/sQVe/tau/pulls/7/reviews',
+        '--input',
+        expect.stringMatching(/tau-publish-[^/]+\/\d+-review\.json$/u),
+      ],
+      contents: Buffer.from(contents),
+    },
+  ]);
+
+  expect(published.url).toBe('https://github.com/sQVe/tau/pull/7#pullrequestreview-1');
+});
+
 it('names the review.json field that is not valid', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);

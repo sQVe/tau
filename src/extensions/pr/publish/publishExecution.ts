@@ -122,8 +122,9 @@ const urlSuffix: Readonly<Record<PublicationKind, string>> = {
   review: '#pullrequestreview-\\d+',
 };
 
+// GitHub names are case-insensitive, and gh prints the canonical case.
 const publishedUrlPattern = (kind: PublicationKind, repository: string): RegExp =>
-  new RegExp(`^https://${escapePattern(repository)}/pull/\\d+${urlSuffix[kind]}$`, 'u');
+  new RegExp(`^https://${escapePattern(repository)}/pull/\\d+${urlSuffix[kind]}$`, 'iu');
 
 const reviewUrls = (stdout: string): string[] => {
   try {

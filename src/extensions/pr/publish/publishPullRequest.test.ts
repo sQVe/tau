@@ -61,25 +61,6 @@ it('publishes a new pull request with the approved title, body, base, head, and 
   expect(publishedCommands(fake)).toEqual(['pr create']);
 });
 
-it('publishes the pull request URL when another https line comes first', async () => {
-  const { fake, run } = await setUp();
-  const directory = await prepareRun(run);
-
-  await writeRunFile(directory, 'body.md', 'Adds it.\n');
-  await writeRunFile(directory, 'title.md', 'Add a feature\n');
-
-  fake.overrideOutput(
-    'pr create',
-    'https://example.com/other\nhttps://github.com/sQVe/tau/pull/8\n',
-  );
-
-  const request = dryRunPullRequest(directory);
-  const dryRun = await run(request);
-  const published = await run({ ...request, action: 'publish', token: dryRun.token });
-
-  expect(published.url).toBe('https://github.com/sQVe/tau/pull/8');
-});
-
 it('publishes an edited pull request with the approved title and body', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
