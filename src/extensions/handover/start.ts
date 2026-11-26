@@ -102,7 +102,7 @@ const launchTarget = async (
 // checkOutput has already refused a reply without a terminal, so a start that reaches here has one.
 const requireStartedTerminal = (
   started: Awaited<ReturnType<typeof startPiSession>>,
-): { model: string } => {
+): { terminal: string; model: string } => {
   if (!('terminal' in started)) {
     throw new Error('herdr-app do reported no terminal');
   }
@@ -136,13 +136,14 @@ export const startHandover = async (
   checkOutput('herdr-app do', launchReplySchema, parsed);
 
   const spaceStatus = 'space' in started.target ? 'reused' : 'created';
+  const startedTerminal = requireStartedTerminal(started);
 
   return {
     reply: started.reply,
     space: parsed.space,
     tab: parsed.tab,
-    terminal: parsed.terminal,
-    model: requireStartedTerminal(started).model,
+    terminal: startedTerminal.terminal,
+    model: startedTerminal.model,
     spaceStatus,
   };
 };
