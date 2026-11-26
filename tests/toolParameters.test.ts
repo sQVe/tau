@@ -8,12 +8,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
 import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
-import {
-  isRecord,
-  schemaArrayKeywords,
-  schemaMapKeywords,
-  schemaValueKeywords,
-} from '../src/schema.js';
+import { isRecord } from '../src/schema.js';
 import { skillTools } from '../src/skillTools.js';
 import tauRegistration from '../src/tau/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -52,9 +47,46 @@ const isOpenObject = (value: Record<string, unknown>): boolean => {
   return isObjectNode(value) && hasDefaultAdditionalProperties;
 };
 
+// Spelled out here rather than read from production, so a keyword production misses makes this
+// oracle walk a node production leaves open and the test fails.
+const schemaMapKeywords: ReadonlySet<string> = new Set([
+  '$defs',
+  'definitions',
+  'dependencies',
+  'dependentSchemas',
+  'patternProperties',
+  'properties',
+]);
+
+const schemaArrayKeywords: ReadonlySet<string> = new Set([
+  'allOf',
+  'anyOf',
+  'oneOf',
+  'prefixItems',
+]);
+
+const schemaValueKeywords: ReadonlySet<string> = new Set([
+  'additionalItems',
+  'additionalProperties',
+  'contains',
+  'else',
+  'if',
+  'items',
+  'not',
+  'propertyNames',
+  'then',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+]);
+
 // Production leaves every object under `not` or `if` open, because closing one would accept inputs
-// the tool rejects.
-const unassertedKeywords = new Set(['if', 'not']);
+// the tool rejects. A `then` or `else` branch lists only the conditioned properties, so closing it
+// would reject the others.
+const unassertedKeywords = new Set(['else', 'if', 'not', 'then']);
+
+// An `allOf` branch combines with its siblings, so closing it would require that one branch to
+// declare every property.
+const unassertedArrayKeywords = new Set(['allOf']);
 
 const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChild[] => {
   const children: SchemaChild[] = [];
@@ -65,6 +97,10 @@ const schemaChildren = (value: Record<string, unknown>, path: string): SchemaChi
         children.push({ path: `${path}/${key}/${name}`, value: entry });
       }
     } else if (schemaArrayKeywords.has(key) && Array.isArray(child)) {
+      if (unassertedArrayKeywords.has(key)) {
+        continue;
+      }
+
       for (const [index, entry] of child.entries()) {
         children.push({ path: `${path}/${key}/${index}`, value: entry });
       }
@@ -151,6 +187,9 @@ const toolsOf = async (registration: Registration): Promise<Tool[]> => {
   }
 };
 
+// The Tau root and worker entry points register these tools synchronously. A tool registered only
+// for another role, such as `architect_answer` under TAU_ROLE=architect, or from an event handler,
+// such as `handover_question` from `before_agent_start`, is outside this collection.
 const registeredTools = async (): Promise<{ registration: string; tools: Tool[] }[]> => {
   const all: { registration: string; tools: Tool[] }[] = [];
 
@@ -195,7 +234,7 @@ it('enumerates the Tau root and every worker entry point', async () => {
 
 // Providers and MCP bridges refuse a tool whose parameters are not an object at the top, such as a
 // union of objects.
-it('gives every registered tool an object schema at the top of its parameters', async () => {
+it('gives every synchronously registered root and worker tool an object schema at the top', async () => {
   const tools = await registeredTools();
 
   const problems = tools.flatMap(({ registration, tools: registered }) =>
@@ -209,7 +248,7 @@ it('gives every registered tool an object schema at the top of its parameters', 
   expect(problems).toEqual([]);
 });
 
-it('sets literal additionalProperties false on every object schema in every registered tool', async () => {
+it('sets literal additionalProperties false on every object schema in the synchronously registered tools', async () => {
   const tools = await registeredTools();
 
   const problems = tools.flatMap(({ tools: registered }) =>
@@ -276,12 +315,16 @@ it.each([
   expect(objectProblems('sample', schema, '')).toEqual(['sample parameters']);
 });
 
-it('accepts an object schema under not and if', () => {
+it('accepts an object schema under not, if, then, else, and allOf', () => {
   const schema = {
     type: 'object',
     additionalProperties: false,
     not: { type: 'object' },
     if: { properties: { value: { type: 'string' } } },
+    // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword, not a promise method.
+    then: { properties: { value: { type: 'string' } } },
+    else: { properties: { value: { type: 'string' } } },
+    allOf: [{ properties: { value: { type: 'string' } } }],
   };
 
   expect(objectProblems('sample', schema, '')).toEqual([]);
