@@ -18,6 +18,8 @@ const optionsIn = (cwd: string, overrides: Partial<CommandOptions> = {}): Comman
   environment: {},
   deadlineMilliseconds: 5000,
   signal: undefined,
+  // The stop grace is the only wall clock in a stop, so the tests bound it inside the test budget.
+  stopGraceMilliseconds: 500,
   ...overrides,
 });
 
@@ -112,6 +114,31 @@ it('stops the process group at the deadline', async () => {
   expect(await groupState(groupId)).toBe('gone');
 });
 
+// A group that ignores SIGTERM needs the escalation, which is the one wall clock in a stop.
+it('stops a process group that ignores SIGTERM within the stop grace it is given', async () => {
+  const cwd = temporaryCommandDirectory();
+  const groupPath = join(cwd, 'group');
+  const started = Date.now();
+
+  const outcome = await runCommand(
+    optionsIn(cwd, {
+      argv: ['sh', '-c', 'trap "" TERM; echo $$ > group; sleep 30 & wait'],
+      deadlineMilliseconds: 200,
+      stopGraceMilliseconds: 300,
+    }),
+  );
+
+  const groupId = await readGroupId(groupPath);
+
+  killGroupInCleanup(groupId);
+
+  expect(outcome).toEqual({ kind: 'stopped', reason: 'deadline' });
+  expect(await groupState(groupId)).toBe('gone');
+
+  // The 300 ms grace ends the stop, not the 5 s default.
+  expect(Date.now() - started).toBeLessThan(3000);
+});
+
 it('stops the process group on cancel', async () => {
   const cwd = temporaryCommandDirectory();
   const groupPath = join(cwd, 'group');
@@ -200,6 +227,27 @@ it('refuses an invalid deadline or an empty argv', async () => {
   );
 
   expect(existsSync(logPath)).toBe(false);
+});
+
+it('refuses a stop grace that is not a positive safe integer', async () => {
+  const cwd = temporaryCommandDirectory();
+
+  const cases = [
+    { stopGraceMilliseconds: 0, message: 'got 0.' },
+    { stopGraceMilliseconds: -1, message: 'got -1.' },
+    { stopGraceMilliseconds: Number.NaN, message: 'got NaN.' },
+    { stopGraceMilliseconds: 1.5, message: 'got 1.5.' },
+  ];
+
+  for (const { stopGraceMilliseconds, message } of cases) {
+    const logPath = join(cwd, `grace-${String(stopGraceMilliseconds)}.log`);
+
+    await expect(runCommand(optionsIn(cwd, { logPath, stopGraceMilliseconds }))).rejects.toThrow(
+      message,
+    );
+
+    expect(existsSync(logPath)).toBe(false);
+  }
 });
 
 it('accepts the largest timer delay', async () => {

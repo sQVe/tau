@@ -4,7 +4,11 @@ import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 
 import { errorMessage } from '../../errors.js';
-import { stopGroup } from '../../process/process.js';
+import {
+  checkStopGraceMilliseconds,
+  defaultStopGraceMilliseconds,
+  stopGroup,
+} from '../../process/process.js';
 
 export interface CommandOptions {
   argv: readonly string[];
@@ -13,6 +17,8 @@ export interface CommandOptions {
   environment: Readonly<Record<string, string>>;
   deadlineMilliseconds: number;
   signal: AbortSignal | undefined;
+  // How long a stopped command may ignore SIGTERM before SIGKILL.
+  stopGraceMilliseconds?: number;
 }
 
 export type CommandOutcome =
@@ -28,8 +34,6 @@ interface CommandState {
   };
   startFailure: Promise<string> | undefined;
 }
-
-const stopGraceMilliseconds = 5000;
 
 const largestTimerDelayMilliseconds = 2_147_483_647;
 
@@ -53,6 +57,12 @@ const checkCommandOptions = (options: CommandOptions): void => {
       `The deadline must be at most ${largestTimerDelayMilliseconds} ms, got ${options.deadlineMilliseconds}.`,
     );
   }
+
+  const { stopGraceMilliseconds } = options;
+
+  if (stopGraceMilliseconds !== undefined) {
+    checkStopGraceMilliseconds(stopGraceMilliseconds);
+  }
 };
 
 const appendFailure = async (log: FileHandle, error: unknown): Promise<string> => {
@@ -67,6 +77,7 @@ const stopChild = (
   state: CommandState,
   child: ChildProcess,
   reason: 'deadline' | 'cancelled',
+  stopGraceMilliseconds: number,
 ): void => {
   if (state.stop.stopping !== undefined) {
     return;
@@ -106,7 +117,15 @@ const outcomeAfterClose = async (
 
 const runOpenedCommand = (options: CommandOptions, log: FileHandle): Promise<CommandOutcome> =>
   new Promise<CommandOutcome>((resolve, reject) => {
-    const { argv, cwd, environment, deadlineMilliseconds, signal } = options;
+    const {
+      argv,
+      cwd,
+      environment,
+      deadlineMilliseconds,
+      signal,
+      stopGraceMilliseconds = defaultStopGraceMilliseconds,
+    } = options;
+
     const [command = '', ...commandArguments] = argv;
 
     let child: ChildProcess;
@@ -133,11 +152,11 @@ const runOpenedCommand = (options: CommandOptions, log: FileHandle): Promise<Com
     };
 
     const onAbort = () => {
-      stopChild(state, child, 'cancelled');
+      stopChild(state, child, 'cancelled', stopGraceMilliseconds);
     };
 
     const deadline = setTimeout(() => {
-      stopChild(state, child, 'deadline');
+      stopChild(state, child, 'deadline', stopGraceMilliseconds);
     }, deadlineMilliseconds);
 
     child.once('error', (error) => {

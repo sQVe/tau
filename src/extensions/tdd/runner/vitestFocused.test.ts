@@ -18,7 +18,9 @@ const createProject = async () => {
   return cwd;
 };
 
-describe('focused Vitest entry', () => {
+// Every test here awaits one real Vitest process, so the budget covers a process start and its run
+// instead of the default budget for a test that polls nothing.
+describe('focused Vitest entry', { timeout: 30_000 }, () => {
   beforeEach(() => {
     const agentDirectory = temporaryDirectory(onTestFinished, 'tau-focused-agent-');
 
