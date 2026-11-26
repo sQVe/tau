@@ -311,7 +311,7 @@ it('a folder inside a checkout starts a session', async () => {
   expect(fake.calls).toHaveLength(1);
 });
 
-it('a start whose Git cannot run reports the Git failure', async () => {
+it('a start whose Git cannot run runs no command', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const emptyPath = temporaryDirectory(onTestFinished, 'tau-pi-start-no-git-');
@@ -323,7 +323,7 @@ it('a start whose Git cannot run reports the Git failure', async () => {
   });
 
   await expect(startPiSession({ exec: fake.exec, cwd: root }, startRequest(root))).rejects.toThrow(
-    /^git rev-parse --git-dir failed: /u,
+    'git rev-parse --git-dir failed:',
   );
 
   expect(fake.calls).toEqual([]);
