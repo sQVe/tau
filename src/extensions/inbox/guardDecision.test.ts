@@ -82,8 +82,9 @@ const table: { command: string; refused: boolean }[] = [
 it.each(['constructor', 'toString', '__proto__'])(
   'treats the %s command name as an ordinary command',
   (name) => {
-    expect(() => typesIntoTerminal(`${name} -x`)).not.toThrow();
-    expect(typesIntoTerminal(`${name} -x`)).toBe(false);
+    const refused = typesIntoTerminal(`${name} -x`);
+
+    expect(refused).toBe(false);
   },
 );
 
