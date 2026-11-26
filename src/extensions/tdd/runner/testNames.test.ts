@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { matchesRequestedName, requestedNamePattern } from './testNames.js';
+import { displayCutFor, matchesRequestedName, requestedNamePattern } from './testNames.js';
 
 describe('matchesRequestedName', () => {
   it.for([
@@ -47,6 +47,12 @@ describe('matchesRequestedName', () => {
       requested: 'its',
       matches: false,
     },
+    {
+      name: 'a name that only ends with a quote',
+      registered: "abc '",
+      requested: 'abc ',
+      matches: false,
+    },
   ])('$name matches $matches', ({ registered, requested, matches }) => {
     expect(matchesRequestedName(registered, requested)).toBe(matches);
   });
@@ -54,6 +60,17 @@ describe('matchesRequestedName', () => {
   // Chai's rendering leaves no marker that separates a table value from a quoted token.
   it('accepts a title that quotes its last token, as a chai-rendered name', () => {
     expect(matchesRequestedName("returns 'ok'", 'returns ok')).toBe(true);
+  });
+});
+
+describe('displayCutFor', () => {
+  it.for([
+    { name: 'no requested name', requested: [], cut: 40 },
+    { name: 'a short name', requested: ['works'], cut: 40 },
+    { name: 'a name whose quotes fit the default cut', requested: ['a'.repeat(38)], cut: 40 },
+    { name: 'a longer name', requested: ['a'.repeat(39)], cut: 41 },
+  ])('uses a cut of $cut for $name', ({ requested, cut }) => {
+    expect(displayCutFor(requested)).toBe(cut);
   });
 });
 
@@ -82,6 +99,13 @@ describe('requestedNamePattern', () => {
     expect(registered.filter((candidate) => !matchesPattern(pattern, candidate))).toEqual([]);
     expect(matchesPattern(pattern, 'other works')).toBe(false);
     expect(matchesPattern(pattern, `${name} again`)).toBe(false);
+  });
+
+  it('accepts a wrapper around a one-character tail', () => {
+    const pattern = requestedNamePattern(['outer a']);
+
+    expect(matchesPattern(pattern, "outer 'a'")).toBe(true);
+    expect(matchesRequestedName("outer 'a'", 'outer a')).toBe(true);
   });
 
   it('rejects a quoted separator', () => {

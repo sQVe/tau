@@ -27,13 +27,13 @@ const wrapStarts = (name: string): number[] => {
     index = name.indexOf(' ', index + 1);
   }
 
-  return starts.filter((start) => name.length > start + 1);
+  return starts.filter((start) => name.length > start);
 };
 
 const wrapsAt = (name: string, start: number): boolean => {
   const quote = name.charAt(start);
 
-  return isQuote(quote) && name.at(-1) === quote;
+  return name.length > start + 1 && isQuote(quote) && name.at(-1) === quote;
 };
 
 const unwrappedAt = (name: string, start: number): string =>
