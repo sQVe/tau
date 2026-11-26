@@ -6,25 +6,32 @@ import { fileURLToPath } from 'node:url';
 import { parseSync, Visitor } from 'oxc-parser';
 import type {
   ArrowFunctionExpression,
-  AssignmentExpression,
   BindingPattern,
   BindingRestElement,
+  BlockStatement,
+  CallExpression,
   Expression,
   Function,
   MemberExpression,
   ModuleDeclaration,
+  NewExpression,
   ParamPattern,
   Program,
+  Statement,
   TSParameterProperty,
+  VariableDeclaration,
+  VisitorObject,
 } from 'oxc-parser';
 import { expect, it } from 'vitest';
 
 import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
 
-interface EffectScope {
-  parameters: Set<string>;
-  functions: Set<string>;
+type BindingKind = 'escaping' | 'function' | 'local';
+
+interface BindingScope {
+  bindings: Map<string, BindingKind>;
+  functionScope: boolean;
 }
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -414,12 +421,205 @@ const importedBindings = (program: Program): Set<string> =>
     }),
   );
 
+const createBindingScopes = () => {
+  const scopes: BindingScope[] = [{ bindings: new Map(), functionScope: true }];
+
+  const declare = (name: string, kind: BindingKind): void => {
+    scopes.at(-1)?.bindings.set(name, kind);
+  };
+
+  // A `var` belongs to the nearest function, not to the block that declares it.
+  const declareVariable = (name: string, kind: BindingKind): void => {
+    const scope = scopes.findLast((candidate) => candidate.functionScope);
+
+    scope?.bindings.set(name, kind);
+  };
+
+  const enter = (functionScope: boolean): void => {
+    scopes.push({ bindings: new Map(), functionScope });
+  };
+
+  const exit = (): void => {
+    scopes.pop();
+  };
+
+  // The innermost binding wins, so a local that shadows an import or a parameter does not escape.
+  const kindOf = (name: string): BindingKind | undefined => {
+    for (const scope of scopes.toReversed()) {
+      const kind = scope.bindings.get(name);
+
+      if (kind !== undefined) {
+        return kind;
+      }
+    }
+
+    return undefined;
+  };
+
+  return { declare, declareVariable, enter, exit, kindOf };
+};
+
+type BindingScopes = ReturnType<typeof createBindingScopes>;
+
+const bodyStatements = (node: Function | ArrowFunctionExpression): readonly Statement[] =>
+  node.body?.type === 'BlockStatement' ? node.body.body : [];
+
+// A function declaration is hoisted to the top of its scope, so a later assignment still sees it.
+const functionNames = (statements: readonly Statement[]): string[] =>
+  statements.flatMap((statement) => {
+    const isExport =
+      statement.type === 'ExportNamedDeclaration' || statement.type === 'ExportDefaultDeclaration';
+
+    const declaration = isExport ? statement.declaration : statement;
+
+    return declaration?.type === 'FunctionDeclaration' && declaration.id !== null
+      ? [declaration.id.name]
+      : [];
+  });
+
+const declareFunctions = (bindings: BindingScopes, statements: readonly Statement[]): void => {
+  for (const name of functionNames(statements)) {
+    bindings.declare(name, 'function');
+  }
+};
+
+const globalObjects = new Set(['global', 'globalThis', 'process', 'self', 'window']);
+
+const rootName = (node: Expression): string | undefined => {
+  if (node.type === 'Identifier') {
+    return node.name;
+  }
+
+  return node.type === 'MemberExpression' ? rootName(node.object) : undefined;
+};
+
+const isEscapingObject = (bindings: BindingScopes, node: MemberExpression): boolean => {
+  const name = rootName(node.object);
+
+  if (name === undefined) {
+    return false;
+  }
+
+  const kind = bindings.kindOf(name);
+  const isGlobal = kind === undefined && globalObjects.has(name);
+
+  return kind === 'escaping' || isGlobal;
+};
+
+const isFunctionValue = (bindings: BindingScopes, node: Expression | null): boolean => {
+  if (node === null) {
+    return false;
+  }
+
+  if (node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') {
+    return true;
+  }
+
+  return node.type === 'Identifier' && bindings.kindOf(node.name) === 'function';
+};
+
+const enterFunctionScope = (
+  bindings: BindingScopes,
+  node: Function | ArrowFunctionExpression,
+): void => {
+  bindings.enter(true);
+
+  for (const name of node.params.flatMap(bindingNames)) {
+    bindings.declare(name, 'escaping');
+  }
+
+  declareFunctions(bindings, bodyStatements(node));
+};
+
+const enterBlockScope = (bindings: BindingScopes, node: BlockStatement): void => {
+  bindings.enter(false);
+  declareFunctions(bindings, node.body);
+};
+
+const declareVariables = (bindings: BindingScopes, node: VariableDeclaration): void => {
+  const declareName = node.kind === 'var' ? bindings.declareVariable : bindings.declare;
+
+  for (const declarator of node.declarations) {
+    const kind = isFunctionValue(bindings, declarator.init) ? 'function' : 'local';
+
+    for (const name of bindingNames(declarator.id)) {
+      declareName(name, kind);
+    }
+  }
+};
+
+const checkImport = (
+  path: string,
+  registry: readonly string[],
+  node: ModuleDeclaration,
+  at: (offset: number, what: string) => void,
+): void => {
+  const specifier = 'source' in node ? node.source?.value : undefined;
+
+  if (specifier === undefined || isTypeOnly(node)) {
+    return;
+  }
+
+  const target = posix.join(posix.dirname(path), specifier).replace(/\.js$/, '.ts');
+
+  if (isPureLibrary(path, specifier)) {
+    return;
+  }
+
+  if (!specifier.startsWith('.') || !registry.includes(target)) {
+    at(node.start, `runtime import of ${specifier}`);
+  }
+};
+
+// `Date()` returns the current time as a string.
+const callProblem = (node: CallExpression): string | undefined => {
+  const callee = node.callee.type === 'Identifier' ? node.callee.name : undefined;
+
+  return callee === 'require' || callee === 'Date' ? `${callee}()` : undefined;
+};
+
+const isCurrentDate = (node: NewExpression): boolean =>
+  node.callee.type === 'Identifier' && node.callee.name === 'Date' && node.arguments.length === 0;
+
+const effectVisitors = (
+  bindings: BindingScopes,
+  at: (offset: number, what: string) => void,
+): VisitorObject => ({
+  AssignmentExpression: (node) => {
+    // A function assigned to a property of a parameter, an imported binding, or a global escapes
+    // the module, so the rule counts it as an effect.
+    const escapes = node.left.type === 'MemberExpression' && isEscapingObject(bindings, node.left);
+
+    if (escapes && isFunctionValue(bindings, node.right)) {
+      at(node.start, 'assigns a function to a property');
+    }
+  },
+  CallExpression: (node) => {
+    const problem = callProblem(node);
+
+    if (problem !== undefined) {
+      at(node.start, problem);
+    }
+  },
+  NewExpression: (node) => {
+    if (isCurrentDate(node)) {
+      at(node.start, 'new Date()');
+    }
+  },
+  MemberExpression: (node) => {
+    const name = memberName(node);
+
+    if (name !== undefined && effectMembers.has(name)) {
+      at(node.start, name);
+    }
+  },
+});
+
 // Lists each runtime import outside the registry, dynamic load, and effect in a registered module.
 const impurities = (path: string, source: string, registry: readonly string[]) => {
   const found: string[] = [];
   const program = parseSync(path, source).program;
-  const imported = importedBindings(program);
-  const scopes: EffectScope[] = [{ parameters: new Set(), functions: new Set() }];
+  const bindings = createBindingScopes();
 
   const at = (offset: number, what: string) => {
     const lineNumber = source.slice(0, offset).split('\n').length;
@@ -427,112 +627,51 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
     return found.push(`${path}:${lineNumber}: ${what}`);
   };
 
-  const checkImport = (node: ModuleDeclaration) => {
-    const specifier = 'source' in node ? node.source?.value : undefined;
+  for (const name of importedBindings(program)) {
+    bindings.declare(name, 'escaping');
+  }
 
-    if (specifier === undefined || isTypeOnly(node)) {
-      return;
-    }
-
-    const target = posix.join(posix.dirname(path), specifier).replace(/\.js$/, '.ts');
-
-    if (isPureLibrary(path, specifier)) {
-      return;
-    }
-
-    if (!specifier.startsWith('.') || !registry.includes(target)) {
-      at(node.start, `runtime import of ${specifier}`);
-    }
-  };
-
-  const isEscapingObject = (node: MemberExpression) => {
-    if (node.object.type !== 'Identifier') {
-      return false;
-    }
-
-    const name = node.object.name;
-
-    return imported.has(name) || scopes.some((scope) => scope.parameters.has(name));
-  };
-
-  const assignsFunction = (node: AssignmentExpression) => {
-    const right = node.right;
-
-    if (right.type === 'ArrowFunctionExpression' || right.type === 'FunctionExpression') {
-      return true;
-    }
-
-    return right.type === 'Identifier' && scopes.some((scope) => scope.functions.has(right.name));
-  };
-
-  const enterFunction = (node: Function | ArrowFunctionExpression) => {
-    if (node.type === 'FunctionDeclaration' && node.id !== null) {
-      scopes.at(-1)?.functions.add(node.id.name);
-    }
-
-    scopes.push({ parameters: new Set(node.params.flatMap(bindingNames)), functions: new Set() });
-  };
-
-  const exitFunction = () => {
-    scopes.pop();
-  };
+  declareFunctions(bindings, program.body);
 
   new Visitor({
-    FunctionDeclaration: enterFunction,
-    'FunctionDeclaration:exit': exitFunction,
-    FunctionExpression: enterFunction,
-    'FunctionExpression:exit': exitFunction,
-    TSDeclareFunction: enterFunction,
-    'TSDeclareFunction:exit': exitFunction,
-    TSEmptyBodyFunctionExpression: enterFunction,
-    'TSEmptyBodyFunctionExpression:exit': exitFunction,
-    ArrowFunctionExpression: enterFunction,
-    'ArrowFunctionExpression:exit': exitFunction,
-    VariableDeclarator: (node) => {
-      const init = node.init;
-
-      const isFunction =
-        init?.type === 'ArrowFunctionExpression' || init?.type === 'FunctionExpression';
-
-      if (isFunction && node.id.type === 'Identifier') {
-        scopes.at(-1)?.functions.add(node.id.name);
-      }
+    FunctionDeclaration: (node) => {
+      enterFunctionScope(bindings, node);
     },
-    ImportDeclaration: checkImport,
-    ExportNamedDeclaration: checkImport,
-    ExportAllDeclaration: checkImport,
+    'FunctionDeclaration:exit': bindings.exit,
+    FunctionExpression: (node) => {
+      enterFunctionScope(bindings, node);
+    },
+    'FunctionExpression:exit': bindings.exit,
+    TSDeclareFunction: (node) => {
+      enterFunctionScope(bindings, node);
+    },
+    'TSDeclareFunction:exit': bindings.exit,
+    TSEmptyBodyFunctionExpression: (node) => {
+      enterFunctionScope(bindings, node);
+    },
+    'TSEmptyBodyFunctionExpression:exit': bindings.exit,
+    ArrowFunctionExpression: (node) => {
+      enterFunctionScope(bindings, node);
+    },
+    'ArrowFunctionExpression:exit': bindings.exit,
+    BlockStatement: (node) => {
+      enterBlockScope(bindings, node);
+    },
+    'BlockStatement:exit': bindings.exit,
+    VariableDeclaration: (node) => {
+      declareVariables(bindings, node);
+    },
+    ImportDeclaration: (node) => {
+      checkImport(path, registry, node, at);
+    },
+    ExportNamedDeclaration: (node) => {
+      checkImport(path, registry, node, at);
+    },
+    ExportAllDeclaration: (node) => {
+      checkImport(path, registry, node, at);
+    },
     ImportExpression: (node) => at(node.start, 'dynamic import'),
-    AssignmentExpression: (node) => {
-      // A function assigned to a property of a parameter or an imported binding escapes the module,
-      // so the rule counts it as an effect.
-      if (node.left.type === 'MemberExpression' && isEscapingObject(node.left)) {
-        if (assignsFunction(node)) {
-          at(node.start, 'assigns a function to a property');
-        }
-      }
-    },
-    CallExpression: (node) => {
-      const callee = node.callee.type === 'Identifier' ? node.callee.name : undefined;
-
-      // `Date()` returns the current time as a string.
-      if (callee === 'require' || callee === 'Date') {
-        at(node.start, `${callee}()`);
-      }
-    },
-    NewExpression: (node) => {
-      const isDate = node.callee.type === 'Identifier' && node.callee.name === 'Date';
-
-      if (isDate && node.arguments.length === 0) {
-        at(node.start, 'new Date()');
-      }
-    },
-    MemberExpression: (node) => {
-      const name = memberName(node);
-
-      if (name !== undefined && effectMembers.has(name)) {
-        at(node.start, name);
-      }
-    },
+    ...effectVisitors(bindings, at),
   }).visit(program);
 
   return found;
@@ -690,8 +829,29 @@ const aliasedFunctionPropertySource = (): string =>
 const importedFunctionPropertySource = (): string =>
   "import { api } from './rules.js';\napi.run = () => 1;\n";
 
+const importedNestedFunctionPropertySource = (): string =>
+  "import { api } from './rules.js';\napi.config.run = () => 1;\n";
+
+const globalFunctionPropertySource = (): string =>
+  'globalThis.install = () => 1;\nwindow.handler = () => 1;\n';
+
 const localFunctionPropertySource = (): string =>
   'const handlers = {};\nhandlers.run = () => "";\n';
+
+const shadowingImportSource = (): string =>
+  "import { api } from './rules.js';\nexport const make = () => {\n  const api = {};\n  api.run = () => 1;\n  return api;\n};\n";
+
+const hoistedFunctionPropertySource = (): string =>
+  'export const install = (api) => {\n  api.run = later;\n};\nfunction later() {}\n';
+
+const endedBlockFunctionSource = (): string =>
+  'export const install = (api) => {\n  if (api) {\n    function later() {}\n    later();\n  }\n  api.run = later;\n};\n';
+
+const siblingFunctionSource = (): string =>
+  'const first = (api) => api;\nconst second = () => {\n  const api = {};\n  api.run = () => 1;\n  return api;\n};\n';
+
+const siblingBindingSource = (): string =>
+  'const first = () => {\n  const later = () => 1;\n  return later;\n};\nconst second = (api) => {\n  api.run = later;\n};\n';
 
 it('reports a function assigned to a property of a parameter or an imported binding', () => {
   expect(impurities('src/pure/decide.ts', functionPropertySource(), testRegistry)).toEqual([
@@ -707,8 +867,38 @@ it('reports a function assigned to a property of a parameter or an imported bind
   ]);
 });
 
+it('reports a function assigned to a property of a global or of a nested member chain', () => {
+  expect(impurities('src/pure/decide.ts', globalFunctionPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:1: assigns a function to a property',
+    'src/pure/decide.ts:2: assigns a function to a property',
+  ]);
+
+  expect(
+    impurities('src/pure/decide.ts', importedNestedFunctionPropertySource(), testRegistry),
+  ).toEqual(['src/pure/decide.ts:2: assigns a function to a property']);
+});
+
 it('does not report a function assigned to a property of a local object', () => {
   expect(impurities('src/pure/decide.ts', localFunctionPropertySource(), testRegistry)).toEqual([]);
+});
+
+it('does not report a local that shadows an import', () => {
+  expect(impurities('src/pure/decide.ts', shadowingImportSource(), testRegistry)).toEqual([]);
+});
+
+it('reports a function assigned before its hoisted declaration', () => {
+  expect(impurities('src/pure/decide.ts', hoistedFunctionPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:2: assigns a function to a property',
+  ]);
+});
+
+it('does not report a function declared in a block that has ended', () => {
+  expect(impurities('src/pure/decide.ts', endedBlockFunctionSource(), testRegistry)).toEqual([]);
+});
+
+it('does not let a binding leak out of a sibling function', () => {
+  expect(impurities('src/pure/decide.ts', siblingFunctionSource(), testRegistry)).toEqual([]);
+  expect(impurities('src/pure/decide.ts', siblingBindingSource(), testRegistry)).toEqual([]);
 });
 
 it('applies each pure module exception to one finding and reports a stale exception', () => {
