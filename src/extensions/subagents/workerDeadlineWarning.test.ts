@@ -5,7 +5,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { saveReport, writeAssignment } from './assignment.js';
 import type { SavedReport } from './assignment.js';
-import { deadlineWarningDelay } from './deadlineDecision.js';
+import { deadlineWarningDelay, deadlineWarningReserve } from './deadlineDecision.js';
 import {
   assignmentFor,
   dispatch,
@@ -15,18 +15,18 @@ import {
 } from './fixtures/workerExtensionHarness.js';
 
 interface FakeClock {
-  warningTimers: () => number;
+  armedWarningTimers: () => number;
 }
 
 vi.mock(import('node:fs/promises'), { spy: true });
 
 const start = 1_700_000_000_000;
-const warningReserve = 90_000;
 const warningDelay = deadlineWarningDelay(start + 120_000, start);
-const gitDrainMilliseconds = 100;
+const outputIdleMilliseconds = 100;
 
 // Git arms a timer to drain a child's streams when the child exits, and the extension's scan runs
-// git without a test awaiting it, so a count of every timer also counts git's.
+// git without a test awaiting it, so a count of every timer also counts git's. Count the timer the
+// warning arms, which is the only one this test arms with that delay.
 const withFakeTimers = (): FakeClock => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   vi.setSystemTime(start);
@@ -36,7 +36,10 @@ const withFakeTimers = (): FakeClock => {
   const armedTimers = new Map<unknown, number>();
 
   vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
-    const handle = setTimeoutFake(callback, delay, ...args);
+    const handle = setTimeoutFake(() => {
+      armedTimers.delete(handle);
+      callback(...args);
+    }, delay);
 
     armedTimers.set(handle, delay ?? 0);
 
@@ -53,7 +56,8 @@ const withFakeTimers = (): FakeClock => {
   });
 
   return {
-    warningTimers: () => [...armedTimers.values()].filter((delay) => delay === warningDelay).length,
+    armedWarningTimers: () =>
+      [...armedTimers.values()].filter((delay) => delay === warningDelay).length,
   };
 };
 
@@ -89,7 +93,7 @@ it('warns once 30 s before a deadline 120 s away, and not before', async () => {
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
 
-  await vi.advanceTimersByTimeAsync(120_000 - warningReserve - 1);
+  await vi.advanceTimersByTimeAsync(120_000 - deadlineWarningReserve - 1);
 
   expect(pi.sendMessage).not.toHaveBeenCalled();
 
@@ -144,9 +148,10 @@ it('shows no warning when the worker reports before the warning time', async () 
     context,
   );
 
-  setTimeout(() => undefined, gitDrainMilliseconds);
+  // The timer git arms to drain a child's streams once the child exits.
+  setTimeout(() => undefined, outputIdleMilliseconds);
 
-  expect(clock.warningTimers()).toBe(0);
+  expect(clock.armedWarningTimers()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
 
@@ -186,11 +191,11 @@ it('shows no warning after session_shutdown', async () => {
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
 
-  expect(clock.warningTimers()).toBe(1);
+  expect(clock.armedWarningTimers()).toBe(1);
 
   pi.handler('session_shutdown')({}, context);
 
-  expect(clock.warningTimers()).toBe(0);
+  expect(clock.armedWarningTimers()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
   await flushAsync();
@@ -211,7 +216,7 @@ it('shows no warning when the assignment already has a report before the start',
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
 
-  expect(clock.warningTimers()).toBe(0);
+  expect(clock.armedWarningTimers()).toBe(0);
 
   await vi.advanceTimersByTimeAsync(120_000);
 
