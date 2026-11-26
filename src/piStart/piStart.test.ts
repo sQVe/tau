@@ -912,6 +912,9 @@ it.each<[string, readonly string[] | undefined]>([
   ['a node command with a flag value of pi', ['node', '--title', 'pi', '/path/tool.js']],
   ['a node command with a Pi-named flag value', ['node', '--require', './pi.js', 'main.js']],
   ['a bare pi argument after an unknown value-taking flag', ['node', '--stack-size', '2000', 'pi']],
+  ['a node eval command with a trailing pi', ['node', '-e', 'code', 'pi']],
+  ['a node eval command with a path-shaped pi after the code', ['node', '-e', 'code', '/path/pi']],
+  ['a node print command with a trailing pi', ['node', '--print', 'code', 'pi']],
 ])('a start retries a model read that first returns %s', async (_shape, firstRead) => {
   const fake = launchWithForeground([
     'pi',

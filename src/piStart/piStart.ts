@@ -172,16 +172,17 @@ const hasExecutableSuffix = (argument: string): boolean =>
 const isPathShaped = (argument: string): boolean =>
   carriesPath(argument) || hasExecutableSuffix(argument);
 
-// Runtime flags that take a separate value, so the next argument is a flag value and not the
-// script. The list holds the supported Node and Bun flags; an unknown value-taking flag falls
-// back to the heuristic: a path-shaped Pi name is accepted and a bare one is rejected.
+// An inline-program flag supplies the program itself, so no script follows it.
+const inlineProgramRuntimeFlags = new Set(['--eval', '-e', '--print', '-p']);
+
+// A partial allowlist of runtime flags that take a separate value, so the next argument is a flag
+// value and not the script. A bare Pi name counts only when it is the first candidate after the
+// skipped values; a later Pi name needs a path separator or an executable suffix.
 const valueTakingRuntimeFlags = new Set([
   '--conditions',
   '-C',
   '--dns-result-order',
   '--env-file',
-  '--eval',
-  '-e',
   '--experimental-loader',
   '--icu-data-dir',
   '--import',
@@ -191,8 +192,6 @@ const valueTakingRuntimeFlags = new Set([
   '--max-old-space-size',
   '--openssl-config',
   '--preload',
-  '--print',
-  '-p',
   '--redirect-warnings',
   '--require',
   '-r',
@@ -201,12 +200,17 @@ const valueTakingRuntimeFlags = new Set([
   '--watch-path',
 ]);
 
+// Returns the index of the argument after the flag and after its value when the flag takes one.
+const skipRuntimeFlagValue = (argument: string, index: number): number =>
+  valueTakingRuntimeFlags.has(argument) ? index + 2 : index + 1;
+
 // The script is the first argument after the runtime once the known flag values are skipped. A
 // later Pi name counts only when it carries a path separator or an executable suffix.
 const scriptArgument = (argv: readonly string[]): string | undefined => {
   let isFirstCandidate = true;
+  let index = 1;
 
-  for (let index = 1; index < argv.length; index += 1) {
+  while (index < argv.length) {
     const argument = argv[index];
 
     if (argument === undefined) {
@@ -214,7 +218,11 @@ const scriptArgument = (argv: readonly string[]): string | undefined => {
     }
 
     if (argument.startsWith('-')) {
-      index += valueTakingRuntimeFlags.has(argument) ? 1 : 0;
+      if (inlineProgramRuntimeFlags.has(argument)) {
+        return undefined;
+      }
+
+      index = skipRuntimeFlagValue(argument, index);
 
       continue;
     }
@@ -226,6 +234,7 @@ const scriptArgument = (argv: readonly string[]): string | undefined => {
     }
 
     isFirstCandidate = false;
+    index += 1;
   }
 
   return undefined;
