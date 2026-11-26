@@ -82,6 +82,12 @@ type WrapperWord =
   | { kind: 'positional' }
   | { kind: 'command' };
 
+interface ShortOption {
+  letters: string;
+  // What is attached to the letters, such as `./commit.sh` in `-lc./commit.sh`.
+  tail: string;
+}
+
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
 
@@ -283,27 +289,35 @@ const envSplitStringOptions = wrapperCommandOptions.get('env') ?? new Set<string
 
 const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
 
-// A letter of an enabled short option: the word starts with `-`, its letters parse, and no `o` or
-// `O` precedes the letter, because that letter then belongs to the option's value.
-const enabledLetterIndex = (word: string, letter: string): number => {
+// A `-` short-option word, split into its letters and the tail attached to them.
+const shortOption = (word: string): ShortOption | undefined => {
   const match = /^-([A-Za-z]*)([\s\S]*)$/u.exec(word);
 
-  if (match === null) {
-    return -1;
-  }
+  return match === null ? undefined : { letters: match[1] ?? '', tail: match[2] ?? '' };
+};
 
-  const letters = match[1] ?? '';
-  const index = letters.indexOf(letter);
+// A letter of an enabled short option; no `o` or `O` may precede it, because that letter then
+// belongs to the option's value.
+const enabledLetterIndex = (option: ShortOption, letter: string): number => {
+  const index = option.letters.indexOf(letter);
 
-  return index !== -1 && /[oO]/u.test(letters.slice(0, index)) ? -1 : index;
+  return index !== -1 && /[oO]/u.test(option.letters.slice(0, index)) ? -1 : index;
 };
 
 // An option with `c`, such as `-c` or `-lc`, puts the code in an argument, not in a file.
-const isInlineCodeWord = (word: string): boolean => enabledLetterIndex(word, 'c') !== -1;
+const isInlineCodeWord = (word: string): boolean => {
+  const option = shortOption(word);
+
+  return option !== undefined && enabledLetterIndex(option, 'c') !== -1;
+};
 
 // An option that makes the shell read its code from standard input; `+s` disables one instead.
-const isStdinOptionWord = (word: string): boolean =>
-  word === '--stdin' || enabledLetterIndex(word, 's') !== -1;
+const isStdinOptionWord = (word: string): boolean => {
+  const option = shortOption(word);
+  const namesStdin = option !== undefined && enabledLetterIndex(option, 's') !== -1;
+
+  return word === '--stdin' || namesStdin;
+};
 
 const assignmentPattern = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 
@@ -564,14 +578,19 @@ const codeOperand = (words: string[], start: number): string | undefined => {
 // A short-option word can carry its code after the `c`, as in `-c'git commit'`. A `c` after an
 // `o` or `O` letter belongs to that option's value, as in `-onoclobber`.
 const attachedInlineCode = (word: string): string | undefined => {
-  const index = enabledLetterIndex(word, 'c');
+  const option = shortOption(word);
+
+  if (option === undefined) {
+    return undefined;
+  }
+
+  const index = enabledLetterIndex(option, 'c');
 
   if (index === -1) {
     return undefined;
   }
 
-  const [, letters = '', tail = ''] = /^-([A-Za-z]*)([\s\S]*)$/u.exec(word) ?? [];
-  const code = letters.slice(index + 1) + tail;
+  const code = option.letters.slice(index + 1) + option.tail;
 
   return code === '' ? undefined : code;
 };
