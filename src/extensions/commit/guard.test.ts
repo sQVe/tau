@@ -19,7 +19,7 @@ const expectOutcome = (event: ToolCallEvent, cwd = process.cwd()): void => {
   expect(guard(event, cwd)).toEqual({ block: true, reason: commitGuardReason });
 };
 
-const chmodRestricted = process.getuid?.() === 0 || process.platform === 'win32';
+const permissionsNotEnforced = process.getuid?.() === 0 || process.platform === 'win32';
 
 const writeScript = (directory: string, name: string, text: string): string => {
   const path = join(directory, name);
@@ -169,11 +169,14 @@ describe('guardToolCall', () => {
 
   it('allows a script file that does not exist', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    withExactPath(pathDirectory);
 
     expect(guard(makeBashEvent('sh missing.sh'), directory)).toBeUndefined();
   });
 
-  it.skipIf(chmodRestricted)('blocks a script file it cannot read', () => {
+  it.skipIf(permissionsNotEnforced)('blocks a script file it cannot read', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const path = writeScript(directory, 'locked.sh', 'git status\n');
 
@@ -408,6 +411,13 @@ describe('guardToolCall', () => {
   });
 
   it('blocks a command that names 65 script files', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const names = writeScriptFiles(directory, 65);
+
+    expectOutcome(makeBashEvent(referencesTo(names)), directory);
+  });
+
+  it('blocks the file past the read cap without reading it', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const names = writeScriptFiles(directory, 65);
 
@@ -749,6 +759,14 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('sh 3< commit.sh 0>&3'), directory);
   });
 
+  it('blocks a script file fed through a duplicated descriptor chain', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh 3< commit.sh 2>&3 <&2'), directory);
+  });
+
   it('allows a script file fed to a non-stdin descriptor', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -875,6 +893,18 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     expect(guard(makeBashEvent("bash -c 'git status'"), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['fish', '#!/usr/bin/env fish'],
+    ['csh', '#!/bin/csh'],
+    ['busybox sh', '#!/bin/busybox sh'],
+  ])('blocks a commit in a file with a %s shebang', (_label, shebang) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
   });
 
   it('allows a commit in a file whose env shebang names another program', () => {
@@ -1264,7 +1294,7 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(command), directory);
   });
 
-  it.skipIf(chmodRestricted)('allows an unreadable PATH entry that finds nothing', () => {
+  it.skipIf(permissionsNotEnforced)('allows an unreadable PATH entry that finds nothing', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
@@ -1278,23 +1308,26 @@ describe('guardToolCall', () => {
     }
   });
 
-  it.skipIf(chmodRestricted)('blocks a PATH candidate after an unreadable PATH entry', () => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-    const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
-    const later = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+  it.skipIf(permissionsNotEnforced)(
+    'blocks a PATH candidate after an unreadable PATH entry',
+    () => {
+      const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+      const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+      const later = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
-    writeScript(later, 'tool.sh', 'git commit -m x\n');
-    chmodSync(locked, 0o000);
-    withExactPath(locked, later);
+      writeScript(later, 'tool.sh', 'git commit -m x\n');
+      chmodSync(locked, 0o000);
+      withExactPath(locked, later);
 
-    try {
-      expectOutcome(makeBashEvent('sh tool.sh'), directory);
-    } finally {
-      chmodSync(locked, 0o755);
-    }
-  });
+      try {
+        expectOutcome(makeBashEvent('sh tool.sh'), directory);
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    },
+  );
 
-  it.skipIf(chmodRestricted)(
+  it.skipIf(permissionsNotEnforced)(
     'blocks a fail-closed read of a path a PATH probe found unreadable',
     () => {
       const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
@@ -1313,7 +1346,7 @@ describe('guardToolCall', () => {
     },
   );
 
-  it.skipIf(chmodRestricted)('allows a local script before an unreadable PATH entry', () => {
+  it.skipIf(permissionsNotEnforced)('allows a local script before an unreadable PATH entry', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const locked = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
 
@@ -1328,19 +1361,22 @@ describe('guardToolCall', () => {
     }
   });
 
-  it.skipIf(chmodRestricted)('blocks a named file whose stat fails with a permission error', () => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-    const locked = join(directory, 'locked');
+  it.skipIf(permissionsNotEnforced)(
+    'blocks a named file whose stat fails with a permission error',
+    () => {
+      const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+      const locked = join(directory, 'locked');
 
-    writeScript(directory, 'locked/commit.sh', 'git commit -m x\n');
-    chmodSync(locked, 0o000);
+      writeScript(directory, 'locked/commit.sh', 'git commit -m x\n');
+      chmodSync(locked, 0o000);
 
-    try {
-      expectOutcome(makeBashEvent('sh locked/commit.sh'), directory);
-    } finally {
-      chmodSync(locked, 0o755);
-    }
-  });
+      try {
+        expectOutcome(makeBashEvent('sh locked/commit.sh'), directory);
+      } finally {
+        chmodSync(locked, 0o755);
+      }
+    },
+  );
 
   it('inspects inline code in its own command directory', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');

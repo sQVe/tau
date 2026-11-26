@@ -193,11 +193,15 @@ const shellInterpreters = new Set([
   '.',
   'ash',
   'bash',
+  'csh',
   'dash',
+  'fish',
   'ksh',
   'mksh',
   'sh',
   'source',
+  'tcsh',
+  'yash',
   'zsh',
 ]);
 
@@ -453,8 +457,14 @@ const shebangInterpreter = (text: string): string | undefined => {
     return undefined;
   }
 
-  if (commandName(program) !== 'env') {
-    return commandName(program);
+  const name = commandName(program);
+
+  if (name === 'busybox') {
+    return rest[0] === undefined ? name : commandName(rest[0]);
+  }
+
+  if (name !== 'env') {
+    return name;
   }
 
   const target = envTarget(rest);
@@ -982,15 +992,16 @@ const scriptFacts = (
     return cached;
   }
 
+  // Reaching the cap fails closed without reading, so one call never reads more than the budget.
+  if (state.reads >= maximumScriptReads) {
+    return undefined;
+  }
+
   const facts = namedFileFacts(path, failClosed);
 
   // Only a candidate that exists is read; a probe that finds nothing costs one stat and no budget.
   if (facts.kind !== 'missing') {
     state.reads += 1;
-
-    if (state.reads > maximumScriptReads) {
-      return undefined;
-    }
   }
 
   state.facts.set(key, facts);

@@ -150,10 +150,8 @@ const decodeAnsiCText = (body: string): string => {
   return decoded.split('\u0000', 1)[0] ?? '';
 };
 
-// `0>&N` feeds standard input from descriptor N, while every other `>&` form is output.
-const isStdinDescriptor = (descriptor: string | undefined): boolean =>
-  descriptor !== undefined && Number(descriptor) === 0;
-
+// `n>&m` copies descriptor m onto descriptor n, which can carry an input descriptor onward. The
+// bare `>&word` form is output only.
 const inputKind = (
   kind: Redirection['kind'],
   descriptor: string | undefined,
@@ -167,11 +165,7 @@ const inputKind = (
     return kind;
   }
 
-  if (
-    kind === 'outputDuplicate' &&
-    isStdinDescriptor(descriptor) &&
-    isUnquotedDigitWord(word, false)
-  ) {
+  if (kind === 'outputDuplicate' && descriptor !== undefined && isUnquotedDigitWord(word, false)) {
     return 'duplicate';
   }
 
