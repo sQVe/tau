@@ -169,6 +169,25 @@ const rejectPathLinks = async (directory: string, file: string) => {
   }
 };
 
+// A pipe opens without a writer only in non-blocking mode. The type check and the read use one
+// handle, and O_NOFOLLOW refuses a symlink swapped in after the path checks.
+export const readPublicationBytes = async (path: string): Promise<Buffer> => {
+  const flags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
+  const handle = await open(path, flags);
+
+  try {
+    const stats = await handle.stat();
+
+    if (!stats.isFile()) {
+      throw new Error(`Refusing to read a path that is not a regular file: ${path}`);
+    }
+
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
+};
+
 const readPublicationFile = async (directory: string, file: string): Promise<RunFile> => {
   const path = join(directory, file);
 
@@ -180,24 +199,9 @@ const readPublicationFile = async (directory: string, file: string): Promise<Run
     throw new Error(`No ${file} at ${path}. Write it there first.`);
   }
 
-  // A pipe opens without a writer only in non-blocking mode. The type check and the read use one
-  // handle, and O_NOFOLLOW refuses a symlink swapped in after the checks.
-  const flags = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
-  const handle = await open(path, flags);
+  const bytes = await readPublicationBytes(path);
 
-  try {
-    const stats = await handle.stat();
-
-    if (!stats.isFile()) {
-      throw new Error(`Refusing to read a path that is not a regular file: ${path}`);
-    }
-
-    const bytes = await handle.readFile();
-
-    return { file, path, bytes, text: bytes.toString('utf8') };
-  } finally {
-    await handle.close();
-  }
+  return { file, path, bytes, text: bytes.toString('utf8') };
 };
 
 const requireCommentFile = (action: string, file: string | undefined): string => {
