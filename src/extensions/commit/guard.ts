@@ -346,8 +346,7 @@ const clusterValue = (
   return undefined;
 };
 
-// `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
-// before the program.
+// A value option takes the next word, an attached value, or a short-option cluster's value.
 const optionValue = (
   words: string[],
   index: number,
@@ -375,6 +374,8 @@ const optionValue = (
   return clusterValue(words, index, word, options);
 };
 
+// `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
+// before the program.
 const envTarget = (words: string[]): string | undefined => {
   const valueOptions = wrapperOptionValues.get('env') ?? new Set<string>();
   const expanded: string[] = [];
@@ -544,14 +545,23 @@ const codeOperand = (words: string[], start: number): string | undefined => {
   return undefined;
 };
 
-// A short-option word can carry its code after the `c`, as in `-c'git commit'`.
+// A short-option word can carry its code after the `c`, as in `-c'git commit'`. A `c` after an
+// `o` or `O` letter belongs to that option's value, as in `-onoclobber`.
 const attachedInlineCode = (word: string): string | undefined => {
-  if (!/^[-+][A-Za-z]/u.test(word)) {
+  const match = /^[-+]([A-Za-z]*)(.*)$/u.exec(word);
+
+  if (match === null) {
     return undefined;
   }
 
-  const index = word.indexOf('c');
-  const code = index === -1 ? '' : word.slice(index + 1);
+  const letters = match[1] ?? '';
+  const index = letters.indexOf('c');
+
+  if (index === -1 || /[oO]/u.test(letters.slice(0, index))) {
+    return undefined;
+  }
+
+  const code = letters.slice(index + 1) + (match[2] ?? '');
 
   return code === '' ? undefined : code;
 };
@@ -746,13 +756,19 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
 // Shell keywords that can precede a command word in the same simple command.
 const reservedWords = new Set(['!', '{', 'if', 'then', 'elif', 'else', 'while', 'until', 'do']);
 
-const walkWrappers = (words: string[]): WrapperScan => {
-  const assignments: string[] = [];
+const leadingWordCount = (words: string[]): number => {
   let index = 0;
 
   while (index < words.length && reservedWords.has(words[index] ?? '')) {
     index += 1;
   }
+
+  return index;
+};
+
+const walkWrappers = (words: string[]): WrapperScan => {
+  const assignments: string[] = [];
+  let index = leadingWordCount(words);
 
   while (index < words.length) {
     const word = words[index] ?? '';
@@ -853,7 +869,7 @@ const isPlainDirectoryWord = (word: string) =>
 
 // Only a literal `cd` changes the directory of the commands after it in the same list.
 const nextDirectory = (command: ShellCommand, directory: string): string => {
-  const { arguments: words } = command;
+  const words = command.arguments.slice(leadingWordCount(command.arguments));
   const [name, operand] = words;
 
   if (words.length !== 2 || name === undefined || operand === undefined) {

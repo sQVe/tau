@@ -1016,6 +1016,35 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(command), directory);
   });
 
+  it.each([
+    ['sh -onoclobber', "sh -onoclobber -c 'git commit -m x'"],
+    ['bash -Ocheckwinsize', "bash -Ocheckwinsize -c 'git commit -m x'"],
+    ['bash -Onocasematch', "bash -Onocasematch -c './commit.sh'"],
+  ])('blocks code after a shell option that ends in c: %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('allows code after a shell option that ends in c without a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent("bash -onoclobber -c 'git status'"), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['if then cd', 'if true; then cd sub; sh commit.sh; fi'],
+    ['while do cd', 'while true; do cd sub; sh commit.sh; done'],
+  ])('resolves a keyword-prefixed cd: %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
   it('allows attached inline code that does not create a commit', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1042,6 +1071,7 @@ describe('guardToolCall', () => {
 
   it.each([
     ['sudo -Eu', 'sudo -Eu root sh commit.sh'],
+    ['sudo -Euname', 'sudo -Euname sh commit.sh'],
     ['xargs -tn', 'xargs -tn 2 sh commit.sh'],
     ['sudo -C', 'sudo -C 5 sh commit.sh'],
     ['sudo --command-timeout', 'sudo --command-timeout 5 sh commit.sh'],
@@ -1053,10 +1083,10 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(command), directory);
   });
 
-  it('allows a short-option cluster that names data', () => {
+  it('allows a cluster whose value is not the command word', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    expect(guard(makeBashEvent('printf -tn 2 sh commit.sh'), directory)).toBeUndefined();
+    expect(guard(makeBashEvent('sudo -Eu sh commit.sh'), directory)).toBeUndefined();
   });
 
   it('blocks a script after a positional that looks like an assignment', () => {
