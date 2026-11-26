@@ -20,15 +20,19 @@ interface Streams {
   stderr: StreamTarget | undefined;
 }
 
-interface ScriptFacts {
-  logs: boolean;
+// Whether a reader sees a compound's failure, whether a command inside it throws stderr away, and
+// whether the command's own redirection does.
+interface CompoundFacts {
+  shows: boolean;
   discards: boolean;
+  ownDiscards: boolean;
 }
-
-type ScriptFactsOf = (script: string | undefined, depth: number) => ScriptFacts;
 
 const shellNames = new Set(['sh', 'bash', 'dash', 'zsh']);
 const devNull = '/dev/null';
+const maximumDepth = 4;
+
+const emptyStreams: Streams = { stdout: undefined, stderr: undefined };
 
 const isDescriptor = (target: string): boolean => /^\d+$/u.test(target) || target === '-';
 
@@ -102,8 +106,8 @@ const applyRedirection = (
   }
 };
 
-const streamsOf = (command: ShellCommand): Streams => {
-  const streams: Streams = { stdout: undefined, stderr: undefined };
+const streamsOf = (command: ShellCommand, inherited: Streams): Streams => {
+  const streams: Streams = { ...inherited };
 
   for (const redirection of command.redirections) {
     applyRedirection(streams, redirection);
@@ -112,28 +116,23 @@ const streamsOf = (command: ShellCommand): Streams => {
   return streams;
 };
 
-const discardsStderr = (command: ShellCommand): boolean => {
-  const stderr = streamsOf(command).stderr;
+// A stream with no redirection reaches the terminal, which is visible.
+const showsStderr = (streams: Streams): boolean => {
+  const stderr = streams.stderr;
 
-  if (stderr === undefined) {
-    return false;
-  }
+  const writesVisibleFile = stderr?.kind === 'file' && stderr.path !== devNull;
 
-  const writesDevNull = stderr.kind === 'file' && stderr.path === devNull;
-
-  return stderr.kind === 'closed' || writesDevNull;
+  return stderr === undefined || writesVisibleFile;
 };
 
-// Only a resolved file target keeps the output where a later read can see it.
-const logsStderr = (command: ShellCommand): boolean => {
-  const stderr = streamsOf(command).stderr;
+const discardsStderr = (streams: Streams): boolean => {
+  const stderr = streams.stderr;
+  const writesDevNull = stderr?.kind === 'file' && stderr.path === devNull;
 
-  return stderr?.kind === 'file' && stderr.path !== devNull;
+  return stderr?.kind === 'closed' || writesDevNull;
 };
 
 const shellNameOf = (argument: string): string => argument.slice(argument.lastIndexOf('/') + 1);
-
-const maximumScriptDepth = 4;
 
 const scriptOf = (command: ShellCommand): string | undefined => {
   const shellIndex = command.arguments.findIndex((argument) =>
@@ -151,83 +150,136 @@ const scriptOf = (command: ShellCommand): string | undefined => {
   return commandFlagIndex === -1 ? undefined : command.arguments[commandFlagIndex + 1];
 };
 
-const commandsFacts = (
+const encloses = (command: ShellCommand, closingIndex: number, index: number): boolean =>
+  command.group !== undefined && command.group <= index && index < closingIndex;
+
+const enclosingStreams = (
   commands: readonly ShellCommand[],
+  index: number,
+  inherited: Streams,
+): Streams => {
+  const enclosing = commands
+    .map((command, closingIndex) => ({ command, closingIndex }))
+    .filter(({ command, closingIndex }) => encloses(command, closingIndex, index))
+    .toSorted((left, right) => (left.command.group ?? 0) - (right.command.group ?? 0));
+
+  return enclosing.reduce((streams, { command }) => streamsOf(command, streams), inherited);
+};
+
+// A command shows its failure when its own redirections, over the streams it inherits, end stderr in
+// a visible file. A group shows it when its first command does, and a script when its last command
+// does. A command that redirects anything but leaves stderr discarded hides the failure.
+const compoundFacts = (
+  commands: readonly ShellCommand[],
+  index: number,
+  inherited: Streams,
   depth: number,
-  scriptFactsOf: ScriptFactsOf,
-): ScriptFacts =>
-  commands.reduce<ScriptFacts>(
-    (facts, command) => {
-      const nestedScript = scriptOf(command);
+): CompoundFacts => {
+  const groupFacts = (closingIndex: number, groupInherited: Streams): CompoundFacts => {
+    const closing = commands[closingIndex];
+    const groupStart = closing?.group;
 
-      const nested =
-        nestedScript === undefined
-          ? { logs: false, discards: false }
-          : scriptFactsOf(nestedScript, depth + 1);
+    if (closing === undefined || groupStart === undefined) {
+      return { shows: false, discards: false, ownDiscards: false };
+    }
 
-      return {
-        logs: facts.logs || logsStderr(command) || nested.logs,
-        discards: facts.discards || discardsStderr(command) || nested.discards,
-      };
-    },
-    { logs: false, discards: false },
-  );
+    const members = commands
+      .map((command, memberIndex) => ({ command, index: memberIndex }))
+      .filter(({ index: memberIndex }) => memberIndex >= groupStart && memberIndex < closingIndex);
 
-// Fail closed past the depth budget, so a deeply nested script is treated as hiding its stderr.
-const scriptFacts = (script: string | undefined, depth = 0): ScriptFacts => {
-  if (depth > maximumScriptDepth) {
-    return { logs: false, discards: true };
+    const first = members.find(({ command }) => command.arguments.length > 0);
+
+    const shows =
+      first === undefined
+        ? showsStderr(streamsOf(closing, groupInherited))
+        : compoundFacts(commands, first.index, groupInherited, depth + 1).shows;
+
+    const discards = members.some(({ index: memberIndex }) => {
+      const member = compoundFacts(commands, memberIndex, groupInherited, depth + 1);
+
+      return member.discards || member.ownDiscards;
+    });
+
+    return { shows, discards, ownDiscards: false };
+  };
+
+  const scriptFacts = (script: string, scriptInherited: Streams): CompoundFacts => {
+    const scriptCommands = parseShellCommands(script) ?? [];
+    const lastIndex = scriptCommands.findLastIndex((command) => command.arguments.length > 0);
+
+    const shows =
+      lastIndex === -1
+        ? showsStderr(scriptInherited)
+        : compoundFacts(scriptCommands, lastIndex, scriptInherited, depth + 1).shows;
+
+    const discards = scriptCommands.some((_command, scriptIndex) => {
+      const member = compoundFacts(scriptCommands, scriptIndex, scriptInherited, depth + 1);
+
+      return member.discards || member.ownDiscards;
+    });
+
+    return { shows, discards, ownDiscards: false };
+  };
+
+  if (depth > maximumDepth) {
+    return { shows: false, discards: true, ownDiscards: false };
   }
 
-  const commands = (parseShellCommands(script ?? '') ?? []).filter(
-    (command) => command.arguments.length > 0,
-  );
+  const command = commands[index];
 
-  return commandsFacts(commands, depth, scriptFacts);
+  if (command === undefined) {
+    return { shows: false, discards: false, ownDiscards: false };
+  }
+
+  const enclosing = enclosingStreams(commands, index, inherited);
+  const own = streamsOf(command, enclosing);
+  const ownDiscards = command.redirections.length > 0 && discardsStderr(own);
+  const script = scriptOf(command);
+
+  if (script !== undefined) {
+    const nested = scriptFacts(script, own);
+
+    return { shows: nested.shows, discards: nested.discards, ownDiscards };
+  }
+
+  if (command.group !== undefined) {
+    const nested = groupFacts(index, enclosing);
+
+    return { shows: nested.shows, discards: nested.discards, ownDiscards };
+  }
+
+  return { shows: showsStderr(own), discards: false, ownDiscards };
 };
 
-const unitFacts = (commands: readonly ShellCommand[], command: ShellCommand): ScriptFacts =>
-  commandsFacts(
-    commands.filter(
-      (candidate) =>
-        candidate.unit === command.unit && candidate.arguments.length > 0 && candidate !== command,
-    ),
-    0,
-    scriptFacts,
-  );
+const insideGroup = (commands: readonly ShellCommand[], index: number): boolean =>
+  commands.some((command, closingIndex) => encloses(command, closingIndex, index));
 
-// The outer redirection hides the script's own stderr. A script keeps it when some command writes
-// stderr to a file and no command sends stderr to /dev/null.
-const scriptKeepsStderr = (script: string): boolean => {
-  const facts = scriptFacts(script);
+const hidesFailure = (commands: readonly ShellCommand[], index: number): boolean => {
+  const command = commands[index];
 
-  return facts.logs && !facts.discards;
-};
-
-const scriptDiscardsStderr = (script: string | undefined): boolean => scriptFacts(script).discards;
-
-const hidesFailure = (command: ShellCommand, commands: readonly ShellCommand[]): boolean => {
-  if (!command.background) {
+  if (command === undefined || !command.background) {
     return false;
   }
 
-  if (command.arguments.length === 0) {
-    if (!discardsStderr(command)) {
-      return false;
-    }
-
-    const facts = unitFacts(commands, command);
-
-    return !facts.logs || facts.discards;
-  }
-
+  const enclosing = enclosingStreams(commands, index, emptyStreams);
+  const own = streamsOf(command, enclosing);
   const script = scriptOf(command);
 
-  if (!discardsStderr(command)) {
-    return scriptDiscardsStderr(script);
+  if (script !== undefined) {
+    const facts = compoundFacts(commands, index, enclosing, 0);
+    const ownHidden = facts.ownDiscards && !facts.shows;
+
+    return facts.discards || ownHidden;
   }
 
-  return script === undefined || !scriptKeepsStderr(script);
+  if (command.group !== undefined) {
+    const facts = compoundFacts(commands, index, enclosing, 0);
+    const ownHidden = facts.ownDiscards && !facts.shows;
+
+    return facts.discards || ownHidden;
+  }
+
+  return discardsStderr(own) && !showsStderr(own);
 };
 
 const blockReason =
@@ -244,7 +296,9 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
     return undefined;
   }
 
-  return commands.some((command) => hidesFailure(command, commands))
+  return commands.some(
+    (_command, index) => !insideGroup(commands, index) && hidesFailure(commands, index),
+  )
     ? { block: true, reason: blockReason }
     : undefined;
 };

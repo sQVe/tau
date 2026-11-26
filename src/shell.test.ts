@@ -20,6 +20,9 @@ const backgroundsOf = (source: string): boolean[] | undefined =>
 const unitsOf = (source: string): number[] | undefined =>
   parseShellCommands(source)?.map(({ unit }) => unit);
 
+const groupsOf = (source: string): (number | undefined)[] | undefined =>
+  parseShellCommands(source)?.map(({ group }) => group);
+
 describe('parseShellCommands', () => {
   it.each([
     ['git commit>out', [['git', 'commit', 'out']]],
@@ -75,10 +78,23 @@ describe('parseShellCommands', () => {
   });
 
   it.each([
-    ['a group and its closing redirections', '( cmd )', [0, 1, 1]],
+    ['a group and its closing redirections', '( cmd ) > out', [0, 1, 1]],
+    ['a group with a list separator', '( a; b ) > out', [0, 1, 2, 1]],
     ['a plain list', 'cmd; other', [0, 1]],
   ])('records the unit index for %s', (_name, source, expected) => {
     expect(unitsOf(source)).toEqual(expected);
+  });
+
+  it('records the group start on the command that closes the group', () => {
+    expect(groupsOf('( a; b ) > out')).toEqual([undefined, undefined, undefined, 1]);
+  });
+
+  it('gives a continuation the closed group unit', () => {
+    expect(unitsOf('( cmd ) | next')).toEqual([0, 1, 1, 1]);
+  });
+
+  it('offsets the unit of a backtick command into the outer list', () => {
+    expect(unitsOf('echo `git commit`')).toEqual([0, 1]);
   });
 
   it.each([

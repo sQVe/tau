@@ -13,6 +13,9 @@ export interface ShellCommand {
   background: boolean;
   // The index of the first command of this command's pipeline or list unit.
   unit: number;
+  // The index of the command that opened this command's group, set only on the command that
+  // closes the group.
+  group: number | undefined;
   redirections: ShellRedirection[];
 }
 
@@ -34,6 +37,8 @@ interface ListState {
   depth: number;
   // The first command index of the pipeline or list unit at each nesting depth.
   unitStarts: number[];
+  // The first command index of the group at each nesting depth.
+  groupStarts: number[];
   continuesList: boolean;
   closesSubstitution: boolean;
 }
@@ -175,6 +180,7 @@ class ShellParser {
       pendingRedirection: undefined,
       depth: 0,
       unitStarts: [firstCommand],
+      groupStarts: [],
       continuesList: false,
       closesSubstitution,
     };
@@ -376,7 +382,7 @@ class ShellParser {
     state.continuesList = continuesListAfter(operator);
     this.position += length;
 
-    if (endsUnit) {
+    if (endsUnit && state.groupStarts.length === 0) {
       state.unitStarts[state.unitStarts.length - 1] = commandIndex;
     }
 
@@ -385,6 +391,7 @@ class ShellParser {
     } else if (character === '(') {
       state.depth += 1;
       state.unitStarts.push(commandIndex);
+      state.groupStarts.push(commandIndex);
     } else if (character === ')') {
       return this.closeGroup(state);
     }
@@ -410,8 +417,19 @@ class ShellParser {
 
     state.depth = Math.max(0, state.depth - 1);
 
+    const groupStart = state.groupStarts.pop();
+
+    if (groupStart !== undefined) {
+      state.command.group = groupStart;
+      state.command.unit = groupStart;
+    }
+
     if (state.unitStarts.length > 1) {
       state.unitStarts.pop();
+    }
+
+    if (groupStart !== undefined && state.unitStarts.length > 0) {
+      state.unitStarts[state.unitStarts.length - 1] = groupStart;
     }
 
     return false;
@@ -477,12 +495,21 @@ class ShellParser {
       heredocs: [],
       background: false,
       unit,
+      group: undefined,
       redirections: [],
     };
 
     this.commands.push(command);
 
     return command;
+  }
+
+  private offsetCommand(command: ShellCommand, base: number): void {
+    command.unit += base;
+
+    if (command.group !== undefined) {
+      command.group += base;
+    }
   }
 
   private readSingleQuoted(): string {
@@ -583,6 +610,13 @@ class ShellParser {
     const innerParser = new ShellParser(inner);
 
     innerParser.parseList(false);
+
+    const base = this.commands.length;
+
+    for (const command of innerParser.commands) {
+      this.offsetCommand(command, base);
+    }
+
     this.commands.push(...innerParser.commands);
 
     return `\`${inner}\``;
@@ -647,7 +681,7 @@ class ShellParser {
         const base = this.commands.length;
 
         for (const command of bodyParser.commands) {
-          command.unit += base;
+          this.offsetCommand(command, base);
           this.heredocBodyCommands.add(command);
         }
 

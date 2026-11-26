@@ -143,7 +143,39 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a shell script whose logging command is followed by a silent one',
     command: `setsid sh -c 'cmd > /tmp/x.log 2>&1; true' >/dev/null 2>&1 &`,
+    blocked: true,
+  },
+  {
+    name: 'a shell script whose last command inherits the discarded stderr',
+    command: `sh -c 'echo start > /tmp/x.log 2>&1; cmd' >/dev/null 2>&1 &`,
+    blocked: true,
+  },
+  {
+    name: 'a shell script whose inner group discards stderr',
+    command: `sh -c '( cmd ) 2>/dev/null' &`,
+    blocked: true,
+  },
+  {
+    name: 'a shell script whose inner group logs stderr',
+    command: `sh -c '( cmd ) > /tmp/x.log 2>&1' >/dev/null 2>&1 &`,
     blocked: false,
+  },
+  {
+    name: 'a detached group whose first command discards stderr and a later one logs',
+    command:
+      '( herdr-app do space.close --confirmed 2>/dev/null; echo done > /tmp/x.log 2>&1 ) >/dev/null 2>&1 &',
+    blocked: true,
+  },
+  {
+    name: 'a detached group whose first command logs and a later one inherits the discard',
+    command:
+      '( herdr-app do space.close --confirmed > /tmp/x.log 2>&1; sleep 1 ) >/dev/null 2>&1 &',
+    blocked: false,
+  },
+  {
+    name: 'a detached group whose first command inherits the discarded stderr',
+    command: '( close; true > /tmp/x.log 2>&1 ) >/dev/null 2>&1 &',
+    blocked: true,
   },
   {
     name: 'a shell script whose nested script discards stderr',
