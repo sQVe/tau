@@ -29,6 +29,33 @@ interface SchemaChild {
   value: unknown;
 }
 
+// Keep an independent copy of every keyword that holds a subschema. If a keyword drops from the
+// production sets, this list still names it and the equality test below fails.
+const expectedSchemaMapKeywords = [
+  '$defs',
+  'definitions',
+  'dependencies',
+  'dependentSchemas',
+  'patternProperties',
+  'properties',
+];
+
+const expectedSchemaArrayKeywords = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
+
+const expectedSchemaValueKeywords = [
+  'additionalItems',
+  'additionalProperties',
+  'contains',
+  'else',
+  'if',
+  'items',
+  'not',
+  'propertyNames',
+  'then',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+];
+
 const isOpenObject = (value: Record<string, unknown>): boolean => {
   const isObjectType = value['type'] === 'object';
   const additionalProperties = value['additionalProperties'];
@@ -137,12 +164,19 @@ const toolsOf = async (registration: Registration): Promise<Tool[]> => {
 const registeredTools = async (): Promise<{ registration: string; tools: Tool[] }[]> => {
   const all: { registration: string; tools: Tool[] }[] = [];
 
+  // Each registration reads the environment that `toolsOf` stubs, so register one at a time.
   for (const registration of await registrations()) {
     all.push({ registration: registration.name, tools: await toolsOf(registration) });
   }
 
   return all;
 };
+
+it('lists every subschema keyword in the production sets', () => {
+  expect([...schemaMapKeywords].toSorted()).toEqual(expectedSchemaMapKeywords);
+  expect([...schemaArrayKeywords].toSorted()).toEqual(expectedSchemaArrayKeywords);
+  expect([...schemaValueKeywords].toSorted()).toEqual(expectedSchemaValueKeywords);
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();

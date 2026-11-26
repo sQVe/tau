@@ -62,6 +62,11 @@ The pure modules are `errors`, `handoverSender`, `judgeSchema`, `prose`, `schema
 `importTable` is an I/O module. Each of its edges to a pure module follows the shared rule and is
 not listed.
 
+`schema` keeps one exception to the no-effect rule: `strictToolRegistration` replaces `registerTool`
+on the API it is given and records the APIs it has installed on. The import table may only shrink,
+so a new module is not an option. `tests/structure.test.ts` records the exception, and the rest of
+the module still makes pure decisions.
+
 `questionGate` is an I/O module because its judges call models and set timers. It imports no I/O
 module, so it has no line below.
 

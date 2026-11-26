@@ -6,7 +6,6 @@ import {
   anyItem,
   anyKey,
   findUnknownKeys,
-  isRecord,
   newerRecordVersion,
   reportedId,
   strictToolParameters,
@@ -131,10 +130,35 @@ it('keeps a schema-valued additionalProperties on a map schema', () => {
 
 it('leaves an existing false additionalProperties alone', () => {
   const schema = Type.Object({ value: Type.String() }, { additionalProperties: false });
-  const result: unknown = strictToolParameters(schema);
-  const additionalProperties = isRecord(result) ? result['additionalProperties'] : undefined;
 
-  expect(additionalProperties).toBe(false);
+  expect(strictToolParameters(schema)).toMatchObject({ additionalProperties: false });
+});
+
+it('closes an object schema under every subschema keyword', () => {
+  const child = { type: 'object', properties: { value: { type: 'string' } } };
+
+  const schema = Type.Unsafe<unknown>({
+    type: 'object',
+    definitions: { child },
+    dependentSchemas: { child },
+    dependencies: { child },
+    propertyNames: child,
+    contains: child,
+    additionalItems: child,
+    unevaluatedProperties: child,
+    unevaluatedItems: child,
+  });
+
+  expect(strictToolParameters(schema)).toMatchObject({
+    definitions: { child: { additionalProperties: false } },
+    dependentSchemas: { child: { additionalProperties: false } },
+    dependencies: { child: { additionalProperties: false } },
+    propertyNames: { additionalProperties: false },
+    contains: { additionalProperties: false },
+    additionalItems: { additionalProperties: false },
+    unevaluatedProperties: { additionalProperties: false },
+    unevaluatedItems: { additionalProperties: false },
+  });
 });
 
 it('does not rewrite an object value stored in an annotation keyword', () => {

@@ -35,16 +35,31 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 
 // Adds additionalProperties: false to every object schema, so Pi refuses an argument the tool does
 // not declare. A map schema keeps its additionalProperties schema, which constrains every key.
-export const schemaMapKeywords = new Set(['$defs', 'patternProperties', 'properties']);
+// Every keyword that holds a subschema must appear in one of these sets, or a tool can ship an open
+// schema under it.
+export const schemaMapKeywords = new Set([
+  '$defs',
+  'definitions',
+  'dependencies',
+  'dependentSchemas',
+  'patternProperties',
+  'properties',
+]);
+
 export const schemaArrayKeywords = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
 
 export const schemaValueKeywords = new Set([
+  'additionalItems',
   'additionalProperties',
+  'contains',
   'else',
   'if',
   'items',
   'not',
+  'propertyNames',
   'then',
+  'unevaluatedItems',
+  'unevaluatedProperties',
 ]);
 
 const strictSchemaMap = (value: unknown, visit: (child: unknown) => unknown): unknown => {
