@@ -36,6 +36,12 @@ export interface NextestTool {
   edit: (cwd: string, path: string, content: string) => Promise<NextestPatch | undefined>;
 }
 
+type DeepPartial<Value> = Value extends readonly (infer Item)[]
+  ? readonly DeepPartial<Item>[]
+  : Value extends object
+    ? { [Key in keyof Value]?: DeepPartial<Value[Key]> }
+    : Value;
+
 export const nextestConfig = JSON.stringify({ tdd: { runner: 'nextest' } });
 
 // A toMatchObject failure prints only the keys the expectation names, so the reason has to travel as
@@ -51,7 +57,7 @@ export const stageOutput = (result: RunnerResult): string => {
   return [message, ...stages].filter((part) => part !== '').join('\n\n');
 };
 
-export const expectOutcome = (report: RunnerResult, expected: Record<string, unknown>): void => {
+export const expectOutcome = (report: RunnerResult, expected: DeepPartial<RunnerResult>): void => {
   expect(report, stageOutput(report)).toMatchObject(expected);
 };
 
