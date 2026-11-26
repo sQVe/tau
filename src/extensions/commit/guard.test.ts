@@ -1057,6 +1057,135 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
   });
 
+  it.each([
+    ['env -S with trailing words', 'env -S git commit -m x'],
+    ['env -S with a script', 'env -S sh commit.sh'],
+  ])('blocks split-string code with trailing words after %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(command), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows split-string code whose trailing words do not create a commit', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent("env -S 'git status' -x"), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['#!/usr/bin/env -Ssh -e', '#!/usr/bin/env -Ssh -e'],
+    ['#!/usr/bin/env --split-string=sh', '#!/usr/bin/env --split-string=sh'],
+  ])('blocks a commit in a file with an attached split string: %s', (_label, shebang) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
+
+    expect(guard(makeBashEvent('./commit.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows a file whose attached split string names another program', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', '#!/usr/bin/env -Snode\ngit commit -m x\n');
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
+  it('keeps the process PATH entries when an assignment cannot be expanded', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const processDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(processDirectory, 'tool.sh', 'git commit -m x\n');
+    withExactPath(processDirectory);
+
+    expect(guard(makeBashEvent('PATH=$PATH . tool.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('keeps the process PATH entries for a tilde assignment', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const processDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(processDirectory, 'tool.sh', 'git commit -m x\n');
+    withExactPath(processDirectory);
+
+    expect(guard(makeBashEvent('PATH=~/bin sh tool.sh'), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('uses the last PATH assignment before the command word', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const first = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+    const second = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(second, 'tool.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(`PATH=${first} PATH=${second} sh tool.sh`), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows when only the first PATH assignment resolves the command', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const first = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+    const second = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(first, 'tool.sh', 'git commit -m x\n');
+
+    expect(
+      guard(makeBashEvent(`PATH=${first} PATH=${second} sh tool.sh`), directory),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ['env PATH=', (directory: string) => `env PATH=${directory} sh tool.sh`],
+    ['standalone PATH=', (directory: string) => `PATH=${directory}; sh tool.sh`],
+    ['export PATH=', (directory: string) => `export PATH=${directory}; sh tool.sh`],
+  ])('blocks a script resolved through %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(command(pathDirectory)), directory)).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('does not leak a subshell PATH assignment', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(`(PATH=${pathDirectory}); sh tool.sh`), directory)).toBeUndefined();
+  });
+
+  it('does not leak a substitution PATH assignment', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
+
+    writeScript(pathDirectory, 'tool.sh', 'git commit -m x\n');
+
+    expect(
+      guard(makeBashEvent(`echo $(PATH=${pathDirectory}); sh tool.sh`), directory),
+    ).toBeUndefined();
+  });
+
   it('uses a leading PATH assignment for the probe', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const pathDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
