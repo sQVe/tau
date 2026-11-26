@@ -162,9 +162,6 @@ export const wrapperValueOptions: Readonly<Record<string, ReadonlySet<string>>> 
     '--type',
     '--user',
   ]),
-  // `time` is the bash reserved word, which takes only the `-p` flag. The value options `-f`, `-o`,
-  // `--format`, and `--output` belong to the external `time` binary, which is a different command.
-  time: new Set(),
   timeout: new Set(['-k', '-s', '--kill-after', '--signal']),
   watch: new Set(['-n', '-q', '--equexit', '--interval']),
   xargs: new Set([
@@ -218,11 +215,11 @@ const namesInsteadOfRuns = (options: readonly string[]): boolean =>
 const afterReservedTime = (words: readonly string[], index: number): number => {
   let next = index + 1;
 
-  while (words[next] === '-p' || words[next] === '--') {
+  while (words[next] === '-p') {
     next += 1;
   }
 
-  return next;
+  return words[next] === '--' ? next + 1 : next;
 };
 
 const optionEnd = (
@@ -260,19 +257,16 @@ const afterWrapper = (
   return optionEnd(words, afterOptions + fixedArguments, valueOptions);
 };
 
-// A wrapper's options differ by name, and the external `time` binary needs its own value options.
+// A wrapper's options differ by name. A `time` wrapper is the external binary, because commandStart
+// handles the bare reserved word before it reads this table.
 const wrapperValueOptionsOf = (word: string): ReadonlySet<string> | undefined => {
   const name = commandNameOf(word);
 
-  if (!Object.hasOwn(wrapperValueOptions, name)) {
-    return undefined;
+  if (name === 'time') {
+    return externalTimeValueOptions;
   }
 
-  if (name !== 'time') {
-    return wrapperValueOptions[name];
-  }
-
-  return word === name ? wrapperValueOptions.time : externalTimeValueOptions;
+  return Object.hasOwn(wrapperValueOptions, name) ? wrapperValueOptions[name] : undefined;
 };
 
 // Walks the leading assignments, keywords, and wrappers to the command they run.
@@ -339,7 +333,9 @@ const shellOptionScript = (words: readonly string[]): string | undefined => {
       return undefined;
     }
 
-    if (shellValueOptions.has(word)) {
+    const consumesValue = shellValueOptions.has(word) || /^[-+][a-zA-Z]*[oO]$/u.test(word);
+
+    if (consumesValue) {
       index += 2;
 
       continue;
@@ -961,6 +957,7 @@ class ShellParser {
 
     this.position += 1;
     this.restartCommand(state);
+    state.unitStarts[state.unitStarts.length - 1] = state.commandIndex;
     state.continuesList = false;
     this.setCaseState(state, 'command');
 
@@ -1103,32 +1100,69 @@ class ShellParser {
     return false;
   }
 
+  private recordArgument(
+    state: ListState,
+    word: string,
+    wordQuoted: boolean,
+    redirectionFollows: boolean,
+  ): void {
+    const isArgument =
+      !isIoNumber(word, wordQuoted, redirectionFollows) && !state.redirectionTarget;
+
+    if (!isArgument) {
+      return;
+    }
+
+    const wordIndex = state.command.arguments.length;
+
+    state.command.arguments.push(word);
+
+    if (wordQuoted) {
+      return;
+    }
+
+    this.trackCompound(state, word, wordIndex);
+    this.noteCaseWord(state, word);
+  }
+
+  private recordRedirectionTarget(state: ListState, word: string): void {
+    if (!state.redirectionTarget || state.pendingRedirection === undefined) {
+      return;
+    }
+
+    state.command.redirections.push({ ...state.pendingRedirection, target: word });
+  }
+
+  // A case pattern is not a command, so its words never reach the command a guard scans. The
+  // closer still runs, because it ends the case instead of naming another pattern.
+  private recordWord(
+    state: ListState,
+    word: string,
+    wordQuoted: boolean,
+    redirectionFollows: boolean,
+  ): void {
+    const isCasePattern = state.compounds.at(-1)?.caseState === 'pattern';
+    const isCaseCloser = isCasePattern && closingKeywords.has(word);
+
+    if (isCasePattern && !isCaseCloser) {
+      return;
+    }
+
+    state.command.words.push(word);
+    this.recordArgument(state, word, wordQuoted, redirectionFollows);
+    this.recordRedirectionTarget(state, word);
+    state.redirectionTarget = false;
+  }
+
   private finishWord(state: ListState, redirectionFollows = false): void {
-    const { word, wordQuoted, heredocOperator, redirectionTarget, pendingRedirection } = state;
+    const { word, wordQuoted, heredocOperator } = state;
 
     if (word === undefined) {
       return;
     }
 
     if (heredocOperator === undefined) {
-      state.command.words.push(word);
-
-      if (!isIoNumber(word, wordQuoted, redirectionFollows) && !redirectionTarget) {
-        const wordIndex = state.command.arguments.length;
-
-        state.command.arguments.push(word);
-
-        if (!wordQuoted) {
-          this.trackCompound(state, word, wordIndex);
-          this.noteCaseWord(state, word);
-        }
-      }
-
-      if (redirectionTarget && pendingRedirection !== undefined) {
-        state.command.redirections.push({ ...pendingRedirection, target: word });
-      }
-
-      state.redirectionTarget = false;
+      this.recordWord(state, word, wordQuoted, redirectionFollows);
     } else {
       this.commands.splice(state.wordCommandStart);
 

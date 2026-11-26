@@ -217,6 +217,24 @@ describe('parseShellCommands', () => {
     },
   );
 
+  it('reads a case pattern as words that run nothing', () => {
+    expect(wordsOf('case $x in git|commit) echo ok ;; esac')).toEqual([
+      ['case', '$x', 'in'],
+      ['echo', 'ok'],
+      ['esac'],
+    ]);
+
+    expect(argumentsOf('case $x in git|commit) echo ok ;; esac')).toEqual([
+      ['case', '$x', 'in'],
+      ['echo', 'ok'],
+      ['esac'],
+    ]);
+  });
+
+  it('backgrounds only a case pattern list member that ends with an ampersand', () => {
+    expect(backgroundsOf('case x in a) b & ;; esac')).toEqual([false, true, false]);
+  });
+
   it('splits an append of both streams', () => {
     expect(parseShellCommands('cmd &>>/tmp/x.log')?.[0]).toMatchObject({
       redirections: [{ fileDescriptor: undefined, operator: '&>>', target: '/tmp/x.log' }],
@@ -616,6 +634,7 @@ describe('commandWords and shellScriptOf', () => {
     expect(shellScriptOf(['sh', '--', 'script', '-c', 'hc send'])).toBeUndefined();
     expect(shellScriptOf(['bash', '-x', 'script.sh', '-c', 'hc send'])).toBeUndefined();
     expect(shellScriptOf(['bash', '-o', 'pipefail', '-c', 'cmd'])).toBe('cmd');
+    expect(shellScriptOf(['bash', '-euo', 'pipefail', '-c', 'cmd'])).toBe('cmd');
     expect(shellScriptOf(['bash', '--rcfile', '/tmp/rc', '-c', 'cmd'])).toBe('cmd');
     expect(shellScriptOf(['bash', '-lc', 'cmd'])).toBe('cmd');
   });
@@ -632,6 +651,7 @@ describe('commandWords and shellScriptOf', () => {
   it('treats only -p and -- as the reserved time word options', () => {
     expect(commandWords(['time', '-p', 'hc', 'send']).words).toEqual(['hc', 'send']);
     expect(commandWords(['time', '--', 'hc', 'send']).words).toEqual(['hc', 'send']);
+    expect(commandWords(['time', '--', '-p', 'hc', 'send']).words).toEqual(['-p', 'hc', 'send']);
 
     expect(commandWords(['time', '-o', '/tmp/log', 'hc', 'send']).words).toEqual([
       '-o',
