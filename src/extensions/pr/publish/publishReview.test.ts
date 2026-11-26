@@ -219,6 +219,27 @@ it('accepts an APPROVE review without a body', async () => {
   expect(fake.calls).toEqual([]);
 });
 
+it('refuses a review comment with a blank body', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(
+    directory,
+    'review.json',
+    `${JSON.stringify({
+      event: 'COMMENT',
+      body: 'Please fix the naming.',
+      comments: [{ path: 'src/a.ts', line: 3, body: '   ' }],
+    })}\n`,
+  );
+
+  await expect(
+    run({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }),
+  ).rejects.toThrow('review.json comments[0] needs a body.');
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('refuses start_line without line', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareRun(run);
@@ -286,3 +307,40 @@ it('names the review.json field that is not valid', async () => {
 
   expect(fake.calls).toEqual([]);
 });
+
+const reviewRequest = (directory: string) =>
+  ({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }) as const;
+
+it.each(['file', 'base', 'head', 'draft'] as const)(
+  'refuses %s for a review in the dry run',
+  async (name) => {
+    const { fake, run } = await setUp();
+    const directory = await prepareRun(run);
+    const foreignInput = { [name]: name === 'draft' ? true : 'main' };
+
+    await expect(run({ ...reviewRequest(directory), ...foreignInput })).rejects.toThrow(
+      `dryRun with kind review cannot take ${name}.`,
+    );
+
+    expect(fake.calls).toEqual([]);
+  },
+);
+
+it.each(['file', 'base', 'head', 'draft'] as const)(
+  'refuses %s for a review in publish',
+  async (name) => {
+    const { fake, run } = await setUp();
+    const directory = await prepareRun(run);
+
+    await writeRunFile(directory, 'review.json', `${JSON.stringify({ event: 'APPROVE' })}\n`);
+
+    const dryRun = await run(reviewRequest(directory));
+    const foreignInput = { [name]: name === 'draft' ? true : 'main' };
+
+    await expect(
+      run({ ...reviewRequest(directory), action: 'publish', token: dryRun.token, ...foreignInput }),
+    ).rejects.toThrow(`publish with kind review cannot take ${name}.`);
+
+    expect(fake.calls).toEqual([]);
+  },
+);

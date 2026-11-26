@@ -65,3 +65,15 @@ export const publishedFilePath = (fake: GhFake, index = 0): string => {
 
   return commandArguments[commandArguments.indexOf(flag) + 1] ?? '';
 };
+
+export const preparePullRequestRun = async (
+  run: PublicationRun,
+  contents: { title?: string; body?: string } = {},
+): Promise<string> => {
+  const directory = await preparePublicationRun(run);
+
+  await writeRunFile(directory, 'title.md', contents.title ?? 'Add a feature\n');
+  await writeRunFile(directory, 'body.md', contents.body ?? 'Adds it.\n');
+
+  return directory;
+};

@@ -197,3 +197,44 @@ it('refuses a whitespace-only comment file', async () => {
 
   expect(fake.calls).toEqual([]);
 });
+
+const commentRequest = (directory: string) =>
+  ({
+    action: 'dryRun',
+    kind: 'comment',
+    repository,
+    directory,
+    pr: 7,
+    file: 'comment.md',
+  }) as const;
+
+it.each(['base', 'head', 'draft'] as const)(
+  'refuses %s for a comment in the dry run',
+  async (name) => {
+    const { fake, run } = await setUp();
+    const directory = await prepareRun(run);
+    const foreignInput = { [name]: name === 'draft' ? true : 'main' };
+
+    await expect(run({ ...commentRequest(directory), ...foreignInput })).rejects.toThrow(
+      `dryRun with kind comment cannot take ${name}.`,
+    );
+
+    expect(fake.calls).toEqual([]);
+  },
+);
+
+it.each(['base', 'head', 'draft'] as const)('refuses %s for a comment in publish', async (name) => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'comment.md', 'Looks good.\n');
+
+  const dryRun = await run(commentRequest(directory));
+  const foreignInput = { [name]: name === 'draft' ? true : 'main' };
+
+  await expect(
+    run({ ...commentRequest(directory), action: 'publish', token: dryRun.token, ...foreignInput }),
+  ).rejects.toThrow(`publish with kind comment cannot take ${name}.`);
+
+  expect(fake.calls).toEqual([]);
+});

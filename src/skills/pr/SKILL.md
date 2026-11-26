@@ -294,7 +294,7 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      smaller PR. Write each comment and the body as [review comments](../shared/review-comments.md)
      says. Save the review as `$prdir/review.json`, with `commit_id`, `event`, `body`, and
      `comments` as step 12 describes. Run `dryRun` with `kind: 'review'`, fix every finding, and run
-     `dryRun` again.
+     `dryRun` again. For a review, a finding's `line` counts lines inside its `field`.
    - Prose check: call `pr` `dryRun` with `kind: 'pullRequest'`, `repository`, `directory`, and the
      create or update values. Fix every finding in `title.md` and `body.md`, then run `dryRun`
      again. Name each finding kept on purpose with its reason in the session report. Findings never
