@@ -131,6 +131,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a backgrounded script that inherits a discarded stderr',
+    command: "( sh -c 'cmd' & ) >/dev/null 2>&1",
+    blocked: true,
+  },
+  {
     name: 'a |& pipeline discarding stderr',
     command: 'cmd 2>/dev/null |& cat &',
     blocked: false,

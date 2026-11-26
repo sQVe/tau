@@ -611,7 +611,7 @@ it('applies each pure module exception to one finding and reports a stale except
   ]);
 });
 
-it('keeps a second finding when an exception matches the first', () => {
+it('keeps the later Date() finding when an exception matches the earlier one', () => {
   expect(
     purityProblems(
       ['src/pure/decide.ts'],
