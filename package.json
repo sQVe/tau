@@ -46,7 +46,7 @@
     "release:github": "pnpm changeset git-tag"
   },
   "dependencies": {
-    "@voidzero-dev/vite-plus-core": "0.3.0",
+    "@voidzero-dev/vite-plus-core": "0.3.3",
     "@xmldom/xmldom": "0.9.12",
     "cc-safety-net": "2.8.2",
     "entities": "9.0.0",
