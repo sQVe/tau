@@ -88,10 +88,10 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
     expected: { kind: 'match', model: 'claude-opus-5-5' },
   },
   {
-    name: 'a space-separated model before an equals model',
+    name: 'an equals model before a space-separated model',
     facts: facts({
       requested: { provider: undefined, id: 'claude-opus-5-5' },
-      argv: ['pi', '--model', 'claude-opus-5-5', '--model=later'],
+      argv: ['pi', '--model=claude-opus-5-5', '--model', 'later'],
     }),
     expected: { kind: 'match', model: 'claude-opus-5-5' },
   },

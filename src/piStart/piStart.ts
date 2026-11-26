@@ -146,11 +146,18 @@ const cancellationError = (signal: AbortSignal | undefined): Error => {
     : new Error('The started model readback was cancelled.', { cause: reason });
 };
 
-const piExecutablePattern = /^pi(?:\.(?:cmd|js|exe))?$/u;
-const nodeExecutables = new Set(['node', 'node.exe', 'bun']);
+const executableSuffixes = ['cmd', 'js', 'exe', 'ps1'];
+const runtimeNames = ['node', 'bun'];
+
+const piExecutableNames = new Set(['pi', ...executableSuffixes.map((suffix) => `pi.${suffix}`)]);
+
+const nodeExecutables = new Set([
+  ...runtimeNames,
+  ...runtimeNames.flatMap((name) => executableSuffixes.map((suffix) => `${name}.${suffix}`)),
+]);
 
 const isPiExecutable = (argument: string | undefined): boolean =>
-  argument !== undefined && piExecutablePattern.test(basename(argument));
+  argument !== undefined && piExecutableNames.has(basename(argument));
 
 const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined => {
   if (argv === undefined) {
@@ -169,9 +176,9 @@ const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefi
     return undefined;
   }
 
-  const script = argv.find((argument, index) => index > 0 && !argument.startsWith('-'));
+  const runsPi = argv.slice(1).some((argument) => isPiExecutable(argument));
 
-  return isPiExecutable(script) ? argv : undefined;
+  return runsPi ? argv : undefined;
 };
 
 // Each read shares one deadline with the whole readback, so a slow terminal cannot extend the

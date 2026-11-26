@@ -61,7 +61,7 @@ it('an abort during the model readback rejects with the cancellation error', asy
     }),
   );
 
-  useFakeStartProcess(cleanup, 'running', true);
+  const processControl = useFakeStartProcess(cleanup, 'running', true);
   await recordSession(root);
 
   const exec: typeof runtime.exec = async (command, commandArguments, options) => {
@@ -93,6 +93,8 @@ it('an abort during the model readback rejects with the cancellation error', asy
   await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
 
   expect(await opening).toBe(cancellation);
+  expect(processControl.signals).toEqual(['SIGTERM']);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('an abort during the poll stops the terminal, releases the claim, and rejects', async ({

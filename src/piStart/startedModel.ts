@@ -51,8 +51,10 @@ const startedReference = (argv: readonly string[]): RequestedModel | 'unreadable
     return { provider: undefined, id: undefined };
   }
 
+  const startedProvider = provider.kind === 'value' ? provider.value : undefined;
+
   return {
-    provider: provider.kind === 'value' ? provider.value : undefined,
+    provider: startedProvider,
     id: model.value,
   };
 };

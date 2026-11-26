@@ -793,14 +793,42 @@ it.each([
     ],
   },
   {
+    name: 'a node pi path with a value-taking flag before the script',
+    argv: [
+      'node',
+      '--loader',
+      'tsx',
+      '/path/pi',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
+  },
+  {
     name: 'a bun pi path',
     argv: ['bun', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+  },
+  {
+    name: 'a bun.exe pi path',
+    argv: ['bun.exe', '/path/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
   },
   {
     name: 'a node.exe pi.cmd path',
     argv: [
       'node.exe',
       '/usr/local/bin/pi.cmd',
+      '--provider',
+      'morph',
+      '--model',
+      'morph-dsv41flash-1017',
+    ],
+  },
+  {
+    name: 'a node pi.ps1 path',
+    argv: [
+      'node',
+      '/usr/local/bin/pi.ps1',
       '--provider',
       'morph',
       '--model',
@@ -832,7 +860,10 @@ it.each([
   }
 });
 
-it('a start retries a model read that has no Pi foreground yet', async () => {
+it.each([
+  ['undefined', undefined],
+  ['a non-Pi argv', ['bash']],
+])('a start retries a model read that first returns %s', async (_shape, firstRead) => {
   const fake = launchWithForeground([
     'pi',
     '--provider',
@@ -848,7 +879,7 @@ it('a start retries a model read that has no Pi foreground yet', async () => {
     reads += 1;
 
     return reads === 1
-      ? ['bash']
+      ? firstRead
       : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
   };
 
