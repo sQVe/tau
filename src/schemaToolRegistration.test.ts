@@ -144,8 +144,27 @@ it('reports a clear error when registerTool ignores the replacement', () => {
   }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
 });
 
-it('reports a clear error when reading registerTool back throws', () => {
+it('reports a clear error when reading registerTool throws a TypeError', () => {
   const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      throw new TypeError('the getter failed');
+    },
+    set: () => undefined,
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+});
+
+it('binds the registerTool it read once', () => {
+  const api = {} as ExtensionAPI;
+  const registered: unknown[] = [];
+  const register = (tool: unknown): unknown => registered.push(tool);
+  let stored: unknown;
   let reads = 0;
 
   Object.defineProperty(api, 'registerTool', {
@@ -153,13 +172,38 @@ it('reports a clear error when reading registerTool back throws', () => {
     get: () => {
       reads += 1;
 
-      if (reads === 3) {
+      return stored ?? (reads === 1 ? register : undefined);
+    },
+    set: (value: unknown) => {
+      stored = value;
+    },
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).not.toThrow();
+
+  registerThrough(api, Type.Object({}));
+
+  expect(registered).toHaveLength(1);
+});
+
+it('reports a clear error when reading registerTool back throws', () => {
+  const api = {} as ExtensionAPI;
+  let assigned: unknown;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      if (assigned !== undefined) {
         throw new Error('the getter failed');
       }
 
       return () => undefined;
     },
-    set: () => undefined,
+    set: (value: unknown) => {
+      assigned = value;
+    },
   });
 
   expect(() => {

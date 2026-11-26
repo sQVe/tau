@@ -185,21 +185,21 @@ const notWritableMessage =
   'Cannot install strict tool parameters: registerTool is not writable on this API.';
 
 const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
-  let registered: ExtensionAPI['registerTool'];
+  let current: ExtensionAPI['registerTool'] | undefined;
 
+  // An accessor or proxy trap may throw or return a different function on each read, so read the
+  // property once and bind the value that was checked.
   try {
-    if (typeof pi.registerTool !== 'function') {
-      throw new TypeError('Cannot install strict tool parameters: registerTool is not a function.');
-    }
-
-    registered = pi.registerTool.bind(pi);
+    current = pi['registerTool'];
   } catch (error) {
-    if (error instanceof TypeError) {
-      throw error;
-    }
-
     throw new Error(notWritableMessage, { cause: error });
   }
+
+  if (typeof current !== 'function') {
+    throw new TypeError('Cannot install strict tool parameters: registerTool is not a function.');
+  }
+
+  const registered = current.bind(pi);
 
   const wrapper: ExtensionAPI['registerTool'] = (tool) => {
     // oxlint-disable-next-line typescript/no-confusing-void-expression -- the installed API may return a value at runtime, and the wrapper must keep it.
