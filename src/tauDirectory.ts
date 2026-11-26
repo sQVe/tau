@@ -313,13 +313,19 @@ export const rejectTauSymlinks = async (root: string, path: string): Promise<voi
   await rejectParsedSymlinks(root, parseSegments(path));
 };
 
-// Refuses a `.tau` that exists but is not a directory.
-const rejectTauFile = async (root: string) => {
-  const path = join(root, '.tau');
-  const entry = await existingEntry(path);
+// Refuses any directory a write would go through that exists but is not a directory. The target is
+// not a parent, and a reader names its own refusal for a missing target.
+const rejectTauFile = async (root: string, segments: readonly string[]) => {
+  const directories = writtenPaths(segments)
+    .filter((path) => path !== '.tau/.gitignore')
+    .slice(0, -1);
 
-  if (entry !== undefined && !entry.isDirectory()) {
-    throw new Error(`Tau directory ${path} is not a directory.`);
+  const entries = await Promise.all(directories.map((path) => existingEntry(join(root, path))));
+  const index = entries.findIndex((entry) => entry !== undefined && !entry.isDirectory());
+  const directory = directories[index];
+
+  if (directory !== undefined) {
+    throw new Error(`Tau directory ${join(root, directory)} is not a directory.`);
   }
 };
 
@@ -335,7 +341,7 @@ const checkTauDirectoryWith = async (
 
   await rejectParsedSymlinks(root, segments);
   await rejectLinkedIgnoreFile(root);
-  await rejectTauFile(root);
+  await rejectTauFile(root, segments);
   await rejectLaterExceptions(root);
 
   if (await isBareRoot(root, bareProbes)) {
@@ -365,7 +371,7 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
 
   await rejectParsedSymlinks(root, segments);
   await rejectLinkedIgnoreFile(root);
-  await rejectTauFile(root);
+  await rejectTauFile(root, segments);
 
   if (await isBareRoot(root, bareProbes)) {
     await rejectLaterExceptions(root);

@@ -180,8 +180,11 @@ it('ensureTauDirectory refuses a .tau that is a regular file and leaves it untou
 
   await writeFile(path, 'text\n');
 
+  const before = await listTree(root);
+
   await expect(ensureTauDirectory(root, 'workers')).rejects.toThrow('is not a directory');
   await expect(readFile(path, 'utf8')).resolves.toBe('text\n');
+  expect(await listTree(root)).toEqual(before);
 });
 
 it('ensureTauDirectory refuses a .tau that is a regular file in a bare root', async () => {
@@ -189,7 +192,10 @@ it('ensureTauDirectory refuses a .tau that is a regular file in a bare root', as
 
   await writeFile(join(bare, '.tau'), 'text\n');
 
+  const before = await listTree(bare);
+
   await expect(ensureTauDirectory(bare, 'workers')).rejects.toThrow('is not a directory');
+  expect(await listTree(bare)).toEqual(before);
 });
 
 it('checkTauDirectory refuses a .tau that is a regular file', async () => {
@@ -197,7 +203,25 @@ it('checkTauDirectory refuses a .tau that is a regular file', async () => {
 
   await writeFile(join(root, '.tau'), 'text\n');
 
+  const before = await listTree(root);
+
   await expect(checkTauDirectory(root, 'workers')).rejects.toThrow('is not a directory');
+  expect(await listTree(root)).toEqual(before);
+});
+
+it('ensureTauDirectory refuses a file at an intermediate .tau directory', async () => {
+  const root = await createTemporaryRepository(afterThisTest);
+
+  await mkdir(join(root, '.tau'));
+  await writeFile(join(root, '.tau', 'workers'), 'text\n');
+
+  const before = await listTree(root);
+
+  await expect(ensureTauDirectory(root, 'workers/sub')).rejects.toThrow(
+    `Tau directory ${join(root, '.tau', 'workers')} is not a directory.`,
+  );
+
+  expect(await listTree(root)).toEqual(before);
 });
 
 it('rejectLinkedFile treats a path through a file as missing', async () => {
