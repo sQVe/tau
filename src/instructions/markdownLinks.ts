@@ -1,10 +1,12 @@
 import { decodeHTMLStrict, decodeXML } from 'entities';
+import Slugger from 'github-slugger';
 import { Marked, Tokenizer } from 'marked';
 import type { Token, Tokens } from 'marked';
 
 export interface MarkdownLinks {
   targets: readonly string[];
   slugs: ReadonlySet<string>;
+  anchors: ReadonlySet<string>;
 }
 
 export type Destination =
@@ -12,9 +14,10 @@ export type Destination =
   | { kind: 'undecodable' }
   | { kind: 'local'; path: string; fragment: string | undefined };
 
-const externalTarget = /^[a-z][a-z\d+.-]*:/i;
+export const namesFragment = (links: MarkdownLinks, fragment: string): boolean =>
+  links.slugs.has(fragment) || links.anchors.has(fragment);
 
-const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
+const externalTarget = /^[a-z][a-z\d+.-]*:/i;
 
 const tokenizer = new Marked({
   tokenizer: {
@@ -36,28 +39,12 @@ const frontmatter = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/;
 
 const withoutFrontmatter = (markdown: string) => markdown.replace(frontmatter, '');
 
-const slugOf = (heading: string) =>
-  heading.trim().toLowerCase().replaceAll(notSlugCharacter, '').replaceAll(' ', '-');
-
+// GitHub builds heading anchors with github-slugger, so a hand-written filter for the characters
+// it drops disagrees with the anchors GitHub generates.
 const headingSlugs = (headings: readonly string[]): ReadonlySet<string> => {
-  const counts = new Map<string, number>();
-  const slugs = new Set<string>();
+  const slugger = new Slugger();
 
-  for (const heading of headings) {
-    const base = slugOf(heading);
-    let slug = base;
-
-    while (slugs.has(slug)) {
-      const count = (counts.get(base) ?? 0) + 1;
-
-      counts.set(base, count);
-      slug = `${base}-${count}`;
-    }
-
-    slugs.add(slug);
-  }
-
-  return slugs;
+  return new Set(headings.map((heading) => slugger.slug(heading)));
 };
 
 export const decodedComponent = (text: string): string | undefined => {
@@ -122,8 +109,10 @@ const characterReference = /&(?:#\d{1,8}|#[xX][\da-fA-F]{1,8}|[A-Za-z][A-Za-z\d]
 const decodedReference = (reference: string): string =>
   reference.includes('#') ? decodeXML(reference) : decodeHTMLStrict(reference);
 
-const decodedTokenText = (token: Token): string =>
-  tokenText(token).replaceAll(characterReference, (reference) => decodedReference(reference));
+const decodedReferences = (text: string): string =>
+  text.replaceAll(characterReference, (reference) => decodedReference(reference));
+
+const decodedTokenText = (token: Token): string => decodedReferences(tokenText(token));
 
 export const markdownTokenText = (tokens: readonly Token[]): string =>
   tokens
@@ -206,6 +195,61 @@ export const walkMarkdownTokens = (
   }
 };
 
+// Reads a comment or an anchor element in one pass, so an anchor inside a comment is skipped and
+// an anchor after one is still read. A quoted attribute value is consumed whole, so a `>` inside it
+// does not end the tag.
+const anchorOrComment = /(<!--[\s\S]*?-->)|<a\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;
+
+// Matches one attribute at a time, so a quoted value of another attribute is never read as one.
+const tagAttribute = /\s*([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+
+const isAnchorAttribute = (name: string) => {
+  const lowercased = name.toLowerCase();
+
+  return lowercased === 'name' || lowercased === 'id';
+};
+
+const anchorValuesOf = (attributes: string): string[] => {
+  const values: string[] = [];
+
+  for (const match of attributes.matchAll(tagAttribute)) {
+    const [, name = '', doubleQuoted, singleQuoted, bare] = match;
+    const value = doubleQuoted ?? singleQuoted ?? bare;
+
+    if (isAnchorAttribute(name) && value !== undefined && value !== '') {
+      values.push(decodedReferences(value));
+    }
+  }
+
+  return values;
+};
+
+const anchorNamesOf = (html: string): string[] => {
+  const names: string[] = [];
+
+  for (const element of html.matchAll(anchorOrComment)) {
+    const attributes = element[2];
+
+    if (attributes !== undefined) {
+      names.push(...anchorValuesOf(attributes));
+    }
+  }
+
+  return names;
+};
+
+const collectAnchors = (tokens: readonly Token[], anchors: string[]): void => {
+  for (const token of tokens) {
+    if (token.type === 'html') {
+      anchors.push(...anchorNamesOf(tokenText(token)));
+
+      continue;
+    }
+
+    collectAnchors(childrenOf(token), anchors);
+  }
+};
+
 const collectLinks = (tokens: readonly Token[], targets: string[], headings: string[]): void => {
   walkMarkdownTokens(
     tokens,
@@ -227,14 +271,13 @@ const collectLinks = (tokens: readonly Token[], targets: string[], headings: str
 };
 
 export const readMarkdownLinks = (markdown: string): MarkdownLinks => {
+  const tokens = tokenizer.lexer(withoutFrontmatter(withoutByteOrderMark(markdown)));
   const targets: string[] = [];
   const headings: string[] = [];
+  const anchors: string[] = [];
 
-  collectLinks(
-    tokenizer.lexer(withoutFrontmatter(withoutByteOrderMark(markdown))),
-    targets,
-    headings,
-  );
+  collectLinks(tokens, targets, headings);
+  collectAnchors(tokens, anchors);
 
-  return { targets, slugs: headingSlugs(headings) };
+  return { targets, slugs: headingSlugs(headings), anchors: new Set(anchors) };
 };

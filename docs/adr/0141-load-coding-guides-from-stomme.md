@@ -46,6 +46,12 @@ file in Tau. The set keeps its name, so profiles and saved loadouts stay valid.
 - The next run reads them again, so a changed pin, layer, or guide reaches it without a restart.
 - The main session and each worker use one reader, so both send the same text for one project.
 
+### Which fragments resolve
+
+- A fragment resolves when it names a heading slug, or the `name` or `id` of an `a` element.
+- Heading slugs come from `github-slugger`, the library GitHub builds heading anchors with, so a
+  character GitHub strips from an anchor, such as `½`, gives the same slug here as on GitHub.
+
 ### A broken installation
 
 - When the project's guides cannot be used, the set sends one line: Tau could not load the stomme

@@ -375,6 +375,11 @@ const slugTable: { name: string; markdown: string; expected: readonly string[] }
     expected: ['labelsample'],
   },
   {
+    name: 'strips a fraction character the way GitHub does',
+    markdown: '# A &frac12; B',
+    expected: ['a--b'],
+  },
+  {
     name: 'keeps link markup inside a code span in a heading',
     markdown: '# Run `[link](./x.md)` now',
     expected: ['run-linkxmd-now'],
@@ -438,4 +443,86 @@ const slugTable: { name: string; markdown: string; expected: readonly string[] }
 
 it.for(slugTable)('$name', ({ markdown, expected }) => {
   expect([...readMarkdownLinks(markdown).slugs]).toEqual(expected);
+});
+
+const anchorTable: { name: string; markdown: string; expected: readonly string[] }[] = [
+  {
+    name: 'reads the name of an anchor element',
+    markdown: '<a name="custom-anchor"></a>\n',
+    expected: ['custom-anchor'],
+  },
+  {
+    name: 'reads the id of an anchor element',
+    markdown: 'Text <a id="custom-anchor"></a> more\n',
+    expected: ['custom-anchor'],
+  },
+  {
+    name: 'reads the name and the id of one anchor element',
+    markdown: '<a id="first" name="second"></a>\n',
+    expected: ['first', 'second'],
+  },
+  {
+    name: 'reads an unquoted anchor attribute',
+    markdown: '<a name=plain></a>\n',
+    expected: ['plain'],
+  },
+  {
+    name: 'reads a single-quoted anchor attribute',
+    markdown: "<a name='single'></a>\n",
+    expected: ['single'],
+  },
+  {
+    name: 'reads no anchor from an empty anchor attribute',
+    markdown: '<a name=""></a>\n',
+    expected: [],
+  },
+  {
+    name: 'reads no anchor from an attribute without a value',
+    markdown: '<a name></a>\n',
+    expected: [],
+  },
+  {
+    name: 'reads no anchor from an anchor element inside an HTML comment',
+    markdown: '<!-- <a name="commented"></a> -->\n',
+    expected: [],
+  },
+  {
+    name: 'reads an anchor after an HTML comment',
+    markdown: '<!-- <a name="commented"></a> -->\n\n<a name="after"></a>\n',
+    expected: ['after'],
+  },
+  {
+    name: 'reads an anchor after a comment in one HTML token',
+    markdown: '<!-- commented --><a name="after"></a>\n',
+    expected: ['after'],
+  },
+  {
+    name: 'reads an anchor whose tag holds a greater-than sign in a quoted value',
+    markdown: '<a title="1 > 0" name="real"></a>\n',
+    expected: ['real'],
+  },
+  {
+    name: 'reads no anchor from an attribute value that names another attribute',
+    markdown: '<a title="set id = phantom"></a>\n',
+    expected: [],
+  },
+  {
+    name: 'decodes a character reference in an anchor name',
+    markdown: '<a name="R&amp;D"></a>\n',
+    expected: ['R&D'],
+  },
+  {
+    name: 'reads an anchor tag with an uppercase name',
+    markdown: '<A NAME="upper"></A>\n',
+    expected: ['upper'],
+  },
+  {
+    name: 'reads no anchor from an anchor element inside a code span or a fence',
+    markdown: '`<a name="span"></a>`\n\n```\n<a name="fenced"></a>\n```\n',
+    expected: [],
+  },
+];
+
+it.for(anchorTable)('$name', ({ markdown, expected }) => {
+  expect([...readMarkdownLinks(markdown).anchors]).toEqual(expected);
 });

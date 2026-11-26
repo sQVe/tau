@@ -62,6 +62,43 @@ const table: {
     expected: { kind: 'valid' },
   },
   {
+    name: 'a fragment to a heading with a fraction character',
+    files: [
+      ['shared/rules.md', '# A &frac12; B\n'],
+      ['shared/coding.md', '[half](./rules.md#a--b)\n'],
+    ],
+    expected: { kind: 'valid' },
+  },
+  {
+    name: 'a fragment that keeps the fraction character of a heading',
+    files: [
+      ['shared/rules.md', '# A &frac12; B\n'],
+      ['shared/coding.md', '[half](./rules.md#a-½-b)\n'],
+    ],
+    expected: {
+      kind: 'broken',
+      path: 'shared/coding.md',
+      target: './rules.md#a-½-b',
+      problem: 'missing-heading',
+    },
+  },
+  {
+    name: 'a fragment that names the name of an anchor element',
+    files: [
+      ['shared/rules.md', '<a name="custom-anchor"></a>\n'],
+      ['shared/coding.md', '[anchor](./rules.md#custom-anchor)\n'],
+    ],
+    expected: { kind: 'valid' },
+  },
+  {
+    name: 'a fragment that names the id of an anchor element',
+    files: [
+      ['shared/rules.md', '# Rules\n\n<a id="custom-anchor"></a>\n'],
+      ['shared/coding.md', '[anchor](./rules.md#custom-anchor)\n'],
+    ],
+    expected: { kind: 'valid' },
+  },
+  {
     name: 'a fragment that names the old C1 letter of a numeric reference heading',
     files: [
       ['shared/rules.md', '# A &#131;B\n'],
