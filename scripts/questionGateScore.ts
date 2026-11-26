@@ -48,7 +48,8 @@ import type {
   ScoreItem,
 } from './questionGateScore/questionGateScoreReport.ts';
 import { runShadowReport } from './questionGateScore/shadowScore.ts';
-import { parseTime, readInTurn } from './tokenUsage.ts';
+import { readInTurn } from './readInTurn.ts';
+import { parseTime } from './tokenUsage.ts';
 
 interface Judges {
   classify: ClassifyQuestion;

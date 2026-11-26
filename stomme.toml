@@ -543,6 +543,11 @@ entry = "src/process/process.ts"
 public = []
 imports = ["errors"]
 
+[modules.prose]
+entry = "src/prose.ts"
+public = []
+imports = []
+
 [modules.questionGate]
 entry = "src/questionGate/questionGate.ts"
 public = ["src/questionGate/decision/decision.ts", "src/questionGate/examples.ts"]

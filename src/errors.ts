@@ -44,7 +44,14 @@ export const failureWithRelease = async (
 export const toError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error));
 
-export const hasErrorCode = (error: unknown, code: string): boolean =>
-  error instanceof Error && 'code' in error && error.code === code;
+export const errorCode = (error: unknown): string | undefined => {
+  if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string') {
+    return undefined;
+  }
+
+  return error.code;
+};
+
+export const hasErrorCode = (error: unknown, code: string): boolean => errorCode(error) === code;
 
 export const isMissingFile = (error: unknown): boolean => hasErrorCode(error, 'ENOENT');

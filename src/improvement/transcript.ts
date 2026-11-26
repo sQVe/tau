@@ -6,6 +6,11 @@ import { assistantCalls } from '../sessionMessage/sessionMessage.ts';
 
 export type Entry = Record<string, unknown>;
 
+export type TranscriptLine =
+  | { status: 'entry'; line: number; entry: Entry }
+  | { status: 'notARecord'; line: number }
+  | { status: 'malformed'; line: number };
+
 export type Transcript =
   | { status: 'read'; cwd: string; calls: ToolCall[] }
   | { status: 'malformed'; cwd: string | undefined; calls: ToolCall[]; reason: string }
@@ -71,27 +76,49 @@ export type TranscriptState = Static<typeof transcriptStateSchema>;
 export const copyKey = (entry: Entry): string =>
   `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
 
-const parseEntry = (source: string): Entry | undefined => {
-  try {
-    const value: unknown = JSON.parse(source);
+const classifyTranscriptLine = (line: string, number: number): TranscriptLine => {
+  let value: unknown;
 
-    return isRecord(value) ? value : undefined;
+  try {
+    value = JSON.parse(line);
   } catch {
-    return undefined;
+    return { status: 'malformed', line: number };
   }
+
+  return isRecord(value)
+    ? { status: 'entry', line: number, entry: value }
+    : { status: 'notARecord', line: number };
+};
+
+const parseEntry = (source: string): Entry | undefined => {
+  const line = classifyTranscriptLine(source, 1);
+
+  return line.status === 'entry' ? line.entry : undefined;
+};
+
+export const scanTranscriptLines = (source: string): TranscriptLine[] => {
+  const lines: TranscriptLine[] = [];
+
+  for (const [index, line] of source.split('\n').entries()) {
+    if (line.trim() === '') {
+      continue;
+    }
+
+    lines.push(classifyTranscriptLine(line, index + 1));
+  }
+
+  return lines;
 };
 
 export const parseEntries = (source: string): { entries: Entry[]; malformedLines: number } => {
   const entries: Entry[] = [];
   let malformedLines = 0;
 
-  for (const line of source.split('\n').filter((candidate) => candidate.trim() !== '')) {
-    const entry = parseEntry(line);
-
-    if (entry === undefined) {
-      malformedLines += 1;
+  for (const line of scanTranscriptLines(source)) {
+    if (line.status === 'entry') {
+      entries.push(line.entry);
     } else {
-      entries.push(entry);
+      malformedLines += 1;
     }
   }
 
