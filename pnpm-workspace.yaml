@@ -10,7 +10,7 @@ overrides:
 # Vite+ uses its own version for the Vite-compatible core.
 peerDependencyRules:
   allowedVersions:
-    vite: 0.3.0
+    vite: 0.3.3
 minimumReleaseAgeExclude:
   - '@earendil-works/chord@1.0.0'
   - '@earendil-works/pi-agent-core@1.0.0 || 1.2.0 || 1.3.0 || 1.4.0 || 1.5.0 || 1.6.0'
