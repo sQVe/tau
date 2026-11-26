@@ -99,6 +99,9 @@ const plainTheme = {
   bold: (text: string) => text,
 } as unknown as Theme;
 
+const longLineRows = (page: readonly string[]) =>
+  page.map((row) => row.trim()).filter((row) => row.startsWith('word'));
+
 it.each([12, 24])('keeps long confirmations within a %s-row terminal', async (rows) => {
   const message = Array.from({ length: 40 }, (_, index) => `Write ${index + 1}`).join('\n');
   const pages: (readonly string[])[] = [];
@@ -178,7 +181,38 @@ it('scrolls wrapped message rows both ways without changing No selection', async
   expect(pages[2]).toBe(pages[0]);
 });
 
-it('refits the message after terminal height and width changes', async () => {
+it('refits the message when the terminal width changes', async () => {
+  const dimensions = { rows: 24, columns: 80 };
+  // One row inside 78 content columns, two rows inside 38.
+  const longLine = `${'word '.repeat(10)}tail`;
+  const message = `Write 1\n${longLine}`;
+  const pages: (readonly string[])[] = [];
+
+  const context = customContext(
+    (component) => {
+      pages.push(component.render(dimensions.columns));
+
+      dimensions.columns = 40;
+      component.invalidate();
+      pages.push(component.render(dimensions.columns));
+      component.handleInput?.('\u001B');
+    },
+    plainTheme,
+    undefined,
+    dimensions,
+  );
+
+  expect(await confirm(context, 'Review writes', message)).toBe(false);
+
+  expect(longLineRows(pages[0] ?? [])).toEqual([longLine]);
+
+  expect(longLineRows(pages[1] ?? [])).toEqual([
+    'word word word word word word word',
+    'word word word tail',
+  ]);
+});
+
+it('refits the message when the terminal height changes', async () => {
   const dimensions = { rows: 18, columns: 80 };
   const message = Array.from({ length: 30 }, (_, index) => `Write ${index + 1}`).join('\n');
   const pages: (readonly string[])[] = [];
@@ -193,7 +227,6 @@ it('refits the message after terminal height and width changes', async () => {
       }
 
       dimensions.rows = 24;
-      dimensions.columns = 40;
       component.invalidate();
       pages.push(component.render(dimensions.columns));
       dimensions.rows = 80;
