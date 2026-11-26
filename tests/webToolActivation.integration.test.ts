@@ -1,27 +1,41 @@
-import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
-import { expect, it } from 'vitest';
+import { beforeAll, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
 
 import { bundledProfileDirectory, parseProfile } from '../src/extensions/subagents/profiles.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
-import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+import { suiteCleanup, temporaryDirectory } from './temporaryDirectoryHarness.js';
+import { createWebAccessExtension } from './webAccessExtensionHarness.js';
 
 const webToolNames = ['fetch_content', 'get_search_content', 'web_search'];
 
-const extensionPaths = [
-  resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
-];
+const registerSuiteCleanup = suiteCleanup();
 
-const createDirectory = (registerCleanup: TestContext['onTestFinished']) => {
-  const directory = temporaryDirectory(registerCleanup, 'tau-web-activation-');
-  isolateWebAccessConfig(join(directory, 'agent'), registerCleanup);
+let extensionPaths: string[];
 
-  return directory;
-};
+beforeAll(() => {
+  const fixtureDirectory = temporaryDirectory(registerSuiteCleanup, 'tau-web-config-');
+  const configDirectory = join(fixtureDirectory, 'config');
+
+  mkdirSync(configDirectory, { recursive: true });
+  isolateWebAccessConfig(configDirectory, registerSuiteCleanup);
+
+  // Without the setting, pi-web-access activates the web tools eagerly for a model that cannot add
+  // tools mid-conversation, which skips the web_enable flow these tests cover.
+  writeFileSync(
+    join(configDirectory, 'web-search.json'),
+    JSON.stringify({ toolActivation: 'dynamic' }),
+  );
+
+  extensionPaths = [createWebAccessExtension(fixtureDirectory)];
+});
+
+const createDirectory = (registerCleanup: TestContext['onTestFinished']) =>
+  temporaryDirectory(registerCleanup, 'tau-web-activation-');
 
 it('keeps the scout profile web tools active from the first turn', async ({ onTestFinished }) => {
   const directory = createDirectory(onTestFinished);

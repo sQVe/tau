@@ -2,7 +2,6 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
@@ -10,6 +9,7 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
 import { suiteCleanup } from './temporaryDirectoryHarness.js';
+import { createWebAccessExtension } from './webAccessExtensionHarness.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -18,26 +18,13 @@ let agentDirectory: string;
 let webAccessExtension: string;
 const registerCleanup = suiteCleanup();
 
-// pi-web-access keeps the config path from its first load in a module instance. Other test files
-// in this process may load it first, so this file loads its own instance through a distinct URL,
-// and every scenario shares it.
 beforeAll(async () => {
   // The directory outlives each test, so `afterAll` removes it.
   directory = await mkdtemp(join(tmpdir(), 'tau-web-answer-'));
   agentDirectory = join(directory, 'agent');
   await mkdir(agentDirectory);
 
-  const webAccessUrl = pathToFileURL(
-    join(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
-  );
-
-  webAccessUrl.search = `?instance=${encodeURIComponent(directory)}`;
-  webAccessExtension = join(directory, 'webAccess.mjs');
-
-  await writeFile(
-    webAccessExtension,
-    `export { default } from ${JSON.stringify(webAccessUrl.href)};\n`,
-  );
+  webAccessExtension = createWebAccessExtension(directory);
 
   isolateWebAccessConfig(agentDirectory, registerCleanup);
 
