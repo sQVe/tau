@@ -1,10 +1,11 @@
 import { createRequire } from 'node:module';
 
-interface ReporterAttempt {
-  specifier: string;
-  reporter: unknown;
-  errorCode: string | undefined;
-}
+type ReporterAttempt =
+  | { specifier: string; kind: 'found'; reporter: unknown }
+  | { specifier: string; kind: 'missing' }
+  | { specifier: string; kind: 'failed'; errorCode: string | undefined };
+
+type LoadModule = (specifier: string) => unknown;
 
 // The project's own Vitest loads this file, so a bare import resolves from the project root and
 // fails wherever the project's release moved or removed the entry that exports the JSON reporter.
@@ -29,31 +30,48 @@ const jsonReporterIn = (loaded: unknown): unknown => {
   return typeof loaded.JsonReporter === 'function' ? loaded.JsonReporter : undefined;
 };
 
-const attemptJsonReporter = (specifier: string): ReporterAttempt => {
+const attemptJsonReporter = (load: LoadModule, specifier: string): ReporterAttempt => {
   try {
-    const loaded: unknown = projectRequire(specifier);
+    const reporter = jsonReporterIn(load(specifier));
 
-    return { specifier, reporter: jsonReporterIn(loaded), errorCode: undefined };
+    return reporter === undefined
+      ? { specifier, kind: 'missing' }
+      : { specifier, kind: 'found', reporter };
   } catch (error) {
-    return { specifier, reporter: undefined, errorCode: errorCodeOf(error) };
+    return { specifier, kind: 'failed', errorCode: errorCodeOf(error) };
   }
 };
 
-const loadJsonReporter = (): unknown => {
-  const attempts = reporterSpecifiers.map(attemptJsonReporter);
-  const found = attempts.find((attempt) => attempt.reporter !== undefined);
-
-  if (found !== undefined) {
-    return found.reporter;
+const failureDetail = (attempt: ReporterAttempt): string => {
+  if (attempt.kind === 'missing') {
+    return `${attempt.specifier}: no JSON reporter export`;
   }
 
-  const details = attempts.map(
-    ({ specifier, errorCode }) => `${specifier}: ${errorCode ?? 'no JSON reporter export'}`,
-  );
+  if (attempt.kind === 'failed') {
+    return `${attempt.specifier}: load failed (${attempt.errorCode ?? 'no error code'})`;
+  }
+
+  return attempt.specifier;
+};
+
+export const loadJsonReporter = (load: LoadModule): unknown => {
+  const attempts: ReporterAttempt[] = [];
+
+  for (const specifier of reporterSpecifiers) {
+    const attempt = attemptJsonReporter(load, specifier);
+
+    attempts.push(attempt);
+
+    if (attempt.kind === 'found') {
+      return attempt.reporter;
+    }
+  }
+
+  const details = attempts.map(failureDetail);
 
   throw new Error(
     `Tau's Vitest report reporter found no JSON reporter in the Vitest installed for ${process.cwd()} (${details.join('; ')}). Reinstall Vitest for this project.`,
   );
 };
 
-export default loadJsonReporter();
+export default loadJsonReporter(projectRequire);
