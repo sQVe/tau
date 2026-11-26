@@ -66,6 +66,13 @@ type WrapperStep =
   | { kind: 'skip'; next: number }
   | { kind: 'command' };
 
+interface WrapperChain {
+  // The shell code of every command option seen along the chain, in source order.
+  codes: string[];
+  // Where the wrapped command word starts, when the chain ends at a command.
+  commandIndex: number | undefined;
+}
+
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
 
@@ -575,7 +582,7 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
   return { codes, commandIndex: undefined };
 };
 
-const wrapperCodes = (words: string[]): string[] => {
+const walkWrappers = (words: string[]): WrapperChain => {
   let index = 0;
 
   while (index < words.length) {
@@ -590,54 +597,28 @@ const wrapperCodes = (words: string[]): string[] => {
     const name = commandName(word);
 
     if (wrapperOptionValues.get(name) === undefined) {
-      return [];
+      return { codes: [], commandIndex: isOptionWord(word) ? undefined : index };
     }
 
     const scan = scanWrapper(words, index, name);
 
     if (scan.codes.length > 0) {
-      return scan.codes;
+      return { codes: scan.codes, commandIndex: undefined };
     }
 
     if (scan.commandIndex === undefined) {
-      return [];
+      return { codes: [], commandIndex: undefined };
     }
 
     index = scan.commandIndex;
   }
 
-  return [];
+  return { codes: [], commandIndex: undefined };
 };
 
-const commandWordIndex = (words: string[]): number | undefined => {
-  let index = 0;
+const wrapperCodes = (words: string[]): string[] => walkWrappers(words).codes;
 
-  while (index < words.length) {
-    const word = words[index] ?? '';
-
-    if (assignmentPattern.test(word)) {
-      index += 1;
-
-      continue;
-    }
-
-    const name = commandName(word);
-
-    if (wrapperOptionValues.get(name) === undefined) {
-      return isOptionWord(word) ? undefined : index;
-    }
-
-    const scan = scanWrapper(words, index, name);
-
-    if (scan.codes.length > 0 || scan.commandIndex === undefined) {
-      return undefined;
-    }
-
-    index = scan.commandIndex;
-  }
-
-  return undefined;
-};
+const commandWordIndex = (words: string[]): number | undefined => walkWrappers(words).commandIndex;
 
 const commandWord = ({ arguments: words }: ShellCommand): string | undefined => {
   const index = commandWordIndex(words);

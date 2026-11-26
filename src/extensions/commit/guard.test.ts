@@ -842,8 +842,6 @@ describe('guardToolCall', () => {
   it('reads a short option with its value attached as shell code', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    writeScript(directory, 'commit.sh', 'git commit -m x\n');
-
     expect(guard(makeBashEvent("flock lock -c'git commit -m x'"), directory)).toEqual({
       block: true,
       reason: commitGuardReason,
