@@ -264,7 +264,7 @@ const pureModules = [
   'src/instructions/syncRecord.ts',
   'src/linear/descriptionMatch.ts',
   'src/linear/ownership.ts',
-  'src/piStart/startedModel.ts',
+  'src/piStart/startedModel/startedModel.ts',
   'src/process/stateDecision.ts',
   'src/prose.ts',
   'src/questionGate/decideDecision.ts',
@@ -302,7 +302,7 @@ const pureModules = [
 ];
 
 const pureAdvice =
-  'A pure module must not read records, the clock, randomness, or the environment. Move the read or effect to the caller and pass the value in as a fact.';
+  'A pure module must not read records, the clock, randomness, or the environment, or escape a function into an imported, parameter, or global object. Move the read or effect to the caller and pass the value in as a fact.';
 
 // `strictToolRegistration` replaces `registerTool` on the API it is given and keeps a set of
 // installed APIs, so `src/schema.ts` breaks the no-effect rule. The import table may only shrink,
@@ -508,7 +508,11 @@ const isFunctionValue = (bindings: BindingScopes, node: Expression | null): bool
     return false;
   }
 
-  if (node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') {
+  if (
+    node.type === 'ArrowFunctionExpression' ||
+    node.type === 'FunctionExpression' ||
+    node.type === 'ClassExpression'
+  ) {
     return true;
   }
 
@@ -826,6 +830,11 @@ const functionPropertySource = (): string =>
 const aliasedFunctionPropertySource = (): string =>
   'const wrapper = () => 1;\nconst install = (api) => {\n  api.run = wrapper;\n};\n';
 
+const classPropertySource = (): string => 'const install = (api) => {\n  api.run = class {};\n};\n';
+
+const aliasedClassPropertySource = (): string =>
+  'const handler = class {};\nconst install = (api) => {\n  api.run = handler;\n};\n';
+
 const importedFunctionPropertySource = (): string =>
   "import { api } from './rules.js';\napi.run = () => 1;\n";
 
@@ -873,6 +882,16 @@ it('reports a function assigned to a property of a parameter or an imported bind
 
   expect(impurities('src/pure/decide.ts', importedFunctionPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:2: assigns a function to a property',
+  ]);
+});
+
+it('reports a class assigned to a property of a parameter', () => {
+  expect(impurities('src/pure/decide.ts', classPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:2: assigns a function to a property',
+  ]);
+
+  expect(impurities('src/pure/decide.ts', aliasedClassPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:3: assigns a function to a property',
   ]);
 });
 
