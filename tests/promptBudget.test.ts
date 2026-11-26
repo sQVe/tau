@@ -44,9 +44,11 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
 // ceiling. CI measures the pull request merged into its base branch, so a ceiling must also cover the
 // prompt text the base branch adds after the branch's last merge; measure that merge before lowering
-// one.
+// one. That is why a local reading can sit below its ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
   lead: 69_213, // target 38,000
+  // The adopted-project reading is 64,351; the 25 above it covers the base branch's ticket tool
+  // description, which names a pull request that closes the ticket.
   architect: 64_376,
   worker: 29_356, // target 14,000
   reviewer: 24_635, // target 11,000
