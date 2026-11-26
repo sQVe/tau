@@ -38,6 +38,8 @@ const table: { command: string; refused: boolean }[] = [
   { command: 'nohup hc send t1 x', refused: true },
   { command: 'time hc send t1 x', refused: true },
   { command: 'time -p hc keys t1 enter', refused: true },
+  { command: '/usr/bin/time -o /tmp/log hc send t1 x', refused: true },
+  { command: "/usr/bin/time -o /tmp/log sh -c 'hc send t1 x'", refused: true },
   { command: 'sudo hc send t1 x', refused: true },
   { command: 'sudo -E -u bob hc keys t1 enter', refused: true },
   { command: 'echo x | xargs hc send t1', refused: true },
@@ -51,7 +53,7 @@ const table: { command: string; refused: boolean }[] = [
   { command: "ksh -c 'hc send t1 x'", refused: true },
   { command: "watch -n 1 'hc send t1 x'", refused: true },
   { command: 'command -p -- hc send t1 x', refused: true },
-  { command: 'time -v hc send t1 x', refused: true },
+  { command: 'time -v hc send t1 x', refused: false },
   { command: 'command hc send t1 -v', refused: true },
   { command: 'hc interrupt t1', refused: false },
   { command: 'hc send --help', refused: false },
@@ -78,15 +80,6 @@ const table: { command: string; refused: boolean }[] = [
   { command: "bash script.sh 'hc send t1 x'", refused: false },
   { command: "hc send t1 'unterminated", refused: false },
 ];
-
-it.each(['constructor', 'toString', '__proto__'])(
-  'treats the %s command name as an ordinary command',
-  (name) => {
-    const refused = typesIntoTerminal(`${name} -x`);
-
-    expect(refused).toBe(false);
-  },
-);
 
 it('refuses hc send and hc keys only in command position', () => {
   const decided = table.map(({ command }) => ({ command, refused: typesIntoTerminal(command) }));

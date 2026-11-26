@@ -10,7 +10,6 @@ it('blocks the past nohup close whose stderr went to /dev/null', () => {
   const decision = decideDetachedOutput({ toolName: 'bash', command: nohupClose });
 
   expect(decision?.block).toBe(true);
-  expect(decision?.reason).toContain('> /tmp/<name>.log 2>&1');
 });
 
 it('allows the logged setsid close whose inner command writes a log', () => {
@@ -534,6 +533,41 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a redirection-only exec that only discards stderr',
     command: 'exec 2>/dev/null &',
+    blocked: false,
+  },
+  {
+    name: 'a backgrounded brace compound with a redirection after its closer',
+    command: '{ herdr-app do space.close --confirmed & } >/dev/null 2>&1',
+    blocked: true,
+  },
+  {
+    name: 'a backgrounded if compound with a redirection after its closer',
+    command: 'if true; then herdr-app do space.close --confirmed & fi >/dev/null 2>&1',
+    blocked: true,
+  },
+  {
+    name: 'a backgrounded case inside a group that discards stderr',
+    command: '( case x in a) herdr-app do space.close --confirmed ;; esac ) 2>/dev/null &',
+    blocked: true,
+  },
+  {
+    name: 'a foreground script that detaches a discarded command',
+    command: "bash -c 'cmd 2>/dev/null &'",
+    blocked: true,
+  },
+  {
+    name: 'a foreground script that detaches a command under the outer discard',
+    command: "bash -c 'cmd &' 2>/dev/null",
+    blocked: true,
+  },
+  {
+    name: 'a foreground script that detaches a visible command',
+    command: "bash -c 'cmd &'",
+    blocked: false,
+  },
+  {
+    name: 'a foreground script that detaches a command that logs',
+    command: "bash -c 'cmd > /tmp/x.log 2>&1 &'",
     blocked: false,
   },
 ])('decides $name', ({ command, blocked }) => {

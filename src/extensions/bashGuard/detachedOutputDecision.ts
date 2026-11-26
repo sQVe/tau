@@ -435,14 +435,48 @@ const isJudgedCommand = (command: ShellCommand): boolean => {
   return command.group !== undefined || command.arguments.length > 0;
 };
 
-const judgesHiddenFailure = (scope: CompoundScope, index: number): boolean => {
+const judgesHiddenFailure = (scope: CompoundScope, index: number, depth = 0): boolean => {
   const command = scope.commands[index];
 
   if (command === undefined || !isJudgedCommand(command)) {
     return false;
   }
 
-  return !insideBackgroundedGroup(scope.commands, index) && hidesFailure(scope, index);
+  if (insideBackgroundedGroup(scope.commands, index)) {
+    return false;
+  }
+
+  if (hidesFailure(scope, index)) {
+    return true;
+  }
+
+  if (command.background) {
+    return false;
+  }
+
+  const script = shellScriptOf(command.arguments);
+
+  if (script === undefined) {
+    return false;
+  }
+
+  // A foreground command that runs a script still detaches the script's own backgrounded members.
+  if (depth > maximumDepth) {
+    return true;
+  }
+
+  const commands = parseShellCommands(script);
+
+  if (commands === undefined) {
+    return false;
+  }
+
+  const inherited = streamsOf(command, enclosingOf(scope, index));
+  const nested = compoundScope(commands, inherited);
+
+  return commands.some((_nested, nestedIndex) =>
+    judgesHiddenFailure(nested, nestedIndex, depth + 1),
+  );
 };
 
 const blockReason =
