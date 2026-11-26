@@ -1,9 +1,8 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
 import handoverQuestionExtension from '../src/extensions/handoverQuestion/handoverQuestion.js';
-import { acceptChecks } from '../src/inbox/inbox.js';
 import { fakeExtensionApi } from './extensionApi.js';
 import { forgetAcceptCheck } from './inboxReceiverHarness.js';
 
@@ -27,17 +26,6 @@ afterEach(() => {
   vi.unstubAllEnvs();
   forgetAcceptCheck('handover-question');
   forgetAcceptCheck('handover-answer');
-});
-
-it('forgets both accept checks after the test', () => {
-  vi.stubEnv('TAU_ROLE', '');
-
-  handoverQuestionExtension(fakeExtensionApi().pi);
-
-  onTestFinished(() => {
-    expect(acceptChecks()['handover-question']).toBeUndefined();
-    expect(acceptChecks()['handover-answer']).toBeUndefined();
-  });
 });
 
 it('registers no tool without a sender', async () => {

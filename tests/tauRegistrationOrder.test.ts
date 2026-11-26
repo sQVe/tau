@@ -311,8 +311,6 @@ it('sets the session directory before the inbox accepts answers', async ({ onTes
   } as unknown as ExtensionContext;
 
   onTestFinished(async () => {
-    forgetAcceptCheck('handover-answer');
-    forgetAcceptCheck('handover-question');
     await inboxShutdown.handler({ type: 'session_shutdown', reason: 'quit' } as never, context);
   });
 

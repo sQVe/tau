@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { assert, property, string, stringMatching, uuid } from 'fast-check';
+import { assert, property, string, uuid } from 'fast-check';
 import { expect, it } from 'vitest';
 
 import { resolvePropertySeed } from '../../tests/propertySeedHarness.js';
-import { parseSenderLine } from '../handoverSender.js';
+import { isSenderTerminal, parseSenderLine } from '../handoverSender.js';
 import type { SavableMessageBody } from './protocol.js';
+import { isSessionId } from './protocol.js';
 import {
   answeredQuestionId,
   decideCandidate,
@@ -637,8 +638,11 @@ it('parses the heading that messageText writes for a handover question', () => {
   });
 });
 
-const validTerminal = stringMatching(/^\S+$/u);
-const validSession = stringMatching(/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u);
+// The production validators decide which generated values are valid. Broad candidates plus
+// filtering keep the generator from re-declaring the terminal and session rules.
+const validTerminal = string({ minLength: 1, maxLength: 64 }).filter(isSenderTerminal);
+
+const validSession = string({ minLength: 1, maxLength: 64 }).filter(isSessionId);
 
 it('parses every generated heading messageText writes for a handover question', () => {
   const seed = resolvePropertySeed();
@@ -663,6 +667,28 @@ it('parses every generated heading messageText writes for a handover question', 
     { seed, numRuns: 100 },
   );
 });
+
+it.each(['session.one', 'session-two', 'session_three', 'a.b-c_d'])(
+  'round-trips a heading with session ID %s',
+  (askerSession) => {
+    expect(isSessionId(askerSession)).toBe(true);
+
+    const payload = {
+      questionId: validQuestionId,
+      text: 'Which option should I use?',
+      askerTerminal: 'worker',
+      askerSession,
+    };
+
+    expect(
+      parseHandoverQuestionHeading(messageText({ family: 'handover-question', payload })),
+    ).toEqual({
+      questionId: validQuestionId,
+      askerTerminal: 'worker',
+      askerSession,
+    });
+  },
+);
 
 it('keeps a heading inside the question text from changing the parsed question', () => {
   const otherQuestionId = '22222222-2222-4222-8222-222222222222';

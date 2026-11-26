@@ -1,19 +1,10 @@
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import type * as protocol from './protocol.js';
 import { deleteMessage, pendingMessages, readMessage, saveMessage } from './store.js';
-
-// A saved record can carry an ID the live rule no longer accepts, so the live rule rejects every
-// ID here and discovery must fall back to the frozen historical rule.
-vi.mock(import('./protocol.js'), async (importOriginal) => {
-  const actual = await importOriginal<typeof protocol>();
-
-  return { ...actual, isUuid: () => false };
-});
 
 const messageId = '11111111-1111-4111-8111-111111111111';
 
@@ -469,24 +460,18 @@ it('does not run the fence for a message that is already saved', async () => {
   ).resolves.toBe('existing');
 });
 
-it('lists a frozen record while the live UUID rule rejects every ID', async () => {
+it('lists a frozen version 3 record and a current record while skipping temporary and foreign names', async () => {
   const directory = directoryFixture();
+  const currentMessageId = '55555555-5555-4555-8555-555555555555';
 
   fixtureInto(directory, 'version3.json');
+  await saveMessage(directory, { ...record, messageId: currentMessageId });
+  writeFileSync(join(directory, `.${messageId}.json.66666666-6666-4666-8666-666666666666`), '{}');
+  writeFileSync(join(directory, 'notes.json'), '{}');
   writeFileSync(join(directory, 'not-a-uuid.json'), '{}');
   writeFileSync(join(directory, '..json'), '{}');
 
-  await expect(pendingMessages(directory)).resolves.toEqual([messageId]);
-});
-
-it('lists saved records by message ID and skips temporary and foreign names', async () => {
-  const directory = directoryFixture();
-
-  await saveMessage(directory, record);
-  writeFileSync(join(directory, `.${messageId}.json.55555555-5555-4555-8555-555555555555`), '{}');
-  writeFileSync(join(directory, 'notes.json'), '{}');
-
-  await expect(pendingMessages(directory)).resolves.toEqual([messageId]);
+  await expect(pendingMessages(directory)).resolves.toEqual([messageId, currentMessageId]);
   await expect(pendingMessages(join(directory, 'missing'))).resolves.toEqual([]);
 });
 

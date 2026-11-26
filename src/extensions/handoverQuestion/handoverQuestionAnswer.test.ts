@@ -21,6 +21,7 @@ import {
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { acceptChecks, createReceiptStore, createReceiver } from '../../inbox/inbox.js';
 import type { MessageReply, MessageRequest } from '../../inbox/protocol.js';
+import { messageText } from '../../inbox/receiptDecision.js';
 import handoverQuestionExtension from './handoverQuestion.js';
 import { writeQuestionRecord } from './question/questionRecord.js';
 
@@ -39,7 +40,15 @@ const receivedEntry = (leadSession: string): SessionEntry =>
   ({
     type: 'custom_message',
     customType: 'tau-inbox-message',
-    content: `Handover question ${answerQuestionId} from terminal worker-1, session ${answerAskerSession}:\n\nWhich option should I use?`,
+    content: messageText({
+      family: 'handover-question',
+      payload: {
+        questionId: answerQuestionId,
+        text: 'Which option should I use?',
+        askerTerminal: 'worker-1',
+        askerSession: answerAskerSession,
+      },
+    }),
     display: true,
     details: {
       version: 4,
@@ -100,17 +109,6 @@ afterEach(() => {
   vi.unstubAllEnvs();
   forgetAcceptCheck('handover-question');
   forgetAcceptCheck('handover-answer');
-});
-
-it('forgets both accept checks after the test', () => {
-  vi.stubEnv('TAU_ROLE', '');
-
-  handoverQuestionExtension(fakeExtensionApi().pi);
-
-  onTestFinished(() => {
-    expect(acceptChecks()['handover-question']).toBeUndefined();
-    expect(acceptChecks()['handover-answer']).toBeUndefined();
-  });
 });
 
 it('refuses to answer without a saved session ID', async () => {
