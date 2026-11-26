@@ -193,8 +193,8 @@ export const walkMarkdownTokens = (
   }
 };
 
-const htmlComment = /<!--[\s\S]*?-->/g;
-const anchorElement = /<a\b[^>]*>/gi;
+const commentStart = '<!--';
+const anchorOrComment = /<!--[\s\S]*?-->|<a\b[^>]*>/gi;
 const anchorAttribute = /(?:^|\s)(?:name|id)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/gi;
 const surroundingQuotes = /^["']|["']$/g;
 
@@ -204,7 +204,11 @@ const attributeName = (attribute: string) =>
 const anchorNamesOf = (html: string): string[] => {
   const names: string[] = [];
 
-  for (const element of html.replaceAll(htmlComment, '').matchAll(anchorElement)) {
+  for (const element of html.matchAll(anchorOrComment)) {
+    if (element[0].startsWith(commentStart)) {
+      continue;
+    }
+
     for (const attribute of element[0].matchAll(anchorAttribute)) {
       const name = attributeName(attribute[0]);
 

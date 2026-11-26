@@ -482,6 +482,16 @@ const anchorTable: { name: string; markdown: string; expected: readonly string[]
     expected: [],
   },
   {
+    name: 'reads an anchor after an HTML comment',
+    markdown: '<!-- <a name="commented"></a> -->\n\n<a name="after"></a>\n',
+    expected: ['after'],
+  },
+  {
+    name: 'reads an anchor after a comment in one HTML token',
+    markdown: '<!-- commented --><a name="after"></a>\n',
+    expected: ['after'],
+  },
+  {
     name: 'reads no anchor from an anchor element inside a code span or a fence',
     markdown: '`<a name="span"></a>`\n\n```\n<a name="fenced"></a>\n```\n',
     expected: [],
