@@ -281,10 +281,19 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
         heredocs: ['body\n'],
+        heredocScopes: ['0'],
         depth: 0,
         scope: '',
       },
-      { words: ['next'], arguments: ['next'], inputs: [], heredocs: [], depth: 0, scope: '' },
+      {
+        words: ['next'],
+        arguments: ['next'],
+        inputs: [],
+        heredocs: [],
+        heredocScopes: [],
+        depth: 0,
+        scope: '',
+      },
     ]);
   });
 
@@ -296,6 +305,23 @@ describe('parseShellCommands', () => {
     expect(parseShellCommands('cat <<EOF\n\tEOF\nEOF\nnext')?.[0]?.heredocs).toEqual(['\tEOF\n']);
   });
 
+  it('records the scope of each expanding heredoc body on its owner', () => {
+    const commands = parseShellCommands(
+      "cd sub <<EOF\n$(a)\nEOF\ncat <<'E2'\nx\nE2\ncat <<E3\n$(b)\nE3\n",
+    );
+
+    const owners = commands?.map(({ words, heredocScopes }) => [words, heredocScopes]);
+
+    expect(owners).toEqual([
+      [['cd', 'sub'], ['0']],
+      [['cat'], []],
+      [['a'], []],
+      [['cat'], ['1']],
+      [[], []],
+      [['b'], []],
+    ]);
+  });
+
   it('does not treat <<< as a heredoc', () => {
     expect(parseShellCommands('cat <<< word\nnext')).toEqual([
       {
@@ -303,10 +329,19 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         inputs: [{ descriptor: undefined, kind: 'hereString', target: 'word' }],
         heredocs: [],
+        heredocScopes: [],
         depth: 0,
         scope: '',
       },
-      { words: ['next'], arguments: ['next'], inputs: [], heredocs: [], depth: 0, scope: '' },
+      {
+        words: ['next'],
+        arguments: ['next'],
+        inputs: [],
+        heredocs: [],
+        heredocScopes: [],
+        depth: 0,
+        scope: '',
+      },
     ]);
   });
 
@@ -364,6 +399,7 @@ describe('parseShellCommands', () => {
         arguments: ['cat'],
         inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
         heredocs: [''],
+        heredocScopes: ['0'],
         depth: 0,
         scope: '',
       },

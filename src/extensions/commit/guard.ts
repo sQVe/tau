@@ -43,11 +43,6 @@ interface GuardState {
   pathDirectories: string[];
 }
 
-interface CommandStart {
-  scope: string;
-  directory: string;
-}
-
 interface InterpreterSources {
   files: string[];
   code: string[];
@@ -492,31 +487,56 @@ const skipWrapper = (
   return skip === undefined || sawUnless ? next : next + skip.count;
 };
 
+const commandOptionValue = (
+  words: string[],
+  index: number,
+  commandOptions: ReadonlySet<string>,
+): string | undefined => {
+  const word = words[index] ?? '';
+
+  for (const option of commandOptions) {
+    if (word === option) {
+      return words[index + 1];
+    }
+
+    if (word.startsWith(`${option}=`)) {
+      return word.slice(option.length + 1);
+    }
+  }
+
+  return undefined;
+};
+
+// The wrapper's own shell-code option comes before its first positional, or directly after the
+// single positional it takes, as in `flock lock -c 'cmd'`. A later option belongs to the wrapped
+// command.
 const optionCommandCode = (
   words: string[],
   index: number,
   commandOptions: ReadonlySet<string>,
   valueOptions: ReadonlySet<string>,
 ): string | undefined => {
-  for (let next = index + 1; next < words.length; next += 1) {
-    const word = words[next] ?? '';
+  let next = index + 1;
 
-    for (const option of commandOptions) {
-      if (word === option) {
-        return words[next + 1];
-      }
+  while (next < words.length) {
+    const own = commandOptionValue(words, next, commandOptions);
 
-      if (word.startsWith(`${option}=`)) {
-        return word.slice(option.length + 1);
-      }
+    if (own !== undefined) {
+      return own;
     }
 
+    const word = words[next] ?? '';
+
     if (valueOptions.has(word)) {
+      next += 2;
+    } else if (isOptionWord(word)) {
       next += 1;
+    } else {
+      break;
     }
   }
 
-  return undefined;
+  return commandOptionValue(words, next + 1, commandOptions);
 };
 
 const wrapperInlineCode = (words: string[]): string | undefined => {
@@ -583,44 +603,42 @@ const commandWord = ({ arguments: words }: ShellCommand): string | undefined => 
 // An interpreter runs a file or inline code only from the executable position, so data such as
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
-  const inline = wrapperInlineCode(command.arguments);
-
-  if (inline !== undefined) {
-    return { files: [], code: [inline] };
-  }
-
+  const wrapperCode = wrapperInlineCode(command.arguments);
+  const code = wrapperCode === undefined ? [] : [wrapperCode];
   const index = commandWordIndex(command.arguments);
 
   if (index === undefined) {
-    return { files: [], code: [] };
+    return { files: [], code };
   }
 
   const word = command.arguments[index];
 
   if (word === undefined || !isInterpreter(word)) {
-    return { files: [], code: [] };
+    return { files: [], code };
   }
 
   const mode = shellMode(command.arguments.slice(index + 1));
   const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
-    return { files: [mode.name], code: [] };
+    return { files: [mode.name], code };
   }
 
   if (mode.kind === 'inline') {
-    return { files: [], code: mode.code === undefined ? [] : [mode.code] };
+    const inlineCode = mode.code === undefined ? [] : [mode.code];
+
+    return { files: [], code: [...code, ...inlineCode] };
   }
 
   if (stdin === undefined || stdin.kind === 'heredoc') {
-    return { files: [], code: [] };
+    return { files: [], code };
   }
 
   if (stdin.kind === 'hereString') {
-    return { files: [], code: [stdin.target] };
+    return { files: [], code: [...code, stdin.target] };
   }
 
-  return { files: [stdin.target], code: [] };
+  return { files: [stdin.target], code };
 };
 
 // A bare word resolves through `PATH`, so only a word with a path separator names a local file.
@@ -761,13 +779,16 @@ const directoryFor = (directories: string[], depth: number): string => {
   return directories[depth] ?? '';
 };
 
+const parentScope = (scope: string): string =>
+  scope.includes('.') ? scope.slice(0, scope.lastIndexOf('.')) : '';
+
 // A substitution's scope can be nested under a scope that owns no command, such as a heredoc
 // body, so walk up until a scope with a stack exists.
 const ancestorDirectory = (stacks: Map<string, string[]>, scope: string): string | undefined => {
   let current = scope;
 
   while (current !== '') {
-    current = current.includes('.') ? current.slice(0, current.lastIndexOf('.')) : '';
+    current = parentScope(current);
     const stack = stacks.get(current);
 
     if (stack !== undefined) {
@@ -778,21 +799,19 @@ const ancestorDirectory = (stacks: Map<string, string[]>, scope: string): string
   return undefined;
 };
 
-const isUnderScope = (scope: string, prefix: string): boolean =>
-  prefix === '' || scope.startsWith(`${prefix}.`);
-
-const isStrictPrefix = (prefix: string, scope: string): boolean =>
-  prefix !== scope && isUnderScope(scope, prefix);
-
-// A heredoc body expands before its owner runs, so it resolves against the directory the owner
+// A heredoc body expands before its owner runs, so it resolves against the directory its owner
 // started in, not the one the owner's own `cd` moves to.
-const ownerDirectory = (history: CommandStart[], scope: string): string | undefined => {
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const entry = history[index];
+const recordedBase = (bases: Map<string, string>, scope: string): string | undefined => {
+  let current = scope;
 
-    if (entry !== undefined && isStrictPrefix(entry.scope, scope)) {
-      return entry.directory;
+  while (current !== '') {
+    const base = bases.get(current);
+
+    if (base !== undefined) {
+      return base;
     }
+
+    current = parentScope(current);
   }
 
   return undefined;
@@ -803,7 +822,7 @@ const directoryStack = (
   stacks: Map<string, string[]>,
   scope: string,
   cwd: string,
-  history: CommandStart[],
+  bases: Map<string, string>,
 ): string[] => {
   const existing = stacks.get(scope);
 
@@ -811,7 +830,7 @@ const directoryStack = (
     return existing;
   }
 
-  const base = ownerDirectory(history, scope) ?? ancestorDirectory(stacks, scope) ?? cwd;
+  const base = recordedBase(bases, scope) ?? ancestorDirectory(stacks, scope) ?? cwd;
   const stack = [base];
 
   stacks.set(scope, stack);
@@ -846,15 +865,15 @@ const createsCommit = (source: string, cwd: string, state: GuardState, depth = 0
 
   const scriptCommands = commands.some(runsShell) ? commands : commands.filter(runsGit);
   const stacks = new Map<string, string[]>();
-  const history: CommandStart[] = [];
+  const bases = new Map<string, string>();
 
   for (const command of commands) {
-    const stack = directoryStack(stacks, command.scope, cwd, history);
+    const stack = directoryStack(stacks, command.scope, cwd, bases);
     const directory = directoryFor(stack, command.depth);
     const scripts = namedScriptsOf(command, directory);
 
-    if (command.arguments.length > 0) {
-      history.push({ scope: command.scope, directory });
+    for (const scope of command.heredocScopes) {
+      bases.set(scope, directory);
     }
 
     const blocks = (script: NamedScript) =>

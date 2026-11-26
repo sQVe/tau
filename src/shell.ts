@@ -16,6 +16,8 @@ export interface ShellCommand {
   // The redirections that apply to the command, in source order.
   inputs: ShellInput[];
   heredocs: string[];
+  // The scopes of the expanding heredoc bodies the command owns, in source order.
+  heredocScopes: string[];
   // The parenthesis nesting depth of the command inside its scope, so a subshell keeps its own
   // directory.
   depth: number;
@@ -190,8 +192,8 @@ class ShellParser {
 
   // Each substitution or expanding heredoc body runs in its own scope, named by its parent and an
   // ordinal that is unique within the parse.
-  private childParser(source: string): ShellParser {
-    return new ShellParser(source, this.nextChildScope());
+  private childParser(source: string, scope = this.nextChildScope()): ShellParser {
+    return new ShellParser(source, scope);
   }
 
   private nextChildScope(): string {
@@ -463,6 +465,7 @@ class ShellParser {
       arguments: [],
       inputs: [],
       heredocs: [],
+      heredocScopes: [],
       depth,
       scope: this.scope,
     };
@@ -626,7 +629,11 @@ class ShellParser {
       heredoc.command.heredocs.push(body);
 
       if (heredoc.expands) {
-        const bodyParser = this.childParser(body);
+        const scope = this.nextChildScope();
+
+        heredoc.command.heredocScopes.push(scope);
+
+        const bodyParser = this.childParser(body, scope);
 
         bodyParser.readExpandingText(undefined, false);
         this.commands.push(...bodyParser.commands);
