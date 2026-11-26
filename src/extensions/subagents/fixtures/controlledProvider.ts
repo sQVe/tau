@@ -209,7 +209,7 @@ const reportResponses = (): FauxResponseStep[] => [
   ]),
   fauxAssistantMessage([
     fauxToolCall('bash', { command: 'test "$(cat source.txt)" = after && printf command-ok' }),
-    fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' }),
+    fauxToolCall('bash', { command: 'git -C delete-fixture clean -fdx' }),
   ]),
   fullCheckStep(),
   (context) => {
