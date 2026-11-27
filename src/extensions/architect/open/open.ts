@@ -259,8 +259,11 @@ const launchFailure = (launch: PiLaunchResult): Error =>
     ? launch.error
     : new Error('The architect launch failed before it reported a terminal.');
 
-const launchFailed = (launch: PiLaunchResult): boolean =>
+const launchReportedFailure = (launch: PiLaunchResult): boolean =>
   launchOutcomeDecision(launchFacts(launch)) === 'notCreated' || launch.error !== undefined;
+
+const launchFailed = (launch: PiLaunchResult): boolean =>
+  !launch.readbackFailed && launchReportedFailure(launch);
 
 const launchResult = (prepared: PreparedArchitectStart, model = 'unknown'): OpenResult =>
   prepared.session === undefined
@@ -419,6 +422,12 @@ const applyLaunchOutcome = async (
   fence: StartFence,
   started: PiLaunchResult,
 ): Promise<void> => {
+  // A readback failure leaves a live terminal, and an adopted child keeps running. The caller must
+  // still see the failure, so the outer catch completes the fence and reports it.
+  if (started.readbackFailed) {
+    throw launchFailure(started);
+  }
+
   if (launchFailed(started)) {
     await settleLaunch(request, fence, launchFailure(started));
 

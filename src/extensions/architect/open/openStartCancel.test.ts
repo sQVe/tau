@@ -92,7 +92,10 @@ it('an abort during the model readback rejects with the cancellation error', asy
 
   await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
 
-  expect(await opening).toBe(cancellation);
+  const failure = await opening;
+
+  expect(failure).toMatchObject({ terminal: 't-architect', cause: cancellation });
+  expect((failure as Error).message).toContain('cancelled during the readback');
   expect(processControl.signals).toEqual(['SIGTERM']);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });

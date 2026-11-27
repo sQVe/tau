@@ -22,6 +22,7 @@ import {
   takingStartTicket,
   useFakeStartProcess,
 } from '../../../../tests/startTicketFake.js';
+import type { FakeStartProcess } from '../../../../tests/startTicketFake.js';
 import type { Exec } from '../../../command.js';
 import { holdFileLock } from '../../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../../hc/hc.js';
@@ -38,6 +39,8 @@ interface OpenTool {
   terminals: Map<string, ExecResult>;
   tool: ReturnType<typeof createArchitectTool>;
   runtime: HcRuntime;
+  // The fake child process, when the started terminal adopts the claim.
+  processControl: FakeStartProcess | undefined;
 }
 
 interface OpenToolOptions {
@@ -285,9 +288,10 @@ export const openTool = (
   const processId = options.takeover === false ? fakeStartProcessId : fakeRunningStartProcessId;
   const fake = withStartTicket(appFake(), processId);
 
-  if (options.takeover !== false) {
-    useFakeStartProcess(onTestFinished, 'running', false, fakeRunningStartProcessId);
-  }
+  const processControl =
+    options.takeover === false
+      ? undefined
+      : useFakeStartProcess(onTestFinished, 'running', false, fakeRunningStartProcessId);
 
   const app =
     options.takeover === false
@@ -304,7 +308,7 @@ export const openTool = (
 
   const tool = createArchitectTool(runtime);
 
-  return { hc, app, terminals, tool, runtime };
+  return { hc, app, terminals, tool, runtime, processControl };
 };
 
 export const open = (
