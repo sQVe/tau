@@ -223,6 +223,7 @@ export const pureModules = [
   'src/verification/freshness.ts',
   'src/verification/selection.ts',
   'src/wake/deliveryStep.ts',
+  'src/wrapperAnalysis.ts',
   'tests/hcIsolationHarness.ts',
 ];
 
@@ -232,9 +233,10 @@ export const pureAdvice =
 // `strictToolRegistration` replaces `registerTool` on the API it is given and keeps a set of
 // installed APIs, so `src/schema.ts` breaks the no-effect rule. The import table may only shrink,
 // so a new module is not an option. Record the finding instead of dropping the module from the
-// registry.
-export const pureModuleExceptions: Readonly<Record<string, string>> = {
-  'src/schema.ts': 'assigns a function to a property',
+// registry. Each reason must match exactly one finding, so a second effect in the module still
+// fails the registry.
+export const pureModuleExceptions: Readonly<Record<string, readonly string[]>> = {
+  'src/schema.ts': ['assigns a function to a property'],
 };
 
 // The outside libraries a registered module may import, by module path.

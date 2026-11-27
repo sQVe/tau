@@ -36,7 +36,7 @@ interface WrappedExpression {
 const effectMembers = new Set(['Date.now', 'Math.random', 'performance.now', 'process.env']);
 
 // Reads `Date.now` and `Date['now']` alike.
-const propertyKey = ({ computed, property }: MemberExpression) => {
+export const propertyKey = ({ computed, property }: MemberExpression): string | undefined => {
   if (property.type === 'Identifier' && !computed) {
     return property.name;
   }
@@ -50,7 +50,7 @@ const propertyKey = ({ computed, property }: MemberExpression) => {
     : undefined;
 };
 
-const memberName = (node: MemberExpression) => {
+export const memberName = (node: MemberExpression): string | undefined => {
   const key = propertyKey(node);
 
   return node.object.type === 'Identifier' && key !== undefined
@@ -473,64 +473,42 @@ export const impurities = (path: string, source: string, registry: readonly stri
   return found;
 };
 
-const environmentAccess = (node: Expression) =>
-  node.type === 'MemberExpression' && memberName(node) === 'process.env';
-
-// Lists the variables a source reads from process.env. Writes, deletes, and text are not reads.
-export const environmentReads = (path: string, source: string): string[] => {
-  const found: string[] = [];
-  const notReads = new Set<unknown>();
-
-  new Visitor({
-    AssignmentExpression: (node) => {
-      if (node.operator === '=') {
-        notReads.add(node.left);
-      }
-    },
-    UnaryExpression: (node) => {
-      if (node.operator === 'delete') {
-        notReads.add(node.argument);
-      }
-    },
-    MemberExpression: (node) => {
-      const name = propertyKey(node);
-
-      if (environmentAccess(node.object) && name !== undefined && !notReads.has(node)) {
-        found.push(name);
-      }
-    },
-    BinaryExpression: (node) => {
-      const { left } = node;
-
-      if (node.operator === 'in' && left.type === 'Literal' && environmentAccess(node.right)) {
-        found.push(String(left.value));
-      }
-    },
-  }).visit(parseSync(path, source).program);
-
-  return found;
-};
-
 export const purityProblems = (
   modules: readonly string[],
-  exceptions: Readonly<Record<string, string>>,
+  exceptions: Readonly<Record<string, readonly string[]>>,
   readSource: (path: string) => string,
 ): string[] => {
   const problems = modules.flatMap((path) => {
     const findings = impurities(path, readSource(path), modules);
-    const exception = exceptions[path];
+    const reasons = exceptions[path];
 
-    if (exception === undefined) {
+    if (reasons === undefined) {
       return findings;
     }
 
-    const suppressed = findings.findIndex((finding) => finding.endsWith(`: ${exception}`));
+    const remaining = [...findings];
+    const unmatched: string[] = [];
 
-    if (suppressed === -1) {
-      return [...findings, `${path}: unused exception ${exception}`];
+    for (const reason of reasons) {
+      const matches = remaining.filter((finding) => finding.endsWith(`: ${reason}`));
+      const [match] = matches;
+
+      if (match === undefined) {
+        unmatched.push(`${path}: unused exception ${reason}`);
+
+        continue;
+      }
+
+      if (matches.length > 1) {
+        unmatched.push(`${path}: exception ${reason} matches ${matches.length} findings`);
+
+        continue;
+      }
+
+      remaining.splice(remaining.indexOf(match), 1);
     }
 
-    return findings.filter((_finding, index) => index !== suppressed);
+    return [...remaining, ...unmatched];
   });
 
   const unregistered = Object.keys(exceptions)

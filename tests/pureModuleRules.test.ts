@@ -15,6 +15,9 @@ const functionPropertySource = (): string =>
 const aliasedFunctionPropertySource = (): string =>
   'const wrapper = () => 1;\nconst install = (api) => {\n  api.run = wrapper;\n};\n';
 
+const parameterFunctionSource = (): string =>
+  'const install = (api, callback) => {\n  api.run = callback;\n};\n';
+
 const classPropertySource = (): string => 'const install = (api) => {\n  api.run = class {};\n};\n';
 
 const aliasedClassPropertySource = (): string =>
@@ -79,6 +82,12 @@ const siblingFunctionSource = (): string =>
 
 const siblingBindingSource = (): string =>
   'const first = () => {\n  const later = () => 1;\n  return later;\n};\nconst second = (api) => {\n  api.run = later;\n};\n';
+
+// Every parameter is a plain escaping value, so the analyser cannot tell a function parameter from
+// an object one. This pins that limit until it reads parameter types.
+it('does not report a function passed as a parameter when it escapes', () => {
+  expect(impurities('src/pure/decide.ts', parameterFunctionSource(), testRegistry)).toEqual([]);
+});
 
 it('reports a function assigned to a property of a parameter or an imported binding', () => {
   expect(impurities('src/pure/decide.ts', functionPropertySource(), testRegistry)).toEqual([
@@ -252,7 +261,7 @@ it('applies each pure module exception to one finding and reports a stale except
   expect(
     purityProblems(
       modules,
-      { 'src/pure/decide.ts': 'runtime import of node:fs/promises' },
+      { 'src/pure/decide.ts': ['runtime import of node:fs/promises'] },
       readImportSource,
     ),
   ).toEqual([]);
@@ -260,7 +269,7 @@ it('applies each pure module exception to one finding and reports a stale except
   expect(
     purityProblems(
       modules,
-      { 'src/pure/decide.ts': 'assigns a function to a property' },
+      { 'src/pure/decide.ts': ['assigns a function to a property'] },
       readImportSource,
     ),
   ).toEqual([
@@ -271,7 +280,7 @@ it('applies each pure module exception to one finding and reports a stale except
   expect(
     purityProblems(
       modules,
-      { 'src/pure/other.ts': 'runtime import of node:fs/promises' },
+      { 'src/pure/other.ts': ['runtime import of node:fs/promises'] },
       readImportSource,
     ),
   ).toEqual([
@@ -280,23 +289,25 @@ it('applies each pure module exception to one finding and reports a stale except
   ]);
 });
 
-it('keeps the later Date() finding when an exception matches the earlier one', () => {
+it('reports an exception reason that matches more than one finding', () => {
   expect(
     purityProblems(
       ['src/pure/decide.ts'],
-      { 'src/pure/decide.ts': 'Date()' },
+      { 'src/pure/decide.ts': ['Date()'] },
       readImportAndDateSource,
     ),
   ).toEqual([
     'src/pure/decide.ts:1: runtime import of node:fs/promises',
+    'src/pure/decide.ts:2: Date()',
     'src/pure/decide.ts:3: Date()',
+    'src/pure/decide.ts: exception Date() matches 2 findings',
   ]);
 });
 
 it('does not let an empty or partial exception reason suppress a finding', () => {
   const modules = ['src/pure/decide.ts'];
 
-  expect(purityProblems(modules, { 'src/pure/decide.ts': '' }, readImportSource)).toEqual([
+  expect(purityProblems(modules, { 'src/pure/decide.ts': [''] }, readImportSource)).toEqual([
     'src/pure/decide.ts:1: runtime import of node:fs/promises',
     'src/pure/decide.ts: unused exception ',
   ]);
@@ -304,7 +315,7 @@ it('does not let an empty or partial exception reason suppress a finding', () =>
   expect(
     purityProblems(
       modules,
-      { 'src/pure/decide.ts': 'a function to a property' },
+      { 'src/pure/decide.ts': ['a function to a property'] },
       functionPropertySource,
     ),
   ).toEqual([

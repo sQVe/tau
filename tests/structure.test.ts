@@ -3,12 +3,20 @@ import type { Dirent } from 'node:fs';
 import { basename, join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { Visitor, parseSync } from 'oxc-parser';
+import type { Expression } from 'oxc-parser';
 import { expect, it } from 'vitest';
 
 import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
 import { pureAdvice, pureModuleExceptions, pureModules } from './pureModuleRegistry.js';
-import { environmentReads, findingLines, impurities, purityProblems } from './pureModuleRules.js';
+import {
+  findingLines,
+  impurities,
+  memberName,
+  propertyKey,
+  purityProblems,
+} from './pureModuleRules.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -360,6 +368,44 @@ it('puts every test file in exactly one Vitest project', () => {
   expect(testFiles.length).toBeGreaterThan(100);
   expect(misplaced).toEqual([]);
 });
+
+const environmentAccess = (node: Expression) =>
+  node.type === 'MemberExpression' && memberName(node) === 'process.env';
+
+// Lists the variables a source reads from process.env. Writes, deletes, and text are not reads.
+const environmentReads = (path: string, source: string): string[] => {
+  const found: string[] = [];
+  const notReads = new Set<unknown>();
+
+  new Visitor({
+    AssignmentExpression: (node) => {
+      if (node.operator === '=') {
+        notReads.add(node.left);
+      }
+    },
+    UnaryExpression: (node) => {
+      if (node.operator === 'delete') {
+        notReads.add(node.argument);
+      }
+    },
+    MemberExpression: (node) => {
+      const name = propertyKey(node);
+
+      if (environmentAccess(node.object) && name !== undefined && !notReads.has(node)) {
+        found.push(name);
+      }
+    },
+    BinaryExpression: (node) => {
+      const { left } = node;
+
+      if (node.operator === 'in' && left.type === 'Literal' && environmentAccess(node.right)) {
+        found.push(String(left.value));
+      }
+    },
+  }).visit(parseSync(path, source).program);
+
+  return found;
+};
 
 it('handles every environment variable that test code reads in the cached test tasks', () => {
   const isTestCode = (path: string) =>
