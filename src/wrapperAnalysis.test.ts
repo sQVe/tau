@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { commandWords, runsRedirectionsOnlyExec } from './wrapperAnalysis.js';
+import { commandStart, commandWords, runsRedirectionsOnlyExec } from './wrapperAnalysis.js';
 
 describe('commandWords', () => {
   it.each([
@@ -21,6 +21,13 @@ describe('commandWords', () => {
       words: ['chroot', '--userspec', 'root', 'root', 'sh', '-c', 'cmd'],
     },
     { name: 'a flock lock file', words: ['flock', '-w', '5', '/tmp/lock', 'sh', '-c', 'cmd'] },
+    { name: 'an ionice class', words: ['ionice', '-c', '3', 'sh', '-c', 'cmd'] },
+    { name: 'a chrt priority', words: ['chrt', '-f', '1', 'sh', '-c', 'cmd'] },
+    { name: 'a taskset cpu list', words: ['taskset', '-c', '0-3', 'sh', '-c', 'cmd'] },
+    { name: 'a taskset mask', words: ['taskset', '0x3', 'sh', '-c', 'cmd'] },
+    { name: 'an unbuffer prefix', words: ['unbuffer', 'sh', '-c', 'cmd'] },
+    { name: 'an env path option', words: ['env', '-P', '/tmp', 'sh', '-c', 'cmd'] },
+    { name: 'an xargs max replacements option', words: ['xargs', '-J', 'x', 'sh', '-c', 'cmd'] },
   ])('reads the command head past $name', ({ words }) => {
     expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
   });
@@ -29,6 +36,7 @@ describe('commandWords', () => {
     expect(commandWords(['echo', 'env', '-S', 'a b'])).toEqual({
       words: ['echo', 'env', '-S', 'a b'],
       lookup: false,
+      unreadable: false,
     });
   });
 
@@ -71,6 +79,39 @@ describe('commandWords', () => {
 
   it('expands a split value that holds only whitespace to nothing', () => {
     expect(commandWords(['env', '-S', '   ', 'hc', 'send']).words).toEqual(['hc', 'send']);
+  });
+
+  it('keeps the command start index within the word count', () => {
+    expect(commandStart(['timeout']).index).toBe(1);
+    expect(commandStart(['sudo', '-u']).index).toBe(2);
+  });
+
+  it.each([
+    { name: 'a sudo option cluster', words: ['sudo', '-Eu', 'root', 'sh', '-c', 'cmd'] },
+    { name: 'an env option cluster', words: ['env', '-iu', 'FOO', 'sh', '-c', 'cmd'] },
+  ])('reads the command head past $name', ({ words }) => {
+    expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
+  });
+
+  it('splits an env -S value with env word rules', () => {
+    expect(commandWords(['env', '-S', "FOO='a b' sh -c cmd"]).words).toEqual(['sh', '-c', 'cmd']);
+    expect(commandWords(['env', '-iS', 'hc send t1 x']).words).toEqual(['hc', 'send', 't1', 'x']);
+  });
+
+  it('marks an env -S value that depends on the environment as unreadable', () => {
+    expect(commandWords(['env', '-S', `\${SHELL} -c cmd`])).toEqual({
+      words: [],
+      lookup: false,
+      unreadable: true,
+    });
+  });
+
+  it('keeps an env -S value that env rejects from naming a command', () => {
+    expect(commandWords(['env', '-S', 'a\\ b sh -c cmd'])).toEqual({
+      words: [],
+      lookup: false,
+      unreadable: false,
+    });
   });
 
   it.each([
@@ -133,7 +174,12 @@ describe('commandWords', () => {
     'treats the %s command name as an ordinary command',
     (name) => {
       expect(() => commandWords([name, '-x'])).not.toThrow();
-      expect(commandWords([name, '-x'])).toEqual({ words: [name, '-x'], lookup: false });
+
+      expect(commandWords([name, '-x'])).toEqual({
+        words: [name, '-x'],
+        lookup: false,
+        unreadable: false,
+      });
     },
   );
 
@@ -141,17 +187,21 @@ describe('commandWords', () => {
     expect(commandWords(['command', '-v', 'sh', '-c', 'cmd'])).toEqual({
       words: ['sh', '-c', 'cmd'],
       lookup: true,
+      unreadable: false,
     });
 
     expect(commandWords(['command', '-p', '--', 'hc', 'send'])).toEqual({
       words: ['hc', 'send'],
       lookup: false,
+      unreadable: false,
     });
   });
 });
 
 it.each([
   { name: 'a bare exec', words: ['exec'], runs: true },
+  { name: 'an exec after a qualifier keyword', words: ['command', '!', 'exec'], runs: false },
+  { name: 'an exec after a qualifier word', words: ['command', 'then', 'exec'], runs: false },
   { name: 'an exec with a name option', words: ['exec', '-a', 'name'], runs: true },
   { name: 'a negated exec', words: ['!', 'exec'], runs: true },
   { name: 'a timed exec', words: ['time', 'exec'], runs: true },

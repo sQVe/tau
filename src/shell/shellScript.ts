@@ -7,6 +7,14 @@ import {
   wrapperValueOptions,
 } from '../wrapperAnalysis.js';
 
+// The script a command runs through a shell: a shell's `-c` word, a wrapper's script option, or
+// the words `watch` joins. `unreadable` is true when an `env -S` value cannot be resolved, so the
+// caller must not treat the command as running no script.
+export interface ShellScript {
+  readonly script: string | undefined;
+  readonly unreadable: boolean;
+}
+
 const shellNames: ReadonlySet<string> = new Set([
   'ash',
   'bash',
@@ -52,13 +60,9 @@ const namesShellScript = (word: string): boolean => {
   return false;
 };
 
-// `--` only ends option parsing, so it never names the script. The script word comes after it.
-const afterOptionTerminator = (words: readonly string[], index: number): number =>
-  words[index] === '--' ? index + 1 : index;
-
-// A shell runs a `-c` script only when `-c` is an option. A positional operand names a script file
-// instead, so the scan stops there and after `--`. A flag word can set `c` and take a value at once,
-// as `-co pipefail` does, so the scan remembers `c` until it reaches the script word.
+// A shell runs the script named after its options. `-c` takes the first non-option operand, or the
+// word after `--`, as the script. A flag word can set `c` and take a value at once, as `-co
+// pipefail` does, so the scan remembers `c` until it reaches the script word.
 const shellOptionScript = (words: readonly string[]): string | undefined => {
   let index = 0;
   let namesScript = false;
@@ -66,31 +70,20 @@ const shellOptionScript = (words: readonly string[]): string | undefined => {
   while (index < words.length) {
     const word = words[index] ?? '';
 
-    if (word === '--' || !isShellOptionWord(word)) {
-      const scriptIndex = afterOptionTerminator(words, index);
-      const script = words[scriptIndex];
+    if (word === '--') {
+      const script = words[index + 1];
 
       return namesScript ? script : undefined;
     }
 
+    if (!isShellOptionWord(word)) {
+      return namesScript ? word : undefined;
+    }
+
     const consumesValue = takesShellOptionValue(word);
-    const namesScriptHere = namesShellScript(word);
 
-    namesScript ||= namesScriptHere;
-
-    if (consumesValue) {
-      index += 2;
-
-      continue;
-    }
-
-    if (namesScriptHere) {
-      const scriptIndex = afterOptionTerminator(words, index + 1);
-
-      return words[scriptIndex];
-    }
-
-    index += 1;
+    namesScript ||= namesShellScript(word);
+    index += consumesValue ? 2 : 1;
   }
 
   return undefined;
@@ -145,25 +138,27 @@ const watchScript = (words: readonly string[]): string | undefined => {
 const wrapperScript = (name: string, words: readonly string[]): string | undefined =>
   name === 'watch' ? watchScript(words) : flockScript(words);
 
-// The script a command runs through a shell: a shell's `-c` word, a wrapper's script option, or
-// the words `watch` joins.
-export const shellScriptOf = (words: readonly string[]): string | undefined => {
+export const shellScriptOf = (words: readonly string[]): ShellScript => {
   const expanded = withEnvSplitStrings(words);
-  const { index, wrappers, lookup } = commandStart(expanded);
+  const { index, wrappers, lookup } = commandStart(expanded.words);
 
-  if (lookup) {
-    return undefined;
+  if (expanded.unreadable || lookup) {
+    return { script: undefined, unreadable: expanded.unreadable };
   }
 
-  const headName = commandNameOf(expanded[index] ?? '');
+  const headName = commandNameOf(expanded.words[index] ?? '');
 
   if (shellNames.has(headName)) {
-    return shellOptionScript(expanded.slice(index + 1));
+    return { script: shellOptionScript(expanded.words.slice(index + 1)), unreadable: false };
   }
 
   const scriptWrapper = wrappers.findLast(({ name }) => scriptWrapperNames.has(name));
 
-  return scriptWrapper === undefined
-    ? undefined
-    : wrapperScript(scriptWrapper.name, expanded.slice(scriptWrapper.index));
+  return {
+    script:
+      scriptWrapper === undefined
+        ? undefined
+        : wrapperScript(scriptWrapper.name, expanded.words.slice(scriptWrapper.index)),
+    unreadable: false,
+  };
 };

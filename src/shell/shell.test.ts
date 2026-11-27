@@ -202,6 +202,20 @@ describe('parseShellCommands', () => {
     expect(pipeTargetsOf('{ a; b; } | c')).toEqual([3, 3, 3, undefined]);
   });
 
+  it('points a pipe at the first command of an element that opens a group', () => {
+    expect(pipeTargetsOf('a | (b > log)')).toEqual([2, undefined, undefined, undefined]);
+    expect(pipeTargetsOf('a | (b) > log')).toEqual([2, undefined, undefined, undefined]);
+
+    expect(pipeTargetsOf('a | ((b))')).toEqual([
+      3,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
   it('offsets the pipe target of a spliced sub-parse into the outer list', () => {
     expect(pipeTargetsOf('echo `a | b`')).toEqual([undefined, 2, undefined]);
 

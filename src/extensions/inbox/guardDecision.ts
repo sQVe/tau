@@ -14,7 +14,7 @@ const asksHelp = (commandArguments: string[]) => {
   return options.some((word) => helpOptions.has(word));
 };
 
-const runsHcTyping = ([name, ...rest]: string[]) => {
+const runsHcTyping = ([name, ...rest]: readonly string[]) => {
   const subcommandIndex = rest.findIndex((word) => !word.startsWith('-'));
   const runsHc = name !== undefined && commandNameOf(name) === 'hc';
 
@@ -23,10 +23,10 @@ const runsHcTyping = ([name, ...rest]: string[]) => {
   return runsHc && typesText && !asksHelp(rest.slice(subcommandIndex + 1));
 };
 
-const commandWordsOf = (words: string[]): string[] => {
+const commandWordsOf = (words: readonly string[]): readonly string[] => {
   const command = commandWords(words);
 
-  return command.lookup ? [] : [...command.words];
+  return command.lookup ? [] : command.words;
 };
 
 export const typesIntoTerminal = (source: string): boolean =>
@@ -37,7 +37,12 @@ export const typesIntoTerminal = (source: string): boolean =>
       return true;
     }
 
-    const script = shellScriptOf(command.arguments);
+    const { script, unreadable } = shellScriptOf(command.arguments);
+
+    // An `env -S` value that depends on the environment may still run a typing command.
+    if (unreadable) {
+      return true;
+    }
 
     return script !== undefined && typesIntoTerminal(script);
   });

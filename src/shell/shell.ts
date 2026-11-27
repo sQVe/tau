@@ -583,6 +583,7 @@ class ShellParser {
     if (character === '\n') {
       this.readPendingHeredocs();
     } else if (character === '(') {
+      this.movePipeTarget(commandIndex - 1, commandIndex);
       state.depth += 1;
       state.unitStarts.push(commandIndex);
       state.groupStarts.push(commandIndex);
@@ -736,6 +737,16 @@ class ShellParser {
 
     element.start = commandIndex;
     this.shellId = this.childShellIdOf(element.parentShellId);
+  }
+
+  // An element that opens with `(` starts at the group's first command, not at the empty command
+  // the separator created, so a pipe must target the group's first command instead.
+  private movePipeTarget(from: number, to: number): void {
+    for (const command of this.commands) {
+      if (command.pipeTarget === from) {
+        command.pipeTarget = to;
+      }
+    }
   }
 
   private endPipeline(state: ListState, commandIndex: number): void {

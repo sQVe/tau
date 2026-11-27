@@ -14,6 +14,7 @@ import { gitEnvironment } from '../../git.js';
 import { readTextWithinSync } from '../../record.js';
 import { parseShellCommands, quoteShellArgument } from '../../shell/shell.js';
 import type { ShellCommand, ShellInput } from '../../shell/shell.js';
+import { splitEnvString } from '../../wrapperAnalysis.js';
 
 export type NamedFileFacts =
   | { kind: 'missing' }
@@ -426,12 +427,11 @@ const optionValue = (
   return clusterValue(words, index, word, options);
 };
 
-// `env -S` splits its value with the shell's own word rules, so a quoted value stays one word.
+// `env -S` splits its value with its own word rules, so a quoted value stays one word.
 const splitStringWords = (value: string): string[] => {
-  const commands = parseShellCommands(value);
-  const words = commands?.flatMap((command) => command.words);
+  const split = splitEnvString(value);
 
-  return words ?? value.split(/\s+/u);
+  return split.kind === 'words' ? [...split.words] : value.split(/\s+/u);
 };
 
 // `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
