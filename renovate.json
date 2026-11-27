@@ -59,7 +59,7 @@
       "allowedVersions": "<1.92.0"
     },
     {
-      "description": "Pi 1.6.0 provides typebox 1.3 at runtime, so the development copy stays on 1.3 until Pi moves.",
+      "description": "Pi 1.7.0 provides typebox 1.3 at runtime, so the development copy stays on 1.3 until Pi moves.",
       "matchPackageNames": ["typebox"],
       "allowedVersions": "<1.4.0"
     }
