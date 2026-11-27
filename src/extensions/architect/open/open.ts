@@ -284,7 +284,7 @@ const launchFailure = (launch: PiLaunchResult): Error =>
 const launchReportedFailure = (launch: PiLaunchResult): boolean =>
   launchOutcomeDecision(launchFacts(launch)) === 'notCreated';
 
-const launchResult = (prepared: PreparedArchitectStart, model = 'unknown'): OpenResult =>
+const launchResult = (prepared: PreparedArchitectStart, model: string): OpenResult =>
   prepared.session === undefined
     ? { status: 'opened', sessionFile: null, model }
     : { status: 'resumed', sessionFile: prepared.session, model };
@@ -526,7 +526,7 @@ export const openArchitect = async (
 
     await applyLaunchOutcome(request, fence, started);
 
-    const result = launchResult(prepared, started.model);
+    const result = launchResult(prepared, started.model ?? 'unknown');
 
     keptClaims.delete(request.root);
 

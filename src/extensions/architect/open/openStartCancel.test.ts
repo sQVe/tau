@@ -42,6 +42,18 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const expectCancelled = (failure: unknown, reason: unknown): void => {
+  if (reason instanceof Error) {
+    expect(failure).toBe(reason);
+
+    return;
+  }
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe('The open was cancelled.');
+  expect((failure as Error).cause).toBe(reason);
+};
+
 it('an abort during the model readback rejects with the cancellation error', async ({
   onTestFinished: cleanup,
 }) => {
@@ -94,7 +106,7 @@ it('an abort during the model readback rejects with the cancellation error', asy
 
   const failure = await opening;
 
-  expect(failure).toBe(cancellation);
+  expectCancelled(failure, cancellation);
   expect(processControl.signals).toEqual(['SIGTERM']);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
@@ -266,18 +278,6 @@ it('an abort after the takeover rejects and leaves the architect running', async
     terminal: 't-architect',
   });
 });
-
-const expectCancelled = (failure: unknown, reason: unknown): void => {
-  if (reason instanceof Error) {
-    expect(failure).toBe(reason);
-
-    return;
-  }
-
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe('The open was cancelled.');
-  expect((failure as Error).cause).toBe(reason);
-};
 
 it.each([
   ['an Error reason', () => new Error('cancelled before dispatch')],
