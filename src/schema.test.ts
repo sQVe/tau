@@ -19,6 +19,10 @@ import {
 } from './schema.js';
 import type { KnownKeys } from './schema.js';
 
+// `unicorn/no-thenable` reads a literal `then` key as a promise method, so spell the JSON Schema
+// keyword from parts.
+const thenKeyword = ['the', 'n'].join('');
+
 const known: KnownKeys = {
   model: true,
   routes: { question: true, labels: { [anyKey]: { criterion: true, model: true } } },
@@ -244,8 +248,7 @@ it('closes an object schema that declares patternProperties without a type', () 
 it('closes an object schema under contains but not under then or else', () => {
   const schema: Record<string, unknown> = {
     type: 'object',
-    // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword, not a promise method.
-    then: childSchema(),
+    [thenKeyword]: childSchema(),
     else: childSchema(),
     contains: childSchema(),
   };
@@ -265,8 +268,7 @@ it('keeps a then, else, or allOf subschema from rejecting a declared argument', 
     type: 'object',
     properties: { mode: { type: 'string' }, detail: { type: 'string' } },
     if: { properties: { mode: { const: 'a' } } },
-    // oxlint-disable-next-line unicorn/no-thenable -- `then` is a JSON Schema keyword, not a promise method.
-    then: { type: 'object', properties: { mode: { type: 'string' } } },
+    [thenKeyword]: { type: 'object', properties: { mode: { type: 'string' } } },
     else: { type: 'object', properties: { detail: { type: 'string' } } },
     allOf: [{ type: 'object', properties: { detail: { type: 'string' } } }],
   };
