@@ -47,6 +47,7 @@ const table: { command: string; refused: boolean }[] = [
   { command: "env --split-string='hc send t1 x'", refused: true },
   { command: 'env -Shc send t1 x', refused: true },
   { command: "env -i -u HOME -S 'hc keys t1 enter'", refused: true },
+  { command: "env -S 'echo hc send t1 x'", refused: false },
   { command: '/usr/bin/time -o /tmp/log hc send t1 x', refused: true },
   { command: "/usr/bin/time -o /tmp/log sh -c 'hc send t1 x'", refused: true },
   { command: 'sudo hc send t1 x', refused: true },
