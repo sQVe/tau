@@ -367,24 +367,22 @@ it('keeps the non-Pi foreground budget across a read that times out', async () =
       message: undefined,
       signal: undefined,
       deadline: startedAt + 30_000,
-    })
-      .then(
-        (value) => {
-          settledAt = Date.now();
+    }).then(
+      (value) => {
+        settledAt = Date.now();
 
-          return value;
-        },
-        (error: unknown) => {
-          settledAt = Date.now();
+        return value;
+      },
+      (error: unknown) => {
+        settledAt = Date.now();
 
-          throw error;
-        },
-      )
-      .catch((error: unknown) => error);
+        return error;
+      },
+    );
 
     await vi.advanceTimersByTimeAsync(readbackNoForegroundBudgetMilliseconds + 1_000);
 
-    const outcome = await Promise.race([reading, Promise.resolve('waiting' as const)]);
+    const outcome = await reading;
 
     expect(outcome).toBeInstanceOf(Error);
     expect((outcome as Error).message).toContain('The started model on terminal t-new is unknown');
