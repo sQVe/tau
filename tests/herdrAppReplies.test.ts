@@ -113,6 +113,10 @@ it('fails a malformed --argv instead of reporting no foreground', async () => {
   await expect(
     fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', 'not json'], undefined),
   ).rejects.toThrow('herdr-app fake received malformed --argv JSON: not json');
+
+  const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(lookup.code).toBe(3);
 });
 
 it.each(['{}', '7', '[1,2]'])(
@@ -123,8 +127,63 @@ it.each(['{}', '7', '[1,2]'])(
     await expect(
       fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', argv], undefined),
     ).rejects.toThrow(`herdr-app fake received a --argv that is not a list of strings: ${argv}`);
+
+    const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+    expect(lookup.code).toBe(3);
   },
 );
+
+it('reads the started folder from the --folder and the model from the argv on a tab.new', async () => {
+  const fake = createHerdrAppFake();
+
+  const argv = JSON.stringify([
+    'env',
+    'pi',
+    '--provider',
+    'morph',
+    '--model',
+    'morph/morph-dsv41flash-1017',
+  ]);
+
+  const launched = await fake.exec(
+    'herdr-app',
+    [
+      'do',
+      'tab.new',
+      '--space',
+      'space-1',
+      '--folder',
+      '/work/repo',
+      '--name',
+      'lead',
+      '--argv',
+      argv,
+      '--task',
+      'Next steps',
+      '--focus',
+      'false',
+    ],
+    undefined,
+  );
+
+  const address = terminalFromReply(launched.stdout) ?? '';
+
+  expect(address).toBe('t-new');
+
+  const result = await fake.exec('hc', ['get', '--json', '--', address], undefined);
+
+  expect(JSON.parse(result.stdout)).toEqual({
+    address: 't-new',
+    state: 'live',
+    foreground: {
+      pid: 1,
+      name: 'pi',
+      argv: ['pi', '--provider', 'morph', '--model', 'morph/morph-dsv41flash-1017'],
+      cwd: '/work/repo',
+    },
+  });
+});
 
 it('reads the started folder from the argv env -C for a split', async () => {
   const fake = createHerdrAppFake();

@@ -1,4 +1,5 @@
 import type { Exec } from '../src/command.js';
+import type { HcTerminal } from '../src/hc/replies.js';
 import type { HerdrSpace } from '../src/piStart/herdrPane.js';
 import {
   argumentAfter,
@@ -20,12 +21,7 @@ export interface HerdrAppFakeOptions {
   spaces?: readonly HerdrAppSpace[];
 }
 
-interface StartedForeground {
-  pid: number;
-  name: string;
-  argv: string[];
-  cwd: string;
-}
+type StartedForeground = NonNullable<HcTerminal['foreground']>;
 
 export const listedSpace = (
   id: string,
@@ -146,6 +142,9 @@ const launchArgv = (commandArguments: readonly string[]): string[] | undefined =
   return parsed;
 };
 
+// The fake reports a normalized foreground that keeps only the model flags, because the real launch
+// wraps Pi in `env` and the readback matches a Pi argv. `foreground.argv` is therefore not the
+// launched argv; `fake.calls` holds that.
 const startedForegroundOf = (
   commandArguments: readonly string[],
 ): StartedForeground | undefined => {
