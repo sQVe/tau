@@ -1,9 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { failedResult } from '../../../../tests/execFake.js';
-import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
+import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { openTool, requestFor, wrongModelReadbackExec } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
+import { architectLockPath } from '../lock.js';
 import { openArchitect, openKeptClaimMessage } from './open.js';
 
 const faults = vi.hoisted(() => ({ failClaimRelease: false }));
@@ -86,8 +87,6 @@ it('keeps both the claim release failure and the readback failure', async ({ onT
   const { root, config } = await setup(onTestFinished);
   const { runtime } = openTool(root, undefined, undefined, { takeover: false });
 
-  useFakeStartProcess(onTestFinished, 'gone');
-
   await recordSession(root);
 
   const exec = wrongModelReadbackExec(runtime, root);
@@ -109,4 +108,12 @@ it('keeps both the claim release failure and the readback failure', async ({ onT
   expect((failure as Error).cause).toBeInstanceOf(Error);
 
   expect(((failure as Error).cause as Error).message).toContain('The claim could not be released');
+
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();
+
+  const later: unknown = await openArchitect(requestFor(root, config.location, runtime)).catch(
+    (error: unknown) => error,
+  );
+
+  expect((later as Error).message).toBe(message);
 });
