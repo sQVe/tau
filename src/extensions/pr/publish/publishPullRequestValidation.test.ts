@@ -251,6 +251,15 @@ it('refuses a run directory without body.md', async () => {
   expect(fake.calls).toEqual([]);
 });
 
+it('refuses a run directory without title.md before it reports body.md', async () => {
+  const { fake, run } = await setUp();
+  const directory = await prepareRun(run);
+
+  await expect(run(dryRunPullRequest(directory))).rejects.toThrow('No title.md at');
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('refuses to publish when a file changed after the dry run and sends nothing', async () => {
   const { fake, run } = await setUp();
   const directory = await preparePullRequestRun(run);

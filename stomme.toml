@@ -520,7 +520,6 @@ public = [
   "src/instructions/guideRuns.ts",
   "src/instructions/languageRules/languageRules.ts",
   "src/instructions/markdownLinks.ts",
-  "src/instructions/regularFile.ts",
   "src/instructions/stommeGuides/stommeGuides.ts",
   "src/instructions/systemPrompt.ts",
 ]

@@ -264,10 +264,21 @@ const reviewFindings = (
 const readPullRequestFiles = async (target: PublicationTarget): Promise<PullRequestFiles> => {
   const { directory, repository } = target;
 
-  const [titleFile, bodyFile] = await Promise.all([
+  const [titleResult, bodyResult] = await Promise.allSettled([
     readPublicationFile(directory, titleFileName),
     readPublicationFile(directory, bodyFileName),
   ]);
+
+  if (titleResult.status === 'rejected') {
+    throw titleResult.reason;
+  }
+
+  if (bodyResult.status === 'rejected') {
+    throw bodyResult.reason;
+  }
+
+  const titleFile = titleResult.value;
+  const bodyFile = bodyResult.value;
 
   const title = titleFile.text.trim();
 
