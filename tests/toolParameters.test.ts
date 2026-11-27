@@ -80,7 +80,12 @@ const isOpenObject = (value: Record<string, unknown>): boolean => {
 
   const requiresObjectValue = isRecord(value['const']) || hasObjectEnumValue(value);
 
-  const keepsObjectOpen = combinesWithSibling || requiresObjectValue;
+  // Production keeps a node open when its own unevaluatedProperties decides which extra keys it
+  // allows, and still closes a node that sets the keyword to false.
+  const allowsUndeclaredKeys =
+    Object.hasOwn(value, 'unevaluatedProperties') && value['unevaluatedProperties'] !== false;
+
+  const keepsObjectOpen = combinesWithSibling || requiresObjectValue || allowsUndeclaredKeys;
 
   return isObjectNode(value) && hasDefaultAdditionalProperties && !keepsObjectOpen;
 };
@@ -274,8 +279,16 @@ it('registers the tools of the Tau root and the worker entry points it checks', 
   const tools = await registeredTools();
   const names = tools.map(({ registration }) => registration);
 
-  expect(names).toContain('tau root');
-  expect(names).toEqual(expect.arrayContaining(['workerExtension.ts', 'workerRecord.ts']));
+  // An exact list, because `registrations` imports only the entry points this scan checks: a
+  // dropped entry point would silently shrink the coverage below.
+  expect(names).toEqual([
+    'tau root',
+    'toolResultRedaction.ts',
+    'workerBashGuard.ts',
+    'workerExtension.ts',
+    'inbox.ts',
+    'workerRecord.ts',
+  ]);
 
   const root = tools.find(({ registration }) => registration === 'tau root');
 
@@ -420,6 +433,24 @@ it('accepts an object-valued const or enum that production keeps open', () => {
 
   expect(objectProblems('sample', constant, '')).toEqual([]);
   expect(objectProblems('sample', enumerated, '')).toEqual([]);
+});
+
+it.each([
+  { name: 'true', unevaluatedProperties: true },
+  { name: 'a schema', unevaluatedProperties: { type: 'string' } },
+])(
+  'accepts a node that lets unevaluatedProperties: $name decide its extra keys',
+  ({ unevaluatedProperties }) => {
+    const schema = { type: 'object', unevaluatedProperties };
+
+    expect(objectProblems('sample', schema, '')).toEqual([]);
+  },
+);
+
+it('reports a node whose unevaluatedProperties: false still needs closure', () => {
+  const schema = { type: 'object', unevaluatedProperties: false };
+
+  expect(objectProblems('sample', schema, '')).toEqual(['sample parameters']);
 });
 
 it('refuses an undeclared handover start field', async () => {
