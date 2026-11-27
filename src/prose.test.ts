@@ -1,7 +1,13 @@
 import { expect, it } from 'vitest';
 
-import { analyzeProse, checkProse, proseSentences } from './prose.js';
-import type { ProseFinding } from './prose.js';
+import {
+  analyzeProse,
+  checkProse,
+  proseCharacterCensus,
+  proseCharacterClass,
+  proseSentences,
+} from './prose.js';
+import type { ProseCharacterClass, ProseFinding } from './prose.js';
 
 const words = (count: number, end = ''): string =>
   `${Array.from({ length: count }, () => 'word').join(' ')}${end}`;
@@ -399,4 +405,95 @@ const sentenceTable: {
 
 it.each(sentenceTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
   expect(proseSentences(row.markdown)).toEqual(row.expected);
+});
+
+const letterBoundaries: readonly (readonly [string, string])[] = [
+  ['A', 'Z'],
+  ['a', 'z'],
+  ['\u00c0', '\u00d6'],
+  ['\u00d8', '\u00f6'],
+  ['\u0391', '\u03a9'],
+  ['\u03b1', '\u03c9'],
+  ['\u0400', '\u04ff'],
+  ['\u05d0', '\u05ea'],
+  ['\u0621', '\u064a'],
+  ['\u0915', '\u0939'],
+  ['\u0e01', '\u0e30'],
+  ['\u3041', '\u3096'],
+  ['\u30a1', '\u30fa'],
+  ['\u4e00', '\u9fff'],
+];
+
+it.each(letterBoundaries)('classifies %s through %s as letters', (first, last) => {
+  expect(proseCharacterClass(first)).toBe('letter');
+  expect(proseCharacterClass(last)).toBe('letter');
+});
+
+const characterTable: readonly (readonly [string, ProseCharacterClass])[] = [
+  ['0', 'digit'],
+  ['9', 'digit'],
+  [' ', 'space'],
+  ['\t', 'space'],
+  ['\n', 'space'],
+  ['\r', 'space'],
+  ['-', 'dash'],
+  ['\u2013', 'dash'],
+  ['\u2014', 'dash'],
+  ['"', 'quote'],
+  ["'", 'quote'],
+  ['`', 'quote'],
+  ['\u2018', 'quote'],
+  ['\u2019', 'quote'],
+  ['\u201c', 'quote'],
+  ['\u201d', 'quote'],
+  ['.', 'terminal'],
+  ['!', 'terminal'],
+  ['?', 'terminal'],
+  ['(', 'bracket'],
+  [')', 'bracket'],
+  ['[', 'bracket'],
+  [']', 'bracket'],
+  ['{', 'bracket'],
+  ['}', 'bracket'],
+  ['\u00a1', 'symbol'],
+  ['\u00bf', 'symbol'],
+  ['@', 'other'],
+  ['\uffff', 'other'],
+];
+
+it.each(characterTable)('classifies %j as %s', (character, expected) => {
+  expect(proseCharacterClass(character)).toBe(expected);
+});
+
+it('counts characters by class', () => {
+  expect(proseCharacterCensus('A1 b—c?')).toEqual({
+    total: 7,
+    letters: 3,
+    digits: 1,
+    spaces: 1,
+    punctuation: 2,
+    other: 0,
+  });
+});
+
+it('counts an empty text as zero of every class', () => {
+  expect(proseCharacterCensus('')).toEqual({
+    total: 0,
+    letters: 0,
+    digits: 0,
+    spaces: 0,
+    punctuation: 0,
+    other: 0,
+  });
+});
+
+it('counts an unclassified character as other', () => {
+  expect(proseCharacterCensus('@')).toEqual({
+    total: 1,
+    letters: 0,
+    digits: 0,
+    spaces: 0,
+    punctuation: 0,
+    other: 1,
+  });
 });
