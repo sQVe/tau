@@ -43,7 +43,10 @@ const isObjectNode = (value: Record<string, unknown>): boolean => {
 
   const isObjectType = type === 'object';
   const isObjectTypeList = Array.isArray(type) && type.includes('object');
-  const declaresKeys = 'properties' in value || 'patternProperties' in value;
+
+  const declaresKeys =
+    Object.hasOwn(value, 'properties') || Object.hasOwn(value, 'patternProperties');
+
   const declaresTypelessKeys = type === undefined && declaresKeys;
 
   return isObjectType || isObjectTypeList || declaresTypelessKeys;
@@ -201,6 +204,11 @@ const registrations = async (): Promise<Registration[]> => {
       register: tauRegistration,
       environment: { TAU_ROLE: undefined, TAU_WORKER_RECORD: undefined },
     },
+    {
+      name: 'tau root (architect)',
+      register: tauRegistration,
+      environment: { TAU_ROLE: 'architect', TAU_WORKER_RECORD: undefined },
+    },
     ...workerRegistrations,
   ];
 };
@@ -220,9 +228,9 @@ const toolsOf = async (registration: Registration): Promise<Tool[]> => {
   }
 };
 
-// The Tau root and worker entry points register these tools synchronously. A tool registered only
-// for another role, such as the `architect` answer tool under TAU_ROLE=architect, or from an event
-// handler, such as `handover_question` from `before_agent_start`, is outside this collection.
+// The Tau root (lead and architect) and worker entry points register these tools synchronously. A
+// tool registered from an event handler, such as `handover_question` from `before_agent_start`, is
+// outside this collection.
 const registeredTools = async (): Promise<{ registration: string; tools: Tool[] }[]> => {
   const all: { registration: string; tools: Tool[] }[] = [];
 
@@ -275,7 +283,7 @@ it('pins the local schema keyword sets to the production sets', () => {
   expect([...localCombiningKeywords].toSorted()).toEqual([...schemaCombiningKeywords].toSorted());
 });
 
-it('registers the tools of the Tau root and the worker entry points it checks', async () => {
+it('registers the tools of the Tau root, its architect role, and the worker entry points it checks', async () => {
   const tools = await registeredTools();
   const names = tools.map(({ registration }) => registration);
 
@@ -283,6 +291,7 @@ it('registers the tools of the Tau root and the worker entry points it checks', 
   // dropped entry point would silently shrink the coverage below.
   expect(names).toEqual([
     'tau root',
+    'tau root (architect)',
     'toolResultRedaction.ts',
     'workerBashGuard.ts',
     'workerExtension.ts',

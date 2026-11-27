@@ -7,13 +7,15 @@ const readImportSource = (): string => "import { readFile } from 'node:fs/promis
 const readImportAndDateSource = (): string =>
   `${readImportSource()}const first = Date();\nconst second = Date();\n`;
 
-it('applies each pure module exception to one finding and reports a stale exception', () => {
-  const modules = ['src/pure/decide.ts'];
+const modules = ['src/pure/decide.ts'];
 
+it('reports a finding when no exception names it', () => {
   expect(purityProblems(modules, {}, readImportSource)).toEqual([
     'src/pure/decide.ts:1: runtime import of node:fs/promises',
   ]);
+});
 
+it('suppresses the finding an exact exception names', () => {
   expect(
     purityProblems(
       modules,
@@ -21,7 +23,9 @@ it('applies each pure module exception to one finding and reports a stale except
       readImportSource,
     ),
   ).toEqual([]);
+});
 
+it('reports an exception that names no finding', () => {
   expect(
     purityProblems(
       modules,
@@ -32,7 +36,9 @@ it('applies each pure module exception to one finding and reports a stale except
     'src/pure/decide.ts:1: runtime import of node:fs/promises',
     'src/pure/decide.ts: unused exception assigns a function to a property',
   ]);
+});
 
+it('reports an exception for an unregistered module', () => {
   expect(
     purityProblems(
       modules,
@@ -70,14 +76,14 @@ it('reports an exception reason that matches more than one finding', () => {
   ]);
 });
 
-it('does not let an empty or partial exception reason suppress a finding', () => {
-  const modules = ['src/pure/decide.ts'];
-
+it('does not let an empty exception reason suppress a finding', () => {
   expect(purityProblems(modules, { 'src/pure/decide.ts': [''] }, readImportSource)).toEqual([
     'src/pure/decide.ts:1: runtime import of node:fs/promises',
     'src/pure/decide.ts: unused exception ',
   ]);
+});
 
+it('does not let a partial exception reason suppress a finding', () => {
   expect(
     purityProblems(
       modules,

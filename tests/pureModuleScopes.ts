@@ -104,6 +104,10 @@ export const createBindingScopes = (): BindingScopes => {
   };
 
   const exit = (): void => {
+    if (scopes.length === 1) {
+      throw new Error('the binding scope stack would empty');
+    }
+
     scopes.pop();
   };
 

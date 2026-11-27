@@ -2,7 +2,9 @@ import { posix } from 'node:path';
 
 import { parseSync, Visitor } from 'oxc-parser';
 import type {
+  ArrowFunctionExpression,
   CallExpression,
+  Function,
   MemberExpression,
   ModuleDeclaration,
   NewExpression,
@@ -74,13 +76,19 @@ const checkImport = (
     return;
   }
 
-  const target = posix.join(posix.dirname(path), specifier).replace(/\.js$/, '.ts');
-
   if (isPureLibrary(path, specifier)) {
     return;
   }
 
-  if (!specifier.startsWith('.') || !registry.includes(target)) {
+  if (!specifier.startsWith('.')) {
+    at(node.start, `runtime import of ${specifier}`);
+
+    return;
+  }
+
+  const target = posix.join(posix.dirname(path), specifier).replace(/\.js$/, '.ts');
+
+  if (!registry.includes(target)) {
     at(node.start, `runtime import of ${specifier}`);
   }
 };
@@ -147,26 +155,20 @@ export const impurities = (path: string, source: string, registry: readonly stri
 
   declareFunctions(bindings, program.body);
 
+  const enterFunction = (node: Function | ArrowFunctionExpression): void => {
+    enterFunctionScope(bindings, node);
+  };
+
   new Visitor({
-    FunctionDeclaration: (node) => {
-      enterFunctionScope(bindings, node);
-    },
+    FunctionDeclaration: enterFunction,
     'FunctionDeclaration:exit': bindings.exit,
-    FunctionExpression: (node) => {
-      enterFunctionScope(bindings, node);
-    },
+    FunctionExpression: enterFunction,
     'FunctionExpression:exit': bindings.exit,
-    TSDeclareFunction: (node) => {
-      enterFunctionScope(bindings, node);
-    },
+    TSDeclareFunction: enterFunction,
     'TSDeclareFunction:exit': bindings.exit,
-    TSEmptyBodyFunctionExpression: (node) => {
-      enterFunctionScope(bindings, node);
-    },
+    TSEmptyBodyFunctionExpression: enterFunction,
     'TSEmptyBodyFunctionExpression:exit': bindings.exit,
-    ArrowFunctionExpression: (node) => {
-      enterFunctionScope(bindings, node);
-    },
+    ArrowFunctionExpression: enterFunction,
     'ArrowFunctionExpression:exit': bindings.exit,
     BlockStatement: (node) => {
       enterBlockScope(bindings, node);

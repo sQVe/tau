@@ -168,7 +168,7 @@ const startedForegroundOf = (
 
   const cwd = argumentAfter(commandArguments, '--folder') ?? argumentAfter(argv, '-C');
 
-  if (cwd === undefined) {
+  if (cwd === undefined || cwd.startsWith('--')) {
     throw new Error('herdr-app fake received a launch without --folder or -C');
   }
 
@@ -247,7 +247,9 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
 
         startedTerminals.add(terminal);
 
-        if (foreground !== undefined) {
+        if (foreground === undefined) {
+          startedForegrounds.delete(terminal);
+        } else {
           startedForegrounds.set(terminal, foreground);
         }
       }

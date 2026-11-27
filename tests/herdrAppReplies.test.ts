@@ -95,6 +95,28 @@ it('answers live without a foreground for a started terminal that carried no --a
   expect(JSON.parse(result.stdout)).toEqual({ address: 't-new', state: 'live' });
 });
 
+it('does not report an earlier launch foreground after a later launch without --argv', async () => {
+  const fake = createHerdrAppFake();
+  const argv = JSON.stringify(['pi', '--provider', 'morph', '--model', 'morph/glm']);
+
+  await fake.exec(
+    'herdr-app',
+    ['do', 'pane.split', '--pane', 'p-1', '--folder', '/work/repo', '--argv', argv],
+    undefined,
+  );
+
+  await fake.exec(
+    'herdr-app',
+    ['do', 'pane.split', '--pane', 'p-2', '--folder', '/work/repo'],
+    undefined,
+  );
+
+  const result = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ address: 't-new', state: 'live' });
+});
+
 it('fails a launch with an argv but no folder instead of reporting an empty cwd', async () => {
   const fake = createHerdrAppFake();
 
