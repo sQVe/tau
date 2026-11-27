@@ -59,6 +59,7 @@ export const createTemporaryBareRepository = async (
 };
 
 // A bare root keeps the worktree and its Git directory under one temporary directory.
+// The `.git` file holds a relative path, so the root can move as one directory.
 // Builds the layout Tau checkouts use: a `.git` file pointing at `.bare`, with worktrees beside it.
 export const createTemporaryBareRoot = async (
   registerCleanup: RegisterCleanup,
