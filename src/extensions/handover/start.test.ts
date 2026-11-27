@@ -20,7 +20,7 @@ import { StartedTabError } from '../../piStart/piStart.js';
 import { readbackFailureBudgetMilliseconds } from '../../piStart/startedModel/startedModelReadback.js';
 import { tabName } from '../../tabName.js';
 import type { SpaceChoice } from './placement.js';
-import { startHandover } from './start.js';
+import { startedModelOf, startHandover } from './start.js';
 import type { StartHandoverRequest } from './start.js';
 
 vi.mock(import('node:timers/promises'), async (importOriginal) => {
@@ -85,6 +85,14 @@ const tabArguments = (root: string, argv: string, task: string, title: string): 
   '--focus',
   'false',
 ];
+
+// The reply schema already requires a terminal, so the real start cannot break the pairing. The
+// helper reports the broken pairing instead of inventing a model that the caller cannot trust.
+it('reports a start that names no terminal instead of a default model', () => {
+  expect(() => startedModelOf({ reply: '{}', target: { space: 'space-1' } })).toThrow(
+    'herdr-app do reported no terminal',
+  );
+});
 
 it('names the tab after the handover title in an existing space', async () => {
   const fake = createHerdrAppFake();

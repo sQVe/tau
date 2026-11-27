@@ -39,6 +39,18 @@ export interface StartHandoverResult {
   spaceStatus: SpaceStatus;
 }
 
+type PiSessionStart = Awaited<ReturnType<typeof startPiSession>>;
+
+// `startPiSession` reports the model only together with the terminal, and the reply schema already
+// required that terminal. Report a start that breaks the pairing instead of inventing a model.
+export const startedModelOf = (started: PiSessionStart): string => {
+  if (!('model' in started)) {
+    throw new Error('herdr-app do reported no terminal');
+  }
+
+  return started.model;
+};
+
 const launchReplySchema = Type.Object({
   space: Type.String({ minLength: 1 }),
   tab: Type.String({ minLength: 1 }),
@@ -126,16 +138,12 @@ export const startHandover = async (
 
   const spaceStatus = 'space' in started.target ? 'reused' : 'created';
 
-  // checkOutput refused a reply without a terminal, so this start read the model too. The fallback
-  // keeps the result total if that invariant changes.
-  const model = 'model' in started ? started.model : 'default';
-
   return {
     reply: started.reply,
     space: parsed.space,
     tab: parsed.tab,
     terminal: parsed.terminal,
-    model,
+    model: startedModelOf(started),
     spaceStatus,
   };
 };
