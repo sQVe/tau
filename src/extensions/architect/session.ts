@@ -39,6 +39,7 @@ export interface ArchitectSession {
   ui: ConfigWarnings;
   owner: ArchitectOwner;
   held: HeldLockToken;
+  leadTerminal: string | null;
   endNote?: EndNoteRoute;
   deadline?: AskDeadline;
 }
@@ -197,6 +198,7 @@ const startArchitect = async (
       ui: context.ui,
       owner,
       held,
+      leadTerminal,
       ...(endNote === undefined ? {} : { endNote }),
       ...(deadline === undefined ? {} : { deadline }),
     };

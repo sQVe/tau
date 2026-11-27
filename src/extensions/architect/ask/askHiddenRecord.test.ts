@@ -17,10 +17,24 @@ import {
   askFailedReason,
   askKeptClaimMessage,
   askMissingRecordReason,
+  askRetryDelayMilliseconds,
   askUnreadableAnswerReason,
   startHiddenAskRun,
 } from './askHiddenRun.js';
-import { ask, endedWait, endedWithRecord, runningAsk, startFake } from './fixtures/askHarness.js';
+import {
+  ask,
+  details,
+  endedWait,
+  endedWithRecord,
+  runningAsk,
+  startFake,
+  statuses,
+} from './fixtures/askHarness.js';
+
+const flushMicrotasks = (): Promise<void> =>
+  new Promise((resolve) => {
+    setImmediate(resolve);
+  });
 
 it.each([
   { exitCode: 1, signal: null },
@@ -120,6 +134,239 @@ it('returns the answer after a sent record ends the wait', async ({ onTestFinish
   await expect(ask({ ...hc, exec }, root)).resolves.toMatchObject({
     details: { status: 'ended', answer: 'Use --quick.' },
   });
+});
+
+it('waits again after a paused ask terminal and returns the answer when it exits', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const answer = 'Use --quick.';
+  let waits = 0;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      waits += 1;
+
+      if (waits === 1) {
+        return succeededResult(endedWait('t-ask', true, 0, null, 'status'));
+      }
+
+      const { records } = await readAskRecords(root);
+      const record = records[0];
+
+      if (record?.route === 'hidden') {
+        await writeAskRecord(root, { ...record, status: 'sent', answer });
+      }
+
+      return succeededResult(endedWait('t-ask', true));
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  await expect(ask({ ...hc, exec }, root)).resolves.toMatchObject({
+    details: { status: 'ended', answer },
+  });
+
+  expect(waits).toBe(2);
+});
+
+it('waits between paused status replies and ends on the following exit', async ({
+  onTestFinished: cleanup,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  cleanup(() => {
+    vi.useRealTimers();
+  });
+
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const answer = 'Use --quick.';
+  const firstWait = Promise.withResolvers<undefined>();
+  const secondWait = Promise.withResolvers<undefined>();
+  let waits = 0;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      waits += 1;
+
+      if (waits === 1) {
+        firstWait.resolve(undefined);
+      }
+
+      if (waits === 2) {
+        secondWait.resolve(undefined);
+      }
+
+      if (waits <= 2) {
+        return succeededResult(endedWait('t-ask', true, 0, null, 'status'));
+      }
+
+      const { records } = await readAskRecords(root);
+      const record = records[0];
+
+      if (record?.route === 'hidden') {
+        await writeAskRecord(root, { ...record, status: 'sent', answer });
+      }
+
+      return succeededResult(endedWait('t-ask', true));
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = ask({ ...hc, exec }, root);
+
+  await firstWait.promise;
+  await flushMicrotasks();
+  expect(waits).toBe(1);
+
+  await vi.advanceTimersByTimeAsync(askRetryDelayMilliseconds - 1);
+  await flushMicrotasks();
+  expect(waits).toBe(1);
+
+  await vi.advanceTimersByTimeAsync(1);
+  await secondWait.promise;
+  await flushMicrotasks();
+  expect(waits).toBe(2);
+
+  await vi.advanceTimersByTimeAsync(askRetryDelayMilliseconds);
+  await expect(result).resolves.toMatchObject({ details: { status: 'ended', answer } });
+  expect(waits).toBe(3);
+});
+
+it('recomputes the wait timeout after the retry delay', async ({ onTestFinished: cleanup }) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  cleanup(() => {
+    vi.useRealTimers();
+  });
+
+  const { root } = await setup(cleanup);
+  const hc = startFake();
+  const firstWait = Promise.withResolvers<undefined>();
+  const secondWait = Promise.withResolvers<undefined>();
+  let retryTimeout: number | undefined;
+  let waits = 0;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      waits += 1;
+
+      if (waits === 1) {
+        const { records } = await readAskRecords(root);
+        const record = records[0];
+
+        if (record?.route !== 'hidden') {
+          throw new Error('The ask record is not hidden.');
+        }
+
+        vi.setSystemTime(record.deadline - 1_050);
+        firstWait.resolve(undefined);
+
+        return succeededResult(endedWait('t-ask', true, 0, null, 'status'));
+      }
+
+      if (waits === 2) {
+        const index = commandArguments.indexOf('--timeout');
+        const value = index === -1 ? undefined : commandArguments[index + 1];
+
+        retryTimeout = value === undefined ? undefined : Number(value);
+        secondWait.resolve(undefined);
+      }
+
+      return succeededResult(endedWait('t-ask', true));
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const result = ask({ ...hc, exec }, root);
+
+  await firstWait.promise;
+  await flushMicrotasks();
+  expect(waits).toBe(1);
+
+  await vi.advanceTimersByTimeAsync(askRetryDelayMilliseconds);
+  await secondWait.promise;
+
+  await expect(result).resolves.toMatchObject({
+    details: { status: 'needsOpen', reason: askEndedReason },
+  });
+
+  expect(waits).toBe(2);
+  expect(retryTimeout).toBeGreaterThan(0);
+  expect(retryTimeout).toBeLessThanOrEqual(0.95);
+});
+
+it('settles a cancelled retry delay without starting another wait', async ({
+  onTestFinished: cleanup,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  cleanup(() => {
+    vi.useRealTimers();
+  });
+
+  const { root, config } = await setup(cleanup);
+  const hc = startFake();
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled during the retry delay');
+  const firstWait = Promise.withResolvers<undefined>();
+  let waits = 0;
+
+  await recordSession(root);
+
+  const exec: typeof hc.exec = async (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'wait') {
+      waits += 1;
+      firstWait.resolve(undefined);
+
+      return succeededResult(endedWait('t-ask', true, 0, null, 'status'));
+    }
+
+    return hc.exec(command, commandArguments, options);
+  };
+
+  const request: AskRequest = {
+    root,
+    question: 'Which flag name?',
+    gateRecord: null,
+    leadTerminal: 't-lead',
+    leadSessionId: 'session-lead',
+    listenerPath: undefined,
+    location: config.location,
+    ui: { notify: vi.fn<() => void>() },
+    hc: { ...hc, cwd: root, exec, signal: controller.signal },
+    liveAsk: () => Promise.reject(new Error('unexpected live ask')),
+  };
+
+  const result = askArchitect(request);
+
+  await firstWait.promise;
+  await flushMicrotasks();
+  expect(waits).toBe(1);
+
+  controller.abort(cancellation);
+  await vi.advanceTimersByTimeAsync(askRetryDelayMilliseconds);
+
+  await expect(result).resolves.toMatchObject({
+    status: 'failed',
+    reason: askFailedReason,
+  });
+
+  expect(waits).toBe(1);
+  expect(await statuses(root)).toEqual(['failed']);
+  expect((await details(root))[0]).toContain('The operation was aborted');
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('returns a distinct reason when the settled ask record is missing', async ({
@@ -265,6 +512,24 @@ it.each([
       answer: 'Use --quick.',
     }),
     expected: { status: 'ended', answer: 'Use --quick.' },
+  },
+  {
+    name: 'clean no-answer',
+    settle: (record: Extract<Awaited<ReturnType<typeof readAskRecord>>, { route: 'hidden' }>) => ({
+      ...record,
+      status: 'failed' as const,
+      detail: askEndedDetail,
+    }),
+    expected: { status: 'needsOpen', reason: askEndedReason },
+  },
+  {
+    name: 'terminal failure',
+    settle: (record: Extract<Awaited<ReturnType<typeof readAskRecord>>, { route: 'hidden' }>) => ({
+      ...record,
+      status: 'failed' as const,
+      detail: askEndedFailureDetail,
+    }),
+    expected: { status: 'failed', reason: askFailedReason },
   },
   {
     name: 'failed',

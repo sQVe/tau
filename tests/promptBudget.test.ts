@@ -44,14 +44,14 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
 // ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  lead: 70_076, // target 38,000; measured locally
-  architect: 63_888, // measured locally
-  worker: 28_435, // target 14,000
-  reviewer: 23_888, // target 11,000
-  checker: 24_041,
-  qa: 18_426, // measured locally; target 9,000
-  browser: 16_050, // target 9,000
-  scout: 15_609, // target 9,000
+  lead: 70_291, // target 38,000; measured locally
+  architect: 64_103, // measured locally
+  worker: 28_650, // target 14,000
+  reviewer: 24_103, // target 11,000
+  checker: 24_256,
+  qa: 18_641, // measured locally; target 9,000
+  browser: 16_265, // target 9,000
+  scout: 15_824, // target 9,000
 };
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];

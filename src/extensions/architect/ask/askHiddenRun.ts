@@ -13,6 +13,7 @@ import type { ChangeAskOptions, HiddenAskRecord, HiddenAskRecordChange } from '.
 import type { StartFence, StartFenceCompletion } from '../startFence/startFence.js';
 import type { AskRequest, AskResult } from './ask.js';
 import { askDeadlineDetail, askRecordOutcome } from './askDecision.js';
+import { askWaitStep } from './askWaitDecision.js';
 
 interface HiddenAskLaunch {
   outcome: LaunchOutcome;
@@ -30,6 +31,11 @@ export interface HiddenAskRun {
 type HiddenAskLaunchResult =
   | { kind: 'started'; started: HiddenAskRecord; terminal: string }
   | { kind: 'settled'; result: AskResult };
+
+type AskRetryDelayResult =
+  | { kind: 'ready' }
+  | { kind: 'timeout' }
+  | { kind: 'aborted'; error: unknown };
 
 export const askDeadlineSeconds = 900;
 
@@ -97,6 +103,8 @@ export const askFailedReason =
 
 const millisecondsPerSecond = 1000;
 const adoptedChildPollMilliseconds = 100;
+
+export const askRetryDelayMilliseconds = 100;
 
 const needsOpen = (reason: string): AskResult => ({ status: 'needsOpen', reason });
 
@@ -177,6 +185,10 @@ const resultFromRecord = (
   }
 
   if (outcome === 'failed') {
+    if (record.detail === askEndedDetail) {
+      return needsOpen(askEndedReason);
+    }
+
     return { status: 'failed', askId, reason: askFailedReason };
   }
 
@@ -498,6 +510,164 @@ const settleEnded = async (
   return resultFromRecord(request.root, askId, changed?.record);
 };
 
+const askRetryDelay = async (
+  deadline: number,
+  signal: AbortSignal | undefined,
+): Promise<AskRetryDelayResult> => {
+  const millisecondsLeft = deadline - Date.now();
+
+  if (millisecondsLeft <= 0) {
+    return { kind: 'timeout' };
+  }
+
+  const options = signal === undefined ? {} : { signal };
+
+  try {
+    await sleep(Math.min(askRetryDelayMilliseconds, millisecondsLeft), undefined, options);
+  } catch (error) {
+    return { kind: 'aborted', error };
+  }
+
+  return Date.now() < deadline ? { kind: 'ready' } : { kind: 'timeout' };
+};
+
+const askWaitResults = (
+  request: AskRequest,
+  askId: string,
+  started: HiddenAskRecord,
+  terminal: string,
+  fence: StartFence,
+  settle: SettleHiddenAsk,
+  options: ChangeAskOptions,
+  waited: Awaited<ReturnType<typeof wait>>,
+): AsyncIterableIterator<AskResult | undefined> => {
+  let current = waited;
+  let finished = false;
+
+  const next = async (): Promise<IteratorResult<AskResult | undefined>> => {
+    if (finished) {
+      return { done: true, value: undefined };
+    }
+
+    const step = askWaitStep(current, Date.now(), started.deadline);
+
+    if (step.kind === 'exited') {
+      finished = true;
+
+      const result = await settleEnded(
+        request,
+        askId,
+        current.exit_code ?? null,
+        current.signal ?? null,
+        options,
+      );
+
+      return { done: false, value: result };
+    }
+
+    if (step.kind === 'timeout') {
+      finished = true;
+
+      const result = await settleTimeout(request, started, terminal, settle, options);
+
+      return { done: false, value: result };
+    }
+
+    const retry = await askRetryDelay(started.deadline, request.hc.signal);
+
+    if (retry.kind === 'timeout') {
+      finished = true;
+
+      const result = await settleTimeout(request, started, terminal, settle, options);
+
+      return { done: false, value: result };
+    }
+
+    if (retry.kind === 'aborted') {
+      finished = true;
+
+      const result = await settleWaitFailure(
+        request,
+        started,
+        fence,
+        terminal,
+        settle,
+        retry.error,
+        options,
+      );
+
+      return { done: false, value: result };
+    }
+
+    const millisecondsLeft = started.deadline - Date.now();
+
+    if (millisecondsLeft <= 0) {
+      finished = true;
+
+      const result = await settleTimeout(request, started, terminal, settle, options);
+
+      return { done: false, value: result };
+    }
+
+    try {
+      current = await wait(request.hc, terminal, {
+        timeout: millisecondsLeft / millisecondsPerSecond,
+      });
+
+      return { done: false, value: undefined };
+    } catch (error) {
+      finished = true;
+
+      const result = await settleWaitFailure(
+        request,
+        started,
+        fence,
+        terminal,
+        settle,
+        error,
+        options,
+      );
+
+      return { done: false, value: result };
+    }
+  };
+
+  const iterator: AsyncIterableIterator<AskResult | undefined> = {
+    next,
+    [Symbol.asyncIterator]: () => iterator,
+  };
+
+  return iterator;
+};
+
+const waitForAskEnd = async (
+  request: AskRequest,
+  askId: string,
+  started: HiddenAskRecord,
+  terminal: string,
+  fence: StartFence,
+  settle: SettleHiddenAsk,
+  options: ChangeAskOptions,
+  waited: Awaited<ReturnType<typeof wait>>,
+): Promise<AskResult> => {
+  for await (const result of askWaitResults(
+    request,
+    askId,
+    started,
+    terminal,
+    fence,
+    settle,
+    options,
+    waited,
+  )) {
+    if (result !== undefined) {
+      return result;
+    }
+  }
+
+  throw new Error('The ask wait produced no result.');
+};
+
 const runHiddenAsk = async (
   request: AskRequest,
   sessionFile: string,
@@ -544,7 +714,6 @@ const runHiddenAsk = async (
   }
 
   const { started, terminal } = launched;
-
   let waited: Awaited<ReturnType<typeof wait>>;
 
   try {
@@ -553,11 +722,7 @@ const runHiddenAsk = async (
     return settleWaitFailure(request, started, fence, terminal, settle, error, options);
   }
 
-  if (!waited.ended) {
-    return settleTimeout(request, started, terminal, settle, options);
-  }
-
-  return settleEnded(request, askId, waited.exit_code ?? null, waited.signal ?? null, options);
+  return waitForAskEnd(request, askId, started, terminal, fence, settle, options, waited);
 };
 
 export const startHiddenAskRun = (

@@ -35,9 +35,8 @@ export const endedWait = (
   ended: boolean,
   exitCode: number | null = ended ? 0 : null,
   signal: number | null = null,
+  reason = ended ? 'exit' : 'timeout',
 ): string => {
-  const reason = ended ? 'ended' : 'timeout';
-
   return JSON.stringify({
     terminal,
     ended,

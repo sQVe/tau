@@ -247,7 +247,7 @@ it('ask returns the answer the architect saved', async ({ onTestFinished: cleanu
 
   hc.reply(
     'wait',
-    JSON.stringify({ terminal: 't-ask', ended: true, reason: 'ended', turn: 1, children: [] }),
+    JSON.stringify({ terminal: 't-ask', ended: true, reason: 'exit', turn: 1, children: [] }),
   );
 
   const exec: typeof hc.exec = async (command, commandArguments, options) => {
@@ -324,7 +324,7 @@ it('ask falls back when its record disappears', async ({ onTestFinished: cleanup
     JSON.stringify({
       terminal: 't-ask',
       ended: true,
-      reason: 'ended',
+      reason: 'exit',
       turn: 1,
       children: [],
       exit_code: 0,
@@ -364,7 +364,7 @@ it('ask ignores a present record on another route', async ({ onTestFinished: cle
     JSON.stringify({
       terminal: 't-ask',
       ended: true,
-      reason: 'ended',
+      reason: 'exit',
       turn: 1,
       children: [],
       exit_code: 0,

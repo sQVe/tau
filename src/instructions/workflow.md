@@ -16,6 +16,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 
 ## Open herdr-app terminals in a new tab
 
+- These rules cover terminals in your own checkout. A new checkout gets its own space through the
+  `worktree` and `handover` skills; follow those skills for a terminal in that checkout.
 - Read your space from the `herdr.space` label of `hc get $HC_TERMINAL_ID`.
 - Start a terminal with
   `herdr-app do tab.new --space <your space> --folder <folder> --name "<role>: <task>" --argv '["<program>"]'`.
@@ -25,8 +27,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 - Give a new space its task when you start it, through the `architect` `open` `request` or the
   `handover` `start` file. Never start a space empty and send the task later, and never open the
   architect with no topic.
-- Before you report where it runs, check that `hc get <new terminal>` shows your `herdr.space` label
-  and the folder in `foreground.cwd`.
+- Before you report where a tab you opened in your space runs, check that `hc get <new terminal>`
+  shows your `herdr.space` label and the folder in `foreground.cwd`.
 
 ## Run commands
 

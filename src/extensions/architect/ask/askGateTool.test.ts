@@ -92,7 +92,7 @@ it('ask with gate saves the gate record on the hidden path', async ({
     JSON.stringify({
       terminal: 't-ask',
       ended: true,
-      reason: 'ended',
+      reason: 'exit',
       turn: 1,
       children: [],
       exit_code: 0,
@@ -136,7 +136,7 @@ it('ask with question saves no gate record', async ({ onTestFinished: cleanup })
 
   hc.reply(
     'wait',
-    JSON.stringify({ terminal: 't-ask', ended: true, reason: 'ended', turn: 1, children: [] }),
+    JSON.stringify({ terminal: 't-ask', ended: true, reason: 'exit', turn: 1, children: [] }),
   );
 
   const tool = createArchitectTool({ ...hc, cwd: root });
