@@ -21,6 +21,7 @@ export const initializeRepositorySync = (directory: string): void => {
   execFileSync('git', ['init', '--quiet', '--initial-branch=main'], { cwd: directory });
 };
 
+// A test that awaits its first step can create its repository here.
 export const initializeRepository = async (directory: string): Promise<void> => {
   await promisify(execFile)('git', ['init', '--quiet', '--initial-branch=main'], {
     cwd: directory,
