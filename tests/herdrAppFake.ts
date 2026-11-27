@@ -167,7 +167,11 @@ const startedForegroundOf = (
     modelArguments.push('--model', model);
   }
 
-  const cwd = argumentAfter(commandArguments, '--folder') ?? argumentAfter(argv, '-C') ?? '';
+  const cwd = argumentAfter(commandArguments, '--folder') ?? argumentAfter(argv, '-C');
+
+  if (cwd === undefined) {
+    throw new Error('herdr-app fake received a launch without --folder or -C');
+  }
 
   return { pid: 1, name: 'pi', argv: ['pi', ...modelArguments], cwd };
 };
@@ -194,6 +198,7 @@ export type HerdrAppKey = HerdrAppCommand | typeof getKey;
 
 export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<HerdrAppKey> => {
   const startedForegrounds = new Map<string, StartedForeground>();
+  const startedTerminals = new Set<string>();
 
   const execFake = createExecFake<HerdrAppKey>({
     keyOf: (command, commandArguments) =>
@@ -206,14 +211,21 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
           const address = commandArguments.at(-1) ?? '';
           const foreground = startedForegrounds.get(address);
 
-          return foreground === undefined
-            ? failedResult(
-                JSON.stringify({
-                  error: { kind: 'not_found', message: `unknown terminal: ${address}` },
-                }),
-                notFoundExitCode,
-              )
-            : succeededResult(liveReply(address, foreground));
+          if (foreground !== undefined) {
+            return succeededResult(liveReply(address, foreground));
+          }
+
+          // A terminal this fake started but recorded no argv for is live with no foreground yet.
+          if (startedTerminals.has(address)) {
+            return succeededResult(liveReply(address, undefined));
+          }
+
+          return failedResult(
+            JSON.stringify({
+              error: { kind: 'not_found', message: `unknown terminal: ${address}` },
+            }),
+            notFoundExitCode,
+          );
         };
       }
 
@@ -230,10 +242,15 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
 
     if (result.code === 0 && command === 'herdr-app') {
       const terminal = terminalFromReply(result.stdout);
-      const foreground = startedForegroundOf(commandArguments);
 
-      if (terminal !== undefined && foreground !== undefined) {
-        startedForegrounds.set(terminal, foreground);
+      if (terminal !== undefined) {
+        startedTerminals.add(terminal);
+
+        const foreground = startedForegroundOf(commandArguments);
+
+        if (foreground !== undefined) {
+          startedForegrounds.set(terminal, foreground);
+        }
       }
     }
 

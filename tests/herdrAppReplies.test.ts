@@ -81,7 +81,7 @@ it('reports a terminal it did not start as not_found', async () => {
   expect(JSON.parse(result.stderr)).toMatchObject({ error: { kind: 'not_found' } });
 });
 
-it('records no foreground for a reply that carried no --argv', async () => {
+it('answers live without a foreground for a started terminal that carried no --argv', async () => {
   const fake = createHerdrAppFake();
 
   const launched = await fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1'], undefined);
@@ -91,8 +91,16 @@ it('records no foreground for a reply that carried no --argv', async () => {
 
   const result = await fake.exec('hc', ['get', '--json', '--', address], undefined);
 
-  expect(result.code).toBe(3);
-  expect(JSON.parse(result.stderr)).toMatchObject({ error: { kind: 'not_found' } });
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ address: 't-new', state: 'live' });
+});
+
+it('fails a launch with an argv but no folder instead of reporting an empty cwd', async () => {
+  const fake = createHerdrAppFake();
+
+  await expect(
+    fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', '["pi"]'], undefined),
+  ).rejects.toThrow('herdr-app fake received a launch without --folder or -C');
 });
 
 it('fails a malformed --argv instead of reporting no foreground', async () => {
@@ -125,6 +133,9 @@ it('reads the started folder from the argv env -C for a split', async () => {
   );
 
   const address = terminalFromReply(launched.stdout) ?? '';
+
+  expect(address).toBe('t-new');
+
   const result = await fake.exec('hc', ['get', '--json', '--', address], undefined);
 
   const reply = JSON.parse(result.stdout) as { foreground?: { cwd?: string } };
