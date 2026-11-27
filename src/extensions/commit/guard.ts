@@ -109,6 +109,7 @@ const gitCommitPattern = /\bgit\b[^;|&\n]*(?<![\w/-])commit(?![\w/])|\bgit-commi
 // source, every word and heredoc body in that source is parsed as a script too, because piped data
 // such as `echo 'git commit' | sh` becomes code.
 const shellRunnerNames = new Set([
+  '.',
   'ash',
   'bash',
   'csh',
@@ -171,9 +172,6 @@ const runsGitCommit = ({ words }: ShellCommand) => {
 
   return names.includes('git-commit') || optionWords.some(isCommitWord);
 };
-
-const runsShell = ({ words }: ShellCommand) =>
-  words.some((word) => shellRunnerNames.has(commandName(word)));
 
 // Git runs some quoted arguments as shell code, as in `git rebase -x` and `git submodule foreach`.
 const runsGit = ({ words }: ShellCommand) => words.some((word) => commandName(word) === 'git');
@@ -910,6 +908,13 @@ const commandWord = ({ arguments: words }: ShellCommand): string | undefined => 
   return index === undefined ? undefined : words[index];
 };
 
+// A shell runs the source only in executable position, so `git add scripts/bash` is data.
+const runsShell = (command: ShellCommand) => {
+  const word = commandWord(command);
+
+  return word !== undefined && shellRunnerNames.has(commandName(word));
+};
+
 // A `.` or `source` operand resolves through PATH before the working directory.
 const searchesPathFirst = (word: string): boolean => {
   const name = commandName(word);
@@ -974,8 +979,31 @@ const isPlainDirectoryWord = (word: string) =>
 
 const isAssignmentWord = (word: string): boolean => assignmentPattern.test(word);
 
-// Only a literal `cd` changes the directory of the commands after it in the same list. Options and
-// assignment words around the operand do not change which directory it names.
+// Options end at the first operand, so `cd sub -P` names two operands.
+const directoryOperands = (words: string[]): string[] => {
+  const operands: string[] = [];
+  let optionsEnded = false;
+
+  for (const word of words) {
+    if (!optionsEnded && word === '--') {
+      optionsEnded = true;
+
+      continue;
+    }
+
+    if (!optionsEnded && word !== '-' && isOptionWord(word)) {
+      continue;
+    }
+
+    optionsEnded = true;
+    operands.push(word);
+  }
+
+  return operands;
+};
+
+// Only a literal `cd` changes the directory of the commands after it in the same list. Leading
+// options and assignment words do not change which directory it names.
 const nextDirectory = (command: ShellCommand, directory: string): string => {
   const words = command.arguments.slice(leadingWordCount(command.arguments));
   const nameIndex = words.findIndex((word) => !isAssignmentWord(word));
@@ -985,15 +1013,12 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
     return directory;
   }
 
-  const rest = words.slice(nameIndex + 1);
-  const separator = rest.indexOf('--');
-  const options = separator === -1 ? rest : rest.slice(0, separator);
-  const afterSeparator = separator === -1 ? [] : rest.slice(separator + 1);
+  const operands = directoryOperands(words.slice(nameIndex + 1));
 
-  const operands = [
-    ...options.filter((word) => !isAssignmentWord(word) && !isOptionWord(word)),
-    ...afterSeparator,
-  ];
+  // A bare `cd` goes HOME; `cd -` goes to an OLDPWD the guard cannot know, so it stays.
+  if (operands.length === 0) {
+    return gitEnvironment().HOME ?? homedir();
+  }
 
   // The shell rejects a second operand and stays where it is, so only one operand moves it.
   if (operands.length !== 1) {

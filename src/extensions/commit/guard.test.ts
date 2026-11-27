@@ -438,14 +438,12 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(command), directory);
   });
 
-  it('keeps the inherited PATH when a nested script replaces PATH', () => {
+  it('uses the inherited PATH when a nested script assigns an unexpandable PATH', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const bin = temporaryDirectory(onTestFinished, 'tau-commit-guard-bin-');
-    const home = temporaryDirectory(onTestFinished, 'tau-commit-guard-home-');
 
-    writeScript(directory, 'outer.sh', 'PATH=$HOME/bin sh tool.sh\n');
+    writeScript(directory, 'outer.sh', 'PATH=$BIN sh tool.sh\n');
     writeScript(bin, 'tool.sh', 'git commit -m x\n');
-    withEnvironment('HOME', home);
     withExactPath();
 
     expectOutcome(makeBashEvent(`PATH=${bin} sh outer.sh`), directory);
@@ -473,6 +471,25 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('. tool.sh'), directory);
   });
 
+  it('allows a heredoc that mentions git commit followed by a shell name in a path', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(
+      guard(
+        makeBashEvent(
+          "cat > notes.md <<'EOF'\nRun git commit through the tool.\nEOF\ngit add scripts/bash",
+        ),
+        directory,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('blocks code piped to a dot with a device path', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent("echo 'git commit -m x' | . /dev/stdin"), directory);
+  });
+
   it('allows a heredoc that mentions git commit followed by git add .', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -493,6 +510,28 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
     expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it.each([
+    ['a trailing --', 'cd sub --'],
+    ['a trailing option', 'cd sub -P'],
+  ])('keeps the directory when cd has an operand before %s', (_label, prefix) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'sub/commit.sh', 'echo hello\n');
+
+    expectOutcome(makeBashEvent(`${prefix}; sh commit.sh`), directory);
+  });
+
+  it('blocks a script file in the HOME directory a bare cd names', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const home = temporaryDirectory(onTestFinished, 'tau-commit-guard-home-');
+
+    writeScript(home, 'commit.sh', 'git commit -m x\n');
+    withEnvironment('HOME', home);
+
+    expectOutcome(makeBashEvent('cd; sh commit.sh'), directory);
   });
 
   it('keeps the directory when cd names more than one operand', () => {
