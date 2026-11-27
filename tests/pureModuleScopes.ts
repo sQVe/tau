@@ -13,7 +13,7 @@ import type {
   VariableDeclaration,
 } from 'oxc-parser';
 
-export type BindingKind = 'escaping' | 'function' | 'local';
+type BindingKind = 'escaping' | 'function' | 'local';
 
 interface BindingScope {
   bindings: Map<string, BindingKind>;
@@ -120,7 +120,7 @@ export const createBindingScopes = (): BindingScopes => {
   return { declare, declareVariable, enter, exit, kindOf };
 };
 
-export // A TypeScript-only wrapper is erased at compile time, so it does not change the value's kind.
+// A TypeScript-only wrapper is erased at compile time, so it does not change the value's kind.
 const wrapperTypes = new Set([
   'ParenthesizedExpression',
   'TSAsExpression',
@@ -159,7 +159,7 @@ const declaredStatement = (statement: Statement) => {
 
 // A function or class declaration is hoisted to the top of its scope for this rule, so a later
 // assignment still sees it. The rule is call-agnostic, so it does not model the class TDZ.
-export const declarationNames = (statements: readonly Statement[]): string[] =>
+const declarationNames = (statements: readonly Statement[]): string[] =>
   statements.flatMap((statement) => {
     const declaration = declaredStatement(statement);
 
