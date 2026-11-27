@@ -5,9 +5,10 @@ import type {
   MessageRenderer,
   ToolDefinition,
 } from '@earendil-works/pi-coding-agent';
-import { vi } from 'vitest';
+import { onTestFinished, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
+import type { RoleKind } from '../src/role/role.js';
 import tauRegistration from '../src/tau/tau.js';
 import { declinedExec } from './declinedExecFake.js';
 
@@ -106,20 +107,20 @@ export const appendedSystemPrompt = (
 };
 
 // Registers Tau for a role so a test can inspect what the entry point wires.
-export const registeredTauApi = async (
-  role: 'lead' | 'architect' | 'worker',
-): Promise<FakeExtensionApi> => {
+export const registeredTauApi = async (role: RoleKind): Promise<FakeExtensionApi> => {
   const roleVariable = role === 'lead' ? undefined : role;
 
   vi.stubEnv('TAU_ROLE', roleVariable);
 
+  // A registered handler reads the role when the test invokes it, so the stub must outlive this
+  // helper instead of being cleared before it returns.
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
   const fake = fakeExtensionApi();
 
-  try {
-    await tauRegistration(fake.pi);
-  } finally {
-    vi.unstubAllEnvs();
-  }
+  await tauRegistration(fake.pi);
 
   return fake;
 };

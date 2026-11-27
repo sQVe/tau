@@ -120,7 +120,7 @@ export const terminalFromReply = (stdout: string): string | undefined => {
 };
 
 // The launch arguments carry the started argv as JSON. A malformed value is a test mistake, so this
-// reader refuses it instead of throwing from inside the fake.
+// reader refuses it instead of reporting a terminal with no foreground.
 const launchArgv = (commandArguments: readonly string[]): string[] | undefined => {
   const value = argumentAfter(commandArguments, '--argv');
 
@@ -132,8 +132,8 @@ const launchArgv = (commandArguments: readonly string[]): string[] | undefined =
 
   try {
     parsed = JSON.parse(value);
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new Error(`herdr-app fake received malformed --argv JSON: ${value}`, { cause: error });
   }
 
   const isStringArray = Array.isArray(parsed) && parsed.every((entry) => typeof entry === 'string');
@@ -162,25 +162,23 @@ const startedForegroundOf = (
     modelArguments.push('--model', model);
   }
 
-  const cwd = argumentAfter(commandArguments, '--folder') ?? '';
+  const cwd = argumentAfter(commandArguments, '--folder') ?? argumentAfter(argv, '-C') ?? '';
 
   return { pid: 1, name: 'pi', argv: ['pi', ...modelArguments], cwd };
 };
 
-const foregroundReply = (address: string, foreground: StartedForeground): string =>
-  JSON.stringify({ address, state: 'live', foreground });
+const liveReply = (address: string, foreground: StartedForeground | undefined): string => {
+  const reply =
+    foreground === undefined ? { address, state: 'live' } : { address, state: 'live', foreground };
+
+  return JSON.stringify(reply);
+};
 
 // The one reply shape for a terminal this fake started, so a reader and the hc get schema agree.
 export const launchedTerminalReply = (
   address: string,
   commandArguments: readonly string[],
-): string => {
-  const foreground = startedForegroundOf(commandArguments);
-
-  return foreground === undefined
-    ? JSON.stringify({ address, state: 'live' })
-    : foregroundReply(address, foreground);
-};
+): string => liveReply(address, startedForegroundOf(commandArguments));
 
 const getKey = 'get';
 
@@ -210,7 +208,7 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
                 }),
                 notFoundExitCode,
               )
-            : succeededResult(foregroundReply(address, foreground));
+            : succeededResult(liveReply(address, foreground));
         };
       }
 

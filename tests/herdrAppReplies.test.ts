@@ -85,12 +85,38 @@ it('records no foreground for a reply that carried no --argv', async () => {
   const fake = createHerdrAppFake();
 
   const launched = await fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1'], undefined);
-  const address = terminalFromReply(launched.stdout);
+  const address = terminalFromReply(launched.stdout) ?? '';
 
   expect(address).toBe('t-new');
 
-  const result = await fake.exec('hc', ['get', '--json', '--', address ?? ''], undefined);
+  const result = await fake.exec('hc', ['get', '--json', '--', address], undefined);
 
   expect(result.code).toBe(3);
   expect(JSON.parse(result.stderr)).toMatchObject({ error: { kind: 'not_found' } });
+});
+
+it('fails a malformed --argv instead of reporting no foreground', async () => {
+  const fake = createHerdrAppFake();
+
+  await expect(
+    fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', 'not json'], undefined),
+  ).rejects.toThrow('herdr-app fake received malformed --argv JSON: not json');
+});
+
+it('reads the started folder from the argv env -C for a split', async () => {
+  const fake = createHerdrAppFake();
+  const argv = JSON.stringify(['env', '-C', '/work/repo', 'pi']);
+
+  const launched = await fake.exec(
+    'herdr-app',
+    ['do', 'pane.split', '--pane', 'p-1', '--argv', argv],
+    undefined,
+  );
+
+  const address = terminalFromReply(launched.stdout) ?? '';
+  const result = await fake.exec('hc', ['get', '--json', '--', address], undefined);
+
+  const reply = JSON.parse(result.stdout) as { foreground?: { cwd?: string } };
+
+  expect(reply.foreground?.cwd).toBe('/work/repo');
 });
