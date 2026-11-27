@@ -594,33 +594,7 @@ it('a right-of start with an aborted signal runs no command', async () => {
 });
 
 it('bounds the launch call with the launch timeout', async () => {
-  let launchTimeout: number | undefined;
-
-  const fake = createExecFake<'start' | 'get'>({
-    keyOf: (command, commandArguments) => {
-      if (command === 'herdr-app') {
-        return 'start';
-      }
-
-      return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
-    },
-    handlerFor: (key) => (_commandArguments, options) => {
-      if (key === 'get') {
-        return succeededResult(
-          JSON.stringify({
-            address: 't-space',
-            state: 'live',
-            foreground: { pid: 1, name: 'pi', argv: ['pi'], cwd: root },
-          }),
-        );
-      }
-
-      launchTimeout = options?.timeout;
-
-      return succeededResult('{"space":"sp-1","tab":"tb-1","terminal":"t-space"}');
-    },
-  });
-
+  const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
   const result = await launchPiSession(
@@ -628,9 +602,9 @@ it('bounds the launch call with the launch timeout', async () => {
     launchRequest(root, readerFor(fake, root)),
   );
 
-  expect(result.terminal).toBe('t-space');
+  expect(result.terminal).toBe('t-new');
   expect(result.error).toBeUndefined();
-  expect(launchTimeout).toBe(30_000);
+  expect(fake.calls[0]?.timeout).toBe(30_000);
 });
 
 it('a launch in a folder that is not a Git checkout runs no command', async () => {
@@ -825,13 +799,12 @@ it('a start normalizes a non-Error cancellation from the creation command', asyn
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const controller = new AbortController();
-  const reason = 'cancelled during the launch command';
+  const reason: unknown = 'cancelled during the launch command';
 
-  const exec: typeof fake.exec = (command, commandArguments, options) => {
+  const exec: typeof fake.exec = () => {
     controller.abort(reason);
-    controller.signal.throwIfAborted();
 
-    return fake.exec(command, commandArguments, options);
+    throw reason;
   };
 
   const failure = await startPiSessionWithTerminal(
@@ -847,13 +820,12 @@ it('a launch normalizes a non-Error cancellation from the creation command', asy
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const controller = new AbortController();
-  const reason = 'cancelled during the launch command';
+  const reason: unknown = 'cancelled during the launch command';
 
-  const exec: typeof fake.exec = (command, commandArguments, options) => {
+  const exec: typeof fake.exec = () => {
     controller.abort(reason);
-    controller.signal.throwIfAborted();
 
-    return fake.exec(command, commandArguments, options);
+    throw reason;
   };
 
   const result = await launchPiSession(
@@ -863,6 +835,31 @@ it('a launch normalizes a non-Error cancellation from the creation command', asy
 
   expect(result.error).toBeInstanceOf(Error);
   expect((result.error as Error).cause).toBe(reason);
+});
+
+it('a launch cancelled during the model readback reports the cancellation', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+  const reason: unknown = 'cancelled during the readback';
+
+  const exec: typeof fake.exec = (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      controller.abort(reason);
+
+      throw reason;
+    }
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  const result = await launchPiSession(
+    { exec, cwd: root, signal: controller.signal },
+    launchRequest(root, readerFor({ ...fake, exec }, root)),
+  );
+
+  expect(result.aborted).toBe(true);
+  expect(result.error).toBeInstanceOf(StartedTabError);
 });
 
 const mismatchingReader = async (): Promise<readonly string[] | undefined> => [

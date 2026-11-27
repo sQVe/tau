@@ -7,7 +7,7 @@ const executableNames = (name: string, suffixes: readonly string[]): string[] =>
 
 const piExecutableSuffixes = ['cmd', 'js', 'exe'];
 
-// `baseName` strips a `.exe` suffix, so the set holds only the names it can return.
+// `executableName` strips a `.exe` suffix, so the set holds only the names it can return.
 const piExecutableNames = new Set(
   executableNames(
     'pi',
@@ -18,14 +18,14 @@ const piExecutableNames = new Set(
 const runtimeExecutables = new Set(['node', 'bun']);
 
 // The name a word runs, without its directory and suffix, so `BASH.EXE` and `bash` compare equal.
-export const baseName = (argument: string): string => {
+export const executableName = (argument: string): string => {
   const name = basename(argument.replaceAll('\\', '/')).toLowerCase();
 
   return name.endsWith('.exe') ? name.slice(0, -'.exe'.length) : name;
 };
 
 const isPiExecutable = (argument: string | undefined): boolean =>
-  argument !== undefined && piExecutableNames.has(baseName(argument));
+  argument !== undefined && piExecutableNames.has(executableName(argument));
 
 const carriesPath = (argument: string): boolean =>
   argument.includes('/') || argument.includes('\\');
@@ -143,7 +143,7 @@ export const piArgv = (argv: readonly string[] | undefined): readonly string[] |
     return argv;
   }
 
-  const runtime = first === undefined ? undefined : baseName(first);
+  const runtime = first === undefined ? undefined : executableName(first);
 
   if (runtime === undefined || !runtimeExecutables.has(runtime)) {
     return undefined;

@@ -363,7 +363,7 @@ const launch = async (
 
     return { ...launched, model };
   } catch (error) {
-    return { ...launched, error };
+    return { ...launched, aborted: runtime.signal?.aborted === true, error };
   }
 };
 

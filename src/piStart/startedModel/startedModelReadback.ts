@@ -3,7 +3,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { normalizeCancellation } from '../../command.js';
 import { parseModelReference } from '../../config/models.js';
 import { errorMessage, toError } from '../../errors.js';
-import { baseName, piArgv } from '../startedArgv.js';
+import { shellScriptOf } from '../../shell/shellScript.js';
+import { executableName, piArgv } from '../startedArgv.js';
 import { decideStartedModel } from './startedModel.js';
 import type { RequestedModel, StartedModelDecision } from './startedModel.js';
 
@@ -59,14 +60,14 @@ export const readbackFailureBudgetMilliseconds = 5_000;
 // keeps the caller's deadline.
 export const readbackNoForegroundBudgetMilliseconds = 15_000;
 
-const shellNames = new Set(['bash', 'dash', 'ksh', 'sh', 'zsh']);
-
 // The architect launch wraps Pi in `sh -c`, so the pane shows that wrapper before Pi takes over.
+// The shell module owns the shell names and the `-c` parsing, including combined flags. The first
+// word keeps the executable spelling, so normalize it before the shell module reads it.
 const runsShellScript = (argv: readonly string[]): boolean => {
-  const [executable] = argv;
-  const name = executable === undefined ? undefined : baseName(executable);
+  const [executable, ...rest] = argv;
+  const normalized = executable === undefined ? argv : [executableName(executable), ...rest];
 
-  return name !== undefined && shellNames.has(name) && argv.includes('-c');
+  return shellScriptOf(normalized).kind !== 'none';
 };
 
 const requestedModelOf = (model: string | undefined): RequestedModel => {

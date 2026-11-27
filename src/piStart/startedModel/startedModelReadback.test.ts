@@ -319,6 +319,9 @@ it('keeps polling for a Pi foreground past the no-foreground budget', async () =
 
 it.each<[string, readonly string[]]>([
   ['a shell wrapper', ['sh', '-c', 'mv -- "$1" "$1.started.$$" || exit 75; shift; exec "$@"']],
+  ['a shell wrapper with a combined -ec flag', ['bash', '-ec', 'exec "$@"']],
+  ['an ash shell wrapper', ['ash', '-c', 'exec "$@"']],
+  ['a mksh shell wrapper', ['mksh', '-c', 'exec "$@"']],
   ['an upper-case shell wrapper', ['BASH.EXE', '-c', 'exec "$@"']],
 ])('keeps the caller deadline while %s may still start Pi', async (_label, wrapper) => {
   const startedAt = Date.now();
