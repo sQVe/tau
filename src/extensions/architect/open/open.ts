@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
+import { normalizeCancellation } from '../../../command.js';
 import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
 import { userConfigPath } from '../../../config/config.js';
 import { readRoleModel } from '../../../config/roleModels.js';
@@ -264,7 +265,7 @@ const launchFailure = (launch: PiLaunchResult): Error =>
     : new Error('The architect launch failed before it reported a terminal.');
 
 const launchReportedFailure = (launch: PiLaunchResult): boolean =>
-  launchOutcomeDecision(launchFacts(launch)) === 'notCreated' || launch.error !== undefined;
+  launchOutcomeDecision(launchFacts(launch)) === 'notCreated';
 
 const launchResult = (prepared: PreparedArchitectStart, model = 'unknown'): OpenResult =>
   prepared.session === undefined
@@ -311,11 +312,8 @@ export const takeoverAdoptedChildEndedError = (): Error =>
     'The architect took the checkout lock but its process ended before it could answer. Call architect open again.',
   );
 
-const cancelledOpenError = (signal: AbortSignal | undefined): Error => {
-  const reason: unknown = signal?.reason;
-
-  return reason instanceof Error ? reason : new Error('The open was cancelled.', { cause: reason });
-};
+const cancelledOpenError = (signal: AbortSignal | undefined): Error =>
+  toError(normalizeCancellation(signal, signal?.reason, 'The open was cancelled.'));
 
 const throwIfOpenCancelled = (signal: AbortSignal | undefined): void => {
   if (signal?.aborted === true) {
@@ -424,8 +422,8 @@ const applyLaunchOutcome = async (
   started: PiLaunchResult,
 ): Promise<void> => {
   // A readback failure leaves a live terminal, and an adopted child keeps running. The caller must
-  // still see the failure, so the outer catch completes the fence and reports it. An abort keeps its
-  // own error, because the fence may already have stopped the child.
+  // still see the failure, so the outer catch completes the fence and reports it. An abort reports
+  // the caller's cancellation error instead of the readback error.
   if (started.error instanceof StartedTabError) {
     throwIfOpenCancelled(request.hc.signal);
 
@@ -504,12 +502,17 @@ export const openArchitect = async (
     const completion = await fence.complete();
 
     if (completion.claim === 'kept') {
+      // A readback failure is the only error that names the started terminal and its model, so it
+      // survives the kept-claim message and a later open.
+      const readbackFailure = error instanceof StartedTabError ? toError(error) : undefined;
+      const failure = completion.failure ?? readbackFailure;
+
       keptClaims.set(request.root, {
         token: fence.token,
-        ...(completion.failure === undefined ? {} : { failure: completion.failure }),
+        ...(failure === undefined ? {} : { failure }),
       });
 
-      throw openKeptClaimError(request.root, completion.failure);
+      throw openKeptClaimError(request.root, failure);
     }
 
     throw error;
