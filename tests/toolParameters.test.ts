@@ -11,6 +11,7 @@ import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
 import {
   isRecord,
   schemaArrayKeywords,
+  schemaCombiningKeywords,
   schemaMapKeywords,
   schemaUnassertedKeywords,
   schemaValueKeywords,
@@ -48,13 +49,40 @@ const isObjectNode = (value: Record<string, unknown>): boolean => {
   return isObjectType || isObjectTypeList || declaresTypelessKeys;
 };
 
+// Spelled out here rather than read from production, so a change to the combining keywords fails
+// the pin below.
+const localCombiningKeywords: ReadonlySet<string> = new Set([
+  '$ref',
+  'allOf',
+  'anyOf',
+  'dependencies',
+  'dependentSchemas',
+  'else',
+  'oneOf',
+  'then',
+]);
+
+const hasObjectEnumValue = (value: Record<string, unknown>): boolean => {
+  const entries = value['enum'];
+
+  return Array.isArray(entries) && entries.some((entry) => isRecord(entry));
+};
+
 const isOpenObject = (value: Record<string, unknown>): boolean => {
   const additionalProperties = value['additionalProperties'];
 
   // An explicit true is the tool author's opt-out, so production leaves it as written.
   const hasDefaultAdditionalProperties = additionalProperties === undefined;
 
-  return isObjectNode(value) && hasDefaultAdditionalProperties;
+  // Production keeps a combining node and an object-valued const or enum open, because closing
+  // either would reject a value the schema declares.
+  const combinesWithSibling = Object.keys(value).some((key) => localCombiningKeywords.has(key));
+
+  const requiresObjectValue = isRecord(value['const']) || hasObjectEnumValue(value);
+
+  const keepsObjectOpen = combinesWithSibling || requiresObjectValue;
+
+  return isObjectNode(value) && hasDefaultAdditionalProperties && !keepsObjectOpen;
 };
 
 // Spelled out here rather than read from production, so a keyword production changes fails the pin
@@ -215,6 +243,7 @@ it('pins the local schema keyword sets to the production sets', () => {
   expect([...localArrayKeywords].toSorted()).toEqual([...schemaArrayKeywords].toSorted());
   expect([...localValueKeywords].toSorted()).toEqual([...schemaValueKeywords].toSorted());
   expect([...localUnassertedKeywords].toSorted()).toEqual([...schemaUnassertedKeywords].toSorted());
+  expect([...localCombiningKeywords].toSorted()).toEqual([...schemaCombiningKeywords].toSorted());
 });
 
 it('enumerates the Tau root and every worker entry point', async () => {
@@ -356,6 +385,20 @@ it('accepts properties on a node whose declared type is not an object', () => {
   const schema = { type: 'string', properties: { value: { type: 'string' } } };
 
   expect(objectProblems('sample', schema, '')).toEqual([]);
+});
+
+it('accepts a node that combines with a sibling schema', () => {
+  const schema = { type: 'object', allOf: [{ properties: { value: { type: 'string' } } }] };
+
+  expect(objectProblems('sample', schema, '')).toEqual([]);
+});
+
+it('accepts an object-valued const or enum that production keeps open', () => {
+  const constant = { type: 'object', const: { value: 'x' } };
+  const enumerated = { type: 'object', enum: [{ value: 'x' }] };
+
+  expect(objectProblems('sample', constant, '')).toEqual([]);
+  expect(objectProblems('sample', enumerated, '')).toEqual([]);
 });
 
 it('refuses an undeclared handover start field', async () => {

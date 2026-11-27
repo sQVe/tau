@@ -202,6 +202,18 @@ it.each([
   },
 );
 
+it('keeps a node that carries only the schema form of dependencies open', () => {
+  const schema = {
+    type: 'object',
+    properties: { credit_card: { type: 'string' } },
+    dependencies: { credit_card: { required: ['billing_address'] } },
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { credit_card: 'x', billing_address: 'y' })).toBe(true);
+});
+
 it('leaves an object nested under a dependent schema open', () => {
   const schema = {
     type: 'object',
@@ -345,15 +357,24 @@ it('keeps an item that a sibling items schema declares matching contains', () =>
   expect(Value.Check(strict, [{ a: 1, b: 2 }])).toBe(true);
 });
 
-it('does not close a node that requires an object-valued const or enum', () => {
-  const constant = strictToolParameters(Type.Unsafe<unknown>({ type: 'object', const: { a: 1 } }));
+it('does not rewrite an object value under const or enum', () => {
+  const embeddedConstant = { type: 'object', properties: {} };
 
-  const enumerated = strictToolParameters(
-    Type.Unsafe<unknown>({ type: 'object', enum: [{ a: 1 }] }),
+  const constant = strictToolParameters(
+    Type.Unsafe<unknown>({ type: 'object', const: embeddedConstant }),
   );
 
-  expect(Value.Check(constant, { a: 1 })).toBe(true);
-  expect(Value.Check(enumerated, { a: 1 })).toBe(true);
+  const enumerated = strictToolParameters(
+    Type.Unsafe<unknown>({ type: 'object', enum: [embeddedConstant] }),
+  );
+
+  const storedConstant = isRecord(constant) ? constant['const'] : undefined;
+  const storedEnum = isRecord(enumerated) ? enumerated['enum'] : undefined;
+
+  expect(storedConstant).toEqual(embeddedConstant);
+  expect(storedEnum).toEqual([embeddedConstant]);
+  expect(Value.Check(constant, embeddedConstant)).toBe(true);
+  expect(Value.Check(enumerated, embeddedConstant)).toBe(true);
 });
 
 it('keeps an object nested under an allOf branch open', () => {

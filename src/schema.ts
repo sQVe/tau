@@ -104,7 +104,7 @@ export const schemaUnassertedKeywords: ReadonlySet<string> = new Set([
 // A node that combines with a sibling schema cannot close itself: additionalProperties only counts
 // the properties next to it, so a property a sibling declares would be rejected. A `$ref` sibling
 // likewise leaves the node's own properties incomplete.
-const schemaCombiningKeywords: ReadonlySet<string> = new Set([
+export const schemaCombiningKeywords: ReadonlySet<string> = new Set([
   '$ref',
   'allOf',
   'anyOf',
@@ -242,8 +242,9 @@ const descriptorOf = (target: ExtensionAPI, key: string): PropertyDescriptor | u
     }
 
     const prototype: unknown = Object.getPrototypeOf(current);
+    const isPrototype = typeof prototype === 'object' || typeof prototype === 'function';
 
-    current = typeof prototype === 'object' ? prototype : null;
+    current = isPrototype ? prototype : null;
   }
 
   return undefined;
@@ -313,7 +314,8 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   }
 
   // An accessor may return a new wrapper on every read, so a different function can still be the
-  // value the setter stored. Trust a function read back through the descriptor that accepted it.
+  // value the setter stored. Trust a function read back through the descriptor that accepted it,
+  // unless it is the value from before the assignment, which means the setter discarded it.
   let readBack: unknown;
 
   try {
@@ -324,7 +326,7 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
     throw new Error(notReadableMessage, { cause: error });
   }
 
-  if (typeof readBack !== 'function') {
+  if (typeof readBack !== 'function' || readBack === current) {
     restoreRegisterTool(pi, current);
 
     throw new Error(notWritableMessage);

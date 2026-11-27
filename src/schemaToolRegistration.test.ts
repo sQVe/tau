@@ -107,6 +107,38 @@ it('installs through an API that stores registerTool in an accessor', () => {
   ]);
 });
 
+const callablePrototype = function callablePrototype() {};
+
+it('installs through an accessor inherited from a function prototype', () => {
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+
+  Object.defineProperty(callablePrototype, 'registerTool', {
+    configurable: true,
+    get: () => stored,
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  const api = Object.setPrototypeOf(
+    function host() {},
+    callablePrototype,
+  ) as unknown as ExtensionAPI;
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(registered).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
 it('installs through an accessor on the prototype', () => {
   const registered: unknown[] = [];
 
@@ -197,6 +229,21 @@ it('keeps the value the wrapped registration returns', () => {
   strictToolRegistration(api);
 
   expect(registerThrough(api, Type.Object({}))).toBe('registered');
+});
+
+it('reports an accessor whose setter discards the assignment as not writable', () => {
+  const original = passThroughRegisterTool;
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => original,
+    set: () => undefined,
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
 });
 
 it('reports a clear error when registerTool is not a function', () => {
