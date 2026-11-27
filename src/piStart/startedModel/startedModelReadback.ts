@@ -5,7 +5,6 @@ import { normalizeCancellation } from '../../command.js';
 import { parseModelReference } from '../../config/models.js';
 import { errorMessage, toError } from '../../errors.js';
 import { piArgv } from '../startedArgv.js';
-import { stillRunningClause } from '../stillRunningHint.js';
 import { decideStartedModel } from './startedModel.js';
 import type { RequestedModel, StartedModelDecision } from './startedModel.js';
 
@@ -39,6 +38,12 @@ interface ReadAttempt {
   readonly failure: ReadFailure | undefined;
 }
 
+interface PollState {
+  readonly failure: ReadFailure | undefined;
+  readonly interval: number;
+  readonly nonPiSince: number | undefined;
+}
+
 const readbackInitialIntervalMilliseconds = 100;
 const readbackMaxIntervalMilliseconds = 1000;
 
@@ -64,24 +69,21 @@ const runsShellScript = (argv: readonly string[]): boolean => {
 
 const requestedModelOf = (model: string | undefined): RequestedModel => {
   if (model === undefined) {
-    return { provider: undefined, id: undefined };
+    return { kind: 'default' };
   }
 
-  return parseModelReference(model) ?? { provider: undefined, id: model };
-};
+  const parsed = parseModelReference(model);
 
-const stillRunningHint = (terminal: string): string =>
-  `It ${stillRunningClause(terminal)} before you start another.`;
+  return parsed === undefined
+    ? { kind: 'model', provider: undefined, id: model }
+    : { kind: 'model', ...parsed };
+};
 
 const unreadableModelError = (terminal: string, cause?: unknown): Error => {
   const options = cause === undefined ? undefined : { cause };
   const failure = cause === undefined ? '' : ` A read failed: ${errorMessage(cause)}.`;
-  const hint = cause === undefined ? ` ${stillRunningHint(terminal)}` : '';
 
-  return new Error(
-    `The started model on terminal ${terminal} is unknown.${failure}${hint}`,
-    options,
-  );
+  return new Error(`The started model on terminal ${terminal} is unknown.${failure}`, options);
 };
 
 const mismatchModelError = (
@@ -89,7 +91,7 @@ const mismatchModelError = (
   decision: Extract<StartedModelDecision, { kind: 'mismatch' }>,
 ): Error =>
   new Error(
-    `The started Pi on terminal ${terminal} runs ${decision.started}, but the request asked for ${decision.requested}. ${stillRunningHint(terminal)}`,
+    `The started Pi on terminal ${terminal} runs ${decision.started}, but the request asked for ${decision.requested}.`,
   );
 
 const cancellationError = (signal: AbortSignal | undefined): Error =>
@@ -174,8 +176,9 @@ const noteReadFailure = (
   now: number,
 ): ReadFailure => previous ?? { error, since: now };
 
-// A read that uses the rest of the budget returns no argv and leaves the recorded failure in place,
-// so the deadline error still names it.
+// A read that uses the rest of the budget returns no argv and keeps the recorded failure, so the
+// deadline error still names it. A read that times out records that reason instead of reading as a
+// terminal with no foreground yet.
 const attemptRead = async (
   request: StartedModelReadRequest,
   failure: ReadFailure | undefined,
@@ -188,9 +191,13 @@ const attemptRead = async (
       request.signal,
     );
 
-    return read.kind === 'read'
-      ? { argv: read.argv, failure: undefined }
-      : { argv: undefined, failure };
+    if (read.kind === 'read') {
+      return { argv: read.argv, failure: undefined };
+    }
+
+    const timeout = new Error('the read timed out');
+
+    return { argv: undefined, failure: noteReadFailure(failure, timeout, Date.now()) };
   } catch (error) {
     if (request.signal?.aborted === true) {
       throw cancellationError(request.signal);
@@ -210,11 +217,10 @@ const attemptRead = async (
 const pollStartedModel = async (
   request: StartedModelReadRequest,
   requested: RequestedModel,
-  failure: ReadFailure | undefined,
-  interval: number,
-  nonPiSince: number | undefined,
+  state: PollState,
 ): Promise<string> => {
   const { terminal, signal, deadline } = request;
+  const { failure, interval, nonPiSince } = state;
 
   const limitOf = (since: number | undefined): number =>
     since === undefined
@@ -249,9 +255,9 @@ const pollStartedModel = async (
   }
 
   const transientWrapper = attempt.argv !== undefined && runsShellScript(attempt.argv);
-
-  const nextNonPiSince =
-    nonPiSince ?? (attempt.argv === undefined || transientWrapper ? undefined : Date.now());
+  const keepsDeadline = attempt.argv === undefined || transientWrapper;
+  const armedSince = nonPiSince ?? Date.now();
+  const nextNonPiSince = keepsDeadline ? undefined : armedSince;
 
   const remainingAfterRead = limitOf(nextNonPiSince) - Date.now();
 
@@ -261,20 +267,18 @@ const pollStartedModel = async (
 
   await pauseBeforeRead(Math.min(interval, remainingAfterRead), signal);
 
-  return pollStartedModel(
-    request,
-    requested,
-    attempt.failure,
-    Math.min(interval * 2, readbackMaxIntervalMilliseconds),
-    nextNonPiSince,
-  );
+  return pollStartedModel(request, requested, {
+    failure: attempt.failure,
+    interval: Math.min(interval * 2, readbackMaxIntervalMilliseconds),
+    nonPiSince: nextNonPiSince,
+  });
+};
+
+const initialPollState: PollState = {
+  failure: undefined,
+  interval: readbackInitialIntervalMilliseconds,
+  nonPiSince: undefined,
 };
 
 export const readStartedModel = (request: StartedModelReadRequest): Promise<string> =>
-  pollStartedModel(
-    request,
-    requestedModelOf(request.model),
-    undefined,
-    readbackInitialIntervalMilliseconds,
-    undefined,
-  );
+  pollStartedModel(request, requestedModelOf(request.model), initialPollState);

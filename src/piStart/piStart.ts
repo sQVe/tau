@@ -18,7 +18,7 @@ import { isRecord, text } from '../schema.js';
 import { piArguments } from './piArguments.js';
 import { readStartedModel } from './startedModel/startedModelReadback.js';
 import type { ReadForegroundArgv } from './startedModel/startedModelReadback.js';
-import { stillRunningClause } from './stillRunningHint.js';
+import { stillRunningClause } from './stillRunningClause.js';
 
 export type PiStartTarget = { space: string } | { name: string };
 

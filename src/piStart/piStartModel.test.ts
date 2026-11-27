@@ -283,7 +283,7 @@ it('a start fails when the terminal never shows a foreground before the deadline
 
     expect(message).toContain('t-new');
     expect(message).toContain('hc get t-new');
-    expect(message).toContain('It may still be running');
+    expect(message).toContain('may still be running');
   } finally {
     vi.useRealTimers();
   }
@@ -459,33 +459,6 @@ it('a slow successful launch still leaves a window to read the model', async () 
   }
 });
 
-it('a model read that times out removes its abort listener', async () => {
-  const fake = createHerdrAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const controller = new AbortController();
-  const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-
-  try {
-    const opening = startPiSession(
-      { exec: fake.exec, cwd: root, signal: controller.signal },
-      startRequest(root, neverReads),
-    ).catch((error: unknown) => error);
-
-    await vi.waitFor(() => {
-      expect(fake.calls).toHaveLength(1);
-    });
-
-    await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
-
-    expect(await opening).toBeInstanceOf(Error);
-    expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
-  } finally {
-    removeListener.mockRestore();
-    vi.useRealTimers();
-  }
-});
-
 it('a launch returns the model its terminal runs', async () => {
   const fake = launchWithForeground(['pi', '--provider', 'a', '--model', 'architect']);
   const root = await createTemporaryRepository(onTestFinished);
@@ -557,44 +530,4 @@ it('a start reports the model when its terminal shows the Pi foreground late', a
 
   expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
   expect(reads).toBe(3);
-});
-
-it('a start backs off between model reads instead of polling every 100 ms', async () => {
-  const fake = createHerdrAppFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const readTimes: number[] = [];
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-
-  try {
-    const startedAt = Date.now();
-
-    const reader = async (): Promise<readonly string[] | undefined> => {
-      readTimes.push(Date.now() - startedAt);
-
-      return undefined;
-    };
-
-    const opening = startPiSession(
-      { exec: fake.exec, cwd: root },
-      startRequest(root, reader),
-    ).catch((error: unknown) => error);
-
-    await vi.waitFor(() => {
-      expect(readTimes.length).toBeGreaterThan(0);
-    });
-
-    await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
-
-    expect(await opening).toBeInstanceOf(Error);
-
-    const gaps = readTimes
-      .slice(1)
-      .map((readTime, index) => readTime - (readTimes[index] ?? readTime));
-
-    expect(gaps.slice(0, 3)).toEqual([100, 200, 400]);
-    expect(Math.max(...gaps)).toBe(1000);
-    expect(readTimes.length).toBeLessThan(60);
-  } finally {
-    vi.useRealTimers();
-  }
 });
