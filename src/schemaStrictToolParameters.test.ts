@@ -538,6 +538,20 @@ it('does not close a node whose properties only its prototype declares', () => {
   expect(isClosed(strict)).toBe(false);
 });
 
+it('closes a node whose additionalProperties only its prototype declares', () => {
+  const schema: Record<string, unknown> = {
+    type: 'object',
+    properties: { value: { type: 'string' } },
+  };
+
+  Object.setPrototypeOf(schema, { additionalProperties: false });
+
+  const strict = strictToolParameters(schema);
+
+  expect(isClosed(strict)).toBe(true);
+  expect(Value.Check(strict, { value: 'a', extra: 1 })).toBe(false);
+});
+
 it('reports a schema that points at itself instead of cloning a cycle', () => {
   const properties: Record<string, unknown> = {};
   const schema = { type: 'object', properties };
