@@ -22,7 +22,6 @@ export const blockedOutputReason = (value: unknown): string | undefined => {
 
   const reason = text(value['reason']);
   const isGuardReason = reason === blockReason || reason === unverifiableReason;
-  const namesLogFile = reason?.includes('/tmp/<name>.log') === true;
 
-  return isGuardReason && namesLogFile ? reason : undefined;
+  return isGuardReason ? reason : undefined;
 };
