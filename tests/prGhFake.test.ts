@@ -146,6 +146,40 @@ it('refuses a field write whose trailing --input has no value', async () => {
   expect(fake.writes).toEqual([]);
 });
 
+it('reads the api endpoint after an explicit GET method', async () => {
+  const fake = createGhFake();
+
+  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
+
+  fake.pullRequests['github.com/sQVe/tau'] = [
+    {
+      number: 7,
+      state: 'OPEN',
+      title: 'Add a feature',
+      body: 'Adds it.',
+      baseRefName: 'main',
+      isDraft: false,
+      headRefOid: 'abc123',
+      headOwner: 'sQVe',
+      headBranch: 'feature',
+      headCommittedAt: '2026-01-02T03:04:05Z',
+    },
+  ];
+
+  const result = await fake.exec('gh', [
+    'api',
+    '--hostname',
+    'github.com',
+    '--method',
+    'GET',
+    'repos/sQVe/tau/commits/abc123',
+    '--jq',
+    '.commit.committer.date',
+  ]);
+
+  expect(result.stdout).toBe('2026-01-02T03:04:05Z');
+});
+
 it('refuses an api write whose trailing --input has no value', async () => {
   const fake = createGhFake();
 

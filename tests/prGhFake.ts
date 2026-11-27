@@ -145,6 +145,9 @@ const parentOutput = (parent: string | undefined) => {
   return { id: 'R_parent', name, owner: { id: 'U_owner', login: owner } };
 };
 
+const apiEndpoint = (commandArguments: readonly string[]): string =>
+  commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
+
 export const createGhFake = (): GhFake => {
   const repositoryView = (commandArguments: readonly string[]) => {
     const name = commandArguments[2] ?? '';
@@ -226,8 +229,8 @@ export const createGhFake = (): GhFake => {
 
   // gh api --jq prints raw lines, not JSON.
   const commitApi = (commandArguments: readonly string[]) => {
-    const host = commandArguments[2];
-    const path = commandArguments[3] ?? '';
+    const host = argumentAfter(commandArguments, '--hostname') ?? '';
+    const path = apiEndpoint(commandArguments);
     const parts = path.split('/');
     const [owner, name, sha] = [parts[1], parts[2], parts[4]];
     const prs = fake.pullRequests[`${host}/${owner}/${name}`] ?? [];
@@ -289,7 +292,7 @@ export const createGhFake = (): GhFake => {
       return baseKey;
     }
 
-    const readsCheckSuites = commandArguments[3]?.endsWith('/check-suites') === true;
+    const readsCheckSuites = apiEndpoint(commandArguments).endsWith('/check-suites');
 
     if (readsCheckSuites) {
       return 'check-suites';
