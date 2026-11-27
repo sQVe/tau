@@ -156,6 +156,12 @@ const staticBlockVarSource = (): string =>
 const forOfMemberSource = (): string =>
   'export const install = (request) => {\n  for (const item of request.items) {\n    item.handler = () => 1;\n  }\n};\n';
 
+const leakedForOfBindingSource = (): string =>
+  "import { api } from './rules.js';\nfor (const api of items) {\n}\napi.run = () => 1;\n";
+
+const forInKeySource = (): string =>
+  'export const install = (request) => {\n  for (const key in request.headers) {\n    const name = key;\n    name.x = () => 1;\n  }\n};\n';
+
 it('reports a class declaration assigned to a property of a parameter', () => {
   expect(impurities('src/pure/decide.ts', classDeclarationPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:3: assigns a function to a property',
@@ -192,6 +198,16 @@ it('reports an escape through a for-of loop binding', () => {
   expect(impurities('src/pure/decide.ts', forOfMemberSource(), testRegistry)).toEqual([
     'src/pure/decide.ts:3: assigns a function to a property',
   ]);
+});
+
+it('keeps a for-of loop binding inside the loop', () => {
+  expect(impurities('src/pure/decide.ts', leakedForOfBindingSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:4: assigns a function to a property',
+  ]);
+});
+
+it('does not pass the enumerated object kind to a for-in key', () => {
+  expect(impurities('src/pure/decide.ts', forInKeySource(), testRegistry)).toEqual([]);
 });
 
 it('reports a function assigned to a property of a global or of a nested member chain', () => {
