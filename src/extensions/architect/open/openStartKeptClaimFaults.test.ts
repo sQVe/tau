@@ -1,8 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { failedResult } from '../../../../tests/execFake.js';
-import { openTool, requestFor } from '../fixtures/openHarness.js';
-import { setup } from '../fixtures/toolHarness.js';
+import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
+import { openTool, requestFor, wrongModelReadbackExec } from '../fixtures/openHarness.js';
+import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { openArchitect, openKeptClaimMessage } from './open.js';
 
 const faults = vi.hoisted(() => ({ failClaimRelease: false }));
@@ -79,4 +80,33 @@ it('reports the claim release failure and keeps it for a later open', async ({
   expect((later as Error).message).toBe((first as Error).message);
   expect((later as Error).cause).toBeInstanceOf(Error);
   expect(((later as Error).cause as Error).message).toBe(((first as Error).cause as Error).message);
+});
+
+it('keeps both the claim release failure and the readback failure', async ({ onTestFinished }) => {
+  const { root, config } = await setup(onTestFinished);
+  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+
+  useFakeStartProcess(onTestFinished, 'gone');
+
+  await recordSession(root);
+
+  const exec = wrongModelReadbackExec(runtime, root);
+
+  faults.failClaimRelease = true;
+
+  const failure = await openArchitect(
+    requestFor(root, config.location, { ...runtime, exec }),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+
+  const message = (failure as Error).message;
+
+  expect(message).toContain(openKeptClaimMessage(root));
+  expect(message).toContain('The claim could not be released: The lock could not be truncated.');
+  expect(message).toContain('morph/morph-dsv41flash-1017');
+  expect(message).toContain('t-architect');
+  expect((failure as Error).cause).toBeInstanceOf(Error);
+
+  expect(((failure as Error).cause as Error).message).toContain('The claim could not be released');
 });
