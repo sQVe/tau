@@ -9,8 +9,6 @@ import {
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 
-const setUp = setUpPublicationTests;
-
 const reviewRequest = (directory: string) =>
   ({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }) as const;
 
@@ -53,7 +51,7 @@ const pendingReview = `${JSON.stringify(
 )}\n`;
 
 it('posts a submitted review with inline comments in one call', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   await writeRunFile(directory, 'review.json', submittedReview);
   const request = reviewRequest(directory);
@@ -68,7 +66,7 @@ it('posts a submitted review with inline comments in one call', async () => {
 });
 
 it('reports review findings per prose field, not over the JSON', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   const commentBody = 'The naming here is unclear \u2014 please rename it.';
 
@@ -113,7 +111,7 @@ it('reports review findings per prose field, not over the JSON', async () => {
 });
 
 it('posts a pending review without an event in one call', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   await writeRunFile(directory, 'review.json', pendingReview);
 
@@ -128,7 +126,7 @@ it('posts a pending review without an event in one call', async () => {
 });
 
 it('refuses a review comment with neither line nor position and names its index', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   const review = {
@@ -148,7 +146,7 @@ it('refuses a review comment with neither line nor position and names its index'
 });
 
 it('refuses a reply comment as an unknown field', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   const review = { comments: [{ path: 'src/a.ts', body: 'Agreed.', in_reply_to: 101 }] };
 
@@ -162,7 +160,7 @@ it('refuses a reply comment as an unknown field', async () => {
 });
 
 it('posts a review comment that carries only position', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   const review = { comments: [{ path: 'src/a.ts', position: 3, body: 'Fine.' }] };
   const contents = `${JSON.stringify(review, null, 2)}\n`;
@@ -179,7 +177,7 @@ it('posts a review comment that carries only position', async () => {
 });
 
 it('refuses a COMMENT review without a body', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(
@@ -196,7 +194,7 @@ it('refuses a COMMENT review without a body', async () => {
 });
 
 it('refuses a REQUEST_CHANGES review without a body', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(
@@ -216,7 +214,7 @@ it('refuses a REQUEST_CHANGES review without a body', async () => {
 });
 
 it('accepts an APPROVE review without a body', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'review.json', `${JSON.stringify({ event: 'APPROVE' })}\n`);
@@ -228,7 +226,7 @@ it('accepts an APPROVE review without a body', async () => {
 });
 
 it('refuses a review comment with a blank body', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(
@@ -249,7 +247,7 @@ it('refuses a review comment with a blank body', async () => {
 });
 
 it('refuses a review comment that sets both line and position', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(
@@ -270,7 +268,7 @@ it('refuses a review comment that sets both line and position', async () => {
 });
 
 it('refuses start_line without line', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(
@@ -291,7 +289,7 @@ it('refuses start_line without line', async () => {
 });
 
 it('refuses start_side without start_line', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(
@@ -312,7 +310,7 @@ it('refuses start_side without start_line', async () => {
 });
 
 it('refuses review.json that is not JSON', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'review.json', '{');
@@ -323,7 +321,7 @@ it('refuses review.json that is not JSON', async () => {
 });
 
 it('names the review.json field that is not valid', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'review.json', '{"event":"MERGE"}\n');
@@ -336,7 +334,7 @@ it('names the review.json field that is not valid', async () => {
 it.each(['file', 'base', 'head', 'draft'] as const)(
   'refuses %s for a review in the dry run',
   async (name) => {
-    const { fake, run } = await setUp();
+    const { fake, run } = await setUpPublicationTests();
     const directory = await prepareRun(run);
     const foreignInput = foreignInputOf(name);
 
@@ -351,7 +349,7 @@ it.each(['file', 'base', 'head', 'draft'] as const)(
 it.each(['file', 'base', 'head', 'draft'] as const)(
   'refuses %s for a review in publish',
   async (name) => {
-    const { fake, run } = await setUp();
+    const { fake, run } = await setUpPublicationTests();
     const directory = await prepareRun(run);
 
     await writeRunFile(directory, 'review.json', `${JSON.stringify({ event: 'APPROVE' })}\n`);

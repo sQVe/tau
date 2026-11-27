@@ -17,8 +17,6 @@ import {
 
 const isRoot = process.getuid?.() === 0;
 
-const setUp = setUpPublicationTests;
-
 // The title can hold the flag text, so the real file flag is the last one. Only a verified copy
 // below a private publish directory counts, so other commands are left alone.
 const verifiedCopyPathOf = (commandArguments: readonly string[]): string | undefined => {
@@ -29,7 +27,7 @@ const verifiedCopyPathOf = (commandArguments: readonly string[]): string | undef
 };
 
 it('refuses a dry run without a kind', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   await expect(run({ action: 'dryRun', repository, directory })).rejects.toThrow(
@@ -40,7 +38,7 @@ it('refuses a dry run without a kind', async () => {
 });
 
 it('refuses a create without a base', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   await expect(
@@ -51,7 +49,7 @@ it('refuses a create without a base', async () => {
 });
 
 it('refuses a create without a head', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   await expect(
@@ -62,7 +60,7 @@ it('refuses a create without a head', async () => {
 });
 
 it('refuses a publish without a token', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   await expect(run({ ...dryRunPullRequest(directory), action: 'publish' })).rejects.toThrow(
@@ -73,7 +71,7 @@ it('refuses a publish without a token', async () => {
 });
 
 it('reports an invalid pr before a missing run file', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await expect(run({ ...dryRunPullRequestEdit(directory), pr: 0 })).rejects.toThrow(
@@ -84,7 +82,7 @@ it('reports an invalid pr before a missing run file', async () => {
 });
 
 it('reports a missing base before a missing run file', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await expect(
@@ -95,7 +93,7 @@ it('reports a missing base before a missing run file', async () => {
 });
 
 it('reports the missing token before a missing run file', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await expect(run({ ...dryRunPullRequest(directory), action: 'publish' })).rejects.toThrow(
@@ -106,7 +104,7 @@ it('reports the missing token before a missing run file', async () => {
 });
 
 it('refuses a title.md that holds a line break', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'body.md', 'Adds it.\n');
@@ -120,7 +118,7 @@ it('refuses a title.md that holds a line break', async () => {
 });
 
 it('refuses a whitespace-only title.md at the dry run', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'body.md', 'Adds it.\n');
@@ -132,7 +130,7 @@ it('refuses a whitespace-only title.md at the dry run', async () => {
 });
 
 it('refuses a whitespace-only base', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   await expect(run({ ...dryRunPullRequest(directory), base: '  ' })).rejects.toThrow(
@@ -143,7 +141,7 @@ it('refuses a whitespace-only base', async () => {
 });
 
 it('refuses a whitespace-only head', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   await expect(run({ ...dryRunPullRequest(directory), head: '\t' })).rejects.toThrow(
@@ -154,7 +152,7 @@ it('refuses a whitespace-only head', async () => {
 });
 
 it('publishes trimmed base and head', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = { ...dryRunPullRequest(directory), base: ' main ', head: ' feature ' };
@@ -180,7 +178,7 @@ it('publishes trimmed base and head', async () => {
 });
 
 it('refuses to publish when only title.md changed and names it', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequest(directory);
@@ -196,7 +194,7 @@ it('refuses to publish when only title.md changed and names it', async () => {
 });
 
 it('refuses to publish a token from another create target and sends nothing', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequest(directory);
@@ -213,7 +211,7 @@ it('refuses to publish a token from another create target and sends nothing', as
 });
 
 it('refuses to publish a token from another pull request and sends nothing', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequestEdit(directory);
@@ -227,7 +225,7 @@ it('refuses to publish a token from another pull request and sends nothing', asy
 });
 
 it('refuses to publish a token from another run directory and sends nothing', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const first = await prepareRun(run);
   const second = await prepareRun(run);
 
@@ -250,7 +248,7 @@ it('refuses to publish a token from another run directory and sends nothing', as
 });
 
 it('refuses a run directory without body.md', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'title.md', 'Add a feature\n');
@@ -261,7 +259,7 @@ it('refuses a run directory without body.md', async () => {
 });
 
 it('refuses a run directory without title.md before it reports body.md', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await expect(run(dryRunPullRequest(directory))).rejects.toThrow('No title.md at');
@@ -270,7 +268,7 @@ it('refuses a run directory without title.md before it reports body.md', async (
 });
 
 it('refuses to publish when a file changed after the dry run and sends nothing', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequest(directory);
@@ -289,6 +287,7 @@ it('publishes the verified bytes when the file changes after the token check', a
   let directory = '';
   let publishedPath = '';
   let fileMode = 0;
+  let directoryMode = 0;
 
   const { fake, run } = await createPublicationTool(onTestFinished, {
     wrapExec: (exec) => async (command, commandArguments, options) => {
@@ -297,6 +296,7 @@ it('publishes the verified bytes when the file changes after the token check', a
       if (copyPath !== undefined) {
         publishedPath = copyPath;
         fileMode = (await stat(publishedPath)).mode;
+        directoryMode = (await stat(dirname(publishedPath))).mode;
         await writeFile(join(directory, 'body.md'), 'Changed after the token check.\n');
       }
 
@@ -316,11 +316,12 @@ it('publishes the verified bytes when the file changes after the token check', a
 
   expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it.\n'));
   expect(fileMode & 0o777).toBe(0o600);
+  expect(directoryMode & 0o777).toBe(0o700);
   await expect(access(publishedPath)).rejects.toThrow(/ENOENT/u);
 });
 
 it('removes the verified copy when the publish fails and names the run file', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequestEdit(directory);
@@ -383,7 +384,7 @@ it.skipIf(isRoot)('keeps the publish result when the private copy cannot be remo
 const createInputValues = { base: 'main', head: 'feature', draft: true } as const;
 
 it.each(['base', 'head', 'draft'] as const)('refuses %s together with pr', async (name) => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequestEdit(directory);
@@ -397,7 +398,7 @@ it.each(['base', 'head', 'draft'] as const)('refuses %s together with pr', async
 });
 
 it('refuses a create input on publish too', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequestEdit(directory);
@@ -411,7 +412,7 @@ it('refuses a create input on publish too', async () => {
 });
 
 it('refuses file for a pull request in the dry run', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await expect(run({ ...dryRunPullRequest(directory), file: 'comment.md' })).rejects.toThrow(
@@ -422,7 +423,7 @@ it('refuses file for a pull request in the dry run', async () => {
 });
 
 it('refuses file for a pull request in publish', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequest(directory);

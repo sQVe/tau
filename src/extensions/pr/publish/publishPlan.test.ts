@@ -11,20 +11,18 @@ import {
 import type { PublishRequest } from './publishPlan.js';
 import { planPublication, publicationTarget } from './publishPlan.js';
 
-const setUp = setUpPublicationTests;
-
 const planned = async (
-  request: (directory: string) => PublishRequest,
+  requestFor: (directory: string) => PublishRequest,
   files: Record<string, string> = {},
 ) => {
-  const { root, run } = await setUp();
+  const { root, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   for (const [file, contents] of Object.entries(files)) {
     await writeRunFile(directory, file, contents);
   }
 
-  const target = await publicationTarget('dryRun', root, request(directory));
+  const target = await publicationTarget('dryRun', root, requestFor(directory));
 
   return planPublication(target);
 };
@@ -37,7 +35,7 @@ const filePathAt = (
 ): string | undefined => plan.commandArguments[index];
 
 it('marks the body file of a create command', async () => {
-  const plan = await planned((directory) => dryRunPullRequest(directory), pullRequestFiles);
+  const plan = await planned(dryRunPullRequest, pullRequestFiles);
 
   expect(plan.fileArguments).toHaveLength(1);
   expect(plan.fileArguments[0]?.file.file).toBe('body.md');
@@ -45,7 +43,7 @@ it('marks the body file of a create command', async () => {
 });
 
 it('marks the body file of an edit command', async () => {
-  const plan = await planned((directory) => dryRunPullRequestEdit(directory), pullRequestFiles);
+  const plan = await planned(dryRunPullRequestEdit, pullRequestFiles);
 
   expect(plan.fileArguments).toHaveLength(1);
   expect(plan.fileArguments[0]?.file.file).toBe('body.md');
@@ -87,7 +85,7 @@ it('does not mistake a flag-like base for the body file', async () => {
 });
 
 it('does not mistake a flag-like title for the body file', async () => {
-  const plan = await planned((directory) => dryRunPullRequest(directory), {
+  const plan = await planned(dryRunPullRequest, {
     ...pullRequestFiles,
     'title.md': '--body-file\n',
   });
@@ -100,7 +98,7 @@ it('does not mistake a flag-like title for the body file', async () => {
 });
 
 it('returns prose findings for the dry run and none for publish', async () => {
-  const { root, run } = await setUp();
+  const { root, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'body.md', 'Adds it \u2014 now.\n');

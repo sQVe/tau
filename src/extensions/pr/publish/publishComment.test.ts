@@ -13,10 +13,8 @@ import {
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 
-const setUp = setUpPublicationTests;
-
 it('publishes a comment file under bots', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   await writeRunFile(directory, 'bots/0.md', 'Looks good.\n');
 
@@ -64,7 +62,7 @@ const commentRequest = (directory: string, file = 'comment.md') =>
   }) as const;
 
 it('refuses a comment file that is an absolute path', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   const file = await writeRunFile(directory, 'comment.md', 'Looks good.\n');
 
@@ -76,7 +74,7 @@ it('refuses a comment file that is an absolute path', async () => {
 });
 
 it('refuses a comment file that climbs out of the run directory', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await expect(run(commentRequest(directory, '../body.md'))).rejects.toThrow(
@@ -87,7 +85,7 @@ it('refuses a comment file that climbs out of the run directory', async () => {
 });
 
 it('refuses a comment file path with a backslash', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await expect(run(commentRequest(directory, 'bots\\0.md'))).rejects.toThrow(
@@ -98,7 +96,7 @@ it('refuses a comment file path with a backslash', async () => {
 });
 
 it('refuses a comment file that is a directory', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   const path = join(directory, 'bots');
 
@@ -112,7 +110,7 @@ it('refuses a comment file that is a directory', async () => {
 });
 
 it('refuses a comment file under a symlinked directory', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   const outside = temporaryDirectory(onTestFinished, 'tau-pr-outside-');
 
@@ -125,7 +123,7 @@ it('refuses a comment file under a symlinked directory', async () => {
 });
 
 it('refuses a comment file that is a symlink', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   const outside = temporaryDirectory(onTestFinished, 'tau-pr-outside-');
 
@@ -138,7 +136,7 @@ it('refuses a comment file that is a symlink', async () => {
 });
 
 it('refuses a comment file with another hard link', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
   const outside = temporaryDirectory(onTestFinished, 'tau-pr-outside-');
 
@@ -151,7 +149,7 @@ it('refuses a comment file with another hard link', async () => {
 });
 
 it('refuses a comment path whose parent is a file', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'body.md', 'Adds it.\n');
@@ -164,7 +162,7 @@ it('refuses a comment path whose parent is a file', async () => {
 });
 
 it('refuses a whitespace-only comment file', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'bots/0.md', '  \n');
@@ -179,7 +177,7 @@ it('refuses a whitespace-only comment file', async () => {
 it.each(['base', 'head', 'draft'] as const)(
   'refuses %s for a comment in the dry run',
   async (name) => {
-    const { fake, run } = await setUp();
+    const { fake, run } = await setUpPublicationTests();
     const directory = await prepareRun(run);
     const foreignInput = foreignInputOf(name);
 
@@ -192,7 +190,7 @@ it.each(['base', 'head', 'draft'] as const)(
 );
 
 it.each(['base', 'head', 'draft'] as const)('refuses %s for a comment in publish', async (name) => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'comment.md', 'Looks good.\n');

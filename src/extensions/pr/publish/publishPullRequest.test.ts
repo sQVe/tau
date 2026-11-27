@@ -10,10 +10,8 @@ import {
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 
-const setUp = setUpPublicationTests;
-
 it('publishes a new pull request with the approved title, body, base, head, and draft', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const dryRun = await run(dryRunPullRequest(directory));
@@ -54,7 +52,7 @@ it('publishes a new pull request with the approved title, body, base, head, and 
 });
 
 it('publishes an edited pull request with the approved title and body', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run);
 
   const request = dryRunPullRequestEdit(directory);
@@ -86,7 +84,7 @@ it('publishes an edited pull request with the approved title and body', async ()
 });
 
 it('creates a pull request without --draft when draft is false', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);
 
   await writeRunFile(directory, 'body.md', 'Adds it.\n');
@@ -115,7 +113,7 @@ it('creates a pull request without --draft when draft is false', async () => {
 });
 
 it('returns the em dash finding from the dry run and publishes with it', async () => {
-  const { fake, run } = await setUp();
+  const { fake, run } = await setUpPublicationTests();
   const directory = await preparePullRequestRun(run, { body: 'Adds it \u2014 now.\n' });
 
   const request = dryRunPullRequest(directory);
@@ -136,7 +134,7 @@ it('returns the em dash finding from the dry run and publishes with it', async (
 it.each(['--body-file', '--input'])(
   'publishes a title equal to %s and still rewrites the real file argument',
   async (flag) => {
-    const { fake, run } = await setUp();
+    const { fake, run } = await setUpPublicationTests();
     const directory = await preparePullRequestRun(run);
     await writeRunFile(directory, 'title.md', `${flag}\n`);
 
