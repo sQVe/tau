@@ -145,7 +145,7 @@ export const schemaCombiningKeywords: ReadonlySet<string> = new Set([
 ]);
 
 const declaresObject = (value: Record<string, unknown>): boolean => {
-  const type = value['type'];
+  const type = Object.hasOwn(value, 'type') ? value['type'] : undefined;
 
   if (type === 'object') {
     return true;
@@ -155,15 +155,16 @@ const declaresObject = (value: Record<string, unknown>): boolean => {
     return true;
   }
 
-  const declaresKeys = 'properties' in value || 'patternProperties' in value;
+  const declaresKeys =
+    Object.hasOwn(value, 'properties') || Object.hasOwn(value, 'patternProperties');
 
   return type === undefined && declaresKeys;
 };
 
 // `const` and `enum` name instance values, so closing the node would reject the object it requires.
 const requiresObjectValue = (value: Record<string, unknown>): boolean => {
-  const constant = value['const'];
-  const entries = value['enum'];
+  const constant = Object.hasOwn(value, 'const') ? value['const'] : undefined;
+  const entries = Object.hasOwn(value, 'enum') ? value['enum'] : undefined;
   const requiresConstant = isRecord(constant);
   const requiresEntry = Array.isArray(entries) && entries.some((entry) => isRecord(entry));
 
@@ -194,11 +195,13 @@ const finishClone = (
   cloneCache(walk, asserted).set(value, clone);
 };
 
-const strictSchemaMap = (value: unknown, asserted: boolean, walk: SchemaWalk): unknown => {
-  if (!isRecord(value)) {
-    return value;
-  }
-
+// The cache and cycle bookkeeping every clone shares, so the build callback only makes the copy.
+const memoizedClone = (
+  value: SchemaNode,
+  asserted: boolean,
+  walk: SchemaWalk,
+  build: () => unknown,
+): unknown => {
   const cache = cloneCache(walk, asserted);
   const cached = cache.get(value);
 
@@ -208,15 +211,27 @@ const strictSchemaMap = (value: unknown, asserted: boolean, walk: SchemaWalk): u
 
   beginClone(value, walk);
 
-  const clone: Record<PropertyKey, unknown> = { ...value };
-
-  for (const key of Object.keys(value)) {
-    clone[key] = walk.visit(value[key], asserted);
-  }
+  const clone = build();
 
   finishClone(value, asserted, walk, clone);
 
   return clone;
+};
+
+const strictSchemaMap = (value: unknown, asserted: boolean, walk: SchemaWalk): unknown => {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return memoizedClone(value, asserted, walk, () => {
+    const clone: Record<PropertyKey, unknown> = { ...value };
+
+    for (const key of Object.keys(value)) {
+      clone[key] = walk.visit(value[key], asserted);
+    }
+
+    return clone;
+  });
 };
 
 const strictSchemaChild = (
@@ -248,69 +263,51 @@ const strictSchemaArray = (
   value: readonly unknown[],
   asserted: boolean,
   walk: SchemaWalk,
-): unknown => {
-  const cache = cloneCache(walk, asserted);
-  const cached = cache.get(value);
+): unknown =>
+  memoizedClone(value, asserted, walk, () => {
+    const clone: unknown[] = [];
 
-  if (cached !== undefined) {
-    return cached;
-  }
+    for (const item of value) {
+      clone.push(walk.visit(item, asserted));
+    }
 
-  beginClone(value, walk);
-
-  const clone: unknown[] = [];
-
-  for (const item of value) {
-    clone.push(walk.visit(item, asserted));
-  }
-
-  finishClone(value, asserted, walk, clone);
-
-  return clone;
-};
+    return clone;
+  });
 
 const strictSchemaObject = (
   value: Record<string, unknown>,
   asserted: boolean,
   walk: SchemaWalk,
-): unknown => {
-  const cache = cloneCache(walk, asserted);
-  const cached = cache.get(value);
+): unknown =>
+  memoizedClone(value, asserted, walk, () => {
+    const clone: Record<PropertyKey, unknown> = { ...value };
 
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  beginClone(value, walk);
-
-  const clone: Record<PropertyKey, unknown> = { ...value };
-
-  for (const key of Object.keys(value)) {
-    clone[key] = strictSchemaChild(key, value[key], asserted, walk);
-  }
-
-  const combinesWithSibling = Object.keys(value).some((keyword) =>
-    schemaCombiningKeywords.has(keyword),
-  );
-
-  const allowsUndeclaredKeys =
-    Object.hasOwn(value, 'unevaluatedProperties') && value['unevaluatedProperties'] !== false;
-
-  const closesObject = asserted && declaresObject(value);
-  const keepsObjectOpen = requiresObjectValue(value) || combinesWithSibling || allowsUndeclaredKeys;
-
-  if (closesObject && !keepsObjectOpen) {
-    const additionalProperties = value['additionalProperties'];
-
-    if (additionalProperties === undefined) {
-      clone['additionalProperties'] = false;
+    for (const key of Object.keys(value)) {
+      clone[key] = strictSchemaChild(key, value[key], asserted, walk);
     }
-  }
 
-  finishClone(value, asserted, walk, clone);
+    const combinesWithSibling = Object.keys(value).some((keyword) =>
+      schemaCombiningKeywords.has(keyword),
+    );
 
-  return clone;
-};
+    const allowsUndeclaredKeys =
+      Object.hasOwn(value, 'unevaluatedProperties') && value['unevaluatedProperties'] !== false;
+
+    const closesObject = asserted && declaresObject(value);
+
+    const keepsObjectOpen =
+      requiresObjectValue(value) || combinesWithSibling || allowsUndeclaredKeys;
+
+    if (closesObject && !keepsObjectOpen) {
+      const additionalProperties = value['additionalProperties'];
+
+      if (additionalProperties === undefined) {
+        clone['additionalProperties'] = false;
+      }
+    }
+
+    return clone;
+  });
 
 const strictSchemaValue = (value: unknown, asserted: boolean, walk: SchemaWalk): unknown => {
   if (Array.isArray(value)) {
@@ -510,7 +507,7 @@ const verifyInstalled = (
   }
 };
 
-const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
+const installWrapper = (pi: ExtensionAPI): void => {
   const current = readRegisterTool(pi);
   const registered = current.bind(pi);
   const probe = createProbe();
@@ -539,8 +536,6 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   }
 
   verifyInstalled(pi, wrapper, current, probe);
-
-  return wrapper;
 };
 
 // Wraps `registerTool` once per API. Every tool registered through that API after this call has

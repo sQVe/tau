@@ -380,6 +380,32 @@ it('does not register the probe when the readback reaches the original registrat
   expect(registered).toEqual([]);
 });
 
+it('accepts a readback that wraps the probe error after reaching the wrapper', () => {
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => (tool: unknown) => {
+      try {
+        return stored(tool);
+      } catch (error) {
+        throw new Error('host logged the failure', { cause: error });
+      }
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).not.toThrow();
+
+  expect(registered).toEqual([]);
+});
+
 it('reports a readback that validates the definition before it delegates as a refused probe', () => {
   const registered: unknown[] = [];
   let stored = (tool: unknown): unknown => registered.push(tool);
