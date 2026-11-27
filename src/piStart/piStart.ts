@@ -3,7 +3,13 @@ import { stat } from 'node:fs/promises';
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';
 
-import { checkOutput, commandFailure, parseJson, runCommand } from '../command.js';
+import {
+  checkOutput,
+  commandFailure,
+  normalizeCancellation,
+  parseJson,
+  runCommand,
+} from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { errorMessage, isMissingFile } from '../errors.js';
 import { isGitRepository } from '../git.js';
@@ -61,12 +67,9 @@ export interface PiLaunchResult {
   aborted: boolean;
   reply: string | undefined;
   terminal: string | undefined;
-  // Undefined means no readback happened, or it failed and `error` carries the failure. A launch
-  // can set `error` while `terminal` is live, so a caller must read both fields.
+  // Undefined means no readback happened, or it failed and `error` carries a `StartedTabError`. A
+  // launch can set `error` while `terminal` is live, so a caller must read both fields.
   model: string | undefined;
-  // True when the tab exists but the model readback failed. A caller must surface that failure even
-  // when the child adopted the start claim, because the running terminal may be the wrong model.
-  readbackFailed: boolean;
   error: unknown;
 }
 
@@ -180,9 +183,7 @@ const isGitCheckout = async (folder: string, bareRoot: boolean): Promise<boolean
 
 // The abort signal's reason may be a plain value, which would reject with a non-Error.
 const normalizeLaunchCancellation = (signal: AbortSignal | undefined, error: unknown): unknown =>
-  signal?.aborted === true && !(error instanceof Error)
-    ? new Error('The Pi launch was cancelled.', { cause: error })
-    : error;
+  normalizeCancellation(signal, error, 'The Pi launch was cancelled.');
 
 const throwIfLaunchCancelled = (signal: AbortSignal | undefined): void => {
   try {
@@ -217,7 +218,6 @@ const launchResult = (
   reply: result.stdout,
   terminal,
   model: undefined,
-  readbackFailed: false,
   error,
 });
 
@@ -342,7 +342,6 @@ const launch = async (
       reply: undefined,
       terminal: undefined,
       model: undefined,
-      readbackFailed: false,
       error: normalizeLaunchCancellation(runtime.signal, error),
     };
   }
@@ -362,7 +361,7 @@ const launch = async (
 
     return { ...launched, model };
   } catch (error) {
-    return { ...launched, readbackFailed: true, error };
+    return { ...launched, error };
   }
 };
 
@@ -376,7 +375,10 @@ const terminalFromReply = (
 
     checkOutput(label, schema, created);
 
-    return { terminal: replyTerminal(reply), error: undefined };
+    return {
+      terminal: isRecord(created) ? replyText(created, 'terminal') : undefined,
+      error: undefined,
+    };
   } catch (error) {
     return { terminal: undefined, error };
   }

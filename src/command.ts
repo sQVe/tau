@@ -27,9 +27,13 @@ export const piExec =
 export const outputPreviewLength = 200;
 
 // The abort signal's reason may be a plain value, which would reject with a non-Error.
-const normalizeCancellation = (signal: AbortSignal | undefined, error: unknown): unknown =>
+export const normalizeCancellation = (
+  signal: AbortSignal | undefined,
+  error: unknown,
+  message = 'Cancelled.',
+): unknown =>
   signal?.aborted === true && !(error instanceof Error)
-    ? new Error('Cancelled.', { cause: error })
+    ? new Error(message, { cause: error })
     : error;
 
 export const commandFailure = (

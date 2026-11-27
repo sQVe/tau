@@ -43,8 +43,9 @@ const readbackMaxIntervalMilliseconds = 1000;
 // this window and report the failure instead of the whole readback budget.
 export const readbackFailureBudgetMilliseconds = 5_000;
 
-// A terminal that never shows a Pi foreground (Pi exited on a bad flag, or the pane shows a shell)
-// is not going to change, so report it without using the whole readback budget.
+// A terminal that shows a foreground that is not Pi (Pi exited on a bad flag, or the pane shows a
+// shell) is not going to change, so report it without using the whole readback budget. A terminal
+// that shows no foreground at all may still be starting, so it keeps the caller's deadline.
 export const readbackNoForegroundBudgetMilliseconds = 15_000;
 
 const requestedModelOf = (model: string | undefined): RequestedModel => {
@@ -200,11 +201,16 @@ const pollStartedModel = async (
   requested: RequestedModel,
   failure: ReadFailure | undefined,
   interval: number,
-  noForegroundSince: number,
+  nonPiSince: number | undefined,
 ): Promise<string> => {
   const { terminal, signal, deadline } = request;
-  const limit = Math.min(deadline, noForegroundSince + readbackNoForegroundBudgetMilliseconds);
-  const remaining = limit - Date.now();
+
+  const limitOf = (since: number | undefined): number =>
+    since === undefined
+      ? deadline
+      : Math.min(deadline, since + readbackNoForegroundBudgetMilliseconds);
+
+  const remaining = limitOf(nonPiSince) - Date.now();
 
   if (remaining <= 0) {
     throw unreadableModelError(terminal, failure?.error);
@@ -231,7 +237,8 @@ const pollStartedModel = async (
     throw unreadableModelError(terminal);
   }
 
-  const remainingAfterRead = limit - Date.now();
+  const nextNonPiSince = nonPiSince ?? (attempt.argv === undefined ? undefined : Date.now());
+  const remainingAfterRead = limitOf(nextNonPiSince) - Date.now();
 
   if (remainingAfterRead <= 0) {
     throw unreadableModelError(terminal, attempt.failure?.error);
@@ -244,7 +251,7 @@ const pollStartedModel = async (
     requested,
     attempt.failure,
     Math.min(interval * 2, readbackMaxIntervalMilliseconds),
-    noForegroundSince,
+    nextNonPiSince,
   );
 };
 
@@ -254,5 +261,5 @@ export const readStartedModel = (request: StartedModelReadRequest): Promise<stri
     requestedModelOf(request.model),
     undefined,
     readbackInitialIntervalMilliseconds,
-    Date.now(),
+    undefined,
   );

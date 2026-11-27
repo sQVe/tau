@@ -35,6 +35,14 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
     },
   },
   {
+    name: 'a task message that equals the started model value',
+    facts: facts({
+      argv: ['pi', '--provider', 'claude-bridge', '--model', 'claude-opus-5-5'],
+      message: 'claude-opus-5-5',
+    }),
+    expected: { kind: 'match', model: 'claude-bridge/claude-opus-5-5' },
+  },
+  {
     name: 'a task message that starts with a model flag',
     facts: facts({
       requested: { provider: undefined, id: undefined },

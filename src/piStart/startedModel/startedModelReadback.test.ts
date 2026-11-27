@@ -108,16 +108,59 @@ it('reports a terminal that never shows a Pi foreground before the whole budget'
       deadline: Date.now() + 30_000,
     }).catch((error: unknown) => error);
 
-    await vi.advanceTimersByTimeAsync(readbackNoForegroundBudgetMilliseconds + 1_000);
+    await vi.advanceTimersByTimeAsync(readbackNoForegroundBudgetMilliseconds - 1_000);
+
+    expect(await Promise.race([reading, Promise.resolve('waiting' as const)])).toBe('waiting');
+
+    await vi.advanceTimersByTimeAsync(2_000);
 
     const outcome = await Promise.race([reading, Promise.resolve('waiting' as const)]);
 
     expect(outcome).toBeInstanceOf(Error);
     expect((outcome as Error).message).toContain('The started model on terminal t-new is unknown');
-    expect(reads).toBeLessThan(30);
+    expect(reads).toBeGreaterThan(1);
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('keeps polling for a Pi foreground past the no-foreground budget', async () => {
+  const startedAt = Date.now();
+
+  const read = async (): Promise<readonly string[] | undefined> =>
+    Date.now() - startedAt < 20_000 ? undefined : ['pi'];
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  try {
+    const reading = readStartedModel({
+      readForegroundArgv: read,
+      terminal: 't-new',
+      model: undefined,
+      message: undefined,
+      signal: undefined,
+      deadline: Date.now() + 30_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(25_000);
+
+    expect(await reading).toBe('default');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('reads the default model when the task message starts with a model flag', async () => {
+  const model = await readStartedModel({
+    readForegroundArgv: async () => ['pi', '--model=other'],
+    terminal: 't-new',
+    model: undefined,
+    message: '--model=other',
+    signal: undefined,
+    deadline: Date.now() + 30_000,
+  });
+
+  expect(model).toBe('default');
 });
 
 it('keeps an earlier read failure when a later read uses the rest of the budget', async () => {

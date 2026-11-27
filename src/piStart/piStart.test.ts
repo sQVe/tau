@@ -767,6 +767,22 @@ it('a start bounds the creation command with the launch timeout', async () => {
   expect(timeouts[0]).toBe(30_000);
 });
 
+it('a right-of start bounds the split command with the launch timeout', async () => {
+  const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
+  const root = await createTemporaryRepository(onTestFinished);
+  const timeouts: (number | undefined)[] = [];
+
+  const exec: typeof fake.exec = (command, commandArguments, options) => {
+    timeouts.push(options?.timeout);
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  await startPiSessionRightOf({ exec, cwd: root }, paneRequest(root, readerFor(fake, root)));
+
+  expect(timeouts[0]).toBe(30_000);
+});
+
 it('a start normalizes a non-Error cancellation from the creation command', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);

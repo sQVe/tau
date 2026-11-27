@@ -67,13 +67,16 @@ const displayModel = ({ provider, id }: RequestedModel): string => {
   return provider === undefined ? id : `${provider}/${id}`;
 };
 
-// The task message is the last positional argument, so a message that starts with a model flag is
-// not the flag the launcher passed.
+// The task message is the last positional argument. Only a message that starts with `-` can be read
+// as a flag, so only that form is removed; a message that equals a flag value must stay.
 const withoutTrailingMessage = (
   argv: readonly string[],
   message: string | undefined,
-): readonly string[] =>
-  message !== undefined && argv.at(-1) === message ? argv.slice(0, -1) : argv;
+): readonly string[] => {
+  const isFlagLikeMessage = message?.startsWith('-') === true && argv.at(-1) === message;
+
+  return isFlagLikeMessage ? argv.slice(0, -1) : argv;
+};
 
 export const decideStartedModel = (facts: StartedModelFacts): StartedModelDecision => {
   const started = startedReference(withoutTrailingMessage(facts.argv, facts.message));
