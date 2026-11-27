@@ -59,54 +59,40 @@ const second = { file: 'body.md', path: '/run/b/body.md', bytes: Buffer.from('Se
 it('rewrites every file argument to a unique verified copy', () => {
   const result = verifiedCopyArguments(
     ['--body-file', first.path, '--input', second.path],
-    [first, second],
+    [
+      { index: 1, file: first },
+      { index: 3, file: second },
+    ],
     directory,
   );
 
   expect(result.commandArguments).toEqual([
     '--body-file',
-    join(directory, '0-body.md'),
+    join(directory, '1-body.md'),
     '--input',
-    join(directory, '2-body.md'),
+    join(directory, '3-body.md'),
   ]);
 
   expect(result.copies).toEqual([
-    { path: join(directory, '0-body.md'), bytes: first.bytes },
-    { path: join(directory, '2-body.md'), bytes: second.bytes },
+    { path: join(directory, '1-body.md'), bytes: first.bytes },
+    { path: join(directory, '3-body.md'), bytes: second.bytes },
   ]);
 });
 
-it('reads a flag-like file path as a value, not as a flag', () => {
+it('keeps a flag-like file path as a value, not as a flag', () => {
   const flagLike = { file: 'body.md', path: '--title', bytes: Buffer.from('Flag-like.\n') };
 
   const result = verifiedCopyArguments(
-    ['--body-file', flagLike.path, '--input', first.path],
-    [flagLike, first],
+    ['--body-file', flagLike.path],
+    [{ index: 1, file: flagLike }],
     directory,
   );
 
-  expect(result.commandArguments).toEqual([
-    '--body-file',
-    join(directory, '0---title'),
-    '--input',
-    join(directory, '2-body.md'),
-  ]);
-});
-
-it('refuses a file flag with no value after it', () => {
-  expect(() => verifiedCopyArguments(['--input'], [first], directory)).toThrow(
-    'The publication command has no file after --input.',
-  );
-});
-
-it('refuses a file flag whose value the plan did not verify', () => {
-  expect(() => verifiedCopyArguments(['--body-file', '/run/other.md'], [first], directory)).toThrow(
-    'The publication command reads a file the plan did not verify.',
-  );
+  expect(result.commandArguments).toEqual(['--body-file', join(directory, '1---title')]);
 });
 
 it('refuses a command that names no file', () => {
-  expect(() => verifiedCopyArguments(['pr', 'view', '7'], [first], directory)).toThrow(
+  expect(() => verifiedCopyArguments(['pr', 'view', '7'], [], directory)).toThrow(
     'The publication command names no file to read.',
   );
 });

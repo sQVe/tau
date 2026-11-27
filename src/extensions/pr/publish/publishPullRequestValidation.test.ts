@@ -19,6 +19,15 @@ const isRoot = process.getuid?.() === 0;
 
 const setUp = () => setUpPublication(onTestFinished);
 
+// The title can hold the flag text, so the real file flag is the last one. Only a verified copy
+// below a private publish directory counts, so other commands are left alone.
+const verifiedCopyPathOf = (commandArguments: readonly string[]): string | undefined => {
+  const index = commandArguments.lastIndexOf('--body-file');
+  const path = index === -1 ? undefined : commandArguments[index + 1];
+
+  return path?.includes('tau-publish-') === true ? path : undefined;
+};
+
 it('refuses a dry run without a kind', async () => {
   const { fake, run } = await setUp();
   const directory = await preparePullRequestRun(run);
@@ -284,10 +293,14 @@ it('publishes the verified bytes when the file changes after the token check', a
 
   const { fake, run } = await createPublicationTool(onTestFinished, {
     wrapExec: (exec) => async (command, commandArguments, options) => {
-      publishedPath = commandArguments[commandArguments.indexOf('--body-file') + 1] ?? '';
-      fileMode = (await stat(publishedPath)).mode;
-      directoryMode = (await stat(dirname(publishedPath))).mode;
-      await writeFile(join(directory, 'body.md'), 'Changed after the token check.\n');
+      const copyPath = verifiedCopyPathOf(commandArguments);
+
+      if (copyPath !== undefined) {
+        publishedPath = copyPath;
+        fileMode = (await stat(publishedPath)).mode;
+        directoryMode = (await stat(dirname(publishedPath))).mode;
+        await writeFile(join(directory, 'body.md'), 'Changed after the token check.\n');
+      }
 
       return exec(command, commandArguments, options);
     },
@@ -338,11 +351,13 @@ it.skipIf(isRoot)('keeps the publish result when the private copy cannot be remo
 
   const { run } = await createPublicationTool(onTestFinished, {
     wrapExec: (exec) => async (command, commandArguments, options) => {
-      privateDirectory = dirname(
-        commandArguments[commandArguments.indexOf('--body-file') + 1] ?? '',
-      );
+      const copyPath = verifiedCopyPathOf(commandArguments);
 
-      await chmod(privateDirectory, 0o500);
+      if (copyPath !== undefined) {
+        privateDirectory = dirname(copyPath);
+
+        await chmod(privateDirectory, 0o500);
+      }
 
       return exec(command, commandArguments, options);
     },

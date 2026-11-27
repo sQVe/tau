@@ -61,16 +61,19 @@ export const requirePullRequestNumber = (action: string, pr: number | undefined)
     throw new Error(`${action} needs pr.`);
   }
 
-  if (!Number.isInteger(pr)) {
-    throw new TypeError(`pr must be an integer, not ${pr}.`);
+  const isInteger = Number.isInteger(pr);
+  const isSafeInteger = Number.isSafeInteger(pr);
+
+  if (!isInteger) {
+    throw new Error(`pr must be an integer, not ${pr}.`);
   }
 
-  if (!Number.isSafeInteger(pr)) {
-    throw new RangeError(`pr must be a safe integer, not ${pr}.`);
+  if (!isSafeInteger) {
+    throw new Error(`pr must be a safe integer, not ${pr}.`);
   }
 
   if (pr < 1) {
-    throw new RangeError(`pr must be 1 or more, not ${pr}.`);
+    throw new Error(`pr must be 1 or more, not ${pr}.`);
   }
 
   return pr;

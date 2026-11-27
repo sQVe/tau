@@ -1,5 +1,4 @@
 import type { CommandRuntime } from '../../../command.js';
-import { formatRepository } from '../../../github/repositoryTargetDecisions.js';
 import { requireValue } from '../prRun.js';
 import { decidePublication, publicationToken } from './publishDecisions.js';
 import { publishedUrl, runWithVerifiedBytes } from './publishExecution.js';
@@ -49,8 +48,8 @@ export const publishPublication = async (
     throw new Error(decision.reason);
   }
 
-  const stdout = await runWithVerifiedBytes(runtime, plan.commandArguments, plan.files);
-  const url = publishedUrl(target.kind, formatRepository(target.repository), stdout);
+  const stdout = await runWithVerifiedBytes(runtime, plan.commandArguments, plan.fileArguments);
+  const url = publishedUrl(target.kind, plan.target.repository, stdout);
 
   return { kind: target.kind, files: plan.files.map((file) => file.file), url };
 };

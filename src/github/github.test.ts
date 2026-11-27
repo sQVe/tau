@@ -143,55 +143,46 @@ const refusedPullRequestNumbers: {
   rule: string;
   pr: number | undefined;
   error: string;
-  errorClass: ErrorConstructor;
 }[] = [
   {
     rule: 'refuses a missing number and names the action',
     pr: undefined,
     error: 'publish needs pr.',
-    errorClass: Error,
   },
   {
     rule: 'refuses zero',
     pr: 0,
     error: 'pr must be 1 or more, not 0.',
-    errorClass: RangeError,
   },
   {
     rule: 'refuses a negative number',
     pr: -1,
     error: 'pr must be 1 or more, not -1.',
-    errorClass: RangeError,
   },
   {
     rule: 'refuses a fraction',
     pr: 1.5,
     error: 'pr must be an integer, not 1.5.',
-    errorClass: TypeError,
   },
   {
     rule: 'refuses a number that is not safe',
     pr: Number.MAX_SAFE_INTEGER + 1,
     error: `pr must be a safe integer, not ${Number.MAX_SAFE_INTEGER + 1}.`,
-    errorClass: RangeError,
   },
   {
     rule: 'refuses NaN',
     pr: Number.NaN,
     error: 'pr must be an integer, not NaN.',
-    errorClass: TypeError,
   },
   {
     rule: 'refuses infinity',
     pr: Number.POSITIVE_INFINITY,
     error: 'pr must be an integer, not Infinity.',
-    errorClass: TypeError,
   },
 ];
 
-it.each(refusedPullRequestNumbers)('$rule', ({ pr, error, errorClass }) => {
+it.each(refusedPullRequestNumbers)('$rule', ({ pr, error }) => {
   const thrown = thrownBy(() => requirePullRequestNumber('publish', pr));
 
-  expect(thrown).toBeInstanceOf(errorClass);
   expect(thrown).toHaveProperty('message', error);
 });

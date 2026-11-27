@@ -49,10 +49,16 @@ export interface PublicationFinding {
   excerpt: string;
 }
 
+export interface FileArgument {
+  index: number;
+  file: PublicationFile & { path: string };
+}
+
 export interface PublicationPlan {
   target: PublicationTargetFacts;
   files: RunFile[];
   commandArguments: string[];
+  fileArguments: FileArgument[];
   findings: PublicationFinding[];
 }
 
@@ -158,15 +164,23 @@ export const publicationTarget = async (
 
 // A linked directory on the way to the file could make the read leave the run directory.
 
-const rejectPathLinks = async (directory: string, file: string) => {
-  let path = directory;
-
-  for (const segment of file.split(/[/\\]/u)) {
-    path = join(path, segment);
-    // oxlint-disable-next-line no-await-in-loop -- Checking in path order names the first refusal.
-    await rejectLinkedFile(path, 'read');
+const rejectPathLinksFrom = async (
+  directory: string,
+  segments: readonly string[],
+  index: number,
+): Promise<void> => {
+  if (index >= segments.length) {
+    return;
   }
+
+  const path = join(directory, ...segments.slice(0, index + 1));
+
+  await rejectLinkedFile(path, 'read');
+  await rejectPathLinksFrom(directory, segments, index + 1);
 };
+
+const rejectPathLinks = (directory: string, file: string): Promise<void> =>
+  rejectPathLinksFrom(directory, file.split(/[/\\]/u), 0);
 
 const readPublicationFile = async (directory: string, file: string): Promise<RunFile> => {
   const path = join(directory, file);
@@ -292,11 +306,13 @@ const readPullRequestFiles = async (target: PublicationTarget): Promise<PullRequ
 
   const files = [titleFile, bodyFile];
 
+  const findings = target.action === 'dryRun' ? files.flatMap(fileFindings) : [];
+
   return {
     title,
     bodyFile,
     files,
-    findings: files.flatMap(fileFindings),
+    findings,
     repositoryTarget: formatRepository(repository),
   };
 };
@@ -309,6 +325,15 @@ const rejectCreateInput = (action: string, name: string, value: unknown) => {
   throw new Error(`${action} cannot take ${name} with pr. Omit ${name} or pr.`);
 };
 
+const appendFile = (
+  commandArguments: string[],
+  flag: string,
+  file: RunFile,
+): Pick<PublicationPlan, 'commandArguments' | 'fileArguments'> => ({
+  commandArguments: [...commandArguments, flag, file.path],
+  fileArguments: [{ index: commandArguments.length + 1, file }],
+});
+
 const readPullRequestEdit = async (target: PublicationTarget): Promise<PublicationPlan> => {
   const { action, directory, request } = target;
 
@@ -320,17 +345,11 @@ const readPullRequestEdit = async (target: PublicationTarget): Promise<Publicati
 
   const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
 
-  const commandArguments = [
-    'pr',
-    'edit',
-    String(pr),
-    '--repo',
-    repositoryTarget,
-    '--title',
-    title,
+  const { commandArguments, fileArguments } = appendFile(
+    ['pr', 'edit', String(pr), '--repo', repositoryTarget, '--title', title],
     '--body-file',
-    bodyFile.path,
-  ];
+    bodyFile,
+  );
 
   const facts: PublicationTargetFacts = {
     kind: 'pullRequest',
@@ -339,7 +358,7 @@ const readPullRequestEdit = async (target: PublicationTarget): Promise<Publicati
     pr,
   };
 
-  return { target: facts, files, commandArguments, findings };
+  return { target: facts, files, commandArguments, fileArguments, findings };
 };
 
 const readPullRequestCreate = async (target: PublicationTarget): Promise<PublicationPlan> => {
@@ -352,21 +371,13 @@ const readPullRequestCreate = async (target: PublicationTarget): Promise<Publica
   const isDraft = request.draft === true;
   const draft = isDraft ? ['--draft'] : [];
 
-  const commandArguments = [
-    'pr',
-    'create',
-    '--repo',
-    repositoryTarget,
-    '--base',
-    base,
-    '--head',
-    head,
-    '--title',
-    title,
+  const { commandArguments, fileArguments } = appendFile(
+    ['pr', 'create', '--repo', repositoryTarget, '--base', base, '--head', head, '--title', title],
     '--body-file',
-    bodyFile.path,
-    ...draft,
-  ];
+    bodyFile,
+  );
+
+  commandArguments.push(...draft);
 
   const facts: PublicationTargetFacts = {
     kind: 'pullRequest',
@@ -377,7 +388,7 @@ const readPullRequestCreate = async (target: PublicationTarget): Promise<Publica
     draft: isDraft,
   };
 
-  return { target: facts, files, commandArguments, findings };
+  return { target: facts, files, commandArguments, fileArguments, findings };
 };
 
 const readPullRequest = (target: PublicationTarget): Promise<PublicationPlan> =>
@@ -394,15 +405,11 @@ const readComment = async (target: PublicationTarget): Promise<PublicationPlan> 
 
   const repositoryTarget = formatRepository(repository);
 
-  const commandArguments = [
-    'pr',
-    'comment',
-    String(pr),
-    '--repo',
-    repositoryTarget,
+  const { commandArguments, fileArguments } = appendFile(
+    ['pr', 'comment', String(pr), '--repo', repositoryTarget],
     '--body-file',
-    file.path,
-  ];
+    file,
+  );
 
   const facts: PublicationTargetFacts = {
     kind: 'comment',
@@ -411,7 +418,9 @@ const readComment = async (target: PublicationTarget): Promise<PublicationPlan> 
     pr,
   };
 
-  return { target: facts, files: [file], commandArguments, findings: fileFindings(file) };
+  const findings = target.action === 'dryRun' ? fileFindings(file) : [];
+
+  return { target: facts, files: [file], commandArguments, fileArguments, findings };
 };
 
 const needsBody = (event: string | undefined): event is 'COMMENT' | 'REQUEST_CHANGES' =>
@@ -454,16 +463,11 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
   const repositoryTarget = formatRepository(repository);
   const path = `repos/${repositoryPath(repository)}/pulls/${pr}/reviews`;
 
-  const commandArguments = [
-    'api',
-    '--hostname',
-    repository.host,
-    '--method',
-    'POST',
-    path,
+  const { commandArguments, fileArguments } = appendFile(
+    ['api', '--hostname', repository.host, '--method', 'POST', path],
     '--input',
-    file.path,
-  ];
+    file,
+  );
 
   const review = parseReview(file);
 
@@ -480,7 +484,9 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
     pr,
   };
 
-  return { target: facts, files: [file], commandArguments, findings: reviewFindings(file, review) };
+  const findings = target.action === 'dryRun' ? reviewFindings(file, review) : [];
+
+  return { target: facts, files: [file], commandArguments, fileArguments, findings };
 };
 
 export const planPublication = (target: PublicationTarget): Promise<PublicationPlan> => {

@@ -6,8 +6,8 @@ import type { CommandRuntime } from '../../../command.js';
 import { runCommand } from '../../../command.js';
 import { label } from '../../../github/github.js';
 import { isRecord } from '../../../schema.js';
-import type { PublicationFile } from './publishDecisions.js';
 import type { PublicationKind } from './publishKind.js';
+import type { FileArgument } from './publishPlan.js';
 
 interface VerifiedCopy {
   path: string;
@@ -22,84 +22,24 @@ export interface VerifiedCommand {
 const privateDirectoryMode = 0o700;
 const privateFileMode = 0o600;
 
-const fileArgumentFlags: ReadonlySet<string> = new Set(['--body-file', '--input']);
-
-const valueFlags: ReadonlySet<string> = new Set([
-  '--repo',
-  '--title',
-  '--base',
-  '--head',
-  '--hostname',
-  '--method',
-]);
-
-const booleanFlags: ReadonlySet<string> = new Set(['--draft']);
-
-export const flagKind = (flag: string): 'boolean' | 'file' | 'value' | undefined => {
-  if (valueFlags.has(flag)) {
-    return 'value';
-  }
-
-  if (fileArgumentFlags.has(flag)) {
-    return 'file';
-  }
-
-  return booleanFlags.has(flag) ? 'boolean' : undefined;
-};
-
 // Rewrites every file argument to a unique copy below directory, so equal basenames cannot collide.
 export const verifiedCopyArguments = (
   commandArguments: readonly string[],
-  files: readonly (PublicationFile & { path: string })[],
+  fileArguments: readonly FileArgument[],
   directory: string,
 ): VerifiedCommand => {
-  const rewritten = [...commandArguments];
-  const copies: VerifiedCopy[] = [];
-  let found = false;
-  let skipValue = false;
-
-  for (const [index, argument] of commandArguments.entries()) {
-    if (skipValue) {
-      skipValue = false;
-
-      continue;
-    }
-
-    const kind = flagKind(argument);
-
-    if (kind === 'value') {
-      skipValue = true;
-
-      continue;
-    }
-
-    if (kind !== 'file') {
-      continue;
-    }
-
-    found = true;
-
-    const sourcePath = commandArguments[index + 1];
-
-    if (sourcePath === undefined) {
-      throw new Error(`The publication command has no file after ${argument}.`);
-    }
-
-    const source = files.find((file) => file.path === sourcePath);
-
-    if (source === undefined) {
-      throw new Error('The publication command reads a file the plan did not verify.');
-    }
-
-    const path = join(directory, `${index}-${basename(source.path)}`);
-
-    rewritten[index + 1] = path;
-    copies.push({ path, bytes: source.bytes });
-    skipValue = true;
+  if (fileArguments.length === 0) {
+    throw new Error('The publication command names no file to read.');
   }
 
-  if (!found) {
-    throw new Error('The publication command names no file to read.');
+  const rewritten = [...commandArguments];
+  const copies: VerifiedCopy[] = [];
+
+  for (const { index, file } of fileArguments) {
+    const path = join(directory, `${index}-${basename(file.path)}`);
+
+    rewritten[index] = path;
+    copies.push({ path, bytes: file.bytes });
   }
 
   return { commandArguments: rewritten, copies };
@@ -110,14 +50,14 @@ export const verifiedCopyArguments = (
 export const runWithVerifiedBytes = async (
   runtime: CommandRuntime,
   commandArguments: readonly string[],
-  files: readonly (PublicationFile & { path: string })[],
+  fileArguments: readonly FileArgument[],
 ): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-publish-'));
 
   try {
     await chmod(directory, privateDirectoryMode);
 
-    const verified = verifiedCopyArguments(commandArguments, files, directory);
+    const verified = verifiedCopyArguments(commandArguments, fileArguments, directory);
 
     await Promise.all(
       verified.copies.map((copy) => writeFile(copy.path, copy.bytes, { mode: privateFileMode })),
