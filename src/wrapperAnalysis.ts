@@ -288,19 +288,44 @@ const envSplitString = (
 };
 
 // Only an `env` that runs the command may split its value. An `env` word after the command is an
-// ordinary argument, which the shell passes on unsplit. Every leading `env` may carry a split
-// string, and only the innermost one runs the command its words describe.
-export const withEnvSplitStrings = (words: readonly string[]): readonly string[] => {
-  const envWrappers = commandStart(words).wrappers.filter(({ name }) => name === 'env');
-  let result = [...words];
+// ordinary argument, which the shell passes on unsplit. A split value may itself start with an
+// `env` wrapper, so the first split string is expanded and the result is read again.
+const wordsKey = (words: readonly string[]): string => JSON.stringify(words);
 
-  // Expanding from the last wrapper keeps the indices of the earlier wrappers valid.
-  for (const env of envWrappers.toReversed()) {
-    const split = envSplitString(result, env.index + 1);
+const envSplitIn = (
+  words: readonly string[],
+): { index: number; words: string[]; end: number } | undefined => {
+  for (const { name, index } of commandStart(words).wrappers) {
+    if (name !== 'env') {
+      continue;
+    }
+
+    const split = envSplitString(words, index + 1);
 
     if (split !== undefined) {
-      result = [...result.slice(0, env.index + 1), ...split.words, ...result.slice(split.end)];
+      return { index, ...split };
     }
+  }
+
+  return undefined;
+};
+
+// A split value that reproduces the words it came from would expand forever, so a repeated word
+// list ends the expansion.
+export const withEnvSplitStrings = (words: readonly string[]): readonly string[] => {
+  const seen = new Set<string>();
+  let result = [...words];
+
+  while (!seen.has(wordsKey(result))) {
+    seen.add(wordsKey(result));
+
+    const split = envSplitIn(result);
+
+    if (split === undefined) {
+      return result;
+    }
+
+    result = [...result.slice(0, split.index + 1), ...split.words, ...result.slice(split.end)];
   }
 
   return result;

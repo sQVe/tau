@@ -46,6 +46,21 @@ describe('commandWords', () => {
     ]);
   });
 
+  it.each([
+    {
+      name: 'a split string that names another env split string',
+      words: ['env', '-S', 'env -S hc send t1 x'],
+      head: ['hc', 'send', 't1', 'x'],
+    },
+    {
+      name: 'an env argument after a split value',
+      words: ['env', '-S', 'echo', 'env', '-S', 'hello'],
+      head: ['echo', 'env', '-S', 'hello'],
+    },
+  ])('reads the command head past $name', ({ words, head }) => {
+    expect(commandWords(words).words).toEqual(head);
+  });
+
   it('stops reading env options at the first operand', () => {
     expect(commandWords(['env', 'echo', '-S', 'sh -c cmd']).words).toEqual([
       'echo',
