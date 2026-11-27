@@ -129,24 +129,21 @@ const readWithinBudget = (
 ): Promise<ReadWithinBudget> =>
   new Promise((resolve, reject) => {
     const readController = new AbortController();
-    // The handler runs before the timer exists, so the timer lives in a holder rather than a
-    // declaration the handler closes over.
-    const timerHolder: { current: NodeJS.Timeout | undefined } = { current: undefined };
 
     const onAbort = (): void => {
-      clearTimeout(timerHolder.current);
+      clearTimeout(timer);
       readController.abort();
       reject(cancellationError(signal));
     };
 
-    timerHolder.current = setTimeout(() => {
+    const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       readController.abort();
       resolve({ kind: 'timeout' });
     }, remaining);
 
     const settle = (): void => {
-      clearTimeout(timerHolder.current);
+      clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
     };
 
