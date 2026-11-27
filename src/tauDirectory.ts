@@ -11,7 +11,7 @@ import {
 } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
-import { isMissingFile, isMissingPath } from './errors.ts';
+import { isMissingFile } from './errors.ts';
 import { currentBareProbeCache, findCheckoutRoot, isBareRoot, readGit, runGit } from './git.ts';
 import type { BareProbe, GitOptions, ProbeCache } from './git.ts';
 
@@ -52,7 +52,7 @@ const writtenPaths = (segments: readonly string[]) => [
 
 export const existingEntry = (path: string): Promise<Stats | undefined> =>
   lstat(path).catch((error: unknown) => {
-    if (isMissingPath(error)) {
+    if (isMissingFile(error)) {
       return undefined;
     }
 
@@ -65,7 +65,7 @@ export const isSymlink = async (path: string): Promise<boolean> => {
 
     return stats.isSymbolicLink();
   } catch (error) {
-    if (isMissingPath(error)) {
+    if (isMissingFile(error)) {
       return false;
     }
 
@@ -77,7 +77,7 @@ export const isSymlink = async (path: string): Promise<boolean> => {
 // writer forever. A directory always has several links.
 export const rejectLinkedFile = async (path: string, verb: 'read' | 'write'): Promise<void> => {
   const stats = await lstat(path).catch((error: unknown) => {
-    if (isMissingPath(error)) {
+    if (isMissingFile(error)) {
       return undefined;
     }
 
@@ -136,7 +136,7 @@ const rejectLinkedIgnoreFile = async (root: string) => {
       throw new Error(`Refusing to write through a file with another hard link: ${path}`);
     }
   } catch (error) {
-    if (!isMissingPath(error)) {
+    if (!isMissingFile(error)) {
       throw error;
     }
   }
@@ -313,21 +313,6 @@ export const rejectTauSymlinks = async (root: string, path: string): Promise<voi
   await rejectParsedSymlinks(root, parseSegments(path));
 };
 
-// Refuses any directory a write would go through that exists but is not a directory. The target is
-// not a parent, and a reader names its own refusal for a missing target.
-const rejectTauFile = async (root: string, segments: readonly string[]) => {
-  const trailingTargetAndIgnoreFile = 2;
-  const directories = writtenPaths(segments).slice(0, -trailingTargetAndIgnoreFile);
-
-  const entries = await Promise.all(directories.map((path) => existingEntry(join(root, path))));
-  const index = entries.findIndex((entry) => entry !== undefined && !entry.isDirectory());
-  const directory = directories[index];
-
-  if (directory !== undefined) {
-    throw new Error(`Tau directory ${join(root, directory)} is not a directory.`);
-  }
-};
-
 // Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or
 // `.tau/.gitignore` has another hard link, since either could send writes outside the repository,
 // or when Git would not ignore files in it. Changes nothing, so a read can run it.
@@ -340,7 +325,6 @@ const checkTauDirectoryWith = async (
 
   await rejectParsedSymlinks(root, segments);
   await rejectLinkedIgnoreFile(root);
-  await rejectTauFile(root, segments);
   await rejectLaterExceptions(root);
 
   if (await isBareRoot(root, bareProbes)) {
@@ -360,8 +344,8 @@ export const checkTauDirectory = (root: string, path: string): Promise<void> =>
   checkTauDirectoryWith(root, path, currentBareProbeCache());
 
 // Creates `<root>/.tau/<path>` and makes Git ignore everything in `.tau/`. Refuses before it
-// creates anything when a path it would write through is a symlink, when `.tau` is not a directory,
-// when `.tau/.gitignore` has another link, or when Git tracks
+// creates anything when a path it would write through is a symlink, when `.tau/.gitignore` has
+// another hard link, or when Git tracks
 // `.tau/.gitignore` or a file in the target. Refuses before it creates the target when Git would
 // not ignore it. A path swapped between the check and the write can still escape.
 export const ensureTauDirectory = async (root: string, path: string): Promise<string> => {
@@ -370,7 +354,6 @@ export const ensureTauDirectory = async (root: string, path: string): Promise<st
 
   await rejectParsedSymlinks(root, segments);
   await rejectLinkedIgnoreFile(root);
-  await rejectTauFile(root, segments);
 
   if (await isBareRoot(root, bareProbes)) {
     await rejectLaterExceptions(root);

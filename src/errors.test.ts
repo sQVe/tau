@@ -6,7 +6,6 @@ import {
   failureWithRelease,
   hasErrorCode,
   isMissingFile,
-  isMissingPath,
   toError,
 } from './errors.js';
 
@@ -43,13 +42,6 @@ it.for<[string, unknown]>([
 it('reads a missing file from the ENOENT code only', () => {
   expect(isMissingFile(withCode('ENOENT'))).toBe(true);
   expect(isMissingFile(withCode('EISDIR'))).toBe(false);
-});
-
-it('reads a missing path from ENOENT and ENOTDIR only', () => {
-  expect(isMissingPath(withCode('ENOENT'))).toBe(true);
-  expect(isMissingPath(withCode('ENOTDIR'))).toBe(true);
-  expect(isMissingPath(withCode('EISDIR'))).toBe(false);
-  expect(isMissingPath('ENOENT')).toBe(false);
 });
 
 it.for<[string, unknown, string]>([

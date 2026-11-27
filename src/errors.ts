@@ -55,6 +55,3 @@ export const errorCode = (error: unknown): string | undefined => {
 export const hasErrorCode = (error: unknown, code: string): boolean => errorCode(error) === code;
 
 export const isMissingFile = (error: unknown): boolean => hasErrorCode(error, 'ENOENT');
-
-export const isMissingPath = (error: unknown): boolean =>
-  isMissingFile(error) || hasErrorCode(error, 'ENOTDIR');
