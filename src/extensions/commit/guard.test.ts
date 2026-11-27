@@ -590,13 +590,26 @@ describe('guardToolCall', () => {
   it.each([
     ['a separate -e option', 'cd -e sub'],
     ['a clustered -e option', 'cd -eP sub'],
-  ])('keeps the directory when cd names %s', (_label, prefix) => {
+    ['mixed options', 'cd -P -L -e sub'],
+    ['a clustered mixed option', 'cd -PLe sub'],
+  ])('blocks a script file in a directory cd names with %s', (_label, prefix) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(`${prefix}; sh commit.sh`), directory);
+  });
+
+  it.each([
+    ['a separate -e option', 'cd -e sub'],
+    ['a clustered mixed option', 'cd -PLe sub'],
+  ])('allows a harmless script in a directory cd names with %s', (_label, prefix) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
     writeScript(directory, 'sub/commit.sh', 'echo hello\n');
 
-    expectOutcome(makeBashEvent(`${prefix}; sh commit.sh`), directory);
+    expect(guard(makeBashEvent(`${prefix}; sh commit.sh`), directory)).toBeUndefined();
   });
 
   it('keeps the working directory when HOME names no directory', () => {

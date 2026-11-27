@@ -1009,32 +1009,15 @@ const homeDirectory = (): string | undefined => {
   return home === '' ? undefined : home;
 };
 
+// Bash accepts these options in any order and in clusters, and ignores `-e` unless `-P` is in
+// effect at the end, so every matching word is an option.
 const cdOptionPattern = /^-[LPe@]+$/u;
 
 // Options end at the first operand, so `cd sub -P` names two operands. An option `cd` rejects is an
 // operand, so it keeps the current directory.
-// `-e` is valid only after `-P`, so `cd -e sub` names a rejected option and keeps the directory.
-const isCdOption = (word: string, physical: boolean): boolean => {
-  if (!cdOptionPattern.test(word)) {
-    return false;
-  }
-
-  const errorsIndex = word.indexOf('e');
-
-  if (errorsIndex === -1) {
-    return true;
-  }
-
-  const physicalIndex = word.indexOf('P');
-  const physicalBefore = physicalIndex !== -1 && physicalIndex < errorsIndex;
-
-  return physical || physicalBefore;
-};
-
 const directoryOperands = (words: string[]): string[] => {
   const operands: string[] = [];
   let optionsEnded = false;
-  let physical = false;
 
   for (const word of words) {
     if (!optionsEnded && word === '--') {
@@ -1043,9 +1026,7 @@ const directoryOperands = (words: string[]): string[] => {
       continue;
     }
 
-    if (!optionsEnded && isCdOption(word, physical)) {
-      physical = physical || word.includes('P');
-
+    if (!optionsEnded && cdOptionPattern.test(word)) {
       continue;
     }
 
