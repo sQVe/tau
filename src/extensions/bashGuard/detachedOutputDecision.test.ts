@@ -1,14 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { loggedClose, nohupClose } from '../../../tests/bashGuardCommands.js';
+import { loggedClose, nestedScript, nohupClose } from '../../../tests/bashGuardCommands.js';
 import { quoteShellArgument } from '../../shell/shell.js';
 import { decideDetachedOutput } from './detachedOutputDecision.js';
 
 const blocks = (command: string): boolean =>
   decideDetachedOutput({ toolName: 'bash', command })?.block === true;
-
-const nestedScript = (depth: number): string =>
-  depth === 0 ? 'true' : `bash -c ${quoteShellArgument(nestedScript(depth - 1))}`;
 
 // Wraps a nested script chain in `outerDepth` foreground scripts, then backgrounds it.
 const nestedBackgroundedScript = (outerDepth: number, innerDepth: number): string => {
