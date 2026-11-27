@@ -44,9 +44,15 @@ export const commandFailure = (
     return undefined;
   }
 
-  const output = (result.stderr || result.stdout).trim();
+  const output = (result.stderr.trim() || result.stdout.trim()).slice(0, outputPreviewLength);
 
-  return new Error(`${label} failed: ${output}`);
+  if (output !== '') {
+    return new Error(`${label} failed: ${output}`);
+  }
+
+  const status = result.killed ? 'killed' : `exit code ${result.code}`;
+
+  return new Error(`${label} failed: ${status}`);
 };
 
 export const runCommand = async (

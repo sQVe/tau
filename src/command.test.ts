@@ -1,7 +1,28 @@
 import { Type } from 'typebox';
 import { expect, it } from 'vitest';
 
-import { checkOutput, parseJson } from './command.js';
+import { checkOutput, commandFailure, parseJson } from './command.js';
+
+const failedResult = (overrides: Record<string, unknown>) =>
+  ({ code: 1, killed: false, stdout: '', stderr: '', ...overrides }) as never;
+
+it('falls back to stdout when stderr is whitespace only', () => {
+  const failure = commandFailure('herdr-app do', failedResult({ stderr: ' \n', stdout: 'boom' }));
+
+  expect(failure?.message).toBe('herdr-app do failed: boom');
+});
+
+it('names the exit status when a failed command printed nothing', () => {
+  const failure = commandFailure('herdr-app do', failedResult({ code: 3 }));
+
+  expect(failure?.message).toBe('herdr-app do failed: exit code 3');
+});
+
+it('names a killed command that printed nothing', () => {
+  const failure = commandFailure('herdr-app do', failedResult({ killed: true }));
+
+  expect(failure?.message).toBe('herdr-app do failed: killed');
+});
 
 it('returns the value of valid JSON', () => {
   expect(parseJson('tool list', '{"a":[1]}')).toEqual({ a: [1] });
