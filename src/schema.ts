@@ -23,13 +23,27 @@ interface RegisterToolHost {
 
 export type AskKind = 'choice' | 'approval';
 
-interface InstallProbe {
-  reachedWrapper: boolean;
-}
-
 // A proxy trap or an accessor can return a different function on every read, so a function read
 // back is only evidence when a probe passed to it reaches the wrapper.
 type ProbeCall = (tool: unknown) => unknown;
+
+// A schema built in code may point at itself. JSON Schema must serialize, so a self-reference is
+// refused instead of cloned. A node that two positions share is cloned once per closure rule,
+// because the asserted and unasserted positions close a node differently.
+interface SchemaWalk {
+  readonly assertedClones: WeakMap<object, unknown>;
+  readonly unassertedClones: WeakMap<object, unknown>;
+  readonly visiting: WeakSet<object>;
+  readonly visit: (value: unknown, asserted: boolean) => unknown;
+}
+
+interface ProbeTool extends ToolDefinition {
+  readonly [probeMarker]: true;
+  reachedWrapper: boolean;
+}
+
+// A schema node the walk clones, either an object or an array.
+type SchemaNode = Record<PropertyKey, unknown> | readonly unknown[];
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -66,9 +80,10 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // a tool schema can hold a subschema under it. A subschema under a keyword outside these sets stays
 // as written, so an object there keeps its keys open, including objects nested inside it. An
 // explicit additionalProperties: true stays, because the tool author declared free-form input;
-// closing it would reject calls the author declared valid. A node that declares
-// `unevaluatedProperties` stays open too, because that keyword already decides which extra keys it
-// allows.
+// closing it would reject calls the author declared valid. A node whose own `unevaluatedProperties`
+// is not `false` stays open too, because that keyword already decides which extra keys it allows.
+// `unevaluatedProperties: false` forbids them, so the node still needs the literal keyword for a
+// consumer that ignores it.
 export const schemaMapKeywords: ReadonlySet<string> = new Set(['patternProperties', 'properties']);
 
 export const schemaArrayKeywords: ReadonlySet<string> = new Set(['prefixItems']);
@@ -141,20 +156,51 @@ const requiresObjectValue = (value: Record<string, unknown>): boolean => {
   return requiresConstant || requiresEntry;
 };
 
-const strictSchemaMap = (
-  value: unknown,
+const cyclicSchemaMessage =
+  'Cannot install strict tool parameters: the parameters schema refers to itself.';
+
+const cloneCache = (walk: SchemaWalk, asserted: boolean): WeakMap<object, unknown> =>
+  asserted ? walk.assertedClones : walk.unassertedClones;
+
+const beginClone = (value: SchemaNode, walk: SchemaWalk): void => {
+  if (walk.visiting.has(value)) {
+    throw new Error(cyclicSchemaMessage);
+  }
+
+  walk.visiting.add(value);
+};
+
+const finishClone = (
+  value: SchemaNode,
   asserted: boolean,
-  visit: (child: unknown, asserted: boolean) => unknown,
-): unknown => {
+  walk: SchemaWalk,
+  clone: unknown,
+): void => {
+  walk.visiting.delete(value);
+  cloneCache(walk, asserted).set(value, clone);
+};
+
+const strictSchemaMap = (value: unknown, asserted: boolean, walk: SchemaWalk): unknown => {
   if (!isRecord(value)) {
     return value;
   }
 
+  const cache = cloneCache(walk, asserted);
+  const cached = cache.get(value);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  beginClone(value, walk);
+
   const clone: Record<PropertyKey, unknown> = { ...value };
 
   for (const key of Object.keys(value)) {
-    clone[key] = visit(value[key], asserted);
+    clone[key] = walk.visit(value[key], asserted);
   }
+
+  finishClone(value, asserted, walk, clone);
 
   return clone;
 };
@@ -163,48 +209,48 @@ const strictSchemaChild = (
   key: string,
   child: unknown,
   asserted: boolean,
-  visit: (value: unknown, asserted: boolean) => unknown,
+  walk: SchemaWalk,
 ): unknown => {
   if (schemaUnassertedKeywords.has(key)) {
-    return visit(child, false);
+    return walk.visit(child, false);
   }
 
   if (schemaMapKeywords.has(key)) {
-    return strictSchemaMap(child, asserted, visit);
+    return strictSchemaMap(child, asserted, walk);
   }
 
   if (schemaArrayKeywords.has(key)) {
-    return Array.isArray(child) ? visit(child, asserted) : child;
+    return Array.isArray(child) ? walk.visit(child, asserted) : child;
   }
 
   if (schemaValueKeywords.has(key)) {
-    return visit(child, asserted);
+    return walk.visit(child, asserted);
   }
 
   return child;
 };
 
-// A schema built in code may point at itself. Each clone is recorded before its children are walked,
-// so a repeated node returns the clone already made instead of recursing forever.
 const strictSchemaArray = (
   value: readonly unknown[],
   asserted: boolean,
-  seen: WeakMap<object, unknown>,
-  visit: (value: unknown, asserted: boolean) => unknown,
+  walk: SchemaWalk,
 ): unknown => {
-  const cached = seen.get(value);
+  const cache = cloneCache(walk, asserted);
+  const cached = cache.get(value);
 
   if (cached !== undefined) {
     return cached;
   }
 
+  beginClone(value, walk);
+
   const clone: unknown[] = [];
 
-  seen.set(value, clone);
-
   for (const item of value) {
-    clone.push(visit(item, asserted));
+    clone.push(walk.visit(item, asserted));
   }
+
+  finishClone(value, asserted, walk, clone);
 
   return clone;
 };
@@ -212,28 +258,30 @@ const strictSchemaArray = (
 const strictSchemaObject = (
   value: Record<string, unknown>,
   asserted: boolean,
-  seen: WeakMap<object, unknown>,
-  visit: (value: unknown, asserted: boolean) => unknown,
+  walk: SchemaWalk,
 ): unknown => {
-  const cached = seen.get(value);
+  const cache = cloneCache(walk, asserted);
+  const cached = cache.get(value);
 
   if (cached !== undefined) {
     return cached;
   }
 
+  beginClone(value, walk);
+
   const clone: Record<PropertyKey, unknown> = { ...value };
 
-  seen.set(value, clone);
-
   for (const key of Object.keys(value)) {
-    clone[key] = strictSchemaChild(key, value[key], asserted, visit);
+    clone[key] = strictSchemaChild(key, value[key], asserted, walk);
   }
 
   const combinesWithSibling = Object.keys(value).some((keyword) =>
     schemaCombiningKeywords.has(keyword),
   );
 
-  const allowsUndeclaredKeys = 'unevaluatedProperties' in value;
+  const allowsUndeclaredKeys =
+    Object.hasOwn(value, 'unevaluatedProperties') && value['unevaluatedProperties'] !== false;
+
   const closesObject = asserted && declaresObject(value);
   const keepsObjectOpen = requiresObjectValue(value) || combinesWithSibling || allowsUndeclaredKeys;
 
@@ -245,30 +293,32 @@ const strictSchemaObject = (
     }
   }
 
+  finishClone(value, asserted, walk, clone);
+
   return clone;
 };
 
-const strictSchemaValue = (
-  value: unknown,
-  asserted = true,
-  seen = new WeakMap<object, unknown>(),
-): unknown => {
-  const visit = (child: unknown, childAsserted: boolean): unknown =>
-    strictSchemaValue(child, childAsserted, seen);
-
+const strictSchemaValue = (value: unknown, asserted: boolean, walk: SchemaWalk): unknown => {
   if (Array.isArray(value)) {
-    return strictSchemaArray(value, asserted, seen, visit);
+    return strictSchemaArray(value, asserted, walk);
   }
 
   if (!isRecord(value)) {
     return value;
   }
 
-  return strictSchemaObject(value, asserted, seen, visit);
+  return strictSchemaObject(value, asserted, walk);
 };
 
 export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Schema => {
-  const strict = strictSchemaValue(schema);
+  const walk: SchemaWalk = {
+    assertedClones: new WeakMap(),
+    unassertedClones: new WeakMap(),
+    visiting: new WeakSet(),
+    visit: (value, asserted) => strictSchemaValue(value, asserted, walk),
+  };
+
+  const strict = strictSchemaValue(schema, true, walk);
 
   // The clone holds every key, so its values win. Spreading the schema keeps the caller's type
   // without a type assertion, which this package's lint forbids.
@@ -343,42 +393,41 @@ const readRegisterTool = (pi: ExtensionAPI): RegisterToolReturningValue => {
 
 const probeError = new Error('the strict registration probe reached the wrapper');
 
-const probeTarget: ToolDefinition = {
+const probeMarker: unique symbol = Symbol('strict tool parameters probe');
+
+const createProbeTool = (): ProbeTool => ({
+  [probeMarker]: true,
+  reachedWrapper: false,
   name: 'tau-strict-tool-parameters-probe',
   label: 'strict tool parameters probe',
   description: 'A tool used once to confirm that the strict registration wrapper is installed.',
   parameters: Type.Object({}),
   execute: () => Promise.reject(probeError),
-};
-
-// Any read from the probe throws, so a host that never reaches the wrapper refuses it before it
-// registers anything.
-const probeTool = new Proxy(probeTarget, {
-  get: () => {
-    throw probeError;
-  },
 });
 
-let activeProbe: InstallProbe | undefined;
+const isProbeTool = (value: unknown): value is ProbeTool =>
+  typeof value === 'object' && value !== null && probeMarker in value;
 
 const isProbeCall = (value: unknown): value is ProbeCall => typeof value === 'function';
 
-const confirmsWrapper = (readBack: unknown): boolean => {
+// The probe is an ordinary tool object, so a host that reads its fields before it delegates still
+// reaches the wrapper. Only the probe of this install is evidence: another install's probe is
+// refused without being registered, and a host that records the probe may keep that tool.
+const confirmsWrapper = (readBack: unknown, probe: ProbeTool): boolean => {
   if (!isProbeCall(readBack)) {
     return false;
   }
 
-  const probe: InstallProbe = { reachedWrapper: false };
-
-  activeProbe = probe;
+  let result: unknown;
 
   try {
-    readBack(probeTool);
+    result = readBack(probe);
   } catch {
-    // A host refuses the probe; reaching the wrapper is the evidence.
-  } finally {
-    activeProbe = undefined;
+    return probe.reachedWrapper;
   }
+
+  // A host that defers the call cannot confirm the wrapper, and its rejection must not escape.
+  void Promise.resolve(result).catch(() => undefined);
 
   return probe.reachedWrapper;
 };
@@ -389,6 +438,7 @@ const verifyInstalled = (
   pi: ExtensionAPI,
   wrapper: RegisterToolReturningValue,
   current: RegisterToolReturningValue,
+  probe: ProbeTool,
 ): void => {
   let descriptor: PropertyDescriptor | undefined;
 
@@ -415,7 +465,7 @@ const verifyInstalled = (
     failInstall(pi, current, notWritableMessage);
   }
 
-  if (readBack !== wrapper && !confirmsWrapper(readBack)) {
+  if (readBack !== wrapper && !confirmsWrapper(readBack, probe)) {
     failInstall(pi, current, notWritableMessage);
   }
 };
@@ -423,10 +473,13 @@ const verifyInstalled = (
 const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   const current = readRegisterTool(pi);
   const registered = current.bind(pi);
+  const probe = createProbeTool();
 
   const wrapper: RegisterToolReturningValue = (tool) => {
-    if (activeProbe !== undefined) {
-      activeProbe.reachedWrapper = true;
+    if (isProbeTool(tool)) {
+      if (tool === probe) {
+        probe.reachedWrapper = true;
+      }
 
       throw probeError;
     }
@@ -445,7 +498,7 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
     throw new Error(notWritableMessage, { cause: error });
   }
 
-  verifyInstalled(pi, wrapper, current);
+  verifyInstalled(pi, wrapper, current, probe);
 
   return wrapper;
 };

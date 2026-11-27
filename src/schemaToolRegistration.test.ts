@@ -198,6 +198,101 @@ it('installs through an accessor that returns a new bound wrapper on every read'
   ]);
 });
 
+it('installs through an accessor whose readback reads the tool before it delegates', () => {
+  const registered: unknown[] = [];
+  const names: string[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      const delegate = stored;
+
+      return (tool: { name: string }) => {
+        names.push(tool.name);
+
+        return delegate(tool);
+      };
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(names).toContain('sample');
+
+  expect(registered).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+it("refuses an accessor that returns another API's wrapper while discarding the write", () => {
+  const registered: unknown[] = [];
+  const installed = registrationApi((tool) => registered.push(tool));
+
+  strictToolRegistration(installed);
+
+  const otherWrapper = installed.registerTool;
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => otherWrapper.bind(api),
+    set: () => undefined,
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+
+  expect(registered).toEqual([]);
+});
+
+it('does not leave an unhandled rejection when the host defers the registration', async () => {
+  const rejections: unknown[] = [];
+
+  const onRejection = (reason: unknown): void => {
+    rejections.push(reason);
+  };
+
+  process.on('unhandledRejection', onRejection);
+
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => async (tool: unknown) => stored(tool),
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  try {
+    expect(() => {
+      strictToolRegistration(api);
+    }).not.toThrow();
+
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+  } finally {
+    process.off('unhandledRejection', onRejection);
+  }
+
+  expect(rejections).toEqual([]);
+});
+
 const passThroughRegisterTool = (tool: unknown): unknown => tool;
 
 it('restores the original registerTool when the readback fails', () => {

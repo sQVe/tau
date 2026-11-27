@@ -499,21 +499,70 @@ it('keeps a node that declares unevaluatedProperties open', () => {
   expect(Value.Check(strict, { value: 'a', extra: 1 })).toBe(true);
 });
 
-it('keeps a schema that points at itself from overflowing the stack', () => {
-  const schema: Record<string, unknown> = { type: 'object', properties: {} };
-  const properties = schema['properties'];
+// `unevaluatedProperties: false` forbids undeclared keys, but a consumer that only reads
+// `additionalProperties` would accept them, so the node still needs the literal keyword.
+it('closes a node whose unevaluatedProperties is false', () => {
+  const schema = Type.Unsafe<unknown>({
+    type: 'object',
+    properties: { value: { type: 'string' } },
+    unevaluatedProperties: false,
+  });
 
-  if (!isRecord(properties)) {
-    throw new Error('the fixture must declare properties');
-  }
+  const strict = strictToolParameters(schema);
+
+  expect(strict).toMatchObject({ additionalProperties: false });
+  expect(Value.Check(strict, { value: 'a', extra: 1 })).toBe(false);
+});
+
+// A clone keeps the keys the schema itself declares, and an inherited keyword is not part of it.
+it('closes a node whose unevaluatedProperties only its prototype declares', () => {
+  const schema: Record<string, unknown> = {
+    type: 'object',
+    properties: { value: { type: 'string' } },
+  };
+
+  Object.setPrototypeOf(schema, { unevaluatedProperties: true });
+
+  const strict = strictToolParameters(schema);
+
+  expect(strict).toMatchObject({ additionalProperties: false });
+});
+
+it('reports a schema that points at itself instead of cloning a cycle', () => {
+  const properties: Record<string, unknown> = {};
+  const schema = { type: 'object', properties };
 
   properties['self'] = schema;
 
-  const strict = strictToolParameters(schema);
-  const strictProperties = isRecord(strict) ? strict['properties'] : undefined;
-  const self = isRecord(strictProperties) ? strictProperties['self'] : undefined;
-  const selfAdditionalProperties = isRecord(self) ? self['additionalProperties'] : undefined;
+  expect(() => strictToolParameters(schema)).toThrow(
+    'Cannot install strict tool parameters: the parameters schema refers to itself.',
+  );
+});
 
-  expect(isRecord(self)).toBe(true);
-  expect(selfAdditionalProperties).toBe(false);
+it('clones a schema object that two positions share', () => {
+  const shared = { type: 'object', properties: { value: { type: 'string' } } };
+  const schema = { type: 'object', properties: { first: shared, second: shared } };
+
+  const strict = strictToolParameters(schema);
+  const first = isRecord(strict.properties) ? strict.properties['first'] : undefined;
+  const second = isRecord(strict.properties) ? strict.properties['second'] : undefined;
+
+  expect(isClosed(first)).toBe(true);
+  expect(isClosed(second)).toBe(true);
+  expect(Value.Check(strict, { first: { value: 'a' }, second: { value: 'b' } })).toBe(true);
+});
+
+// The closure rule depends on the position, so one clone per node is not enough: the unasserted
+// branch must keep the object open even when the asserted branch closed the same node.
+it('clones a node reached from an asserted and an unasserted position by its own rule', () => {
+  const shared = { type: 'object', properties: { value: { type: 'string' } } };
+  const schema = { type: 'object', properties: { inner: shared }, not: shared };
+
+  const strict = strictToolParameters(schema);
+  const inner = isRecord(strict.properties) ? strict.properties['inner'] : undefined;
+  const notChild = strict['not'];
+
+  expect(isClosed(inner)).toBe(true);
+  expect(notChild).not.toHaveProperty('additionalProperties');
+  expect(Value.Check(strict, { inner: { value: 'a' } })).toBe(false);
 });
