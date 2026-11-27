@@ -1104,6 +1104,8 @@ describe('guardToolCall', () => {
     ['env -S', "env -S 'git commit -m x'"],
     ['env -S with a script', "env -S 'sh commit.sh'"],
     ['env --split-string=', "env --split-string='git commit -m x'"],
+    ['an abbreviated env --split', "env --split 'git commit -m x'"],
+    ['an abbreviated env --split=', "env --split='git commit -m x'"],
   ])('blocks inline code after %s', (_label, command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1231,6 +1233,18 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     writeScript(directory, 'commit.sh', `#!/usr/bin/env -S "bash -c 'true'\ngit commit -m x\n`);
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
+  it('blocks a commit in a file whose env -S shebang expands its interpreter', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(
+      directory,
+      'commit.sh',
+      `#!/usr/bin/env -S \${SHELL} -c 'git commit -m x'\necho hello\n`,
+    );
 
     expectOutcome(makeBashEvent('./commit.sh'), directory);
   });

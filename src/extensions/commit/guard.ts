@@ -99,6 +99,24 @@ type PathState =
   | { kind: 'present' }
   | { kind: 'failed'; facts: NamedFileFacts };
 
+// `env -S` splits its value with its own word rules, so a quoted value stays one word. A value that
+// depends on the environment cannot be resolved, so the shell's word rules recover the words. When
+// the recovered program word itself needs the environment, the file may run any program, so the
+// caller cannot allow it.
+type EnvSplitWords =
+  | { readonly kind: 'words'; readonly words: readonly string[] }
+  | { readonly kind: 'unreadable' };
+
+type EnvTarget =
+  | { readonly kind: 'words'; readonly words: string[] }
+  | { readonly kind: 'unreadable' };
+
+interface ShebangInterpreter {
+  readonly name: string | undefined;
+  // True when an `env -S` value depends on the environment, so the program cannot be named.
+  readonly unreadable: boolean;
+}
+
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
 
@@ -399,6 +417,23 @@ const clusterValue = (
   return undefined;
 };
 
+// getopt_long accepts any unambiguous abbreviation of a long option, so `--split` names
+// `--split-string`.
+const abbreviatedLongOption = (word: string, options: ReadonlySet<string>): string | undefined => {
+  if (!word.startsWith('--') || word === '--') {
+    return undefined;
+  }
+
+  const equals = word.indexOf('=');
+  const name = equals === -1 ? word : word.slice(0, equals);
+
+  const candidates = [...options].filter(
+    (option) => option.startsWith('--') && option.startsWith(name),
+  );
+
+  return candidates.length === 1 ? candidates[0] : undefined;
+};
+
 // A value option takes the next word, an attached value, or a short-option cluster's value.
 const optionValue = (
   words: string[],
@@ -424,27 +459,51 @@ const optionValue = (
     return { value, next: index + 1 };
   }
 
+  const abbreviated = abbreviatedLongOption(word, options);
+
+  const equals = word.indexOf('=');
+
+  if (abbreviated !== undefined && equals !== -1) {
+    return { value: word.slice(equals + 1), next: index + 1 };
+  }
+
+  if (abbreviated !== undefined) {
+    const value = words[index + 1];
+
+    return value === undefined ? undefined : { value, next: index + 2 };
+  }
+
   return clusterValue(words, index, word, options);
 };
 
-// `env -S` splits its value with its own word rules, so a quoted value stays one word. A value that
-// depends on the environment cannot be resolved, so the shell's word rules recover the words.
-// When even those fail, no program can be named and the caller inspects the file.
-const splitStringWords = (value: string): readonly string[] | undefined => {
+const splitStringWords = (value: string): EnvSplitWords | undefined => {
   const split = splitEnvString(value);
 
   if (split.kind === 'words') {
-    return split.words;
+    return { kind: 'words', words: split.words };
   }
 
   const commands = parseShellCommands(value);
+  const words = commands?.flatMap((command) => command.words);
 
-  return commands?.flatMap((command) => command.words);
+  if (words === undefined) {
+    return undefined;
+  }
+
+  const program = words.find(
+    (word) => word !== '' && !word.startsWith('-') && !assignmentPattern.test(word),
+  );
+
+  if (split.kind === 'unreadable' && program?.includes('$') === true) {
+    return { kind: 'unreadable' };
+  }
+
+  return { kind: 'words', words };
 };
 
 // `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
 // before the program.
-const envTarget = (words: string[]): string[] | undefined => {
+const envTarget = (words: string[]): EnvTarget | undefined => {
   const valueOptions = wrapperOptionValues.get('env') ?? new Set<string>();
   const expanded: string[] = [];
 
@@ -461,7 +520,11 @@ const envTarget = (words: string[]): string[] | undefined => {
         return undefined;
       }
 
-      expanded.push(...splitWords);
+      if (splitWords.kind === 'unreadable') {
+        return splitWords;
+      }
+
+      expanded.push(...splitWords.words);
 
       break;
     }
@@ -483,12 +546,12 @@ const envTarget = (words: string[]): string[] | undefined => {
     (word) => word !== '' && !word.startsWith('-') && !assignmentPattern.test(word),
   );
 
-  return index === -1 ? undefined : expanded.slice(index);
+  return index === -1 ? undefined : { kind: 'words', words: expanded.slice(index) };
 };
 
 // A busybox applet is the program the wrapper runs, such as `sh` in `busybox sh`.
 const appletWord = (
-  words: string[],
+  words: readonly string[],
   index: number,
 ): { index: number; word: string } | undefined => {
   const word = words[index];
@@ -506,7 +569,7 @@ const appletWord = (
   return applet === undefined ? undefined : { index: index + 1, word: applet };
 };
 
-const appletInterpreter = (words: string[]): string | undefined => {
+const appletInterpreter = (words: readonly string[]): string | undefined => {
   const applet = appletWord(words, 0);
 
   if (applet !== undefined) {
@@ -518,7 +581,7 @@ const appletInterpreter = (words: string[]): string | undefined => {
   return first === undefined ? undefined : commandName(first);
 };
 
-const shebangInterpreter = (text: string): string | undefined => {
+const shebangInterpreter = (text: string): ShebangInterpreter | undefined => {
   if (!text.startsWith('#!')) {
     return undefined;
   }
@@ -534,23 +597,45 @@ const shebangInterpreter = (text: string): string | undefined => {
   const name = commandName(program);
 
   if (name !== 'env') {
-    return appletInterpreter([program, ...rest]);
+    return { name: appletInterpreter([program, ...rest]), unreadable: false };
   }
 
   const target = envTarget(rest);
 
-  return target === undefined ? undefined : appletInterpreter(target);
+  if (target === undefined) {
+    return { name: undefined, unreadable: false };
+  }
+
+  if (target.kind === 'unreadable') {
+    return { name: undefined, unreadable: true };
+  }
+
+  return { name: appletInterpreter(target.words), unreadable: false };
 };
 
 const isShellScript = (text: string): boolean => {
-  const interpreter = shebangInterpreter(text);
+  const shebang = shebangInterpreter(text);
 
-  return interpreter === undefined || shellInterpreters.has(interpreter);
+  if (shebang === undefined || shebang.unreadable) {
+    return true;
+  }
+
+  return shebang.name === undefined || shellInterpreters.has(shebang.name);
 };
 
 const textVerdict = (text: string, checksShebang: boolean): NamedFileVerdict => {
-  if (checksShebang && !isShellScript(text)) {
-    return 'allow';
+  if (checksShebang) {
+    const shebang = shebangInterpreter(text);
+
+    if (shebang?.unreadable === true) {
+      return 'block';
+    }
+
+    const namesAnotherProgram = shebang?.name !== undefined && !shellInterpreters.has(shebang.name);
+
+    if (namesAnotherProgram) {
+      return 'allow';
+    }
   }
 
   return text.includes('\u0000') ? 'block' : 'inspect';
