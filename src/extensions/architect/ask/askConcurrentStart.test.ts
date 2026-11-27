@@ -77,7 +77,7 @@ it('two asks started together start one hidden architect', async ({ onTestFinish
     JSON.stringify({
       terminal: 't-ask',
       ended: true,
-      reason: 'ended',
+      reason: 'exit',
       turn: 1,
       children: [],
       exit_code: 0,
@@ -145,7 +145,7 @@ it('an ask and an open started together start one architect', async ({
     JSON.stringify({
       terminal: 't-ask',
       ended: true,
-      reason: 'ended',
+      reason: 'exit',
       turn: 1,
       children: [],
       exit_code: 0,
@@ -238,7 +238,7 @@ it('the hidden ask passes the claim, ask record, session, and role to its child'
     JSON.stringify({
       terminal: 't-ask',
       ended: true,
-      reason: 'ended',
+      reason: 'exit',
       turn: 1,
       children: [],
       exit_code: 0,
@@ -313,7 +313,7 @@ it('an open and an ask started together let open win', async ({ onTestFinished: 
     JSON.stringify({
       terminal: 't-ask',
       ended: true,
-      reason: 'ended',
+      reason: 'exit',
       turn: 1,
       children: [],
       exit_code: 0,

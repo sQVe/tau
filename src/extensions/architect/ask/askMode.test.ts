@@ -7,8 +7,10 @@ import { expect, it, vi } from 'vitest';
 import { fakeExtensionApi } from '../../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { holdFileLock } from '../../../fileLock/fileLock.js';
 import { askRecordPath, readAskRecordAt, writeAskRecord, writeAskRecordAt } from '../record.js';
 import type { HiddenAskRecord, LiveAskRecord } from '../record.js';
+import { askEndedDetail } from './askHiddenRun.js';
 import { askModePrompt, registerAskMode } from './askMode.js';
 
 const askRecord = (): HiddenAskRecord => ({
@@ -129,6 +131,76 @@ it('ask mode blocks a handover send to a terminal that is not the lead', async (
 
   expect(shutdown).not.toHaveBeenCalled();
   expect(await readAskRecordAt(path)).toMatchObject({ status: 'running', answer: null });
+});
+
+it('ask mode fails a running ask and shuts down when its run settles without an answer', async ({
+  onTestFinished,
+}) => {
+  const { directory, path } = await askFile(onTestFinished);
+  const fake = fakeExtensionApi();
+  const shutdown = vi.fn<() => void>();
+
+  registerAskMode(fake.pi, () => directory, path);
+
+  await fake.handler('agent_settled')({}, { shutdown, cwd: directory } as never);
+
+  expect(shutdown).toHaveBeenCalledTimes(1);
+
+  expect(await readAskRecordAt(path)).toMatchObject({
+    status: 'failed',
+    detail: askEndedDetail,
+  });
+});
+
+it('ask mode leaves a sent ask unchanged when its run settles', async ({ onTestFinished }) => {
+  const { directory, path } = await askFile(onTestFinished);
+  const sent: HiddenAskRecord = { ...askRecord(), status: 'sent', answer: 'Use --quick.' };
+  const fake = fakeExtensionApi();
+  const shutdown = vi.fn<() => void>();
+
+  await writeAskRecordAt(path, sent);
+  registerAskMode(fake.pi, () => directory, path);
+
+  await fake.handler('agent_settled')({}, { shutdown, cwd: directory } as never);
+
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(await readAskRecordAt(path)).toEqual(sent);
+});
+
+it('ask mode leaves a record another writer settled before its update and does not shut down', async ({
+  onTestFinished,
+}) => {
+  const { directory, path } = await askFile(onTestFinished);
+
+  const settled: HiddenAskRecord = {
+    ...askRecord(),
+    status: 'failed',
+    detail: 'Another writer settled the ask.',
+  };
+
+  const fake = fakeExtensionApi();
+  const shutdown = vi.fn<() => void>();
+
+  const held = await holdFileLock({
+    lockPath: `${path}.lock`,
+    checkout: directory,
+    terminal: undefined,
+  });
+
+  if (held.kind !== 'held') {
+    throw new Error('The ask lock was not taken.');
+  }
+
+  await writeAskRecordAt(path, settled);
+  registerAskMode(fake.pi, () => directory, path);
+
+  const settling = fake.handler('agent_settled')({}, { shutdown, cwd: directory } as never);
+
+  await held.release();
+  await settling;
+
+  expect(shutdown).not.toHaveBeenCalled();
+  expect(await readAskRecordAt(path)).toEqual(settled);
 });
 
 it('ask mode leaves a live record alone', async ({ onTestFinished }) => {
