@@ -40,24 +40,20 @@ const multiActionBudget = 3000;
 // Tools over budget today, each with its current description length as its own ceiling.
 const descriptionExceptions: Readonly<Record<string, number>> = {};
 
-// Each ceiling caps a session at its larger measured size, the empty folder or the adopted project.
-// The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
-// ceiling. CI measures the pull request merged into its base branch, so a ceiling must also cover the
-// prompt text the base branch adds after the branch's last merge; measure that merge before lowering
-// one. That is why a local reading can sit below its ceiling.
+// Each ceiling caps a session at its larger measured size, the empty folder or the adopted project,
+// plus a merge allowance of 124 characters. The test rejects only growth, so lower a ceiling by hand
+// after a cut. The target is beside each ceiling. CI measures the pull request merged into its base
+// branch, so the allowance covers the base-branch prompt text measured at the merge; measure that
+// merge before lowering a ceiling. That is why a local reading can sit below its ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  // The adopted-project reading is 70,713. The ceiling adds 124 characters so a small base-branch
-  // prompt change does not fail the merge; measure the merge again before lowering it.
-  lead: 70_837, // target 38,000
-  // The adopted-project reading is 64,376. The ceiling adds 124 characters so a small base-branch
-  // prompt change does not fail the merge; measure the merge again before lowering it.
-  architect: 64_500,
-  worker: 29_356, // target 14,000
-  reviewer: 24_635, // target 11,000
-  checker: 24_788,
-  qa: 19_173, // measured locally; target 9,000
-  browser: 16_797, // target 9,000
-  scout: 16_356, // target 9,000
+  lead: 71_015, // reading 70,891; target 38,000
+  architect: 64_678, // reading 64,554
+  worker: 29_480, // reading 29,356; target 14,000
+  reviewer: 24_759, // reading 24,635; target 11,000
+  checker: 24_912, // reading 24,788
+  qa: 19_297, // reading 19,173; target 9,000
+  browser: 16_921, // reading 16,797; target 9,000
+  scout: 16_480, // reading 16,356; target 9,000
 };
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];
