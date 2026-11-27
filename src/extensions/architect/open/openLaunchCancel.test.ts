@@ -1,8 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { installCommandShim } from '../../../../tests/commandShimFake.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
@@ -32,7 +31,7 @@ it('reports the caller cancellation when an abort lands during the launch checko
     overrides: [
       {
         match: ' rev-parse --git-dir',
-        script: `touch ${quoteShellArgument(started)}\nwhile [ ! -e ${quoteShellArgument(release)} ]; do sleep 0.01; done\nexit 0`,
+        script: `touch ${quoteShellArgument(started)}\nwhile [ ! -e ${quoteShellArgument(release)} ]; do sleep 0.01; done`,
       },
     ],
   });
@@ -43,13 +42,18 @@ it('reports the caller cancellation when an abort lands during the launch checko
     requestFor(root, config.location, { ...runtime, signal: controller.signal }),
   ).catch((error: unknown) => error);
 
-  const probeDeadline = Date.now() + 10_000;
+  try {
+    await vi.waitFor(
+      () => {
+        expect(existsSync(started)).toBe(true);
+      },
+      { timeout: 10_000 },
+    );
+  } catch (error) {
+    writeFileSync(release, '');
 
-  while (!existsSync(started) && Date.now() < probeDeadline) {
-    await sleep(5);
+    throw error;
   }
-
-  expect(existsSync(started)).toBe(true);
 
   controller.abort(reason);
   writeFileSync(release, '');
