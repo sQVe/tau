@@ -98,8 +98,8 @@ interface PiSessionStarted {
 
 type PiSessionStart = { reply: string; target: PiStartTarget } | PiSessionStarted;
 
-interface PiSessionStartOptions {
-  requireTerminal: true;
+interface StartSessionOptions {
+  requireTerminal: boolean;
 }
 
 export const launchTimeoutMilliseconds = 30_000;
@@ -242,11 +242,8 @@ const replyText = (record: Record<string, unknown>, field: string): string | und
   return value === '' ? undefined : value;
 };
 
-const replyTerminal = (reply: string): string | undefined => {
-  const record = parseJsonObject(reply);
-
-  return record === undefined ? undefined : replyText(record, 'terminal');
-};
+const terminalOfRecord = (value: unknown): string | undefined =>
+  isRecord(value) ? replyText(value, 'terminal') : undefined;
 
 const placeOf = (record: Record<string, unknown>): string => {
   const places: string[] = [];
@@ -381,7 +378,7 @@ const terminalFromReply = (
     checkOutput(label, schema, created);
 
     return {
-      terminal: isRecord(created) ? replyText(created, 'terminal') : undefined,
+      terminal: terminalOfRecord(created),
       error: undefined,
     };
   } catch (error) {
@@ -435,21 +432,21 @@ export const launchPiSessionRightOf = async (
   );
 };
 
-export function startPiSession(
+async function startSession(
   runtime: CommandRuntime,
   request: PiStartRequest,
-  options: PiSessionStartOptions,
+  options: { requireTerminal: true },
 ): Promise<PiSessionStarted>;
-
-export function startPiSession(
+async function startSession(
   runtime: CommandRuntime,
   request: PiStartRequest,
+  options: { requireTerminal: false },
 ): Promise<PiSessionStart>;
 
-export async function startPiSession(
+async function startSession(
   runtime: CommandRuntime,
   request: PiStartRequest,
-  options?: PiSessionStartOptions,
+  options: StartSessionOptions,
 ): Promise<PiSessionStart> {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
@@ -468,12 +465,13 @@ export async function startPiSession(
     { timeout: launchTimeoutMilliseconds },
   );
 
-  // A caller that needs the terminal refuses the reply here, where the reply enters.
-  if (options?.requireTerminal === true) {
-    checkOutput('herdr-app do', terminalReplySchema, parseJson('herdr-app do', reply));
+  const created = parseJson('herdr-app do', reply);
+
+  if (options.requireTerminal) {
+    checkOutput('herdr-app do', terminalReplySchema, created);
   }
 
-  const terminal = replyTerminal(reply);
+  const terminal = terminalOfRecord(created);
 
   if (terminal === undefined) {
     return { reply, target };
@@ -485,6 +483,16 @@ export async function startPiSession(
 
   return { reply, target, terminal, model };
 }
+
+export const startPiSession = (
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+): Promise<PiSessionStart> => startSession(runtime, request, { requireTerminal: false });
+
+export const startPiSessionWithTerminal = (
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+): Promise<PiSessionStarted> => startSession(runtime, request, { requireTerminal: true });
 
 export const startPiSessionRightOf = async (
   runtime: CommandRuntime,

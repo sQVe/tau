@@ -10,7 +10,7 @@ import type { HandoverSender } from '../../handoverSender.js';
 import { senderEnvironment, senderLine } from '../../handoverSender.js';
 import { foregroundArgv } from '../../hc/hc.js';
 import { listSpaces } from '../../piStart/herdrPane.js';
-import { startPiSession } from '../../piStart/piStart.js';
+import { startPiSessionWithTerminal } from '../../piStart/piStart.js';
 import type { PiStartTarget } from '../../piStart/piStart.js';
 import { tabName } from '../../tabName.js';
 import { readHandoverText } from './handoverFile.js';
@@ -108,21 +108,17 @@ export const startHandover = async (
   const task = sender === undefined ? text : `${senderLine(sender)}\n\n${text}`;
   const environment = sender === undefined ? undefined : senderEnvironment(sender);
 
-  const started = await startPiSession(
-    runtime,
-    {
-      folder: request.folder,
-      target: () => launchTarget(runtime, request),
-      tabName: tabName('lead', request.title),
-      task,
-      model: request.model,
-      session: undefined,
-      bareRoot: request.bareRoot,
-      environment,
-      readForegroundArgv: (terminal, signal) => foregroundArgv({ ...runtime, signal }, terminal),
-    },
-    { requireTerminal: true },
-  );
+  const started = await startPiSessionWithTerminal(runtime, {
+    folder: request.folder,
+    target: () => launchTarget(runtime, request),
+    tabName: tabName('lead', request.title),
+    task,
+    model: request.model,
+    session: undefined,
+    bareRoot: request.bareRoot,
+    environment,
+    readForegroundArgv: (terminal, signal) => foregroundArgv({ ...runtime, signal }, terminal),
+  });
 
   const parsed = parseJson('herdr-app do', started.reply);
 

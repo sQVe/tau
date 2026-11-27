@@ -14,7 +14,7 @@ import {
   launchPiSession,
   launchPiSessionRightOf,
   launchTimeoutMilliseconds,
-  startPiSession,
+  startPiSessionWithTerminal,
 } from './piStart.js';
 import { readbackFailureBudgetMilliseconds } from './startedModel/startedModelReadback.js';
 
@@ -54,9 +54,6 @@ const launchWithForeground = (
   });
 };
 
-const modelOf = (result: Awaited<ReturnType<typeof startPiSession>>): string | undefined =>
-  'model' in result ? result.model : undefined;
-
 it('a start returns the model its terminal runs', async () => {
   const fake = launchWithForeground([
     'pi',
@@ -68,12 +65,12 @@ it('a start returns the model its terminal runs', async () => {
 
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
   );
 
-  expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
+  expect(result.model).toBe('morph/morph-dsv41flash-1017');
 });
 
 it.each([
@@ -95,7 +92,7 @@ it.each([
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
-    const opening = startPiSession(
+    const opening = startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
     );
@@ -108,7 +105,7 @@ it.each([
 
     const result = await opening;
 
-    expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
+    expect(result.model).toBe('morph/morph-dsv41flash-1017');
   } finally {
     vi.useRealTimers();
   }
@@ -136,12 +133,12 @@ it('a start retries a model read that first returns a non-Pi argv', async () => 
       : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
   };
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
   );
 
-  expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
+  expect(result.model).toBe('morph/morph-dsv41flash-1017');
   expect(reads).toBe(2);
 });
 
@@ -167,12 +164,12 @@ it('a start retries a model read that fails once before answering', async () => 
     return ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
   };
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
   );
 
-  expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
+  expect(result.model).toBe('morph/morph-dsv41flash-1017');
   expect(reads).toBe(2);
 });
 
@@ -205,7 +202,7 @@ it('a start keeps reading a terminal that is not registered yet past the failure
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
-    const opening = startPiSession(
+    const opening = startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
     ).catch((error: unknown) => error);
@@ -224,7 +221,7 @@ it('a start keeps reading a terminal that is not registered yet past the failure
 
     expect(result).not.toBeInstanceOf(Error);
 
-    expect(modelOf(result as Awaited<ReturnType<typeof startPiSession>>)).toBe(
+    expect((result as Awaited<ReturnType<typeof startPiSessionWithTerminal>>).model).toBe(
       'morph/morph-dsv41flash-1017',
     );
   } finally {
@@ -243,7 +240,7 @@ it('a start fails when the terminal runs another model', async () => {
 
   const root = await createTemporaryRepository(onTestFinished);
 
-  const failure = await startPiSession(
+  const failure = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), { model: 'claude-bridge/claude-opus-5-5' }),
   ).catch((error: unknown) => error);
@@ -264,7 +261,7 @@ it('a start fails when the terminal never shows a foreground before the deadline
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
-    const opening = startPiSession(
+    const opening = startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, neverReads),
     ).catch((error: unknown) => error);
@@ -295,7 +292,7 @@ it('an abort during the model readback ends the call', async () => {
   const controller = new AbortController();
   const cancellation = new Error('cancelled during the readback');
 
-  const opening = startPiSession(
+  const opening = startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root, signal: controller.signal },
     startRequest(root, neverReads),
   ).catch((error: unknown) => error);
@@ -333,7 +330,7 @@ it('an abort during the backoff pause ends the call before the next read', async
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
-    const opening = startPiSession(
+    const opening = startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root, signal: controller.signal },
       startRequest(root, readsNothing),
     ).catch((error: unknown) => error);
@@ -373,7 +370,7 @@ it('aborts an in-flight model read when the readback budget expires', async () =
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
-    const opening = startPiSession(
+    const opening = startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, reader),
     ).catch((error: unknown) => error);
@@ -412,7 +409,7 @@ it('bounds the launch and the readback with one timeout', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
-    const opening = startPiSession(
+    const opening = startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, neverReads),
     ).catch((error: unknown) => error);
@@ -448,12 +445,12 @@ it('a slow successful launch still leaves a window to read the model', async () 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
-    const result = await startPiSession(
+    const result = await startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, readerFor(fake, root), { model: 'morph/morph-dsv41flash-1017' }),
     );
 
-    expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
+    expect(result.model).toBe('morph/morph-dsv41flash-1017');
   } finally {
     vi.useRealTimers();
   }
@@ -523,11 +520,11 @@ it('a start reports the model when its terminal shows the Pi foreground late', a
       : ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
   };
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, reader, { model: 'morph/morph-dsv41flash-1017' }),
   );
 
-  expect(modelOf(result)).toBe('morph/morph-dsv41flash-1017');
+  expect(result.model).toBe('morph/morph-dsv41flash-1017');
   expect(reads).toBe(3);
 });

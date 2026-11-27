@@ -27,16 +27,14 @@ import {
   launchPiSessionRightOf,
   startPiSession,
   startPiSessionRightOf,
+  startPiSessionWithTerminal,
 } from './piStart.js';
-
-const terminalOf = (result: Awaited<ReturnType<typeof startPiSession>>): string | undefined =>
-  'terminal' in result ? result.terminal : undefined;
 
 it('a space start opens one tab with the argv as JSON', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), {
       model: 'morph/morph-dsv41flash-1017',
@@ -84,7 +82,7 @@ it('a space start returns the terminal from its reply', async () => {
 
   fake.overrideOutput('space.new', '{"space":"sp-1","tab":"tb-1","terminal":"t-space"}');
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), {
       target: { name: 'ticket-1' },
@@ -125,13 +123,12 @@ it('a required-terminal start rejects a reply without a terminal', async () => {
   fake.overrideOutput('space.new', '{"ok":true}');
 
   await expect(
-    startPiSession(
+    startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, readerFor(fake, root), {
         target: { name: 'ticket-1' },
         tabName: 'architect',
       }),
-      { requireTerminal: true },
     ),
   ).rejects.toThrow('herdr-app do printed unexpected output');
 
@@ -142,7 +139,7 @@ it('a space start names its first tab', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), {
       target: { name: 'ticket-1' },
@@ -187,7 +184,7 @@ it('a true bare repository root starts a session', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryBareRepository(onTestFinished);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), { bareRoot: true }),
   );
@@ -206,12 +203,12 @@ it('a bare repository starts a session without the caller naming it bare', async
   const fake = createHerdrAppFake();
   const root = await createTemporaryBareRepository(onTestFinished);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), { bareRoot: false }),
   );
 
-  expect(terminalOf(result)).toBe('t-new');
+  expect(result.terminal).toBe('t-new');
   expect(fake.calls).toHaveLength(2);
 });
 
@@ -219,12 +216,12 @@ it('a bare root layout starts a session', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryBareRoot(onTestFinished);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), { bareRoot: false }),
   );
 
-  expect(terminalOf(result)).toBe('t-new');
+  expect(result.terminal).toBe('t-new');
   expect(fake.calls).toHaveLength(2);
 });
 
@@ -236,12 +233,12 @@ it('a linked worktree starts a session', async () => {
   await git(repository, 'commit', '--quiet', '--allow-empty', '-m', 'one');
   await git(repository, 'worktree', 'add', '--quiet', worktree);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: repository },
     startRequest(worktree, readerFor(fake, repository)),
   );
 
-  expect(terminalOf(result)).toBe('t-new');
+  expect(result.terminal).toBe('t-new');
   expect(fake.calls).toHaveLength(2);
 });
 
@@ -249,7 +246,7 @@ it('a resolver start runs the target it resolves', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), {
       target: async () => ({ space: 'resolved-space' }),
@@ -295,7 +292,7 @@ it('a resolver that aborts the signal runs no command', async () => {
   const controller = new AbortController();
 
   await expect(
-    startPiSession(
+    startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root, signal: controller.signal },
       startRequest(root, readerFor(fake, root), {
         target: async () => {
@@ -316,7 +313,7 @@ it('a folder that is not a Git checkout is refused', async () => {
   const folder = temporaryDirectory(onTestFinished, 'tau-pi-start-');
 
   await expect(
-    startPiSession(
+    startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, readerFor(fake, root), { folder }),
     ),
@@ -333,7 +330,7 @@ it('a folder whose Git pointer names a missing path is refused', async () => {
   writeFileSync(join(folder, '.git'), 'gitdir: absent\n');
 
   await expect(
-    startPiSession(
+    startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, readerFor(fake, root), { folder }),
     ),
@@ -349,12 +346,12 @@ it('a folder inside a checkout starts a session', async () => {
 
   mkdirSync(folder);
 
-  const result = await startPiSession(
+  const result = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     startRequest(root, readerFor(fake, root), { folder }),
   );
 
-  expect(terminalOf(result)).toBe('t-new');
+  expect(result.terminal).toBe('t-new');
   expect(fake.calls).toHaveLength(2);
 });
 
@@ -370,7 +367,10 @@ it('a start whose Git cannot run runs no command', async () => {
   });
 
   await expect(
-    startPiSession({ exec: fake.exec, cwd: root }, startRequest(root, readerFor(fake, root))),
+    startPiSessionWithTerminal(
+      { exec: fake.exec, cwd: root },
+      startRequest(root, readerFor(fake, root)),
+    ),
   ).rejects.toThrow(/^git rev-parse --git-dir failed:/u);
 
   expect(fake.calls).toEqual([]);
@@ -383,7 +383,7 @@ it('a folder that is not a Git checkout refuses before the resolver runs', async
   const calls: string[] = [];
 
   await expect(
-    startPiSession(
+    startPiSessionWithTerminal(
       { exec: fake.exec, cwd: root },
       startRequest(root, readerFor(fake, root), {
         folder,
@@ -658,7 +658,7 @@ it('a start aborted at the checkout probe rejects with an Error for a non-Error 
 
   controller.abort('cancelled during the start checkout probe');
 
-  const failure = await startPiSession(
+  const failure = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root, signal: controller.signal },
     startRequest(root, readerFor(fake, root)),
   ).catch((error: unknown) => error);
@@ -690,7 +690,7 @@ it('a start whose resolver aborts with a non-Error reason rejects with an Error'
   const root = await createTemporaryRepository(onTestFinished);
   const controller = new AbortController();
 
-  const failure = await startPiSession(
+  const failure = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root, signal: controller.signal },
     startRequest(root, readerFor(fake, root), {
       target: async () => {
@@ -782,7 +782,7 @@ it('a start bounds the creation command with the launch timeout', async () => {
     return fake.exec(command, commandArguments, options);
   };
 
-  await startPiSession({ exec, cwd: root }, startRequest(root, readerFor(fake, root)));
+  await startPiSessionWithTerminal({ exec, cwd: root }, startRequest(root, readerFor(fake, root)));
 
   expect(timeouts[0]).toBe(30_000);
 });
@@ -816,7 +816,7 @@ it('a start normalizes a non-Error cancellation from the creation command', asyn
     return fake.exec(command, commandArguments, options);
   };
 
-  const failure = await startPiSession(
+  const failure = await startPiSessionWithTerminal(
     { exec, cwd: root, signal: controller.signal },
     startRequest(root, readerFor(fake, root)),
   ).catch((error: unknown) => error);
@@ -859,7 +859,7 @@ it('a space start readback failure carries the started space and tab', async () 
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
 
-  const failure = await startPiSession(
+  const failure = await startPiSessionWithTerminal(
     { exec: fake.exec, cwd: root },
     { ...startRequest(root, readerFor(fake, root)), readForegroundArgv: mismatchingReader },
   ).catch((error: unknown) => error);
