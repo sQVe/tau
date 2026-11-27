@@ -1215,6 +1215,26 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('./commit.sh'), directory);
   });
 
+  it('blocks a commit in a file whose env -S shebang quotes its interpreter', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(
+      directory,
+      'commit.sh',
+      `#!/usr/bin/env -S "bash" -c "true $MSG"\ngit commit -m x\n`,
+    );
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
+  it('blocks a commit in a file whose env -S shebang cannot be split', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', `#!/usr/bin/env -S "bash -c 'true'\ngit commit -m x\n`);
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
   it('allows a commit in a file whose env shebang names another program', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 

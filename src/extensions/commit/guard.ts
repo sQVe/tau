@@ -427,11 +427,19 @@ const optionValue = (
   return clusterValue(words, index, word, options);
 };
 
-// `env -S` splits its value with its own word rules, so a quoted value stays one word.
-const splitStringWords = (value: string): string[] => {
+// `env -S` splits its value with its own word rules, so a quoted value stays one word. A value that
+// depends on the environment cannot be resolved, so the shell's word rules recover the words.
+// When even those fail, no program can be named and the caller inspects the file.
+const splitStringWords = (value: string): readonly string[] | undefined => {
   const split = splitEnvString(value);
 
-  return split.kind === 'words' ? [...split.words] : value.split(/\s+/u);
+  if (split.kind === 'words') {
+    return split.words;
+  }
+
+  const commands = parseShellCommands(value);
+
+  return commands?.flatMap((command) => command.words);
 };
 
 // `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
@@ -447,8 +455,13 @@ const envTarget = (words: string[]): string[] | undefined => {
 
     if (split !== undefined) {
       const value = [split.value, ...words.slice(split.next)].join(' ');
+      const splitWords = splitStringWords(value);
 
-      expanded.push(...splitStringWords(value));
+      if (splitWords === undefined) {
+        return undefined;
+      }
+
+      expanded.push(...splitWords);
 
       break;
     }
