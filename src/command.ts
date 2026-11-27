@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { describeSchemaProblem } from './schema.js';
+import { describeSchemaProblem, isRecord } from './schema.js';
 
 export type Exec = ExtensionAPI['exec'];
 
@@ -85,6 +85,17 @@ export const parseJson = (label: string, stdout: string): unknown => {
       `${label} printed output that is not JSON: ${stdout.slice(0, outputPreviewLength)}`,
       { cause: error },
     );
+  }
+};
+
+// Returns the object a JSON document holds, or undefined when the text is not a JSON object.
+export const parseJsonObject = (value: string): Record<string, unknown> | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(value);
+
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
   }
 };
 

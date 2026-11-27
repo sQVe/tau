@@ -8,15 +8,17 @@ import {
   commandFailure,
   normalizeCancellation,
   parseJson,
+  parseJsonObject,
   runCommand,
 } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { errorMessage, isMissingFile } from '../errors.js';
 import { isGitRepository } from '../git.js';
-import { isRecord } from '../schema.js';
+import { isRecord, text } from '../schema.js';
 import { piArguments } from './piArguments.js';
 import { readStartedModel } from './startedModel/startedModelReadback.js';
 import type { ReadForegroundArgv } from './startedModel/startedModelReadback.js';
+import { stillRunningClause } from './stillRunningHint.js';
 
 export type PiStartTarget = { space: string } | { name: string };
 
@@ -222,23 +224,13 @@ const launchResult = (
 });
 
 const replyText = (record: Record<string, unknown>, field: string): string | undefined => {
-  const value = record[field];
+  const value = text(record[field]);
 
-  return typeof value === 'string' && value !== '' ? value : undefined;
-};
-
-const replyRecord = (reply: string): Record<string, unknown> | undefined => {
-  try {
-    const parsed: unknown = JSON.parse(reply);
-
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
+  return value === '' ? undefined : value;
 };
 
 const replyTerminal = (reply: string): string | undefined => {
-  const record = replyRecord(reply);
+  const record = parseJsonObject(reply);
 
   return record === undefined ? undefined : replyText(record, 'terminal');
 };
@@ -266,7 +258,7 @@ const startedTabMessage = (
   const reason = errorMessage(error).replace(/[.!?]$/u, '');
   const reasonPrefix = reason === '' ? '' : `${reason}. `;
 
-  return `${reasonPrefix}The started terminal ${terminal}${where} may still be running; check it with hc get ${terminal} and stop it with hc kill ${terminal} if you do not want to keep it.`;
+  return `${reasonPrefix}The started terminal ${terminal}${where} ${stillRunningClause(terminal)} and stop it with hc kill ${terminal} if you do not want to keep it.`;
 };
 
 // The readback runs after the tab exists, so a failure must still name the tab a caller can stop.
@@ -277,7 +269,7 @@ export class StartedTabError extends Error {
   readonly pane: string | undefined;
 
   constructor(reply: string, terminal: string, error: unknown) {
-    const record = replyRecord(reply);
+    const record = parseJsonObject(reply);
 
     super(startedTabMessage(record, terminal, error), { cause: error });
 
@@ -460,6 +452,8 @@ export const startPiSession = async (
     return { reply, target };
   }
 
+  // The handover result carries the model, so an abort after the terminal exists reports the started
+  // tab instead of a start without a model. A right-of start can return without a model.
   const model = await readStartedTerminalModel(request, reply, terminal, deadline, runtime.signal);
 
   return { reply, target, terminal, model };
