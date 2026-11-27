@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 
 import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
 import type {
@@ -924,8 +924,13 @@ const runsShell = (command: ShellCommand) => {
     return true;
   }
 
-  return command.words.some(
-    (word, wordIndex) => findExecOptions.has(word) && isShellRunner(command.words[wordIndex + 1]),
+  if (shell === undefined || commandName(shell.word) !== 'find') {
+    return false;
+  }
+
+  return command.arguments.some(
+    (word, wordIndex) =>
+      findExecOptions.has(word) && isShellRunner(command.arguments[wordIndex + 1]),
   );
 };
 
@@ -993,7 +998,7 @@ const isPlainDirectoryWord = (word: string) =>
 
 const isAssignmentWord = (word: string): boolean => assignmentPattern.test(word);
 
-// HOME names a directory only when it is a non-empty absolute path.
+// HOME names a directory only when it is non-empty.
 const homeDirectory = (): string | undefined => {
   const home = gitEnvironment().HOME;
 
@@ -1001,10 +1006,10 @@ const homeDirectory = (): string | undefined => {
     return homedir();
   }
 
-  return isAbsolute(home) ? home : undefined;
+  return home === '' ? undefined : home;
 };
 
-const cdOptions = new Set(['-L', '-P']);
+const cdOptionPattern = /^-[LPe@]+$/u;
 
 // Options end at the first operand, so `cd sub -P` names two operands. An option `cd` rejects is an
 // operand, so it keeps the current directory.
@@ -1019,7 +1024,7 @@ const directoryOperands = (words: string[]): string[] => {
       continue;
     }
 
-    if (!optionsEnded && cdOptions.has(word)) {
+    if (!optionsEnded && cdOptionPattern.test(word)) {
       continue;
     }
 
@@ -1045,7 +1050,9 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
 
   // A bare `cd` goes HOME; `cd -` goes to an OLDPWD the guard cannot know, so it stays.
   if (operands.length === 0) {
-    return homeDirectory() ?? directory;
+    const home = homeDirectory();
+
+    return home === undefined ? directory : resolve(directory, home);
   }
 
   // The shell rejects a second operand and stays where it is, so only one operand moves it.
@@ -1169,14 +1176,14 @@ const scriptFacts = (path: string, state: GuardState, failClosed: boolean): Name
 
 // A shell looks up a bare interpreter operand through PATH when the local file is missing.
 // A leading `~` or `~/` names a path under HOME, as the shell expands it.
-const expandHome = (name: string): string | undefined => {
+const expandHome = (name: string, directory: string): string | undefined => {
   if (name !== '~' && !name.startsWith('~/')) {
     return undefined;
   }
 
   const home = homeDirectory();
 
-  return home === undefined ? undefined : join(home, name.slice(1));
+  return home === undefined ? undefined : join(resolve(directory, home), name.slice(1));
 };
 
 const candidatePaths = ({
@@ -1186,7 +1193,7 @@ const candidatePaths = ({
   pathDirectories,
   pathFirst,
 }: NamedScript): string[] => {
-  const home = expandHome(name);
+  const home = expandHome(name, cwd);
 
   if (home !== undefined) {
     return [home];

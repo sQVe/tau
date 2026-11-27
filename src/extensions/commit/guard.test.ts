@@ -66,8 +66,6 @@ const withExactPath = (...entries: string[]): void => {
   withEnvironment('PATH', entries.join(delimiter));
 };
 
-const commitLine = `git commit`;
-
 const makeReadEvent = (): ToolCallEvent => ({
   type: 'tool_call',
   toolCallId: 'tool-call-1',
@@ -527,13 +525,23 @@ describe('guardToolCall', () => {
   });
 
   it.each([
-    ['a busybox applet', 'cat <<EOF | busybox sh\ngit commit -m x\nEOF'],
-    ['a busybox applet with its own heredoc', 'busybox sh <<EOF\ngit commit -m x\nEOF'],
+    ['a busybox applet', "cat <<'EOF' | busybox sh\ngit commit -m x\nEOF"],
+    ['a busybox applet with its own heredoc', "busybox sh <<'EOF'\ngit commit -m x\nEOF"],
     ['a shell after find -exec', "find . -name x -exec sh -c 'git commit -m x' \\;"],
-  ])('blocks code for %s', (_label, template) => {
+    [
+      'a shell after find -exec with a redirect',
+      "find . -exec 2>/dev/null sh -c 'git commit -m x' \\;",
+    ],
+  ])('blocks code for %s', (_label, command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    expectOutcome(makeBashEvent(template.replace('git commit', commitLine)), directory);
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('allows an -exec word that is data', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('echo -exec sh'), directory)).toBeUndefined();
   });
 
   it('allows a find command whose exec runs no shell', () => {
@@ -546,7 +554,7 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const home = temporaryDirectory(onTestFinished, 'tau-commit-guard-home-');
 
-    writeScript(directory, 'commit.sh', `${commitLine} -m x\n`);
+    writeScript(directory, 'commit.sh', `git commit -m x\n`);
     writeScript(home, 'commit.sh', 'echo hello\n');
     withEnvironment('HOME', home);
 
@@ -556,18 +564,38 @@ describe('guardToolCall', () => {
   it('keeps the directory when cd names the previous directory', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    writeScript(directory, 'commit.sh', `${commitLine} -m x\n`);
+    writeScript(directory, 'commit.sh', `git commit -m x\n`);
 
     expectOutcome(makeBashEvent('cd -; sh commit.sh'), directory);
   });
 
-  it('blocks a script file in the HOME directory when HOME is empty', () => {
+  it('keeps the working directory when HOME is empty', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    writeScript(directory, 'commit.sh', `${commitLine} -m x\n`);
+    writeScript(directory, 'commit.sh', `git commit -m x\n`);
     withEnvironment('HOME', '');
 
     expectOutcome(makeBashEvent('cd; sh commit.sh'), directory);
+  });
+
+  it('resolves a relative HOME against the working directory', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+    withEnvironment('HOME', 'sub');
+
+    expectOutcome(makeBashEvent('cd; sh commit.sh'), directory);
+  });
+
+  it.each([
+    ['a separate option', 'cd -P -e sub'],
+    ['a clustered option', 'cd -Pe sub'],
+  ])('blocks a script file in a directory cd names with %s', (_label, prefix) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(`${prefix}; sh commit.sh`), directory);
   });
 
   it('blocks a script file in the HOME directory a bare cd names', () => {
