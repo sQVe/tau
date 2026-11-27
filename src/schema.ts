@@ -52,6 +52,13 @@ interface InstallProbe {
 // A schema node the walk clones, either an object or an array.
 type SchemaNode = Record<PropertyKey, unknown> | readonly unknown[];
 
+// A host that reads the probe's fields before it delegates still reaches the wrapper. A host that
+// validates the definition refuses the probe, because the probe has no parameter schema, so such a
+// host cannot be confirmed and the install reports the refusal. The probe stays invalid so a
+// readback that stores it without delegating cannot register it. Only the probe of this install is
+// evidence: another install's probe is refused without being registered.
+type ProbeOutcome = 'reached' | 'refused' | 'unconfirmed';
+
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -340,6 +347,9 @@ const notWritableMessage =
 const notReadableMessage =
   'Cannot install strict tool parameters: registerTool is not readable on this API.';
 
+const probeRefusedMessage =
+  'Cannot install strict tool parameters: the host refused the registration probe.';
+
 const descriptorOf = (target: ExtensionAPI, key: string): PropertyDescriptor | undefined => {
   let current: object | null = target;
 
@@ -427,25 +437,29 @@ const isProbeTool = (value: unknown): value is ProbeTool => {
 
 const isProbeCall = (value: unknown): value is ProbeCall => typeof value === 'function';
 
-// A host that reads the probe's fields before it delegates still reaches the wrapper. Only the probe
-// of this install is evidence: another install's probe is refused without being registered.
-const confirmsWrapper = (readBack: unknown, probe: InstallProbe): boolean => {
+const probeOutcome = (readBack: unknown, probe: InstallProbe): ProbeOutcome => {
   if (!isProbeCall(readBack)) {
-    return false;
+    return 'unconfirmed';
   }
 
   let result: unknown;
 
   try {
     result = readBack(probe.tool);
-  } catch {
-    return probe.reached;
+  } catch (error) {
+    if (probe.reached) {
+      return 'reached';
+    }
+
+    // Another install's wrapper throws the same error, so it refused the probe without confirming
+    // this install's wrapper.
+    return error === probeError ? 'unconfirmed' : 'refused';
   }
 
   // A host that defers the call cannot confirm the wrapper, and its rejection must not escape.
   void Promise.resolve(result).catch(() => undefined);
 
-  return probe.reached;
+  return probe.reached ? 'reached' : 'unconfirmed';
 };
 
 // An inherited accessor accepts the value through its setter and creates no own property, and a
@@ -481,7 +495,17 @@ const verifyInstalled = (
     failInstall(pi, current, notWritableMessage);
   }
 
-  if (readBack !== wrapper && !confirmsWrapper(readBack, probe)) {
+  if (readBack === wrapper) {
+    return;
+  }
+
+  const outcome = probeOutcome(readBack, probe);
+
+  if (outcome === 'refused') {
+    failInstall(pi, current, probeRefusedMessage);
+  }
+
+  if (outcome === 'unconfirmed') {
     failInstall(pi, current, notWritableMessage);
   }
 };

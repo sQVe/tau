@@ -281,7 +281,11 @@ it('registers a tool whose probe marker is not true', () => {
 
   strictToolRegistration(api);
 
-  const [marker] = Object.getOwnPropertySymbols(captured);
+  const markers = Object.getOwnPropertySymbols(captured);
+
+  expect(markers).toHaveLength(1);
+
+  const [marker] = markers;
 
   if (marker === undefined) {
     throw new Error('the probe carried no marker symbol');
@@ -325,21 +329,33 @@ it('installs through a readback that freezes the tool it receives', () => {
 
   registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
 
-  expect(registered).toHaveLength(1);
+  expect(registered).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
 });
 
 // Pi's registerTool refuses a tool without an object parameter schema before it stores the tool.
+// tests/piHostToolRegistration.test.ts checks that refusal against the real host.
+const requireObjectParameters = (tool: unknown): void => {
+  const parameters = isRecord(tool) ? tool['parameters'] : undefined;
+
+  const hasObjectParameters =
+    typeof parameters === 'object' && parameters !== null && !Array.isArray(parameters);
+
+  if (!hasObjectParameters) {
+    throw new Error('must define an object parameter schema');
+  }
+};
+
 const piRegistration =
   (registered: unknown[]) =>
   (tool: unknown): void => {
-    const parameters = isRecord(tool) ? tool['parameters'] : undefined;
-
-    const hasObjectParameters =
-      typeof parameters === 'object' && parameters !== null && !Array.isArray(parameters);
-
-    if (!hasObjectParameters) {
-      throw new Error('must define an object parameter schema');
-    }
+    requireObjectParameters(tool);
 
     registered.push(tool);
   };
@@ -359,7 +375,35 @@ it('does not register the probe when the readback reaches the original registrat
 
   expect(() => {
     strictToolRegistration(api);
-  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+  }).toThrow('Cannot install strict tool parameters: the host refused the registration probe.');
+
+  expect(registered).toEqual([]);
+});
+
+it('reports a readback that validates the definition before it delegates as a refused probe', () => {
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      const delegate = stored;
+
+      return (tool: unknown) => {
+        requireObjectParameters(tool);
+
+        return delegate(tool);
+      };
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: the host refused the registration probe.');
 
   expect(registered).toEqual([]);
 });
