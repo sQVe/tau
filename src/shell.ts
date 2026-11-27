@@ -18,12 +18,36 @@ export interface ShellRedirection {
   target: string;
 }
 
+type ShellInputKind = 'file' | 'duplicate' | 'heredoc' | 'hereString';
+
+export interface ShellInput {
+  // The file descriptor word before the operator, or undefined for standard input.
+  descriptor: string | undefined;
+  kind: ShellInputKind;
+  // The file or descriptor name, or the here-string payload. A heredoc body stays in `heredocs`.
+  target: string;
+}
+
+interface ShellHeredoc {
+  body: string;
+  scope: string | undefined;
+}
+
 export interface ShellCommand {
   words: string[];
   // The words bash passes to the command: `words` without file descriptor numbers and redirection
   // targets.
   arguments: string[];
-  heredocs: string[];
+  // The redirections that feed the command, in source order.
+  inputs: ShellInput[];
+  // The heredoc bodies the command owns, in source order. Only an expanding body has a scope.
+  heredocs: ShellHeredoc[];
+  // The parenthesis nesting depth of the command inside its scope, so a subshell keeps its own
+  // directory.
+  depth: number;
+  // The substitution that runs the command: '' for the top list, and `0`, `0.1`, and so on for
+  // each nested `$(...)`, backtick body, or expanding heredoc body.
+  scope: string;
   background: boolean;
   // The index of the first command inside this command's group, set only on the command that
   // closes the group.
@@ -67,11 +91,17 @@ interface ListState {
   word: string | undefined;
   wordQuoted: boolean;
   wordCommandStart: number;
-  heredocOperator: { stripsTabs: boolean } | undefined;
+  heredocOperator: { stripsTabs: boolean; descriptor: string | undefined } | undefined;
   redirectionTarget: boolean;
   pendingRedirection:
-    | { fileDescriptor: number | undefined; operator: ShellRedirectionOperator }
+    | {
+        fileDescriptor: number | undefined;
+        descriptor: string | undefined;
+        operator: ShellRedirectionOperator;
+      }
     | undefined;
+  // The file descriptor word that preceded the pending redirection.
+  redirectionDescriptor: string | undefined;
   depth: number;
   // The first command index of the pipeline or list unit at each nesting depth.
   unitStarts: number[];
@@ -663,8 +693,36 @@ const endsListUnit = (character: string, isBackground: boolean): boolean =>
   isBackground || character === ';' || character === '\n';
 
 // A digit word touching `<` or `>` is a file descriptor. Quoting makes it an ordinary word.
+const isDigitWord = (word: string): boolean => /^\d+$/u.test(word);
+
 const isIoNumber = (word: string, wordQuoted: boolean, redirectionFollows: boolean) =>
-  redirectionFollows && !wordQuoted && /^\d+$/u.test(word);
+  redirectionFollows && !wordQuoted && isDigitWord(word);
+
+// `n>&m` copies descriptor m onto descriptor n, which can carry an input descriptor onward. The
+// bare `>&word` form is output only.
+const inputKind = (
+  operator: ShellRedirectionOperator,
+  descriptor: string | undefined,
+  target: string,
+): ShellInputKind | undefined => {
+  if (operator === '<' || operator === '<>') {
+    return 'file';
+  }
+
+  if (operator === '<&') {
+    return 'duplicate';
+  }
+
+  if (operator === '<<<') {
+    return 'hereString';
+  }
+
+  if (operator === '>&' && descriptor !== undefined && isDigitWord(target)) {
+    return 'duplicate';
+  }
+
+  return undefined;
+};
 
 const rejectPendingHeredoc = (state: ListState) => {
   if (state.heredocOperator !== undefined) {
@@ -757,10 +815,23 @@ class ShellParser {
   private readonly heredocOwners = new Map<ShellCommand, ShellCommand>();
   private shellId: string;
   private childShells = 0;
+  private scope: string;
+  private childScopes = 0;
 
-  constructor(source: string, shellId = '0') {
+  constructor(source: string, shellId = '0', scope = '') {
     this.source = source;
     this.shellId = shellId;
+    this.scope = scope;
+  }
+
+  // Each substitution or expanding heredoc body runs in its own scope, named by its parent and an
+  // ordinal that is unique within the parse.
+  private nextChildScope(): string {
+    const ordinal = this.childScopes;
+
+    this.childScopes += 1;
+
+    return this.scope === '' ? String(ordinal) : `${this.scope}.${ordinal}`;
   }
 
   private childShellIdOf(parentShellId: string): string {
@@ -779,14 +850,17 @@ class ShellParser {
     const parentShellId = this.shellId;
     const childShellId = this.childShellId();
     const parentChildShells = this.childShells;
+    const parentScope = this.scope;
 
     this.shellId = childShellId;
     this.childShells = 0;
+    this.scope = this.nextChildScope();
 
     parse();
 
     this.shellId = parentShellId;
     this.childShells = parentChildShells;
+    this.scope = parentScope;
   }
 
   // Parse until the end, or until the `)` that closes a `$(` when `closesSubstitution` is set.
@@ -794,7 +868,7 @@ class ShellParser {
     const firstCommand = this.commands.length;
 
     const state: ListState = {
-      command: this.startCommand(),
+      command: this.startCommand(0),
       commandIndex: this.commands.length - 1,
       word: undefined,
       wordQuoted: false,
@@ -802,6 +876,7 @@ class ShellParser {
       heredocOperator: undefined,
       redirectionTarget: false,
       pendingRedirection: undefined,
+      redirectionDescriptor: undefined,
       depth: 0,
       unitStarts: [firstCommand],
       groupStarts: [],
@@ -865,18 +940,33 @@ class ShellParser {
   // Returns true when this token starts a redirection.
   private readRedirectionToken(state: ListState, character: string, next: string): boolean {
     if (character === '<' || character === '>') {
-      const fileDescriptor = this.fileDescriptorBeforeRedirection(state);
-
       this.finishWord(state, true);
       const redirection = this.readRedirection();
 
-      state.heredocOperator = redirection.heredoc ?? state.heredocOperator;
-      state.redirectionTarget = redirection.heredoc === undefined;
+      if (state.pendingRedirection !== undefined) {
+        state.redirectionDescriptor = undefined;
+      }
 
-      state.pendingRedirection =
-        redirection.heredoc === undefined
-          ? { fileDescriptor, operator: redirection.operator }
-          : undefined;
+      if (redirection.heredoc !== undefined) {
+        state.heredocOperator = {
+          ...redirection.heredoc,
+          descriptor: state.redirectionDescriptor,
+        };
+
+        state.redirectionDescriptor = undefined;
+        state.redirectionTarget = false;
+        state.pendingRedirection = undefined;
+      } else {
+        const descriptor = state.redirectionDescriptor;
+
+        state.redirectionTarget = true;
+
+        state.pendingRedirection = {
+          fileDescriptor: descriptor === undefined ? undefined : Number(descriptor),
+          descriptor,
+          operator: redirection.operator,
+        };
+      }
 
       return true;
     }
@@ -890,7 +980,7 @@ class ShellParser {
 
     this.position += operator.length;
     state.redirectionTarget = true;
-    state.pendingRedirection = { fileDescriptor: undefined, operator };
+    state.pendingRedirection = { fileDescriptor: undefined, descriptor: undefined, operator };
 
     return true;
   }
@@ -1003,6 +1093,12 @@ class ShellParser {
       commandIndex,
     );
 
+    if (character === ')' && state.closesSubstitution && state.depth === 0) {
+      this.position += length;
+
+      return true;
+    }
+
     this.restartCommand(state);
     state.continuesList = continuesListAfter(operator);
     this.position += length;
@@ -1019,17 +1115,21 @@ class ShellParser {
       state.groupStarts.push(commandIndex);
       state.elements.push({ start: commandIndex, parentShellId: undefined });
     } else if (character === ')') {
-      return this.closeGroup(state);
+      this.closeGroup(state);
+      state.command.depth = state.depth;
     }
+
+    state.command.depth = state.depth;
 
     return false;
   }
 
   private restartCommand(state: ListState): void {
-    state.command = this.startCommand();
+    state.command = this.startCommand(state.depth);
     state.commandIndex = this.commands.length - 1;
     state.redirectionTarget = false;
     state.pendingRedirection = undefined;
+    state.redirectionDescriptor = undefined;
   }
 
   private setCaseState(state: ListState, caseState: 'pattern' | 'command'): void {
@@ -1205,17 +1305,13 @@ class ShellParser {
     }
   }
 
-  private closeGroup(state: ListState): boolean {
-    if (state.closesSubstitution && state.depth === 0) {
-      return true;
-    }
-
+  private closeGroup(state: ListState): void {
     state.depth = Math.max(0, state.depth - 1);
 
     const groupStart = state.groupStarts.pop();
 
     if (groupStart === undefined) {
-      return false;
+      return;
     }
 
     if (state.unitStarts.length > 1) {
@@ -1229,8 +1325,6 @@ class ShellParser {
     }
 
     state.command.group = groupStart;
-
-    return false;
   }
 
   private recordArgument(
@@ -1263,7 +1357,15 @@ class ShellParser {
       return;
     }
 
-    state.command.redirections.push({ ...state.pendingRedirection, target: word });
+    const { descriptor, fileDescriptor, operator } = state.pendingRedirection;
+
+    state.command.redirections.push({ fileDescriptor, operator, target: word });
+
+    const kind = inputKind(operator, descriptor, word);
+
+    if (kind !== undefined) {
+      state.command.inputs.push({ descriptor, kind, target: word });
+    }
   }
 
   // A case pattern is not a command, so its words never reach the command a guard scans. The
@@ -1296,9 +1398,27 @@ class ShellParser {
     }
 
     if (heredocOperator === undefined) {
-      this.recordWord(state, word, wordQuoted, redirectionFollows);
+      const isDescriptorWord =
+        redirectionFollows &&
+        state.pendingRedirection === undefined &&
+        isIoNumber(word, wordQuoted, redirectionFollows);
+
+      if (isDescriptorWord) {
+        state.command.words.push(word);
+        state.redirectionDescriptor = word;
+      } else {
+        this.recordWord(state, word, wordQuoted, redirectionFollows);
+        state.pendingRedirection = undefined;
+        state.redirectionDescriptor = undefined;
+      }
     } else {
       this.commands.splice(state.wordCommandStart);
+
+      state.command.inputs.push({
+        descriptor: heredocOperator.descriptor,
+        kind: 'heredoc',
+        target: '',
+      });
 
       this.pendingHeredocs.push({
         command: state.command,
@@ -1308,9 +1428,9 @@ class ShellParser {
       });
 
       state.heredocOperator = undefined;
+      state.redirectionDescriptor = undefined;
     }
 
-    state.pendingRedirection = undefined;
     state.word = undefined;
     state.wordQuoted = false;
   }
@@ -1405,11 +1525,14 @@ class ShellParser {
     return '$`"\\'.includes(next) ? next : `\\${next}`;
   }
 
-  private startCommand(): ShellCommand {
+  private startCommand(depth: number): ShellCommand {
     const command: ShellCommand = {
       words: [],
       arguments: [],
+      inputs: [],
       heredocs: [],
+      depth,
+      scope: this.scope,
       background: false,
       group: undefined,
       shellId: this.shellId,
@@ -1529,7 +1652,7 @@ class ShellParser {
     }
 
     this.position += 1;
-    const innerParser = new ShellParser(inner, this.childShellId());
+    const innerParser = new ShellParser(inner, this.childShellId(), this.nextChildScope());
 
     innerParser.parseList(false);
 
@@ -1584,24 +1707,15 @@ class ShellParser {
     return { operator, heredoc: undefined };
   }
 
-  private fileDescriptorBeforeRedirection(state: ListState): number | undefined {
-    const { word, wordQuoted } = state;
-
-    if (word === undefined || !isIoNumber(word, wordQuoted, true)) {
-      return undefined;
-    }
-
-    return Number(word);
-  }
-
   private readPendingHeredocs(): void {
     for (const heredoc of this.pendingHeredocs.splice(0)) {
       const body = this.readHeredocBody(heredoc);
+      const scope = heredoc.expands ? this.nextChildScope() : undefined;
 
-      heredoc.command.heredocs.push(body);
+      heredoc.command.heredocs.push({ body, scope });
 
-      if (heredoc.expands) {
-        const bodyParser = new ShellParser(body, this.childShellId());
+      if (scope !== undefined) {
+        const bodyParser = new ShellParser(body, this.childShellId(), scope);
 
         bodyParser.readExpandingText(undefined, false);
 

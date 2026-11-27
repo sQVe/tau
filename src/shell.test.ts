@@ -17,6 +17,11 @@ const argumentsOf = (source: string) =>
     ?.map(({ arguments: commandArguments }) => commandArguments)
     .filter((commandArguments) => commandArguments.length > 0);
 
+const inputsOf = (source: string) =>
+  parseShellCommands(source)
+    ?.filter(({ words }) => words.length > 0)
+    .map(({ inputs }) => inputs);
+
 const backgroundsOf = (source: string): boolean[] | undefined =>
   parseShellCommands(source)
     ?.filter(({ arguments: commandArguments }) => commandArguments.length > 0)
@@ -47,6 +52,95 @@ describe('parseShellCommands', () => {
     ['a&&b', [['a'], ['b']]],
   ])('splits redirections from words: %s', (source, expected) => {
     expect(wordsOf(source)).toEqual(expected);
+  });
+
+  it.each([
+    ['sh < commit.sh', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
+    ['sh 0< commit.sh', [[{ descriptor: '0', kind: 'file', target: 'commit.sh' }]]],
+    ['sh 00< commit.sh', [[{ descriptor: '00', kind: 'file', target: 'commit.sh' }]]],
+    ['sh 3< commit.sh', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
+    ['sh <commit.sh > build.log', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
+    ['sh <> commit.sh', [[{ descriptor: undefined, kind: 'file', target: 'commit.sh' }]]],
+    ['sh 3<> commit.sh', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
+    ['sh <&3', [[{ descriptor: undefined, kind: 'duplicate', target: '3' }]]],
+    ['sh 2<&1', [[{ descriptor: '2', kind: 'duplicate', target: '1' }]]],
+    [
+      'sh 3< commit.sh <&3',
+      [
+        [
+          { descriptor: '3', kind: 'file', target: 'commit.sh' },
+          { descriptor: undefined, kind: 'duplicate', target: '3' },
+        ],
+      ],
+    ],
+    ['sh > build.log', [[]]],
+    ['sh >> build.log', [[]]],
+    ['sh >&2', [[]]],
+    ['sh &> build.log', [[]]],
+    ["cat <<'EOF'\nbody\nEOF", [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
+    ["cat <<-'EOF'\n\tbody\n\tEOF", [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
+    ['cat <<< word', [[{ descriptor: undefined, kind: 'hereString', target: 'word' }]]],
+    [
+      'sh 3<<EOF < commit.sh\nbody\nEOF',
+      [
+        [
+          { descriptor: '3', kind: 'heredoc', target: '' },
+          { descriptor: undefined, kind: 'file', target: 'commit.sh' },
+        ],
+      ],
+    ],
+    [
+      'sh <2<script.sh',
+      [
+        [
+          { descriptor: undefined, kind: 'file', target: '2' },
+          { descriptor: undefined, kind: 'file', target: 'script.sh' },
+        ],
+      ],
+    ],
+    ['sh >&1<script.sh', [[{ descriptor: undefined, kind: 'file', target: 'script.sh' }]]],
+    [
+      'sh 3< commit.sh 0>&3',
+      [
+        [
+          { descriptor: '3', kind: 'file', target: 'commit.sh' },
+          { descriptor: '0', kind: 'duplicate', target: '3' },
+        ],
+      ],
+    ],
+    [
+      'sh 3< commit.sh 2>&3',
+      [
+        [
+          { descriptor: '3', kind: 'file', target: 'commit.sh' },
+          { descriptor: '2', kind: 'duplicate', target: '3' },
+        ],
+      ],
+    ],
+    [
+      'sh 3< commit.sh 2>&3 <&2',
+      [
+        [
+          { descriptor: '3', kind: 'file', target: 'commit.sh' },
+          { descriptor: '2', kind: 'duplicate', target: '3' },
+          { descriptor: undefined, kind: 'duplicate', target: '2' },
+        ],
+      ],
+    ],
+    ['sh 3< commit.sh >&2', [[{ descriptor: '3', kind: 'file', target: 'commit.sh' }]]],
+    ['sh 0< >&1', [[]]],
+    ['sh 0< <<EOF\nbody\nEOF', [[{ descriptor: undefined, kind: 'heredoc', target: '' }]]],
+    [
+      'sh <&3<&4',
+      [
+        [
+          { descriptor: undefined, kind: 'duplicate', target: '3' },
+          { descriptor: undefined, kind: 'duplicate', target: '4' },
+        ],
+      ],
+    ],
+  ])('records the redirections that feed standard input: %s', (source, expected) => {
+    expect(inputsOf(source)).toEqual(expected);
   });
 
   it('records a background command and its redirections', () => {
@@ -116,13 +210,7 @@ describe('parseShellCommands', () => {
   it('offsets the pipe target of a spliced sub-parse into the outer list', () => {
     expect(pipeTargetsOf('echo `a | b`')).toEqual([undefined, 2, undefined]);
 
-    expect(pipeTargetsOf('cat <<EOF\n$(a | b)\nEOF')).toEqual([
-      undefined,
-      undefined,
-      3,
-      undefined,
-      undefined,
-    ]);
+    expect(pipeTargetsOf('cat <<EOF\n$(a | b)\nEOF')).toEqual([undefined, undefined, 3, undefined]);
   });
 
   it('keeps an inner pipeline target when an enclosing element is also piped', () => {
@@ -499,7 +587,10 @@ describe('parseShellCommands', () => {
       {
         words: ['cat'],
         arguments: ['cat'],
-        heredocs: ['body\n'],
+        inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
+        heredocs: [{ body: 'body\n', scope: '0' }],
+        depth: 0,
+        scope: '',
         background: false,
         shellId: '0',
         pipeTarget: undefined,
@@ -508,7 +599,10 @@ describe('parseShellCommands', () => {
       {
         words: ['next'],
         arguments: ['next'],
+        inputs: [],
         heredocs: [],
+        depth: 0,
+        scope: '',
         background: false,
         shellId: '0',
         pipeTarget: undefined,
@@ -520,7 +614,7 @@ describe('parseShellCommands', () => {
   it('reads a heredoc body after a continued line', () => {
     const commands = parseShellCommands('cat <<EOF &&\nbody\nEOF\nnext');
 
-    expect(commands?.[0]?.heredocs).toEqual(['body\n']);
+    expect(commands?.[0]?.heredocs).toEqual([{ body: 'body\n', scope: '0' }]);
     expect(commands?.map(({ words }) => words)).toEqual([['cat'], ['next']]);
   });
 
@@ -542,10 +636,55 @@ describe('parseShellCommands', () => {
 
   it('strips leading tabs from the delimiter line only for <<-', () => {
     expect(parseShellCommands('cat <<-EOF\n\tbody\n\tEOF\nnext')?.[0]?.heredocs).toEqual([
-      '\tbody\n',
+      { body: '\tbody\n', scope: '0' },
     ]);
 
-    expect(parseShellCommands('cat <<EOF\n\tEOF\nEOF\nnext')?.[0]?.heredocs).toEqual(['\tEOF\n']);
+    expect(parseShellCommands('cat <<EOF\n\tEOF\nEOF\nnext')?.[0]?.heredocs).toEqual([
+      { body: '\tEOF\n', scope: '0' },
+    ]);
+  });
+
+  it.each([
+    ['(a)', [['a', 1]]],
+    ['((a))', [['a', 2]]],
+    [
+      '(a) (b)',
+      [
+        ['a', 1],
+        ['b', 1],
+      ],
+    ],
+    [
+      '(a; b) c',
+      [
+        ['a', 1],
+        ['b', 1],
+        ['c', 0],
+      ],
+    ],
+  ])('records the parenthesis depth: %s', (source, expected) => {
+    const depths = parseShellCommands(source)
+      ?.filter(({ words }) => words.length > 0)
+      .map(({ words, depth }) => [words[0], depth]);
+
+    expect(depths).toEqual(expected);
+  });
+
+  it('records the scope of each expanding heredoc body on its owner', () => {
+    const commands = parseShellCommands(
+      "cd sub <<EOF\n$(a)\nEOF\ncat <<'E2'\nx\nE2\ncat <<E3\n$(b)\nE3\n",
+    );
+
+    const owners = commands?.map(({ words, heredocs, scope }) => [words, heredocs, scope]);
+
+    expect(owners).toEqual([
+      [['cd', 'sub'], [{ body: '$(a)\n', scope: '0' }], ''],
+      [['cat'], [{ body: 'x\n', scope: undefined }], ''],
+      [['a'], [], '0.0'],
+      [['cat'], [{ body: '$(b)\n', scope: '1' }], ''],
+      [[], [], ''],
+      [['b'], [], '1.0'],
+    ]);
   });
 
   it('does not treat <<< as a heredoc', () => {
@@ -553,7 +692,10 @@ describe('parseShellCommands', () => {
       {
         words: ['cat', 'word'],
         arguments: ['cat'],
+        inputs: [{ descriptor: undefined, kind: 'hereString', target: 'word' }],
         heredocs: [],
+        depth: 0,
+        scope: '',
         background: false,
         shellId: '0',
         pipeTarget: undefined,
@@ -562,7 +704,10 @@ describe('parseShellCommands', () => {
       {
         words: ['next'],
         arguments: ['next'],
+        inputs: [],
         heredocs: [],
+        depth: 0,
+        scope: '',
         background: false,
         shellId: '0',
         pipeTarget: undefined,
@@ -623,7 +768,10 @@ describe('parseShellCommands', () => {
       {
         words: ['cat'],
         arguments: ['cat'],
-        heredocs: [''],
+        inputs: [{ descriptor: undefined, kind: 'heredoc', target: '' }],
+        heredocs: [{ body: '', scope: '0' }],
+        depth: 0,
+        scope: '',
         background: false,
         shellId: '0',
         pipeTarget: undefined,
@@ -632,16 +780,33 @@ describe('parseShellCommands', () => {
     ]);
   });
 
+  it.each([
+    ['a; b', ['', '']],
+    ['a; $(b); c', ['', '', '0', '']],
+    ['$( $(x) )', ['', '0', '0.1']],
+    ['`a`', ['', '0']],
+    ['cat <<EOF\n$(x)\nEOF', ['', '', '0.0']],
+    ["cat <<'EOF'\nx\nEOF", ['', '']],
+  ])('gives each substitution its own scope: %s', (source, expected) => {
+    const scopes = parseShellCommands(source)?.map(({ scope }) => scope);
+
+    expect(scopes).toEqual(expected);
+  });
+
   it('keeps the heredoc body free of a phantom line at the end of the source', () => {
-    expect(parseShellCommands('cat <<EOF\nbody\n')?.[0]?.heredocs).toEqual(['body\n']);
+    expect(parseShellCommands('cat <<EOF\nbody\n')?.[0]?.heredocs).toEqual([
+      { body: 'body\n', scope: '0' },
+    ]);
   });
 
   it('strips every leading tab, and only leading tabs, before comparing the delimiter', () => {
-    expect(parseShellCommands('cat <<-ab\na\tb\nab\nnext')?.[0]?.heredocs).toEqual(['a\tb\n']);
+    expect(parseShellCommands('cat <<-ab\na\tb\nab\nnext')?.[0]?.heredocs).toEqual([
+      { body: 'a\tb\n', scope: '0' },
+    ]);
 
     const commands = parseShellCommands('cat <<-EOF\n\t\tEOF\nnext');
 
-    expect(commands?.[0]?.heredocs).toEqual(['']);
+    expect(commands?.[0]?.heredocs).toEqual([{ body: '', scope: '0' }]);
     expect(commands?.map(({ words }) => words)).toContainEqual(['next']);
   });
 

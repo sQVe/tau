@@ -103,7 +103,7 @@ describe('guardToolCall', () => {
   );
 
   it('allows a case pattern that names git and commit', () => {
-    expect(guardToolCall(makeBashEvent('case $x in git|commit) echo ok ;; esac'))).toBeUndefined();
+    expect(guard(makeBashEvent('case $x in git|commit) echo ok ;; esac'))).toBeUndefined();
   });
 
   it('returns a block result for a plain git commit bash command', () => {
