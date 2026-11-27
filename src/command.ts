@@ -30,7 +30,7 @@ export const outputPreviewLength = 200;
 export const normalizeCancellation = (
   signal: AbortSignal | undefined,
   error: unknown,
-  message = 'Cancelled.',
+  message: string,
 ): unknown =>
   signal?.aborted === true && !(error instanceof Error)
     ? new Error(message, { cause: error })
@@ -44,7 +44,7 @@ export const commandFailure = (
     return undefined;
   }
 
-  const output = (result.stderr.trim() || result.stdout.trim()).slice(0, outputPreviewLength);
+  const output = result.stderr.trim() || result.stdout.trim();
 
   if (output !== '') {
     return new Error(`${label} failed: ${output}`);
@@ -71,7 +71,7 @@ export const runCommand = async (
       ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
     });
   } catch (error) {
-    throw normalizeCancellation(runtime.signal, error);
+    throw normalizeCancellation(runtime.signal, error, `${label} failed: cancelled`);
   }
 
   const failure = commandFailure(label, result);
