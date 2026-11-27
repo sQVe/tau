@@ -327,11 +327,13 @@ class ShellParser {
     this.childShells = 0;
     this.scope = this.nextChildScope();
 
-    parse();
-
-    this.shellId = parentShellId;
-    this.childShells = parentChildShells;
-    this.scope = parentScope;
+    try {
+      parse();
+    } finally {
+      this.shellId = parentShellId;
+      this.childShells = parentChildShells;
+      this.scope = parentScope;
+    }
   }
 
   // Parse until the end, or until the `)` that closes a `$(` when `closesSubstitution` is set.
@@ -728,7 +730,7 @@ class ShellParser {
       const elementShellId = this.childShellIdOf(element.parentShellId);
 
       for (const command of this.commands.slice(element.start)) {
-        command.shellId = `${elementShellId}${command.shellId.slice(this.shellId.length)}`;
+        this.moveUnderShell(command, elementShellId);
       }
     }
 
@@ -751,6 +753,12 @@ class ShellParser {
     element.start = commandIndex;
   }
 
+  // A command's id starts with the id of the shell that owns it, so replacing that prefix moves the
+  // command under a child shell.
+  private moveUnderShell(command: ShellCommand, shellId: string): void {
+    command.shellId = `${shellId}${command.shellId.slice(this.shellId.length)}`;
+  }
+
   // A trailing `&` backgrounds the whole pipeline or list unit, not only its last command. A
   // compound restores the unit start it opened in when it closes, so the whole compound joins the
   // unit. A command parsed from a heredoc body runs when the command that carries the heredoc
@@ -771,19 +779,13 @@ class ShellParser {
       }
 
       command.background = true;
-      command.shellId = `${unitShellId}${command.shellId.slice(this.shellId.length)}`;
+      this.moveUnderShell(command, unitShellId);
     }
   }
 
-  private closeGroup(state: ListState): void {
-    state.depth = Math.max(0, state.depth - 1);
-
-    const groupStart = state.groupStarts.pop();
-
-    if (groupStart === undefined) {
-      return;
-    }
-
+  // Closing a unit pops its start, leaves the element the unit opened, and restores the shell the
+  // element ran in. Both the parenthesis and the compound path must do this in lockstep.
+  private closeUnit(state: ListState, groupStart: number): void {
     if (state.unitStarts.length > 1) {
       state.unitStarts.pop();
     }
@@ -795,6 +797,18 @@ class ShellParser {
     }
 
     state.command.group = groupStart;
+  }
+
+  private closeGroup(state: ListState): void {
+    state.depth = Math.max(0, state.depth - 1);
+
+    const groupStart = state.groupStarts.pop();
+
+    if (groupStart === undefined) {
+      return;
+    }
+
+    this.closeUnit(state, groupStart);
   }
 
   private recordArgument(
@@ -928,18 +942,8 @@ class ShellParser {
       return;
     }
 
-    if (state.unitStarts.length > 1) {
-      state.unitStarts.pop();
-    }
-
+    this.closeUnit(state, compound.start);
     state.unitStarts[state.unitStarts.length - 1] = compound.unitStart;
-    state.command.group = compound.start;
-
-    const element = state.elements.pop();
-
-    if (element?.parentShellId !== undefined) {
-      this.shellId = element.parentShellId;
-    }
   }
 
   private noteCaseWord(state: ListState, word: string): void {
@@ -1183,7 +1187,8 @@ class ShellParser {
       heredoc.command.heredocs.push({ body, scope });
 
       if (scope !== undefined) {
-        const bodyParser = new ShellParser(body, this.childShellId(), scope);
+        const bodyShellId = this.childShellIdOf(heredoc.command.shellId);
+        const bodyParser = new ShellParser(body, bodyShellId, scope);
 
         bodyParser.readExpandingText(undefined, false);
 
