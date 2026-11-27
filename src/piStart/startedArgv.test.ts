@@ -4,7 +4,11 @@ import { piArgv } from './startedArgv.js';
 
 const modelArguments = ['--provider', 'morph', '--model', 'morph-dsv41flash-1017'];
 
-it.each<{ name: string; argv: readonly string[] | undefined; expected: unknown }>([
+it.each<{
+  name: string;
+  argv: readonly string[] | undefined;
+  expected: readonly string[] | undefined;
+}>([
   {
     name: 'a bare pi command',
     argv: ['pi', ...modelArguments],
@@ -116,9 +120,24 @@ it.each<{ name: string; argv: readonly string[] | undefined; expected: unknown }
     expected: undefined,
   },
   {
+    name: 'an empty argv',
+    argv: [],
+    expected: undefined,
+  },
+  {
     name: 'a non-Pi command',
     argv: ['bash', ...modelArguments],
     expected: undefined,
+  },
+  {
+    name: 'a path-shaped pi after the value of an unlisted flag',
+    argv: ['node', '--experimental-config-file', 'config.json', '/path/pi'],
+    expected: ['node', '--experimental-config-file', 'config.json', '/path/pi'],
+  },
+  {
+    name: 'a pi executable suffix after a first candidate',
+    argv: ['node', 'tool.js', 'pi.exe'],
+    expected: ['node', 'tool.js', 'pi.exe'],
   },
   {
     name: 'a node command with a trailing pi argument',
