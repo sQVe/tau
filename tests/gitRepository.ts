@@ -8,6 +8,7 @@ import { forgetTemporaryDirectory, trackTemporaryDirectory } from './temporaryDi
 
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
 
+// The mutation cache key hashes this file, so this experiment line gives the step a new key.
 export const git = async (cwd: string, ...commandArguments: string[]): Promise<string> => {
   const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
 
