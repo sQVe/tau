@@ -290,8 +290,6 @@ const envSplitString = (
 // Only an `env` that runs the command may split its value. An `env` word after the command is an
 // ordinary argument, which the shell passes on unsplit. A split value may itself start with an
 // `env` wrapper, so the first split string is expanded and the result is read again.
-const wordsKey = (words: readonly string[]): string => JSON.stringify(words);
-
 const envSplitIn = (
   words: readonly string[],
 ): { index: number; words: string[]; end: number } | undefined => {
@@ -310,15 +308,11 @@ const envSplitIn = (
   return undefined;
 };
 
-// A split value that reproduces the words it came from would expand forever, so a repeated word
-// list ends the expansion.
+// Every pass consumes a word that contains whitespace, or shortens the list, so the loop ends.
 export const withEnvSplitStrings = (words: readonly string[]): readonly string[] => {
-  const seen = new Set<string>();
   let result = [...words];
 
-  while (!seen.has(wordsKey(result))) {
-    seen.add(wordsKey(result));
-
+  for (;;) {
     const split = envSplitIn(result);
 
     if (split === undefined) {
@@ -327,8 +321,6 @@ export const withEnvSplitStrings = (words: readonly string[]): readonly string[]
 
     result = [...result.slice(0, split.index + 1), ...split.words, ...result.slice(split.end)];
   }
-
-  return result;
 };
 
 // The words a wrapper or keyword runs as a command. `lookup` is true when a `command -v` or

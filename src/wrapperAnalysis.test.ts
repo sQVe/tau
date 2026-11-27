@@ -57,7 +57,7 @@ describe('commandWords', () => {
       words: ['env', '-S', 'echo', 'env', '-S', 'hello'],
       head: ['echo', 'env', '-S', 'hello'],
     },
-  ])('reads the command head past $name', ({ words, head }) => {
+  ])('reads the command head past $name after split expansion', ({ words, head }) => {
     expect(commandWords(words).words).toEqual(head);
   });
 
@@ -67,6 +67,10 @@ describe('commandWords', () => {
       '-S',
       'sh -c cmd',
     ]);
+  });
+
+  it('expands a split value that holds only whitespace to nothing', () => {
+    expect(commandWords(['env', '-S', '   ', 'hc', 'send']).words).toEqual(['hc', 'send']);
   });
 
   it.each([
