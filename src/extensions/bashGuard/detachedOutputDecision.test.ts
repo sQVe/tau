@@ -188,6 +188,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a detached pipeline whose group redirect wins over the pipe target',
+    command: '( cmd 2>&1 ) >/dev/null | cat &',
+    blocked: true,
+  },
+  {
     name: 'a shell discarding inner stderr',
     command: `sh -c 'sh -c "printf hidden >&2; exit 17" 2>/dev/null' &`,
     blocked: true,
@@ -629,6 +634,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     command: "bash -c 'cmd \"unterminated'",
     blocked: false,
   },
+  {
+    name: 'a top-level command that does not parse',
+    command: "cmd 'unterminated 2>/dev/null &",
+    blocked: false,
+  },
 ])('decides $name', ({ command, blocked }) => {
   expect(blocks(command)).toBe(blocked);
 });
@@ -648,6 +658,16 @@ it('reports the depth budget as unverifiable instead of claiming a detached proc
 
   expect(decision?.block).toBe(true);
   expect(decision?.reason).toContain('nests scripts deeper than the guard can inspect');
+});
+
+it('reports a hidden failure after an unverifiable script chain', () => {
+  const decision = decideDetachedOutput({
+    toolName: 'bash',
+    command: `${nestedScript(6)}; nohup app >/dev/null 2>&1 &`,
+  });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('detaches a process');
 });
 
 it('ignores another tool name', () => {

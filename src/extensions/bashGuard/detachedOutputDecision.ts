@@ -114,7 +114,7 @@ const applyExecRedirections = (
   const target = commands[index];
 
   if (target === undefined) {
-    throw new Error('the exec pass needs a command at its index');
+    return inherited;
   }
 
   let streams = inherited;
@@ -141,11 +141,21 @@ const applyExecRedirections = (
 const enclosingGroupsOf = (scope: CompoundScope, index: number): readonly EnclosingGroup[] =>
   scope.groups.filter(({ start, closingIndex }) => encloses(start, closingIndex, index));
 
-const enclosingStreams = (scope: CompoundScope, index: number): Streams => {
+const enclosingStreams = (
+  scope: CompoundScope,
+  index: number,
+  pipeStdout: StreamTarget | undefined,
+): Streams => {
   const { inherited } = scope;
   const enclosing = enclosingGroupsOf(scope, index);
 
   let streams = applyExecRedirections(scope, index, inherited, undefined);
+
+  // The pipeline redirects the element's stdout when the shell builds the pipeline, before the
+  // commands of an enclosing group run, so a group redirection still wins over it.
+  if (pipeStdout !== undefined) {
+    streams = new Map([...streams.entries(), [1, pipeStdout] as const]);
+  }
 
   for (const group of enclosing) {
     const groupStreams = streamsOf(group.closing, streams);
@@ -181,14 +191,14 @@ const compoundScope = (
   return { commands, inherited, from, enclosingByIndex: new Map(), groups, execs };
 };
 
-const enclosingOf = (scope: CompoundScope, index: number): Streams => {
+const enclosingOf = (scope: CompoundScope, index: number, pipeStdout?: StreamTarget): Streams => {
   const cached = scope.enclosingByIndex.get(index);
 
   if (cached !== undefined) {
     return cached;
   }
 
-  const enclosing = enclosingStreams(scope, index);
+  const enclosing = enclosingStreams(scope, index, pipeStdout);
 
   scope.enclosingByIndex.set(index, enclosing);
 
@@ -274,13 +284,6 @@ const membersFacts = (
   return { shows: shows ?? showsStderr(fallbackStreams), discards, ownDiscards: false };
 };
 
-const groupFacts = (
-  factsOf: CompoundFactsOf,
-  scope: CompoundScope,
-  closingIndex: number,
-  depth: number,
-): CompoundFacts => membersFacts(factsOf, scope, closingIndex, depth);
-
 const scriptFacts = (
   factsOf: CompoundFactsOf,
   script: string,
@@ -300,8 +303,8 @@ const scriptFacts = (
 };
 
 // A command shows its failure when its own redirections, over the streams it inherits, end stderr in
-// a visible file. A compound shows it when every member that can fail does. A command that redirects
-// anything but leaves stderr discarded hides the failure.
+// a visible file. A compound shows it when its last member with arguments does. A command that
+// redirects anything but leaves stderr discarded hides the failure.
 //
 // Exceeding the budget fails closed: the compound is treated as discarding, because the parser
 // cannot rule out a hidden failure. Group nesting consumes the same budget as script nesting.
@@ -316,8 +319,9 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
     return noFacts;
   }
 
-  const enclosing = enclosingOf(scope, index);
-  const own = streamsOf(command, enclosing, pipelineStdout(scope, index));
+  const pipeStdout = pipelineStdout(scope, index);
+  const enclosing = enclosingOf(scope, index, pipeStdout);
+  const own = streamsOf(command, enclosing);
   const ownDiscards = command.redirections.length > 0 && discardsStderr(own);
   const script = shellScriptOf(command.arguments);
 
@@ -329,7 +333,7 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
 
   if (command.group !== undefined) {
     const nestedScope = compoundScope(scope.commands, enclosing, command.group);
-    const nested = groupFacts(compoundFacts, nestedScope, index, depth);
+    const nested = membersFacts(compoundFacts, nestedScope, index, depth);
 
     return { shows: nested.shows, discards: nested.discards, ownDiscards };
   }
@@ -349,7 +353,8 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
     return false;
   }
 
-  const own = streamsOf(command, enclosingOf(scope, index), pipelineStdout(scope, index));
+  const pipeStdout = pipelineStdout(scope, index);
+  const own = streamsOf(command, enclosingOf(scope, index, pipeStdout));
   const script = shellScriptOf(command.arguments);
 
   if (script !== undefined || command.group !== undefined) {
@@ -378,19 +383,22 @@ const redirectionCanFail = (redirection: ShellRedirection): boolean => {
   return target !== devNull;
 };
 
+const someRedirectionCanFail = (command: ShellCommand): boolean =>
+  command.redirections.some(redirectionCanFail);
+
 // A command the parser creates at an opening parenthesis has no arguments and closes no group, so
 // judging it would read the enclosing redirections as its own. A redirection-only command runs no
 // program, so it has no failure to hide unless one of its redirections can fail.
 const isJudgedCommand = (command: ShellCommand): boolean => {
   if (runsRedirectionsOnlyExec(command.arguments)) {
-    return command.redirections.some(redirectionCanFail);
+    return someRedirectionCanFail(command);
   }
 
   if (command.group !== undefined || command.arguments.length > 0) {
     return true;
   }
 
-  return command.redirections.some(redirectionCanFail);
+  return someRedirectionCanFail(command);
 };
 
 const judgesHiddenFailure = (
@@ -434,7 +442,8 @@ const judgesHiddenFailure = (
     return undefined;
   }
 
-  const inherited = streamsOf(command, enclosingOf(scope, index), pipelineStdout(scope, index));
+  const inherited = streamsOf(command, enclosingOf(scope, index, pipelineStdout(scope, index)));
+
   const nested = compoundScope(commands, inherited);
 
   for (let nestedIndex = 0; nestedIndex < commands.length; nestedIndex += 1) {
@@ -468,14 +477,17 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
   }
 
   const scope = compoundScope(commands, emptyStreams);
+  let unverifiable = false;
 
   for (let index = 0; index < commands.length; index += 1) {
     const failure = judgesHiddenFailure(scope, index);
 
-    if (failure !== undefined) {
-      return { block: true, reason: failure === 'hidden' ? blockReason : unverifiableReason };
+    if (failure === 'hidden') {
+      return { block: true, reason: blockReason };
     }
+
+    unverifiable ||= failure === 'unverifiable';
   }
 
-  return undefined;
+  return unverifiable ? { block: true, reason: unverifiableReason } : undefined;
 };
