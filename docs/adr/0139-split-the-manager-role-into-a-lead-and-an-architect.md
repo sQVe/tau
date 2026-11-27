@@ -49,7 +49,9 @@ without a gate call.
 
 Every session the lead opens with `open` ends with one final handover whose text starts with
 `Final:`. It states the outcome and the lead's next step, and the lead leaves that request alone
-until it arrives.
+until it arrives. A resumed architect may keep earlier lead terminals in its transcript, so the
+visible architect refuses a `handover send` to any terminal other than its current lead. The refusal
+names both terminals, and a refused send queues nothing.
 
 While a session the lead opened runs, the lead starts no editing worker in this checkout, because
 the architect can switch the branch during `start-slice` step 9.
@@ -98,7 +100,10 @@ notified.
 
 Without a live holder, `ask` resumes the saved session in a hidden terminal with one question and a
 deadline. This path needs the recorded session file. The architect answers, updates the ticket if
-needed, sends the answer to the lead's inbox, and ends.
+needed, sends the answer to the lead's inbox, and ends. The lead's wait ends only when the terminal
+exits or the ask reaches its deadline; a status change or message does not end it. The ask session
+marks its record `failed` and shuts down when its run settles without an answer, so a real miss ends
+the wait quickly.
 
 The architect is a Pi session resumed by its saved session file. It can ask the user directly and
 keeps its earlier design context and approvals. The checkout records the session file. A lock file
