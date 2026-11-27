@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { impurities, purityProblems } from './pureModuleRules.js';
+import { purityProblems } from './pureModuleExceptions.js';
+import { impurities } from './pureModuleImpurities.js';
 
 const readImportSource = (): string => "import { readFile } from 'node:fs/promises';\n";
 
@@ -37,6 +38,15 @@ const importedFunctionPropertySource = (): string =>
 
 const importedAliasPropertySource = (): string =>
   "import { api } from './rules.js';\nconst target = api;\ntarget.run = () => 1;\n";
+
+const memberAliasPropertySource = (): string =>
+  'export const install = (request) => {\n  const api = request.api;\n  api.run = () => 1;\n};\n';
+
+const endedSwitchClassSource = (): string =>
+  'export const install = (api, value) => {\n  switch (value) {\n    case 1:\n      class Handler {}\n      Handler;\n  }\n  api.run = Handler;\n};\n';
+
+const switchCaseClassSource = (): string =>
+  'const install = (api) => {\n  switch (api) {\n    case 1:\n      class Handler {}\n      api.run = Handler;\n  }\n};\n';
 
 const importedNestedFunctionPropertySource = (): string =>
   "import { api } from './rules.js';\napi.config.run = () => 1;\n";
@@ -107,6 +117,20 @@ it('reports a function assigned to a property of a parameter or an imported bind
   ]);
 });
 
+it('reports an escape through an alias of a parameter member', () => {
+  expect(impurities('src/pure/decide.ts', memberAliasPropertySource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:3: assigns a function to a property',
+  ]);
+});
+
+it('keeps a class declared in a switch case inside the switch', () => {
+  expect(impurities('src/pure/decide.ts', switchCaseClassSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:5: assigns a function to a property',
+  ]);
+
+  expect(impurities('src/pure/decide.ts', endedSwitchClassSource(), testRegistry)).toEqual([]);
+});
+
 it('reports a class assigned to a property of a parameter', () => {
   expect(impurities('src/pure/decide.ts', classPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:2: assigns a function to a property',
@@ -125,9 +149,6 @@ const wrappedDestructuredSource = (): string =>
 
 const wrappedMemberSource = (): string =>
   'export const install = (api) => {\n  (api as Api).run = () => 1;\n};\n';
-
-const switchCaseClassSource = (): string =>
-  'const install = (api) => {\n  switch (api) {\n    case 1:\n      class Handler {}\n      api.run = Handler;\n  }\n};\n';
 
 const staticBlockClassSource = (): string =>
   'class Holder {\n  static {\n    class Handler {}\n    const install = (api) => {\n      api.run = Handler;\n    };\n    install;\n  }\n}\n';

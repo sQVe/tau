@@ -9,14 +9,9 @@ import { expect, it } from 'vitest';
 
 import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
+import { purityProblems } from './pureModuleExceptions.js';
+import { findingLines, impurities, memberName, propertyKey } from './pureModuleImpurities.js';
 import { pureAdvice, pureModuleExceptions, pureModules } from './pureModuleRegistry.js';
-import {
-  findingLines,
-  impurities,
-  memberName,
-  propertyKey,
-  purityProblems,
-} from './pureModuleRules.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
