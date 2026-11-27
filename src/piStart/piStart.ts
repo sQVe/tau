@@ -462,7 +462,7 @@ export const startPiSession = async (
 export const startPiSessionRightOf = async (
   runtime: CommandRuntime,
   request: PiStartRightOfRequest,
-): Promise<{ reply: string; terminal: string; model: string }> => {
+): Promise<{ reply: string; terminal: string; model: string | undefined }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
   const deadline = Date.now() + launchTimeoutMilliseconds;
@@ -479,6 +479,12 @@ export const startPiSessionRightOf = async (
   checkOutput('herdr-app do pane.split', splitReplySchema, created);
 
   const terminal = created.terminal;
+
+  // The split already created the terminal, so an abort that arrived while the command ran still
+  // reports it. The readback is skipped because the abort would cancel it.
+  if (runtime.signal?.aborted === true) {
+    return { reply, terminal, model: undefined };
+  }
 
   const model = await readStartedTerminalModel(request, reply, terminal, deadline, runtime.signal);
 

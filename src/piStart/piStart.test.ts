@@ -524,7 +524,7 @@ it('a split reply that is not JSON rejects with the command context and no secon
   expect(fake.calls).toHaveLength(1);
 });
 
-it('a split that succeeds before the signal aborts is not reported as a split failure', async () => {
+it('a split Herdr reports successful stays successful when the signal aborts during the call', async () => {
   const controller = new AbortController();
 
   const fake = createExecFake<'split'>({
@@ -538,14 +538,17 @@ it('a split that succeeds before the signal aborts is not reported as a split fa
 
   const root = await createTemporaryRepository(onTestFinished);
 
-  const failure = await startPiSessionRightOf(
+  const result = await startPiSessionRightOf(
     { exec: fake.exec, cwd: root, signal: controller.signal },
-    paneRequest(root, async () => ['pi']),
-  ).catch((error: unknown) => error);
+    paneRequest(root, readerFor(fake, root)),
+  );
 
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toContain('cancelled during the split');
-  expect((failure as Error).message).not.toContain('pane.split failed');
+  expect(result).toEqual({
+    reply: '{"pane":"p-new","terminal":"t-new"}',
+    terminal: 't-new',
+    model: undefined,
+  });
+
   expect(fake.calls).toHaveLength(1);
 });
 
