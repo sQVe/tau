@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  commandKeywords,
   commandWords,
   parseShellCommands,
   runsRedirectionsOnlyExec,
   shellScriptOf,
-  wrapperValueOptions,
 } from './shell.js';
 
 const wordsOf = (source: string) =>
@@ -26,6 +24,9 @@ const backgroundsOf = (source: string): boolean[] | undefined =>
 
 const groupsOf = (source: string): (number | undefined)[] | undefined =>
   parseShellCommands(source)?.map(({ group }) => group);
+
+const pipeTargetsOf = (source: string): (number | undefined)[] | undefined =>
+  parseShellCommands(source)?.map(({ pipeTarget }) => pipeTarget);
 
 const shellIdsOf = (source: string): string[] | undefined =>
   parseShellCommands(source)
@@ -89,6 +90,27 @@ describe('parseShellCommands', () => {
 
   it('backgrounds only the command that ends a list inside a foreground group', () => {
     expect(backgroundsOf('( a; b & )')).toEqual([false, true]);
+  });
+
+  it('keeps an ampersand inside a compound away from the enclosing unit', () => {
+    expect(backgroundsOf('a && { b & }')).toEqual([false, true, false]);
+    expect(backgroundsOf('producer | { consumer & }')).toEqual([false, true, false]);
+  });
+
+  it('backgrounds a whole and-list when the ampersand follows the compound', () => {
+    expect(backgroundsOf('a && { b; } &')).toEqual([true, true, true]);
+  });
+
+  it('opens a compound nested inside another compound', () => {
+    expect(groupsOf('{ if a; then b; fi & }')).toEqual([undefined, undefined, 0, 0]);
+    expect(groupsOf('{ case x in a) b ;; esac & }')).toEqual([undefined, undefined, 0, 0]);
+    expect(groupsOf('{ { a; } & }')).toEqual([undefined, 0, 0]);
+  });
+
+  it('records the next pipeline element on each command that writes to a pipe', () => {
+    expect(pipeTargetsOf('a | b | c > log')).toEqual([1, 2, undefined]);
+    expect(pipeTargetsOf('a && b')).toEqual([undefined, undefined]);
+    expect(pipeTargetsOf('{ a; b; } | c')).toEqual([3, 3, 3, undefined]);
   });
 
   it('records the group start on the command that closes the group', () => {
@@ -464,6 +486,7 @@ describe('parseShellCommands', () => {
         heredocs: ['body\n'],
         background: false,
         shellId: '0',
+        pipeTarget: undefined,
         redirections: [],
       },
       {
@@ -472,6 +495,7 @@ describe('parseShellCommands', () => {
         heredocs: [],
         background: false,
         shellId: '0',
+        pipeTarget: undefined,
         redirections: [],
       },
     ]);
@@ -516,6 +540,7 @@ describe('parseShellCommands', () => {
         heredocs: [],
         background: false,
         shellId: '0',
+        pipeTarget: undefined,
         redirections: [{ fileDescriptor: undefined, operator: '<<<', target: 'word' }],
       },
       {
@@ -524,6 +549,7 @@ describe('parseShellCommands', () => {
         heredocs: [],
         background: false,
         shellId: '0',
+        pipeTarget: undefined,
         redirections: [],
       },
     ]);
@@ -584,6 +610,7 @@ describe('parseShellCommands', () => {
         heredocs: [''],
         background: false,
         shellId: '0',
+        pipeTarget: undefined,
         redirections: [],
       },
     ]);
@@ -636,25 +663,37 @@ describe('parseShellCommands', () => {
   );
 });
 
-const wrapperOptions = Object.entries(wrapperValueOptions).flatMap(([name, options]) =>
-  [...options].map((option) => ({ name, option })),
-);
-
-const wrapperFixedArguments = (name: string): string[] =>
-  ['chroot', 'flock', 'timeout'].includes(name) ? ['root'] : [];
-
 describe('commandWords and shellScriptOf', () => {
-  it.each(wrapperOptions)(
-    'reads the command head past the $name option $option',
-    ({ name, option }) => {
-      const words = [name, option, 'value', ...wrapperFixedArguments(name), 'sh', '-c', 'cmd'];
-
-      expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
-      expect(shellScriptOf(words)).toBe('cmd');
+  it.each([
+    { name: 'a doas user option', words: ['doas', '-u', 'root', 'sh', '-c', 'cmd'] },
+    { name: 'an env split string option', words: ['env', '-u', 'HOME', 'sh', '-c', 'cmd'] },
+    { name: 'an env chdir option', words: ['env', '--chdir', '/tmp', 'sh', '-c', 'cmd'] },
+    { name: 'a nice adjustment', words: ['nice', '-n', '5', 'sh', '-c', 'cmd'] },
+    { name: 'a stdbuf output option', words: ['stdbuf', '-oL', 'sh', '-c', 'cmd'] },
+    { name: 'a sudo user option', words: ['sudo', '-u', 'root', 'sh', '-c', 'cmd'] },
+    { name: 'a timeout signal option', words: ['timeout', '-s', 'TERM', '5', 'sh', '-c', 'cmd'] },
+    { name: 'an xargs replace option', words: ['xargs', '-I', '{}', 'sh', '-c', 'cmd'] },
+    {
+      name: 'a chroot root argument',
+      words: ['chroot', '--userspec', 'root', 'root', 'sh', '-c', 'cmd'],
     },
-  );
+    { name: 'a flock lock file', words: ['flock', '-w', '5', '/tmp/lock', 'sh', '-c', 'cmd'] },
+  ])('reads the command head past $name', ({ words }) => {
+    expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
+    expect(shellScriptOf(words)).toBe('cmd');
+  });
 
-  it.each([...commandKeywords])('reads the command head past the %s keyword', (keyword) => {
+  it.each([
+    { name: 'a negation', keyword: '!' },
+    { name: 'a brace', keyword: '{' },
+    { name: 'an if', keyword: 'if' },
+    { name: 'a then', keyword: 'then' },
+    { name: 'an elif', keyword: 'elif' },
+    { name: 'an else', keyword: 'else' },
+    { name: 'a do', keyword: 'do' },
+    { name: 'a while', keyword: 'while' },
+    { name: 'an until', keyword: 'until' },
+  ])('reads the command head past $name keyword', ({ keyword }) => {
     const words = [keyword, 'sh', '-c', 'cmd'];
 
     expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
@@ -683,6 +722,26 @@ describe('commandWords and shellScriptOf', () => {
     expect(shellScriptOf(['bash', '-co', 'pipefail', '--', 'cmd'])).toBe('cmd');
     expect(shellScriptOf(['bash', '-c', '--', 'cmd'])).toBe('cmd');
     expect(shellScriptOf(['bash', '-c', '--'])).toBeUndefined();
+  });
+
+  it('reads a wrapper operand after an option terminator', () => {
+    const words = ['flock', '--', '-lockfile', 'bash', '-lc', 'cmd'];
+
+    expect(commandWords(words).words).toEqual(['bash', '-lc', 'cmd']);
+    expect(shellScriptOf(words)).toBe('cmd');
+
+    expect(commandWords(['command', '--', '-v', 'hc', 'send']).words).toEqual(['-v', 'hc', 'send']);
+  });
+
+  it('reads a combined flag word that gives its value to -o before -c', () => {
+    expect(shellScriptOf(['bash', '-oc', 'cmd'])).toBeUndefined();
+    expect(shellScriptOf(['bash', '-lc', 'cmd'])).toBe('cmd');
+  });
+
+  it('reads the command after a wrapper time as the external binary', () => {
+    expect(commandWords(['command', 'time', '-v', 'hc', 'send']).words).toEqual(['hc', 'send']);
+
+    expect(commandWords(['time', '-v', 'hc', 'send']).words).toEqual(['-v', 'hc', 'send']);
   });
 
   it('reads the command the external time binary runs', () => {

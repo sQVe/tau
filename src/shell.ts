@@ -32,6 +32,9 @@ export interface ShellCommand {
   // substitution, backtick, expanding heredoc body, pipeline element, or backgrounded unit starts a
   // child shell, so an `exec` there does not change the descriptors of the shell that contains it.
   shellId: string;
+  // The index of the next pipeline element whose stdin this command writes to. A command with a
+  // pipe on stdout does not write to the terminal, so its stdout target is the pipe.
+  pipeTarget: number | undefined;
   redirections: ShellRedirection[];
 }
 
@@ -109,7 +112,7 @@ const shellNames: ReadonlySet<string> = new Set([
 ]);
 
 // A word that runs the command after it instead of being the command itself.
-export const commandKeywords: ReadonlySet<string> = new Set([
+const commandKeywords: ReadonlySet<string> = new Set([
   '!',
   '{',
   'do',
@@ -123,7 +126,7 @@ export const commandKeywords: ReadonlySet<string> = new Set([
 
 // Each wrapper runs the command after its own options and fixed arguments. The set lists the
 // options that take the next word as their value.
-export const wrapperValueOptions: Readonly<Record<string, ReadonlySet<string>>> = {
+const wrapperValueOptions: Readonly<Record<string, ReadonlySet<string>>> = {
   chroot: new Set(['--groups', '--userspec']),
   command: new Set(),
   doas: new Set(['-C', '-a', '-u']),
@@ -232,11 +235,41 @@ const optionEnd = (
   while (index < words.length) {
     const word = words[index] ?? '';
 
+    if (word === '--') {
+      return index + 1;
+    }
+
     if (!word.startsWith('-')) {
       return index;
     }
 
     index += valueOptions.has(word) ? 2 : 1;
+  }
+
+  return index;
+};
+
+// Advances past leading keywords, assignments, and a reserved `time` word with its flags. A
+// compound opener or closer counts as leading when the caller asks for it, so a compound nested in
+// the same command opens at its own word.
+const afterLeadingWords = (
+  words: readonly string[],
+  start: number,
+  reservedTime: boolean,
+  isLeading: (word: string) => boolean = () => false,
+): number => {
+  let index = start;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+
+    if (commandKeywords.has(word) || assignmentPattern.test(word) || isLeading(word)) {
+      index += 1;
+    } else if (reservedTime && word === 'time') {
+      index = afterReservedTime(words, index);
+    } else {
+      return index;
+    }
   }
 
   return index;
@@ -279,11 +312,12 @@ const commandStart = (words: readonly string[]): CommandStart => {
     const word = words[index] ?? '';
     const name = commandNameOf(word);
     const valueOptions = wrapperValueOptionsOf(word);
+    // A bare `time` is the reserved word only before any wrapper. After one it is the external
+    // binary, whose own options the wrapper table below reads.
+    const afterLeading = afterLeadingWords(words, index, wrappers.length === 0);
 
-    if (commandKeywords.has(word) || assignmentPattern.test(word)) {
-      index += 1;
-    } else if (name === 'time' && word === name) {
-      index = afterReservedTime(words, index);
+    if (afterLeading !== index) {
+      index = afterLeading;
     } else if (valueOptions === undefined) {
       break;
     } else {
@@ -299,12 +333,87 @@ const commandStart = (words: readonly string[]): CommandStart => {
   return { index, wrappers, lookup };
 };
 
+// `env` splits the value of `-S`/`--split-string` into words and runs the first one, so the value
+// is command text rather than an ordinary option value.
+const envSplitOptionNames: ReadonlySet<string> = new Set(['-S', '--split-string']);
+const splitStringPrefix = '--split-string=';
+const splitWordPattern = /\s+/u;
+
+const splitStringAt = (
+  words: readonly string[],
+  index: number,
+): { value: string; end: number } | undefined => {
+  const word = words[index] ?? '';
+
+  if (word.startsWith(splitStringPrefix)) {
+    return { value: word.slice(splitStringPrefix.length), end: index + 1 };
+  }
+
+  if (envSplitOptionNames.has(word)) {
+    return { value: words[index + 1] ?? '', end: index + 2 };
+  }
+
+  return word.startsWith('-S') && word.length > 2
+    ? { value: word.slice(2), end: index + 1 }
+    : undefined;
+};
+
+// Finds an `env` split string among its options. The scan stops at `--` or at the first operand,
+// because `env` stops reading options there.
+const envSplitString = (
+  words: readonly string[],
+  start: number,
+): { words: string[]; end: number } | undefined => {
+  const envValueOptions = wrapperValueOptions.env ?? emptyOptionValues;
+  let index = start;
+
+  while (index < words.length) {
+    const word = words[index] ?? '';
+    const split = splitStringAt(words, index);
+
+    if (split !== undefined) {
+      const splitWords = split.value.split(splitWordPattern).filter((value) => value !== '');
+
+      return { words: splitWords, end: split.end };
+    }
+
+    if (word === '--' || !word.startsWith('-')) {
+      return undefined;
+    }
+
+    index += envValueOptions.has(word) ? 2 : 1;
+  }
+
+  return undefined;
+};
+
+const withEnvSplitStrings = (words: readonly string[]): readonly string[] => {
+  let result = [...words];
+  let index = 0;
+
+  while (index < result.length) {
+    const word = result[index] ?? '';
+    const split = commandNameOf(word) === 'env' ? envSplitString(result, index + 1) : undefined;
+
+    if (split === undefined) {
+      index += 1;
+
+      continue;
+    }
+
+    result = [...result.slice(0, index + 1), ...split.words, ...result.slice(split.end)];
+  }
+
+  return result;
+};
+
 // The words a wrapper or keyword runs as a command. `lookup` is true when a `command -v` or
 // `command -V` wrapper names a command instead of running it.
 export const commandWords = (words: readonly string[]): CommandWords => {
-  const { index, lookup } = commandStart(words);
+  const expanded = withEnvSplitStrings(words);
+  const { index, lookup } = commandStart(expanded);
 
-  return { words: words.slice(index), lookup };
+  return { words: expanded.slice(index), lookup };
 };
 
 // A shell option word may take the next word as its value, as `-o pipefail` and `--rcfile file` do.
@@ -317,7 +426,25 @@ const isShellOptionWord = (word: string): boolean => word.length > 1 && startsLi
 const takesShellOptionValue = (word: string): boolean =>
   shellValueOptions.has(word) || /^[-+][a-zA-Z]*[oO]$/u.test(word);
 
-const namesShellScript = (word: string): boolean => /^-[a-zA-Z]*c[a-zA-Z]*$/u.test(word);
+// A `-c` flag names a script only when it is not the value of an `-o`/`-O` option earlier in the
+// same word, as `bash -oc cmd` means `-o c` and takes `cmd` as a script file.
+const namesShellScript = (word: string): boolean => {
+  if (!startsLikeOption(word)) {
+    return false;
+  }
+
+  for (const letter of word.slice(1)) {
+    if (letter === 'o' || letter === 'O') {
+      return false;
+    }
+
+    if (letter === 'c') {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 // `--` only ends option parsing, so it never names the script. The script word comes after it.
 const afterOptionTerminator = (words: readonly string[], index: number): number =>
@@ -415,23 +542,24 @@ const wrapperScript = (name: string, words: readonly string[]): string | undefin
 // The script a command runs through a shell: a shell's `-c` word, a wrapper's script option, or
 // the words `watch` joins.
 export const shellScriptOf = (words: readonly string[]): string | undefined => {
-  const { index, wrappers, lookup } = commandStart(words);
+  const expanded = withEnvSplitStrings(words);
+  const { index, wrappers, lookup } = commandStart(expanded);
 
   if (lookup) {
     return undefined;
   }
 
-  const headName = commandNameOf(words[index] ?? '');
+  const headName = commandNameOf(expanded[index] ?? '');
 
   if (shellNames.has(headName)) {
-    return shellOptionScript(words.slice(index + 1));
+    return shellOptionScript(expanded.slice(index + 1));
   }
 
   const scriptWrapper = wrappers.findLast(({ name }) => scriptWrapperNames.has(name));
 
   return scriptWrapper === undefined
     ? undefined
-    : wrapperScript(scriptWrapper.name, words.slice(scriptWrapper.index));
+    : wrapperScript(scriptWrapper.name, expanded.slice(scriptWrapper.index));
 };
 
 export const quoteShellArgument = (argument: string): string =>
@@ -464,34 +592,17 @@ const compoundClosers: Readonly<Record<string, string>> = {
 
 const closingKeywords: ReadonlySet<string> = new Set(['}', 'done', 'esac', 'fi']);
 
-// The first compound word a command runs, after its leading keywords. Only a reserved word can sit
-// before a compound opener: bash treats a brace after `sudo`, `chroot`, or `env` as that wrapper's
-// argument, so a wrapper does not start a compound. `time` is a reserved word and keeps only its
-// flag.
-const compoundWordAt = (words: readonly string[]): number | undefined => {
-  let index = 0;
+// Whether the word at `index` opens or closes a compound. It must sit after only keywords,
+// assignments, other compound words, and a reserved `time`, so a compound nested in the same
+// command opens at its own word.
+const compoundWordAt = (words: readonly string[], index: number): boolean => {
+  const word = words[index] ?? '';
+  const isCompound = Object.hasOwn(compoundClosers, word) || closingKeywords.has(word);
 
-  while (index < words.length) {
-    const word = words[index] ?? '';
+  const isLeading = (candidate: string): boolean =>
+    Object.hasOwn(compoundClosers, candidate) || closingKeywords.has(candidate);
 
-    if (Object.hasOwn(compoundClosers, word) || closingKeywords.has(word)) {
-      return index;
-    }
-
-    if (commandKeywords.has(word) || assignmentPattern.test(word)) {
-      index += 1;
-
-      continue;
-    }
-
-    if (word !== 'time') {
-      return undefined;
-    }
-
-    index = afterReservedTime(words, index);
-  }
-
-  return undefined;
+  return isCompound && afterLeadingWords(words, 0, true, isLeading) > index;
 };
 
 const closesCasePattern = (compound: OpenCompound | undefined, word: string): boolean =>
@@ -509,11 +620,10 @@ export const runsRedirectionsOnlyExec = (words: readonly string[]): boolean => {
   while (index < words.length) {
     const word = words[index] ?? '';
     const name = commandNameOf(word);
+    const afterLeading = afterLeadingWords(words, index, true);
 
-    if (commandKeywords.has(word) || assignmentPattern.test(word)) {
-      index += 1;
-    } else if (word === 'time') {
-      index = afterReservedTime(words, index);
+    if (afterLeading !== index) {
+      index = afterLeading;
     } else if (shellQualifierNames.has(name)) {
       const afterOptions = optionEnd(words, index + 1, emptyOptionValues);
       const options = words.slice(index + 1, afterOptions);
@@ -1034,6 +1144,10 @@ class ShellParser {
       return;
     }
 
+    for (const command of this.commands.slice(element.start, commandIndex)) {
+      command.pipeTarget = commandIndex;
+    }
+
     if (element.parentShellId === undefined) {
       element.parentShellId = this.shellId;
 
@@ -1206,6 +1320,8 @@ class ShellParser {
 
       state.compounds.push({ closer, unitStart, start, caseState });
       state.elements.push({ start, parentShellId: undefined });
+      // The compound is its own unit, so a separator inside it never reaches the enclosing one.
+      state.unitStarts.push(start);
 
       return;
     }
@@ -1218,6 +1334,10 @@ class ShellParser {
 
     if (compound === undefined) {
       return;
+    }
+
+    if (state.unitStarts.length > 1) {
+      state.unitStarts.pop();
     }
 
     state.unitStarts[state.unitStarts.length - 1] = compound.unitStart;
@@ -1239,9 +1359,9 @@ class ShellParser {
   }
 
   // A compound keyword runs the commands up to its closer as one unit, so a trailing `&` after the
-  // closer backgrounds the whole compound instead of only the closer's command. Closing the
-  // compound restores the unit start it opened in, because a separator inside it moved the unit
-  // start forward.
+  // closer backgrounds the whole compound instead of only the closer's command. Opening the
+  // compound starts its own unit, so an inner `&` cannot reach the enclosing one. Closing it
+  // restores the unit start it opened in, because a separator inside it moved that start forward.
   private trackCompound(state: ListState, word: string, wordIndex: number): void {
     if (!Object.hasOwn(compoundClosers, word) && !closingKeywords.has(word)) {
       return;
@@ -1256,9 +1376,9 @@ class ShellParser {
       return;
     }
 
-    const leading = compoundWordAt(state.command.arguments);
+    const leading = compoundWordAt(state.command.arguments, wordIndex);
 
-    if (leading === undefined || leading !== wordIndex) {
+    if (!leading) {
       return;
     }
 
@@ -1289,6 +1409,7 @@ class ShellParser {
       background: false,
       group: undefined,
       shellId: this.shellId,
+      pipeTarget: undefined,
       redirections: [],
     };
 
