@@ -590,6 +590,11 @@ entry = "src/shell.ts"
 public = []
 imports = ["wrapperAnalysis"]
 
+[modules.shellScript]
+entry = "src/shellScript.ts"
+public = []
+imports = ["wrapperAnalysis"]
+
 [modules.skillTools]
 entry = "src/skillTools.ts"
 public = []

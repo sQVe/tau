@@ -1,6 +1,7 @@
 import { parseShellCommands } from '../../shell.js';
 import type { ShellCommand, ShellRedirection } from '../../shell.js';
-import { runsRedirectionsOnlyExec, shellScriptOf } from '../../wrapperAnalysis.js';
+import { shellScriptOf } from '../../shellScript.js';
+import { runsRedirectionsOnlyExec } from '../../wrapperAnalysis.js';
 import {
   compoundScope,
   enclosingOf,
