@@ -45,7 +45,7 @@ it('records a PATCH api call as a write, not a read', async () => {
   ]);
 });
 
-it.each(['-f', '--field', '--raw-field'])(
+it.each(['-F', '--field', '--raw-field'])(
   'records an api call with %s as a write, not a read',
   async (field) => {
     const fake = createGhFake();
@@ -105,6 +105,41 @@ it('refuses an api write without --input', async () => {
     '--method',
     'POST',
     'repos/sQVe/tau/pulls/7/reviews',
+  ]);
+
+  expect(result).toMatchObject({ code: 1, stderr: 'missing --input' });
+  expect(fake.writes).toEqual([]);
+});
+
+it('reads an api call with an explicit GET method even when it carries a field', async () => {
+  const fake = createGhFake();
+
+  const result = await fake.exec('gh', [
+    'api',
+    '--hostname',
+    'github.com',
+    '--method',
+    'GET',
+    'repos/sQVe/tau/pulls/7/reviews',
+    '-f',
+    'body=Fine.',
+  ]);
+
+  expect(result.code).toBe(0);
+  expect(fake.writes).toEqual([]);
+});
+
+it('refuses an api write whose trailing --input has no value', async () => {
+  const fake = createGhFake();
+
+  const result = await fake.exec('gh', [
+    'api',
+    '--hostname',
+    'github.com',
+    '--method',
+    'POST',
+    'repos/sQVe/tau/pulls/7/reviews',
+    '--input',
   ]);
 
   expect(result).toMatchObject({ code: 1, stderr: 'missing --input' });

@@ -126,7 +126,10 @@ const writeFacts = {
   },
 } satisfies Record<WriteKey, WriteFacts>;
 
-const writeFieldFlags = ['--input', '-f', '--field', '--raw-field'];
+const fieldFlags = ['-f', '-F', '--field', '--raw-field'] as const;
+
+const carriesWriteFields = (commandArguments: readonly string[]): boolean =>
+  fieldFlags.some((field) => commandArguments.includes(field));
 
 const writeKeys: ReadonlySet<WriteKey> = new Set<WriteKey>(
   Object.keys(writeFacts) as readonly WriteKey[],
@@ -293,10 +296,15 @@ export const createGhFake = (): GhFake => {
     }
 
     const method = argumentAfter(commandArguments, '--method');
+    const readsWithMethod = method === 'GET';
     const writesMethod = method !== undefined && method !== 'GET';
-    const carriesWriteFields = writeFieldFlags.some((field) => commandArguments.includes(field));
 
-    return writesMethod || carriesWriteFields ? 'api write' : baseKey;
+    const carriesFields =
+      carriesWriteFields(commandArguments) || commandArguments.includes('--input');
+
+    const writesFields = !readsWithMethod && carriesFields;
+
+    return writesMethod || writesFields ? 'api write' : baseKey;
   };
 
   const recordWrite = async (
@@ -310,9 +318,7 @@ export const createGhFake = (): GhFake => {
     const path = flagIndex === -1 ? undefined : commandArguments[flagIndex + 1];
 
     if (path === undefined) {
-      const carriesWriteFields = writeFieldFlags.some((field) => commandArguments.includes(field));
-
-      if (key === 'api write' && carriesWriteFields) {
+      if (key === 'api write' && carriesWriteFields(commandArguments)) {
         fake.writes.push({
           key,
           commandArguments: [...commandArguments],
