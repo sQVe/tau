@@ -23,6 +23,14 @@ interface RegisterToolHost {
 
 export type AskKind = 'choice' | 'approval';
 
+interface InstallProbe {
+  reachedWrapper: boolean;
+}
+
+// A proxy trap or an accessor can return a different function on every read, so a function read
+// back is only evidence when a probe passed to it reaches the wrapper.
+type ProbeCall = (tool: unknown) => unknown;
+
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -58,7 +66,9 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // a tool schema can hold a subschema under it. A subschema under a keyword outside these sets stays
 // as written, so an object there keeps its keys open, including objects nested inside it. An
 // explicit additionalProperties: true stays, because the tool author declared free-form input;
-// closing it would reject calls the author declared valid.
+// closing it would reject calls the author declared valid. A node that declares
+// `unevaluatedProperties` stays open too, because that keyword already decides which extra keys it
+// allows.
 export const schemaMapKeywords: ReadonlySet<string> = new Set(['patternProperties', 'properties']);
 
 export const schemaArrayKeywords: ReadonlySet<string> = new Set(['prefixItems']);
@@ -164,7 +174,7 @@ const strictSchemaChild = (
   }
 
   if (schemaArrayKeywords.has(key)) {
-    return Array.isArray(child) ? child.map((entry) => visit(entry, asserted)) : child;
+    return Array.isArray(child) ? visit(child, asserted) : child;
   }
 
   if (schemaValueKeywords.has(key)) {
@@ -174,27 +184,58 @@ const strictSchemaChild = (
   return child;
 };
 
-const strictSchemaValue = (value: unknown, asserted = true): unknown => {
-  if (Array.isArray(value)) {
-    return value.map((item) => strictSchemaValue(item, asserted));
+// A schema built in code may point at itself. Each clone is recorded before its children are walked,
+// so a repeated node returns the clone already made instead of recursing forever.
+const strictSchemaArray = (
+  value: readonly unknown[],
+  asserted: boolean,
+  seen: WeakMap<object, unknown>,
+  visit: (value: unknown, asserted: boolean) => unknown,
+): unknown => {
+  const cached = seen.get(value);
+
+  if (cached !== undefined) {
+    return cached;
   }
 
-  if (!isRecord(value)) {
-    return value;
+  const clone: unknown[] = [];
+
+  seen.set(value, clone);
+
+  for (const item of value) {
+    clone.push(visit(item, asserted));
+  }
+
+  return clone;
+};
+
+const strictSchemaObject = (
+  value: Record<string, unknown>,
+  asserted: boolean,
+  seen: WeakMap<object, unknown>,
+  visit: (value: unknown, asserted: boolean) => unknown,
+): unknown => {
+  const cached = seen.get(value);
+
+  if (cached !== undefined) {
+    return cached;
   }
 
   const clone: Record<PropertyKey, unknown> = { ...value };
 
+  seen.set(value, clone);
+
   for (const key of Object.keys(value)) {
-    clone[key] = strictSchemaChild(key, value[key], asserted, strictSchemaValue);
+    clone[key] = strictSchemaChild(key, value[key], asserted, visit);
   }
 
   const combinesWithSibling = Object.keys(value).some((keyword) =>
     schemaCombiningKeywords.has(keyword),
   );
 
+  const allowsUndeclaredKeys = 'unevaluatedProperties' in value;
   const closesObject = asserted && declaresObject(value);
-  const keepsObjectOpen = requiresObjectValue(value) || combinesWithSibling;
+  const keepsObjectOpen = requiresObjectValue(value) || combinesWithSibling || allowsUndeclaredKeys;
 
   if (closesObject && !keepsObjectOpen) {
     const additionalProperties = value['additionalProperties'];
@@ -205,6 +246,25 @@ const strictSchemaValue = (value: unknown, asserted = true): unknown => {
   }
 
   return clone;
+};
+
+const strictSchemaValue = (
+  value: unknown,
+  asserted = true,
+  seen = new WeakMap<object, unknown>(),
+): unknown => {
+  const visit = (child: unknown, childAsserted: boolean): unknown =>
+    strictSchemaValue(child, childAsserted, seen);
+
+  if (Array.isArray(value)) {
+    return strictSchemaArray(value, asserted, seen, visit);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return strictSchemaObject(value, asserted, seen, visit);
 };
 
 export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Schema => {
@@ -234,7 +294,8 @@ const descriptorOf = (target: ExtensionAPI, key: string): PropertyDescriptor | u
     }
 
     const prototype: unknown = Object.getPrototypeOf(current);
-    const isPrototype = typeof prototype === 'object' || typeof prototype === 'function';
+    const isObjectPrototype = typeof prototype === 'object' || typeof prototype === 'function';
+    const isPrototype = prototype !== null && isObjectPrototype;
 
     current = isPrototype ? prototype : null;
   }
@@ -280,6 +341,48 @@ const readRegisterTool = (pi: ExtensionAPI): RegisterToolReturningValue => {
   return current;
 };
 
+const probeError = new Error('the strict registration probe reached the wrapper');
+
+const probeTarget: ToolDefinition = {
+  name: 'tau-strict-tool-parameters-probe',
+  label: 'strict tool parameters probe',
+  description: 'A tool used once to confirm that the strict registration wrapper is installed.',
+  parameters: Type.Object({}),
+  execute: () => Promise.reject(probeError),
+};
+
+// Any read from the probe throws, so a host that never reaches the wrapper refuses it before it
+// registers anything.
+const probeTool = new Proxy(probeTarget, {
+  get: () => {
+    throw probeError;
+  },
+});
+
+let activeProbe: InstallProbe | undefined;
+
+const isProbeCall = (value: unknown): value is ProbeCall => typeof value === 'function';
+
+const confirmsWrapper = (readBack: unknown): boolean => {
+  if (!isProbeCall(readBack)) {
+    return false;
+  }
+
+  const probe: InstallProbe = { reachedWrapper: false };
+
+  activeProbe = probe;
+
+  try {
+    readBack(probeTool);
+  } catch {
+    // A host refuses the probe; reaching the wrapper is the evidence.
+  } finally {
+    activeProbe = undefined;
+  }
+
+  return probe.reachedWrapper;
+};
+
 // An inherited accessor accepts the value through its setter and creates no own property, and a
 // proxy trap may throw while it reports one, so read the descriptor through the chain.
 const verifyInstalled = (
@@ -295,26 +398,24 @@ const verifyInstalled = (
     failInstall(pi, current, notReadableMessage, error);
   }
 
-  if (descriptor?.get === undefined) {
-    if (descriptor?.value !== wrapper) {
-      failInstall(pi, current, notWritableMessage);
-    }
-
+  if (descriptor?.value === wrapper) {
     return;
   }
 
-  // An accessor may return a new wrapper on every read, so a different function can still be the
-  // value the setter stored. Trust a function read back through the descriptor that accepted it,
-  // unless it is the value from before the assignment, which means the setter discarded it.
+  const host: RegisterToolHost = pi;
   let readBack: unknown;
 
   try {
-    readBack = descriptor.get.call(pi);
+    readBack = descriptor?.get === undefined ? host.registerTool : descriptor.get.call(pi);
   } catch (error) {
     failInstall(pi, current, notReadableMessage, error);
   }
 
   if (typeof readBack !== 'function' || readBack === current) {
+    failInstall(pi, current, notWritableMessage);
+  }
+
+  if (readBack !== wrapper && !confirmsWrapper(readBack)) {
     failInstall(pi, current, notWritableMessage);
   }
 };
@@ -323,8 +424,20 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   const current = readRegisterTool(pi);
   const registered = current.bind(pi);
 
-  const wrapper: RegisterToolReturningValue = (tool) =>
-    registered({ ...tool, parameters: strictToolParameters(tool.parameters) });
+  const wrapper: RegisterToolReturningValue = (tool) => {
+    if (activeProbe !== undefined) {
+      activeProbe.reachedWrapper = true;
+
+      throw probeError;
+    }
+
+    const strictTool: typeof tool = { ...tool, parameters: strictToolParameters(tool.parameters) };
+
+    // A tool may inherit a member such as `execute`, so keep the prototype the caller supplied.
+    Reflect.setPrototypeOf(strictTool, Reflect.getPrototypeOf(tool));
+
+    return registered(strictTool);
+  };
 
   try {
     pi.registerTool = wrapper;

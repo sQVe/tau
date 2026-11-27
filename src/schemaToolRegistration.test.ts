@@ -331,3 +331,92 @@ it('binds the registerTool it read once', () => {
 
   expect(registered).toHaveLength(1);
 });
+
+it('installs through an API that only exposes registerTool through a proxy get trap', () => {
+  const registered: unknown[] = [];
+  let stored: ((tool: unknown) => unknown) | undefined;
+
+  const proxyTarget: Record<PropertyKey, unknown> = {};
+
+  const api = new Proxy(proxyTarget, {
+    get: (value, key) => {
+      if (key !== 'registerTool') {
+        return value[key];
+      }
+
+      return stored ?? ((tool: unknown) => registered.push(tool));
+    },
+    set: (value, key, assigned: unknown) => {
+      if (key !== 'registerTool') {
+        value[key] = assigned;
+
+        return true;
+      }
+
+      stored = assigned as (tool: unknown) => unknown;
+
+      return true;
+    },
+  }) as unknown as ExtensionAPI;
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(registered).toMatchObject([
+    {
+      name: 'sample',
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+it('refuses an accessor whose setter discards the write while the getter returns another function', () => {
+  const original = passThroughRegisterTool;
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => original.bind(api),
+    set: () => undefined,
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+});
+
+const inheritedExecute = (): string => 'ran';
+
+it('keeps a member the tool inherits from its prototype', () => {
+  const registered: unknown[] = [];
+
+  const tool = {
+    name: 'sample',
+    parameters: Type.Object({ nested: Type.Object({ value: Type.String() }) }),
+  };
+
+  Reflect.setPrototypeOf(tool, { execute: inheritedExecute });
+
+  const api = registrationApi((value) => registered.push(value));
+
+  strictToolRegistration(api);
+
+  const register = api.registerTool as unknown as (value: unknown) => unknown;
+
+  register(tool);
+
+  expect(registered).toMatchObject([
+    {
+      name: 'sample',
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+
+  expect((registered[0] as { execute?: unknown }).execute).toBe(inheritedExecute);
+});

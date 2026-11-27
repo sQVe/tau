@@ -485,3 +485,35 @@ it('does not rewrite an object value stored in default or examples', () => {
     }),
   );
 });
+
+it('keeps a node that declares unevaluatedProperties open', () => {
+  const schema = Type.Unsafe<unknown>({
+    type: 'object',
+    properties: { value: { type: 'string' } },
+    unevaluatedProperties: true,
+  });
+
+  const strict = strictToolParameters(schema);
+
+  expect(strict).not.toHaveProperty('additionalProperties');
+  expect(Value.Check(strict, { value: 'a', extra: 1 })).toBe(true);
+});
+
+it('keeps a schema that points at itself from overflowing the stack', () => {
+  const schema: Record<string, unknown> = { type: 'object', properties: {} };
+  const properties = schema['properties'];
+
+  if (!isRecord(properties)) {
+    throw new Error('the fixture must declare properties');
+  }
+
+  properties['self'] = schema;
+
+  const strict = strictToolParameters(schema);
+  const strictProperties = isRecord(strict) ? strict['properties'] : undefined;
+  const self = isRecord(strictProperties) ? strictProperties['self'] : undefined;
+  const selfAdditionalProperties = isRecord(self) ? self['additionalProperties'] : undefined;
+
+  expect(isRecord(self)).toBe(true);
+  expect(selfAdditionalProperties).toBe(false);
+});
