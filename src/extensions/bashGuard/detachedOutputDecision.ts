@@ -40,7 +40,7 @@ interface CompoundFacts {
 }
 
 type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
-type HiddenFailure = 'hidden' | 'unverifiable';
+type HiddenFailure = 'hidden' | 'unreadable' | 'unverifiable';
 
 const maximumDepth = 4;
 const noFacts: CompoundFacts = { shows: false, discards: false, ownDiscards: false };
@@ -113,14 +113,14 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
   const enclosing = enclosingOf(scope, index, pipeStdout);
   const own = streamsOf(command, enclosing);
   const ownDiscards = command.redirections.length > 0 && discardsStderr(own);
-  const { script, unreadable } = shellScriptOf(command.arguments);
+  const shellScript = shellScriptOf(command.arguments);
 
-  if (unreadable) {
+  if (shellScript.kind === 'unreadable') {
     return failClosedFacts;
   }
 
-  if (script !== undefined) {
-    const nested = scriptFacts(compoundFacts, script, own, depth);
+  if (shellScript.kind === 'script') {
+    const nested = scriptFacts(compoundFacts, shellScript.script, own, depth);
 
     return { shows: nested.shows, discards: nested.discards, ownDiscards };
   }
@@ -140,29 +140,33 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
 const insideBackgroundedGroup = (commands: readonly ShellCommand[], index: number): boolean =>
   innermostGroupOf(commands, index)?.closing.background === true;
 
-const hidesFailure = (scope: CompoundScope, index: number, depth: number): boolean => {
+const hidesFailure = (
+  scope: CompoundScope,
+  index: number,
+  depth: number,
+): HiddenFailure | undefined => {
   const command = scope.commands[index];
 
   if (command === undefined || !command.background) {
-    return false;
+    return undefined;
   }
 
   const pipeStdout = pipelineStdout(scope, index);
   const own = streamsOf(command, enclosingOf(scope, index, pipeStdout));
-  const { script, unreadable } = shellScriptOf(command.arguments);
+  const shellScript = shellScriptOf(command.arguments);
 
-  if (unreadable) {
-    return true;
+  if (shellScript.kind === 'unreadable') {
+    return 'unreadable';
   }
 
-  if (script !== undefined || command.group !== undefined) {
+  if (shellScript.kind === 'script' || command.group !== undefined) {
     const facts = compoundFacts(scope, index, depth);
     const hidden = !showsStderr(own) && !facts.shows;
 
-    return facts.discards || hidden;
+    return facts.discards || hidden ? 'hidden' : undefined;
   }
 
-  return !showsStderr(own);
+  return showsStderr(own) ? undefined : 'hidden';
 };
 
 // A command that only redirects runs no program, so it has no failure to hide unless one of its
@@ -213,13 +217,13 @@ const nestedScriptFailure = (
     return undefined;
   }
 
-  const { script, unreadable } = shellScriptOf(command.arguments);
+  const shellScript = shellScriptOf(command.arguments);
 
-  if (unreadable) {
-    return 'unverifiable';
+  if (shellScript.kind === 'unreadable') {
+    return 'unreadable';
   }
 
-  if (script === undefined) {
+  if (shellScript.kind === 'none') {
     return undefined;
   }
 
@@ -227,7 +231,7 @@ const nestedScriptFailure = (
     return 'unverifiable';
   }
 
-  const commands = parseShellCommands(script);
+  const commands = parseShellCommands(shellScript.script);
 
   if (commands === undefined) {
     return undefined;
@@ -263,8 +267,10 @@ const judgesHiddenFailure = (
     return undefined;
   }
 
-  if (hidesFailure(scope, index, depth)) {
-    return 'hidden';
+  const hidden = hidesFailure(scope, index, depth);
+
+  if (hidden !== undefined) {
+    return hidden;
   }
 
   if (command.background) {
@@ -280,6 +286,9 @@ export const blockReason =
 export const unverifiableReason =
   'This bash command nests scripts deeper than the guard can inspect, so a hidden failure cannot be ruled out. Run the inner command directly, or write its output to a log file such as `> /tmp/<name>.log 2>&1` and read it before reporting the effect.';
 
+export const unreadableReason =
+  'This bash command has an `env -S` value that depends on the environment, so the guard cannot tell whether it hides a failure. Write the value out in full, or write its output to a log file such as `> /tmp/<name>.log 2>&1` and read it before reporting the effect.';
+
 export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutputDecision => {
   if (facts.toolName !== 'bash' || typeof facts.command !== 'string') {
     return undefined;
@@ -294,7 +303,7 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
   }
 
   const scope = compoundScope(commands, new Map());
-  let unverifiable = false;
+  let failClosed: HiddenFailure | undefined;
 
   for (let index = 0; index < commands.length; index += 1) {
     const failure = judgesHiddenFailure(scope, index);
@@ -303,8 +312,15 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
       return { block: true, reason: blockReason };
     }
 
-    unverifiable ||= failure === 'unverifiable';
+    failClosed ??= failure;
   }
 
-  return unverifiable ? { block: true, reason: unverifiableReason } : undefined;
+  if (failClosed === undefined) {
+    return undefined;
+  }
+
+  return {
+    block: true,
+    reason: failClosed === 'unreadable' ? unreadableReason : unverifiableReason,
+  };
 };

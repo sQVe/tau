@@ -8,12 +8,12 @@ import {
 } from '../wrapperAnalysis.js';
 
 // The script a command runs through a shell: a shell's `-c` word, a wrapper's script option, or
-// the words `watch` joins. `unreadable` is true when an `env -S` value cannot be resolved, so the
-// caller must not treat the command as running no script.
-export interface ShellScript {
-  readonly script: string | undefined;
-  readonly unreadable: boolean;
-}
+// the words `watch` joins. An `env -S` value that cannot be resolved has no script the caller can
+// read, so the caller must not treat the command as running no script.
+export type ShellScript =
+  | { readonly kind: 'script'; readonly script: string }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'unreadable' };
 
 const shellNames: ReadonlySet<string> = new Set([
   'ash',
@@ -138,27 +138,35 @@ const watchScript = (words: readonly string[]): string | undefined => {
 const wrapperScript = (name: string, words: readonly string[]): string | undefined =>
   name === 'watch' ? watchScript(words) : flockScript(words);
 
+const scriptVariant = (script: string | undefined): ShellScript =>
+  script === undefined ? { kind: 'none' } : { kind: 'script', script };
+
 export const shellScriptOf = (words: readonly string[]): ShellScript => {
   const expanded = withEnvSplitStrings(words);
   const { index, wrappers, lookup } = commandStart(expanded.words);
 
-  if (expanded.unreadable || lookup) {
-    return { script: undefined, unreadable: expanded.unreadable };
+  // A lookup names a command instead of running it, so an unreadable value after it runs nothing.
+  if (lookup) {
+    return { kind: 'none' };
+  }
+
+  if (expanded.unreadable) {
+    return { kind: 'unreadable' };
   }
 
   const headName = commandNameOf(expanded.words[index] ?? '');
 
   if (shellNames.has(headName)) {
-    return { script: shellOptionScript(expanded.words.slice(index + 1)), unreadable: false };
+    return scriptVariant(shellOptionScript(expanded.words.slice(index + 1)));
   }
 
   const scriptWrapper = wrappers.findLast(({ name }) => scriptWrapperNames.has(name));
 
-  return {
-    script:
-      scriptWrapper === undefined
-        ? undefined
-        : wrapperScript(scriptWrapper.name, expanded.words.slice(scriptWrapper.index)),
-    unreadable: false,
-  };
+  if (scriptWrapper === undefined) {
+    return { kind: 'none' };
+  }
+
+  return scriptVariant(
+    wrapperScript(scriptWrapper.name, expanded.words.slice(scriptWrapper.index)),
+  );
 };

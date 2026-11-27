@@ -1,5 +1,6 @@
 import {
   blockReason,
+  unreadableReason,
   unverifiableReason,
 } from '../src/extensions/bashGuard/detachedOutputDecision.js';
 import { isRecord, text } from '../src/schema.js';
@@ -21,7 +22,9 @@ export const blockedOutputReason = (value: unknown): string | undefined => {
   }
 
   const reason = text(value['reason']);
-  const isGuardReason = reason === blockReason || reason === unverifiableReason;
+
+  const isGuardReason =
+    reason === blockReason || reason === unreadableReason || reason === unverifiableReason;
 
   return isGuardReason ? reason : undefined;
 };

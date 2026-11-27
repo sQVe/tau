@@ -2,7 +2,11 @@ import { expect, it } from 'vitest';
 
 import { shellScriptOf } from './shellScript.js';
 
-const scriptOf = (words: readonly string[]): string | undefined => shellScriptOf(words).script;
+const scriptOf = (words: readonly string[]): string | undefined => {
+  const shellScript = shellScriptOf(words);
+
+  return shellScript.kind === 'script' ? shellScript.script : undefined;
+};
 
 it.each([
   { name: 'a doas user option', words: ['doas', '-u', 'root', 'sh', '-c', 'cmd'] },
@@ -120,22 +124,13 @@ it('splits an env -S value with env word rules', () => {
 });
 
 it('reports an env -S value that depends on the environment as unreadable', () => {
-  expect(shellScriptOf(['env', '-S', `\${SHELL} -c cmd`])).toEqual({
-    script: undefined,
-    unreadable: true,
-  });
+  expect(shellScriptOf(['env', '-S', `\${SHELL} -c cmd`])).toEqual({ kind: 'unreadable' });
 
-  expect(shellScriptOf(['env', '-S', `'\${SHELL}' -c cmd`])).toEqual({
-    script: undefined,
-    unreadable: false,
-  });
+  expect(shellScriptOf(['env', '-S', `'\${SHELL}' -c cmd`])).toEqual({ kind: 'none' });
 });
 
 it('runs nothing for an env -S value that env rejects', () => {
-  expect(shellScriptOf(['env', '-S', 'a\\ b sh -c cmd'])).toEqual({
-    script: undefined,
-    unreadable: false,
-  });
+  expect(shellScriptOf(['env', '-S', 'a\\ b sh -c cmd'])).toEqual({ kind: 'none' });
 });
 
 it.each(['constructor', 'toString', '__proto__'])(
@@ -151,4 +146,8 @@ it('joins the words watch hands to its shell', () => {
 
 it('reports no script for a command lookup', () => {
   expect(scriptOf(['command', '-v', 'sh', '-c', 'cmd'])).toBeUndefined();
+});
+
+it('runs nothing for a lookup before an unreadable env split value', () => {
+  expect(shellScriptOf(['command', '-v', 'env', '-S', `\${SHELL}`])).toEqual({ kind: 'none' });
 });

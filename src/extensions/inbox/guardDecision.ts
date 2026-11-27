@@ -37,12 +37,12 @@ export const typesIntoTerminal = (source: string): boolean =>
       return true;
     }
 
-    const { script, unreadable } = shellScriptOf(command.arguments);
+    const shellScript = shellScriptOf(command.arguments);
 
     // An `env -S` value that depends on the environment may still run a typing command.
-    if (unreadable) {
+    if (shellScript.kind === 'unreadable') {
       return true;
     }
 
-    return script !== undefined && typesIntoTerminal(script);
+    return shellScript.kind === 'script' && typesIntoTerminal(shellScript.script);
   });

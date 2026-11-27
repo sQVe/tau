@@ -93,6 +93,21 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     command: '( exec 2>/dev/null; cmd & ) 2>/tmp/x.log',
     blocked: true,
   },
+  {
+    name: 'a nested brace exec after the enclosing group redirection',
+    command: '{ { exec 2>/dev/null; }; cmd & } 2>/tmp/x.log',
+    blocked: true,
+  },
+  {
+    name: 'a nested brace exec in a subshell after the group redirection',
+    command: '( { exec 2>/dev/null; }; cmd & ) 2>/tmp/x.log',
+    blocked: true,
+  },
+  {
+    name: 'a nested brace exec before the enclosing group discards stderr',
+    command: '{ { exec 2>/tmp/x.log; }; cmd & } 2>/dev/null',
+    blocked: false,
+  },
   { name: 'a detached command that keeps stderr', command: 'cmd &', blocked: false },
   {
     name: 'a detached command with stderr to /dev/null',
@@ -173,6 +188,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a foreground pipeline that merges stderr into the pipe',
     command: 'printf example 2>/dev/null |& cat',
+    blocked: false,
+  },
+  {
+    name: 'a command lookup of an env value that depends on the environment',
+    command: `command -v env -S \${SHELL}`,
     blocked: false,
   },
   {
@@ -741,6 +761,27 @@ it('reports the depth budget as unverifiable instead of claiming a detached proc
 
   expect(decision?.block).toBe(true);
   expect(decision?.reason).toContain('nests scripts deeper than the guard can inspect');
+});
+
+it('names an env value that depends on the environment instead of the depth budget', () => {
+  const decision = decideDetachedOutput({
+    toolName: 'bash',
+    command: `env -S "\${SHELL} -c 'make'"`,
+  });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('depends on the environment');
+  expect(decision?.reason).not.toContain('nests scripts deeper');
+});
+
+it('names an env value that depends on the environment on a detached command', () => {
+  const decision = decideDetachedOutput({
+    toolName: 'bash',
+    command: `env -S "\${SHELL} -c 'cmd 2>/dev/null'" &`,
+  });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('depends on the environment');
 });
 
 it('reports a hidden failure after an unverifiable script chain', () => {

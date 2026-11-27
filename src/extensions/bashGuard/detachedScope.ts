@@ -85,15 +85,32 @@ const closedNonSubshellBefore = (
 const changesShellStreams = (command: ShellCommand): boolean =>
   command.redirections.length > 0 && runsRedirectionsOnlyExec(command.arguments);
 
+// An `exec` in a closed non-subshell group reaches the target. Inside an enclosing group, only a
+// group that opened within it counts, because the enclosing group's redirection ran before this
+// one's `exec` did.
+const closedExecReaches = (
+  commands: readonly ShellCommand[],
+  group: EnclosingGroup | undefined,
+  innermost: EnclosingGroup | undefined,
+  index: number,
+): boolean => {
+  if (innermost === undefined || !closedNonSubshellBefore(commands, innermost, index)) {
+    return false;
+  }
+
+  return group === undefined || innermost.start >= group.start;
+};
+
 // Applies the `exec` commands whose innermost group is `group`, in source order. The enclosing
 // groups apply their own redirections between these passes, so a group redirection that starts
 // after an inherited `exec` still wins. A non-subshell group's `exec` still reaches the commands
-// after the group closes, because the brace group runs in the same shell.
+// after the group closes, because the brace group runs in the same shell, and it runs after the
+// redirection of every group that encloses it.
 const applyExecRedirections = (
   scope: CompoundScope,
   index: number,
   inherited: Streams,
-  group: ShellCommand | undefined,
+  group: EnclosingGroup | undefined,
 ): Streams => {
   const { commands, execs, from } = scope;
   const target = commands[index];
@@ -114,13 +131,8 @@ const applyExecRedirections = (
     }
 
     const innermost = exec.innermost;
-
-    const closedBeforeTarget =
-      group === undefined &&
-      innermost !== undefined &&
-      closedNonSubshellBefore(commands, innermost, index);
-
-    const inSameGroup = innermost !== undefined && innermost.closing === group;
+    const closedBeforeTarget = closedExecReaches(commands, group, innermost, index);
+    const inSameGroup = innermost !== undefined && innermost.closing === group?.closing;
 
     const reachesTarget =
       innermost === undefined ? group === undefined : inSameGroup || closedBeforeTarget;
@@ -157,7 +169,7 @@ const enclosingStreams = (
   for (const group of enclosing) {
     const groupStreams = streamsOf(group.closing, streams);
 
-    streams = applyExecRedirections(scope, index, groupStreams, group.closing);
+    streams = applyExecRedirections(scope, index, groupStreams, group);
   }
 
   return streams;
