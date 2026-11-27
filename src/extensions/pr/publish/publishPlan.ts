@@ -5,6 +5,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { outputPreviewLength } from '../../../command.js';
+import { hasErrorCode } from '../../../errors.js';
 import { parseRepository, requirePullRequestNumber } from '../../../github/github.js';
 import type { Repository } from '../../../github/github.js';
 import { formatRepository } from '../../../github/repositoryTargetDecisions.js';
@@ -185,6 +186,7 @@ const rejectPathLinks = (directory: string, file: string): Promise<void> =>
 // A parent that is a regular file fails with ENOTDIR, which reads as a missing path.
 const readPublicationFile = async (directory: string, file: string): Promise<RunFile> => {
   const path = join(directory, file);
+  const missingFile = `No ${file} at ${path}. Write it there first.`;
 
   try {
     await rejectPathLinks(directory, file);
@@ -192,19 +194,15 @@ const readPublicationFile = async (directory: string, file: string): Promise<Run
     const entry = await existingEntry(path);
 
     if (entry === undefined) {
-      throw new Error(`No ${file} at ${path}. Write it there first.`);
+      throw new Error(missingFile);
     }
 
     const bytes = await readRunFile(path);
 
     return { file, path, bytes, text: bytes.toString('utf8') };
   } catch (error: unknown) {
-    const isObject = typeof error === 'object' && error !== null;
-    const carriesCode = isObject && 'code' in error;
-    const isNotDirectory = carriesCode && error.code === 'ENOTDIR';
-
-    if (isNotDirectory) {
-      throw new Error(`No ${file} at ${path}. Write it there first.`, { cause: error });
+    if (hasErrorCode(error, 'ENOTDIR')) {
+      throw new Error(missingFile, { cause: error });
     }
 
     throw error;
