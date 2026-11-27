@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { TSchema, TUnsafe } from 'typebox';
 import { Value } from 'typebox/value';
@@ -10,9 +10,15 @@ export interface KnownKeys {
   readonly [key: string]: KnownKeys | true;
 }
 
+// A registration call whose declared signature returns void, viewed so the wrapper can keep the
+// value an installed function returns at runtime.
+type RegisterToolReturningValue = <ToolSchema extends TSchema, ToolDetails = unknown>(
+  tool: ToolDefinition<ToolSchema, ToolDetails>,
+) => unknown;
+
 // The API shape read at installation. `registerTool` may be absent, an accessor, or a proxy trap.
 interface RegisterToolHost {
-  registerTool?: ExtensionAPI['registerTool'];
+  registerTool?: RegisterToolReturningValue | undefined;
 }
 
 export type AskKind = 'choice' | 'approval';
@@ -180,8 +186,9 @@ const strictSchemaValue = (value: unknown, asserted = true): unknown => {
 };
 
 export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Schema => {
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the clone keeps every schema field and only adds additionalProperties to object nodes.
-  return strictSchemaValue(schema) as Schema;
+  const strict = strictSchemaValue(schema);
+
+  return isRecord(strict) ? { ...schema, ...strict } : schema;
 };
 
 const installedApis = new WeakSet<ExtensionAPI>();
@@ -194,7 +201,7 @@ const notReadableMessage =
 
 const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   const host: RegisterToolHost = pi;
-  let current: ExtensionAPI['registerTool'] | undefined;
+  let current: RegisterToolReturningValue | undefined;
 
   // An accessor or proxy trap may throw or return a different function on each read, so read the
   // property once and bind the value that was checked.
@@ -210,9 +217,13 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
 
   const registered = current.bind(pi);
 
-  const wrapper: ExtensionAPI['registerTool'] = (tool) => {
-    // oxlint-disable-next-line typescript/no-confusing-void-expression -- the installed API may return a value at runtime, and the wrapper must keep it.
-    return registered({ ...tool, parameters: strictToolParameters(tool.parameters) });
+  const wrapper: RegisterToolReturningValue = (tool) => {
+    const registeredTool = registered({
+      ...tool,
+      parameters: strictToolParameters(tool.parameters),
+    });
+
+    return registeredTool;
   };
 
   try {
