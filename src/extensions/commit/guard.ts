@@ -1,4 +1,5 @@
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 
 import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
@@ -108,7 +109,6 @@ const gitCommitPattern = /\bgit\b[^;|&\n]*(?<![\w/-])commit(?![\w/])|\bgit-commi
 // source, every word and heredoc body in that source is parsed as a script too, because piped data
 // such as `echo 'git commit' | sh` becomes code.
 const shellRunnerNames = new Set([
-  '.',
   'ash',
   'bash',
   'csh',
@@ -985,9 +985,22 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
     return directory;
   }
 
-  const operand = words
-    .slice(nameIndex + 1)
-    .find((word) => !isAssignmentWord(word) && !isOptionWord(word));
+  const rest = words.slice(nameIndex + 1);
+  const separator = rest.indexOf('--');
+  const options = separator === -1 ? rest : rest.slice(0, separator);
+  const afterSeparator = separator === -1 ? [] : rest.slice(separator + 1);
+
+  const operands = [
+    ...options.filter((word) => !isAssignmentWord(word) && !isOptionWord(word)),
+    ...afterSeparator,
+  ];
+
+  // The shell rejects a second operand and stays where it is, so only one operand moves it.
+  if (operands.length !== 1) {
+    return directory;
+  }
+
+  const [operand] = operands;
 
   if (operand === undefined || !isPlainDirectoryWord(operand)) {
     return directory;
@@ -1102,15 +1115,15 @@ const scriptFacts = (path: string, state: GuardState, failClosed: boolean): Name
 };
 
 // A shell looks up a bare interpreter operand through PATH when the local file is missing.
-// A leading `~` names a path under HOME, as the shell expands it.
+// A leading `~` or `~/` names a path under HOME, as the shell expands it.
 const expandHome = (name: string): string | undefined => {
   if (name !== '~' && !name.startsWith('~/')) {
     return undefined;
   }
 
-  const home = gitEnvironment().HOME;
+  const home = gitEnvironment().HOME ?? homedir();
 
-  return home === undefined ? undefined : join(home, name.slice(1));
+  return join(home, name.slice(1));
 };
 
 const candidatePaths = ({
@@ -1249,8 +1262,9 @@ const pathDirectoriesFor = (
   const entries = assigned.split(delimiter).filter((entry) => entry !== '');
   const expandable = entries.filter((entry) => isExpandablePathEntry(entry));
   const resolved = expandable.map((entry) => resolve(directory, entry));
+  const base = inherited ?? state.pathDirectories;
 
-  return expandable.length === entries.length ? resolved : [...resolved, ...state.pathDirectories];
+  return expandable.length === entries.length ? resolved : [...resolved, ...base];
 };
 
 const readPathDirectories = (): string[] => {

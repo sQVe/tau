@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 
 import type { ExtensionAPI, ToolCallEvent } from '@earendil-works/pi-coding-agent';
@@ -54,12 +54,16 @@ const writeScriptFiles = (directory: string, count: number): string[] => {
 
 const referencesTo = (names: string[]): string => names.map((name) => `sh ${name}`).join('; ');
 
-const withExactPath = (...entries: string[]): void => {
-  vi.stubEnv('PATH', entries.join(delimiter));
+const withEnvironment = (variable: string, value: string): void => {
+  vi.stubEnv(variable, value);
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });
+};
+
+const withExactPath = (...entries: string[]): void => {
+  withEnvironment('PATH', entries.join(delimiter));
 };
 
 const makeReadEvent = (): ToolCallEvent => ({
@@ -434,7 +438,20 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(command), directory);
   });
 
-  it('passes a PATH assignment to a nested script', () => {
+  it('keeps the inherited PATH when a nested script replaces PATH', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const bin = temporaryDirectory(onTestFinished, 'tau-commit-guard-bin-');
+    const home = temporaryDirectory(onTestFinished, 'tau-commit-guard-home-');
+
+    writeScript(directory, 'outer.sh', 'PATH=$HOME/bin sh tool.sh\n');
+    writeScript(bin, 'tool.sh', 'git commit -m x\n');
+    withEnvironment('HOME', home);
+    withExactPath();
+
+    expectOutcome(makeBashEvent(`PATH=${bin} sh outer.sh`), directory);
+  });
+
+  it('blocks when a PATH assignment reaches a nested script', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const bin = temporaryDirectory(onTestFinished, 'tau-commit-guard-bin-');
 
@@ -454,6 +471,37 @@ describe('guardToolCall', () => {
     withExactPath(pathDirectory);
 
     expectOutcome(makeBashEvent('. tool.sh'), directory);
+  });
+
+  it('allows a heredoc that mentions git commit followed by git add .', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(
+      guard(
+        makeBashEvent("cat > notes.md <<'EOF'\nRun git commit through the tool.\nEOF\ngit add ."),
+        directory,
+      ),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ['a dot', '. commit.sh'],
+    ['source', 'source commit.sh'],
+  ])('blocks a script named by %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('keeps the directory when cd names more than one operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'a/commit.sh', 'echo hello\n');
+
+    expectOutcome(makeBashEvent('cd a extra; sh commit.sh'), directory);
   });
 
   it('resolves a script named by a script in the directory it runs in', () => {
@@ -493,7 +541,7 @@ describe('guardToolCall', () => {
 
   it('does not charge a native binary to the read budget', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-    const binary = readFileSync('/bin/true');
+    const binary = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x00]);
 
     const names = Array.from({ length: 65 }, (_value, index) => {
       const name = `tool-${index}`;
