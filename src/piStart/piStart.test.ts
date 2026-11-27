@@ -98,6 +98,24 @@ it('a space start returns the terminal from its reply', async () => {
   });
 });
 
+it('a lenient space start ignores a reply that is not JSON', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  fake.overrideOutput('space.new', 'not json');
+
+  const result = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    startRequest(root, readerFor(fake, root), {
+      target: { name: 'ticket-1' },
+      tabName: 'architect',
+    }),
+  );
+
+  expect(result).toEqual({ reply: 'not json', target: { name: 'ticket-1' } });
+  expect(fake.calls).toHaveLength(1);
+});
+
 it('a space start without a terminal in its reply returns no terminal', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);

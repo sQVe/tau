@@ -432,6 +432,14 @@ export const launchPiSessionRightOf = async (
   );
 };
 
+const parseJsonIfPossible = (label: string, stdout: string): unknown => {
+  try {
+    return parseJson(label, stdout);
+  } catch {
+    return undefined;
+  }
+};
+
 async function startSession(
   runtime: CommandRuntime,
   request: PiStartRequest,
@@ -465,13 +473,15 @@ async function startSession(
     { timeout: launchTimeoutMilliseconds },
   );
 
-  const created = parseJson('herdr-app do', reply);
+  const created = options.requireTerminal
+    ? parseJson('herdr-app do', reply)
+    : parseJsonIfPossible('herdr-app do', reply);
 
   if (options.requireTerminal) {
     checkOutput('herdr-app do', terminalReplySchema, created);
   }
 
-  const terminal = terminalOfRecord(created);
+  const terminal = created === undefined ? undefined : terminalOfRecord(created);
 
   if (terminal === undefined) {
     return { reply, target };
@@ -484,6 +494,8 @@ async function startSession(
   return { reply, target, terminal, model };
 }
 
+// The lenient variant keeps a non-JSON reply as text, so a caller that does not need a terminal
+// still reads the start. `startPiSessionWithTerminal` requires the terminal reply.
 export const startPiSession = (
   runtime: CommandRuntime,
   request: PiStartRequest,

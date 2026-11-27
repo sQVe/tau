@@ -1,10 +1,9 @@
-import { basename } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { normalizeCancellation } from '../../command.js';
 import { parseModelReference } from '../../config/models.js';
 import { errorMessage, toError } from '../../errors.js';
-import { piArgv } from '../startedArgv.js';
+import { baseName, piArgv } from '../startedArgv.js';
 import { decideStartedModel } from './startedModel.js';
 import type { RequestedModel, StartedModelDecision } from './startedModel.js';
 
@@ -13,7 +12,7 @@ export type ReadForegroundArgv = (
   signal: AbortSignal,
 ) => Promise<readonly string[] | undefined>;
 
-export interface StartedModelReadRequest {
+interface StartedModelReadRequest {
   readForegroundArgv: ReadForegroundArgv;
   terminal: string;
   model: string | undefined;
@@ -33,10 +32,13 @@ type ReadWithinBudget =
   | { readonly kind: 'read'; readonly argv: readonly string[] | undefined }
   | { readonly kind: 'timeout' };
 
-interface ReadAttempt {
-  readonly argv: readonly string[] | undefined;
-  readonly failure: ReadFailure | undefined;
-}
+type ReadAttempt =
+  | {
+      readonly kind: 'read';
+      readonly argv: readonly string[] | undefined;
+      readonly failure: ReadFailure | undefined;
+    }
+  | { readonly kind: 'timeout'; readonly failure: ReadFailure };
 
 interface PollState {
   readonly failure: ReadFailure | undefined;
@@ -62,7 +64,7 @@ const shellNames = new Set(['bash', 'dash', 'ksh', 'sh', 'zsh']);
 // The architect launch wraps Pi in `sh -c`, so the pane shows that wrapper before Pi takes over.
 const runsShellScript = (argv: readonly string[]): boolean => {
   const [executable] = argv;
-  const name = executable === undefined ? undefined : basename(executable);
+  const name = executable === undefined ? undefined : baseName(executable);
 
   return name !== undefined && shellNames.has(name) && argv.includes('-c');
 };
@@ -127,21 +129,24 @@ const readWithinBudget = (
 ): Promise<ReadWithinBudget> =>
   new Promise((resolve, reject) => {
     const readController = new AbortController();
+    // The handler runs before the timer exists, so the timer lives in a holder rather than a
+    // declaration the handler closes over.
+    const timerHolder: { current: NodeJS.Timeout | undefined } = { current: undefined };
 
     const onAbort = (): void => {
-      clearTimeout(timer);
+      clearTimeout(timerHolder.current);
       readController.abort();
       reject(cancellationError(signal));
     };
 
-    const timer = setTimeout(() => {
+    timerHolder.current = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       readController.abort();
       resolve({ kind: 'timeout' });
     }, remaining);
 
     const settle = (): void => {
-      clearTimeout(timer);
+      clearTimeout(timerHolder.current);
       signal?.removeEventListener('abort', onAbort);
     };
 
@@ -192,12 +197,12 @@ const attemptRead = async (
     );
 
     if (read.kind === 'read') {
-      return { argv: read.argv, failure: undefined };
+      return { kind: 'read', argv: read.argv, failure: undefined };
     }
 
     const timeout = new Error('the read timed out');
 
-    return { argv: undefined, failure: noteReadFailure(failure, timeout, Date.now()) };
+    return { kind: 'timeout', failure: noteReadFailure(failure, timeout, Date.now()) };
   } catch (error) {
     if (request.signal?.aborted === true) {
       throw cancellationError(request.signal);
@@ -210,8 +215,24 @@ const attemptRead = async (
       throw unreadableModelError(request.terminal, next.error);
     }
 
-    return { argv: undefined, failure: next };
+    return { kind: 'read', argv: undefined, failure: next };
   }
+};
+
+const attemptArgv = (attempt: ReadAttempt): readonly string[] | undefined =>
+  attempt.kind === 'read' ? attempt.argv : undefined;
+
+// A timeout is not a terminal with no foreground yet, so it must not discard an armed streak. A
+// read with no foreground, or a shell wrapper that may still exec Pi, keeps the caller deadline.
+const streakAfter = (attempt: ReadAttempt, nonPiSince: number | undefined): number | undefined => {
+  if (attempt.kind === 'timeout') {
+    return nonPiSince;
+  }
+
+  const transientWrapper = attempt.argv !== undefined && runsShellScript(attempt.argv);
+  const keepsDeadline = attempt.argv === undefined || transientWrapper;
+
+  return keepsDeadline ? undefined : (nonPiSince ?? Date.now());
 };
 
 const pollStartedModel = async (
@@ -234,7 +255,8 @@ const pollStartedModel = async (
   }
 
   const attempt = await attemptRead(request, failure, remaining);
-  const startedArgv = piArgv(attempt.argv);
+  const argv = attemptArgv(attempt);
+  const startedArgv = piArgv(argv);
 
   if (startedArgv !== undefined) {
     const decision = decideStartedModel({
@@ -254,10 +276,7 @@ const pollStartedModel = async (
     throw unreadableModelError(terminal);
   }
 
-  const transientWrapper = attempt.argv !== undefined && runsShellScript(attempt.argv);
-  const keepsDeadline = attempt.argv === undefined || transientWrapper;
-  const armedSince = nonPiSince ?? Date.now();
-  const nextNonPiSince = keepsDeadline ? undefined : armedSince;
+  const nextNonPiSince = streakAfter(attempt, nonPiSince);
 
   const remainingAfterRead = limitOf(nextNonPiSince) - Date.now();
 

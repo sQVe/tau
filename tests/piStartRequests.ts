@@ -9,15 +9,13 @@ import type {
 import type { ReadForegroundArgv } from '../src/piStart/startedModel/startedModelReadback.js';
 import type { ExecCall, ExecFake } from './execFake.js';
 
-export type ForegroundReader = ReadForegroundArgv;
-
 type StartRequest = Parameters<typeof startPiSession>[1];
 type LaunchRequest = Parameters<typeof launchPiSession>[1];
 type PaneRequest = Parameters<typeof launchPiSessionRightOf>[1];
 type CommonRequest = Omit<StartRequest, 'target' | 'tabName'>;
 
 export const readerFor =
-  <Key extends string>(fake: ExecFake<Key>, root: string): ForegroundReader =>
+  <Key extends string>(fake: ExecFake<Key>, root: string): ReadForegroundArgv =>
   (terminal, signal) =>
     foregroundArgv({ exec: fake.exec, cwd: root, signal }, terminal);
 
@@ -30,7 +28,7 @@ export const readbackCall = (terminal: string): ExecCall => ({
   signal: anyAbortSignal(),
 });
 
-const commonRequest = (root: string, readForegroundArgv: ForegroundReader): CommonRequest => ({
+const commonRequest = (root: string, readForegroundArgv: ReadForegroundArgv): CommonRequest => ({
   folder: root,
   task: 'Next steps\n',
   model: undefined,
@@ -42,7 +40,7 @@ const commonRequest = (root: string, readForegroundArgv: ForegroundReader): Comm
 
 export const startRequest = (
   root: string,
-  readForegroundArgv: ForegroundReader,
+  readForegroundArgv: ReadForegroundArgv,
   overrides: Partial<StartRequest> = {},
 ): StartRequest => ({
   ...commonRequest(root, readForegroundArgv),
@@ -53,14 +51,14 @@ export const startRequest = (
 
 export const launchRequest = (
   root: string,
-  readForegroundArgv: ForegroundReader,
+  readForegroundArgv: ReadForegroundArgv,
 ): LaunchRequest => ({
   ...commonRequest(root, readForegroundArgv),
   target: { name: 'ticket-1' },
   tabName: 'architect',
 });
 
-export const paneRequest = (root: string, readForegroundArgv: ForegroundReader): PaneRequest => ({
+export const paneRequest = (root: string, readForegroundArgv: ReadForegroundArgv): PaneRequest => ({
   ...commonRequest(root, readForegroundArgv),
   pane: 'p-lead',
   task: 'Design this',

@@ -14,8 +14,12 @@ const runtimeExecutables = new Set([
   ...executableNames('bun', ['exe']),
 ]);
 
-const baseName = (argument: string): string =>
-  basename(argument.replaceAll('\\', '/')).toLowerCase();
+// The name a word runs, without its directory and suffix, so `BASH.EXE` and `bash` compare equal.
+export const baseName = (argument: string): string => {
+  const name = basename(argument.replaceAll('\\', '/')).toLowerCase();
+
+  return name.endsWith('.exe') ? name.slice(0, -'.exe'.length) : name;
+};
 
 const isPiExecutable = (argument: string | undefined): boolean =>
   argument !== undefined && piExecutableNames.has(baseName(argument));

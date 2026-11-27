@@ -344,6 +344,66 @@ it('keeps the caller deadline while a shell wrapper foreground may still start P
   }
 });
 
+it('keeps the caller deadline while an upper-case shell wrapper may still start Pi', async () => {
+  const startedAt = Date.now();
+  const wrapper = ['BASH.EXE', '-c', 'exec "$@"'];
+
+  const read = async (): Promise<readonly string[] | undefined> =>
+    Date.now() - startedAt < 20_000 ? wrapper : ['pi'];
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  try {
+    const reading = readStartedModel({
+      readForegroundArgv: read,
+      terminal: 't-new',
+      model: undefined,
+      message: undefined,
+      signal: undefined,
+      deadline: Date.now() + 30_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(25_000);
+
+    expect(await reading).toBe('default');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('keeps the non-Pi foreground budget across a read that times out', async () => {
+  const startedAt = Date.now();
+  let reads = 0;
+
+  const read = (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    return reads === 1 ? Promise.resolve(['bash']) : neverResolves;
+  };
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  try {
+    const reading = readStartedModel({
+      readForegroundArgv: read,
+      terminal: 't-new',
+      model: undefined,
+      message: undefined,
+      signal: undefined,
+      deadline: startedAt + 30_000,
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(readbackNoForegroundBudgetMilliseconds + 1_000);
+
+    const outcome = await Promise.race([reading, Promise.resolve('waiting' as const)]);
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toContain('The started model on terminal t-new is unknown');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('reads the default model when the task message starts with a model flag', async () => {
   const model = await readStartedModel({
     readForegroundArgv: async () => ['pi', '--model=other'],

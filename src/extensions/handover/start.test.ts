@@ -69,6 +69,11 @@ const execAnsweringHc =
       ? hc.exec(command, commandArguments, options)
       : app.exec(command, commandArguments, options);
 
+const hcRuntimeOf = (app: ExecFake<HerdrAppCommand>, hc: HcFake, cwd: string) => ({
+  exec: execAnsweringHc(app, hc),
+  cwd,
+});
+
 const tabArguments = (root: string, argv: string, task: string, title: string): string[] => [
   'do',
   'tab.new',
@@ -144,13 +149,10 @@ it('names the started space, tab, and terminal when the started model differs', 
     }),
   );
 
-  const failure = await startHandover(
-    { exec: execAnsweringHc(app, hc), cwd: root },
-    {
-      ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
-      model: 'morph/morph-dsv41flash-1017',
-    },
-  ).catch((error: unknown) => error);
+  const failure = await startHandover(hcRuntimeOf(app, hc, root), {
+    ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+    model: 'morph/morph-dsv41flash-1017',
+  }).catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(StartedTabError);
 
@@ -440,7 +442,7 @@ it('reports the started terminal when the model readback fails', async () => {
 
   try {
     const opening = startHandover(
-      { exec: execAnsweringHc(app, hc), cwd: root },
+      hcRuntimeOf(app, hc, root),
       requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
     ).catch((error: unknown) => error);
 
