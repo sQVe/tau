@@ -101,6 +101,10 @@ it('fails a launch with an argv but no folder instead of reporting an empty cwd'
   await expect(
     fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', '["pi"]'], undefined),
   ).rejects.toThrow('herdr-app fake received a launch without --folder or -C');
+
+  const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(lookup.code).toBe(3);
 });
 
 it('fails a malformed --argv instead of reporting no foreground', async () => {

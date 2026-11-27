@@ -244,9 +244,9 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
       const terminal = terminalFromReply(result.stdout);
 
       if (terminal !== undefined) {
-        startedTerminals.add(terminal);
-
         const foreground = startedForegroundOf(commandArguments);
+
+        startedTerminals.add(terminal);
 
         if (foreground !== undefined) {
           startedForegrounds.set(terminal, foreground);
