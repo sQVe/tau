@@ -1,16 +1,22 @@
 import { expect, it } from 'vitest';
 
 import { decideStartedModel } from './startedModel.js';
-import type { StartedModelFacts } from './startedModel.js';
+import type { RequestedModel, StartedModelDecision, StartedModelFacts } from './startedModel.js';
+
+const requestedModel: RequestedModel = {
+  kind: 'model',
+  provider: 'claude-bridge',
+  id: 'claude-opus-5-5',
+};
 
 const facts = (overrides: Partial<StartedModelFacts> = {}): StartedModelFacts => ({
-  requested: { provider: 'claude-bridge', id: 'claude-opus-5-5' },
+  requested: requestedModel,
   argv: ['pi', '--provider', 'claude-bridge', '--model', 'claude-opus-5-5'],
   message: undefined,
   ...overrides,
 });
 
-it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
+it.each<{ name: string; facts: StartedModelFacts; expected: StartedModelDecision }>([
   {
     name: 'a requested model that matches the started argv',
     facts: facts(),
@@ -27,7 +33,7 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   },
   {
     name: 'no requested model and a model in the argv',
-    facts: facts({ requested: { provider: undefined, id: undefined } }),
+    facts: facts({ requested: { kind: 'default' } }),
     expected: {
       kind: 'mismatch',
       requested: 'default',
@@ -45,7 +51,7 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   {
     name: 'a task message that starts with a model flag',
     facts: facts({
-      requested: { provider: undefined, id: undefined },
+      requested: { kind: 'default' },
       argv: ['pi', '--model=other'],
       message: '--model=other',
     }),
@@ -54,7 +60,7 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   {
     name: 'a real model flag before a task message that starts with one',
     facts: facts({
-      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      requested: { kind: 'model', provider: undefined, id: 'claude-opus-5-5' },
       argv: ['pi', '--model', 'claude-opus-5-5', '--model=other'],
       message: '--model=other',
     }),
@@ -71,13 +77,13 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   },
   {
     name: 'no requested model and no model in the argv',
-    facts: facts({ requested: { provider: undefined, id: undefined }, argv: ['pi'] }),
+    facts: facts({ requested: { kind: 'default' }, argv: ['pi'] }),
     expected: { kind: 'match', model: 'default' },
   },
   {
     name: 'a model flag followed by another flag',
     facts: facts({
-      requested: { provider: undefined, id: undefined },
+      requested: { kind: 'default' },
       argv: ['pi', '--model', '--provider', 'x'],
     }),
     expected: { kind: 'unreadable' },
@@ -85,7 +91,7 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   {
     name: 'a model flag with an empty equals value',
     facts: facts({
-      requested: { provider: undefined, id: undefined },
+      requested: { kind: 'default' },
       argv: ['pi', '--model='],
     }),
     expected: { kind: 'unreadable' },
@@ -93,7 +99,7 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   {
     name: 'a model id that starts with a single dash',
     facts: facts({
-      requested: { provider: undefined, id: '-preview' },
+      requested: { kind: 'model', provider: undefined, id: '-preview' },
       argv: ['pi', '--model', '-preview'],
     }),
     expected: { kind: 'match', model: '-preview' },
@@ -101,7 +107,7 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   {
     name: 'a provider flag followed by another flag',
     facts: facts({
-      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      requested: { kind: 'model', provider: undefined, id: 'claude-opus-5-5' },
       argv: ['pi', '--provider', '--model', 'claude-opus-5-5'],
     }),
     expected: { kind: 'unreadable' },
@@ -109,23 +115,15 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   {
     name: 'a provider flag with no value and no model flag',
     facts: facts({
-      requested: { provider: undefined, id: undefined },
+      requested: { kind: 'default' },
       argv: ['pi', '--provider', '--other'],
     }),
     expected: { kind: 'unreadable' },
   },
   {
-    name: 'a task message that starts with --model after the real flag',
-    facts: facts({
-      requested: { provider: undefined, id: 'claude-opus-5-5' },
-      argv: ['pi', '--model', 'claude-opus-5-5', '--model=from-the-task'],
-    }),
-    expected: { kind: 'match', model: 'claude-opus-5-5' },
-  },
-  {
     name: 'an equals model before a space-separated model',
     facts: facts({
-      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      requested: { kind: 'model', provider: undefined, id: 'claude-opus-5-5' },
       argv: ['pi', '--model=claude-opus-5-5', '--model', 'later'],
     }),
     expected: { kind: 'match', model: 'claude-opus-5-5' },
@@ -133,7 +131,7 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   {
     name: 'a model given with an equals sign',
     facts: facts({
-      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      requested: { kind: 'model', provider: undefined, id: 'claude-opus-5-5' },
       argv: ['pi', '--model=claude-opus-5-5'],
     }),
     expected: { kind: 'match', model: 'claude-opus-5-5' },
@@ -141,7 +139,7 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
   {
     name: 'a provider without a model',
     facts: facts({
-      requested: { provider: undefined, id: undefined },
+      requested: { kind: 'default' },
       argv: ['pi', '--provider', 'x'],
     }),
     expected: { kind: 'match', model: 'default' },

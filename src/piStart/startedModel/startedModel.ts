@@ -1,7 +1,6 @@
-export interface RequestedModel {
-  provider: string | undefined;
-  id: string | undefined;
-}
+export type RequestedModel =
+  | { kind: 'default' }
+  | { kind: 'model'; provider: string | undefined; id: string };
 
 export interface StartedModelFacts {
   requested: RequestedModel;
@@ -49,23 +48,28 @@ const startedReference = (argv: readonly string[]): RequestedModel | 'unreadable
   }
 
   if (model.kind === 'absent') {
-    return { provider: undefined, id: undefined };
+    return { kind: 'default' };
   }
 
   const startedProvider = provider.kind === 'value' ? provider.value : undefined;
 
-  return {
-    provider: startedProvider,
-    id: model.value,
-  };
+  return { kind: 'model', provider: startedProvider, id: model.value };
 };
 
-const displayModel = ({ provider, id }: RequestedModel): string => {
-  if (id === undefined) {
+const displayModel = (model: RequestedModel): string => {
+  if (model.kind === 'default') {
     return 'default';
   }
 
-  return provider === undefined ? id : `${provider}/${id}`;
+  return model.provider === undefined ? model.id : `${model.provider}/${model.id}`;
+};
+
+const sameModel = (started: RequestedModel, requested: RequestedModel): boolean => {
+  if (started.kind === 'default' || requested.kind === 'default') {
+    return started.kind === requested.kind;
+  }
+
+  return started.provider === requested.provider && started.id === requested.id;
 };
 
 // The task message is the last positional argument. Only a message that starts with `-` can be read
@@ -86,8 +90,7 @@ export const decideStartedModel = (facts: StartedModelFacts): StartedModelDecisi
     return { kind: 'unreadable' };
   }
 
-  const matches =
-    started.provider === facts.requested.provider && started.id === facts.requested.id;
+  const matches = sameModel(started, facts.requested);
 
   return matches
     ? { kind: 'match', model: displayModel(started) }
