@@ -1,5 +1,4 @@
-import type { CommandRuntime, Exec } from '../src/command.js';
-import { foregroundArgv } from '../src/hc/hc.js';
+import type { Exec } from '../src/command.js';
 import type { HerdrSpace } from '../src/piStart/herdrPane.js';
 import {
   argumentAfter,
@@ -21,13 +20,12 @@ export interface HerdrAppFakeOptions {
   spaces?: readonly HerdrAppSpace[];
 }
 
-// The reader a piStart request takes, so a test never imports the hc module from src/piStart.
-export const foregroundReaderFor =
-  (
-    runtime: CommandRuntime,
-  ): ((terminal: string, signal: AbortSignal) => Promise<readonly string[] | undefined>) =>
-  (terminal, signal) =>
-    foregroundArgv({ ...runtime, signal }, terminal);
+interface StartedForeground {
+  pid: number;
+  name: string;
+  argv: string[];
+  cwd: string;
+}
 
 export const listedSpace = (
   id: string,
@@ -121,27 +119,53 @@ export const terminalFromReply = (stdout: string): string | undefined => {
   }
 };
 
-const foregroundFromLaunch = (
-  commandArguments: readonly string[],
-): {
-  pid: number;
-  name: string;
-  argv: string[];
-  cwd: string;
-} => {
-  const argv = JSON.parse(argumentAfter(commandArguments, '--argv') ?? '[]') as string[];
-  const provider = argumentAfter(argv, '--provider');
-  const model = argumentAfter(argv, '--model');
+// The launch arguments carry the started argv as JSON. A malformed value is a test mistake, so this
+// reader refuses it instead of throwing from inside the fake.
+const launchArgv = (commandArguments: readonly string[]): string[] | undefined => {
+  const value = argumentAfter(commandArguments, '--argv');
 
-  const modelArguments = [
-    ...(provider === undefined ? [] : ['--provider', provider]),
-    ...(model === undefined ? [] : ['--model', model]),
-  ];
+  if (value === undefined) {
+    return undefined;
+  }
 
-  return { pid: 1, name: 'pi', argv: ['pi', ...modelArguments], cwd: '' };
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+
+  const isStringArray = Array.isArray(parsed) && parsed.every((entry) => typeof entry === 'string');
+
+  return isStringArray ? (parsed as string[]) : undefined;
 };
 
-type StartedForeground = ReturnType<typeof foregroundFromLaunch>;
+const startedForegroundOf = (
+  commandArguments: readonly string[],
+): StartedForeground | undefined => {
+  const argv = launchArgv(commandArguments);
+
+  if (argv === undefined) {
+    return undefined;
+  }
+
+  const provider = argumentAfter(argv, '--provider');
+  const model = argumentAfter(argv, '--model');
+  const modelArguments: string[] = [];
+
+  if (provider !== undefined) {
+    modelArguments.push('--provider', provider);
+  }
+
+  if (model !== undefined) {
+    modelArguments.push('--model', model);
+  }
+
+  const cwd = argumentAfter(commandArguments, '--folder') ?? '';
+
+  return { pid: 1, name: 'pi', argv: ['pi', ...modelArguments], cwd };
+};
 
 const foregroundReply = (address: string, foreground: StartedForeground): string =>
   JSON.stringify({ address, state: 'live', foreground });
@@ -150,18 +174,22 @@ const foregroundReply = (address: string, foreground: StartedForeground): string
 export const launchedTerminalReply = (
   address: string,
   commandArguments: readonly string[],
-): string => foregroundReply(address, foregroundFromLaunch(commandArguments));
+): string => {
+  const foreground = startedForegroundOf(commandArguments);
+
+  return foreground === undefined
+    ? JSON.stringify({ address, state: 'live' })
+    : foregroundReply(address, foreground);
+};
 
 const getKey = 'get';
 
 // hc's exit code when it cannot find the terminal, which this fake shares with the CLI.
 const notFoundExitCode = 3;
 
-type HerdrAppKey = HerdrAppCommand | typeof getKey;
+export type HerdrAppKey = HerdrAppCommand | typeof getKey;
 
-export const createHerdrAppFake = (
-  options: HerdrAppFakeOptions = {},
-): ExecFake<HerdrAppCommand> => {
+export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<HerdrAppKey> => {
   const startedForegrounds = new Map<string, StartedForeground>();
 
   const execFake = createExecFake<HerdrAppKey>({
@@ -199,9 +227,10 @@ export const createHerdrAppFake = (
 
     if (result.code === 0 && command === 'herdr-app') {
       const terminal = terminalFromReply(result.stdout);
+      const foreground = startedForegroundOf(commandArguments);
 
-      if (terminal !== undefined && argumentAfter(commandArguments, '--argv') !== undefined) {
-        startedForegrounds.set(terminal, foregroundFromLaunch(commandArguments));
+      if (terminal !== undefined && foreground !== undefined) {
+        startedForegrounds.set(terminal, foreground);
       }
     }
 

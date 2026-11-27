@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 
+import { foregroundArgv } from '../src/hc/hc.js';
 import type {
   launchPiSession,
   launchPiSessionRightOf,
@@ -7,7 +8,6 @@ import type {
 } from '../src/piStart/piStart.js';
 import type { ReadForegroundArgv } from '../src/piStart/startedModel/startedModelReadback.js';
 import type { ExecCall, ExecFake } from './execFake.js';
-import { foregroundReaderFor } from './herdrAppFake.js';
 
 export type ForegroundReader = ReadForegroundArgv;
 
@@ -16,17 +16,16 @@ type LaunchRequest = Parameters<typeof launchPiSession>[1];
 type PaneRequest = Parameters<typeof launchPiSessionRightOf>[1];
 type CommonRequest = Omit<StartRequest, 'target' | 'tabName'>;
 
-export const readerFor = <Key extends string>(
-  fake: ExecFake<Key>,
-  root: string,
-): ForegroundReader => foregroundReaderFor({ exec: fake.exec, cwd: root });
+export const readerFor =
+  <Key extends string>(fake: ExecFake<Key>, root: string): ForegroundReader =>
+  (terminal, signal) =>
+    foregroundArgv({ exec: fake.exec, cwd: root, signal }, terminal);
 
-const anyAbortSignal: unknown = expect.any(AbortSignal);
-
+// A matcher typed as the value it stands for, so a recorded call can use it as its signal.
 export const readbackCall = (terminal: string): ExecCall => ({
   command: 'hc',
   commandArguments: ['get', '--json', '--', terminal],
-  signal: anyAbortSignal as AbortSignal,
+  signal: expect.any(AbortSignal) as AbortSignal,
 });
 
 const commonRequest = (root: string, readForegroundArgv: ForegroundReader): CommonRequest => ({

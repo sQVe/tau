@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { commandArgumentsOf, createHerdrAppFake, spaceOrTabLaunchesOf } from './herdrAppFake.js';
+import {
+  commandArgumentsOf,
+  createHerdrAppFake,
+  spaceOrTabLaunchesOf,
+  terminalFromReply,
+} from './herdrAppFake.js';
 
 const replyTo = async (commandArguments: readonly string[]): Promise<string> => {
   const fake = createHerdrAppFake();
@@ -79,9 +84,12 @@ it('reports a terminal it did not start as not_found', async () => {
 it('records no foreground for a reply that carried no --argv', async () => {
   const fake = createHerdrAppFake();
 
-  await fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1'], undefined);
+  const launched = await fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1'], undefined);
+  const address = terminalFromReply(launched.stdout);
 
-  const result = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+  expect(address).toBe('t-new');
+
+  const result = await fake.exec('hc', ['get', '--json', '--', address ?? ''], undefined);
 
   expect(result.code).toBe(3);
   expect(JSON.parse(result.stderr)).toMatchObject({ error: { kind: 'not_found' } });

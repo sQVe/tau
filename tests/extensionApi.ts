@@ -8,12 +8,13 @@ import type {
 import { vi } from 'vitest';
 import type { Mock } from 'vitest';
 
+import tauRegistration from '../src/tau/tau.js';
 import { declinedExec } from './declinedExecFake.js';
 
 type Handler = (event: never, context: ExtensionContext) => unknown;
 type Command = Parameters<ExtensionAPI['registerCommand']>[1];
 
-interface FakeExtensionApi {
+export interface FakeExtensionApi {
   pi: ExtensionAPI;
   handlers: Map<string, Handler[]>;
   handler: (name: string) => (event: unknown, context: ExtensionContext) => unknown;
@@ -102,4 +103,23 @@ export const appendedSystemPrompt = (
   }
 
   return event.systemPromptOptions.appendSystemPrompt;
+};
+
+// Registers Tau for a role so a test can inspect what the entry point wires.
+export const registeredTauApi = async (
+  role: 'lead' | 'architect' | 'worker',
+): Promise<FakeExtensionApi> => {
+  const roleVariable = role === 'lead' ? undefined : role;
+
+  vi.stubEnv('TAU_ROLE', roleVariable);
+
+  const fake = fakeExtensionApi();
+
+  try {
+    await tauRegistration(fake.pi);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+
+  return fake;
 };
