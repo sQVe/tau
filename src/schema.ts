@@ -49,20 +49,17 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // constrains every key. A node counts as an object when its type includes `object`, or when it
 // declares `properties` or `patternProperties` without a type. A subschema under `not` or `if`
 // narrows the negation or condition instead, so closing anything inside it would accept inputs the
-// tool rejects. A subschema under `then`, `else`, or `allOf` combines with sibling schemas, so
-// closing anything below it could reject an argument the tool declares; the whole subtree stays as
-// written. The schema form of `dependencies` and `dependentSchemas` applies to the whole instance
-// when a named property is present, like a conditional `allOf`, so they stay as written too. Add a
-// keyword to one of these sets when a tool schema can hold a subschema under it. A subschema under
-// a keyword outside these sets stays as written, so an object there keeps its keys open, including
-// objects nested inside it. An explicit additionalProperties: true stays, because the tool author
-// declared free-form input; closing it would reject calls the author declared valid.
-export const schemaMapKeywords: ReadonlySet<string> = new Set([
-  '$defs',
-  'definitions',
-  'patternProperties',
-  'properties',
-]);
+// tool rejects. A subschema under a combining keyword (`allOf`, `anyOf`, `oneOf`, `then`, `else`,
+// `contains`, or a dependent schema) combines with sibling schemas, so closing anything below it
+// could reject an argument the tool declares; the whole subtree stays as written. The schema form
+// of `dependencies` and `dependentSchemas` applies to the whole instance when a named property is
+// present, like a conditional `allOf`, so they stay as written too. A definition stays as written,
+// because a `$ref` may reach it from an unasserted position. Add a keyword to one of these sets when
+// a tool schema can hold a subschema under it. A subschema under a keyword outside these sets stays
+// as written, so an object there keeps its keys open, including objects nested inside it. An
+// explicit additionalProperties: true stays, because the tool author declared free-form input;
+// closing it would reject calls the author declared valid.
+export const schemaMapKeywords: ReadonlySet<string> = new Set(['patternProperties', 'properties']);
 
 export const schemaArrayKeywords: ReadonlySet<string> = new Set([
   'allOf',
@@ -89,14 +86,32 @@ export const schemaValueKeywords: ReadonlySet<string> = new Set([
 // with sibling schemas. Closing any object below one of them could accept an input the negation or
 // condition rejects, or reject a value a sibling declares, so the whole subtree stays as written.
 // The schema form of `dependencies` and `dependentSchemas` combines with the whole instance, so its
-// subschemas stay open as well.
+// subschemas stay open as well. `contains` constrains the same array items as `items` and
+// `prefixItems`, so a closed `contains` would stop an item the sibling schema declares from matching.
 export const schemaUnassertedKeywords: ReadonlySet<string> = new Set([
   'allOf',
+  'anyOf',
+  'contains',
   'dependencies',
   'dependentSchemas',
   'else',
   'if',
   'not',
+  'oneOf',
+  'then',
+]);
+
+// A node that combines with a sibling schema cannot close itself: additionalProperties only counts
+// the properties next to it, so a property a sibling declares would be rejected. A `$ref` sibling
+// likewise leaves the node's own properties incomplete.
+const schemaCombiningKeywords: ReadonlySet<string> = new Set([
+  '$ref',
+  'allOf',
+  'anyOf',
+  'dependencies',
+  'dependentSchemas',
+  'else',
+  'oneOf',
   'then',
 ]);
 
@@ -114,6 +129,16 @@ const declaresObject = (value: Record<string, unknown>): boolean => {
   const declaresKeys = 'properties' in value || 'patternProperties' in value;
 
   return type === undefined && declaresKeys;
+};
+
+// `const` and `enum` name instance values, so closing the node would reject the object it requires.
+const requiresObjectValue = (value: Record<string, unknown>): boolean => {
+  const constant = value['const'];
+  const entries = value['enum'];
+  const requiresConstant = isRecord(constant);
+  const requiresEntry = Array.isArray(entries) && entries.some((entry) => isRecord(entry));
+
+  return requiresConstant || requiresEntry;
 };
 
 const strictSchemaMap = (
@@ -174,7 +199,14 @@ const strictSchemaValue = (value: unknown, asserted = true): unknown => {
     clone[key] = strictSchemaChild(key, value[key], asserted, strictSchemaValue);
   }
 
-  if (asserted && declaresObject(value)) {
+  const combinesWithSibling = Object.keys(value).some((keyword) =>
+    schemaCombiningKeywords.has(keyword),
+  );
+
+  const closesObject = asserted && declaresObject(value);
+  const keepsObjectOpen = requiresObjectValue(value) || combinesWithSibling;
+
+  if (closesObject && !keepsObjectOpen) {
     const additionalProperties = value['additionalProperties'];
 
     if (additionalProperties === undefined) {
@@ -198,6 +230,32 @@ const notWritableMessage =
 
 const notReadableMessage =
   'Cannot install strict tool parameters: registerTool is not readable on this API.';
+
+const descriptorOf = (target: ExtensionAPI, key: string): PropertyDescriptor | undefined => {
+  let current: object | null = target;
+
+  while (current !== null) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key);
+
+    if (descriptor !== undefined) {
+      return descriptor;
+    }
+
+    const prototype: unknown = Object.getPrototypeOf(current);
+
+    current = typeof prototype === 'object' ? prototype : null;
+  }
+
+  return undefined;
+};
+
+const restoreRegisterTool = (pi: ExtensionAPI, original: RegisterToolReturningValue): void => {
+  try {
+    pi.registerTool = original;
+  } catch {
+    // The install failure still reports why the wrapper did not stay installed.
+  }
+};
 
 const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   const host: RegisterToolHost = pi;
@@ -232,17 +290,43 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
     throw new Error(notWritableMessage, { cause: error });
   }
 
-  const descriptor = Object.getOwnPropertyDescriptor(pi, 'registerTool');
-  const installed: unknown = descriptor?.value;
-  let readBack: unknown;
+  let descriptor: PropertyDescriptor | undefined;
 
+  // An inherited accessor accepts the value through its setter and creates no own property, and a
+  // proxy trap may throw while it reports one, so read the descriptor through the chain.
   try {
-    readBack = descriptor?.get?.call(pi);
+    descriptor = descriptorOf(pi, 'registerTool');
   } catch (error) {
+    restoreRegisterTool(pi, current);
+
     throw new Error(notReadableMessage, { cause: error });
   }
 
-  if (installed !== wrapper && readBack !== wrapper) {
+  if (descriptor?.get === undefined) {
+    if (descriptor?.value !== wrapper) {
+      restoreRegisterTool(pi, current);
+
+      throw new Error(notWritableMessage);
+    }
+
+    return wrapper;
+  }
+
+  // An accessor may return a new wrapper on every read, so a different function can still be the
+  // value the setter stored. Trust a function read back through the descriptor that accepted it.
+  let readBack: unknown;
+
+  try {
+    readBack = descriptor.get.call(pi);
+  } catch (error) {
+    restoreRegisterTool(pi, current);
+
+    throw new Error(notReadableMessage, { cause: error });
+  }
+
+  if (typeof readBack !== 'function') {
+    restoreRegisterTool(pi, current);
+
     throw new Error(notWritableMessage);
   }
 

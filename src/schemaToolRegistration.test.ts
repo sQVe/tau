@@ -107,6 +107,90 @@ it('installs through an API that stores registerTool in an accessor', () => {
   ]);
 });
 
+it('installs through an accessor on the prototype', () => {
+  const registered: unknown[] = [];
+
+  class Api {
+    #register: (tool: unknown) => unknown = (tool) => registered.push(tool);
+
+    get registerTool(): (tool: unknown) => unknown {
+      return this.#register;
+    }
+
+    set registerTool(value: (tool: unknown) => unknown) {
+      this.#register = value;
+    }
+  }
+
+  const api = new Api() as unknown as ExtensionAPI;
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(registered).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+it('installs through an accessor that returns a new bound wrapper on every read', () => {
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => stored.bind(api),
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(registered).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+const passThroughRegisterTool = (tool: unknown): unknown => tool;
+
+it('restores the original registerTool when the readback fails', () => {
+  const original = passThroughRegisterTool;
+  const api = { registerTool: original } as unknown as ExtensionAPI;
+  let stored: (tool: unknown) => unknown = original;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      if (stored !== original) {
+        throw new Error('the getter failed');
+      }
+
+      return stored;
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not readable on this API.');
+
+  expect(stored).toBe(original);
+});
+
 it('keeps the value the wrapped registration returns', () => {
   const api = registrationApi(() => 'registered');
 

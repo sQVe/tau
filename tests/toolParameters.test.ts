@@ -59,12 +59,7 @@ const isOpenObject = (value: Record<string, unknown>): boolean => {
 
 // Spelled out here rather than read from production, so a keyword production changes fails the pin
 // below and forces this oracle to walk it too.
-const localMapKeywords: ReadonlySet<string> = new Set([
-  '$defs',
-  'definitions',
-  'patternProperties',
-  'properties',
-]);
+const localMapKeywords: ReadonlySet<string> = new Set(['patternProperties', 'properties']);
 
 const localArrayKeywords: ReadonlySet<string> = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
 
@@ -87,11 +82,14 @@ const localValueKeywords: ReadonlySet<string> = new Set([
 // sibling declares.
 const localUnassertedKeywords: ReadonlySet<string> = new Set([
   'allOf',
+  'anyOf',
+  'contains',
   'dependencies',
   'dependentSchemas',
   'else',
   'if',
   'not',
+  'oneOf',
   'then',
 ]);
 

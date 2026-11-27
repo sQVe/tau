@@ -245,7 +245,7 @@ it('closes an object schema that declares patternProperties without a type', () 
   });
 });
 
-it('closes an object schema under contains but not under then or else', () => {
+it('leaves an object schema under contains, then, or else open', () => {
   const schema: Record<string, unknown> = {
     type: 'object',
     [thenKeyword]: childSchema(),
@@ -260,7 +260,7 @@ it('closes an object schema under contains but not under then or else', () => {
 
   expect(thenChild).toEqual(childSchema());
   expect(elseChild).toEqual(childSchema());
-  expect(containsChild).toMatchObject({ additionalProperties: false });
+  expect(containsChild).toEqual(childSchema());
 });
 
 it('keeps a then, else, or allOf subschema from rejecting a declared argument', () => {
@@ -277,7 +277,83 @@ it('keeps a then, else, or allOf subschema from rejecting a declared argument', 
 
   expect(Value.Check(strict, { mode: 'a', detail: 'b' })).toBe(true);
   expect(Value.Check(strict, { mode: 'b', detail: 'b' })).toBe(true);
-  expect(Value.Check(strict, { mode: 'a', detail: 'b', extra: 1 })).toBe(false);
+  // A node that combines with a sibling stays open, because the sibling may declare a name it
+  // does not list itself.
+  expect(Value.Check(strict, { mode: 'a', detail: 'b', extra: 1 })).toBe(true);
+});
+
+it('keeps a property that only a combining branch declares', () => {
+  const schema = {
+    type: 'object',
+    properties: { mode: { type: 'string' } },
+    allOf: [{ properties: { detail: { type: 'string' } } }],
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { mode: 'a', detail: 'b' })).toBe(true);
+  expect(Value.Check(strict, { mode: 'a', detail: 1 })).toBe(false);
+});
+
+it.each(['anyOf', 'oneOf'])('keeps a property that only a %s branch declares', (keyword) => {
+  const schema = {
+    type: 'object',
+    properties: { mode: { type: 'string' } },
+    [keyword]: [{ properties: { detail: { type: 'string' } } }],
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { mode: 'a', detail: 'b' })).toBe(true);
+  expect(Value.Check(strict, { mode: 'a', detail: 1 })).toBe(false);
+});
+
+it('keeps an object referenced by a sibling $ref from closing itself', () => {
+  const schema = {
+    type: 'object',
+    $ref: '#/$defs/x',
+    $defs: { x: { type: 'object', properties: { mode: { type: 'string' } } } },
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { mode: 'a', extra: 1 })).toBe(true);
+});
+
+it('leaves a definition as written because an unasserted position may reference it', () => {
+  const schema = {
+    type: 'object',
+    properties: { detail: { $ref: '#/$defs/x' } },
+    if: { $ref: '#/$defs/x' },
+    $defs: { x: { type: 'object', properties: { secret: { type: 'string' } } } },
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, { detail: { secret: 'a', extra: 1 } })).toBe(true);
+});
+
+it('keeps an item that a sibling items schema declares matching contains', () => {
+  const schema = {
+    type: 'array',
+    items: { type: 'object', properties: { a: {}, b: {} } },
+    contains: { type: 'object', properties: { a: {} }, required: ['a'] },
+  };
+
+  const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+
+  expect(Value.Check(strict, [{ a: 1, b: 2 }])).toBe(true);
+});
+
+it('does not close a node that requires an object-valued const or enum', () => {
+  const constant = strictToolParameters(Type.Unsafe<unknown>({ type: 'object', const: { a: 1 } }));
+
+  const enumerated = strictToolParameters(
+    Type.Unsafe<unknown>({ type: 'object', enum: [{ a: 1 }] }),
+  );
+
+  expect(Value.Check(constant, { a: 1 })).toBe(true);
+  expect(Value.Check(enumerated, { a: 1 })).toBe(true);
 });
 
 it('keeps an object nested under an allOf branch open', () => {
@@ -388,7 +464,7 @@ it('leaves a nested object under not open', () => {
   });
 });
 
-const expectedSchemaMapKeywords = ['$defs', 'definitions', 'patternProperties', 'properties'];
+const expectedSchemaMapKeywords = ['patternProperties', 'properties'];
 
 const expectedSchemaArrayKeywords = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
 
@@ -414,11 +490,14 @@ it('pins the subschema keyword sets', () => {
 
   expect([...schemaUnassertedKeywords].toSorted()).toEqual([
     'allOf',
+    'anyOf',
+    'contains',
     'dependencies',
     'dependentSchemas',
     'else',
     'if',
     'not',
+    'oneOf',
     'then',
   ]);
 });
@@ -477,17 +556,17 @@ it('closes an object schema under every asserted subschema keyword in the sets',
   expect({ unclosed, loosened }).toEqual({ unclosed: [], loosened: [] });
 });
 
-it('does not rewrite an object value stored in an annotation keyword', () => {
+it('does not rewrite an object value stored in default or examples', () => {
   const schema = Type.Object(
     { value: Type.String() },
-    { default: { type: 'object' }, examples: [{ type: 'object' }], const: { type: 'object' } },
+    { default: { type: 'object' }, examples: [{ type: 'object' }] },
   );
 
   expect(strictToolParameters(schema)).toEqual(
     expect.objectContaining({
       default: { type: 'object' },
       examples: [{ type: 'object' }],
-      const: { type: 'object' },
+      additionalProperties: false,
     }),
   );
 });
