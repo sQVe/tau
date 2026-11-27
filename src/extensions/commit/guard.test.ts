@@ -1292,6 +1292,14 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
   });
 
+  it('allows a non-shell file whose env -S value depends on the environment', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', '#!/usr/bin/env -S node -e "$X"\ngit commit -m x\n');
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
   it('keeps the process PATH entries when an assignment cannot be expanded', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
     const processDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-path-');
