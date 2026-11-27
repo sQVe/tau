@@ -98,6 +98,9 @@ const commandKeys: Record<string, CommandKey> = {
   'api user': 'api user',
 };
 
+const apiEndpoint = (commandArguments: readonly string[]): string =>
+  commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
+
 const writeFacts = {
   'pr create': {
     fileFlag: '--body-file',
@@ -114,7 +117,7 @@ const writeFacts = {
     fileFlag: '--input',
     stdout: (commandArguments) => {
       const host = argumentAfter(commandArguments, '--hostname') ?? '';
-      const endpoint = commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
+      const endpoint = apiEndpoint(commandArguments);
       const [owner = '', name = '', , pr = ''] = endpoint.split('/').slice(1);
 
       return JSON.stringify({
@@ -144,9 +147,6 @@ const parentOutput = (parent: string | undefined) => {
 
   return { id: 'R_parent', name, owner: { id: 'U_owner', login: owner } };
 };
-
-const apiEndpoint = (commandArguments: readonly string[]): string =>
-  commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
 
 export const createGhFake = (): GhFake => {
   const repositoryView = (commandArguments: readonly string[]) => {

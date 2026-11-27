@@ -29,10 +29,10 @@ export type PublicationDecision = { kind: 'publish' } | { kind: 'refuse'; reason
 
 const tokenVersion = 'v1';
 const separator = ':';
-const unversionedToken = 'The token is not from dryRun. Nothing was published. Run dryRun again.';
+const nothingPublished = 'Nothing was published. Run dryRun again.';
+const unversionedToken = `The token is not from dryRun. ${nothingPublished}`;
 
-const differentTarget =
-  'The token covers a different publication target. Nothing was published. Run dryRun again.';
+const differentTarget = `The token covers a different publication target. ${nothingPublished}`;
 
 const digestOf = (content: Uint8Array | string): string =>
   createHash('sha256').update(content).digest('hex');
@@ -85,9 +85,7 @@ export const decidePublication = (facts: PublicationFacts): PublicationDecision 
   }
 
   if (digests.length !== facts.files.length) {
-    return refusal(
-      'The token covers a different set of files. Nothing was published. Run dryRun again.',
-    );
+    return refusal(`The token covers a different set of files. ${nothingPublished}`);
   }
 
   const changed = facts.files.find((file, index) => fileDigest(file) !== digests[index]);
@@ -96,7 +94,5 @@ export const decidePublication = (facts: PublicationFacts): PublicationDecision 
     return { kind: 'publish' };
   }
 
-  return refusal(
-    `${changed.file} changed since the dry run. Nothing was published. Run dryRun again.`,
-  );
+  return refusal(`${changed.file} changed since the dry run. ${nothingPublished}`);
 };
