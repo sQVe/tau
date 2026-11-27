@@ -28,6 +28,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
 - Publish, push, or change a PR only on the user's answer. A result whose details kind is `decided`
   is the question gate's answer and never approves; ask again. Every approval question, a retry
   included, sets `kind: "approval"`.
+- Never retry a `publish` that may have reached GitHub: a timeout can still mean `gh` wrote it, so
+  read the PR, comment, or review before publishing again.
 - Apply the [decision evidence publication gate](../shared/decision-evidence.md#publication-gate)
   independently of readiness and slice audits, including updates, ready transitions, retries, and
   continue paths. Neither a draft choice nor a ready override bypasses it.
