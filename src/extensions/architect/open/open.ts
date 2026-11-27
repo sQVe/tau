@@ -11,7 +11,11 @@ import { isBareRootWithoutGitEntry } from '../../../git.js';
 import { foregroundArgv, get } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
-import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
+import {
+  launchPiSession,
+  launchPiSessionRightOf,
+  StartedTabError,
+} from '../../../piStart/piStart.js';
 import type { PiLaunchResult } from '../../../piStart/piStart.js';
 import { tabName } from '../../../tabName.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
@@ -262,9 +266,6 @@ const launchFailure = (launch: PiLaunchResult): Error =>
 const launchReportedFailure = (launch: PiLaunchResult): boolean =>
   launchOutcomeDecision(launchFacts(launch)) === 'notCreated' || launch.error !== undefined;
 
-const launchFailed = (launch: PiLaunchResult): boolean =>
-  !launch.readbackFailed && launchReportedFailure(launch);
-
 const launchResult = (prepared: PreparedArchitectStart, model = 'unknown'): OpenResult =>
   prepared.session === undefined
     ? { status: 'opened', sessionFile: null, model }
@@ -423,12 +424,15 @@ const applyLaunchOutcome = async (
   started: PiLaunchResult,
 ): Promise<void> => {
   // A readback failure leaves a live terminal, and an adopted child keeps running. The caller must
-  // still see the failure, so the outer catch completes the fence and reports it.
-  if (started.readbackFailed) {
+  // still see the failure, so the outer catch completes the fence and reports it. An abort keeps its
+  // own error, because the fence may already have stopped the child.
+  if (started.error instanceof StartedTabError) {
+    throwIfOpenCancelled(request.hc.signal);
+
     throw launchFailure(started);
   }
 
-  if (launchFailed(started)) {
+  if (launchReportedFailure(started)) {
     await settleLaunch(request, fence, launchFailure(started));
 
     return;
