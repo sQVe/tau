@@ -168,6 +168,26 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: false,
   },
   {
+    name: 'a detached pipeline that merges stderr into a consumer discarding it',
+    command: 'cmd 2>&1 | cat >/dev/null &',
+    blocked: true,
+  },
+  {
+    name: 'a detached |& pipeline whose consumer discards the merged stream',
+    command: 'cmd 2>&1 |& cat >/dev/null &',
+    blocked: true,
+  },
+  {
+    name: 'a detached pipeline that merges stderr into a consumer logging it',
+    command: 'cmd 2>&1 | cat > /tmp/x.log &',
+    blocked: false,
+  },
+  {
+    name: 'a detached pipeline whose consumer redirects stderr after the merge',
+    command: 'cmd 2>&1 | cat 2>/dev/null &',
+    blocked: true,
+  },
+  {
     name: 'a shell discarding inner stderr',
     command: `sh -c 'sh -c "printf hidden >&2; exit 17" 2>/dev/null' &`,
     blocked: true,
@@ -540,6 +560,26 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: false,
   },
   {
+    name: 'a redirection-only command whose file redirection can fail',
+    command: '2>/dev/null >/nope/x &',
+    blocked: true,
+  },
+  {
+    name: 'a read-write redirection that discards stderr',
+    command: 'cmd 2<>/dev/null &',
+    blocked: true,
+  },
+  {
+    name: 'a read-write redirection that writes a log',
+    command: 'cmd 2<>/tmp/x.log &',
+    blocked: false,
+  },
+  {
+    name: 'a command the parser cannot parse',
+    command: "cmd 2>/dev/null 'unterminated",
+    blocked: false,
+  },
+  {
     name: 'a backgrounded brace compound with a redirection after its closer',
     command: '{ herdr-app do space.close --confirmed & } >/dev/null 2>&1',
     blocked: true,
@@ -602,6 +642,13 @@ it.each(['constructor', 'toString', '__proto__'])(
     expect(blocks(`${name} 2>/dev/null &`)).toBe(true);
   },
 );
+
+it('reports the depth budget as unverifiable instead of claiming a detached process', () => {
+  const decision = decideDetachedOutput({ toolName: 'bash', command: nestedScript(6) });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('nests scripts deeper than the guard can inspect');
+});
 
 it('ignores another tool name', () => {
   expect(decideDetachedOutput({ toolName: 'read', command: 'cmd 2>/dev/null &' })).toBeUndefined();

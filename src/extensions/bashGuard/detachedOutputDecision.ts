@@ -1,5 +1,7 @@
 import { parseShellCommands, runsRedirectionsOnlyExec, shellScriptOf } from '../../shell.js';
 import type { ShellCommand, ShellRedirection } from '../../shell.js';
+import { devNull, isDescriptor, streamsOf, targetOf, terminal } from './detachedStreams.js';
+import type { StreamTarget, Streams } from './detachedStreams.js';
 
 export interface DetachedOutputFacts {
   toolName: string;
@@ -12,16 +14,6 @@ interface BlockedDetachedOutput {
 }
 
 export type DetachedOutputDecision = BlockedDetachedOutput | undefined;
-
-type StreamTarget =
-  | { kind: 'terminal' }
-  | { kind: 'file'; path: string }
-  | { kind: 'closed' }
-  | { kind: 'unknown' };
-
-// The target of every descriptor the shell redirects. A descriptor the table does not name is the
-// terminal for stdout and stderr, and unresolved for any other descriptor.
-type Streams = Map<number, StreamTarget>;
 
 // Whether a reader sees a compound's failure, whether a command inside it throws stderr away, and
 // whether the command's own redirection does.
@@ -37,104 +29,28 @@ interface CompoundScope {
   // Members below this index sit inside a group whose redirections `inherited` already includes.
   from: number;
   enclosingByIndex: Map<number, Streams>;
+  groups: readonly EnclosingGroup[];
+  execs: readonly ExecCommand[];
 }
 
 type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
 
 interface EnclosingGroup {
   readonly closing: ShellCommand;
+  readonly closingIndex: number;
   readonly start: number;
 }
 
-const devNull = '/dev/null';
+interface ExecCommand {
+  readonly command: ShellCommand;
+  readonly index: number;
+  readonly innermost: EnclosingGroup | undefined;
+}
+
+type HiddenFailure = 'hidden' | 'unverifiable';
+
 const maximumDepth = 4;
-const terminalDescriptors = new Set([1, 2]);
-
 const emptyStreams: Streams = new Map();
-const terminal: StreamTarget = { kind: 'terminal' };
-const unknownTarget: StreamTarget = { kind: 'unknown' };
-
-const isDescriptor = (target: string): boolean => /^\d+$/u.test(target) || target === '-';
-
-const targetOf = (streams: Streams, fileDescriptor: number): StreamTarget => {
-  const target = streams.get(fileDescriptor);
-
-  if (target !== undefined) {
-    return target;
-  }
-
-  return terminalDescriptors.has(fileDescriptor) ? terminal : unknownTarget;
-};
-
-const fileTarget = (path: string): StreamTarget => ({ kind: 'file', path });
-
-const duplicatedTarget = (streams: Streams, target: string): StreamTarget => {
-  if (target === '-') {
-    return { kind: 'closed' };
-  }
-
-  if (!/^\d+$/u.test(target)) {
-    return unknownTarget;
-  }
-
-  return targetOf(streams, Number(target));
-};
-
-// `>&word` redirects both streams when word is a file, and duplicates one descriptor when word is a
-// number or `-`.
-const applyAmpersand = (
-  streams: Streams,
-  fileDescriptor: number | undefined,
-  defaultDescriptor: number,
-  target: string,
-): void => {
-  const descriptor = fileDescriptor ?? defaultDescriptor;
-
-  if (isDescriptor(target)) {
-    streams.set(descriptor, duplicatedTarget(streams, target));
-
-    return;
-  }
-
-  const file = fileTarget(target);
-
-  if (descriptor === 1 && fileDescriptor === undefined) {
-    streams.set(1, file);
-    streams.set(2, file);
-
-    return;
-  }
-
-  // Bash refuses a numbered `>&` to a file, so this stream is neither a log nor a discard.
-  streams.set(descriptor, unknownTarget);
-};
-
-const applyRedirection = (streams: Streams, redirection: ShellRedirection): void => {
-  const { fileDescriptor, operator, target } = redirection;
-
-  if (operator === '&>' || operator === '&>>') {
-    const file = fileTarget(target);
-
-    streams.set(1, file);
-    streams.set(2, file);
-  } else if (operator === '>' || operator === '>>' || operator === '>|') {
-    streams.set(fileDescriptor ?? 1, fileTarget(target));
-  } else if (operator === '>&') {
-    applyAmpersand(streams, fileDescriptor, 1, target);
-  } else if (operator === '<&') {
-    applyAmpersand(streams, fileDescriptor, 0, target);
-  }
-};
-
-const streamsOf = (command: ShellCommand, inherited: Streams): Streams => {
-  const streams = new Map(inherited);
-
-  for (const redirection of command.redirections) {
-    applyRedirection(streams, redirection);
-  }
-
-  return streams;
-};
 
 // A stream with no redirection reaches the terminal, which is visible.
 const showsStderr = (streams: Streams): boolean => {
@@ -168,7 +84,7 @@ const innermostGroupOf = (
     }
 
     if (innermost === undefined || start > innermost.start) {
-      innermost = { closing: command, start };
+      innermost = { closing: command, closingIndex, start };
     }
   }
 
@@ -194,52 +110,47 @@ const applyExecRedirections = (
   inherited: Streams,
   group: ShellCommand | undefined,
 ): Streams => {
-  const { commands, from } = scope;
+  const { commands, execs, from } = scope;
   const target = commands[index];
-  let streams = inherited;
 
   if (target === undefined) {
-    return streams;
+    throw new Error('the exec pass needs a command at its index');
   }
 
-  for (let earlier = from; earlier < index; earlier += 1) {
-    const earlierCommand = commands[earlier];
+  let streams = inherited;
 
-    // Most scripts contain no `exec`, so reject one before the group scan.
-    if (earlierCommand === undefined || !changesShellStreams(earlierCommand)) {
+  for (const exec of execs) {
+    if (exec.index < from || exec.index >= index) {
       continue;
     }
 
-    if (!runsInShellOf(target, earlierCommand)) {
+    if (!runsInShellOf(target, exec.command)) {
       continue;
     }
 
-    if (innermostGroupOf(commands, earlier)?.closing !== group) {
+    if (exec.innermost?.closing !== group) {
       continue;
     }
 
-    streams = streamsOf(earlierCommand, streams);
+    streams = streamsOf(exec.command, streams);
   }
 
   return streams;
 };
 
+const enclosingGroupsOf = (scope: CompoundScope, index: number): readonly EnclosingGroup[] =>
+  scope.groups.filter(({ start, closingIndex }) => encloses(start, closingIndex, index));
+
 const enclosingStreams = (scope: CompoundScope, index: number): Streams => {
-  const { commands, inherited, from } = scope;
-
-  const enclosing = commands
-    .map((command, closingIndex) => ({ command, closingIndex }))
-    .filter(({ command, closingIndex }) => {
-      const group = command.group;
-
-      return group !== undefined && group >= from && encloses(group, closingIndex, index);
-    })
-    .toSorted((left, right) => (left.command.group ?? 0) - (right.command.group ?? 0));
+  const { inherited } = scope;
+  const enclosing = enclosingGroupsOf(scope, index);
 
   let streams = applyExecRedirections(scope, index, inherited, undefined);
 
-  for (const { command } of enclosing) {
-    streams = applyExecRedirections(scope, index, streamsOf(command, streams), command);
+  for (const group of enclosing) {
+    const groupStreams = streamsOf(group.closing, streams);
+
+    streams = applyExecRedirections(scope, index, groupStreams, group.closing);
   }
 
   return streams;
@@ -249,12 +160,26 @@ const compoundScope = (
   commands: readonly ShellCommand[],
   inherited: Streams,
   from = 0,
-): CompoundScope => ({
-  commands,
-  inherited,
-  from,
-  enclosingByIndex: new Map(),
-});
+): CompoundScope => {
+  const groups: EnclosingGroup[] = [];
+  const execs: ExecCommand[] = [];
+
+  for (const [index, command] of commands.entries()) {
+    const start = command.group;
+
+    if (start !== undefined && start >= from) {
+      groups.push({ closing: command, closingIndex: index, start });
+    }
+
+    if (changesShellStreams(command)) {
+      execs.push({ command, index, innermost: innermostGroupOf(commands, index) });
+    }
+  }
+
+  groups.sort((left, right) => left.start - right.start);
+
+  return { commands, inherited, from, enclosingByIndex: new Map(), groups, execs };
+};
 
 const enclosingOf = (scope: CompoundScope, index: number): Streams => {
   const cached = scope.enclosingByIndex.get(index);
@@ -270,6 +195,39 @@ const enclosingOf = (scope: CompoundScope, index: number): Streams => {
   return enclosing;
 };
 
+// Where a command's stdout goes when nothing else redirects it.
+const stdoutTargetOf = (scope: CompoundScope, index: number): StreamTarget => {
+  const command = scope.commands[index];
+
+  if (command === undefined) {
+    return terminal;
+  }
+
+  return targetOf(streamsOf(command, enclosingOf(scope, index)), 1);
+};
+
+// A command in a pipeline writes to the next element, and the element that leaves the pipeline
+// decides where the merged stream goes. Following the chain keeps a `2>&1` from reading the pipe
+// as the terminal, and still reads a consumer's log file.
+const pipelineStdout = (scope: CompoundScope, index: number): StreamTarget | undefined => {
+  let target = scope.commands[index]?.pipeTarget;
+  const seen = new Set<number>();
+
+  while (target !== undefined && !seen.has(target)) {
+    seen.add(target);
+
+    const next = scope.commands[target]?.pipeTarget;
+
+    if (next === undefined) {
+      return stdoutTargetOf(scope, target);
+    }
+
+    target = next;
+  }
+
+  return undefined;
+};
+
 const noFacts: CompoundFacts = { shows: false, discards: false, ownDiscards: false };
 const failClosedFacts: CompoundFacts = { shows: false, discards: true, ownDiscards: false };
 
@@ -280,15 +238,18 @@ const memberRangeWithFallbackOf = (
   const closing = closingIndex === undefined ? undefined : scope.commands[closingIndex];
   const start = closing?.group ?? 0;
   const end = closingIndex ?? scope.commands.length;
+  const pipeStdout = closingIndex === undefined ? undefined : pipelineStdout(scope, closingIndex);
 
   const fallbackStreams =
-    closing === undefined ? scope.inherited : streamsOf(closing, scope.inherited);
+    closing === undefined ? scope.inherited : streamsOf(closing, scope.inherited, pipeStdout);
 
   return { start, end, fallbackStreams };
 };
 
-// The last member with arguments decides whether a reader sees the failure. Any member that throws
-// stderr away hides one. An empty member set falls back to the streams the compound inherits.
+// A compound reports its last command's exit status, so its last member with arguments decides
+// whether a reader sees the failure. An earlier member's stderr is not judged, because a detached
+// unit that logs its effect may still run a silent step before it. Any member that throws stderr
+// away hides one. An empty member set falls back to the streams the compound inherits.
 const membersFacts = (
   factsOf: CompoundFactsOf,
   scope: CompoundScope,
@@ -318,15 +279,7 @@ const groupFacts = (
   scope: CompoundScope,
   closingIndex: number,
   depth: number,
-): CompoundFacts => {
-  const closing = scope.commands[closingIndex];
-
-  if (closing?.group === undefined) {
-    return noFacts;
-  }
-
-  return membersFacts(factsOf, scope, closingIndex, depth);
-};
+): CompoundFacts => membersFacts(factsOf, scope, closingIndex, depth);
 
 const scriptFacts = (
   factsOf: CompoundFactsOf,
@@ -347,7 +300,7 @@ const scriptFacts = (
 };
 
 // A command shows its failure when its own redirections, over the streams it inherits, end stderr in
-// a visible file. A compound shows it when its last non-empty command does. A command that redirects
+// a visible file. A compound shows it when every member that can fail does. A command that redirects
 // anything but leaves stderr discarded hides the failure.
 //
 // Exceeding the budget fails closed: the compound is treated as discarding, because the parser
@@ -364,7 +317,7 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
   }
 
   const enclosing = enclosingOf(scope, index);
-  const own = streamsOf(command, enclosing);
+  const own = streamsOf(command, enclosing, pipelineStdout(scope, index));
   const ownDiscards = command.redirections.length > 0 && discardsStderr(own);
   const script = shellScriptOf(command.arguments);
 
@@ -396,7 +349,7 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
     return false;
   }
 
-  const own = streamsOf(command, enclosingOf(scope, index));
+  const own = streamsOf(command, enclosingOf(scope, index), pipelineStdout(scope, index));
   const script = shellScriptOf(command.arguments);
 
   if (script !== undefined || command.group !== undefined) {
@@ -409,7 +362,7 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
   return !showsStderr(own);
 };
 
-// A redirection-only `exec` runs no command, so it has no failure to hide unless one of its
+// A command that only redirects runs no program, so it has no failure to hide unless one of its
 // redirections can fail while stderr is discarded.
 const redirectionCanFail = (redirection: ShellRedirection): boolean => {
   const { operator, target } = redirection;
@@ -418,7 +371,7 @@ const redirectionCanFail = (redirection: ShellRedirection): boolean => {
     return !isDescriptor(target) && target !== devNull;
   }
 
-  if (operator === '<<' || operator === '<<-' || operator === '<<<') {
+  if (operator === '<<<') {
     return false;
   }
 
@@ -426,62 +379,80 @@ const redirectionCanFail = (redirection: ShellRedirection): boolean => {
 };
 
 // A command the parser creates at an opening parenthesis has no arguments and closes no group, so
-// judging it would read the enclosing redirections as its own.
+// judging it would read the enclosing redirections as its own. A redirection-only command runs no
+// program, so it has no failure to hide unless one of its redirections can fail.
 const isJudgedCommand = (command: ShellCommand): boolean => {
   if (runsRedirectionsOnlyExec(command.arguments)) {
     return command.redirections.some(redirectionCanFail);
   }
 
-  return command.group !== undefined || command.arguments.length > 0;
-};
-
-const judgesHiddenFailure = (scope: CompoundScope, index: number, depth = 0): boolean => {
-  const command = scope.commands[index];
-
-  if (command === undefined || !isJudgedCommand(command)) {
-    return false;
-  }
-
-  if (insideBackgroundedGroup(scope.commands, index)) {
-    return false;
-  }
-
-  if (hidesFailure(scope, index)) {
+  if (command.group !== undefined || command.arguments.length > 0) {
     return true;
   }
 
+  return command.redirections.some(redirectionCanFail);
+};
+
+const judgesHiddenFailure = (
+  scope: CompoundScope,
+  index: number,
+  depth = 0,
+): HiddenFailure | undefined => {
+  const command = scope.commands[index];
+
+  if (command === undefined || !isJudgedCommand(command)) {
+    return undefined;
+  }
+
+  if (insideBackgroundedGroup(scope.commands, index)) {
+    return undefined;
+  }
+
+  if (hidesFailure(scope, index)) {
+    return 'hidden';
+  }
+
   if (command.background) {
-    return false;
+    return undefined;
   }
 
   const script = shellScriptOf(command.arguments);
 
   if (script === undefined) {
-    return false;
+    return undefined;
   }
 
   // A foreground command that runs a script still detaches the script's own backgrounded members.
-  // Exceeding the budget fails closed, because a deeper script may detach a hidden failure.
+  // Past the budget the guard cannot inspect the deeper script, so it reports that it cannot tell.
   if (depth > maximumDepth) {
-    return true;
+    return 'unverifiable';
   }
 
   const commands = parseShellCommands(script);
 
   if (commands === undefined) {
-    return false;
+    return undefined;
   }
 
-  const inherited = streamsOf(command, enclosingOf(scope, index));
+  const inherited = streamsOf(command, enclosingOf(scope, index), pipelineStdout(scope, index));
   const nested = compoundScope(commands, inherited);
 
-  return commands.some((_nested, nestedIndex) =>
-    judgesHiddenFailure(nested, nestedIndex, depth + 1),
-  );
+  for (let nestedIndex = 0; nestedIndex < commands.length; nestedIndex += 1) {
+    const nestedFailure = judgesHiddenFailure(nested, nestedIndex, depth + 1);
+
+    if (nestedFailure !== undefined) {
+      return nestedFailure;
+    }
+  }
+
+  return undefined;
 };
 
 const blockReason =
-  'This bash command detaches a process and discards or closes its stderr, so a failure would be hidden. Write the output to a log file, such as `> /tmp/<name>.log 2>&1`, then read the log and the exit status before reporting the effect.';
+  'This bash command detaches a process and discards or closes its stderr, so a failure would be hidden. Write the output to a log file, such as `> /tmp/<name>.log 2>&1`, record the command exit status in that log, then read it before reporting the effect.';
+
+const unverifiableReason =
+  'This bash command nests scripts deeper than the guard can inspect, so a hidden failure cannot be ruled out. Run the inner command directly, or write its output to a log file such as `> /tmp/<name>.log 2>&1` and read it before reporting the effect.';
 
 export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutputDecision => {
   if (facts.toolName !== 'bash' || typeof facts.command !== 'string') {
@@ -490,13 +461,21 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
 
   const commands = parseShellCommands(facts.command);
 
+  // The parser rejects only source that bash itself refuses to run, so an unreadable command cannot
+  // hide a detached failure. When the parser learns to reject valid syntax, this must fail closed.
   if (commands === undefined) {
     return undefined;
   }
 
   const scope = compoundScope(commands, emptyStreams);
 
-  return commands.some((_command, index) => judgesHiddenFailure(scope, index))
-    ? { block: true, reason: blockReason }
-    : undefined;
+  for (let index = 0; index < commands.length; index += 1) {
+    const failure = judgesHiddenFailure(scope, index);
+
+    if (failure !== undefined) {
+      return { block: true, reason: failure === 'hidden' ? blockReason : unverifiableReason };
+    }
+  }
+
+  return undefined;
 };
