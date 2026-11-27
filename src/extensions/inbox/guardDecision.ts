@@ -1,4 +1,5 @@
-import { commandNameOf, commandWords, parseShellCommands, shellScriptOf } from '../../shell.js';
+import { parseShellCommands } from '../../shell.js';
+import { commandNameOf, commandWords, shellScriptOf } from '../../wrapperAnalysis.js';
 
 const typingSubcommands = new Set(['keys', 'send']);
 const helpOptions = new Set(['--help', '-h']);

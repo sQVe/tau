@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  commandWords,
-  parseShellCommands,
-  runsRedirectionsOnlyExec,
-  shellScriptOf,
-} from './shell.js';
+import { parseShellCommands } from './shell.js';
+import { commandWords, runsRedirectionsOnlyExec, shellScriptOf } from './wrapperAnalysis.js';
 
 const wordsOf = (source: string) =>
   parseShellCommands(source)

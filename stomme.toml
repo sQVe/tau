@@ -588,7 +588,7 @@ imports = ["schema"]
 [modules.shell]
 entry = "src/shell.ts"
 public = []
-imports = []
+imports = ["wrapperAnalysis"]
 
 [modules.skillTools]
 entry = "src/skillTools.ts"
@@ -626,6 +626,11 @@ imports = ["errors", "record", "schema", "tauDirectory"]
 
 [modules.wake]
 entry = "src/wake/wake.ts"
+public = []
+imports = []
+
+[modules.wrapperAnalysis]
+entry = "src/wrapperAnalysis.ts"
 public = []
 imports = []
 

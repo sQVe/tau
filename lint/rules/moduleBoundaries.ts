@@ -168,6 +168,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: ['verification/freshness', 'verification/records', 'verification/selection'],
   },
   { name: 'wake', entry: 'wake/wake', publicFiles: [] },
+  { name: 'wrapperAnalysis', entry: 'wrapperAnalysis', publicFiles: [] },
 ];
 
 // The shared modules each module may import, one row per module. src/tau/tau.ts is the
@@ -211,13 +212,14 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   role: ['schema'],
   schema: [],
   sessionMessage: ['schema'],
-  shell: [],
+  shell: ['wrapperAnalysis'],
   skillTools: [],
   tabName: [],
   tauDirectory: ['errors', 'git'],
   terminalText: [],
   verification: ['errors', 'record', 'schema', 'tauDirectory'],
   wake: [],
+  wrapperAnalysis: [],
 };
 
 const publicPaths = new Set(moduleList.flatMap((module) => [module.entry, ...module.publicFiles]));
