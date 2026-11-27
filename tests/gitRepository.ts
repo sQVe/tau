@@ -28,6 +28,7 @@ export const initializeRepository = async (directory: string): Promise<void> => 
   });
 };
 
+// The cleanup callback removes the repository even when its test fails.
 export const createTemporaryRepository = async (
   registerCleanup: RegisterCleanup,
   prefix = 'tau-repository-',
