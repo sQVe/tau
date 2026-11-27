@@ -190,50 +190,56 @@ const attemptRead = async (
   }
 };
 
-export const readStartedModel = async (request: StartedModelReadRequest): Promise<string> => {
-  const { terminal, model, signal, deadline } = request;
-  const requested = requestedModelOf(model);
+const pollStartedModel = async (
+  request: StartedModelReadRequest,
+  requested: RequestedModel,
+  failure: ReadFailure | undefined,
+  interval: number,
+): Promise<string> => {
+  const { terminal, signal, deadline } = request;
+  const remaining = deadline - Date.now();
 
-  let failure: ReadFailure | undefined;
-  let interval = readbackInitialIntervalMilliseconds;
-
-  for (;;) {
-    const remaining = deadline - Date.now();
-
-    if (remaining <= 0) {
-      throw unreadableModelError(terminal, failure?.error);
-    }
-
-    // oxlint-disable-next-line no-await-in-loop -- each read must wait for the previous one.
-    const attempt = await attemptRead(request, failure, remaining);
-
-    failure = attempt.failure;
-
-    const startedArgv = piArgv(attempt.argv);
-
-    if (startedArgv !== undefined) {
-      const decision = decideStartedModel({ requested, argv: startedArgv });
-
-      if (decision.kind === 'match') {
-        return decision.model;
-      }
-
-      if (decision.kind === 'mismatch') {
-        throw mismatchModelError(terminal, decision);
-      }
-
-      throw unreadableModelError(terminal);
-    }
-
-    const remainingAfterRead = deadline - Date.now();
-
-    if (remainingAfterRead <= 0) {
-      throw unreadableModelError(terminal, failure?.error);
-    }
-
-    // oxlint-disable-next-line no-await-in-loop -- the poll needs a pause between reads.
-    await pauseBeforeRead(Math.min(interval, remainingAfterRead), signal);
-
-    interval = Math.min(interval * 2, readbackMaxIntervalMilliseconds);
+  if (remaining <= 0) {
+    throw unreadableModelError(terminal, failure?.error);
   }
+
+  const attempt = await attemptRead(request, failure, remaining);
+  const startedArgv = piArgv(attempt.argv);
+
+  if (startedArgv !== undefined) {
+    const decision = decideStartedModel({ requested, argv: startedArgv });
+
+    if (decision.kind === 'match') {
+      return decision.model;
+    }
+
+    if (decision.kind === 'mismatch') {
+      throw mismatchModelError(terminal, decision);
+    }
+
+    throw unreadableModelError(terminal);
+  }
+
+  const remainingAfterRead = deadline - Date.now();
+
+  if (remainingAfterRead <= 0) {
+    throw unreadableModelError(terminal, attempt.failure?.error);
+  }
+
+  await pauseBeforeRead(Math.min(interval, remainingAfterRead), signal);
+
+  return pollStartedModel(
+    request,
+    requested,
+    attempt.failure,
+    Math.min(interval * 2, readbackMaxIntervalMilliseconds),
+  );
 };
+
+export const readStartedModel = (request: StartedModelReadRequest): Promise<string> =>
+  pollStartedModel(
+    request,
+    requestedModelOf(request.model),
+    undefined,
+    readbackInitialIntervalMilliseconds,
+  );
