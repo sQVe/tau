@@ -299,7 +299,10 @@ const strictSchemaObject = (
       requiresObjectValue(value) || combinesWithSibling || allowsUndeclaredKeys;
 
     if (closesObject && !keepsObjectOpen) {
-      if (!Object.hasOwn(value, 'additionalProperties')) {
+      const declaresAdditionalProperties =
+        Object.hasOwn(value, 'additionalProperties') && value['additionalProperties'] !== undefined;
+
+      if (!declaresAdditionalProperties) {
         clone['additionalProperties'] = false;
       }
     }

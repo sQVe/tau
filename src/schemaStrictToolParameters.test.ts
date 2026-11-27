@@ -59,6 +59,19 @@ it('leaves an existing false additionalProperties alone', () => {
   expect(strictToolParameters(schema)).toMatchObject({ additionalProperties: false });
 });
 
+it('closes a node whose additionalProperties is explicitly undefined', () => {
+  const schema = Type.Unsafe<unknown>({
+    type: 'object',
+    properties: { value: { type: 'string' } },
+    additionalProperties: undefined,
+  });
+
+  const strict = strictToolParameters(schema);
+
+  expect(strict).toMatchObject({ additionalProperties: false });
+  expect(Value.Check(strict, { value: 'a', extra: 1 })).toBe(false);
+});
+
 it('keeps an explicit additionalProperties: true because the author declared free-form input', () => {
   const schema = Type.Unsafe<unknown>({
     type: 'object',
