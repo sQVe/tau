@@ -189,8 +189,10 @@ it('names the record field when only the target is valid', () => {
 
 it('names a newer record format, not a malformed record', () => {
   const error = thrownBy(() => parseText(fixtureText('newer.json')));
+  const message = errorMessage(error);
 
-  expect(errorMessage(error)).not.toContain('Malformed');
+  expect(message).toContain('has a newer format than this Tau reads');
+  expect(message).not.toContain('Malformed');
 });
 
 it('does not call a record with a non-number version newer', () => {

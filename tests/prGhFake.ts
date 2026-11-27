@@ -318,7 +318,7 @@ export const createGhFake = (): GhFake => {
     const path = flagIndex === -1 ? undefined : commandArguments[flagIndex + 1];
 
     if (path === undefined) {
-      if (key === 'api write' && carriesWriteFields(commandArguments)) {
+      if (flagIndex === -1 && key === 'api write' && carriesWriteFields(commandArguments)) {
         fake.writes.push({
           key,
           commandArguments: [...commandArguments],
