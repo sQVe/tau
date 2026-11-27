@@ -6,6 +6,7 @@ import {
   preparePullRequestRun,
   preparePublicationRun as prepareRun,
   publishedCommands,
+  pullRequestCreateArguments,
   setUpPublicationTests,
   writeRunFile,
 } from '../fixtures/publicationRun.js';
@@ -28,21 +29,7 @@ it('publishes a new pull request with the approved title, body, base, head, and 
   expect(fake.writes).toEqual([
     {
       key: 'pr create',
-      commandArguments: [
-        'pr',
-        'create',
-        '--repo',
-        'github.com/sQVe/tau',
-        '--base',
-        'main',
-        '--head',
-        'feature',
-        '--title',
-        'Add a feature',
-        '--draft',
-        '--body-file',
-        expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
-      ],
+      commandArguments: [...pullRequestCreateArguments({ draft: true })],
       contents: Buffer.from('Adds it.\n'),
     },
   ]);
@@ -96,20 +83,7 @@ it('creates a pull request without --draft when draft is false', async () => {
 
   await run({ ...request, action: 'publish', token: dryRun.token });
 
-  expect(fake.writes[0]?.commandArguments).toEqual([
-    'pr',
-    'create',
-    '--repo',
-    'github.com/sQVe/tau',
-    '--base',
-    'main',
-    '--head',
-    'feature',
-    '--title',
-    'Add a feature',
-    '--body-file',
-    expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
-  ]);
+  expect(fake.writes[0]?.commandArguments).toEqual(pullRequestCreateArguments());
 });
 
 it('returns the em dash finding from the dry run and publishes with it', async () => {

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { onTestFinished } from 'vitest';
+import { expect, onTestFinished } from 'vitest';
 
 import type { GhFake } from '../../../../tests/prGhFake.js';
 import { createPublicationTool } from './publicationRepository.js';
@@ -62,6 +62,27 @@ export const dryRunPullRequestEdit = (directory: string) =>
     directory,
     pr: 7,
   }) as const;
+
+export const pullRequestCreateArguments = ({
+  base = 'main',
+  head = 'feature',
+  title = 'Add a feature',
+  draft = false,
+}: { base?: string; head?: string; title?: string; draft?: boolean } = {}): unknown[] => [
+  'pr',
+  'create',
+  '--repo',
+  publicationRepository,
+  '--base',
+  base,
+  '--head',
+  head,
+  '--title',
+  title,
+  ...(draft ? ['--draft'] : []),
+  '--body-file',
+  expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
+];
 
 export const publishedCommands = (fake: GhFake): string[] =>
   fake.calls.map((call) => call.commandArguments.slice(0, 2).join(' '));

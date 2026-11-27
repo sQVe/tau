@@ -125,6 +125,24 @@ it('posts a pending review without an event in one call', async () => {
   expect(fake.calls).toHaveLength(1);
 });
 
+it('refuses a review.json rewritten after the dry run and sends nothing', async () => {
+  const { fake, run } = await setUpPublicationTests();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'review.json', submittedReview);
+
+  const request = reviewRequest(directory);
+  const dryRun = await run(request);
+
+  await writeRunFile(directory, 'review.json', pendingReview);
+
+  await expect(run({ ...request, action: 'publish', token: dryRun.token })).rejects.toThrow(
+    /review\.json changed since the dry run/u,
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('refuses a review comment with neither line nor position and names its index', async () => {
   const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);

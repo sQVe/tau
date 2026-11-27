@@ -61,6 +61,49 @@ const commentRequest = (directory: string, file = 'comment.md') =>
     file,
   }) as const;
 
+it('refuses a comment file rewritten after the dry run and sends nothing', async () => {
+  const { fake, run } = await setUpPublicationTests();
+  const directory = await prepareRun(run);
+
+  await writeRunFile(directory, 'comment.md', 'Looks good.\n');
+
+  const request = commentRequest(directory);
+  const dryRun = await run(request);
+
+  await writeRunFile(directory, 'comment.md', 'Looks better.\n');
+
+  await expect(run({ ...request, action: 'publish', token: dryRun.token })).rejects.toThrow(
+    /comment\.md changed since the dry run/u,
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it.each([
+  ['an empty file name', ''],
+  ['a dot file name', '.'],
+])('refuses %s', async (_case, file) => {
+  const { fake, run } = await setUpPublicationTests();
+  const directory = await prepareRun(run);
+
+  await expect(run(commentRequest(directory, file))).rejects.toThrow(
+    'The comment file must name a file in the run directory.',
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a comment without a file', async () => {
+  const { fake, run } = await setUpPublicationTests();
+  const directory = await prepareRun(run);
+
+  await expect(
+    run({ action: 'dryRun', kind: 'comment', repository, directory, pr: 7 }),
+  ).rejects.toThrow('dryRun needs file.');
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('refuses a comment file that is an absolute path', async () => {
   const { fake, run } = await setUpPublicationTests();
   const directory = await prepareRun(run);

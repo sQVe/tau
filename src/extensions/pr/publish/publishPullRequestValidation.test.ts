@@ -10,6 +10,7 @@ import {
   preparePullRequestRun,
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
+  pullRequestCreateArguments,
   publishedFilePath,
   setUpPublicationTests,
   writeRunFile,
@@ -160,21 +161,7 @@ it('publishes trimmed base and head', async () => {
 
   await run({ ...request, action: 'publish', token: dryRun.token });
 
-  expect(fake.writes[0]?.commandArguments).toEqual([
-    'pr',
-    'create',
-    '--repo',
-    'github.com/sQVe/tau',
-    '--base',
-    'main',
-    '--head',
-    'feature',
-    '--title',
-    'Add a feature',
-    '--draft',
-    '--body-file',
-    expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
-  ]);
+  expect(fake.writes[0]?.commandArguments).toEqual(pullRequestCreateArguments({ draft: true }));
 });
 
 it('refuses to publish when only title.md changed and names it', async () => {
