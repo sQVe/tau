@@ -4,6 +4,7 @@ import { expect, it } from 'vitest';
 import { blockedOutputReason, loggedClose, nohupClose } from '../../../tests/bashGuardCommands.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import bashGuard from './bashGuard.js';
+import { blockReason } from './detachedOutputDecision.js';
 
 const toolCall = async (command: string): Promise<unknown> => {
   const fake = fakeExtensionApi();
@@ -24,7 +25,7 @@ it('blocks a detached nohup command that discards its stderr', async () => {
   const result = await toolCall(nohupClose);
 
   expect(result).toMatchObject({ block: true });
-  expect(blockedOutputReason(result)).toBeDefined();
+  expect(blockedOutputReason(result)).toBe(blockReason);
 });
 
 it('allows a detached setsid command whose effect writes a log', async () => {

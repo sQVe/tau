@@ -73,11 +73,12 @@ const spawnsSubshell = (
   { closing, start }: EnclosingGroup,
 ): boolean => (commands[start]?.depth ?? 0) > closing.depth;
 
-const innermostSubshellOf = (
+// A non-subshell group that closed before the target still leaves its `exec` in effect.
+const closedNonSubshellBefore = (
   commands: readonly ShellCommand[],
+  group: EnclosingGroup,
   index: number,
-): EnclosingGroup | undefined =>
-  innermostGroupWhere(commands, index, (group) => spawnsSubshell(commands, group));
+): boolean => !spawnsSubshell(commands, group) && group.closingIndex < index;
 
 // `exec` with only redirections changes the shell's own descriptors for the commands that follow
 // it in that shell. A command outside that shell does not inherit the change.
@@ -86,7 +87,8 @@ const changesShellStreams = (command: ShellCommand): boolean =>
 
 // Applies the `exec` commands whose innermost group is `group`, in source order. The enclosing
 // groups apply their own redirections between these passes, so a group redirection that starts
-// after an inherited `exec` still wins.
+// after an inherited `exec` still wins. A non-subshell group's `exec` still reaches the commands
+// after the group closes, because the brace group runs in the same shell.
 const applyExecRedirections = (
   scope: CompoundScope,
   index: number,
@@ -111,7 +113,19 @@ const applyExecRedirections = (
       continue;
     }
 
-    if (exec.innermost?.closing !== group) {
+    const innermost = exec.innermost;
+
+    const closedBeforeTarget =
+      group === undefined &&
+      innermost !== undefined &&
+      closedNonSubshellBefore(commands, innermost, index);
+
+    const inSameGroup = innermost !== undefined && innermost.closing === group;
+
+    const reachesTarget =
+      innermost === undefined ? group === undefined : inSameGroup || closedBeforeTarget;
+
+    if (!reachesTarget) {
       continue;
     }
 
@@ -165,7 +179,7 @@ export const compoundScope = (
     }
 
     if (changesShellStreams(command)) {
-      execs.push({ command, index, innermost: innermostSubshellOf(commands, index) });
+      execs.push({ command, index, innermost: innermostGroupOf(commands, index) });
     }
   }
 

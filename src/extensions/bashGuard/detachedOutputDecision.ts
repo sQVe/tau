@@ -113,7 +113,11 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
   const enclosing = enclosingOf(scope, index, pipeStdout);
   const own = streamsOf(command, enclosing);
   const ownDiscards = command.redirections.length > 0 && discardsStderr(own);
-  const script = shellScriptOf(command.arguments);
+  const { script, unreadable } = shellScriptOf(command.arguments);
+
+  if (unreadable) {
+    return failClosedFacts;
+  }
 
   if (script !== undefined) {
     const nested = scriptFacts(compoundFacts, script, own, depth);
@@ -145,7 +149,11 @@ const hidesFailure = (scope: CompoundScope, index: number, depth: number): boole
 
   const pipeStdout = pipelineStdout(scope, index);
   const own = streamsOf(command, enclosingOf(scope, index, pipeStdout));
-  const script = shellScriptOf(command.arguments);
+  const { script, unreadable } = shellScriptOf(command.arguments);
+
+  if (unreadable) {
+    return true;
+  }
 
   if (script !== undefined || command.group !== undefined) {
     const facts = compoundFacts(scope, index, depth);
@@ -191,6 +199,55 @@ const isJudgedCommand = (command: ShellCommand): boolean => {
   return someRedirectionCanFail(command);
 };
 
+// A foreground command that runs a script still detaches the script's own backgrounded members.
+// Past the budget the guard cannot inspect the deeper script, so it reports that it cannot tell.
+const nestedScriptFailure = (
+  scope: CompoundScope,
+  index: number,
+  depth: number,
+  judge: (scope: CompoundScope, index: number, depth: number) => HiddenFailure | undefined,
+): HiddenFailure | undefined => {
+  const command = scope.commands[index];
+
+  if (command === undefined) {
+    return undefined;
+  }
+
+  const { script, unreadable } = shellScriptOf(command.arguments);
+
+  if (unreadable) {
+    return 'unverifiable';
+  }
+
+  if (script === undefined) {
+    return undefined;
+  }
+
+  if (depth > maximumDepth) {
+    return 'unverifiable';
+  }
+
+  const commands = parseShellCommands(script);
+
+  if (commands === undefined) {
+    return undefined;
+  }
+
+  const inherited = streamsOf(command, enclosingOf(scope, index, pipelineStdout(scope, index)));
+
+  const nested = compoundScope(commands, inherited);
+
+  for (let nestedIndex = 0; nestedIndex < commands.length; nestedIndex += 1) {
+    const nestedFailure = judge(nested, nestedIndex, depth + 1);
+
+    if (nestedFailure !== undefined) {
+      return nestedFailure;
+    }
+  }
+
+  return undefined;
+};
+
 const judgesHiddenFailure = (
   scope: CompoundScope,
   index: number,
@@ -214,37 +271,7 @@ const judgesHiddenFailure = (
     return undefined;
   }
 
-  const script = shellScriptOf(command.arguments);
-
-  if (script === undefined) {
-    return undefined;
-  }
-
-  // A foreground command that runs a script still detaches the script's own backgrounded members.
-  // Past the budget the guard cannot inspect the deeper script, so it reports that it cannot tell.
-  if (depth > maximumDepth) {
-    return 'unverifiable';
-  }
-
-  const commands = parseShellCommands(script);
-
-  if (commands === undefined) {
-    return undefined;
-  }
-
-  const inherited = streamsOf(command, enclosingOf(scope, index, pipelineStdout(scope, index)));
-
-  const nested = compoundScope(commands, inherited);
-
-  for (let nestedIndex = 0; nestedIndex < commands.length; nestedIndex += 1) {
-    const nestedFailure = judgesHiddenFailure(nested, nestedIndex, depth + 1);
-
-    if (nestedFailure !== undefined) {
-      return nestedFailure;
-    }
-  }
-
-  return undefined;
+  return nestedScriptFailure(scope, index, depth, judgesHiddenFailure);
 };
 
 export const blockReason =

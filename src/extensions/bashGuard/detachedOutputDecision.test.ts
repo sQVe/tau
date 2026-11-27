@@ -53,6 +53,46 @@ const wrapperRows = wrapperPrefixes.map(([name, prefix]) => ({
 
 it.each<{ name: string; command: string; blocked: boolean }>([
   ...wrapperRows,
+  {
+    name: 'a detached script behind an env split string',
+    command: `env -S "sh -c 'cmd 2>/dev/null'" &`,
+    blocked: true,
+  },
+  {
+    name: 'a detached script behind an env value that depends on the environment',
+    command: `env -S "\${SHELL} -c 'cmd 2>/dev/null'" &`,
+    blocked: true,
+  },
+  {
+    name: 'an exec inside a brace group after the group redirection',
+    command: '{ exec 2>/dev/null; cmd & } 2>/tmp/x.log',
+    blocked: true,
+  },
+  {
+    name: 'an exec inside a brace group before the group discards stderr',
+    command: '{ exec 2>/tmp/x.log; cmd & } 2>/dev/null',
+    blocked: false,
+  },
+  {
+    name: 'an exec inside an if after the group redirection',
+    command: 'if true; then exec 2>/dev/null; cmd & fi 2>/tmp/x.log',
+    blocked: true,
+  },
+  {
+    name: 'an exec inside a while after the group redirection',
+    command: 'while true; do exec 2>/dev/null; cmd & done 2>/tmp/x.log',
+    blocked: true,
+  },
+  {
+    name: 'a brace group exec that reaches a later detached command',
+    command: '{ exec 2>/dev/null; }; cmd &',
+    blocked: true,
+  },
+  {
+    name: 'an exec inside a subshell after the group redirection',
+    command: '( exec 2>/dev/null; cmd & ) 2>/tmp/x.log',
+    blocked: true,
+  },
   { name: 'a detached command that keeps stderr', command: 'cmd &', blocked: false },
   {
     name: 'a detached command with stderr to /dev/null',

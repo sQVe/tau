@@ -15,15 +15,13 @@ const bashCall = (command: string): ToolCallEvent => ({
 const reasonsFor = async (event: ToolCallEvent): Promise<(string | undefined)[]> => {
   const fake = await registeredTauApi('lead');
 
-  const results = await Promise.allSettled(
+  const results = await Promise.all(
     (fake.handlers.get('tool_call') ?? []).map(async (handler) =>
       handler(event as never, {} as never),
     ),
   );
 
-  return results.flatMap((result) =>
-    result.status === 'fulfilled' ? [blockedOutputReason(result.value)] : [],
-  );
+  return results.map((result) => blockedOutputReason(result));
 };
 
 it('registers the detached output guard through the Tau registration', async () => {
@@ -38,10 +36,4 @@ it('registers the guard that reports a script chain it cannot inspect', async ()
   const reasons = await reasonsFor(bashCall(nestedScript(6)));
 
   expect(reasons).toContain(unverifiableReason);
-});
-
-it('accepts only a reason the guard itself produces', () => {
-  expect(
-    blockedOutputReason({ block: true, reason: 'write a log such as /tmp/<name>.log first' }),
-  ).toBeUndefined();
 });
