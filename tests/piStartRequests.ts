@@ -21,11 +21,13 @@ export const readerFor =
   (terminal, signal) =>
     foregroundArgv({ exec: fake.exec, cwd: root, signal }, terminal);
 
-// A matcher typed as the value it stands for, so a recorded call can use it as its signal.
+// The matcher stands for any AbortSignal, so the recorded call keeps its signal type.
+const anyAbortSignal = (): AbortSignal => expect.any(AbortSignal) as AbortSignal;
+
 export const readbackCall = (terminal: string): ExecCall => ({
   command: 'hc',
   commandArguments: ['get', '--json', '--', terminal],
-  signal: expect.any(AbortSignal) as AbortSignal,
+  signal: anyAbortSignal(),
 });
 
 const commonRequest = (root: string, readForegroundArgv: ForegroundReader): CommonRequest => ({

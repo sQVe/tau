@@ -301,6 +301,7 @@ const readStartedTerminalModel = async (
       readForegroundArgv: request.readForegroundArgv,
       terminal,
       model: request.model,
+      message: request.task,
       signal,
       deadline: readbackDeadline(deadline),
     });

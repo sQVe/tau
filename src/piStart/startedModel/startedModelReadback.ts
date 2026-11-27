@@ -15,6 +15,7 @@ export interface StartedModelReadRequest {
   readForegroundArgv: ReadForegroundArgv;
   terminal: string;
   model: string | undefined;
+  message: string | undefined;
   signal: AbortSignal | undefined;
   deadline: number;
 }
@@ -213,7 +214,11 @@ const pollStartedModel = async (
   const startedArgv = piArgv(attempt.argv);
 
   if (startedArgv !== undefined) {
-    const decision = decideStartedModel({ requested, argv: startedArgv });
+    const decision = decideStartedModel({
+      requested,
+      argv: startedArgv,
+      message: request.message,
+    });
 
     if (decision.kind === 'match') {
       return decision.model;

@@ -6,6 +6,7 @@ import type { StartedModelFacts } from './startedModel.js';
 const facts = (overrides: Partial<StartedModelFacts> = {}): StartedModelFacts => ({
   requested: { provider: 'claude-bridge', id: 'claude-opus-5-5' },
   argv: ['pi', '--provider', 'claude-bridge', '--model', 'claude-opus-5-5'],
+  message: undefined,
   ...overrides,
 });
 
@@ -32,6 +33,24 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
       requested: 'default',
       started: 'claude-bridge/claude-opus-5-5',
     },
+  },
+  {
+    name: 'a task message that starts with a model flag',
+    facts: facts({
+      requested: { provider: undefined, id: undefined },
+      argv: ['pi', '--model=other'],
+      message: '--model=other',
+    }),
+    expected: { kind: 'match', model: 'default' },
+  },
+  {
+    name: 'a real model flag before a task message that starts with one',
+    facts: facts({
+      requested: { provider: undefined, id: 'claude-opus-5-5' },
+      argv: ['pi', '--model', 'claude-opus-5-5', '--model=other'],
+      message: '--model=other',
+    }),
+    expected: { kind: 'match', model: 'claude-opus-5-5' },
   },
   {
     name: 'a requested model and no model in the argv',

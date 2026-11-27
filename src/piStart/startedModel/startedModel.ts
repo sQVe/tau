@@ -6,6 +6,7 @@ export interface RequestedModel {
 export interface StartedModelFacts {
   requested: RequestedModel;
   argv: readonly string[];
+  message: string | undefined;
 }
 
 export type StartedModelDecision =
@@ -66,8 +67,16 @@ const displayModel = ({ provider, id }: RequestedModel): string => {
   return provider === undefined ? id : `${provider}/${id}`;
 };
 
+// The task message is the last positional argument, so a message that starts with a model flag is
+// not the flag the launcher passed.
+const withoutTrailingMessage = (
+  argv: readonly string[],
+  message: string | undefined,
+): readonly string[] =>
+  message !== undefined && argv.at(-1) === message ? argv.slice(0, -1) : argv;
+
 export const decideStartedModel = (facts: StartedModelFacts): StartedModelDecision => {
-  const started = startedReference(facts.argv);
+  const started = startedReference(withoutTrailingMessage(facts.argv, facts.message));
 
   if (started === 'unreadable') {
     return { kind: 'unreadable' };

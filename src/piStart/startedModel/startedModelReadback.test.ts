@@ -31,6 +31,7 @@ it('clears the read timer and abort listener when a read throws synchronously', 
       readForegroundArgv: read,
       terminal: 't-new',
       model: undefined,
+      message: undefined,
       signal: controller.signal,
       deadline: Date.now() + 30_000,
     }).catch((error: unknown) => error);
@@ -67,6 +68,7 @@ it('reports a permanent read failure without polling the whole budget', async ()
       readForegroundArgv: read,
       terminal: 't-new',
       model: undefined,
+      message: undefined,
       signal: undefined,
       deadline: Date.now() + 30_000,
     }).catch((error: unknown) => error);
@@ -101,6 +103,7 @@ it('reports a terminal that never shows a Pi foreground before the whole budget'
       readForegroundArgv: read,
       terminal: 't-new',
       model: undefined,
+      message: undefined,
       signal: undefined,
       deadline: Date.now() + 30_000,
     }).catch((error: unknown) => error);
@@ -134,6 +137,7 @@ it('keeps an earlier read failure when a later read uses the rest of the budget'
       readForegroundArgv: read,
       terminal: 't-new',
       model: undefined,
+      message: undefined,
       signal: undefined,
       deadline: Date.now() + 1_000,
     }).catch((error: unknown) => error);
