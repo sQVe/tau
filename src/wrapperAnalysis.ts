@@ -4,6 +4,8 @@
 export interface CommandWords {
   readonly words: readonly string[];
   readonly lookup: boolean;
+  // True when an `env -S` value depends on the environment, so the caller cannot know what runs.
+  readonly unreadable: boolean;
 }
 
 export interface CommandStart {
@@ -61,6 +63,31 @@ const commandKeywords: ReadonlySet<string> = new Set([
   'until',
   'while',
 ]);
+
+// `coproc [NAME] command` runs the command that follows. Bash reads NAME only before a compound
+// command; before a simple command the second word is already that command, as in `coproc hc send`.
+const coprocOpeners: ReadonlySet<string> = new Set([
+  '(',
+  '((',
+  '[[',
+  '{',
+  'case',
+  'for',
+  'if',
+  'select',
+  'until',
+  'while',
+]);
+
+const coprocNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
+const afterCoproc = (words: readonly string[], index: number): number => {
+  const name = words[index + 1] ?? '';
+  const opener = words[index + 2] ?? '';
+  const namesCommand = coprocNamePattern.test(name) && coprocOpeners.has(opener);
+
+  return namesCommand ? index + 2 : index + 1;
+};
 
 // Each wrapper runs the command after its own options and fixed arguments. The set lists the
 // options that take the next word as their value.
@@ -317,7 +344,9 @@ export const commandStart = (words: readonly string[]): CommandStart => {
     // binary, whose own options the wrapper table below reads.
     const afterLeading = afterLeadingWords(words, index, wrappers.length === 0);
 
-    if (afterLeading !== index) {
+    if (word === 'coproc') {
+      index = afterCoproc(words, index);
+    } else if (afterLeading !== index) {
       index = afterLeading;
     } else if (valueOptions === undefined) {
       break;
@@ -333,6 +362,20 @@ export const commandStart = (words: readonly string[]): CommandStart => {
 
   return { index: Math.min(index, words.length), wrappers, lookup };
 };
+
+// `setsid -f` always forks and exits, so the command it starts is detached even without a `&`.
+const setsidForkOption = /^-[A-Za-z]*f[A-Za-z]*$/u;
+
+export const detachesProcess = (words: readonly string[]): boolean =>
+  commandStart(words).wrappers.some(({ name, index }) => {
+    if (name !== 'setsid') {
+      return false;
+    }
+
+    const option = words[index + 1] ?? '';
+
+    return option === '--fork' || setsidForkOption.test(option);
+  });
 
 const envWhitespace: ReadonlySet<string> = new Set([' ', '\t', '\n', '\r', '\v', '\f']);
 
@@ -550,7 +593,13 @@ export const splitEnvString = (value: string): EnvSplitString => {
 };
 
 const splitStringPrefix = '--split-string=';
+const splitStringOption = '--split-string';
 const splitStringOptionLetter = 'S';
+
+// `env` parses long options with getopt_long, which accepts any unambiguous abbreviation, so
+// `--split` names the same option as `--split-string`.
+const namesSplitStringOption = (word: string): boolean =>
+  word.length > 2 && splitStringOption.startsWith(word);
 
 // The long option takes its value after `=`, or as the next word.
 const longSplitStringAt = (
@@ -559,8 +608,15 @@ const longSplitStringAt = (
 ): { value: string; end: number } | undefined => {
   const word = words[index] ?? '';
 
-  if (word === '--split-string') {
+  if (namesSplitStringOption(word)) {
     return { value: words[index + 1] ?? '', end: index + 2 };
+  }
+
+  const equals = word.indexOf('=');
+  const option = equals === -1 ? word : word.slice(0, equals);
+
+  if (equals !== -1 && namesSplitStringOption(option)) {
+    return { value: word.slice(equals + 1), end: index + 1 };
   }
 
   return word.startsWith(splitStringPrefix)
@@ -691,7 +747,11 @@ export const commandWords = (words: readonly string[]): CommandWords => {
   const expanded = withEnvSplitStrings(words);
   const { index, lookup } = commandStart(expanded.words);
 
-  return { words: expanded.words.slice(index), lookup };
+  return {
+    words: expanded.words.slice(index),
+    lookup,
+    unreadable: expanded.unreadable,
+  };
 };
 
 // The shell builtins that run the command after them in the current shell. A wrapper such as `env`

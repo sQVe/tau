@@ -23,17 +23,20 @@ const runsHcTyping = ([name, ...rest]: readonly string[]) => {
   return runsHc && typesText && !asksHelp(rest.slice(subcommandIndex + 1));
 };
 
-const commandWordsOf = (words: readonly string[]): readonly string[] => {
+const runsTypingCommand = (words: readonly string[]): boolean => {
   const command = commandWords(words);
 
-  return command.lookup ? [] : command.words;
+  // An unreadable `env -S` value may still run a typing command, so the guard fails closed.
+  if (command.unreadable) {
+    return true;
+  }
+
+  return !command.lookup && runsHcTyping(command.words);
 };
 
 export const typesIntoTerminal = (source: string): boolean =>
   (parseShellCommands(source) ?? []).some((command) => {
-    const words = commandWordsOf(command.arguments);
-
-    if (runsHcTyping(words)) {
+    if (runsTypingCommand(command.arguments)) {
       return true;
     }
 

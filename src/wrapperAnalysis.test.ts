@@ -49,6 +49,7 @@ describe('commandWords', () => {
     expect(commandWords(['echo', 'env', '-S', 'a b'])).toEqual({
       words: ['echo', 'env', '-S', 'a b'],
       lookup: false,
+      unreadable: false,
     });
   });
 
@@ -110,10 +111,11 @@ describe('commandWords', () => {
     expect(commandWords(['env', '-iS', 'hc send t1 x']).words).toEqual(['hc', 'send', 't1', 'x']);
   });
 
-  it('drops the words of an env -S value that depends on the environment', () => {
+  it('surfaces an env -S value that depends on the environment instead of reporting no command', () => {
     expect(commandWords(['env', '-S', `\${SHELL} -c cmd`])).toEqual({
       words: [],
       lookup: false,
+      unreadable: true,
     });
   });
 
@@ -121,11 +123,35 @@ describe('commandWords', () => {
     expect(commandWords(['env', '-S', 'a\\ b sh -c cmd'])).toEqual({
       words: [],
       lookup: false,
+      unreadable: false,
     });
   });
 
   it.each([
-    { name: 'a negation', keyword: '!' },
+    { name: 'a spaced abbreviation', words: ['env', '--split', 'sh -c cmd'] },
+    { name: 'an attached abbreviation', words: ['env', '--split=sh -c cmd'] },
+  ])('expands an abbreviated env split string: $name', ({ words }) => {
+    expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
+  });
+
+  it('reads the command a coproc runs', () => {
+    expect(commandWords(['coproc', 'hc', 'send', 't1', 'x']).words).toEqual([
+      'hc',
+      'send',
+      't1',
+      'x',
+    ]);
+
+    expect(commandWords(['coproc', 'mycop', '{', 'hc', 'send', 't1', 'x', '}']).words).toEqual([
+      'hc',
+      'send',
+      't1',
+      'x',
+      '}',
+    ]);
+  });
+
+  it.each([
     { name: 'a brace', keyword: '{' },
     { name: 'an if', keyword: 'if' },
     { name: 'a then', keyword: 'then' },
@@ -188,6 +214,7 @@ describe('commandWords', () => {
       expect(commandWords([name, '-x'])).toEqual({
         words: [name, '-x'],
         lookup: false,
+        unreadable: false,
       });
     },
   );
@@ -196,11 +223,13 @@ describe('commandWords', () => {
     expect(commandWords(['command', '-v', 'sh', '-c', 'cmd'])).toEqual({
       words: ['sh', '-c', 'cmd'],
       lookup: true,
+      unreadable: false,
     });
 
     expect(commandWords(['command', '-p', '--', 'hc', 'send'])).toEqual({
       words: ['hc', 'send'],
       lookup: false,
+      unreadable: false,
     });
   });
 });
