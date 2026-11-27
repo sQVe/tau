@@ -162,6 +162,9 @@ const leakedForOfBindingSource = (): string =>
 const forInKeySource = (): string =>
   'export const install = (request) => {\n  for (const key in request.headers) {\n    const name = key;\n    name.x = () => 1;\n  }\n};\n';
 
+const leakedForInBindingSource = (): string =>
+  "import { key } from './rules.js';\nexport const install = (request) => {\n  for (const key in request.headers) {\n  }\n  key.run = () => 1;\n};\n";
+
 it('reports a class declaration assigned to a property of a parameter', () => {
   expect(impurities('src/pure/decide.ts', classDeclarationPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:3: assigns a function to a property',
@@ -208,6 +211,12 @@ it('keeps a for-of loop binding inside the loop', () => {
 
 it('does not pass the enumerated object kind to a for-in key', () => {
   expect(impurities('src/pure/decide.ts', forInKeySource(), testRegistry)).toEqual([]);
+});
+
+it('keeps a for-in loop binding inside the loop', () => {
+  expect(impurities('src/pure/decide.ts', leakedForInBindingSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:5: assigns a function to a property',
+  ]);
 });
 
 it('reports a function assigned to a property of a global or of a nested member chain', () => {

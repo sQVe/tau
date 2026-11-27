@@ -183,6 +183,10 @@ export const impurities = (path: string, source: string, registry: readonly stri
       bindings.setLoopIterable(iterable);
     },
     'ForOfStatement:exit': bindings.exit,
+    ForInStatement: () => {
+      bindings.enter(false);
+    },
+    'ForInStatement:exit': bindings.exit,
     SwitchStatement: (node) => {
       // The switch body is one lexical block, so a class or function declared in a case is visible
       // in the other cases but not after the switch.
