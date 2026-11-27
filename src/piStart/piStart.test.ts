@@ -118,6 +118,26 @@ it('a space start without a terminal in its reply returns no terminal', async ()
   expect(fake.calls).toHaveLength(1);
 });
 
+it('a required-terminal start rejects a reply without a terminal', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  fake.overrideOutput('space.new', '{"ok":true}');
+
+  await expect(
+    startPiSession(
+      { exec: fake.exec, cwd: root },
+      startRequest(root, readerFor(fake, root), {
+        target: { name: 'ticket-1' },
+        tabName: 'architect',
+      }),
+      { requireTerminal: true },
+    ),
+  ).rejects.toThrow('herdr-app do printed unexpected output');
+
+  expect(fake.calls).toHaveLength(1);
+});
+
 it('a space start names its first tab', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);

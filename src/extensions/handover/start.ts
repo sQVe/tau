@@ -39,18 +39,6 @@ export interface StartHandoverResult {
   spaceStatus: SpaceStatus;
 }
 
-type PiSessionStart = Awaited<ReturnType<typeof startPiSession>>;
-
-// `startPiSession` reports the model only together with the terminal, and the reply schema already
-// required that terminal. Report a start that breaks the pairing instead of inventing a model.
-export const startedModelOf = (started: PiSessionStart): string => {
-  if (!('model' in started)) {
-    throw new Error('herdr-app do reported no terminal');
-  }
-
-  return started.model;
-};
-
 const launchReplySchema = Type.Object({
   space: Type.String({ minLength: 1 }),
   tab: Type.String({ minLength: 1 }),
@@ -120,17 +108,21 @@ export const startHandover = async (
   const task = sender === undefined ? text : `${senderLine(sender)}\n\n${text}`;
   const environment = sender === undefined ? undefined : senderEnvironment(sender);
 
-  const started = await startPiSession(runtime, {
-    folder: request.folder,
-    target: () => launchTarget(runtime, request),
-    tabName: tabName('lead', request.title),
-    task,
-    model: request.model,
-    session: undefined,
-    bareRoot: request.bareRoot,
-    environment,
-    readForegroundArgv: (terminal, signal) => foregroundArgv({ ...runtime, signal }, terminal),
-  });
+  const started = await startPiSession(
+    runtime,
+    {
+      folder: request.folder,
+      target: () => launchTarget(runtime, request),
+      tabName: tabName('lead', request.title),
+      task,
+      model: request.model,
+      session: undefined,
+      bareRoot: request.bareRoot,
+      environment,
+      readForegroundArgv: (terminal, signal) => foregroundArgv({ ...runtime, signal }, terminal),
+    },
+    { requireTerminal: true },
+  );
 
   const parsed = parseJson('herdr-app do', started.reply);
 
@@ -143,7 +135,7 @@ export const startHandover = async (
     space: parsed.space,
     tab: parsed.tab,
     terminal: parsed.terminal,
-    model: startedModelOf(started),
+    model: started.model,
     spaceStatus,
   };
 };

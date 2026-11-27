@@ -89,6 +89,19 @@ type TerminalReply = (
   error: unknown;
 };
 
+interface PiSessionStarted {
+  reply: string;
+  target: PiStartTarget;
+  terminal: string;
+  model: string;
+}
+
+type PiSessionStart = { reply: string; target: PiStartTarget } | PiSessionStarted;
+
+interface PiSessionStartOptions {
+  requireTerminal: true;
+}
+
 export const launchTimeoutMilliseconds = 30_000;
 // A launch that used its whole budget still leaves a window to read the model, so a slow launch is
 // not reported as an unknown model.
@@ -422,13 +435,22 @@ export const launchPiSessionRightOf = async (
   );
 };
 
-export const startPiSession = async (
+export function startPiSession(
   runtime: CommandRuntime,
   request: PiStartRequest,
-): Promise<
-  | { reply: string; target: PiStartTarget }
-  | { reply: string; target: PiStartTarget; terminal: string; model: string }
-> => {
+  options: PiSessionStartOptions,
+): Promise<PiSessionStarted>;
+
+export function startPiSession(
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+): Promise<PiSessionStart>;
+
+export async function startPiSession(
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+  options?: PiSessionStartOptions,
+): Promise<PiSessionStart> {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
   const target = isTargetResolver(request.target) ? await request.target() : request.target;
@@ -446,6 +468,11 @@ export const startPiSession = async (
     { timeout: launchTimeoutMilliseconds },
   );
 
+  // A caller that needs the terminal refuses the reply here, where the reply enters.
+  if (options?.requireTerminal === true) {
+    checkOutput('herdr-app do', terminalReplySchema, parseJson('herdr-app do', reply));
+  }
+
   const terminal = replyTerminal(reply);
 
   if (terminal === undefined) {
@@ -457,7 +484,7 @@ export const startPiSession = async (
   const model = await readStartedTerminalModel(request, reply, terminal, deadline, runtime.signal);
 
   return { reply, target, terminal, model };
-};
+}
 
 export const startPiSessionRightOf = async (
   runtime: CommandRuntime,
