@@ -28,6 +28,21 @@ export const targetOf = (streams: Streams, fileDescriptor: number): StreamTarget
   return terminalDescriptors.has(fileDescriptor) ? terminal : unknownTarget;
 };
 
+// A stream with no redirection reaches the terminal, which is visible.
+export const showsStderr = (streams: Streams): boolean => {
+  const stderr = targetOf(streams, 2);
+  const writesVisibleFile = stderr.kind === 'file' && stderr.path !== devNull;
+
+  return stderr.kind === 'terminal' || writesVisibleFile;
+};
+
+export const discardsStderr = (streams: Streams): boolean => {
+  const stderr = targetOf(streams, 2);
+  const writesDevNull = stderr.kind === 'file' && stderr.path === devNull;
+
+  return stderr.kind === 'closed' || writesDevNull;
+};
+
 const fileTarget = (path: string): StreamTarget => ({ kind: 'file', path });
 
 const duplicatedTarget = (streams: Streams, target: string): StreamTarget => {

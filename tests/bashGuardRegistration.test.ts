@@ -1,3 +1,4 @@
+import type { ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
 import { blockedOutputReason, nohupClose } from './bashGuardCommands.js';
@@ -5,7 +6,13 @@ import { registeredTauApi } from './tauRegistration.js';
 
 it('registers the detached output guard through the Tau registration', async () => {
   const fake = await registeredTauApi('lead');
-  const event = { toolName: 'bash', input: { command: nohupClose } };
+
+  const event: ToolCallEvent = {
+    type: 'tool_call',
+    toolCallId: 'tool-call-1',
+    toolName: 'bash',
+    input: { command: nohupClose },
+  };
 
   const results = await Promise.allSettled(
     (fake.handlers.get('tool_call') ?? []).map(async (handler) =>

@@ -1,8 +1,22 @@
 import { parseShellCommands } from '../../shell.js';
 import type { ShellCommand, ShellRedirection } from '../../shell.js';
 import { runsRedirectionsOnlyExec, shellScriptOf } from '../../wrapperAnalysis.js';
-import { devNull, isDescriptor, streamsOf, targetOf, terminal } from './detachedStreams.js';
-import type { StreamTarget, Streams } from './detachedStreams.js';
+import {
+  compoundScope,
+  enclosingOf,
+  innermostGroupOf,
+  memberRangeWithFallbackOf,
+  pipelineStdout,
+} from './detachedScope.js';
+import type { CompoundScope } from './detachedScope.js';
+import {
+  devNull,
+  discardsStderr,
+  isDescriptor,
+  showsStderr,
+  streamsOf,
+} from './detachedStreams.js';
+import type { Streams } from './detachedStreams.js';
 
 export interface DetachedOutputFacts {
   toolName: string;
@@ -24,272 +38,12 @@ interface CompoundFacts {
   readonly ownDiscards: boolean;
 }
 
-interface CompoundScope {
-  commands: readonly ShellCommand[];
-  inherited: Streams;
-  // Members below this index sit inside a group whose redirections `inherited` already includes.
-  from: number;
-  enclosingByIndex: Map<number, Streams>;
-  groups: readonly EnclosingGroup[];
-  execs: readonly ExecCommand[];
-}
-
 type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
-
-interface EnclosingGroup {
-  readonly closing: ShellCommand;
-  readonly closingIndex: number;
-  readonly start: number;
-}
-
-interface ExecCommand {
-  readonly command: ShellCommand;
-  readonly index: number;
-  readonly innermost: EnclosingGroup | undefined;
-}
-
 type HiddenFailure = 'hidden' | 'unverifiable';
 
 const maximumDepth = 4;
-const emptyStreams: Streams = new Map();
-
-// A stream with no redirection reaches the terminal, which is visible.
-const showsStderr = (streams: Streams): boolean => {
-  const stderr = targetOf(streams, 2);
-  const writesVisibleFile = stderr.kind === 'file' && stderr.path !== devNull;
-
-  return stderr.kind === 'terminal' || writesVisibleFile;
-};
-
-const discardsStderr = (streams: Streams): boolean => {
-  const stderr = targetOf(streams, 2);
-  const writesDevNull = stderr.kind === 'file' && stderr.path === devNull;
-
-  return stderr.kind === 'closed' || writesDevNull;
-};
-
-const encloses = (group: number | undefined, closingIndex: number, index: number): boolean =>
-  group !== undefined && group <= index && index < closingIndex;
-
-const innermostGroupOf = (
-  commands: readonly ShellCommand[],
-  index: number,
-): EnclosingGroup | undefined => {
-  let innermost: EnclosingGroup | undefined;
-
-  for (const [closingIndex, command] of commands.entries()) {
-    const start = command.group;
-
-    if (start === undefined || !encloses(start, closingIndex, index)) {
-      continue;
-    }
-
-    if (innermost === undefined || start > innermost.start) {
-      innermost = { closing: command, closingIndex, start };
-    }
-  }
-
-  return innermost;
-};
-
-// A command in a child shell inherits the descriptors its parent has when it starts, so an `exec`
-// in the parent changes them too. An `exec` in a child shell never reaches the parent.
-const runsInShellOf = (command: ShellCommand, shellOwner: ShellCommand): boolean =>
-  command.shellId === shellOwner.shellId || command.shellId.startsWith(`${shellOwner.shellId}.`);
-
-// Only a parenthesis group runs its body in a child shell. A brace group or a compound keyword runs
-// in the current shell, so an `exec` there changes the streams outside the group too.
-const spawnsSubshell = (
-  commands: readonly ShellCommand[],
-  { closing, start }: EnclosingGroup,
-): boolean => (commands[start]?.depth ?? 0) > closing.depth;
-
-const innermostSubshellOf = (
-  commands: readonly ShellCommand[],
-  index: number,
-): EnclosingGroup | undefined => {
-  let innermost: EnclosingGroup | undefined;
-
-  for (const [closingIndex, command] of commands.entries()) {
-    const start = command.group;
-
-    if (start === undefined || !encloses(start, closingIndex, index)) {
-      continue;
-    }
-
-    const group = { closing: command, closingIndex, start };
-
-    if (!spawnsSubshell(commands, group)) {
-      continue;
-    }
-
-    if (innermost === undefined || start > innermost.start) {
-      innermost = group;
-    }
-  }
-
-  return innermost;
-};
-
-// `exec` with only redirections changes the shell's own descriptors for the commands that follow
-// it in that shell. A command outside that shell does not inherit the change.
-const changesShellStreams = (command: ShellCommand): boolean =>
-  command.redirections.length > 0 && runsRedirectionsOnlyExec(command.arguments);
-
-// Applies the `exec` commands whose innermost group is `group`, in source order. The enclosing
-// groups apply their own redirections between these passes, so a group redirection that starts
-// after an inherited `exec` still wins.
-const applyExecRedirections = (
-  scope: CompoundScope,
-  index: number,
-  inherited: Streams,
-  group: ShellCommand | undefined,
-): Streams => {
-  const { commands, execs, from } = scope;
-  const target = commands[index];
-
-  if (target === undefined) {
-    return inherited;
-  }
-
-  let streams = inherited;
-
-  for (const exec of execs) {
-    if (exec.index < from || exec.index >= index) {
-      continue;
-    }
-
-    if (!runsInShellOf(target, exec.command)) {
-      continue;
-    }
-
-    if (exec.innermost?.closing !== group) {
-      continue;
-    }
-
-    streams = streamsOf(exec.command, streams);
-  }
-
-  return streams;
-};
-
-const enclosingGroupsOf = (scope: CompoundScope, index: number): readonly EnclosingGroup[] =>
-  scope.groups.filter(({ start, closingIndex }) => encloses(start, closingIndex, index));
-
-const enclosingStreams = (
-  scope: CompoundScope,
-  index: number,
-  pipeStdout: StreamTarget | undefined,
-): Streams => {
-  const { inherited } = scope;
-  const enclosing = enclosingGroupsOf(scope, index);
-
-  let streams = applyExecRedirections(scope, index, inherited, undefined);
-
-  // The pipeline redirects the element's stdout when the shell builds the pipeline, before the
-  // commands of an enclosing group run, so a group redirection still wins over it.
-  if (pipeStdout !== undefined) {
-    streams = new Map([...streams.entries(), [1, pipeStdout] as const]);
-  }
-
-  for (const group of enclosing) {
-    const groupStreams = streamsOf(group.closing, streams);
-
-    streams = applyExecRedirections(scope, index, groupStreams, group.closing);
-  }
-
-  return streams;
-};
-
-const compoundScope = (
-  commands: readonly ShellCommand[],
-  inherited: Streams,
-  from = 0,
-): CompoundScope => {
-  const groups: EnclosingGroup[] = [];
-  const execs: ExecCommand[] = [];
-
-  for (const [index, command] of commands.entries()) {
-    const start = command.group;
-
-    if (start !== undefined && start >= from) {
-      groups.push({ closing: command, closingIndex: index, start });
-    }
-
-    if (changesShellStreams(command)) {
-      execs.push({ command, index, innermost: innermostSubshellOf(commands, index) });
-    }
-  }
-
-  groups.sort((left, right) => left.start - right.start || right.closingIndex - left.closingIndex);
-
-  return { commands, inherited, from, enclosingByIndex: new Map(), groups, execs };
-};
-
-const enclosingOf = (scope: CompoundScope, index: number, pipeStdout?: StreamTarget): Streams => {
-  const cached = scope.enclosingByIndex.get(index);
-
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const enclosing = enclosingStreams(scope, index, pipeStdout);
-
-  scope.enclosingByIndex.set(index, enclosing);
-
-  return enclosing;
-};
-
-// Where a command's stdout goes when nothing else redirects it.
-const stdoutTargetOf = (scope: CompoundScope, index: number): StreamTarget => {
-  const command = scope.commands[index];
-
-  if (command === undefined) {
-    return terminal;
-  }
-
-  return targetOf(streamsOf(command, enclosingOf(scope, index)), 1);
-};
-
-// A command in a pipeline writes to the next element, and the element that leaves the pipeline
-// decides where the merged stream goes. Following the chain keeps a `2>&1` from reading the pipe
-// as the terminal, and still reads a consumer's log file.
-const pipelineStdout = (scope: CompoundScope, index: number): StreamTarget | undefined => {
-  let target = scope.commands[index]?.pipeTarget;
-  const seen = new Set<number>();
-
-  while (target !== undefined && !seen.has(target)) {
-    seen.add(target);
-
-    const next = scope.commands[target]?.pipeTarget;
-
-    if (next === undefined) {
-      return stdoutTargetOf(scope, target);
-    }
-
-    target = next;
-  }
-
-  return undefined;
-};
-
 const noFacts: CompoundFacts = { shows: false, discards: false, ownDiscards: false };
 const failClosedFacts: CompoundFacts = { shows: false, discards: true, ownDiscards: false };
-
-const memberRangeWithFallbackOf = (
-  scope: CompoundScope,
-  closingIndex: number | undefined,
-): { start: number; end: number; fallbackStreams: Streams } => {
-  const closing = closingIndex === undefined ? undefined : scope.commands[closingIndex];
-  const start = closing?.group ?? 0;
-  const end = closingIndex ?? scope.commands.length;
-  const pipeStdout = closingIndex === undefined ? undefined : pipelineStdout(scope, closingIndex);
-
-  const fallbackStreams =
-    closing === undefined ? scope.inherited : streamsOf(closing, scope.inherited, pipeStdout);
-
-  return { start, end, fallbackStreams };
-};
 
 // A compound reports its last command's exit status, so its last member with arguments decides
 // whether a reader sees the failure. An earlier member's stderr is not judged, because a detached
@@ -511,7 +265,7 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
     return undefined;
   }
 
-  const scope = compoundScope(commands, emptyStreams);
+  const scope = compoundScope(commands, new Map());
   let unverifiable = false;
 
   for (let index = 0; index < commands.length; index += 1) {

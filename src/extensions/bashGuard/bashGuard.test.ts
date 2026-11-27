@@ -1,3 +1,4 @@
+import type { ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
 import { blockedOutputReason, loggedClose, nohupClose } from '../../../tests/bashGuardCommands.js';
@@ -7,9 +8,16 @@ import bashGuard from './bashGuard.js';
 const toolCall = async (command: string): Promise<unknown> => {
   const fake = fakeExtensionApi();
 
+  const event: ToolCallEvent = {
+    type: 'tool_call',
+    toolCallId: 'tool-call-1',
+    toolName: 'bash',
+    input: { command },
+  };
+
   bashGuard(fake.pi);
 
-  return fake.handler('tool_call')({ toolName: 'bash', input: { command } }, {} as never);
+  return fake.handler('tool_call')(event, {} as never);
 };
 
 it('blocks a detached nohup command that discards its stderr', async () => {
@@ -28,10 +36,14 @@ it('ignores a tool call that is not bash', async () => {
 
   bashGuard(fake.pi);
 
-  const result = await fake.handler('tool_call')(
-    { toolName: 'read', input: { path: '/tmp/file' } },
-    {} as never,
-  );
+  const event: ToolCallEvent = {
+    type: 'tool_call',
+    toolCallId: 'tool-call-2',
+    toolName: 'read',
+    input: { path: '/tmp/file' },
+  };
+
+  const result = await fake.handler('tool_call')(event, {} as never);
 
   expect(result).toBeUndefined();
 });
