@@ -173,9 +173,9 @@ it('publishes trimmed base and head', async () => {
     'feature',
     '--title',
     'Add a feature',
+    '--draft',
     '--body-file',
     expect.stringMatching(/tau-publish-[^/]+\/\d+-body\.md$/u),
-    '--draft',
   ]);
 });
 

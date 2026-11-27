@@ -73,11 +73,24 @@ it('marks the review file of a review command', async () => {
   expect(filePathAt(plan, plan.fileArguments[0]?.index ?? -1)).toMatch(/review\.json$/u);
 });
 
-it('does not mistake a flag-like title for the body file', async () => {
+it('does not mistake a flag-like base for the body file', async () => {
   const plan = await planned(
     { ...dryRunPullRequest('/run/1'), base: '--body-file' },
     pullRequestFiles,
   );
+
+  expect(plan.fileArguments).toHaveLength(1);
+
+  const [fileArgument] = plan.fileArguments;
+
+  expect(filePathAt(plan, fileArgument?.index ?? -1)).toBe(fileArgument?.file.path);
+});
+
+it('does not mistake a flag-like title for the body file', async () => {
+  const plan = await planned(dryRunPullRequest('/run/1'), {
+    ...pullRequestFiles,
+    'title.md': '--body-file\n',
+  });
 
   expect(plan.fileArguments).toHaveLength(1);
 

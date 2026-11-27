@@ -36,6 +36,10 @@ export const verifiedCopyArguments = (
   const copies: VerifiedCopy[] = [];
 
   for (const { index, file } of fileArguments) {
+    if (commandArguments[index] !== file.path) {
+      throw new Error('The publication command reads a file the plan did not verify.');
+    }
+
     const path = join(directory, `${index}-${basename(file.path)}`);
 
     rewritten[index] = path;

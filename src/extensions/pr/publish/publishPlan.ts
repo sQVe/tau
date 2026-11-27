@@ -182,20 +182,33 @@ const rejectPathLinksFrom = async (
 const rejectPathLinks = (directory: string, file: string): Promise<void> =>
   rejectPathLinksFrom(directory, file.split(/[/\\]/u), 0);
 
+// A parent that is a regular file fails with ENOTDIR, which reads as a missing path.
 const readPublicationFile = async (directory: string, file: string): Promise<RunFile> => {
   const path = join(directory, file);
 
-  await rejectPathLinks(directory, file);
+  try {
+    await rejectPathLinks(directory, file);
 
-  const entry = await existingEntry(path);
+    const entry = await existingEntry(path);
 
-  if (entry === undefined) {
-    throw new Error(`No ${file} at ${path}. Write it there first.`);
+    if (entry === undefined) {
+      throw new Error(`No ${file} at ${path}. Write it there first.`);
+    }
+
+    const bytes = await readRunFile(path);
+
+    return { file, path, bytes, text: bytes.toString('utf8') };
+  } catch (error: unknown) {
+    const isObject = typeof error === 'object' && error !== null;
+    const carriesCode = isObject && 'code' in error;
+    const isNotDirectory = carriesCode && error.code === 'ENOTDIR';
+
+    if (isNotDirectory) {
+      throw new Error(`No ${file} at ${path}. Write it there first.`, { cause: error });
+    }
+
+    throw error;
   }
-
-  const bytes = await readRunFile(path);
-
-  return { file, path, bytes, text: bytes.toString('utf8') };
 };
 
 const requireCommentFile = (action: string, file: string | undefined): string => {
@@ -325,8 +338,8 @@ const rejectCreateInput = (action: string, name: string, value: unknown) => {
   throw new Error(`${action} cannot take ${name} with pr. Omit ${name} or pr.`);
 };
 
-const appendFile = (
-  commandArguments: string[],
+const withFileArgument = (
+  commandArguments: readonly string[],
   flag: string,
   file: RunFile,
 ): Pick<PublicationPlan, 'commandArguments' | 'fileArguments'> => ({
@@ -345,8 +358,10 @@ const readPullRequestEdit = async (target: PublicationTarget): Promise<Publicati
 
   const { title, bodyFile, files, findings, repositoryTarget } = await readPullRequestFiles(target);
 
-  const { commandArguments, fileArguments } = appendFile(
-    ['pr', 'edit', String(pr), '--repo', repositoryTarget, '--title', title],
+  const baseArguments = ['pr', 'edit', String(pr), '--repo', repositoryTarget, '--title', title];
+
+  const { commandArguments, fileArguments } = withFileArgument(
+    baseArguments,
     '--body-file',
     bodyFile,
   );
@@ -371,13 +386,25 @@ const readPullRequestCreate = async (target: PublicationTarget): Promise<Publica
   const isDraft = request.draft === true;
   const draft = isDraft ? ['--draft'] : [];
 
-  const { commandArguments, fileArguments } = appendFile(
-    ['pr', 'create', '--repo', repositoryTarget, '--base', base, '--head', head, '--title', title],
+  const baseArguments = [
+    'pr',
+    'create',
+    '--repo',
+    repositoryTarget,
+    '--base',
+    base,
+    '--head',
+    head,
+    '--title',
+    title,
+    ...draft,
+  ];
+
+  const { commandArguments, fileArguments } = withFileArgument(
+    baseArguments,
     '--body-file',
     bodyFile,
   );
-
-  commandArguments.push(...draft);
 
   const facts: PublicationTargetFacts = {
     kind: 'pullRequest',
@@ -405,11 +432,8 @@ const readComment = async (target: PublicationTarget): Promise<PublicationPlan> 
 
   const repositoryTarget = formatRepository(repository);
 
-  const { commandArguments, fileArguments } = appendFile(
-    ['pr', 'comment', String(pr), '--repo', repositoryTarget],
-    '--body-file',
-    file,
-  );
+  const baseArguments = ['pr', 'comment', String(pr), '--repo', repositoryTarget];
+  const { commandArguments, fileArguments } = withFileArgument(baseArguments, '--body-file', file);
 
   const facts: PublicationTargetFacts = {
     kind: 'comment',
@@ -463,11 +487,8 @@ const readReview = async (target: PublicationTarget): Promise<PublicationPlan> =
   const repositoryTarget = formatRepository(repository);
   const path = `repos/${repositoryPath(repository)}/pulls/${pr}/reviews`;
 
-  const { commandArguments, fileArguments } = appendFile(
-    ['api', '--hostname', repository.host, '--method', 'POST', path],
-    '--input',
-    file,
-  );
+  const baseArguments = ['api', '--hostname', repository.host, '--method', 'POST', path];
+  const { commandArguments, fileArguments } = withFileArgument(baseArguments, '--input', file);
 
   const review = parseReview(file);
 

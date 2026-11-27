@@ -91,6 +91,12 @@ it('keeps a flag-like file path as a value, not as a flag', () => {
   expect(result.commandArguments).toEqual(['--body-file', join(directory, '1---title')]);
 });
 
+it('refuses a file argument whose position holds another path', () => {
+  expect(() =>
+    verifiedCopyArguments(['--body-file', '/run/other.md'], [{ index: 1, file: first }], directory),
+  ).toThrow('The publication command reads a file the plan did not verify.');
+});
+
 it('refuses a command that names no file', () => {
   expect(() => verifiedCopyArguments(['pr', 'view', '7'], [], directory)).toThrow(
     'The publication command names no file to read.',
