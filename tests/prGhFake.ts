@@ -1,6 +1,14 @@
+import { readFile } from 'node:fs/promises';
+
 import type { Exec } from '../src/command.js';
-import { argumentAfter, createExecFake, failedResult, succeededResult } from './execFake.js';
-import type { ExecCall } from './execFake.js';
+import {
+  argumentAfter,
+  createExecFake,
+  failedResult,
+  isCommandOf,
+  succeededResult,
+} from './execFake.js';
+import type { ExecCall, ExecResult } from './execFake.js';
 
 interface FakeRepository {
   defaultBranch: string;
@@ -34,13 +42,30 @@ type CommandKey =
   | 'repo view'
   | 'pr list'
   | 'pr view'
+  | 'pr create'
+  | 'pr edit'
+  | 'pr comment'
   | 'api'
+  | 'api write'
   | 'api user'
   | 'check-suites';
+
+type WriteKey = 'pr create' | 'pr edit' | 'pr comment' | 'api write';
+
+type ReadKey = Exclude<CommandKey, WriteKey>;
+
+interface FakeWrite {
+  key: WriteKey;
+  commandArguments: string[];
+  // The bytes of the file that --body-file or --input named.
+  contents: Buffer;
+}
 
 export interface GhFake {
   exec: Exec;
   calls: ExecCall[];
+  // Each publish command, with the bytes of the file it sent.
+  writes: FakeWrite[];
   viewer: string;
   // Keyed by <host>/<owner>/<name>.
   repositories: Record<string, FakeRepository>;
@@ -53,6 +78,11 @@ export interface GhFake {
   failCommand: (key: CommandKey, stderr?: string) => void;
 }
 
+interface WriteFacts {
+  fileFlag: '--body-file' | '--input';
+  stdout: (commandArguments: readonly string[]) => string;
+}
+
 // gh pr list prints at most 30 pull requests unless --limit says otherwise.
 const defaultListLimit = 30;
 
@@ -61,9 +91,52 @@ const commandKeys: Record<string, CommandKey> = {
   'repo view': 'repo view',
   'pr list': 'pr list',
   'pr view': 'pr view',
+  'pr create': 'pr create',
+  'pr edit': 'pr edit',
+  'pr comment': 'pr comment',
   'api --hostname': 'api',
   'api user': 'api user',
 };
+
+const apiEndpoint = (commandArguments: readonly string[]): string =>
+  commandArguments.find((argument) => argument.startsWith('repos/')) ?? '';
+
+const writeFacts = {
+  'pr create': {
+    fileFlag: '--body-file',
+    stdout: (commandArguments) =>
+      `https://${argumentAfter(commandArguments, '--repo') ?? ''}/pull/8\n`,
+  },
+  'pr edit': { fileFlag: '--body-file', stdout: () => '' },
+  'pr comment': {
+    fileFlag: '--body-file',
+    stdout: (commandArguments) =>
+      `https://${argumentAfter(commandArguments, '--repo') ?? ''}/pull/${commandArguments[2] ?? ''}#issuecomment-1\n`,
+  },
+  'api write': {
+    fileFlag: '--input',
+    stdout: (commandArguments) => {
+      const host = argumentAfter(commandArguments, '--hostname') ?? '';
+      const endpoint = apiEndpoint(commandArguments);
+      const [owner = '', name = '', , pr = ''] = endpoint.split('/').slice(1);
+
+      return JSON.stringify({
+        id: 1,
+        state: 'PENDING',
+        html_url: `https://${host}/${owner}/${name}/pull/${pr}#pullrequestreview-1`,
+      });
+    },
+  },
+} satisfies Record<WriteKey, WriteFacts>;
+
+const fieldFlags = ['-f', '-F', '--field', '--raw-field'] as const;
+
+const carriesWriteFields = (commandArguments: readonly string[]): boolean =>
+  fieldFlags.some((field) => commandArguments.includes(field));
+
+const writeKeys: ReadonlySet<WriteKey> = new Set<WriteKey>(
+  Object.keys(writeFacts) as readonly WriteKey[],
+);
 
 const parentOutput = (parent: string | undefined) => {
   if (parent === undefined) {
@@ -140,7 +213,7 @@ export const createGhFake = (): GhFake => {
   };
 
   const view = (
-    key: Exclude<CommandKey, 'auth status' | 'api' | 'api user' | 'check-suites'>,
+    key: Exclude<ReadKey, 'auth status' | 'api' | 'api user' | 'check-suites'>,
     commandArguments: readonly string[],
   ) => {
     if (key === 'repo view') {
@@ -156,8 +229,8 @@ export const createGhFake = (): GhFake => {
 
   // gh api --jq prints raw lines, not JSON.
   const commitApi = (commandArguments: readonly string[]) => {
-    const host = commandArguments[2];
-    const path = commandArguments[3] ?? '';
+    const host = argumentAfter(commandArguments, '--hostname') ?? '';
+    const path = apiEndpoint(commandArguments);
     const parts = path.split('/');
     const [owner, name, sha] = [parts[1], parts[2], parts[4]];
     const prs = fake.pullRequests[`${host}/${owner}/${name}`] ?? [];
@@ -170,7 +243,7 @@ export const createGhFake = (): GhFake => {
     return head?.headCommittedAt ?? '2026-10-14T10:00:00Z';
   };
 
-  const output = (key: CommandKey, commandArguments: readonly string[]) => {
+  const output = (key: ReadKey, commandArguments: readonly string[]) => {
     if (key === 'auth status') {
       return '';
     }
@@ -210,16 +283,73 @@ export const createGhFake = (): GhFake => {
 
   const keyOf = (command: string, commandArguments: readonly string[]) => {
     const baseKey = commandKeys[commandArguments.slice(0, 2).join(' ')];
-    const readsCheckSuites = commandArguments[3]?.endsWith('/check-suites') === true;
 
     if (command !== 'gh') {
       return undefined;
     }
 
-    return baseKey === 'api' && readsCheckSuites ? 'check-suites' : baseKey;
+    if (baseKey !== 'api') {
+      return baseKey;
+    }
+
+    const readsCheckSuites = apiEndpoint(commandArguments).endsWith('/check-suites');
+
+    if (readsCheckSuites) {
+      return 'check-suites';
+    }
+
+    const method = argumentAfter(commandArguments, '--method');
+    const readsWithMethod = method === 'GET';
+    const writesMethod = method !== undefined && method !== 'GET';
+
+    const carriesFields =
+      carriesWriteFields(commandArguments) || commandArguments.includes('--input');
+
+    const writesFields = !readsWithMethod && carriesFields;
+
+    return writesMethod || writesFields ? 'api write' : baseKey;
   };
 
-  const handlerFor = (key: CommandKey) => (commandArguments: readonly string[]) => {
+  const recordWrite = async (
+    key: WriteKey,
+    commandArguments: readonly string[],
+  ): Promise<ExecResult> => {
+    const { fileFlag: flag, stdout } = writeFacts[key];
+    // The plan appends the real file flag after every option, so a title equal to the flag comes
+    // first.
+    const flagIndex = commandArguments.lastIndexOf(flag);
+    const path = flagIndex === -1 ? undefined : commandArguments[flagIndex + 1];
+
+    if (path === undefined) {
+      if (flagIndex === -1 && key === 'api write' && carriesWriteFields(commandArguments)) {
+        fake.writes.push({
+          key,
+          commandArguments: [...commandArguments],
+          contents: Buffer.alloc(0),
+        });
+
+        return succeededResult(stdout(commandArguments));
+      }
+
+      return failedResult(`missing ${flag}`);
+    }
+
+    try {
+      const contents = await readFile(path);
+
+      fake.writes.push({ key, commandArguments: [...commandArguments], contents });
+    } catch (error) {
+      return failedResult(`could not read ${path}: ${String(error)}`);
+    }
+
+    return succeededResult(stdout(commandArguments));
+  };
+
+  const handlerFor = (key: CommandKey) => async (commandArguments: readonly string[]) => {
+    if (isCommandOf(writeKeys, key)) {
+      return recordWrite(key, commandArguments);
+    }
+
     const stdout = output(key, commandArguments);
 
     return stdout === undefined
@@ -235,6 +365,7 @@ export const createGhFake = (): GhFake => {
 
   const fake: GhFake = {
     calls: shared.calls,
+    writes: [],
     viewer: 'sQVe',
     repositories: {},
     pullRequests: {},

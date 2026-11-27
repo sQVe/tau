@@ -48,6 +48,8 @@ it.each([
   { call: { action: 'target', remote: {} } },
   { call: { action: 'verify', pr: 'seven' } },
   { call: { action: 'verify', draft: 'yes' } },
+  { call: { action: 'dryRun', kind: 'note' } },
+  { call: { action: 'publish', kind: 'note' } },
 ])('refuses the arguments $call before anything runs', async ({ call }) => {
   const { root, fake } = await setUp();
   const tool = createPrTool(fake.exec);
@@ -57,14 +59,21 @@ it.each([
   expect(await readdir(root)).not.toContain('.tau');
 });
 
-it.each(['prepare', 'target', 'evidence', 'checkHeader', 'reuse', 'verify', 'reviewBots'])(
-  'accepts the %s action and passes it on',
-  (action) => {
-    const tool = createPrTool(createGhFake().exec);
+it.each([
+  'prepare',
+  'target',
+  'evidence',
+  'checkHeader',
+  'reuse',
+  'verify',
+  'reviewBots',
+  'dryRun',
+  'publish',
+])('accepts the %s action and passes it on', (action) => {
+  const tool = createPrTool(createGhFake().exec);
 
-    expect(validated(tool, { action })).toEqual({ action });
-  },
-);
+  expect(validated(tool, { action })).toEqual({ action });
+});
 
 it('reads configured review bots through the PR tool', async () => {
   const { root, fake } = await setUp();

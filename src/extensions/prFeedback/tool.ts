@@ -9,7 +9,7 @@ import { Type } from 'typebox';
 import type { Exec, CommandRuntime } from '../../command.js';
 import { readConfigLocation } from '../../config/config.js';
 import { findCheckoutRoot } from '../../git.js';
-import { parseRepository } from '../../github/github.js';
+import { parseRepository, requirePullRequestNumber } from '../../github/github.js';
 import type { GroupExec } from '../../process/process.js';
 import { checkTauDirectory, createFreshTauDirectory, requireTauChild } from '../../tauDirectory.js';
 import { readChecks } from './checks.js';
@@ -66,18 +66,6 @@ const description = `- status: snapshot {prs,recommended,reason,attention}, bott
   {"version":1,"threads":[{"id":"<thread id>","reply":"<text or null>","resolve":true}],"comment":{"body":"<text>","answers":["<review or comment id>"]}}
   comment may be null. Person writes require confirmation. Changed token/head writes nothing; retries skip posted writes. {status:posted|declined|unchanged,posted,skipped}; unchanged: already posted.`;
 
-const parsePullRequestNumber = (action: string, pr: number | undefined) => {
-  if (pr === undefined) {
-    throw new Error(`${action} needs pr.`);
-  }
-
-  if (!Number.isSafeInteger(pr) || pr < 1) {
-    throw new Error(`pr must be a pull request number, not ${pr}.`);
-  }
-
-  return pr;
-};
-
 // Refuses any directory but .tau/pr-feedback/<name>, so post reads and writes only a round's files.
 const feedbackDirectory = async (root: string, directory: string | undefined) => {
   if (directory === undefined) {
@@ -118,7 +106,7 @@ const read = async (runtime: CommandRuntime, parameters: PrFeedbackInput) => {
   }
 
   const repository = parseRepository(parameters.repository);
-  const pr = parsePullRequestNumber('read', parameters.pr);
+  const pr = requirePullRequestNumber('read', parameters.pr);
   const root = await findCheckoutRoot(runtime.cwd, 'pr_feedback');
   const full = await readFeedback(runtime, repository, pr);
   const feedback = { ...full, threads: threadsToShow(full.threads) };
@@ -141,7 +129,7 @@ const checks = async (runtime: CommandRuntime, parameters: PrFeedbackInput) => {
   }
 
   const repository = parseRepository(parameters.repository);
-  const pr = parsePullRequestNumber('checks', parameters.pr);
+  const pr = requirePullRequestNumber('checks', parameters.pr);
 
   if (parameters.head === undefined) {
     throw new Error('checks needs head.');
@@ -169,7 +157,7 @@ const status = async (
   }
 
   for (const request of parameters.prs) {
-    parsePullRequestNumber('status', request.pr);
+    requirePullRequestNumber('status', request.pr);
 
     if (request.head.trim() === '') {
       throw new Error('status needs a nonempty head for each PR.');

@@ -56,6 +56,29 @@ export const parseRepository = (repository: string): Repository => {
   return { host, owner, name };
 };
 
+export const requirePullRequestNumber = (action: string, pr: number | undefined): number => {
+  if (pr === undefined) {
+    throw new Error(`${action} needs pr.`);
+  }
+
+  const isInteger = Number.isInteger(pr);
+  const isSafeInteger = Number.isSafeInteger(pr);
+
+  if (!isInteger) {
+    throw new Error(`pr must be an integer, not ${pr}.`);
+  }
+
+  if (!isSafeInteger) {
+    throw new Error(`pr must be a safe integer, not ${pr}.`);
+  }
+
+  if (pr < 1) {
+    throw new Error(`pr must be 1 or more, not ${pr}.`);
+  }
+
+  return pr;
+};
+
 const isLongValue = (argument: string) =>
   argument.startsWith('query=') || argument.startsWith('body=');
 

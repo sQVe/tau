@@ -28,6 +28,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
 - Publish, push, or change a PR only on the user's answer. A result whose details kind is `decided`
   is the question gate's answer and never approves; ask again. Every approval question, a retry
   included, sets `kind: "approval"`.
+- Never retry a `publish` that may have reached GitHub: a timeout can still mean `gh` wrote it, so
+  read the PR, comment, or review before publishing again.
 - Apply the [decision evidence publication gate](../shared/decision-evidence.md#publication-gate)
   independently of readiness and slice audits, including updates, ready transitions, retries, and
   continue paths. Neither a draft choice nor a ready override bypasses it.
@@ -292,7 +294,13 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      wrong or a likely alternative rejected for a reason the diff cannot show. Never narrate the
      diff, explain routine code, or post fix receipts. Many comments suggest code comments or a
      smaller PR. Write each comment and the body as [review comments](../shared/review-comments.md)
-     says.
+     says. Save the review as `$prdir/review.json`, with `commit_id`, `event`, `body`, and
+     `comments` as step 12 describes. Run `dryRun` with `kind: 'review'`, fix every finding, and run
+     `dryRun` again. For a review, a finding's `line` counts lines inside its `field`.
+   - Prose check: call `pr` `dryRun` with `kind: 'pullRequest'`, `repository`, `directory`, and the
+     create or update values. Fix every finding in `title.md` and `body.md`, then run `dryRun`
+     again. Name each finding kept on purpose with its reason in the session report. Findings never
+     block publishing.
    - Self-test: can a reviewer without the ticket explain the purpose, changes, limits, and
      evidence? Remove unfamiliar internal terms. Weaken or cut claims without test or diff backing.
 
@@ -316,9 +324,9 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      directory, and read the rest from there.
    - Only when the slice has a saved `finish.md`, show its refreshed rows with their evidence
      commits in the visible preview, not in the PR body.
-   - For a self-review, show the top-level body and each comment's text, file, line, anchor head
-     SHA, and side (`LEFT` for deleted lines, `RIGHT` otherwise). The Hard rules approval rule
-     covers changes to the body, text, or anchor.
+   - For a self-review, show `review.json` as saved and checked: the top-level body and each
+     comment's text, file, line, anchor head SHA, and side (`LEFT` for deleted lines, `RIGHT`
+     otherwise). The Hard rules approval rule covers changes to the body, text, or anchor.
    - Follow the approval rule in step 5 of the [tracker skill](../tracker/SKILL.md) over `title.md`,
      `body.md`, and `release-notes.md` when it exists, passed to `draft_review` in that order. When
      one review covers the drafts of several PRs in a stack, pass each PR's files bottom to top. Ask
@@ -354,10 +362,12 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - Push with `git push <remote> HEAD:refs/heads/<branch>`, adding `-u` for a new branch. After a
      step 1 rebase, push as the [update-branch skill](../update-branch/SKILL.md) says; in a stack,
      use the [stack skill](../stack/SKILL.md). Stop and report a rejected push.
-   - Create with `gh pr create`: specify approved base, head, title, and `--body-file`. Add
-     `--draft` for approved draft status and `--head <owner>:<branch>` for a fork. Update with
-     `gh pr edit`, adding `--base <base>` when the base changes. Change existing draft status with
-     `gh pr ready`, adding `--undo` for draft.
+   - Publish with `pr` `publish`, `kind: 'pullRequest'`, the last `dryRun` `token`, `repository`,
+     `directory`, and the approved values. Pass the PR number as `pr` for an update, or `base`,
+     `head`, and `draft` for a create. Pass a fork `head` as `<owner>:<branch>`. Report the returned
+     `url`. A refusal means a file changed: fix it, run `dryRun` again, and preview again.
+   - Change a base with `gh pr edit <pr> --repo <repo> --base <base>`. Change an existing PR's draft
+     status with `gh pr ready`, adding `--undo` for draft. Neither publishes text.
    - After creating or updating a stacked PR, call `stack` with `action: "link"`, `pr`, and
      `remote`. Never use `gh stack submit`, which publishes generated titles instead of approved
      ones.
@@ -373,19 +383,22 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
 11. Request the review bots from the user's config. A request is a reply to a GitHub bot that
     follows [Hard rules](../tracker/SKILL.md#hard-rules). Run this on a new PR and on an update.
     Call the `pr` tool's `reviewBots` action. For each `request`, save its `comment` exactly, with
-    no trailing newline, as `$prdir/bots/<index>.md` with `write`, and run
-    `gh pr comment <number> --repo <repo> --body-file $prdir/bots/<index>.md`. Never put the comment
-    in the command line, where the shell would change it. Report when no bots are configured.
-    Posting a request does not prove a review started.
+    no trailing newline, as `$prdir/bots/<index>.md` with `write`, then call `pr` `dryRun` with
+    `kind: 'comment'`, `repository`, `pr`, `directory`, and `file: 'bots/<index>.md'`. Fix every
+    finding and run `dryRun` again. Publish with `pr` `publish`, `kind: 'comment'`, the token, and
+    the same inputs, and report the returned `url`. Never put the comment in the command line, where
+    the shell would change it. A file rewritten after the dry run is refused. Report when no bots
+    are configured. Posting a request does not prove a review started.
 
 12. Post the approved self-review as one GitHub review, if the preview showed one.
     - Read the pushed head with
       `gh pr view <number> --repo <repo> --json headRefOid --jq .headRefOid`. Stop if it differs
-      from the previewed anchor SHA, and preview again. Check that each file and line exists on its
-      side of the PR diff at that head.
-    - Save the previewed review as `$prdir/review.json`, with the previewed body and comments:
+      from the previewed anchor SHA, and preview again. A different head changes `commit_id` too:
+      rewrite `review.json`, run `dryRun` again, and preview again. Check that each file and line
+      exists on its side of the PR diff at that head.
+    - `$prdir/review.json` holds the previewed body and comments in this shape:
       `{"commit_id": "<head SHA>", "event": "COMMENT", "body": "<previewed body>", "comments": [{"path": "<file>", "line": <line>, "side": "<side>", "body": "<text>"}]}`.
-      `event` must be set, or GitHub leaves the review pending. `body` is required for `COMMENT`.
-    - Post with
-      `gh api --hostname <host> --method POST repos/<owner>/<name>/pulls/<number>/reviews --input $prdir/review.json`.
-    - Report the posted review, then stop.
+      `event` must be set, or GitHub leaves the review pending. `body` is required for `COMMENT` and
+      `REQUEST_CHANGES`. The published bytes are the ones step 7 dry ran.
+    - Publish with `pr` `publish`, `kind: 'review'`, the last `dryRun` `token`, `repository`, `pr`,
+      and `directory`. Report the returned `url`, then stop.

@@ -1,5 +1,5 @@
 {
-  "code-review": ["code_review", "ticket", "architect"],
+  "code-review": ["code_review", "ticket", "architect", "pr"],
   "code-quality": ["code_review", "ticket"],
   "prune-comments": ["code_review"],
   "brainstorm": ["slice", "draft_review", "architect"],
@@ -11,7 +11,7 @@
   "update-branch": ["stack"],
   "pr": ["pr", "full_check", "stack", "draft_review"],
   "tdd": ["mutation_check"],
-  "pr-feedback": ["pr_feedback", "architect"],
+  "pr-feedback": ["pr_feedback", "architect", "pr"],
   "retrospective": ["improvement"],
   "tracker": ["tracker_evidence", "ticket", "draft_review"],
   "triage-findings": ["architect"]

@@ -5,6 +5,7 @@ import { Type } from 'typebox';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
+import { thrownBy } from '../tests/thrownBy.js';
 import {
   newerFormatNotice,
   parseVersionedRecord,
@@ -84,17 +85,7 @@ it('returns a valid record', async () => {
 });
 
 it('rejects text that is not JSON and keeps the parse error', () => {
-  const failure = (): unknown => {
-    try {
-      parseVersionedRecord('a.json', '{', options);
-    } catch (error) {
-      return error;
-    }
-
-    return undefined;
-  };
-
-  expect(failure()).toMatchObject({
+  expect(thrownBy(() => parseVersionedRecord('a.json', '{', options))).toMatchObject({
     message: expect.stringMatching(/^Malformed .*a\.json/) as unknown,
     cause: expect.any(SyntaxError) as unknown,
   });

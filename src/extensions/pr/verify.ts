@@ -1,18 +1,18 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../../command.js';
 import { readGit } from '../../git.js';
-import { checkOutput, parseRepository, readJson } from '../../github/github.js';
-import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import {
-  existingEntry,
-  checkTauDirectory,
-  rejectLinkedFile,
-  requireTauChild,
-} from '../../tauDirectory.js';
+  checkOutput,
+  parseRepository,
+  readJson,
+  requirePullRequestNumber,
+} from '../../github/github.js';
+import { formatRepository } from '../../github/repositoryTargetDecisions.js';
+import { existingEntry, rejectLinkedFile } from '../../tauDirectory.js';
+import { bodyFileName, readRunFile, requireValue, runDirectoryPath, runName } from './prRun.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 
@@ -31,11 +31,6 @@ export interface VerifyResult {
   differences: Difference[];
 }
 
-export const runPath = 'pr';
-export const runPrefix = 'run-';
-
-const bodyFileName = 'body.md';
-
 const pullRequestViewSchema = Type.Object({
   url: Type.String(),
   title: Type.String(),
@@ -45,17 +40,12 @@ const pullRequestViewSchema = Type.Object({
   headRefOid: Type.String(),
 });
 
-const runName = (root: string, directory: string) =>
-  requireTauChild(root, runPath, runPrefix, directory, 'The body directory');
-
 // A linked directory or body.md, symbolic or hard, could make verify compare a file from outside
 // the checkout.
 const readBody = async (root: string, directory: string) => {
-  const name = runName(root, directory);
+  const name = await runName(root, directory, 'The body directory');
+  const path = join(runDirectoryPath(root, name), bodyFileName);
 
-  await checkTauDirectory(root, `${runPath}/${name}`);
-
-  const path = join(root, '.tau', runPath, name, bodyFileName);
   const entry = await existingEntry(path);
 
   if (entry === undefined) {
@@ -64,7 +54,9 @@ const readBody = async (root: string, directory: string) => {
 
   await rejectLinkedFile(path, 'read');
 
-  return readFile(path, 'utf8');
+  const bytes = await readRunFile(path);
+
+  return bytes.toString('utf8');
 };
 
 const readPublished = async (
@@ -96,40 +88,18 @@ const readPublished = async (
   };
 };
 
-const requireValue = <Value>(name: string, value: Value | undefined): Value => {
-  if (value === undefined) {
-    throw new Error(`verify needs ${name}.`);
-  }
-
-  return value;
-};
-
-const parsePullRequestNumber = (pr: number | undefined) => {
-  const number = requireValue('pr', pr);
-
-  if (!Number.isSafeInteger(number)) {
-    throw new TypeError(`pr must be an integer, not ${number}.`);
-  }
-
-  if (number < 1) {
-    throw new Error(`pr must be 1 or more, not ${number}.`);
-  }
-
-  return number;
-};
-
 // Reads the run's body.md, local HEAD, and the published pull request, and writes nothing.
 export const readVerify = async (
   runtime: CommandRuntime,
   root: string,
   request: VerifyRequest,
 ): Promise<VerifyResult> => {
-  const repository = parseRepository(requireValue('repository', request.repository));
-  const pr = parsePullRequestNumber(request.pr);
-  const directory = requireValue('directory', request.directory);
-  const title = requireValue('title', request.title);
-  const base = requireValue('base', request.base);
-  const draft = requireValue('draft', request.draft);
+  const repository = parseRepository(requireValue('verify', 'repository', request.repository));
+  const pr = requirePullRequestNumber('verify', request.pr);
+  const directory = requireValue('verify', 'directory', request.directory);
+  const title = requireValue('verify', 'title', request.title);
+  const base = requireValue('verify', 'base', request.base);
+  const draft = requireValue('verify', 'draft', request.draft);
   const body = await readBody(root, directory);
   const head = await readGit(root, ['rev-parse', 'HEAD']);
   const expected: PullRequestFields = { title, body, base, draft, head };

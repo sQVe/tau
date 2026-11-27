@@ -2,7 +2,14 @@ import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../command.js';
 import type { ConfigLocation, ConfigWarnings } from '../config/config.js';
-import { checkOutput, parseRepository, label, readJson, run } from '../github/github.js';
+import {
+  checkOutput,
+  parseRepository,
+  label,
+  readJson,
+  requirePullRequestNumber,
+  run,
+} from '../github/github.js';
 import type { Repository } from '../github/github.js';
 import { decideReviewBots } from './reviewBotDecisions.js';
 import type { ReviewBotDecision } from './reviewBotDecisions.js';
@@ -28,18 +35,6 @@ const pullRequestSchema = Type.Object({
   ),
   comments: Type.Array(Type.Object({ body: Type.String(), createdAt: Type.String() })),
 });
-
-const requirePullRequest = (pr: number | undefined) => {
-  if (pr === undefined) {
-    throw new Error('reviewBots needs pr.');
-  }
-
-  if (!Number.isSafeInteger(pr) || pr < 1) {
-    throw new Error(`pr must be an integer of 1 or more, not ${pr}.`);
-  }
-
-  return pr;
-};
 
 const readTime = (commandArguments: readonly string[], text: string, field: string) => {
   const time = Date.parse(text);
@@ -137,7 +132,7 @@ export const readReviewBotStatuses = async (
   }
 
   const repository = parseRepository(request.repository);
-  const pr = requirePullRequest(request.pr);
+  const pr = requirePullRequestNumber('reviewBots', request.pr);
   const bots = readReviewBots(location, ui, `${repository.owner}/${repository.name}`);
 
   if (bots === undefined || bots.length === 0) {

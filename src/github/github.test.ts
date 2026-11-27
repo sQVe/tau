@@ -1,8 +1,14 @@
 import { expect, it } from 'vitest';
 
-import { createExecFake, succeededResult } from '../../tests/execFake.ts';
+import { createExecFake, succeededResult } from '../../tests/execFake.js';
+import { thrownBy } from '../../tests/thrownBy.js';
 import type { Exec } from '../command.js';
-import { pullRequestListArguments, readMergedPullRequests, runOutcome } from './github.js';
+import {
+  pullRequestListArguments,
+  readMergedPullRequests,
+  requirePullRequestNumber,
+  runOutcome,
+} from './github.js';
 
 type ExecResult = Awaited<ReturnType<Exec>>;
 
@@ -127,4 +133,56 @@ it('throws when gh fails', async () => {
   await expect(readMergedPullRequests(runtime, mergedRepository, '2026-11-01')).rejects.toThrow(
     /failed: boom/u,
   );
+});
+
+it.each([1, Number.MAX_SAFE_INTEGER])('returns the pull request number %i', (pr) => {
+  expect(requirePullRequestNumber('publish', pr)).toBe(pr);
+});
+
+const refusedPullRequestNumbers: {
+  rule: string;
+  pr: number | undefined;
+  error: string;
+}[] = [
+  {
+    rule: 'refuses a missing number and names the action',
+    pr: undefined,
+    error: 'publish needs pr.',
+  },
+  {
+    rule: 'refuses zero',
+    pr: 0,
+    error: 'pr must be 1 or more, not 0.',
+  },
+  {
+    rule: 'refuses a negative number',
+    pr: -1,
+    error: 'pr must be 1 or more, not -1.',
+  },
+  {
+    rule: 'refuses a fraction',
+    pr: 1.5,
+    error: 'pr must be an integer, not 1.5.',
+  },
+  {
+    rule: 'refuses a number that is not safe',
+    pr: Number.MAX_SAFE_INTEGER + 1,
+    error: `pr must be a safe integer, not ${Number.MAX_SAFE_INTEGER + 1}.`,
+  },
+  {
+    rule: 'refuses NaN',
+    pr: Number.NaN,
+    error: 'pr must be an integer, not NaN.',
+  },
+  {
+    rule: 'refuses infinity',
+    pr: Number.POSITIVE_INFINITY,
+    error: 'pr must be an integer, not Infinity.',
+  },
+];
+
+it.each(refusedPullRequestNumbers)('$rule', ({ pr, error }) => {
+  const thrown = thrownBy(() => requirePullRequestNumber('publish', pr));
+
+  expect(thrown).toHaveProperty('message', error);
 });

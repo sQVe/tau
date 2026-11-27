@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { thrownBy } from '../../tests/thrownBy.js';
 import { errorMessage } from '../errors.js';
 import { recordFileName } from './record.js';
 import { readRecord, requireRecord } from './recordRead.js';
@@ -25,16 +26,6 @@ const rejection = (outcome: Promise<unknown>) =>
     () => undefined,
     (error: unknown) => error,
   );
-
-const thrownBy = (action: () => unknown) => {
-  try {
-    action();
-  } catch (error) {
-    return error;
-  }
-
-  return undefined;
-};
 
 const refusalOf = async (directory: string) => {
   const result = await readRecord(directory);
@@ -84,7 +75,11 @@ it('reports a newer record as unreadable and not as malformed', async () => {
   const result = await readRecord(directory);
 
   expect(result).toMatchObject({ status: 'unreadable' });
-  expect(errorMessage(thrownBy(() => requireRecord(result)))).not.toContain('Malformed');
+
+  const message = errorMessage(thrownBy(() => requireRecord(result)));
+
+  expect(message).toContain('has a newer format than this Tau reads');
+  expect(message).not.toContain('Malformed');
 });
 
 it('refuses to read through a live symlink', async () => {

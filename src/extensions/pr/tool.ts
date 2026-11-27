@@ -11,9 +11,12 @@ import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readCheckHeader } from './checkEvidence.js';
 import { readChainCoverage } from './coverage.js';
 import { readPublicationEvidence } from './evidence.js';
+import { runPath, runPrefix } from './prRun.js';
+import { publishPublication, readPublication } from './publish/publish.js';
+import { publicationKindSchema } from './publish/publishKind.js';
 import { readReuse } from './reuse.js';
 import { readTarget } from './target.js';
-import { readVerify, runPath, runPrefix } from './verify.js';
+import { readVerify } from './verify.js';
 
 export interface PrToolOptions {
   agentDirectory?: string;
@@ -31,16 +34,19 @@ export const prToolParameters = Type.Object({
     Type.Literal('verify'),
     Type.Literal('reviewBots'),
     Type.Literal('coverage'),
+    Type.Literal('dryRun'),
+    Type.Literal('publish'),
   ]),
   remote: Type.Optional(Type.String({ description: 'target/evidence: push remote.' })),
   base: Type.Optional(
     Type.String({
-      description: 'target/evidence: override base. verify: approved base.',
+      description:
+        'target/evidence: override base. verify: approved base. dryRun/publish: create base.',
     }),
   ),
   directory: Type.Optional(
     Type.String({
-      description: "reuse: review directory. verify: prepare's directory.",
+      description: "reuse: review directory. verify/dryRun/publish: prepare's directory.",
     }),
   ),
   review: Type.Optional(
@@ -55,18 +61,27 @@ export const prToolParameters = Type.Object({
   ),
   repository: Type.Optional(
     Type.String({
-      description: 'verify/reviewBots: <host>/<owner>/<name>.',
+      description: 'verify/reviewBots/dryRun/publish: <host>/<owner>/<name>.',
     }),
   ),
-  pr: Type.Optional(Type.Integer({ description: 'verify/reviewBots: PR number.' })),
+  pr: Type.Optional(Type.Integer({ description: 'verify/reviewBots/dryRun/publish: PR number.' })),
   title: Type.Optional(Type.String({ description: 'verify: approved title.' })),
-  draft: Type.Optional(Type.Boolean({ description: 'verify: approved draft status.' })),
+  draft: Type.Optional(
+    Type.Boolean({ description: 'verify: approved draft status. dryRun/publish: create draft.' }),
+  ),
   chain: Type.Optional(
     Type.Array(Type.Object({ directory: Type.String(), identity: Type.String() }), {
       description: 'coverage: review links.',
     }),
   ),
-  head: Type.Optional(Type.String({ description: 'coverage: revision; default HEAD.' })),
+  head: Type.Optional(
+    Type.String({ description: 'coverage: revision; default HEAD. dryRun/publish: create head.' }),
+  ),
+  kind: Type.Optional(publicationKindSchema),
+  file: Type.Optional(
+    Type.String({ description: 'dryRun/publish comment: path in the run directory.' }),
+  ),
+  token: Type.Optional(Type.String({ description: 'publish: token from dryRun.' })),
 });
 
 export type PrInput = Static<typeof prToolParameters>;
@@ -80,6 +95,8 @@ const description = `- prepare: start a run; {directory}.
 - coverage {chain,mergeBase,head?}: mergeBase..head. chain: [{directory,identity}] root-first; identity: capture.json blob hash. {status,link,reasons,links}: match|mismatch|unsupported|unknown; link: 1-based. Match closes no finding.
 - reuse: review vs mergeBase..HEAD; {status:match|mismatch,reasons,recordedBase,paths:{differing,missing,extra},reports}.
 - verify: published PR vs approval; directory holds body.md. {url,matches,differences:[{field,expected,actual}]} for title/body/base/draft/head.
+- dryRun {kind,repository,directory,pr?,base?,head?,draft?,file?}: {kind,token,findings:[{file,field?,rule,line,excerpt}]} for the files publish would send; writes nothing, runs no gh. pullRequest: title.md and body.md; pr edits, else creates with base,head,draft. comment: file. review: review.json; no event: pending; findings come from body and comments[<i>].body, with field.
+- publish {same,token}: refuses unless the token matches the target and every file, naming the changed file, then runs one gh command. {kind,files,url}; url: null when the output has none. Findings never block.
 - reviewBots: {bots:[{login,comment,status}]}; reviewed: current head; requested: comment after head and first check suite; request: needs comment. Empty: no bots.`;
 
 const prepare = async (runtime: CommandRuntime) => {
@@ -117,6 +134,18 @@ const reviewBots = async (
   return { ...(await readReviewBotStatuses(runtime, location, context.ui, parameters)) };
 };
 
+const dryRun = async (runtime: CommandRuntime, parameters: PrInput) => {
+  const root = await findCheckoutRoot(runtime.cwd, 'pr');
+
+  return { ...(await readPublication(root, parameters)) };
+};
+
+const publish = async (runtime: CommandRuntime, parameters: PrInput) => {
+  const root = await findCheckoutRoot(runtime.cwd, 'pr');
+
+  return { ...(await publishPublication(runtime, root, parameters)) };
+};
+
 const runAction = async (
   exec: Exec,
   options: PrToolOptions,
@@ -141,6 +170,14 @@ const runAction = async (
 
   if (parameters.action === 'reviewBots') {
     return reviewBots(runtime, options, parameters, context);
+  }
+
+  if (parameters.action === 'dryRun') {
+    return dryRun(runtime, parameters);
+  }
+
+  if (parameters.action === 'publish') {
+    return publish(runtime, parameters);
   }
 
   if (parameters.action === 'coverage') {
@@ -174,7 +211,7 @@ export const createPrTool = (
     label: 'PR',
     description,
     promptSnippet:
-      'Gather PR publication evidence, prepare a pull request run, resolve its target, check review reuse, verify the published pull request, and read which review bots to request.',
+      'Gather PR publication evidence, prepare a pull request run, resolve its target, check review reuse, verify the published pull request, dry-run and publish titles, bodies, comments, and reviews, and read which review bots to request.',
     parameters: prToolParameters,
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {

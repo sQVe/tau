@@ -182,7 +182,7 @@ it.each([
     error: 'needs repository',
   },
   { condition: 'pr is missing', input: { pr: undefined }, error: 'needs pr' },
-  { condition: 'pr is below 1', input: { pr: 0 }, error: 'pr must be an integer of 1 or more' },
+  { condition: 'pr is below 1', input: { pr: 0 }, error: 'pr must be 1 or more, not 0.' },
   {
     condition: 'repository is malformed',
     input: { repository: 'tau' },

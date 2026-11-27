@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { thrownBy } from '../../tests/thrownBy.js';
 import { errorMessage } from '../errors.js';
 import { parseCaptureRecord, recordFileName } from './record.js';
 
@@ -14,16 +15,6 @@ const fixtureText = (fixture: string) => readFileSync(join(fixtures, fixture), '
 const parseText = (text: string) => parseCaptureRecord(recordPath, text);
 
 const parseRecord = (record: unknown) => parseText(JSON.stringify(record));
-
-const parseError = (parse: () => unknown) => {
-  try {
-    parse();
-  } catch (error) {
-    return error;
-  }
-
-  return undefined;
-};
 
 it('reads a version 1 record', () => {
   const text = fixtureText('version-1.json');
@@ -86,7 +77,7 @@ const savedRecord = (fixture: string) =>
   JSON.parse(fixtureText(fixture)) as Record<string, unknown>;
 
 const refusal = (record: unknown) => {
-  const error = parseError(() => parseRecord(record));
+  const error = thrownBy(() => parseRecord(record));
 
   expect(error).toBeInstanceOf(Error);
 
@@ -197,9 +188,11 @@ it('names the record field when only the target is valid', () => {
 });
 
 it('names a newer record format, not a malformed record', () => {
-  const error = parseError(() => parseText(fixtureText('newer.json')));
+  const error = thrownBy(() => parseText(fixtureText('newer.json')));
+  const message = errorMessage(error);
 
-  expect(errorMessage(error)).not.toContain('Malformed');
+  expect(message).toContain('has a newer format than this Tau reads');
+  expect(message).not.toContain('Malformed');
 });
 
 it('does not call a record with a non-number version newer', () => {
