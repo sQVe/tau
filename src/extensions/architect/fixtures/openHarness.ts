@@ -262,6 +262,37 @@ const withTakeover = (
   },
 });
 
+const wrongModelForeground = (root: string): string =>
+  JSON.stringify({
+    address: 't-architect',
+    state: 'live',
+    foreground: {
+      pid: 1,
+      name: 'pi',
+      argv: ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+      cwd: root,
+    },
+  });
+
+// Answers the model readback with a live terminal that runs another model. A start also reads the
+// recorded terminal before it launches, so the answer waits until herdr-app has run.
+export const wrongModelReadbackExec = (runtime: HcRuntime, root: string): typeof runtime.exec => {
+  let launched = false;
+
+  return async (command, commandArguments, options) => {
+    const result = await runtime.exec(command, commandArguments, options);
+
+    launched ||= command === 'herdr-app';
+
+    const readingTerminal =
+      command === 'hc' &&
+      commandArguments[0] === 'get' &&
+      commandArguments.at(-1) === 't-architect';
+
+    return readingTerminal && launched ? succeededResult(wrongModelForeground(root)) : result;
+  };
+};
+
 export const openRequest = 'Start ME-1540';
 
 export const requestFor = (
