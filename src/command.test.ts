@@ -28,6 +28,15 @@ it('names a killed command that printed nothing', () => {
   expect(failure?.message).toBe('herdr-app do failed: killed');
 });
 
+it('names a killed command that printed output', () => {
+  const failure = commandFailure(
+    'herdr-app do',
+    failedResult({ killed: true, stderr: 'starting pi...' }),
+  );
+
+  expect(failure?.message).toBe('herdr-app do failed: starting pi... (killed)');
+});
+
 it('keeps the whole failure output when it is long', () => {
   const stderr = `first${'x'.repeat(10_000)}last`;
   const failure = commandFailure('git push', failedResult({ stderr }));
