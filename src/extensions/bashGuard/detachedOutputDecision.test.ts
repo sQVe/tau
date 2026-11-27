@@ -10,6 +10,17 @@ const blocks = (command: string): boolean =>
 const nestedScript = (depth: number): string =>
   depth === 0 ? 'true' : `bash -c ${quoteShellArgument(nestedScript(depth - 1))}`;
 
+// Wraps a nested script chain in `outerDepth` foreground scripts, then backgrounds it.
+const nestedBackgroundedScript = (outerDepth: number, innerDepth: number): string => {
+  let script = `bash -c ${quoteShellArgument(nestedScript(innerDepth))} &`;
+
+  for (let level = 0; level < outerDepth; level += 1) {
+    script = `bash -c ${quoteShellArgument(script)}`;
+  }
+
+  return script;
+};
+
 it('blocks the past nohup close whose stderr went to /dev/null', () => {
   const decision = decideDetachedOutput({ toolName: 'bash', command: nohupClose });
 
@@ -380,6 +391,21 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: false,
   },
   {
+    name: 'a nested group whose inner redirection discards stderr and whose outer logs',
+    command: '{ { cmd & } 2>/dev/null; } 2>/tmp/x.log',
+    blocked: true,
+  },
+  {
+    name: 'a nested group whose inner redirection logs and whose outer discards stderr',
+    command: '{ { cmd & } 2>/tmp/x.log; } 2>/dev/null',
+    blocked: false,
+  },
+  {
+    name: 'a paren group whose inner redirection discards stderr and whose outer logs',
+    command: '( { cmd & } 2>/dev/null ) 2>/tmp/x.log',
+    blocked: true,
+  },
+  {
     name: 'a detached pipeline broken across a newline whose first command discards stderr',
     command: 'nohup cmd 2>/dev/null |\n  cat &',
     blocked: true,
@@ -457,6 +483,21 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a detached command after an exec in an enclosing brace group',
     command: 'exec 2>/dev/null; { cmd & }',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after an exec a closed brace group keeps in the current shell',
+    command: '{ exec 2>/dev/null; }; nohup app &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after an exec a closed paren group keeps in a subshell',
+    command: '( exec 2>/dev/null; ); nohup app &',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after an exec a brace group follows with a log redirection',
+    command: '{ exec 2>/dev/null; } 2>/tmp/x.log; nohup app &',
     blocked: true,
   },
   {
@@ -652,6 +693,11 @@ it.each(['constructor', 'toString', '__proto__'])(
     expect(blocks(`${name} 2>/dev/null &`)).toBe(true);
   },
 );
+
+it('counts the enclosing script depth for a backgrounded script', () => {
+  expect(blocks(nestedBackgroundedScript(2, 3))).toBe(true);
+  expect(blocks(nestedBackgroundedScript(1, 2))).toBe(false);
+});
 
 it('reports the depth budget as unverifiable instead of claiming a detached process', () => {
   const decision = decideDetachedOutput({ toolName: 'bash', command: nestedScript(6) });

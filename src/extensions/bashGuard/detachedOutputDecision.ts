@@ -1,5 +1,6 @@
-import { parseShellCommands, runsRedirectionsOnlyExec, shellScriptOf } from '../../shell.js';
+import { parseShellCommands } from '../../shell.js';
 import type { ShellCommand, ShellRedirection } from '../../shell.js';
+import { runsRedirectionsOnlyExec, shellScriptOf } from '../../wrapperAnalysis.js';
 import { devNull, isDescriptor, streamsOf, targetOf, terminal } from './detachedStreams.js';
 import type { StreamTarget, Streams } from './detachedStreams.js';
 
@@ -96,6 +97,40 @@ const innermostGroupOf = (
 const runsInShellOf = (command: ShellCommand, shellOwner: ShellCommand): boolean =>
   command.shellId === shellOwner.shellId || command.shellId.startsWith(`${shellOwner.shellId}.`);
 
+// Only a parenthesis group runs its body in a child shell. A brace group or a compound keyword runs
+// in the current shell, so an `exec` there changes the streams outside the group too.
+const spawnsSubshell = (
+  commands: readonly ShellCommand[],
+  { closing, start }: EnclosingGroup,
+): boolean => (commands[start]?.depth ?? 0) > closing.depth;
+
+const innermostSubshellOf = (
+  commands: readonly ShellCommand[],
+  index: number,
+): EnclosingGroup | undefined => {
+  let innermost: EnclosingGroup | undefined;
+
+  for (const [closingIndex, command] of commands.entries()) {
+    const start = command.group;
+
+    if (start === undefined || !encloses(start, closingIndex, index)) {
+      continue;
+    }
+
+    const group = { closing: command, closingIndex, start };
+
+    if (!spawnsSubshell(commands, group)) {
+      continue;
+    }
+
+    if (innermost === undefined || start > innermost.start) {
+      innermost = group;
+    }
+  }
+
+  return innermost;
+};
+
 // `exec` with only redirections changes the shell's own descriptors for the commands that follow
 // it in that shell. A command outside that shell does not inherit the change.
 const changesShellStreams = (command: ShellCommand): boolean =>
@@ -182,11 +217,11 @@ const compoundScope = (
     }
 
     if (changesShellStreams(command)) {
-      execs.push({ command, index, innermost: innermostGroupOf(commands, index) });
+      execs.push({ command, index, innermost: innermostSubshellOf(commands, index) });
     }
   }
 
-  groups.sort((left, right) => left.start - right.start);
+  groups.sort((left, right) => left.start - right.start || right.closingIndex - left.closingIndex);
 
   return { commands, inherited, from, enclosingByIndex: new Map(), groups, execs };
 };
@@ -346,7 +381,7 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
 const insideBackgroundedGroup = (commands: readonly ShellCommand[], index: number): boolean =>
   innermostGroupOf(commands, index)?.closing.background === true;
 
-const hidesFailure = (scope: CompoundScope, index: number): boolean => {
+const hidesFailure = (scope: CompoundScope, index: number, depth: number): boolean => {
   const command = scope.commands[index];
 
   if (command === undefined || !command.background) {
@@ -358,7 +393,7 @@ const hidesFailure = (scope: CompoundScope, index: number): boolean => {
   const script = shellScriptOf(command.arguments);
 
   if (script !== undefined || command.group !== undefined) {
-    const facts = compoundFacts(scope, index, 0);
+    const facts = compoundFacts(scope, index, depth);
     const hidden = !showsStderr(own) && !facts.shows;
 
     return facts.discards || hidden;
@@ -416,7 +451,7 @@ const judgesHiddenFailure = (
     return undefined;
   }
 
-  if (hidesFailure(scope, index)) {
+  if (hidesFailure(scope, index, depth)) {
     return 'hidden';
   }
 
