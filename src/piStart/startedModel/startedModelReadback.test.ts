@@ -317,36 +317,11 @@ it('keeps polling for a Pi foreground past the no-foreground budget', async () =
   }
 });
 
-it('keeps the caller deadline while a shell wrapper foreground may still start Pi', async () => {
+it.each<[string, readonly string[]]>([
+  ['a shell wrapper', ['sh', '-c', 'mv -- "$1" "$1.started.$$" || exit 75; shift; exec "$@"']],
+  ['an upper-case shell wrapper', ['BASH.EXE', '-c', 'exec "$@"']],
+])('keeps the caller deadline while %s may still start Pi', async (_label, wrapper) => {
   const startedAt = Date.now();
-  const wrapper = ['sh', '-c', 'mv -- "$1" "$1.started.$$" || exit 75; shift; exec "$@"'];
-
-  const read = async (): Promise<readonly string[] | undefined> =>
-    Date.now() - startedAt < 20_000 ? wrapper : ['pi'];
-
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-
-  try {
-    const reading = readStartedModel({
-      readForegroundArgv: read,
-      terminal: 't-new',
-      model: undefined,
-      message: undefined,
-      signal: undefined,
-      deadline: Date.now() + 30_000,
-    });
-
-    await vi.advanceTimersByTimeAsync(25_000);
-
-    expect(await reading).toBe('default');
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-it('keeps the caller deadline while an upper-case shell wrapper may still start Pi', async () => {
-  const startedAt = Date.now();
-  const wrapper = ['BASH.EXE', '-c', 'exec "$@"'];
 
   const read = async (): Promise<readonly string[] | undefined> =>
     Date.now() - startedAt < 20_000 ? wrapper : ['pi'];
@@ -373,6 +348,7 @@ it('keeps the caller deadline while an upper-case shell wrapper may still start 
 
 it('keeps the non-Pi foreground budget across a read that times out', async () => {
   const startedAt = Date.now();
+  let settledAt = 0;
   let reads = 0;
 
   const read = (): Promise<readonly string[] | undefined> => {
@@ -391,7 +367,20 @@ it('keeps the non-Pi foreground budget across a read that times out', async () =
       message: undefined,
       signal: undefined,
       deadline: startedAt + 30_000,
-    }).catch((error: unknown) => error);
+    })
+      .then(
+        (value) => {
+          settledAt = Date.now();
+
+          return value;
+        },
+        (error: unknown) => {
+          settledAt = Date.now();
+
+          throw error;
+        },
+      )
+      .catch((error: unknown) => error);
 
     await vi.advanceTimersByTimeAsync(readbackNoForegroundBudgetMilliseconds + 1_000);
 
@@ -399,6 +388,12 @@ it('keeps the non-Pi foreground budget across a read that times out', async () =
 
     expect(outcome).toBeInstanceOf(Error);
     expect((outcome as Error).message).toContain('The started model on terminal t-new is unknown');
+    expect((outcome as Error).message).toContain('A read failed: the read timed out');
+
+    const elapsed = settledAt - startedAt;
+
+    expect(elapsed).toBeGreaterThanOrEqual(readbackNoForegroundBudgetMilliseconds);
+    expect(elapsed).toBeLessThan(30_000);
   } finally {
     vi.useRealTimers();
   }
