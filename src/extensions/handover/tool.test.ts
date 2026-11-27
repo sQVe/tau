@@ -20,6 +20,7 @@ import type { HcFake } from '../../../tests/hcFake.js';
 import { createHerdrAppFake, spaceOrTabLaunchesOf } from '../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
+import { readbackCall } from '../../../tests/piStartRequests.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { readHandoverText } from './handoverFile.js';
@@ -582,7 +583,6 @@ it('starts a tab from a real bare repository root', async () => {
   const launchCommands = spaceOrTabLaunchesOf(app).map((call) => call.commandArguments[1]);
 
   expect(launchCommands).toEqual(['tab.new']);
-  expect(app.calls).toHaveLength(2);
 });
 
 const countBareProbes = (calls: string): number =>
@@ -633,13 +633,13 @@ it('passes the model to the new Pi through herdr-app', async () => {
     modelContext(root, onTestFinished),
   );
 
-  expect(app.calls).toHaveLength(2);
-
   const [launch] = app.calls;
 
   expect(argumentAfter(launch?.commandArguments ?? [], '--argv')).toBe(
     '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
   );
+
+  expect(app.calls).toContainEqual(readbackCall('t-new'));
 });
 
 it('refuses a regular file as the start folder before any herdr-app call', async () => {

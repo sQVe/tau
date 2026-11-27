@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { argumentAfter } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
@@ -16,10 +16,19 @@ import {
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { readbackCall } from '../../../tests/piStartRequests.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { StartedTabError } from '../../piStart/piStart.js';
+import { readbackFailureBudgetMilliseconds } from '../../piStart/startedModel/startedModelReadback.js';
 import { tabName } from '../../tabName.js';
 import type { SpaceChoice } from './placement.js';
 import { startHandover } from './start.js';
 import type { StartHandoverRequest } from './start.js';
+
+vi.mock(import('node:timers/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+  const { globalTimerDelay } = await import('../../../tests/timerFake.js');
+
+  return { ...original, setTimeout: globalTimerDelay };
+});
 
 const runtimeOf = (fake: ExecFake<HerdrAppCommand>, cwd: string) => ({
   exec: fake.exec,
@@ -60,26 +69,22 @@ const execAnsweringHc =
       ? hc.exec(command, commandArguments, options)
       : app.exec(command, commandArguments, options);
 
-const tabCommand = (root: string, argv: string, task: string, title: string) => ({
-  command: 'herdr-app',
-  commandArguments: [
-    'do',
-    'tab.new',
-    '--space',
-    'space-1',
-    '--folder',
-    root,
-    '--name',
-    tabName('lead', title),
-    '--argv',
-    argv,
-    '--task',
-    task,
-    '--focus',
-    'false',
-  ],
-  signal: undefined,
-});
+const tabArguments = (root: string, argv: string, task: string, title: string): string[] => [
+  'do',
+  'tab.new',
+  '--space',
+  'space-1',
+  '--folder',
+  root,
+  '--name',
+  tabName('lead', title),
+  '--argv',
+  argv,
+  '--task',
+  task,
+  '--focus',
+  'false',
+];
 
 it('names the tab after the handover title in an existing space', async () => {
   const fake = createHerdrAppFake();
@@ -117,10 +122,11 @@ it('opens a tab in the space with the file text as its task', async () => {
     spaceStatus: 'reused',
   });
 
-  expect(fake.calls).toEqual([
-    tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps'),
-    readbackCall('t-new'),
+  expect(commandArgumentsOf(spaceOrTabLaunchesOf(fake))).toEqual([
+    tabArguments(root, '["pi"]', 'Next steps\n', 'Next steps'),
   ]);
+
+  expect(fake.calls).toContainEqual(readbackCall('t-new'));
 });
 
 it('names the started space, tab, and terminal when the started model differs', async () => {
@@ -150,10 +156,13 @@ it('names the started space, tab, and terminal when the started model differs', 
 
   const message = (failure as Error).message;
 
+  expect(message).toContain('morph/morph-dsv41flash-1017');
+  expect(message).toContain('other/model');
   expect(message).toContain('t-new');
   expect(message).toContain('space-1');
   expect(message).toContain('tb-new');
   expect(message).toContain('hc kill t-new');
+  expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
 });
 
 it('passes the lead as sender to the new tab', async () => {
@@ -166,15 +175,16 @@ it('passes the lead as sender to the new tab', async () => {
     sender: { terminal: 't7', sessionId: 'lead-id' },
   });
 
-  expect(fake.calls).toEqual([
-    tabCommand(
+  expect(commandArgumentsOf(spaceOrTabLaunchesOf(fake))).toEqual([
+    tabArguments(
       root,
       '["env","TAU_HANDOVER_SENDER_TERMINAL=t7","TAU_HANDOVER_SENDER_SESSION=lead-id","pi"]',
       'Handover sender: terminal t7, session lead-id.\n\nNext steps\n',
       'Next steps',
     ),
-    readbackCall('t-new'),
   ]);
+
+  expect(fake.calls).toContainEqual(readbackCall('t-new'));
 });
 
 it('starts without a sender as today', async () => {
@@ -187,10 +197,11 @@ it('starts without a sender as today', async () => {
     sender: undefined,
   });
 
-  expect(fake.calls).toEqual([
-    tabCommand(root, '["pi"]', 'Next steps\n', 'Next steps'),
-    readbackCall('t-new'),
+  expect(commandArgumentsOf(spaceOrTabLaunchesOf(fake))).toEqual([
+    tabArguments(root, '["pi"]', 'Next steps\n', 'Next steps'),
   ]);
+
+  expect(fake.calls).toContainEqual(readbackCall('t-new'));
 });
 
 it('opens a new space with Pi in its only tab', async () => {
@@ -212,26 +223,23 @@ it('opens a new space with Pi in its only tab', async () => {
     spaceStatus: 'created',
   });
 
-  expect(spaceOrTabLaunchesOf(fake)).toEqual([
-    {
-      command: 'herdr-app',
-      commandArguments: [
-        'do',
-        'space.new',
-        '--name',
-        'ticket-1',
-        '--folder',
-        root,
-        '--tab',
-        tabName('lead', 'ticket-1'),
-        '--argv',
-        '["pi"]',
-        '--task',
-        'Next steps\n',
-        '--focus',
-        'false',
-      ],
-    },
+  expect(commandArgumentsOf(spaceOrTabLaunchesOf(fake))).toEqual([
+    [
+      'do',
+      'space.new',
+      '--name',
+      'ticket-1',
+      '--folder',
+      root,
+      '--tab',
+      tabName('lead', 'ticket-1'),
+      '--argv',
+      '["pi"]',
+      '--task',
+      'Next steps\n',
+      '--focus',
+      'false',
+    ],
   ]);
 });
 
@@ -405,44 +413,6 @@ it('refuses a listed space without a folder before any launch', async () => {
   expect(commandArgumentsOf(fake.calls)).toEqual([['ls']]);
 });
 
-it('fails when the started terminal runs another model', async () => {
-  const app = createHerdrAppFake();
-  const hc = createHcFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  hc.replyGet(
-    't-new',
-    JSON.stringify({
-      address: 't-new',
-      state: 'live',
-      foreground: {
-        pid: 1,
-        name: 'pi',
-        argv: ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
-        cwd: root,
-      },
-    }),
-  );
-
-  const failure = await startHandover(
-    { exec: execAnsweringHc(app, hc), cwd: root },
-    {
-      ...requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
-      model: 'claude-bridge/claude-opus-5-5',
-    },
-  ).catch((error: unknown) => error);
-
-  expect(failure).toBeInstanceOf(Error);
-
-  const message = (failure as Error).message;
-
-  expect(message).toContain('claude-bridge/claude-opus-5-5');
-  expect(message).toContain('morph/morph-dsv41flash-1017');
-  expect(message).toContain('t-new');
-  expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
-});
-
 it('returns the model the started terminal runs', async () => {
   const app = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
@@ -455,4 +425,43 @@ it('returns the model the started terminal runs', async () => {
 
   expect(result.model).toBe('morph/morph-dsv41flash-1017');
   expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
+  expect(app.calls).toContainEqual(readbackCall('t-new'));
+});
+
+it('reports the started terminal when the model readback fails', async () => {
+  const app = createHerdrAppFake();
+  const hc = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  hc.failGet('t-new', 'hc get t-new failed');
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  try {
+    const opening = startHandover(
+      { exec: execAnsweringHc(app, hc), cwd: root },
+      requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+    ).catch((error: unknown) => error);
+
+    await vi.waitFor(() => {
+      expect(app.calls.length).toBeGreaterThan(0);
+    });
+
+    await vi.advanceTimersByTimeAsync(readbackFailureBudgetMilliseconds + 1_000);
+
+    const failure = await opening;
+
+    expect(failure).toBeInstanceOf(StartedTabError);
+
+    const started = failure as StartedTabError;
+
+    expect(started.terminal).toBe('t-new');
+    expect(started.space).toBe('space-1');
+    expect(started.tab).toBe('tb-new');
+    expect(started.message).toContain('hc get t-new failed');
+    expect(started.message).toContain('hc kill t-new');
+  } finally {
+    vi.useRealTimers();
+  }
 });
