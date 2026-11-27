@@ -18,6 +18,22 @@ interface ProseSegment {
   line: number;
 }
 
+export interface ProseCharacterCensus {
+  total: number;
+  letters: number;
+  digits: number;
+  spaces: number;
+  punctuation: number;
+  other: number;
+}
+
+type ProseCharacterMatch = (character: string) => boolean;
+
+interface ProseCharacterRule {
+  characterClass: ProseCharacterClass;
+  matches: ProseCharacterMatch;
+}
+
 export const ruleOrder = ['longSentence', 'emDash', 'curlyQuote'] as const;
 
 export type ProseRule = (typeof ruleOrder)[number];
@@ -483,3 +499,121 @@ export const analyzeProse = (
 };
 
 export const checkProse = (markdown: string): ProseFinding[] => analyzeProse(markdown).findings;
+
+const proseCharacterClasses = [
+  'letter',
+  'digit',
+  'space',
+  'dash',
+  'quote',
+  'terminal',
+  'bracket',
+  'symbol',
+  'other',
+] as const;
+
+export type ProseCharacterClass = (typeof proseCharacterClasses)[number];
+
+const letterMatches: readonly ProseCharacterMatch[] = [
+  (character) => character >= 'A' && character <= 'Z',
+  (character) => character >= 'a' && character <= 'z',
+  (character) => character >= '\u00c0' && character <= '\u00d6',
+  (character) => character >= '\u00d8' && character <= '\u00f6',
+  (character) => character >= '\u0391' && character <= '\u03a9',
+  (character) => character >= '\u03b1' && character <= '\u03c9',
+  (character) => character >= '\u0400' && character <= '\u04ff',
+  (character) => character >= '\u05d0' && character <= '\u05ea',
+  (character) => character >= '\u0621' && character <= '\u064a',
+  (character) => character >= '\u0915' && character <= '\u0939',
+  (character) => character >= '\u0e01' && character <= '\u0e30',
+  (character) => character >= '\u3041' && character <= '\u3096',
+  (character) => character >= '\u30a1' && character <= '\u30fa',
+  (character) => character >= '\u4e00' && character <= '\u9fff',
+];
+
+const isLetter = (character: string): boolean =>
+  letterMatches.some((matches) => matches(character));
+
+const isDigit = (character: string): boolean => character >= '0' && character <= '9';
+
+const isLineBreak = (character: string): boolean => character === '\n' || character === '\r';
+
+const isSpace = (character: string): boolean =>
+  character === ' ' || character === '\t' || isLineBreak(character);
+
+const isDash = (character: string): boolean =>
+  character === '-' || character === '\u2013' || character === '\u2014';
+
+const isStraightQuote = (character: string): boolean =>
+  character === '"' || character === "'" || character === '`';
+
+const isLeftCurlyQuote = (character: string): boolean =>
+  character === '\u2018' || character === '\u2019';
+
+const isRightCurlyQuote = (character: string): boolean =>
+  character === '\u201c' || character === '\u201d';
+
+const isQuote = (character: string): boolean =>
+  isStraightQuote(character) || isLeftCurlyQuote(character) || isRightCurlyQuote(character);
+
+const isTerminal = (character: string): boolean =>
+  character === '.' || character === '!' || character === '?';
+
+const isRoundBracket = (character: string): boolean => character === '(' || character === ')';
+
+const isSquareBracket = (character: string): boolean => character === '[' || character === ']';
+
+const isCurlyBrace = (character: string): boolean => character === '{' || character === '}';
+
+const isBracket = (character: string): boolean =>
+  isRoundBracket(character) || isSquareBracket(character) || isCurlyBrace(character);
+
+const isSymbol = (character: string): boolean => character >= '\u00a1' && character <= '\u00bf';
+
+const characterRules: readonly ProseCharacterRule[] = [
+  { characterClass: 'letter', matches: isLetter },
+  { characterClass: 'digit', matches: isDigit },
+  { characterClass: 'space', matches: isSpace },
+  { characterClass: 'dash', matches: isDash },
+  { characterClass: 'quote', matches: isQuote },
+  { characterClass: 'terminal', matches: isTerminal },
+  { characterClass: 'bracket', matches: isBracket },
+  { characterClass: 'symbol', matches: isSymbol },
+];
+
+export const proseCharacterClass = (character: string): ProseCharacterClass => {
+  const rule = characterRules.find((candidate) => candidate.matches(character));
+
+  return rule?.characterClass ?? 'other';
+};
+
+export const proseCharacterCensus = (text: string): ProseCharacterCensus => {
+  const census: ProseCharacterCensus = {
+    total: 0,
+    letters: 0,
+    digits: 0,
+    spaces: 0,
+    punctuation: 0,
+    other: 0,
+  };
+
+  for (const character of text) {
+    const characterClass = proseCharacterClass(character);
+
+    census.total += 1;
+
+    if (characterClass === 'letter') {
+      census.letters += 1;
+    } else if (characterClass === 'digit') {
+      census.digits += 1;
+    } else if (characterClass === 'space') {
+      census.spaces += 1;
+    } else if (characterClass === 'other') {
+      census.other += 1;
+    } else {
+      census.punctuation += 1;
+    }
+  }
+
+  return census;
+};
