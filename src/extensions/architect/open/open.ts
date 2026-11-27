@@ -249,6 +249,23 @@ const launchArchitect = (
   return launchPiSessionRightOf(request.hc, { ...start, pane: prepared.pane });
 };
 
+const keptClaimFailure = (
+  completionFailure: Error | undefined,
+  readbackFailure: Error | undefined,
+): Error | undefined => {
+  if (completionFailure === undefined) {
+    return readbackFailure;
+  }
+
+  if (readbackFailure === undefined) {
+    return completionFailure;
+  }
+
+  return new Error(`${completionFailure.message} ${readbackFailure.message}`, {
+    cause: completionFailure,
+  });
+};
+
 const replyTerminalOf = (launch: PiLaunchResult): ReplyTerminal =>
   launch.terminal === undefined ? 'malformed' : 'valid';
 
@@ -318,6 +335,22 @@ const cancelledOpenError = (signal: AbortSignal | undefined): Error =>
 const throwIfOpenCancelled = (signal: AbortSignal | undefined): void => {
   if (signal?.aborted === true) {
     throw cancelledOpenError(signal);
+  }
+};
+
+// The launch's checkout probe reports piStart's own cancellation message, so report the caller's
+// cancellation instead.
+const launchArchitectForOpen = async (
+  request: OpenRequest,
+  prepared: PreparedArchitectStart,
+  fence: StartFence,
+): Promise<PiLaunchResult> => {
+  try {
+    return await launchArchitect(request, prepared, fence);
+  } catch (error) {
+    throwIfOpenCancelled(request.hc.signal);
+
+    throw error;
   }
 };
 
@@ -489,7 +522,7 @@ export const openArchitect = async (
 
     throwIfOpenCancelled(request.hc.signal);
 
-    const started = await launchArchitect(request, prepared, fence);
+    const started = await launchArchitectForOpen(request, prepared, fence);
 
     await applyLaunchOutcome(request, fence, started);
 
@@ -504,8 +537,8 @@ export const openArchitect = async (
     if (completion.claim === 'kept') {
       // A readback failure is the only error that names the started terminal and its model, so it
       // survives the kept-claim message and a later open.
-      const readbackFailure = error instanceof StartedTabError ? toError(error) : undefined;
-      const failure = completion.failure ?? readbackFailure;
+      const readbackFailure = error instanceof StartedTabError ? error : undefined;
+      const failure = keptClaimFailure(completion.failure, readbackFailure);
 
       keptClaims.set(request.root, {
         token: fence.token,
