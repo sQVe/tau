@@ -91,6 +91,37 @@ const shellOptionScript = (words: readonly string[]): string | undefined => {
 
 const flockCommandPrefix = '--command=';
 
+// `flock` reads a short-option cluster with getopt, so `-xc` sets `-x` and names the script with the
+// rest of the word or the next one. A value-taking letter before `c` consumes the rest, so `-wc`
+// names no script.
+const flockClusterScript = (
+  words: readonly string[],
+  index: number,
+  word: string,
+): string | undefined => {
+  if (!word.startsWith('-') || word.startsWith('--')) {
+    return undefined;
+  }
+
+  const letters = word.slice(1);
+
+  for (let position = 0; position < letters.length; position += 1) {
+    const letter = letters[position];
+
+    if (letter === 'c') {
+      const attached = letters.slice(position + 1);
+
+      return attached === '' ? words[index + 1] : attached;
+    }
+
+    if (letter === 'w' || letter === 'E') {
+      return undefined;
+    }
+  }
+
+  return undefined;
+};
+
 const scriptOptionValue = (
   words: readonly string[],
   start: number,
@@ -109,6 +140,12 @@ const scriptOptionValue = (
 
     if (flockScriptOptions.has(word)) {
       return words[index + 1];
+    }
+
+    const cluster = flockClusterScript(words, index, word);
+
+    if (cluster !== undefined) {
+      return cluster;
     }
   }
 
@@ -169,4 +206,23 @@ export const shellScriptOf = (words: readonly string[]): ShellScript => {
   return scriptVariant(
     wrapperScript(scriptWrapper.name, expanded.words.slice(scriptWrapper.index)),
   );
+};
+
+// The shell a command runs, so a caller can judge a script the shell reads from standard input.
+export const shellNameOf = (words: readonly string[]): string | undefined => {
+  const expanded = withEnvSplitStrings(words);
+
+  if (expanded.unreadable) {
+    return undefined;
+  }
+
+  const { index, lookup } = commandStart(expanded.words);
+
+  if (lookup) {
+    return undefined;
+  }
+
+  const headName = commandNameOf(expanded.words[index] ?? '');
+
+  return shellNames.has(headName) ? headName : undefined;
 };

@@ -195,9 +195,18 @@ const inputKind = (
   return undefined;
 };
 
+// Source that bash itself refuses to run. Any other failure is a defect in the parser, not a
+// property of the source, so it must reach the caller.
+class ShellSyntaxError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ShellSyntaxError';
+  }
+}
+
 const rejectPendingHeredoc = (state: ListState) => {
   if (state.heredocOperator !== undefined) {
-    throw new Error('Missing heredoc delimiter');
+    throw new ShellSyntaxError('Missing heredoc delimiter');
   }
 };
 
@@ -284,6 +293,9 @@ class ShellParser {
   private position = 0;
   private readonly pendingHeredocs: PendingHeredoc[] = [];
   private readonly heredocOwners = new Map<ShellCommand, ShellCommand>();
+  // Commands spliced in while an outer element's words were parsed. They do not belong to the
+  // element's own source text, so its pipe target must not reach them.
+  private readonly splicedCommands = new Set<ShellCommand>();
   private shellId: string;
   private childShells = 0;
   private scope: string;
@@ -322,6 +334,7 @@ class ShellParser {
     const childShellId = this.childShellId();
     const parentChildShells = this.childShells;
     const parentScope = this.scope;
+    const firstCommand = this.commands.length;
 
     this.shellId = childShellId;
     this.childShells = 0;
@@ -329,6 +342,10 @@ class ShellParser {
 
     try {
       parse();
+
+      for (const command of this.commands.slice(firstCommand)) {
+        this.splicedCommands.add(command);
+      }
     } finally {
       this.shellId = parentShellId;
       this.childShells = parentChildShells;
@@ -368,7 +385,7 @@ class ShellParser {
     }
 
     if (closesSubstitution) {
-      throw new Error('Unterminated command substitution');
+      throw new ShellSyntaxError('Unterminated command substitution');
     }
 
     this.finishWord(state);
@@ -404,7 +421,7 @@ class ShellParser {
     }
 
     if (terminator !== undefined) {
-      throw new Error(`Unterminated ${terminator}`);
+      throw new ShellSyntaxError(`Unterminated ${terminator}`);
     }
 
     return text;
@@ -720,6 +737,10 @@ class ShellParser {
     }
 
     for (const command of this.commands.slice(element.start, commandIndex)) {
+      if (this.splicedCommands.has(command)) {
+        continue;
+      }
+
       // An inner pipeline already named the element it writes to, so the enclosing pipe must not
       // replace it.
       command.pipeTarget ??= commandIndex;
@@ -776,6 +797,10 @@ class ShellParser {
   // A command's id starts with the id of the shell that owns it, so replacing that prefix moves the
   // command under a child shell.
   private moveUnderShell(command: ShellCommand, shellId: string): void {
+    if (!command.shellId.startsWith(this.shellId)) {
+      throw new Error('a command does not belong to the shell that moves it');
+    }
+
     command.shellId = `${shellId}${command.shellId.slice(this.shellId.length)}`;
   }
 
@@ -1051,7 +1076,7 @@ class ShellParser {
     const end = this.source.indexOf("'", this.position + 1);
 
     if (end === -1) {
-      throw new Error("Unterminated '");
+      throw new ShellSyntaxError("Unterminated '");
     }
 
     const text = this.source.slice(this.position + 1, end);
@@ -1110,7 +1135,7 @@ class ShellParser {
 
     while (this.source[this.position] !== "'") {
       if (this.position >= this.source.length) {
-        throw new Error("Unterminated $'");
+        throw new ShellSyntaxError("Unterminated $'");
       }
 
       this.position += this.source[this.position] === '\\' ? 2 : 1;
@@ -1131,7 +1156,7 @@ class ShellParser {
       const next = this.source[this.position + 1] ?? '';
 
       if (character === undefined) {
-        throw new Error('Unterminated `');
+        throw new ShellSyntaxError('Unterminated `');
       }
 
       if (character === '\\' && '$`\\'.includes(next)) {
@@ -1152,6 +1177,7 @@ class ShellParser {
 
     for (const command of innerParser.commands) {
       this.offsetCommand(command, base);
+      this.splicedCommands.add(command);
     }
 
     for (const [command, owner] of innerParser.heredocOwners) {
@@ -1217,6 +1243,7 @@ class ShellParser {
         for (const command of bodyParser.commands) {
           this.offsetCommand(command, base);
           this.heredocOwners.set(command, heredoc.command);
+          this.splicedCommands.add(command);
           command.background ||= heredoc.command.background;
         }
 
@@ -1247,7 +1274,9 @@ class ShellParser {
   }
 }
 
-// Returns undefined when the source is not valid shell syntax as far as this parser can tell.
+// Returns undefined when the source is not valid shell syntax as far as this parser can tell. A
+// failure that is not a syntax error is a defect, so it reaches the caller instead of reading as an
+// empty command list that a guard would allow.
 export const parseShellCommands = (source: string): ShellCommand[] | undefined => {
   const parser = new ShellParser(source);
 
@@ -1255,7 +1284,11 @@ export const parseShellCommands = (source: string): ShellCommand[] | undefined =
     parser.parseList(false);
 
     return parser.commands;
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof ShellSyntaxError) {
+      return undefined;
+    }
+
+    throw error;
   }
 };

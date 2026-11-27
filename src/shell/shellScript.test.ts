@@ -99,6 +99,11 @@ it('reads a flock script from an inline option value', () => {
   expect(scriptOf(['flock', '--command=cmd 2>/dev/null', '/tmp/lock'])).toBe('cmd 2>/dev/null');
 });
 
+it('reads a flock script from a short option cluster', () => {
+  expect(scriptOf(['flock', '-xc', 'cmd 2>/dev/null', '/tmp/lock'])).toBe('cmd 2>/dev/null');
+  expect(scriptOf(['flock', '-ccmd 2>/dev/null', '/tmp/lock'])).toBe('cmd 2>/dev/null');
+});
+
 it('reads a flock script option after the lock file and its other options', () => {
   expect(scriptOf(['flock', '/tmp/lock', '-w', '5', '-c', 'cmd 2>/dev/null'])).toBe(
     'cmd 2>/dev/null',

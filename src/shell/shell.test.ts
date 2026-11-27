@@ -233,6 +233,18 @@ describe('parseShellCommands', () => {
     ]);
   });
 
+  it('does not give a spliced command the pipe target of the element that contains it', () => {
+    expect(pipeTargetsOf('echo $(a) | cat')).toEqual([2, undefined, undefined]);
+    expect(pipeTargetsOf('echo `a` | cat')).toEqual([2, undefined, undefined]);
+
+    expect(pipeTargetsOf('cat <<EOF\n$(a)\nEOF\nb | c')).toEqual([
+      undefined,
+      3,
+      undefined,
+      undefined,
+    ]);
+  });
+
   it('keeps an inner pipeline target when an enclosing element is also piped', () => {
     expect(pipeTargetsOf('{ a | b; } | c')).toEqual([1, 3, 3, undefined]);
   });
@@ -606,6 +618,13 @@ describe('parseShellCommands', () => {
       expect(parseShellCommands(source)).toBeUndefined();
     },
   );
+
+  it('propagates an unexpected parser failure instead of reporting an empty parse', () => {
+    const depth = 20000;
+    const source = `${'$('.repeat(depth)}a${')'.repeat(depth)}`;
+
+    expect(() => parseShellCommands(source)).toThrow(RangeError);
+  });
 
   it('reads a heredoc body after the line ends', () => {
     expect(parseShellCommands('cat <<EOF\nbody\nEOF\nnext')).toEqual([
