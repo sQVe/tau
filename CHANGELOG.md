@@ -1,5 +1,14 @@
 # tau
 
+## 1.4.2
+
+### Patch Changes
+
+- [#827](https://github.com/sQVe/tau/pull/827)
+  [`8cb8911`](https://github.com/sQVe/tau/commit/8cb89111e11015023c6e5b1632dbea20bbcd017d) Thanks
+  [@sQVe](https://github.com/sQVe)! - The commit guard now reads a script file a bash command names,
+  such as `sh commit.sh`, so a commit inside it is blocked like an inline one.
+
 ## 1.4.1
 
 ### Patch Changes
