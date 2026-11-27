@@ -8,6 +8,7 @@ import { forgetTemporaryDirectory, trackTemporaryDirectory } from './temporaryDi
 
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
 
+// Callers compare the output directly, so the helper drops the trailing newline.
 export const git = async (cwd: string, ...commandArguments: string[]): Promise<string> => {
   const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
 
