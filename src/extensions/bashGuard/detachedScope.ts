@@ -1,4 +1,4 @@
-import type { ShellCommand } from '../../shell/shell.js';
+import type { ShellCommand, ShellRedirection } from '../../shell/shell.js';
 import { runsRedirectionsOnlyExec } from '../../wrapperAnalysis.js';
 import { streamsOf, targetOf, terminal } from './detachedStreams.js';
 import type { StreamTarget, Streams } from './detachedStreams.js';
@@ -23,6 +23,12 @@ interface ExecCommand {
   readonly command: ShellCommand;
   readonly index: number;
   readonly innermost: EnclosingGroup | undefined;
+}
+
+interface ExecReach {
+  readonly reaches: boolean;
+  readonly closedBeforeTarget: boolean;
+  readonly inSameGroup: boolean;
 }
 
 const encloses = (group: number | undefined, closingIndex: number, index: number): boolean =>
@@ -101,6 +107,90 @@ const closedExecReaches = (
   return group === undefined || innermost.start >= group.start;
 };
 
+const enclosingGroupsOf = (scope: CompoundScope, index: number): readonly EnclosingGroup[] =>
+  scope.groups.filter(({ start, closingIndex }) => encloses(start, closingIndex, index));
+
+const outputRedirectionOperators: ReadonlySet<string> = new Set(['>', '>>', '>|', '>&']);
+
+// The descriptors a redirection changes. `&>` changes both output streams.
+const redirectionDescriptors = (redirection: ShellRedirection): number[] => {
+  const { fileDescriptor, operator } = redirection;
+
+  if (operator === '&>' || operator === '&>>') {
+    return [1, 2];
+  }
+
+  if (outputRedirectionOperators.has(operator)) {
+    return [fileDescriptor ?? 1];
+  }
+
+  return [fileDescriptor ?? 0];
+};
+
+// A closed non-subshell group restores every descriptor its own redirection changed, so an `exec`
+// inside it cannot carry those changes past the group.
+const restoredDescriptorsOf = (
+  scope: CompoundScope,
+  execIndex: number,
+  targetIndex: number,
+): ReadonlySet<number> => {
+  const descriptors = new Set<number>();
+
+  for (const group of enclosingGroupsOf(scope, execIndex)) {
+    if (spawnsSubshell(scope.commands, group) || group.closingIndex >= targetIndex) {
+      continue;
+    }
+
+    for (const redirection of group.closing.redirections) {
+      for (const descriptor of redirectionDescriptors(redirection)) {
+        descriptors.add(descriptor);
+      }
+    }
+  }
+
+  return descriptors;
+};
+
+const restoredStreams = (
+  streams: Streams,
+  before: Streams,
+  descriptors: ReadonlySet<number>,
+): Streams => {
+  if (descriptors.size === 0) {
+    return streams;
+  }
+
+  const restored = new Map(streams);
+
+  for (const descriptor of descriptors) {
+    const target = before.get(descriptor);
+
+    if (target === undefined) {
+      restored.delete(descriptor);
+    } else {
+      restored.set(descriptor, target);
+    }
+  }
+
+  return restored;
+};
+
+// An `exec` reaches a target in its own group, or through a closed non-subshell group before it.
+const execReachOf = (
+  scope: CompoundScope,
+  exec: ExecCommand,
+  group: EnclosingGroup | undefined,
+  index: number,
+): ExecReach => {
+  const innermost = exec.innermost;
+  const closedBeforeTarget = closedExecReaches(scope.commands, group, innermost, index);
+  const inSameGroup = innermost !== undefined && innermost.closing === group?.closing;
+
+  const reaches = innermost === undefined ? group === undefined : inSameGroup || closedBeforeTarget;
+
+  return { reaches, closedBeforeTarget, inSameGroup };
+};
+
 // Applies the `exec` commands whose innermost group is `group`, in source order. The enclosing
 // groups apply their own redirections between these passes, so a group redirection that starts
 // after an inherited `exec` still wins. A non-subshell group's `exec` still reaches the commands
@@ -130,25 +220,24 @@ const applyExecRedirections = (
       continue;
     }
 
-    const innermost = exec.innermost;
-    const closedBeforeTarget = closedExecReaches(commands, group, innermost, index);
-    const inSameGroup = innermost !== undefined && innermost.closing === group?.closing;
+    const reach = execReachOf(scope, exec, group, index);
 
-    const reachesTarget =
-      innermost === undefined ? group === undefined : inSameGroup || closedBeforeTarget;
-
-    if (!reachesTarget) {
+    if (!reach.reaches) {
       continue;
     }
 
-    streams = streamsOf(exec.command, streams);
+    const applied = streamsOf(exec.command, streams);
+    const restoresDescriptors = reach.closedBeforeTarget && !reach.inSameGroup;
+
+    const restored = restoresDescriptors
+      ? restoredDescriptorsOf(scope, exec.index, index)
+      : new Set<number>();
+
+    streams = restoredStreams(applied, streams, restored);
   }
 
   return streams;
 };
-
-const enclosingGroupsOf = (scope: CompoundScope, index: number): readonly EnclosingGroup[] =>
-  scope.groups.filter(({ start, closingIndex }) => encloses(start, closingIndex, index));
 
 const enclosingStreams = (
   scope: CompoundScope,

@@ -1,5 +1,6 @@
 import {
   blockReason,
+  unparseableReason,
   unreadableReason,
   unverifiableReason,
 } from '../src/extensions/bashGuard/detachedOutputDecision.js';
@@ -23,8 +24,12 @@ export const blockedOutputReason = (value: unknown): string | undefined => {
 
   const reason = text(value['reason']);
 
-  const isGuardReason =
-    reason === blockReason || reason === unreadableReason || reason === unverifiableReason;
+  const guardReasons = new Set([
+    blockReason,
+    unreadableReason,
+    unparseableReason,
+    unverifiableReason,
+  ]);
 
-  return isGuardReason ? reason : undefined;
+  return reason !== undefined && guardReasons.has(reason) ? reason : undefined;
 };

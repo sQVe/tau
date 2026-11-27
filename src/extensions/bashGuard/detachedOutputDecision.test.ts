@@ -139,6 +139,31 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     command: 'setsid cmd 2>/dev/null &',
     blocked: true,
   },
+  {
+    name: 'a setsid fork that discards stderr without a background separator',
+    command: 'setsid -f cmd 2>/dev/null',
+    blocked: true,
+  },
+  {
+    name: 'a setsid fork that logs stderr',
+    command: 'setsid -f cmd 2>/tmp/x.log',
+    blocked: false,
+  },
+  {
+    name: 'a setsid without fork that discards stderr',
+    command: 'setsid cmd 2>/dev/null',
+    blocked: false,
+  },
+  {
+    name: 'a backgrounded shell that reads its script from a heredoc',
+    command: "bash <<'EOF' &\nnohup app 2>/dev/null\nEOF",
+    blocked: true,
+  },
+  {
+    name: 'a backgrounded shell whose heredoc script logs its stderr',
+    command: "bash <<'EOF' &\nnohup app > /tmp/x.log 2>&1\nEOF",
+    blocked: false,
+  },
   { name: 'a detached append to /dev/null', command: 'cmd >>/dev/null 2>&1 &', blocked: true },
   {
     name: 'a detached command with an unnumbered ampersand to /dev/null',
@@ -555,6 +580,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a detached command after an exec a brace group follows with a log redirection',
     command: '{ exec 2>/dev/null; } 2>/tmp/x.log; nohup app &',
+    blocked: false,
+  },
+  {
+    name: 'a detached command after an exec a brace group follows with a stdout redirection',
+    command: '{ exec 2>/dev/null; } >/tmp/out; nohup app &',
     blocked: true,
   },
   {
@@ -778,6 +808,26 @@ it('names an env value that depends on the environment on a detached command', (
   const decision = decideDetachedOutput({
     toolName: 'bash',
     command: `env -S "\${SHELL} -c 'cmd 2>/dev/null'" &`,
+  });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('depends on the environment');
+});
+
+it('names an unparseable script instead of claiming a detached discard', () => {
+  const decision = decideDetachedOutput({
+    toolName: 'bash',
+    command: `sh -c "echo 'unterminated" > /tmp/x.log 2>&1 &`,
+  });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('cannot parse');
+});
+
+it('prefers an env value that depends on the environment over a deeper script chain', () => {
+  const decision = decideDetachedOutput({
+    toolName: 'bash',
+    command: `${nestedScript(6)}; env -S "\${SHELL} -c 'make'"`,
   });
 
   expect(decision?.block).toBe(true);

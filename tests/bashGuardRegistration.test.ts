@@ -3,7 +3,8 @@ import { expect, it } from 'vitest';
 
 import { unverifiableReason } from '../src/extensions/bashGuard/detachedOutputDecision.js';
 import { blockedOutputReason, nestedScript, nohupClose } from './bashGuardCommands.js';
-import { registeredTauApi } from './tauRegistration.js';
+import { fakeExtensionContext } from './extensionApi.js';
+import { registeredTauApi } from './tauRegistrationHarness.js';
 
 const bashCall = (command: string): ToolCallEvent => ({
   type: 'tool_call',
@@ -17,7 +18,7 @@ const reasonsFor = async (event: ToolCallEvent): Promise<(string | undefined)[]>
 
   const results = await Promise.all(
     (fake.handlers.get('tool_call') ?? []).map(async (handler) =>
-      handler(event as never, {} as never),
+      handler(event as never, fakeExtensionContext()),
     ),
   );
 
