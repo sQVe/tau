@@ -288,21 +288,22 @@ const envSplitString = (
 };
 
 // Only an `env` that runs the command may split its value. An `env` word after the command is an
-// ordinary argument, which the shell passes on unsplit.
+// ordinary argument, which the shell passes on unsplit. Every leading `env` may carry a split
+// string, and only the innermost one runs the command its words describe.
 export const withEnvSplitStrings = (words: readonly string[]): readonly string[] => {
-  const env = commandStart(words).wrappers.find(({ name }) => name === 'env');
+  const envWrappers = commandStart(words).wrappers.filter(({ name }) => name === 'env');
+  let result = [...words];
 
-  if (env === undefined) {
-    return words;
+  // Expanding from the last wrapper keeps the indices of the earlier wrappers valid.
+  for (const env of envWrappers.toReversed()) {
+    const split = envSplitString(result, env.index + 1);
+
+    if (split !== undefined) {
+      result = [...result.slice(0, env.index + 1), ...split.words, ...result.slice(split.end)];
+    }
   }
 
-  const split = envSplitString(words, env.index + 1);
-
-  if (split === undefined) {
-    return words;
-  }
-
-  return [...words.slice(0, env.index + 1), ...split.words, ...words.slice(split.end)];
+  return result;
 };
 
 // The words a wrapper or keyword runs as a command. `lookup` is true when a `command -v` or

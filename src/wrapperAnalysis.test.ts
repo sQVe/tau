@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { shellScriptOf } from './shell/shellScript.js';
 import { commandWords, runsRedirectionsOnlyExec } from './wrapperAnalysis.js';
 
-describe('commandWords and shellScriptOf', () => {
+describe('commandWords', () => {
   it.each([
     { name: 'a doas user option', words: ['doas', '-u', 'root', 'sh', '-c', 'cmd'] },
     { name: 'an env unset option', words: ['env', '-u', 'HOME', 'sh', '-c', 'cmd'] },
@@ -24,7 +23,6 @@ describe('commandWords and shellScriptOf', () => {
     { name: 'a flock lock file', words: ['flock', '-w', '5', '/tmp/lock', 'sh', '-c', 'cmd'] },
   ])('reads the command head past $name', ({ words }) => {
     expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
-    expect(shellScriptOf(words)).toBe('cmd');
   });
 
   it('keeps an env split string that is not a leading wrapper', () => {
@@ -34,10 +32,18 @@ describe('commandWords and shellScriptOf', () => {
     });
   });
 
-  it('reads the -c script past a long shell option that contains c', () => {
-    expect(shellScriptOf(['bash', '--rcfile=/tmp/rc', '-c', 'hc send'])).toBe('hc send');
-    expect(shellScriptOf(['bash', '--rcfile', '/tmp/rc', 'script.sh'])).toBeUndefined();
-    expect(shellScriptOf(['bash', '--rcfile', '/tmp/rc', '-c', 'hc send'])).toBe('hc send');
+  it('expands the split string of every leading env wrapper', () => {
+    expect(commandWords(['env', '-i', 'env', '-S', 'sh -c cmd']).words).toEqual([
+      'sh',
+      '-c',
+      'cmd',
+    ]);
+
+    expect(commandWords(['env', 'FOO=1', 'env', '-S', 'sh -c cmd']).words).toEqual([
+      'sh',
+      '-c',
+      'cmd',
+    ]);
   });
 
   it('stops reading env options at the first operand', () => {
@@ -59,48 +65,17 @@ describe('commandWords and shellScriptOf', () => {
     { name: 'a while', keyword: 'while' },
     { name: 'an until', keyword: 'until' },
   ])('reads the command head past $name keyword', ({ keyword }) => {
-    const words = [keyword, 'sh', '-c', 'cmd'];
-
-    expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
-    expect(shellScriptOf(words)).toBe('cmd');
-  });
-
-  it('reads the -c script only before a shell operand', () => {
-    expect(shellScriptOf(['bash', 'script.sh', '-c', 'hc send'])).toBeUndefined();
-    expect(shellScriptOf(['sh', '--', 'script', '-c', 'hc send'])).toBeUndefined();
-    expect(shellScriptOf(['bash', '-x', 'script.sh', '-c', 'hc send'])).toBeUndefined();
-    expect(shellScriptOf(['bash', '-o', 'pipefail', '-c', 'cmd'])).toBe('cmd');
-    expect(shellScriptOf(['bash', '-euo', 'pipefail', '-c', 'cmd'])).toBe('cmd');
-    expect(shellScriptOf(['bash', '--rcfile', '/tmp/rc', '-c', 'cmd'])).toBe('cmd');
-    expect(shellScriptOf(['bash', '-lc', 'cmd'])).toBe('cmd');
-  });
-
-  it('reads the script after a flag word that sets -c and takes a value', () => {
-    expect(shellScriptOf(['bash', '-co', 'pipefail', 'cmd 2>/dev/null &'])).toBe(
-      'cmd 2>/dev/null &',
-    );
-
-    expect(shellScriptOf(['bash', '-cO', 'pipefail', 'cmd'])).toBe('cmd');
-  });
-
-  it('reads the script after an option terminator that never names the script', () => {
-    expect(shellScriptOf(['bash', '-co', 'pipefail', '--', 'cmd'])).toBe('cmd');
-    expect(shellScriptOf(['bash', '-c', '--', 'cmd'])).toBe('cmd');
-    expect(shellScriptOf(['bash', '-c', '--'])).toBeUndefined();
+    expect(commandWords([keyword, 'sh', '-c', 'cmd']).words).toEqual(['sh', '-c', 'cmd']);
   });
 
   it('reads a wrapper operand after an option terminator', () => {
-    const words = ['flock', '--', '-lockfile', 'bash', '-lc', 'cmd'];
-
-    expect(commandWords(words).words).toEqual(['bash', '-lc', 'cmd']);
-    expect(shellScriptOf(words)).toBe('cmd');
+    expect(commandWords(['flock', '--', '-lockfile', 'bash', '-lc', 'cmd']).words).toEqual([
+      'bash',
+      '-lc',
+      'cmd',
+    ]);
 
     expect(commandWords(['command', '--', '-v', 'hc', 'send']).words).toEqual(['-v', 'hc', 'send']);
-  });
-
-  it('reads a combined flag word that gives its value to -o before -c', () => {
-    expect(shellScriptOf(['bash', '-oc', 'cmd'])).toBeUndefined();
-    expect(shellScriptOf(['bash', '-lc', 'cmd'])).toBe('cmd');
   });
 
   it('reads the command after a wrapper time as the external binary', () => {
@@ -114,8 +89,6 @@ describe('commandWords and shellScriptOf', () => {
       'hc',
       'send',
     ]);
-
-    expect(shellScriptOf(['/usr/bin/time', '-o', '/tmp/log', 'sh', '-c', 'cmd'])).toBe('cmd');
   });
 
   it('treats only -p and -- as the reserved time word options', () => {
@@ -131,28 +104,10 @@ describe('commandWords and shellScriptOf', () => {
     ]);
   });
 
-  it('reads a flock script option before and after the lock file', () => {
-    expect(shellScriptOf(['flock', '-c', 'cmd 2>/dev/null', '/tmp/lock'])).toBe('cmd 2>/dev/null');
-    expect(shellScriptOf(['flock', '/tmp/lock', '-c', 'cmd 2>/dev/null'])).toBe('cmd 2>/dev/null');
-  });
-
-  it('reads a flock script from an inline option value', () => {
-    expect(shellScriptOf(['flock', '--command=cmd 2>/dev/null', '/tmp/lock'])).toBe(
-      'cmd 2>/dev/null',
-    );
-  });
-
-  it('reads a flock script option after the lock file and its other options', () => {
-    expect(shellScriptOf(['flock', '/tmp/lock', '-w', '5', '-c', 'cmd 2>/dev/null'])).toBe(
-      'cmd 2>/dev/null',
-    );
-  });
-
   it('reads the command flock runs after the lock file and its other options', () => {
-    const words = ['flock', '/tmp/lock', '-w', '5', 'sh', '-c', 'cmd 2>/dev/null'];
-
-    expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd 2>/dev/null']);
-    expect(shellScriptOf(words)).toBe('cmd 2>/dev/null');
+    expect(
+      commandWords(['flock', '/tmp/lock', '-w', '5', 'sh', '-c', 'cmd 2>/dev/null']).words,
+    ).toEqual(['sh', '-c', 'cmd 2>/dev/null']);
   });
 
   it.each(['constructor', 'toString', '__proto__'])(
@@ -160,13 +115,8 @@ describe('commandWords and shellScriptOf', () => {
     (name) => {
       expect(() => commandWords([name, '-x'])).not.toThrow();
       expect(commandWords([name, '-x'])).toEqual({ words: [name, '-x'], lookup: false });
-      expect(shellScriptOf([name, '-x'])).toBeUndefined();
     },
   );
-
-  it('joins the words watch hands to its shell', () => {
-    expect(shellScriptOf(['watch', '-n', '1', 'cmd 2>/dev/null'])).toBe('cmd 2>/dev/null');
-  });
 
   it('marks a command lookup instead of a command', () => {
     expect(commandWords(['command', '-v', 'sh', '-c', 'cmd'])).toEqual({
@@ -178,8 +128,6 @@ describe('commandWords and shellScriptOf', () => {
       words: ['hc', 'send'],
       lookup: false,
     });
-
-    expect(shellScriptOf(['command', '-v', 'sh', '-c', 'cmd'])).toBeUndefined();
   });
 });
 
