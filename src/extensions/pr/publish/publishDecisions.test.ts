@@ -1,7 +1,7 @@
 import { array, assert, boolean, constant, integer, oneof, property, string } from 'fast-check';
 import { expect, it } from 'vitest';
 
-import { resolvePropertySeed } from '../../../../tests/propertySeedHarness.ts';
+import { resolvePropertySeed } from '../../../../tests/propertySeedHarness.js';
 import { decidePublication, publicationToken } from './publishDecisions.js';
 import type {
   PublicationDecision,

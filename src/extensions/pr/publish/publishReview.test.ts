@@ -1,15 +1,15 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it } from 'vitest';
 
 import {
   foreignInputOf,
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
   publishedCommands,
-  setUpPublication,
+  setUpPublicationTests,
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 
-const setUp = () => setUpPublication(onTestFinished);
+const setUp = setUpPublicationTests;
 
 const reviewRequest = (directory: string) =>
   ({ action: 'dryRun', kind: 'review', repository, directory, pr: 7 }) as const;

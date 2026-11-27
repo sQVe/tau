@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import type { onTestFinished } from 'vitest';
+import { onTestFinished } from 'vitest';
 
 import type { GhFake } from '../../../../tests/prGhFake.js';
 import { createPublicationTool } from './publicationRepository.js';
@@ -11,9 +11,8 @@ export type { PublicationRun } from './publicationRepository.js';
 
 export const publicationRepository = 'github.com/sQVe/tau';
 
-export const setUpPublication = (
-  registerCleanup: typeof onTestFinished,
-): ReturnType<typeof createPublicationTool> => createPublicationTool(registerCleanup);
+export const setUpPublicationTests = (): ReturnType<typeof createPublicationTool> =>
+  createPublicationTool(onTestFinished);
 
 export const preparePublicationRun = async (run: PublicationRun): Promise<string> => {
   const { directory } = await run({ action: 'prepare' });

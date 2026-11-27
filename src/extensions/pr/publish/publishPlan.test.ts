@@ -1,19 +1,22 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it } from 'vitest';
 
 import {
   dryRunPullRequest,
   dryRunPullRequestEdit,
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
-  setUpPublication,
+  setUpPublicationTests,
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 import type { PublishRequest } from './publishPlan.js';
 import { planPublication, publicationTarget } from './publishPlan.js';
 
-const setUp = () => setUpPublication(onTestFinished);
+const setUp = setUpPublicationTests;
 
-const planned = async (request: PublishRequest, files: Record<string, string> = {}) => {
+const planned = async (
+  request: (directory: string) => PublishRequest,
+  files: Record<string, string> = {},
+) => {
   const { root, run } = await setUp();
   const directory = await prepareRun(run);
 
@@ -21,7 +24,7 @@ const planned = async (request: PublishRequest, files: Record<string, string> = 
     await writeRunFile(directory, file, contents);
   }
 
-  const target = await publicationTarget('dryRun', root, { ...request, directory });
+  const target = await publicationTarget('dryRun', root, request(directory));
 
   return planPublication(target);
 };
@@ -34,7 +37,7 @@ const filePathAt = (
 ): string | undefined => plan.commandArguments[index];
 
 it('marks the body file of a create command', async () => {
-  const plan = await planned(dryRunPullRequest('/run/1'), pullRequestFiles);
+  const plan = await planned((directory) => dryRunPullRequest(directory), pullRequestFiles);
 
   expect(plan.fileArguments).toHaveLength(1);
   expect(plan.fileArguments[0]?.file.file).toBe('body.md');
@@ -42,7 +45,7 @@ it('marks the body file of a create command', async () => {
 });
 
 it('marks the body file of an edit command', async () => {
-  const plan = await planned(dryRunPullRequestEdit('/run/1'), pullRequestFiles);
+  const plan = await planned((directory) => dryRunPullRequestEdit(directory), pullRequestFiles);
 
   expect(plan.fileArguments).toHaveLength(1);
   expect(plan.fileArguments[0]?.file.file).toBe('body.md');
@@ -51,7 +54,7 @@ it('marks the body file of an edit command', async () => {
 
 it('marks the comment file of a comment command', async () => {
   const plan = await planned(
-    { kind: 'comment', repository, pr: 7, file: 'comment.md' },
+    (directory) => ({ kind: 'comment', repository, directory, pr: 7, file: 'comment.md' }),
     { 'comment.md': 'Looks good.\n' },
   );
 
@@ -61,12 +64,9 @@ it('marks the comment file of a comment command', async () => {
 });
 
 it('marks the review file of a review command', async () => {
-  const plan = await planned(
-    { kind: 'review', repository, pr: 7 },
-    {
-      'review.json': `${JSON.stringify({ comments: [{ path: 'src/a.ts', line: 3, body: 'Fine.' }] })}\n`,
-    },
-  );
+  const plan = await planned((directory) => ({ kind: 'review', repository, directory, pr: 7 }), {
+    'review.json': `${JSON.stringify({ comments: [{ path: 'src/a.ts', line: 3, body: 'Fine.' }] })}\n`,
+  });
 
   expect(plan.fileArguments).toHaveLength(1);
   expect(plan.fileArguments[0]?.file.file).toBe('review.json');
@@ -75,7 +75,7 @@ it('marks the review file of a review command', async () => {
 
 it('does not mistake a flag-like base for the body file', async () => {
   const plan = await planned(
-    { ...dryRunPullRequest('/run/1'), base: '--body-file' },
+    (directory) => ({ ...dryRunPullRequest(directory), base: '--body-file' }),
     pullRequestFiles,
   );
 
@@ -87,7 +87,7 @@ it('does not mistake a flag-like base for the body file', async () => {
 });
 
 it('does not mistake a flag-like title for the body file', async () => {
-  const plan = await planned(dryRunPullRequest('/run/1'), {
+  const plan = await planned((directory) => dryRunPullRequest(directory), {
     ...pullRequestFiles,
     'title.md': '--body-file\n',
   });

@@ -1,4 +1,4 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it } from 'vitest';
 
 import {
   dryRunPullRequest,
@@ -6,11 +6,11 @@ import {
   preparePullRequestRun,
   preparePublicationRun as prepareRun,
   publishedCommands,
-  setUpPublication,
+  setUpPublicationTests,
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 
-const setUp = () => setUpPublication(onTestFinished);
+const setUp = setUpPublicationTests;
 
 it('publishes a new pull request with the approved title, body, base, head, and draft', async () => {
   const { fake, run } = await setUp();

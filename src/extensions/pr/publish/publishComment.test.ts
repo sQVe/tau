@@ -9,11 +9,11 @@ import {
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
   publishedCommands,
-  setUpPublication,
+  setUpPublicationTests,
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 
-const setUp = () => setUpPublication(onTestFinished);
+const setUp = setUpPublicationTests;
 
 it('publishes a comment file under bots', async () => {
   const { fake, run } = await setUp();

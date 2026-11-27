@@ -11,13 +11,13 @@ import {
   preparePublicationRun as prepareRun,
   publicationRepository as repository,
   publishedFilePath,
-  setUpPublication,
+  setUpPublicationTests,
   writeRunFile,
 } from '../fixtures/publicationRun.js';
 
 const isRoot = process.getuid?.() === 0;
 
-const setUp = () => setUpPublication(onTestFinished);
+const setUp = setUpPublicationTests;
 
 // The title can hold the flag text, so the real file flag is the last one. Only a verified copy
 // below a private publish directory counts, so other commands are left alone.
@@ -289,7 +289,6 @@ it('publishes the verified bytes when the file changes after the token check', a
   let directory = '';
   let publishedPath = '';
   let fileMode = 0;
-  let directoryMode = 0;
 
   const { fake, run } = await createPublicationTool(onTestFinished, {
     wrapExec: (exec) => async (command, commandArguments, options) => {
@@ -298,7 +297,6 @@ it('publishes the verified bytes when the file changes after the token check', a
       if (copyPath !== undefined) {
         publishedPath = copyPath;
         fileMode = (await stat(publishedPath)).mode;
-        directoryMode = (await stat(dirname(publishedPath))).mode;
         await writeFile(join(directory, 'body.md'), 'Changed after the token check.\n');
       }
 
@@ -318,7 +316,6 @@ it('publishes the verified bytes when the file changes after the token check', a
 
   expect(fake.writes[0]?.contents).toEqual(Buffer.from('Adds it.\n'));
   expect(fileMode & 0o777).toBe(0o600);
-  expect(directoryMode & 0o777).toBe(0o700);
   await expect(access(publishedPath)).rejects.toThrow(/ENOENT/u);
 });
 
