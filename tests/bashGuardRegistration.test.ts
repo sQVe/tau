@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { blockedOutputReason, nohupClose } from './bashGuardCommands.js';
-import { registeredTauApi } from './extensionApi.js';
+import { registeredTauApi } from './tauRegistration.js';
 
 it('registers the detached output guard through the Tau registration', async () => {
   const fake = await registeredTauApi('lead');

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { registeredTauApi } from './extensionApi.js';
+import { registeredTauApi } from './tauRegistration.js';
 
 it('registers the plan tool through the Tau registration for the lead', async () => {
   const fake = await registeredTauApi('lead');

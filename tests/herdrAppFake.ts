@@ -119,6 +119,9 @@ export const terminalFromReply = (stdout: string): string | undefined => {
   }
 };
 
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+
 // The launch arguments carry the started argv as JSON. A malformed value is a test mistake, so this
 // reader refuses it instead of reporting a terminal with no foreground.
 const launchArgv = (commandArguments: readonly string[]): string[] | undefined => {
@@ -136,9 +139,11 @@ const launchArgv = (commandArguments: readonly string[]): string[] | undefined =
     throw new Error(`herdr-app fake received malformed --argv JSON: ${value}`, { cause: error });
   }
 
-  const isStringArray = Array.isArray(parsed) && parsed.every((entry) => typeof entry === 'string');
+  if (!isStringArray(parsed)) {
+    throw new Error(`herdr-app fake received a --argv that is not a list of strings: ${value}`);
+  }
 
-  return isStringArray ? (parsed as string[]) : undefined;
+  return parsed;
 };
 
 const startedForegroundOf = (

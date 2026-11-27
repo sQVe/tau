@@ -103,6 +103,17 @@ it('fails a malformed --argv instead of reporting no foreground', async () => {
   ).rejects.toThrow('herdr-app fake received malformed --argv JSON: not json');
 });
 
+it.each(['{}', '7', '[1,2]'])(
+  'fails a --argv that parses to %s instead of reporting no foreground',
+  async (argv) => {
+    const fake = createHerdrAppFake();
+
+    await expect(
+      fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', argv], undefined),
+    ).rejects.toThrow(`herdr-app fake received a --argv that is not a list of strings: ${argv}`);
+  },
+);
+
 it('reads the started folder from the argv env -C for a split', async () => {
   const fake = createHerdrAppFake();
   const argv = JSON.stringify(['env', '-C', '/work/repo', 'pi']);
