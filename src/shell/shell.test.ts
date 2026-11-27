@@ -222,6 +222,17 @@ describe('parseShellCommands', () => {
     expect(pipeTargetsOf('cat <<EOF\n$(a | b)\nEOF')).toEqual([undefined, undefined, 3, undefined]);
   });
 
+  it('keeps an inner pipe target when a group follows a heredoc body', () => {
+    expect(pipeTargetsOf('cat <<EOF\n$(a | b)\nEOF\n(c)')).toEqual([
+      undefined,
+      undefined,
+      3,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
   it('keeps an inner pipeline target when an enclosing element is also piped', () => {
     expect(pipeTargetsOf('{ a | b; } | c')).toEqual([1, 3, 3, undefined]);
   });

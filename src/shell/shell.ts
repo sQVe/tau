@@ -583,7 +583,7 @@ class ShellParser {
     if (character === '\n') {
       this.readPendingHeredocs();
     } else if (character === '(') {
-      this.movePipeTarget(commandIndex - 1, commandIndex);
+      this.movePipeTarget(state, commandIndex);
       state.depth += 1;
       state.unitStarts.push(commandIndex);
       state.groupStarts.push(commandIndex);
@@ -740,11 +740,20 @@ class ShellParser {
   }
 
   // An element that opens with `(` starts at the group's first command, not at the empty command
-  // the separator created, so a pipe must target the group's first command instead.
-  private movePipeTarget(from: number, to: number): void {
+  // the separator created, so a pipe must target the group's first command instead. A heredoc body
+  // splices its own commands after that empty command, so the element's start must still be the
+  // empty command for the pipe to be the one this parenthesis retargets.
+  private movePipeTarget(state: ListState, commandIndex: number): void {
+    const element = state.elements.at(-1);
+    const from = commandIndex - 1;
+
+    if (element?.start !== from) {
+      return;
+    }
+
     for (const command of this.commands) {
       if (command.pipeTarget === from) {
-        command.pipeTarget = to;
+        command.pipeTarget = commandIndex;
       }
     }
   }
