@@ -41,3 +41,7 @@ it('names the label and the first failing field of a value that breaks the schem
     checkOutput('tool list', schema, { name: 1 });
   }).toThrow(/tool list.*\/name/u);
 });
+
+it('returns a null value of valid JSON', () => {
+  expect(parseJson('tool list', 'null')).toBeNull();
+});
