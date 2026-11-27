@@ -54,6 +54,8 @@ interface InterpreterSources {
   files: string[];
   code: string[];
   pathFirst?: boolean;
+  // True when a command option's value names the program through a variable expansion.
+  unreadable: boolean;
 }
 
 // A wrapper positional word before the command word, skipped unless one of its options is present.
@@ -69,10 +71,13 @@ interface WrapperScan {
   codes: string[];
   // Where the wrapped command word starts, when a command follows.
   commandIndex: number | undefined;
+  // True when a command option's value names its program through a variable expansion.
+  unreadable: boolean;
 }
 
 type WrapperStep =
   | { kind: 'code'; code: string; next: number }
+  | { kind: 'unreadable' }
   | { kind: 'skip'; next: number }
   | { kind: 'command' };
 
@@ -83,6 +88,7 @@ interface WrapperProgress {
 
 type WrapperWord =
   | { kind: 'code'; code: string; next: number }
+  | { kind: 'unreadable' }
   | { kind: 'skip'; next: number }
   | { kind: 'assignment'; word: string }
   | { kind: 'positional' }
@@ -837,6 +843,12 @@ const wrapperStep = (
   const code = optionValue(words, index, commandOptions);
 
   if (code !== undefined) {
+    // An `env -S` value that expands a variable to the program word cannot be read from the literal
+    // words, so the caller must fail closed.
+    if (name === 'env' && splitStringWords(code.value)?.kind === 'unreadable') {
+      return { kind: 'unreadable' };
+    }
+
     // `env -S` runs its split words together with the arguments that follow them.
     const trailing = name === 'env' ? words.slice(code.next).map(quoteShellArgument) : [];
     const text = [code.value, ...trailing].join(' ');
@@ -867,6 +879,18 @@ const operandKind = (
   return assignmentPattern.test(word) ? 'assignment' : 'command';
 };
 
+const wrapperStepWord = (step: WrapperStep): WrapperWord | undefined => {
+  if (step.kind === 'code') {
+    return { kind: 'code', next: step.next, code: step.code };
+  }
+
+  if (step.kind === 'unreadable') {
+    return { kind: 'unreadable' };
+  }
+
+  return undefined;
+};
+
 const wrapperWord = (
   words: string[],
   index: number,
@@ -884,9 +908,10 @@ const wrapperWord = (
   }
 
   const step = wrapperStep(words, index, name, valueOptions, commandOptions);
+  const stepWord = wrapperStepWord(step);
 
-  if (step.kind === 'code') {
-    return { kind: 'code', next: step.next, code: step.code };
+  if (stepWord !== undefined) {
+    return stepWord;
   }
 
   if (step.kind === 'skip') {
@@ -919,7 +944,11 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
     const classified = wrapperWord(words, next, name, progress);
 
     if (classified.kind === 'command') {
-      return { assignments, codes, commandIndex: next };
+      return { assignments, codes, commandIndex: next, unreadable: false };
+    }
+
+    if (classified.kind === 'unreadable') {
+      return { assignments, codes, commandIndex: undefined, unreadable: true };
     }
 
     if (classified.kind === 'code') {
@@ -944,7 +973,7 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
     next += 1;
   }
 
-  return { assignments, codes, commandIndex: undefined };
+  return { assignments, codes, commandIndex: undefined, unreadable: false };
 };
 
 // Shell keywords that can precede a command word in the same simple command.
@@ -977,25 +1006,34 @@ const walkWrappers = (words: string[]): WrapperScan => {
     const name = commandName(word);
 
     if (wrapperOptionValues.get(name) === undefined) {
-      return { assignments, codes: [], commandIndex: isOptionWord(word) ? undefined : index };
+      return {
+        assignments,
+        codes: [],
+        commandIndex: isOptionWord(word) ? undefined : index,
+        unreadable: false,
+      };
     }
 
     const scan = scanWrapper(words, index, name);
 
     assignments.push(...scan.assignments);
 
+    if (scan.unreadable) {
+      return { assignments, codes: scan.codes, commandIndex: undefined, unreadable: true };
+    }
+
     if (scan.codes.length > 0) {
-      return { assignments, codes: scan.codes, commandIndex: undefined };
+      return { assignments, codes: scan.codes, commandIndex: undefined, unreadable: false };
     }
 
     if (scan.commandIndex === undefined) {
-      return { assignments, codes: [], commandIndex: undefined };
+      return { assignments, codes: [], commandIndex: undefined, unreadable: false };
     }
 
     index = scan.commandIndex;
   }
 
-  return { assignments, codes: [], commandIndex: undefined };
+  return { assignments, codes: [], commandIndex: undefined, unreadable: false };
 };
 
 const commandWordIndex = (words: string[]): number | undefined => walkWrappers(words).commandIndex;
@@ -1042,42 +1080,55 @@ const searchesPathFirst = (word: string): boolean => {
 // An interpreter runs a file or inline code only from the executable position, so data such as
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
-  const { codes, commandIndex } = walkWrappers(command.arguments);
+  const { codes, commandIndex, unreadable } = walkWrappers(command.arguments);
+
+  if (unreadable) {
+    return { files: [], code: [], unreadable: true };
+  }
 
   if (codes.length > 0) {
-    return { files: [], code: codes };
+    return { files: [], code: codes, unreadable: false };
   }
 
   if (commandIndex === undefined) {
-    return { files: [], code: [] };
+    return { files: [], code: [], unreadable: false };
   }
 
   const shell = appletWord(command.arguments, commandIndex);
 
   if (shell === undefined || !isInterpreter(shell.word)) {
-    return { files: [], code: [] };
+    return { files: [], code: [], unreadable: false };
   }
 
   const mode = shellMode(command.arguments.slice(shell.index + 1));
   const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
-    return { files: [mode.name], code: [], pathFirst: searchesPathFirst(shell.word) };
+    return {
+      files: [mode.name],
+      code: [],
+      pathFirst: searchesPathFirst(shell.word),
+      unreadable: false,
+    };
   }
 
   if (mode.kind === 'inline') {
-    return { files: [], code: mode.code === undefined ? [] : [mode.code] };
+    return {
+      files: [],
+      code: mode.code === undefined ? [] : [mode.code],
+      unreadable: false,
+    };
   }
 
   if (stdin === undefined || stdin.kind === 'heredoc') {
-    return { files: [], code: [] };
+    return { files: [], code: [], unreadable: false };
   }
 
   if (stdin.kind === 'hereString') {
-    return { files: [], code: [stdin.target] };
+    return { files: [], code: [stdin.target], unreadable: false };
   }
 
-  return { files: [stdin.target], code: [] };
+  return { files: [stdin.target], code: [], unreadable: false };
 };
 
 // A bare word resolves through `PATH`, so only a word with a path separator names a local file.
@@ -1480,6 +1531,10 @@ const createsCommit = (
     const stack = directoryStack(stacks, command.scope, cwd, bases);
     const directory = directoryFor(stack, command.depth);
     const sources = interpreterSources(command);
+
+    if (sources.unreadable) {
+      return true;
+    }
 
     const pathDirectories = pathDirectoriesFor(
       commandPathAssignment(command),

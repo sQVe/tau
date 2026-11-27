@@ -1121,6 +1121,30 @@ describe('guardToolCall', () => {
   });
 
   it.each([
+    ['a direct env split value', `env -S '\${SHELL} -c "git commit -m x"'`],
+    ['an env split value with a separate -c', `env -S '\${SHELL}' -c 'git commit -m x'`],
+    ['a nested env split value', `sh -c 'env -S "\\\${SHELL} -c \\"git commit -m x\\""'`],
+    ['an env split value after command', `command env -S '\${SHELL} -c "git commit -m x"'`],
+    ['an env split value after sudo', `sudo env -S '\${SHELL} -c "git commit -m x"'`],
+  ])('blocks a commit behind %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('blocks an env split value whose program depends on the environment even when its text looks safe', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(`env -S '\${SHELL} -c "git status"'`), directory);
+  });
+
+  it('allows an env split value whose resolved program is not a shell', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent(`env -S 'node -e "$X"'`), directory)).toBeUndefined();
+  });
+
+  it.each([
     ['#!/usr/bin/env -u FOO sh', '#!/usr/bin/env -u FOO sh'],
     ['#!/usr/bin/env --chdir=/ sh', '#!/usr/bin/env --chdir=/ sh'],
   ])('blocks a commit in a file with an env option: %s', (_label, shebang) => {
