@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises';
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';
 
-import { checkOutput, parseJson, runCommand } from '../command.js';
+import { checkOutput, commandFailure, parseJson, runCommand } from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { errorMessage, isMissingFile } from '../errors.js';
 import { isGitRepository } from '../git.js';
@@ -64,6 +64,9 @@ export interface PiLaunchResult {
   // Undefined means no readback happened, or it failed and `error` carries the failure. A launch
   // can set `error` while `terminal` is live, so a caller must read both fields.
   model: string | undefined;
+  // True when the tab exists but the model readback failed. A caller must surface that failure even
+  // when the child adopted the start claim, because the running terminal may be the wrong model.
+  readbackFailed: boolean;
   error: unknown;
 }
 
@@ -214,79 +217,77 @@ const launchResult = (
   reply: result.stdout,
   terminal,
   model: undefined,
+  readbackFailed: false,
   error,
 });
 
-const commandError = (
-  label: string,
-  result: Awaited<ReturnType<CommandRuntime['exec']>>,
-): unknown => {
-  if (result.code === 0 && !result.killed) {
-    return undefined;
-  }
+const replyText = (record: Record<string, unknown>, field: string): string | undefined => {
+  const value = record[field];
 
-  const output = (result.stderr || result.stdout).trim();
-
-  return new Error(`${label} failed: ${output}`);
+  return typeof value === 'string' && value !== '' ? value : undefined;
 };
 
-const findTerminal = (value: unknown): string | undefined => {
-  if (typeof value !== 'object' || value === null || !('terminal' in value)) {
-    return undefined;
-  }
-
-  const terminal = value.terminal;
-
-  return typeof terminal === 'string' && terminal !== '' ? terminal : undefined;
-};
-
-const replyTerminal = (reply: string): string | undefined => {
-  try {
-    return findTerminal(JSON.parse(reply));
-  } catch {
-    return undefined;
-  }
-};
-
-const replyField = (reply: string, field: 'space' | 'tab'): string | undefined => {
+const replyRecord = (reply: string): Record<string, unknown> | undefined => {
   try {
     const parsed: unknown = JSON.parse(reply);
 
-    if (!isRecord(parsed)) {
-      return undefined;
-    }
-
-    const value = parsed[field];
-
-    return typeof value === 'string' && value !== '' ? value : undefined;
+    return isRecord(parsed) ? parsed : undefined;
   } catch {
     return undefined;
   }
 };
 
-// The readback runs after the tab exists, so a failure must still name the tab a caller can stop.
-const startedTabError = (reply: string, terminal: string, error: unknown): Error => {
-  const space = replyField(reply, 'space');
-  const tab = replyField(reply, 'tab');
+const replyTerminal = (reply: string): string | undefined => {
+  const record = replyRecord(reply);
+
+  return record === undefined ? undefined : replyText(record, 'terminal');
+};
+
+const placeOf = (record: Record<string, unknown>): string => {
   const places: string[] = [];
 
-  if (space !== undefined) {
-    places.push(`space ${space}`);
+  for (const field of ['space', 'tab', 'pane'] as const) {
+    const value = replyText(record, field);
+
+    if (value !== undefined) {
+      places.push(`${field} ${value}`);
+    }
   }
 
-  if (tab !== undefined) {
-    places.push(`tab ${tab}`);
-  }
+  return places.length === 0 ? '' : ` (${places.join(', ')})`;
+};
 
-  const where = places.length === 0 ? '' : ` (${places.join(', ')})`;
+const startedTabMessage = (
+  record: Record<string, unknown> | undefined,
+  terminal: string,
+  error: unknown,
+): string => {
+  const where = record === undefined ? '' : placeOf(record);
   const reason = errorMessage(error).replace(/[.!?]$/u, '');
   const reasonPrefix = reason === '' ? '' : `${reason}. `;
 
-  return new Error(
-    `${reasonPrefix}The started terminal ${terminal}${where} is still running; stop it with hc kill ${terminal} if you do not want to keep it.`,
-    { cause: error },
-  );
+  return `${reasonPrefix}The started terminal ${terminal}${where} may still be running; check it with hc get ${terminal} and stop it with hc kill ${terminal} if you do not want to keep it.`;
 };
+
+// The readback runs after the tab exists, so a failure must still name the tab a caller can stop.
+export class StartedTabError extends Error {
+  readonly terminal: string;
+  readonly space: string | undefined;
+  readonly tab: string | undefined;
+  readonly pane: string | undefined;
+
+  constructor(reply: string, terminal: string, error: unknown) {
+    const record = replyRecord(reply);
+
+    super(startedTabMessage(record, terminal, error), { cause: error });
+
+    this.name = 'StartedTabError';
+    this.terminal = terminal;
+    this.space = record === undefined ? undefined : replyText(record, 'space');
+    this.tab = record === undefined ? undefined : replyText(record, 'tab');
+    this.pane = record === undefined ? undefined : replyText(record, 'pane');
+  }
+}
 
 const readStartedTerminalModel = async (
   request: PiReadbackRequest,
@@ -304,7 +305,7 @@ const readStartedTerminalModel = async (
       deadline: readbackDeadline(deadline),
     });
   } catch (error) {
-    throw startedTabError(reply, terminal, error);
+    throw new StartedTabError(reply, terminal, error);
   }
 };
 
@@ -329,7 +330,7 @@ const launch = async (
       runtime,
       result,
       terminal,
-      commandError(command.label, result) ?? error,
+      commandFailure(command.label, result) ?? error,
     );
   } catch (error) {
     return {
@@ -340,7 +341,8 @@ const launch = async (
       reply: undefined,
       terminal: undefined,
       model: undefined,
-      error,
+      readbackFailed: false,
+      error: normalizeLaunchCancellation(runtime.signal, error),
     };
   }
 
@@ -359,7 +361,7 @@ const launch = async (
 
     return { ...launched, model };
   } catch (error) {
-    return { ...launched, error };
+    return { ...launched, readbackFailed: true, error };
   }
 };
 
@@ -373,7 +375,7 @@ const terminalFromReply = (
 
     checkOutput(label, schema, created);
 
-    return { terminal: findTerminal(created), error: undefined };
+    return { terminal: replyTerminal(reply), error: undefined };
   } catch (error) {
     return { terminal: undefined, error };
   }
@@ -446,6 +448,7 @@ export const startPiSession = async (
     'herdr-app',
     startArguments(request, target),
     'herdr-app do',
+    { timeout: launchTimeoutMilliseconds },
   );
 
   const terminal = replyTerminal(reply);
@@ -472,6 +475,7 @@ export const startPiSessionRightOf = async (
     'herdr-app',
     splitArguments(request, request.pane),
     'herdr-app do pane.split',
+    { timeout: launchTimeoutMilliseconds },
   );
 
   const created = parseJson('herdr-app do pane.split', reply);

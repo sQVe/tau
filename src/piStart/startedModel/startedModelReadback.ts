@@ -42,6 +42,10 @@ const readbackMaxIntervalMilliseconds = 1000;
 // this window and report the failure instead of the whole readback budget.
 export const readbackFailureBudgetMilliseconds = 5_000;
 
+// A terminal that never shows a Pi foreground (Pi exited on a bad flag, or the pane shows a shell)
+// is not going to change, so report it without using the whole readback budget.
+export const readbackNoForegroundBudgetMilliseconds = 15_000;
+
 const requestedModelOf = (model: string | undefined): RequestedModel => {
   if (model === undefined) {
     return { provider: undefined, id: undefined };
@@ -107,17 +111,17 @@ const readWithinBudget = (
   signal: AbortSignal | undefined,
 ): Promise<ReadWithinBudget> =>
   new Promise((resolve, reject) => {
-    const readSignal = new AbortController();
+    const readController = new AbortController();
 
     const onAbort = (): void => {
       clearTimeout(timer);
-      readSignal.abort();
+      readController.abort();
       reject(cancellationError(signal));
     };
 
     const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
-      readSignal.abort();
+      readController.abort();
       resolve({ kind: 'timeout' });
     }, remaining);
 
@@ -135,7 +139,7 @@ const readWithinBudget = (
     signal?.addEventListener('abort', onAbort, { once: true });
 
     try {
-      void read(readSignal.signal).then(
+      void read(readController.signal).then(
         (argv) => {
           settle();
           resolve({ kind: 'read', argv });
@@ -195,9 +199,11 @@ const pollStartedModel = async (
   requested: RequestedModel,
   failure: ReadFailure | undefined,
   interval: number,
+  noForegroundSince: number,
 ): Promise<string> => {
   const { terminal, signal, deadline } = request;
-  const remaining = deadline - Date.now();
+  const limit = Math.min(deadline, noForegroundSince + readbackNoForegroundBudgetMilliseconds);
+  const remaining = limit - Date.now();
 
   if (remaining <= 0) {
     throw unreadableModelError(terminal, failure?.error);
@@ -220,7 +226,7 @@ const pollStartedModel = async (
     throw unreadableModelError(terminal);
   }
 
-  const remainingAfterRead = deadline - Date.now();
+  const remainingAfterRead = limit - Date.now();
 
   if (remainingAfterRead <= 0) {
     throw unreadableModelError(terminal, attempt.failure?.error);
@@ -233,6 +239,7 @@ const pollStartedModel = async (
     requested,
     attempt.failure,
     Math.min(interval * 2, readbackMaxIntervalMilliseconds),
+    noForegroundSince,
   );
 };
 
@@ -242,4 +249,5 @@ export const readStartedModel = (request: StartedModelReadRequest): Promise<stri
     requestedModelOf(request.model),
     undefined,
     readbackInitialIntervalMilliseconds,
+    Date.now(),
   );

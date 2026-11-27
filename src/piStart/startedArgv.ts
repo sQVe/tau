@@ -31,9 +31,19 @@ const isPathShaped = (argument: string): boolean =>
 // An inline-program flag supplies the program itself, so no script follows it.
 const inlineProgramRuntimeFlags = new Set(['--eval', '-e', '--print', '-p']);
 
-// A long inline-program flag may carry its program after `=`, as in `--eval=code`.
+// A long inline-program flag may carry its program after `=`, as in `--eval=code`, and a short one
+// may carry it attached, as in `-ecode`.
 const isInlineProgramFlag = (argument: string): boolean => {
   if (inlineProgramRuntimeFlags.has(argument)) {
+    return true;
+  }
+
+  const attachedShortFlag = argument.slice(0, 2);
+
+  const hasAttachedShortProgram =
+    argument.length > 2 && inlineProgramRuntimeFlags.has(attachedShortFlag);
+
+  if (hasAttachedShortProgram) {
     return true;
   }
 
@@ -68,6 +78,7 @@ const valueTakingRuntimeFlags = new Set([
   '--redirect-warnings',
   '--require',
   '-r',
+  '--stack-size',
   '--title',
   '--tls-cipher-list',
   '--watch-path',

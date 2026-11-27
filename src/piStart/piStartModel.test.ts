@@ -1,7 +1,7 @@
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createExecFake, failedResult, succeededResult } from '../../tests/execFake.js';
-import type { ExecFake } from '../../tests/execFake.js';
+import type { ExecFake, ExecResult } from '../../tests/execFake.js';
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
 import {
@@ -31,8 +31,9 @@ vi.mock(import('node:timers/promises'), async (importOriginal) => {
 const launchWithForeground = (
   argv: string[],
   reply = '{"space":"sp-new","tab":"tb-new","terminal":"t-new"}',
+  getReply?: () => ExecResult,
 ): ExecFake<'launch' | 'get'> => {
-  const getReply = JSON.stringify({
+  const defaultGetReply = JSON.stringify({
     address: 't-new',
     state: 'live',
     foreground: { pid: 1, name: 'pi', argv, cwd: '/tmp' },
@@ -47,7 +48,9 @@ const launchWithForeground = (
       return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
     },
     handlerFor: (key) =>
-      key === 'launch' ? () => succeededResult(reply) : () => succeededResult(getReply),
+      key === 'launch'
+        ? () => succeededResult(reply)
+        : () => getReply?.() ?? succeededResult(defaultGetReply),
   });
 };
 
@@ -78,10 +81,18 @@ it.each([
     name: 'a node pi path',
     argv: ['node', '/usr/local/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
   },
+  {
+    name: 'a bun pi path',
+    argv: ['bun', '/usr/local/bin/pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+  },
+  {
+    name: 'a node.exe pi.cmd path',
+    argv: ['node.exe', 'C:/pi/pi.cmd', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+  },
 ])('a start reads the model from $name', async ({ argv }) => {
   const fake = launchWithForeground(argv);
   const root = await createTemporaryRepository(onTestFinished);
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const opening = startPiSession(
@@ -185,21 +196,13 @@ it('a start keeps reading a terminal that is not registered yet past the failure
 
   let registered = false;
 
-  const fake = createExecFake<'launch' | 'get'>({
-    keyOf: (command, commandArguments) => {
-      if (command === 'herdr-app') {
-        return 'launch';
-      }
+  const fake = launchWithForeground(
+    ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+    undefined,
+    () => (registered ? succeededResult(foregroundReply) : failedResult(notFoundReply, 3)),
+  );
 
-      return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
-    },
-    handlerFor: (key) =>
-      key === 'launch'
-        ? () => succeededResult('{"space":"sp-new","tab":"tb-new","terminal":"t-new"}')
-        : () => (registered ? succeededResult(foregroundReply) : failedResult(notFoundReply, 3)),
-  });
-
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const opening = startPiSession(
@@ -258,7 +261,7 @@ it('a start fails when the terminal runs another model', async () => {
 it('a start fails when the terminal never shows a foreground before the deadline', async () => {
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const opening = startPiSession(
@@ -327,7 +330,7 @@ it('an abort during the backoff pause ends the call before the next read', async
     return Promise.resolve(undefined);
   };
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const opening = startPiSession(
@@ -367,7 +370,7 @@ it('aborts an in-flight model read when the readback budget expires', async () =
     return neverResolves;
   };
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const opening = startPiSession(
@@ -406,7 +409,7 @@ it('bounds the launch and the readback with one timeout', async () => {
     },
   });
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const opening = startPiSession(
@@ -442,7 +445,7 @@ it('a slow successful launch still leaves a window to read the model', async () 
     },
   });
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const result = await startPiSession(
@@ -461,7 +464,7 @@ it('a model read that times out removes its abort listener', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const controller = new AbortController();
   const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const opening = startPiSession(
@@ -560,7 +563,7 @@ it('a start backs off between model reads instead of polling every 100 ms', asyn
   const fake = createHerdrAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const readTimes: number[] = [];
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const startedAt = Date.now();

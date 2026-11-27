@@ -156,8 +156,18 @@ it.each<{ name: string; argv: readonly string[] | undefined; expected: unknown }
     expected: undefined,
   },
   {
-    name: 'a bare pi argument after an unknown value-taking flag',
-    argv: ['node', '--stack-size', '2000', 'pi'],
+    name: 'a bare pi after a stack-size flag',
+    argv: ['node', '--stack-size', '2000', 'pi', ...modelArguments],
+    expected: ['node', '--stack-size', '2000', 'pi', ...modelArguments],
+  },
+  {
+    name: 'a node command with an attached short eval flag',
+    argv: ['node', "-e'code'", 'pi'],
+    expected: undefined,
+  },
+  {
+    name: 'a node command with an attached short print flag',
+    argv: ['node', '-pcodepi', 'pi'],
     expected: undefined,
   },
 ])('recognizes $name', ({ argv, expected }) => {

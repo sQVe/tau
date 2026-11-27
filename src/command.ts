@@ -26,21 +26,48 @@ export const piExec =
 
 export const outputPreviewLength = 200;
 
+// The abort signal's reason may be a plain value, which would reject with a non-Error.
+const normalizeCancellation = (signal: AbortSignal | undefined, error: unknown): unknown =>
+  signal?.aborted === true && !(error instanceof Error)
+    ? new Error('Cancelled.', { cause: error })
+    : error;
+
+export const commandFailure = (
+  label: string,
+  result: Awaited<ReturnType<Exec>>,
+): Error | undefined => {
+  if (result.code === 0 && !result.killed) {
+    return undefined;
+  }
+
+  const output = (result.stderr || result.stdout).trim();
+
+  return new Error(`${label} failed: ${output}`);
+};
+
 export const runCommand = async (
   runtime: CommandRuntime,
   command: string,
   commandArguments: string[],
   label: string,
+  options: { timeout?: number | undefined } = {},
 ): Promise<string> => {
-  const result = await runtime.exec(command, commandArguments, {
-    cwd: runtime.cwd,
-    ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
-  });
+  let result: Awaited<ReturnType<Exec>>;
 
-  if (result.code !== 0 || result.killed) {
-    const output = (result.stderr || result.stdout).trim();
+  try {
+    result = await runtime.exec(command, commandArguments, {
+      cwd: runtime.cwd,
+      ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+      ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
+    });
+  } catch (error) {
+    throw normalizeCancellation(runtime.signal, error);
+  }
 
-    throw new Error(`${label} failed: ${output}`);
+  const failure = commandFailure(label, result);
+
+  if (failure !== undefined) {
+    throw failure;
   }
 
   return result.stdout;

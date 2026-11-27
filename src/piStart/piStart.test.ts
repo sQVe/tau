@@ -12,6 +12,7 @@ import {
   git,
 } from '../../tests/gitRepository.js';
 import { createHerdrAppFake } from '../../tests/herdrAppFake.js';
+import type { HerdrAppKey } from '../../tests/herdrAppFake.js';
 import {
   launchRequest,
   paneRequest,
@@ -21,6 +22,7 @@ import {
 } from '../../tests/piStartRequests.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import {
+  StartedTabError,
   launchPiSession,
   launchPiSessionRightOf,
   startPiSession,
@@ -70,6 +72,7 @@ it('a space start opens one tab with the argv as JSON', async () => {
         'false',
       ],
       signal: undefined,
+      timeout: 30_000,
     },
     readbackCall('t-new'),
   ]);
@@ -154,6 +157,7 @@ it('a space start names its first tab', async () => {
         'false',
       ],
       signal: undefined,
+      timeout: 30_000,
     },
     readbackCall('t-new'),
   ]);
@@ -259,6 +263,7 @@ it('a resolver start runs the target it resolves', async () => {
         'false',
       ],
       signal: undefined,
+      timeout: 30_000,
     },
     readbackCall('t-new'),
   ]);
@@ -375,26 +380,13 @@ it('a folder that is not a Git checkout refuses before the resolver runs', async
   expect(fake.calls).toEqual([]);
 });
 
-const paneAppFake = (splitReply: string): ExecFake<'split' | 'get'> =>
-  createExecFake<'split' | 'get'>({
-    keyOf: (command, commandArguments) => {
-      if (command === 'herdr-app') {
-        return 'split';
-      }
+const paneAppFake = (splitReply: string): ExecFake<HerdrAppKey> => {
+  const fake = createHerdrAppFake();
 
-      return command === 'hc' && commandArguments[0] === 'get' ? 'get' : undefined;
-    },
-    handlerFor: (key) => () =>
-      key === 'get'
-        ? succeededResult(
-            JSON.stringify({
-              address: 't-new',
-              state: 'live',
-              foreground: { pid: 1, name: 'pi', argv: ['pi'], cwd: '' },
-            }),
-          )
-        : succeededResult(splitReply),
-  });
+  fake.overrideOutput('pane.split', splitReply);
+
+  return fake;
+};
 
 it('a pane start splits to the right of the requested pane once', async () => {
   const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
@@ -402,16 +394,7 @@ it('a pane start splits to the right of the requested pane once', async () => {
 
   const result = await startPiSessionRightOf(
     { exec: fake.exec, cwd: root },
-    {
-      folder: root,
-      pane: 'p-lead',
-      task: 'Design this',
-      model: undefined,
-      session: undefined,
-      bareRoot: false,
-      environment: { TAU_ROLE: 'architect' },
-      readForegroundArgv: readerFor(fake, root),
-    },
+    { ...paneRequest(root, readerFor(fake, root)), environment: { TAU_ROLE: 'architect' } },
   );
 
   expect(result).toEqual({
@@ -443,19 +426,7 @@ it('a pane split reply without a pane ends the start', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
   await expect(
-    startPiSessionRightOf(
-      { exec: fake.exec, cwd: root },
-      {
-        folder: root,
-        pane: 'p-lead',
-        task: 'Design this',
-        model: undefined,
-        session: undefined,
-        bareRoot: false,
-        environment: undefined,
-        readForegroundArgv: readerFor(fake, root),
-      },
-    ),
+    startPiSessionRightOf({ exec: fake.exec, cwd: root }, paneRequest(root, readerFor(fake, root))),
   ).rejects.toThrow('herdr-app do pane.split printed unexpected output');
 
   expect(fake.calls).toHaveLength(1);
@@ -465,7 +436,7 @@ it('a refused split rejects with the command context and no second command', asy
   const fake = paneAppFake('{"pane":"p-new","terminal":"t-new"}');
   const root = await createTemporaryRepository(onTestFinished);
 
-  fake.failCommand('split', 'pane p-lead is gone');
+  fake.failCommand('pane.split', 'pane p-lead is gone');
 
   const failure = await startPiSessionRightOf(
     { exec: fake.exec, cwd: root },
@@ -778,4 +749,112 @@ it('a killed launch returns no terminal and the launcher error', async () => {
   expect(result.error).toBeInstanceOf(Error);
   expect((result.error as Error).message).toContain('herdr-app do failed');
   expect((result.error as Error).message).toContain('the launch was killed');
+});
+
+it('a start bounds the creation command with the launch timeout', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const timeouts: (number | undefined)[] = [];
+
+  const exec: typeof fake.exec = (command, commandArguments, options) => {
+    timeouts.push(options?.timeout);
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  await startPiSession({ exec, cwd: root }, startRequest(root, readerFor(fake, root)));
+
+  expect(timeouts[0]).toBe(30_000);
+});
+
+it('a start normalizes a non-Error cancellation from the creation command', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+  const reason = 'cancelled during the launch command';
+
+  const exec: typeof fake.exec = (command, commandArguments, options) => {
+    controller.abort(reason);
+    controller.signal.throwIfAborted();
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  const failure = await startPiSession(
+    { exec, cwd: root, signal: controller.signal },
+    startRequest(root, readerFor(fake, root)),
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).cause).toBe(reason);
+});
+
+it('a launch normalizes a non-Error cancellation from the creation command', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const controller = new AbortController();
+  const reason = 'cancelled during the launch command';
+
+  const exec: typeof fake.exec = (command, commandArguments, options) => {
+    controller.abort(reason);
+    controller.signal.throwIfAborted();
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  const result = await launchPiSession(
+    { exec, cwd: root, signal: controller.signal },
+    launchRequest(root, readerFor(fake, root)),
+  );
+
+  expect(result.error).toBeInstanceOf(Error);
+  expect((result.error as Error).cause).toBe(reason);
+});
+
+const mismatchingReader = async (): Promise<readonly string[] | undefined> => [
+  'pi',
+  '--provider',
+  'morph',
+  '--model',
+  'morph-dsv41flash-1017',
+];
+
+it('a space start readback failure carries the started space and tab', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const failure = await startPiSession(
+    { exec: fake.exec, cwd: root },
+    { ...startRequest(root, readerFor(fake, root)), readForegroundArgv: mismatchingReader },
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(StartedTabError);
+
+  const started = failure as StartedTabError;
+
+  expect(started.terminal).toBe('t-new');
+  expect(started.space).toBe('space-1');
+  expect(started.tab).toBe('tb-new');
+  expect(started.message).toContain('space space-1');
+  expect(started.message).toContain('tab tb-new');
+  expect(started.message).toContain('may still be running');
+  expect(started.message).toContain('hc kill t-new');
+});
+
+it('a right-of start readback failure names the created pane', async () => {
+  const fake = createHerdrAppFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const failure = await startPiSessionRightOf(
+    { exec: fake.exec, cwd: root },
+    { ...paneRequest(root, readerFor(fake, root)), readForegroundArgv: mismatchingReader },
+  ).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(StartedTabError);
+
+  const started = failure as StartedTabError;
+
+  expect(started.terminal).toBe('t-new');
+  expect(started.pane).toBe('p-new');
+  expect(started.message).toContain('pane p-new');
 });

@@ -1,6 +1,10 @@
 import { expect, it, vi } from 'vitest';
 
-import { readStartedModel, readbackFailureBudgetMilliseconds } from './startedModelReadback.js';
+import {
+  readStartedModel,
+  readbackFailureBudgetMilliseconds,
+  readbackNoForegroundBudgetMilliseconds,
+} from './startedModelReadback.js';
 
 vi.mock(import('node:timers/promises'), async (importOriginal) => {
   const original = await importOriginal();
@@ -20,7 +24,7 @@ it('clears the read timer and abort listener when a read throws synchronously', 
     throw new Error('read failed');
   };
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const reading = readStartedModel({
@@ -56,7 +60,7 @@ it('reports a permanent read failure without polling the whole budget', async ()
     return Promise.reject(failure);
   };
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const reading = readStartedModel({
@@ -81,6 +85,38 @@ it('reports a permanent read failure without polling the whole budget', async ()
   }
 });
 
+it('reports a terminal that never shows a Pi foreground before the whole budget', async () => {
+  let reads = 0;
+
+  const read = async (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    return ['bash'];
+  };
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  try {
+    const reading = readStartedModel({
+      readForegroundArgv: read,
+      terminal: 't-new',
+      model: undefined,
+      signal: undefined,
+      deadline: Date.now() + 30_000,
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(readbackNoForegroundBudgetMilliseconds + 1_000);
+
+    const outcome = await Promise.race([reading, Promise.resolve('waiting' as const)]);
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toContain('The started model on terminal t-new is unknown');
+    expect(reads).toBeLessThan(30);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('keeps an earlier read failure when a later read uses the rest of the budget', async () => {
   const failure = new Error('read failed once');
   let reads = 0;
@@ -91,7 +127,7 @@ it('keeps an earlier read failure when a later read uses the rest of the budget'
     return reads === 1 ? Promise.reject(failure) : new Promise(() => {});
   };
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   try {
     const reading = readStartedModel({
