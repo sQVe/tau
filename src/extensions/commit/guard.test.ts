@@ -402,6 +402,10 @@ describe('guardToolCall', () => {
     ['a -P option', 'cd -P sub && sh commit.sh'],
     ['a -- separator', 'cd -- sub && sh commit.sh'],
     ['an assignment prefix', 'FOO=bar cd sub && sh commit.sh'],
+    ['a separate -e option', 'cd -e sub; sh commit.sh'],
+    ['a clustered -e option', 'cd -eP sub; sh commit.sh'],
+    ['mixed options', 'cd -P -L -e sub; sh commit.sh'],
+    ['a clustered mixed option', 'cd -PLe sub; sh commit.sh'],
   ])('blocks a script file in a directory cd names with %s', (_label, command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -585,19 +589,6 @@ describe('guardToolCall', () => {
     withEnvironment('HOME', 'sub');
 
     expectOutcome(makeBashEvent('sh ~/commit.sh'), directory);
-  });
-
-  it.each([
-    ['a separate -e option', 'cd -e sub'],
-    ['a clustered -e option', 'cd -eP sub'],
-    ['mixed options', 'cd -P -L -e sub'],
-    ['a clustered mixed option', 'cd -PLe sub'],
-  ])('blocks a script file in a directory cd names with %s', (_label, prefix) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-
-    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
-
-    expectOutcome(makeBashEvent(`${prefix}; sh commit.sh`), directory);
   });
 
   it.each([
