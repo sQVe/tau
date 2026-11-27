@@ -28,3 +28,9 @@ it('registers the detached output guard through the Tau registration', async () 
   // handler blocked the call.
   expect(reasons.filter((reason) => reason !== undefined)).toHaveLength(1);
 });
+
+it('accepts only a reason the guard itself produces', () => {
+  expect(
+    blockedOutputReason({ block: true, reason: 'write a log such as /tmp/<name>.log first' }),
+  ).toBeUndefined();
+});

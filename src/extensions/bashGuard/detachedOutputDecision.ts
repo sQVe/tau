@@ -247,10 +247,10 @@ const judgesHiddenFailure = (
   return undefined;
 };
 
-const blockReason =
+export const blockReason =
   'This bash command detaches a process and discards or closes its stderr, so a failure would be hidden. Write the output to a log file, such as `> /tmp/<name>.log 2>&1`, record the command exit status in that log, then read it before reporting the effect.';
 
-const unverifiableReason =
+export const unverifiableReason =
   'This bash command nests scripts deeper than the guard can inspect, so a hidden failure cannot be ruled out. Run the inner command directly, or write its output to a log file such as `> /tmp/<name>.log 2>&1` and read it before reporting the effect.';
 
 export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutputDecision => {

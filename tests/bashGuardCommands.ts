@@ -1,3 +1,7 @@
+import {
+  blockReason,
+  unverifiableReason,
+} from '../src/extensions/bashGuard/detachedOutputDecision.js';
 import { isRecord, text } from '../src/schema.js';
 
 export const nohupClose =
@@ -13,5 +17,5 @@ export const blockedOutputReason = (value: unknown): string | undefined => {
 
   const reason = text(value['reason']);
 
-  return reason?.includes('/tmp/<name>.log') === true ? reason : undefined;
+  return reason === blockReason || reason === unverifiableReason ? reason : undefined;
 };
