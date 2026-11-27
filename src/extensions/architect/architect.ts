@@ -11,6 +11,7 @@ import type { AnswerTracker } from './answer.js';
 import { createAskAdmissions } from './ask/askAcceptance.js';
 import type { AskAdmissions } from './ask/askAcceptance.js';
 import { registerAskMode } from './ask/askMode.js';
+import { handoverSendTarget, handoverTargetRefusal } from './handoverTargetDecision.js';
 import { blockFinalHandover } from './open/openLiveAsks.js';
 import { finalHandoverResult } from './queuedHandover.js';
 import {
@@ -37,9 +38,18 @@ const registerVisibleArchitect = (
   pi.on('tool_call', async (event) => {
     const session = current();
 
-    return session === undefined
-      ? undefined
-      : blockFinalHandover(event, { root: session.root, sessionId: session.owner.sessionId });
+    if (session === undefined) {
+      return undefined;
+    }
+
+    const target = handoverSendTarget(event);
+    const refusal = handoverTargetRefusal(target, session.leadTerminal);
+
+    if (refusal !== undefined) {
+      return { block: true, reason: refusal };
+    }
+
+    return blockFinalHandover(event, { root: session.root, sessionId: session.owner.sessionId });
   });
 
   pi.on('tool_result', (event, context) => {

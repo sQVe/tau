@@ -329,6 +329,7 @@ const hiddenSession = (
   ui: { notify },
   owner: { lockToken: 'live', mode: 'ask', terminal: 't-ask', sessionId: 'session-architect' },
   held: createHeldLockToken(),
+  leadTerminal: 't-lead',
 });
 
 it('clears the held token and releases the lock when the deadline stop fails', async () => {
@@ -345,6 +346,7 @@ it('clears the held token and releases the lock when the deadline stop fails', a
     ui: { notify },
     owner: { lockToken: 'claim', mode: 'ask', terminal: 't-ask', sessionId: 'session-architect' },
     held,
+    leadTerminal: 't-lead',
     deadline: {
       whenSettled: () => Promise.resolve(),
       stop: () => Promise.reject(new Error('The deadline could not be stopped.')),

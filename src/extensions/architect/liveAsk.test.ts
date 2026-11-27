@@ -597,6 +597,7 @@ it('a close that lands before the lead send returns keeps the ask failed', async
       sessionId: 'session-architect',
     },
     held: createHeldLockToken(),
+    leadTerminal: 't-lead',
   };
 
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');

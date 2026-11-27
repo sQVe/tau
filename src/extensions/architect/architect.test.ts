@@ -8,8 +8,15 @@ import type { Mock, onTestFinished } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
-import { forgetAcceptCheck, savedTexts } from '../../../tests/inboxReceiverHarness.js';
+import {
+  forgetAcceptCheck,
+  advertiseInbox,
+  savedTexts,
+  startHandoverReceiver,
+} from '../../../tests/inboxReceiverHarness.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
+import { sendInboxMessage } from '../../inbox/inbox.js';
 import architectExtension from './architect.js';
 import { startLeadInbox } from './fixtures/leadInbox.js';
 import { sessionContext } from './fixtures/visibleSession.js';
@@ -63,9 +70,12 @@ const runHandlers = async (
   }
 };
 
-const startRegisteredArchitect = async (cleanup: typeof onTestFinished) => {
+const startRegisteredArchitect = async (
+  cleanup: typeof onTestFinished,
+  leadTerminal = 't-lead',
+) => {
   vi.stubEnv('HC_TERMINAL_ID', 't-architect');
-  vi.stubEnv('TAU_LEAD_TERMINAL', 't-lead');
+  vi.stubEnv('TAU_LEAD_TERMINAL', leadTerminal);
   vi.stubEnv('TAU_ARCHITECT_CLAIM', '');
   vi.stubEnv('TAU_ARCHITECT_HANDOFF_ROOT', '');
 
@@ -298,6 +308,69 @@ it('a visible architect blocks a final handover while an ask to it is open', asy
   await writeAskRecord(root, { ...openAsk, status: 'answered' });
 
   await expect(callHandover(fake, { ...send, final: true }, context)).resolves.toEqual([undefined]);
+});
+
+it('a visible architect queues only the final handover to its current lead', async ({
+  onTestFinished,
+}) => {
+  const { root, hc, fake, context } = await startRegisteredArchitect(onTestFinished, 't2');
+
+  const t1 = await startHandoverReceiver(
+    onTestFinished,
+    temporaryDirectory(onTestFinished, 'tau-architect-t1-'),
+    't1',
+    { sessionId: 'session-t1', outsideSlot: true },
+  );
+
+  const t2 = await startHandoverReceiver(
+    onTestFinished,
+    temporaryDirectory(onTestFinished, 'tau-architect-t2-'),
+    't2',
+    { sessionId: 'session-t2', outsideSlot: true },
+  );
+
+  const directory = join(root, '.tau', 'handovers');
+  const file = join(directory, 'note.md');
+
+  advertiseInbox(hc, 't1', t1.path);
+  advertiseInbox(hc, 't2', t2.path);
+  await mkdir(directory, { recursive: true });
+  await writeFile(file, 'Final: done.\n');
+
+  onTestFinished(async () => {
+    await runHandlers(fake, 'session_shutdown', context, { reason: 'quit' });
+  });
+
+  const wrongTarget = { action: 'send' as const, terminal: 't1', file };
+  const [blocked] = await callHandover(fake, wrongTarget, context);
+
+  expect(blocked).toMatchObject({ block: true });
+
+  const reason = (blocked as { reason: string }).reason;
+
+  expect(reason).toContain('t1');
+  expect(reason).toContain('t2');
+  expect(t1.savedRecords()).toEqual([]);
+  expect(t2.savedRecords()).toEqual([]);
+
+  const finalInput = { action: 'send' as const, terminal: 't2', file, final: true };
+  const [allowed] = await callHandover(fake, finalInput, context);
+
+  expect(allowed).toBeUndefined();
+
+  const sent = await sendInboxMessage({
+    hc: { ...hc, cwd: root },
+    target: 't2',
+    body: { family: 'handover', payload: { text: 'Final: done.\n' } },
+    refusal: 'Nothing was queued.',
+  });
+
+  expect(sent).toMatchObject({ status: 'queued', terminal: 't2' });
+  expect(await savedTexts(t2)).toEqual(['Final: done.\n']);
+
+  const shutdown = receiveHandover(fake, sent as unknown as Record<string, unknown>, finalInput);
+
+  expect(shutdown).toHaveBeenCalledTimes(1);
 });
 
 it('only a visible architect registers the architect answer tool', ({ onTestFinished }) => {

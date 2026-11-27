@@ -116,6 +116,7 @@ const closingSetup = async (cleanup: Cleanup, stallPoint: StallPoint = 'commit')
       sessionId: 'session-architect',
     },
     held,
+    leadTerminal: 't-lead',
   };
 
   const frame = encodeMessageFrame({

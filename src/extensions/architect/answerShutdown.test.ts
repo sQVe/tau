@@ -105,6 +105,7 @@ const closingArchitect = async (
       sessionId: 'session-architect',
     },
     held: createHeldLockToken(),
+    leadTerminal: 't-lead',
   };
 
   const send = (answerHc: AnswerHc, file: string | undefined) =>
