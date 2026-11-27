@@ -8,7 +8,12 @@ const executableNames = (name: string, suffixes: readonly string[]): string[] =>
 const piExecutableSuffixes = ['cmd', 'js', 'exe'];
 
 // `baseName` strips a `.exe` suffix, so the set holds only the names it can return.
-const piExecutableNames = new Set(executableNames('pi', ['cmd', 'js']));
+const piExecutableNames = new Set(
+  executableNames(
+    'pi',
+    piExecutableSuffixes.filter((suffix) => suffix !== 'exe'),
+  ),
+);
 
 const runtimeExecutables = new Set(['node', 'bun']);
 
