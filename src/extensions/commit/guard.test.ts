@@ -541,7 +541,7 @@ describe('guardToolCall', () => {
   it('allows an -exec word that is data', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    expect(guard(makeBashEvent('echo -exec sh'), directory)).toBeUndefined();
+    expect(guard(makeBashEvent("echo -exec sh 'echo; git commit'"), directory)).toBeUndefined();
   });
 
   it('allows a find command whose exec runs no shell', () => {
@@ -574,6 +574,36 @@ describe('guardToolCall', () => {
 
     writeScript(directory, 'commit.sh', `git commit -m x\n`);
     withEnvironment('HOME', '');
+
+    expectOutcome(makeBashEvent('cd; sh commit.sh'), directory);
+  });
+
+  it('resolves a tilde operand against a relative HOME', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'sub/commit.sh', 'git commit -m x\n');
+    withEnvironment('HOME', 'sub');
+
+    expectOutcome(makeBashEvent('sh ~/commit.sh'), directory);
+  });
+
+  it.each([
+    ['a separate -e option', 'cd -e sub'],
+    ['a clustered -e option', 'cd -eP sub'],
+  ])('keeps the directory when cd names %s', (_label, prefix) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'sub/commit.sh', 'echo hello\n');
+
+    expectOutcome(makeBashEvent(`${prefix}; sh commit.sh`), directory);
+  });
+
+  it('keeps the working directory when HOME names no directory', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    withEnvironment('HOME', 'missing');
 
     expectOutcome(makeBashEvent('cd; sh commit.sh'), directory);
   });

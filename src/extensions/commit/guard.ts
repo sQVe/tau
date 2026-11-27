@@ -1013,9 +1013,28 @@ const cdOptionPattern = /^-[LPe@]+$/u;
 
 // Options end at the first operand, so `cd sub -P` names two operands. An option `cd` rejects is an
 // operand, so it keeps the current directory.
+// `-e` is valid only after `-P`, so `cd -e sub` names a rejected option and keeps the directory.
+const isCdOption = (word: string, physical: boolean): boolean => {
+  if (!cdOptionPattern.test(word)) {
+    return false;
+  }
+
+  const errorsIndex = word.indexOf('e');
+
+  if (errorsIndex === -1) {
+    return true;
+  }
+
+  const physicalIndex = word.indexOf('P');
+  const physicalBefore = physicalIndex !== -1 && physicalIndex < errorsIndex;
+
+  return physical || physicalBefore;
+};
+
 const directoryOperands = (words: string[]): string[] => {
   const operands: string[] = [];
   let optionsEnded = false;
+  let physical = false;
 
   for (const word of words) {
     if (!optionsEnded && word === '--') {
@@ -1024,7 +1043,9 @@ const directoryOperands = (words: string[]): string[] => {
       continue;
     }
 
-    if (!optionsEnded && cdOptionPattern.test(word)) {
+    if (!optionsEnded && isCdOption(word, physical)) {
+      physical = physical || word.includes('P');
+
       continue;
     }
 
@@ -1033,6 +1054,15 @@ const directoryOperands = (words: string[]): string[] => {
   }
 
   return operands;
+};
+
+// A target moves the shell only when it names a directory.
+const directoryTarget = (target: string, directory: string): string => {
+  try {
+    return statSync(target).isDirectory() ? target : directory;
+  } catch {
+    return directory;
+  }
 };
 
 // Only a literal `cd` changes the directory of the commands after it in the same list. Leading
@@ -1052,7 +1082,7 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
   if (operands.length === 0) {
     const home = homeDirectory();
 
-    return home === undefined ? directory : resolve(directory, home);
+    return home === undefined ? directory : directoryTarget(resolve(directory, home), directory);
   }
 
   // The shell rejects a second operand and stays where it is, so only one operand moves it.
@@ -1066,13 +1096,7 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
     return directory;
   }
 
-  const target = resolve(directory, operand);
-
-  try {
-    return statSync(target).isDirectory() ? target : directory;
-  } catch {
-    return directory;
-  }
+  return directoryTarget(resolve(directory, operand), directory);
 };
 
 const isExpandablePathEntry = (entry: string): boolean =>
