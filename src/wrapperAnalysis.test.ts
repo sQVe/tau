@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { shellScriptOf } from './shellScript.js';
+import { shellScriptOf } from './shell/shellScript.js';
 import { commandWords, runsRedirectionsOnlyExec } from './wrapperAnalysis.js';
 
 describe('commandWords and shellScriptOf', () => {

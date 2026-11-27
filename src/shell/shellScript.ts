@@ -5,7 +5,7 @@ import {
   optionEnd,
   withEnvSplitStrings,
   wrapperValueOptions,
-} from './wrapperAnalysis.js';
+} from '../wrapperAnalysis.js';
 
 const shellNames: ReadonlySet<string> = new Set([
   'ash',

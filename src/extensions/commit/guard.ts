@@ -12,8 +12,8 @@ import type {
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { gitEnvironment } from '../../git.js';
 import { readTextWithinSync } from '../../record.js';
-import { parseShellCommands, quoteShellArgument } from '../../shell.js';
-import type { ShellCommand, ShellInput } from '../../shell.js';
+import { parseShellCommands, quoteShellArgument } from '../../shell/shell.js';
+import type { ShellCommand, ShellInput } from '../../shell/shell.js';
 
 export type NamedFileFacts =
   | { kind: 'missing' }

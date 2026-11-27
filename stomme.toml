@@ -586,13 +586,8 @@ public = ["src/sessionMessage/askResult.ts"]
 imports = ["schema"]
 
 [modules.shell]
-entry = "src/shell.ts"
-public = []
-imports = ["wrapperAnalysis"]
-
-[modules.shellScript]
-entry = "src/shellScript.ts"
-public = []
+entry = "src/shell/shell.ts"
+public = ["src/shell/shellScript.ts"]
 imports = ["wrapperAnalysis"]
 
 [modules.skillTools]

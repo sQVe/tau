@@ -1,4 +1,4 @@
-import type { ShellCommand } from '../../shell.js';
+import type { ShellCommand } from '../../shell/shell.js';
 import { runsRedirectionsOnlyExec } from '../../wrapperAnalysis.js';
 import { streamsOf, targetOf, terminal } from './detachedStreams.js';
 import type { StreamTarget, Streams } from './detachedStreams.js';

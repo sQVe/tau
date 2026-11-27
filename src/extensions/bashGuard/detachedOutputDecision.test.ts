@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { loggedClose, nohupClose } from '../../../tests/bashGuardCommands.js';
-import { quoteShellArgument } from '../../shell.js';
+import { quoteShellArgument } from '../../shell/shell.js';
 import { decideDetachedOutput } from './detachedOutputDecision.js';
 
 const blocks = (command: string): boolean =>

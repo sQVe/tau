@@ -1,4 +1,4 @@
-import { quoteShellArgument } from '../../shell.js';
+import { quoteShellArgument } from '../../shell/shell.js';
 import type { PullView } from './chainDecisions.js';
 import type { StackedPullRequests, StackView } from './checkDecisions.js';
 

@@ -1,4 +1,4 @@
-import type { ShellCommand, ShellRedirection } from '../../shell.js';
+import type { ShellCommand, ShellRedirection } from '../../shell/shell.js';
 
 export type StreamTarget =
   | { kind: 'terminal' }

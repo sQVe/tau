@@ -1,4 +1,4 @@
-import { quoteShellArgument } from '../../shell.js';
+import { quoteShellArgument } from '../../shell/shell.js';
 
 export interface CheckoutFacts {
   exitCode: number | null;

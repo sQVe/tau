@@ -1,6 +1,6 @@
-import { parseShellCommands } from '../../shell.js';
-import type { ShellCommand, ShellRedirection } from '../../shell.js';
-import { shellScriptOf } from '../../shellScript.js';
+import { parseShellCommands } from '../../shell/shell.js';
+import type { ShellCommand, ShellRedirection } from '../../shell/shell.js';
+import { shellScriptOf } from '../../shell/shellScript.js';
 import { runsRedirectionsOnlyExec } from '../../wrapperAnalysis.js';
 import {
   compoundScope,

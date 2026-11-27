@@ -1,4 +1,4 @@
-import { afterLeadingWords } from './wrapperAnalysis.js';
+import { afterLeadingWords } from '../wrapperAnalysis.js';
 
 type ShellRedirectionOperator = '<' | '>' | '>>' | '>|' | '<>' | '>&' | '<&' | '&>' | '&>>' | '<<<';
 
