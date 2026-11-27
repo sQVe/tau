@@ -633,7 +633,11 @@ it('passes the model to the new Pi through herdr-app', async () => {
     modelContext(root, onTestFinished),
   );
 
-  const [launch] = app.calls;
+  const launches = spaceOrTabLaunchesOf(app);
+
+  expect(launches).toHaveLength(1);
+
+  const [launch] = launches;
 
   expect(argumentAfter(launch?.commandArguments ?? [], '--argv')).toBe(
     '["pi","--provider","morph","--model","morph-dsv41flash-1017"]',
