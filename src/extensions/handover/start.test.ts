@@ -152,16 +152,16 @@ it('names the started space, tab, and terminal when the started model differs', 
     },
   ).catch((error: unknown) => error);
 
-  expect(failure).toBeInstanceOf(Error);
+  expect(failure).toBeInstanceOf(StartedTabError);
 
-  const message = (failure as Error).message;
+  const started = failure as StartedTabError;
 
-  expect(message).toContain('morph/morph-dsv41flash-1017');
-  expect(message).toContain('other/model');
-  expect(message).toContain('t-new');
-  expect(message).toContain('space-1');
-  expect(message).toContain('tb-new');
-  expect(message).toContain('hc kill t-new');
+  expect(started.terminal).toBe('t-new');
+  expect(started.space).toBe('space-1');
+  expect(started.tab).toBe('tb-new');
+  expect(started.message).toContain('morph/morph-dsv41flash-1017');
+  expect(started.message).toContain('other/model');
+  expect(started.message).toContain('hc kill t-new');
   expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
 });
 
@@ -445,7 +445,7 @@ it('reports the started terminal when the model readback fails', async () => {
     ).catch((error: unknown) => error);
 
     await vi.waitFor(() => {
-      expect(app.calls.length).toBeGreaterThan(0);
+      expect(hc.calls.length).toBeGreaterThan(0);
     });
 
     await vi.advanceTimersByTimeAsync(readbackFailureBudgetMilliseconds + 1_000);

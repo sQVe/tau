@@ -106,6 +106,10 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('case $x in git|commit) echo ok ;; esac'))).toBeUndefined();
   });
 
+  it('blocks a commit that a case branch runs', () => {
+    expectOutcome(makeBashEvent('case $x in a) git commit -m x ;; esac'));
+  });
+
   it('returns a block result for a plain git commit bash command', () => {
     expectOutcome(makeBashEvent("git commit -m 'feat: add'"));
   });
