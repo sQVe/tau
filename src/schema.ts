@@ -37,9 +37,16 @@ interface SchemaWalk {
   readonly visit: (value: unknown, asserted: boolean) => unknown;
 }
 
-interface ProbeTool extends ToolDefinition {
+// The marker a probe tool carries, so the wrapper recognizes the probe of this install.
+interface ProbeTool {
   readonly [probeMarker]: true;
-  reachedWrapper: boolean;
+}
+
+// The reached flag lives beside the probe rather than on it, so a host that freezes the probe it
+// receives cannot make the wrapper fail.
+interface InstallProbe {
+  readonly tool: ProbeTool;
+  reached: boolean;
 }
 
 // A schema node the walk clones, either an object or an array.
@@ -395,25 +402,34 @@ const probeError = new Error('the strict registration probe reached the wrapper'
 
 const probeMarker: unique symbol = Symbol('strict tool parameters probe');
 
-const createProbeTool = (): ProbeTool => ({
-  [probeMarker]: true,
-  reachedWrapper: false,
+// The probe carries the fields a host may read before it delegates, but no parameter schema: the
+// host's own registration refuses such a tool, so a readback that bypasses the wrapper cannot
+// register the probe.
+const probeFields = {
   name: 'tau-strict-tool-parameters-probe',
   label: 'strict tool parameters probe',
   description: 'A tool used once to confirm that the strict registration wrapper is installed.',
-  parameters: Type.Object({}),
   execute: () => Promise.reject(probeError),
+};
+
+const createProbe = (): InstallProbe => ({
+  reached: false,
+  tool: { [probeMarker]: true, ...probeFields },
 });
 
-const isProbeTool = (value: unknown): value is ProbeTool =>
-  typeof value === 'object' && value !== null && probeMarker in value;
+const isProbeTool = (value: unknown): value is ProbeTool => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  return probeMarker in value && value[probeMarker] === true;
+};
 
 const isProbeCall = (value: unknown): value is ProbeCall => typeof value === 'function';
 
-// The probe is an ordinary tool object, so a host that reads its fields before it delegates still
-// reaches the wrapper. Only the probe of this install is evidence: another install's probe is
-// refused without being registered, and a host that records the probe may keep that tool.
-const confirmsWrapper = (readBack: unknown, probe: ProbeTool): boolean => {
+// A host that reads the probe's fields before it delegates still reaches the wrapper. Only the probe
+// of this install is evidence: another install's probe is refused without being registered.
+const confirmsWrapper = (readBack: unknown, probe: InstallProbe): boolean => {
   if (!isProbeCall(readBack)) {
     return false;
   }
@@ -421,15 +437,15 @@ const confirmsWrapper = (readBack: unknown, probe: ProbeTool): boolean => {
   let result: unknown;
 
   try {
-    result = readBack(probe);
+    result = readBack(probe.tool);
   } catch {
-    return probe.reachedWrapper;
+    return probe.reached;
   }
 
   // A host that defers the call cannot confirm the wrapper, and its rejection must not escape.
   void Promise.resolve(result).catch(() => undefined);
 
-  return probe.reachedWrapper;
+  return probe.reached;
 };
 
 // An inherited accessor accepts the value through its setter and creates no own property, and a
@@ -438,7 +454,7 @@ const verifyInstalled = (
   pi: ExtensionAPI,
   wrapper: RegisterToolReturningValue,
   current: RegisterToolReturningValue,
-  probe: ProbeTool,
+  probe: InstallProbe,
 ): void => {
   let descriptor: PropertyDescriptor | undefined;
 
@@ -473,12 +489,12 @@ const verifyInstalled = (
 const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   const current = readRegisterTool(pi);
   const registered = current.bind(pi);
-  const probe = createProbeTool();
+  const probe = createProbe();
 
   const wrapper: RegisterToolReturningValue = (tool) => {
     if (isProbeTool(tool)) {
-      if (tool === probe) {
-        probe.reachedWrapper = true;
+      if (tool === probe.tool) {
+        probe.reached = true;
       }
 
       throw probeError;

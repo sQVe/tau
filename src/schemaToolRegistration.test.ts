@@ -3,7 +3,7 @@ import type { TSchema } from 'typebox';
 import { Type } from 'typebox';
 import { expect, it } from 'vitest';
 
-import { strictToolRegistration } from './schema.js';
+import { isRecord, strictToolRegistration } from './schema.js';
 
 const registrationApi = (registerTool: (tool: unknown) => unknown): ExtensionAPI =>
   ({ registerTool }) as unknown as ExtensionAPI;
@@ -257,7 +257,114 @@ it("refuses an accessor that returns another API's wrapper while discarding the 
   expect(registered).toEqual([]);
 });
 
-it('does not leave an unhandled rejection when the host defers the registration', async () => {
+it('registers a tool whose probe marker is not true', () => {
+  const registered: unknown[] = [];
+  let captured: object = {};
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      const delegate = stored;
+
+      return (tool: unknown) => {
+        captured = typeof tool === 'object' && tool !== null ? tool : captured;
+
+        return delegate(tool);
+      };
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  strictToolRegistration(api);
+
+  const [marker] = Object.getOwnPropertySymbols(captured);
+
+  if (marker === undefined) {
+    throw new Error('the probe carried no marker symbol');
+  }
+
+  const register = api.registerTool as unknown as (tool: unknown) => unknown;
+
+  expect(() =>
+    register({ name: 'sample', parameters: Type.Object({}), [marker]: false }),
+  ).not.toThrow();
+
+  expect(registered).toMatchObject([
+    { name: 'sample', parameters: { additionalProperties: false } },
+  ]);
+});
+
+it('installs through a readback that freezes the tool it receives', () => {
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      const delegate = stored;
+
+      return (tool: unknown) => {
+        Object.freeze(tool);
+
+        return delegate(tool);
+      };
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).not.toThrow();
+
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(registered).toHaveLength(1);
+});
+
+// Pi's registerTool refuses a tool without an object parameter schema before it stores the tool.
+const piRegistration =
+  (registered: unknown[]) =>
+  (tool: unknown): void => {
+    const parameters = isRecord(tool) ? tool['parameters'] : undefined;
+
+    const hasObjectParameters =
+      typeof parameters === 'object' && parameters !== null && !Array.isArray(parameters);
+
+    if (!hasObjectParameters) {
+      throw new Error('must define an object parameter schema');
+    }
+
+    registered.push(tool);
+  };
+
+it('does not register the probe when the readback reaches the original registration', () => {
+  const registered: unknown[] = [];
+  const original = piRegistration(registered);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => (tool: unknown) => {
+      original(tool);
+    },
+    set: () => undefined,
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+
+  expect(registered).toEqual([]);
+});
+
+it('handles a rejection from a readback that returns a promise', async () => {
   const rejections: unknown[] = [];
 
   const onRejection = (reason: unknown): void => {
@@ -290,6 +397,50 @@ it('does not leave an unhandled rejection when the host defers the registration'
     process.off('unhandledRejection', onRejection);
   }
 
+  expect(rejections).toEqual([]);
+});
+
+it('refuses a readback that defers the registration until after the check', async () => {
+  const rejections: unknown[] = [];
+
+  const onRejection = (reason: unknown): void => {
+    rejections.push(reason);
+  };
+
+  process.on('unhandledRejection', onRejection);
+
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      const delegate = stored;
+
+      return async (tool: unknown) => {
+        await Promise.resolve();
+        delegate(tool);
+      };
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  try {
+    expect(() => {
+      strictToolRegistration(api);
+    }).toThrow('Cannot install strict tool parameters: registerTool is not writable on this API.');
+
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+  } finally {
+    process.off('unhandledRejection', onRejection);
+  }
+
+  expect(registered).toEqual([]);
   expect(rejections).toEqual([]);
 });
 
