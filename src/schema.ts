@@ -61,23 +61,13 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 // closing it would reject calls the author declared valid.
 export const schemaMapKeywords: ReadonlySet<string> = new Set(['patternProperties', 'properties']);
 
-export const schemaArrayKeywords: ReadonlySet<string> = new Set([
-  'allOf',
-  'anyOf',
-  'oneOf',
-  'prefixItems',
-]);
+export const schemaArrayKeywords: ReadonlySet<string> = new Set(['prefixItems']);
 
 export const schemaValueKeywords: ReadonlySet<string> = new Set([
   'additionalItems',
   'additionalProperties',
-  'contains',
-  'else',
-  'if',
   'items',
-  'not',
   'propertyNames',
-  'then',
   'unevaluatedItems',
   'unevaluatedProperties',
 ]);
@@ -220,6 +210,8 @@ const strictSchemaValue = (value: unknown, asserted = true): unknown => {
 export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Schema => {
   const strict = strictSchemaValue(schema);
 
+  // The clone holds every key, so its values win. Spreading the schema keeps the caller's type
+  // without a type assertion, which this package's lint forbids.
   return isRecord(strict) ? { ...schema, ...strict } : schema;
 };
 
@@ -258,12 +250,23 @@ const restoreRegisterTool = (pi: ExtensionAPI, original: RegisterToolReturningVa
   }
 };
 
-const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
+const failInstall = (
+  pi: ExtensionAPI,
+  current: RegisterToolReturningValue,
+  message: string,
+  cause?: unknown,
+): never => {
+  restoreRegisterTool(pi, current);
+
+  throw cause === undefined ? new Error(message) : new Error(message, { cause });
+};
+
+// An accessor or proxy trap may throw or return a different function on each read, so read the
+// property once and bind the value that was checked.
+const readRegisterTool = (pi: ExtensionAPI): RegisterToolReturningValue => {
   const host: RegisterToolHost = pi;
   let current: RegisterToolReturningValue | undefined;
 
-  // An accessor or proxy trap may throw or return a different function on each read, so read the
-  // property once and bind the value that was checked.
   try {
     current = host.registerTool;
   } catch (error) {
@@ -274,43 +277,30 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
     throw new TypeError('Cannot install strict tool parameters: registerTool is not a function.');
   }
 
-  const registered = current.bind(pi);
+  return current;
+};
 
-  const wrapper: RegisterToolReturningValue = (tool) => {
-    const registeredTool = registered({
-      ...tool,
-      parameters: strictToolParameters(tool.parameters),
-    });
-
-    return registeredTool;
-  };
-
-  try {
-    pi.registerTool = wrapper;
-  } catch (error) {
-    throw new Error(notWritableMessage, { cause: error });
-  }
-
+// An inherited accessor accepts the value through its setter and creates no own property, and a
+// proxy trap may throw while it reports one, so read the descriptor through the chain.
+const verifyInstalled = (
+  pi: ExtensionAPI,
+  wrapper: RegisterToolReturningValue,
+  current: RegisterToolReturningValue,
+): void => {
   let descriptor: PropertyDescriptor | undefined;
 
-  // An inherited accessor accepts the value through its setter and creates no own property, and a
-  // proxy trap may throw while it reports one, so read the descriptor through the chain.
   try {
     descriptor = descriptorOf(pi, 'registerTool');
   } catch (error) {
-    restoreRegisterTool(pi, current);
-
-    throw new Error(notReadableMessage, { cause: error });
+    failInstall(pi, current, notReadableMessage, error);
   }
 
   if (descriptor?.get === undefined) {
     if (descriptor?.value !== wrapper) {
-      restoreRegisterTool(pi, current);
-
-      throw new Error(notWritableMessage);
+      failInstall(pi, current, notWritableMessage);
     }
 
-    return wrapper;
+    return;
   }
 
   // An accessor may return a new wrapper on every read, so a different function can still be the
@@ -321,16 +311,28 @@ const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
   try {
     readBack = descriptor.get.call(pi);
   } catch (error) {
-    restoreRegisterTool(pi, current);
-
-    throw new Error(notReadableMessage, { cause: error });
+    failInstall(pi, current, notReadableMessage, error);
   }
 
   if (typeof readBack !== 'function' || readBack === current) {
-    restoreRegisterTool(pi, current);
-
-    throw new Error(notWritableMessage);
+    failInstall(pi, current, notWritableMessage);
   }
+};
+
+const installWrapper = (pi: ExtensionAPI): ExtensionAPI['registerTool'] => {
+  const current = readRegisterTool(pi);
+  const registered = current.bind(pi);
+
+  const wrapper: RegisterToolReturningValue = (tool) =>
+    registered({ ...tool, parameters: strictToolParameters(tool.parameters) });
+
+  try {
+    pi.registerTool = wrapper;
+  } catch (error) {
+    throw new Error(notWritableMessage, { cause: error });
+  }
+
+  verifyInstalled(pi, wrapper, current);
 
   return wrapper;
 };

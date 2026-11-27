@@ -89,18 +89,13 @@ const isOpenObject = (value: Record<string, unknown>): boolean => {
 // below and forces this oracle to walk it too.
 const localMapKeywords: ReadonlySet<string> = new Set(['patternProperties', 'properties']);
 
-const localArrayKeywords: ReadonlySet<string> = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
+const localArrayKeywords: ReadonlySet<string> = new Set(['prefixItems']);
 
 const localValueKeywords: ReadonlySet<string> = new Set([
   'additionalItems',
   'additionalProperties',
-  'contains',
-  'else',
-  'if',
   'items',
-  'not',
   'propertyNames',
-  'then',
   'unevaluatedItems',
   'unevaluatedProperties',
 ]);
@@ -236,6 +231,35 @@ const registeredTools = async (): Promise<{ registration: string; tools: Tool[] 
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+// Production leaves `$ref` and the definitions it reaches as written, so an argument object reached
+// through a reference keeps its keys open. No registered tool may use that shape while it is open.
+const referencePaths = (value: unknown, path: string): string[] => {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => referencePaths(item, `${path}/${index}`));
+  }
+
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const own = ['$ref', '$defs', 'definitions']
+    .filter((key) => key in value)
+    .map((key) => `${path}/${key}`);
+
+  return [
+    ...own,
+    ...Object.entries(value).flatMap(([key, child]) => referencePaths(child, `${path}/${key}`)),
+  ];
+};
+
+it('registers no tool whose parameters reach an argument object through $ref', async () => {
+  const offenders = (await registeredTools()).flatMap(({ registration, tools }) =>
+    tools.flatMap((tool) => referencePaths(tool.parameters, `${registration}:${tool.name}`)),
+  );
+
+  expect(offenders).toEqual([]);
 });
 
 it('pins the local schema keyword sets to the production sets', () => {

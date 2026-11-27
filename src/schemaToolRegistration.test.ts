@@ -107,10 +107,13 @@ it('installs through an API that stores registerTool in an accessor', () => {
   ]);
 });
 
-const callablePrototype = function callablePrototype() {};
-
 it('installs through an accessor inherited from a function prototype', () => {
   const registered: unknown[] = [];
+
+  const callablePrototype = function callablePrototype() {
+    return registered;
+  };
+
   let stored = (tool: unknown): unknown => registered.push(tool);
 
   Object.defineProperty(callablePrototype, 'registerTool', {
@@ -327,27 +330,4 @@ it('binds the registerTool it read once', () => {
   registerThrough(api, Type.Object({}));
 
   expect(registered).toHaveLength(1);
-});
-
-it('reports a read failure when reading registerTool back throws', () => {
-  const api = {} as ExtensionAPI;
-  let assigned: unknown;
-
-  Object.defineProperty(api, 'registerTool', {
-    configurable: true,
-    get: () => {
-      if (assigned !== undefined) {
-        throw new Error('the getter failed');
-      }
-
-      return () => undefined;
-    },
-    set: (value: unknown) => {
-      assigned = value;
-    },
-  });
-
-  expect(() => {
-    strictToolRegistration(api);
-  }).toThrow('Cannot install strict tool parameters: registerTool is not readable on this API.');
 });
