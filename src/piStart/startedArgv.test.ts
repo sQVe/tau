@@ -51,6 +51,21 @@ it.each<{ name: string; argv: readonly string[] | undefined; expected: unknown }
     expected: ['C:\\tools\\node.exe', 'C:\\tools\\pi.cmd', ...modelArguments],
   },
   {
+    name: 'a Windows path whose executable name is upper case',
+    argv: ['C:\\tools\\PI.CMD', ...modelArguments],
+    expected: ['C:\\tools\\PI.CMD', ...modelArguments],
+  },
+  {
+    name: 'a Windows node path whose executable names are upper case',
+    argv: ['C:\\tools\\NODE.EXE', 'C:\\tools\\PI.CMD', ...modelArguments],
+    expected: ['C:\\tools\\NODE.EXE', 'C:\\tools\\PI.CMD', ...modelArguments],
+  },
+  {
+    name: 'a Windows script with an upper-case suffix after the runtime',
+    argv: ['node', 'C:\\tools\\PI.EXE', ...modelArguments],
+    expected: ['node', 'C:\\tools\\PI.EXE', ...modelArguments],
+  },
+  {
     name: 'a node pi path with a leading flag',
     argv: ['node', '--experimental-strip-types', '/path/pi', ...modelArguments],
     expected: ['node', '--experimental-strip-types', '/path/pi', ...modelArguments],

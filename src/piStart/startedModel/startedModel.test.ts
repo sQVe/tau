@@ -91,6 +91,14 @@ it.each<{ name: string; facts: StartedModelFacts; expected: unknown }>([
     expected: { kind: 'unreadable' },
   },
   {
+    name: 'a model id that starts with a single dash',
+    facts: facts({
+      requested: { provider: undefined, id: '-preview' },
+      argv: ['pi', '--model', '-preview'],
+    }),
+    expected: { kind: 'match', model: '-preview' },
+  },
+  {
     name: 'a provider flag followed by another flag',
     facts: facts({
       requested: { provider: undefined, id: 'claude-opus-5-5' },

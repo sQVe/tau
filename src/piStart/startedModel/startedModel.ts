@@ -24,7 +24,8 @@ const flagValue = (argv: readonly string[], flag: string): FlagValue => {
   for (const [index, argument] of argv.entries()) {
     if (argument === flag) {
       const value = argv[index + 1];
-      const usable = value !== undefined && value !== '' && !value.startsWith('-');
+      // A model id may start with one dash; a double dash is the next flag, so the flag has no value.
+      const usable = value !== undefined && value !== '' && !value.startsWith('--');
 
       return usable ? { kind: 'value', value } : { kind: 'unreadable' };
     }

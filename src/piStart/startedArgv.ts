@@ -14,7 +14,8 @@ const runtimeExecutables = new Set([
   ...executableNames('bun', ['exe']),
 ]);
 
-const baseName = (argument: string): string => basename(argument.replaceAll('\\', '/'));
+const baseName = (argument: string): string =>
+  basename(argument.replaceAll('\\', '/')).toLowerCase();
 
 const isPiExecutable = (argument: string | undefined): boolean =>
   argument !== undefined && piExecutableNames.has(baseName(argument));
@@ -23,7 +24,7 @@ const carriesPath = (argument: string): boolean =>
   argument.includes('/') || argument.includes('\\');
 
 const hasExecutableSuffix = (argument: string): boolean =>
-  piExecutableSuffixes.some((suffix) => argument.endsWith(`.${suffix}`));
+  piExecutableSuffixes.some((suffix) => argument.toLowerCase().endsWith(`.${suffix}`));
 
 const isPathShaped = (argument: string): boolean =>
   carriesPath(argument) || hasExecutableSuffix(argument);
