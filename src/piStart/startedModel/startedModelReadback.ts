@@ -1,8 +1,11 @@
+import { basename } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+import { normalizeCancellation } from '../../command.js';
 import { parseModelReference } from '../../config/models.js';
 import { errorMessage, toError } from '../../errors.js';
 import { piArgv } from '../startedArgv.js';
+import { stillRunningClause } from '../stillRunningHint.js';
 import { decideStartedModel } from './startedModel.js';
 import type { RequestedModel, StartedModelDecision } from './startedModel.js';
 
@@ -45,8 +48,19 @@ export const readbackFailureBudgetMilliseconds = 5_000;
 
 // A terminal that shows a foreground that is not Pi (Pi exited on a bad flag, or the pane shows a
 // shell) is not going to change, so report it without using the whole readback budget. A terminal
-// that shows no foreground at all may still be starting, so it keeps the caller's deadline.
+// that shows no foreground at all, or a shell that runs a launch wrapper and may still exec Pi,
+// keeps the caller's deadline.
 export const readbackNoForegroundBudgetMilliseconds = 15_000;
+
+const shellNames = new Set(['bash', 'dash', 'ksh', 'sh', 'zsh']);
+
+// The architect launch wraps Pi in `sh -c`, so the pane shows that wrapper before Pi takes over.
+const runsShellScript = (argv: readonly string[]): boolean => {
+  const [executable] = argv;
+  const name = executable === undefined ? undefined : basename(executable);
+
+  return name !== undefined && shellNames.has(name) && argv.includes('-c');
+};
 
 const requestedModelOf = (model: string | undefined): RequestedModel => {
   if (model === undefined) {
@@ -57,7 +71,7 @@ const requestedModelOf = (model: string | undefined): RequestedModel => {
 };
 
 const stillRunningHint = (terminal: string): string =>
-  `It may still be running; check it with hc get ${terminal} before you start another.`;
+  `It ${stillRunningClause(terminal)} before you start another.`;
 
 const unreadableModelError = (terminal: string, cause?: unknown): Error => {
   const options = cause === undefined ? undefined : { cause };
@@ -78,13 +92,10 @@ const mismatchModelError = (
     `The started Pi on terminal ${terminal} runs ${decision.started}, but the request asked for ${decision.requested}. ${stillRunningHint(terminal)}`,
   );
 
-const cancellationError = (signal: AbortSignal | undefined): Error => {
-  const reason: unknown = signal?.reason;
-
-  return reason instanceof Error
-    ? reason
-    : new Error('The started model readback was cancelled.', { cause: reason });
-};
+const cancellationError = (signal: AbortSignal | undefined): Error =>
+  toError(
+    normalizeCancellation(signal, signal?.reason, 'The started model readback was cancelled.'),
+  );
 
 // A pause between reads rejects as soon as the signal aborts, so cancelling stays prompt.
 const pauseBeforeRead = async (
@@ -237,7 +248,11 @@ const pollStartedModel = async (
     throw unreadableModelError(terminal);
   }
 
-  const nextNonPiSince = nonPiSince ?? (attempt.argv === undefined ? undefined : Date.now());
+  const transientWrapper = attempt.argv !== undefined && runsShellScript(attempt.argv);
+
+  const nextNonPiSince =
+    nonPiSince ?? (attempt.argv === undefined || transientWrapper ? undefined : Date.now());
+
   const remainingAfterRead = limitOf(nextNonPiSince) - Date.now();
 
   if (remainingAfterRead <= 0) {
