@@ -239,8 +239,9 @@ export const isFunctionValue = (bindings: BindingScopes, node: Expression | null
 };
 
 // A plain identifier initializer carries its binding's kind, so an alias of an imported or parameter
-// object still escapes when a property of the alias is assigned. A TypeScript-only wrapper is
-// erased, so it does not change the kind.
+// object still escapes when a property of the alias is assigned. A member of an escaping object
+// carries the object's kind too, so `const api = request.api` still escapes. A TypeScript-only
+// wrapper is erased, so it does not change the kind.
 const isEscapingAlias = (bindings: BindingScopes, node: Expression | null): boolean => {
   if (node === null) {
     return false;

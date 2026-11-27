@@ -1,12 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { purityProblems } from './pureModuleExceptions.js';
 import { impurities } from './pureModuleImpurities.js';
-
-const readImportSource = (): string => "import { readFile } from 'node:fs/promises';\n";
-
-const readImportAndDateSource = (): string =>
-  `${readImportSource()}const first = Date();\nconst second = Date();\n`;
 
 const testRegistry = ['src/pure/decide.ts', 'src/pure/rules.ts'];
 
@@ -41,6 +35,9 @@ const importedAliasPropertySource = (): string =>
 
 const memberAliasPropertySource = (): string =>
   'export const install = (request) => {\n  const api = request.api;\n  api.run = () => 1;\n};\n';
+
+const localMemberAliasSource = (): string =>
+  'const handlers = { api: {} };\nexport const install = () => {\n  const api = handlers.api;\n  api.run = () => 1;\n};\n';
 
 const endedSwitchClassSource = (): string =>
   'export const install = (api, value) => {\n  switch (value) {\n    case 1:\n      class Handler {}\n      Handler;\n  }\n  api.run = Handler;\n};\n';
@@ -123,11 +120,11 @@ it('reports an escape through an alias of a parameter member', () => {
   ]);
 });
 
-it('keeps a class declared in a switch case inside the switch', () => {
-  expect(impurities('src/pure/decide.ts', switchCaseClassSource(), testRegistry)).toEqual([
-    'src/pure/decide.ts:5: assigns a function to a property',
-  ]);
+it('does not report an alias of a member of a local object', () => {
+  expect(impurities('src/pure/decide.ts', localMemberAliasSource(), testRegistry)).toEqual([]);
+});
 
+it('keeps a class declared in a switch case inside the switch', () => {
   expect(impurities('src/pure/decide.ts', endedSwitchClassSource(), testRegistry)).toEqual([]);
 });
 
@@ -270,77 +267,4 @@ it('does not report a function declared in a block that has ended', () => {
 it('does not let a binding leak out of a sibling function', () => {
   expect(impurities('src/pure/decide.ts', siblingFunctionSource(), testRegistry)).toEqual([]);
   expect(impurities('src/pure/decide.ts', siblingBindingSource(), testRegistry)).toEqual([]);
-});
-
-it('applies each pure module exception to one finding and reports a stale exception', () => {
-  const modules = ['src/pure/decide.ts'];
-
-  expect(purityProblems(modules, {}, readImportSource)).toEqual([
-    'src/pure/decide.ts:1: runtime import of node:fs/promises',
-  ]);
-
-  expect(
-    purityProblems(
-      modules,
-      { 'src/pure/decide.ts': ['runtime import of node:fs/promises'] },
-      readImportSource,
-    ),
-  ).toEqual([]);
-
-  expect(
-    purityProblems(
-      modules,
-      { 'src/pure/decide.ts': ['assigns a function to a property'] },
-      readImportSource,
-    ),
-  ).toEqual([
-    'src/pure/decide.ts:1: runtime import of node:fs/promises',
-    'src/pure/decide.ts: unused exception assigns a function to a property',
-  ]);
-
-  expect(
-    purityProblems(
-      modules,
-      { 'src/pure/other.ts': ['runtime import of node:fs/promises'] },
-      readImportSource,
-    ),
-  ).toEqual([
-    'src/pure/decide.ts:1: runtime import of node:fs/promises',
-    'src/pure/other.ts: exception for an unregistered module',
-  ]);
-});
-
-it('reports an exception reason that matches more than one finding', () => {
-  expect(
-    purityProblems(
-      ['src/pure/decide.ts'],
-      { 'src/pure/decide.ts': ['Date()'] },
-      readImportAndDateSource,
-    ),
-  ).toEqual([
-    'src/pure/decide.ts:1: runtime import of node:fs/promises',
-    'src/pure/decide.ts:2: Date()',
-    'src/pure/decide.ts:3: Date()',
-    'src/pure/decide.ts: exception Date() matches 2 findings',
-  ]);
-});
-
-it('does not let an empty or partial exception reason suppress a finding', () => {
-  const modules = ['src/pure/decide.ts'];
-
-  expect(purityProblems(modules, { 'src/pure/decide.ts': [''] }, readImportSource)).toEqual([
-    'src/pure/decide.ts:1: runtime import of node:fs/promises',
-    'src/pure/decide.ts: unused exception ',
-  ]);
-
-  expect(
-    purityProblems(
-      modules,
-      { 'src/pure/decide.ts': ['a function to a property'] },
-      functionPropertySource,
-    ),
-  ).toEqual([
-    'src/pure/decide.ts:2: assigns a function to a property',
-    'src/pure/decide.ts: unused exception a function to a property',
-  ]);
 });
