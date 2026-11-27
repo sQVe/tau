@@ -1,5 +1,15 @@
 # tau
 
+## 1.5.0
+
+### Minor Changes
+
+- [#825](https://github.com/sQVe/tau/pull/825)
+  [`b0a3811`](https://github.com/sQVe/tau/commit/b0a3811f3758291dcd7daebef0d9ef005bea2660) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `pr` tool now dry-runs and publishes PR titles, bodies,
+  comments, and reviews from files. It returns prose findings before publishing and refuses a file
+  that changed after the dry run.
+
 ## 1.4.2
 
 ### Patch Changes
