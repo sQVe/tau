@@ -45,14 +45,16 @@ export const commandFailure = (
   }
 
   const output = result.stderr.trim() || result.stdout.trim();
+  // A cut output is incomplete, so the message must not read as the whole output.
+  const truncatedSuffix = result.truncated ? ' (output truncated)' : '';
 
   if (output !== '') {
-    return new Error(`${label} failed: ${output}`);
+    return new Error(`${label} failed: ${output}${truncatedSuffix}`);
   }
 
   const status = result.killed ? 'killed' : `exit code ${result.code}`;
 
-  return new Error(`${label} failed: ${status}`);
+  return new Error(`${label} failed: ${status}${truncatedSuffix}`);
 };
 
 export const runCommand = async (

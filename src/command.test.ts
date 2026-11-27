@@ -35,6 +35,18 @@ it('keeps the whole failure output when it is long', () => {
   expect(failure?.message).toBe(`git push failed: ${stderr}`);
 });
 
+it('marks a failure whose output the exec cut', () => {
+  const failure = commandFailure('git push', failedResult({ stderr: 'boom', truncated: true }));
+
+  expect(failure?.message).toBe('git push failed: boom (output truncated)');
+});
+
+it('marks a truncated failure that printed nothing', () => {
+  const failure = commandFailure('git push', failedResult({ code: 3, truncated: true }));
+
+  expect(failure?.message).toBe('git push failed: exit code 3 (output truncated)');
+});
+
 it('names the command when a cancelled call rejects with a non-Error reason', async () => {
   const controller = new AbortController();
   const reason: unknown = 'stopped';
@@ -55,9 +67,13 @@ it('names the command when a cancelled call rejects with a non-Error reason', as
     },
   };
 
-  const failure = await runCommand(runtime, 'git', ['status'], 'git status').catch(
-    (error: unknown) => error,
-  );
+  let failure: unknown;
+
+  try {
+    await runCommand(runtime, 'git', ['status'], 'git status');
+  } catch (error) {
+    failure = error;
+  }
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toBe('git status failed: cancelled');
