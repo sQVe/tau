@@ -4,8 +4,6 @@
 export interface CommandWords {
   readonly words: readonly string[];
   readonly lookup: boolean;
-  // True when an `env -S` value depends on the environment, so no command can be named.
-  readonly unreadable: boolean;
 }
 
 export interface CommandStart {
@@ -156,8 +154,17 @@ const wrapperArguments: Readonly<Record<string, number>> = {
 };
 
 // `taskset -c`/`--cpu-list` supplies the CPU list as the option value, so no mask operand follows.
+// The option may carry its value attached (`-c0-3`, `--cpu-list=0-3`) or sit in a short cluster.
+const hasTasksetCpuList = (option: string): boolean => {
+  if (option === '--cpu-list' || option.startsWith('--cpu-list=')) {
+    return true;
+  }
+
+  return option.startsWith('-') && !option.startsWith('--') && option.includes('c');
+};
+
 const fixedArgumentsOf = (name: string, options: readonly string[]): number => {
-  if (name === 'taskset' && options.some((option) => option === '-c' || option === '--cpu-list')) {
+  if (name === 'taskset' && options.some(hasTasksetCpuList)) {
     return 0;
   }
 
@@ -369,7 +376,6 @@ const envEscape = (value: string, index: number, inDoubleQuotes: boolean): EnvEs
 const isSingleQuoteEscape = (character: string | undefined): boolean =>
   character === "'" || character === '\\';
 
-// A `#` at the start of an argument comments out the rest, and `\c` ends the string.
 const finishEnvWord = (state: EnvSplitState): void => {
   if (state.started) {
     state.words.push(state.word);
@@ -436,15 +442,8 @@ const readDoubleQuotedCharacter = (
 
   const escaped = envEscape(value, state.index, true);
 
-  if (escaped.kind === 'invalid' || escaped.kind === 'stop') {
+  if (escaped.kind !== 'character') {
     return { kind: 'ignored' };
-  }
-
-  if (escaped.kind === 'separator') {
-    finishEnvWord(state);
-    state.index = escaped.end;
-
-    return undefined;
   }
 
   appendEnvText(state, escaped.value);
@@ -553,16 +552,30 @@ export const splitEnvString = (value: string): EnvSplitString => {
 const splitStringPrefix = '--split-string=';
 const splitStringOptionLetter = 'S';
 
-const splitStringAt = (
+// The long option takes its value after `=`, or as the next word.
+const longSplitStringAt = (
+  words: readonly string[],
+  index: number,
+): { value: string; end: number } | undefined => {
+  const word = words[index] ?? '';
+
+  if (word === '--split-string') {
+    return { value: words[index + 1] ?? '', end: index + 2 };
+  }
+
+  return word.startsWith(splitStringPrefix)
+    ? { value: word.slice(splitStringPrefix.length), end: index + 1 }
+    : undefined;
+};
+
+// A short option carries its value attached or as the next word, unless an earlier letter in the
+// cluster takes the rest as its own value.
+const shortSplitStringAt = (
   words: readonly string[],
   index: number,
   valueOptions: ReadonlySet<string>,
 ): { value: string; end: number } | undefined => {
   const word = words[index] ?? '';
-
-  if (word.startsWith(splitStringPrefix)) {
-    return { value: word.slice(splitStringPrefix.length), end: index + 1 };
-  }
 
   if (!word.startsWith('-') || word.startsWith('--')) {
     return undefined;
@@ -588,6 +601,13 @@ const splitStringAt = (
 
   return undefined;
 };
+
+const splitStringAt = (
+  words: readonly string[],
+  index: number,
+  valueOptions: ReadonlySet<string>,
+): { value: string; end: number } | undefined =>
+  longSplitStringAt(words, index) ?? shortSplitStringAt(words, index, valueOptions);
 
 // Finds an `env` split string among its options. The scan stops at `--` or at the first operand,
 // because `env` stops reading options there.
@@ -666,13 +686,12 @@ export const withEnvSplitStrings = (words: readonly string[]): ExpandedWords => 
 };
 
 // The words a wrapper or keyword runs as a command. `lookup` is true when a `command -v` or
-// `command -V` wrapper names a command instead of running it. `unreadable` is true when an `env -S`
-// value cannot be resolved, so no command can be named.
+// `command -V` wrapper names a command instead of running it.
 export const commandWords = (words: readonly string[]): CommandWords => {
   const expanded = withEnvSplitStrings(words);
   const { index, lookup } = commandStart(expanded.words);
 
-  return { words: expanded.words.slice(index), lookup, unreadable: expanded.unreadable };
+  return { words: expanded.words.slice(index), lookup };
 };
 
 // The shell builtins that run the command after them in the current shell. A wrapper such as `env`

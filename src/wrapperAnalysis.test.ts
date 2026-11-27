@@ -24,7 +24,20 @@ describe('commandWords', () => {
     { name: 'an ionice class', words: ['ionice', '-c', '3', 'sh', '-c', 'cmd'] },
     { name: 'a chrt priority', words: ['chrt', '-f', '1', 'sh', '-c', 'cmd'] },
     { name: 'a taskset cpu list', words: ['taskset', '-c', '0-3', 'sh', '-c', 'cmd'] },
+    { name: 'a taskset attached cpu list', words: ['taskset', '-c0-3', 'sh', '-c', 'cmd'] },
+    {
+      name: 'a taskset long cpu list with its value attached',
+      words: ['taskset', '--cpu-list=0-3', 'sh', '-c', 'cmd'],
+    },
+    {
+      name: 'a taskset cpu list inside a cluster',
+      words: ['taskset', '-ac', '0-3', 'sh', '-c', 'cmd'],
+    },
     { name: 'a taskset mask', words: ['taskset', '0x3', 'sh', '-c', 'cmd'] },
+    {
+      name: 'an env split string after the spaced long option',
+      words: ['env', '--split-string', 'sh -c cmd'],
+    },
     { name: 'an unbuffer prefix', words: ['unbuffer', 'sh', '-c', 'cmd'] },
     { name: 'an env path option', words: ['env', '-P', '/tmp', 'sh', '-c', 'cmd'] },
     { name: 'an xargs max replacements option', words: ['xargs', '-J', 'x', 'sh', '-c', 'cmd'] },
@@ -36,7 +49,6 @@ describe('commandWords', () => {
     expect(commandWords(['echo', 'env', '-S', 'a b'])).toEqual({
       words: ['echo', 'env', '-S', 'a b'],
       lookup: false,
-      unreadable: false,
     });
   });
 
@@ -98,11 +110,10 @@ describe('commandWords', () => {
     expect(commandWords(['env', '-iS', 'hc send t1 x']).words).toEqual(['hc', 'send', 't1', 'x']);
   });
 
-  it('marks an env -S value that depends on the environment as unreadable', () => {
+  it('drops the words of an env -S value that depends on the environment', () => {
     expect(commandWords(['env', '-S', `\${SHELL} -c cmd`])).toEqual({
       words: [],
       lookup: false,
-      unreadable: true,
     });
   });
 
@@ -110,7 +121,6 @@ describe('commandWords', () => {
     expect(commandWords(['env', '-S', 'a\\ b sh -c cmd'])).toEqual({
       words: [],
       lookup: false,
-      unreadable: false,
     });
   });
 
@@ -178,7 +188,6 @@ describe('commandWords', () => {
       expect(commandWords([name, '-x'])).toEqual({
         words: [name, '-x'],
         lookup: false,
-        unreadable: false,
       });
     },
   );
@@ -187,13 +196,11 @@ describe('commandWords', () => {
     expect(commandWords(['command', '-v', 'sh', '-c', 'cmd'])).toEqual({
       words: ['sh', '-c', 'cmd'],
       lookup: true,
-      unreadable: false,
     });
 
     expect(commandWords(['command', '-p', '--', 'hc', 'send'])).toEqual({
       words: ['hc', 'send'],
       lookup: false,
-      unreadable: false,
     });
   });
 });
