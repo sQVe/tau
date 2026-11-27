@@ -113,6 +113,22 @@ describe('parseShellCommands', () => {
     expect(pipeTargetsOf('{ a; b; } | c')).toEqual([3, 3, 3, undefined]);
   });
 
+  it('offsets the pipe target of a spliced sub-parse into the outer list', () => {
+    expect(pipeTargetsOf('echo `a | b`')).toEqual([undefined, 2, undefined]);
+
+    expect(pipeTargetsOf('cat <<EOF\n$(a | b)\nEOF')).toEqual([
+      undefined,
+      undefined,
+      3,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('keeps an inner pipeline target when an enclosing element is also piped', () => {
+    expect(pipeTargetsOf('{ a | b; } | c')).toEqual([1, 3, 3, undefined]);
+  });
+
   it('records the group start on the command that closes the group', () => {
     expect(groupsOf('( a; b ) > out')).toEqual([undefined, undefined, undefined, 1]);
   });
@@ -666,10 +682,14 @@ describe('parseShellCommands', () => {
 describe('commandWords and shellScriptOf', () => {
   it.each([
     { name: 'a doas user option', words: ['doas', '-u', 'root', 'sh', '-c', 'cmd'] },
-    { name: 'an env split string option', words: ['env', '-u', 'HOME', 'sh', '-c', 'cmd'] },
+    { name: 'an env unset option', words: ['env', '-u', 'HOME', 'sh', '-c', 'cmd'] },
+    { name: 'an env split string value', words: ['env', '-S', 'sh -c cmd'] },
+    { name: 'an env split string attached value', words: ['env', '-Ssh -c cmd'] },
+    { name: 'an env split string equals value', words: ['env', '--split-string=sh -c cmd'] },
     { name: 'an env chdir option', words: ['env', '--chdir', '/tmp', 'sh', '-c', 'cmd'] },
     { name: 'a nice adjustment', words: ['nice', '-n', '5', 'sh', '-c', 'cmd'] },
     { name: 'a stdbuf output option', words: ['stdbuf', '-oL', 'sh', '-c', 'cmd'] },
+    { name: 'a stdbuf output value option', words: ['stdbuf', '-o', 'L', 'sh', '-c', 'cmd'] },
     { name: 'a sudo user option', words: ['sudo', '-u', 'root', 'sh', '-c', 'cmd'] },
     { name: 'a timeout signal option', words: ['timeout', '-s', 'TERM', '5', 'sh', '-c', 'cmd'] },
     { name: 'an xargs replace option', words: ['xargs', '-I', '{}', 'sh', '-c', 'cmd'] },
@@ -681,6 +701,14 @@ describe('commandWords and shellScriptOf', () => {
   ])('reads the command head past $name', ({ words }) => {
     expect(commandWords(words).words).toEqual(['sh', '-c', 'cmd']);
     expect(shellScriptOf(words)).toBe('cmd');
+  });
+
+  it('stops reading env options at the first operand', () => {
+    expect(commandWords(['env', 'echo', '-S', 'sh -c cmd']).words).toEqual([
+      'echo',
+      '-S',
+      'sh -c cmd',
+    ]);
   });
 
   it.each([
@@ -835,6 +863,11 @@ it.each([
   },
   { name: 'a command-qualified exec', words: ['command', 'exec'], runs: true },
   { name: 'a builtin-qualified exec', words: ['builtin', 'exec'], runs: true },
+  {
+    name: 'a time word after a qualifier',
+    words: ['command', 'time', 'exec'],
+    runs: false,
+  },
   { name: 'an exec that runs a command', words: ['exec', 'cmd'], runs: false },
   { name: 'an env exec', words: ['env', 'exec'], runs: false },
   { name: 'a sudo exec', words: ['sudo', 'exec'], runs: false },

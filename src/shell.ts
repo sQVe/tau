@@ -616,11 +616,12 @@ const shellQualifierNames: ReadonlySet<string> = new Set(['builtin', 'command'])
 // the shell that runs it. Only a keyword, `time`, or a shell qualifier may sit before `exec`.
 export const runsRedirectionsOnlyExec = (words: readonly string[]): boolean => {
   let index = 0;
+  let afterQualifier = false;
 
   while (index < words.length) {
     const word = words[index] ?? '';
     const name = commandNameOf(word);
-    const afterLeading = afterLeadingWords(words, index, true);
+    const afterLeading = afterLeadingWords(words, index, !afterQualifier);
 
     if (afterLeading !== index) {
       index = afterLeading;
@@ -633,6 +634,7 @@ export const runsRedirectionsOnlyExec = (words: readonly string[]): boolean => {
       }
 
       index = afterOptions;
+      afterQualifier = true;
     } else {
       break;
     }
@@ -1145,7 +1147,9 @@ class ShellParser {
     }
 
     for (const command of this.commands.slice(element.start, commandIndex)) {
-      command.pipeTarget = commandIndex;
+      // An inner pipeline already named the element it writes to, so the enclosing pipe must not
+      // replace it.
+      command.pipeTarget ??= commandIndex;
     }
 
     if (element.parentShellId === undefined) {
@@ -1421,6 +1425,10 @@ class ShellParser {
   private offsetCommand(command: ShellCommand, base: number): void {
     if (command.group !== undefined) {
       command.group += base;
+    }
+
+    if (command.pipeTarget !== undefined) {
+      command.pipeTarget += base;
     }
   }
 
