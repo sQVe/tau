@@ -20,6 +20,8 @@ import type {
   VisitorObject,
 } from 'oxc-parser';
 
+import { pureLibraries } from './pureModuleRegistry.js';
+
 type BindingKind = 'escaping' | 'function' | 'local';
 
 interface BindingScope {
@@ -30,243 +32,6 @@ interface BindingScope {
 interface WrappedExpression {
   readonly expression: Expression;
 }
-
-export const pureModules = [
-  'scripts/pathCommands.ts',
-  'scripts/piSessionRules.ts',
-  'scripts/piSmokeChecks.ts',
-  'scripts/piVersionDrift.ts',
-  'scripts/proseReport/proseReportSummary.ts',
-  'scripts/questionGateScore/questionGateScoreLog.ts',
-  'scripts/questionGateScore/questionGateScorePrepare.ts',
-  'scripts/questionGateScore/questionGateScoreReport.ts',
-  'scripts/questionGateScore/sessionLowerBound.ts',
-  'scripts/questionGateScore/shadowReport.ts',
-  'scripts/sessionHealthReport.ts',
-  'scripts/sessionHealthRules.ts',
-  'scripts/tokenUsageReport.ts',
-  'src/checkRecord/reuseDecision.ts',
-  'src/codemode/budget.ts',
-  'src/codemode/controlTools.ts',
-  'src/codemode/outputCuts.ts',
-  'src/codemode/outputRetention.ts',
-  'src/codemode/outputSegments.ts',
-  'src/config/allowedModels.ts',
-  'src/config/repositoryEntry.ts',
-  'src/dialog/eligibility.ts',
-  'src/extensions/architect/architectInboxDecision.ts',
-  'src/extensions/architect/ask/askDecision.ts',
-  'src/extensions/architect/ask/askIntakeDecision.ts',
-  'src/extensions/architect/ask/gateQuestion.ts',
-  'src/extensions/architect/claimRelease/claimReleaseDecision.ts',
-  'src/extensions/architect/claimRelease/launchOutcomeDecision.ts',
-  'src/extensions/architect/endNoteDecision.ts',
-  'src/extensions/architect/finalHandoverDecision.ts',
-  'src/extensions/architect/gateDecision.ts',
-  'src/extensions/architect/handoffDecision.ts',
-  'src/extensions/architect/open/openReuseDecision.ts',
-  'src/extensions/architect/queuedHandover.ts',
-  'src/extensions/architect/readFailureDecision.ts',
-  'src/extensions/architect/shutdownDecision.ts',
-  'src/extensions/architect/startFence/startFenceDecision.ts',
-  'src/extensions/architect/startTicket/startTicketDecision.ts',
-  'src/extensions/askUserQuestion/layout.ts',
-  'src/extensions/askUserQuestion/questionnaire.ts',
-  'src/extensions/askUserQuestion/typedAnswerGuard.ts',
-  'src/extensions/askUserQuestion/validation.ts',
-  'src/extensions/bashGuard/detachedOutputDecision.ts',
-  'src/extensions/bashGuard/detachedStreams.ts',
-  'src/extensions/checkoutWarning/message.ts',
-  'src/extensions/commit/autosquash.ts',
-  'src/extensions/commit/fileRequests.ts',
-  'src/extensions/compaction/reminder.ts',
-  'src/extensions/draftReview/reviewDecisions.ts',
-  'src/extensions/fullCheck/idleDecision.ts',
-  'src/extensions/fullCheck/mutationVerdict.ts',
-  'src/extensions/handBack/handBackDecision.ts',
-  'src/extensions/handover/placement.ts',
-  'src/extensions/handoverQuestion/answer/answerDecision.ts',
-  'src/extensions/handoverQuestion/answer/receivedQuestion.ts',
-  'src/extensions/handoverQuestion/senderMessages.ts',
-  'src/extensions/improvement/recordPassDecision.ts',
-  'src/extensions/improvement/recordRequest.ts',
-  'src/extensions/inbox/arrivalDecision.ts',
-  'src/extensions/inbox/guardDecision.ts',
-  'src/extensions/inbox/ownerDecision.ts',
-  'src/extensions/mergeWatch/autoMergeRequest.ts',
-  'src/extensions/mergeWatch/mergeOffer.ts',
-  'src/extensions/mergeWatch/watchOutcome.ts',
-  'src/extensions/mergeWatch/watchStart.ts',
-  'src/extensions/modelFallback/fallbackRoute.ts',
-  'src/extensions/piResume/sessionDecision.ts',
-  'src/extensions/plan/headerLayout.ts',
-  'src/extensions/plan/prompt.ts',
-  'src/extensions/plan/stepStyle.ts',
-  'src/extensions/plan/steps.ts',
-  'src/extensions/pr/evidenceDecisions.ts',
-  'src/extensions/pr/publish/publishDecisions.ts',
-  'src/extensions/pr/reuseDecisions.ts',
-  'src/extensions/pr/targetDecisions.ts',
-  'src/extensions/pr/verifyDecisions.ts',
-  'src/extensions/prFeedback/checkEvidence.ts',
-  'src/extensions/prFeedback/feedbackBounds.ts',
-  'src/extensions/prFeedback/snapshotChange.ts',
-  'src/extensions/prFeedback/statusDecisions.ts',
-  'src/extensions/prFeedback/threads.ts',
-  'src/extensions/prFeedback/writes.ts',
-  'src/extensions/sessionLock/lockDecision.ts',
-  'src/extensions/slice/blockers.ts',
-  'src/extensions/slice/foreignWrites.ts',
-  'src/extensions/slice/startDecisions.ts',
-  'src/extensions/slice/startPickDecisions.ts',
-  'src/extensions/slice/writes.ts',
-  'src/extensions/snippets/history.ts',
-  'src/extensions/snippets/insertion.ts',
-  'src/extensions/snippets/query.ts',
-  'src/extensions/stack/branchDecisions.ts',
-  'src/extensions/stack/chainDecisions.ts',
-  'src/extensions/stack/checkDecisions.ts',
-  'src/extensions/stack/historyDecisions.ts',
-  'src/extensions/stack/linkDecisions.ts',
-  'src/extensions/stack/readResult.ts',
-  'src/extensions/statusbar/reuseDecision.ts',
-  'src/extensions/subagents/acceptanceRefusal.ts',
-  'src/extensions/subagents/bashOutputCap.ts',
-  'src/extensions/subagents/capacityRefusal.ts',
-  'src/extensions/subagents/deadlineDecision.ts',
-  'src/extensions/subagents/eventDecision.ts',
-  'src/extensions/subagents/fullCheckRefusal.ts',
-  'src/extensions/subagents/incompleteReport.ts',
-  'src/extensions/subagents/launchEnvironment.ts',
-  'src/extensions/subagents/modelRefusal.ts',
-  'src/extensions/subagents/qaBrief.ts',
-  'src/extensions/subagents/report/pageInventory/pageInventory.ts',
-  'src/extensions/subagents/report/pageInventory/pageInventoryDecision.ts',
-  'src/extensions/subagents/report/pageInventory/pageInventoryDecisions.ts',
-  'src/extensions/subagents/report/pageInventory/pageInventoryRefusal.ts',
-  'src/extensions/subagents/report/reportGateDecision.ts',
-  'src/extensions/subagents/report/reportSections.ts',
-  'src/extensions/subagents/roleLaunchRefusal.ts',
-  'src/extensions/subagents/sessionUse.ts',
-  'src/extensions/subagents/skillToolsRefusal.ts',
-  'src/extensions/subagents/summaryLength.ts',
-  'src/extensions/subagents/workerAnswer.ts',
-  'src/extensions/subagents/workerDecision.ts',
-  'src/extensions/subagents/workerFolderDecision.ts',
-  'src/extensions/subagents/workerMessage.ts',
-  'src/extensions/subagents/workerModels.ts',
-  'src/extensions/subagents/workerName.ts',
-  'src/extensions/subagents/workerPackages.ts',
-  'src/extensions/subagents/workerPlacement.ts',
-  'src/extensions/subagents/workerResume.ts',
-  'src/extensions/subagents/workerStart.ts',
-  'src/extensions/subagents/workerTools.ts',
-  'src/extensions/tauSkills/requiredFor.ts',
-  'src/extensions/tdd/configLayers.ts',
-  'src/extensions/tdd/fileRoles.ts',
-  'src/extensions/tdd/inputGlob.ts',
-  'src/extensions/tdd/observationTransition.ts',
-  'src/extensions/tdd/projectPath.ts',
-  'src/extensions/tdd/repositoryRoot.ts',
-  'src/extensions/tdd/runner/cargoInputFiles.ts',
-  'src/extensions/tdd/runner/cargoMetadata.ts',
-  'src/extensions/tdd/runner/constants.ts',
-  'src/extensions/tdd/runner/junit.ts',
-  'src/extensions/tdd/runner/nextestArguments.ts',
-  'src/extensions/tdd/runner/nextestFocus.ts',
-  'src/extensions/tdd/runner/nextestList.ts',
-  'src/extensions/tdd/runner/nextestResult.ts',
-  'src/extensions/tdd/runner/report.ts',
-  'src/extensions/tdd/runner/rustAttribution.ts',
-  'src/extensions/tdd/runner/rustDepInfo.ts',
-  'src/extensions/tdd/runner/testNames.ts',
-  'src/extensions/tdd/runner/vitestOptions.ts',
-  'src/extensions/tdd/runner/vitestSelection.ts',
-  'src/extensions/tdd/runner/vitestVersion.ts',
-  'src/extensions/tdd/worktreePath.ts',
-  'src/extensions/toolResultRedaction/redaction.ts',
-  'src/extensions/tracker/approvedPreview.ts',
-  'src/extensions/tracker/cancelDecision.ts',
-  'src/extensions/tracker/candidateFit.ts',
-  'src/extensions/tracker/commentTarget.ts',
-  'src/extensions/tracker/promptLines.ts',
-  'src/extensions/tracker/setupDiagnostic.ts',
-  'src/extensions/tracker/ticketWrites.ts',
-  'src/extensions/verification/itemDecision.ts',
-  'src/extensions/verification/runDecision.ts',
-  'src/fileLock/lockHolderDecision.ts',
-  'src/github/pullRequestDecisions.ts',
-  'src/github/repositoryTargetDecisions.ts',
-  'src/handoverSender.ts',
-  'src/improvement/classIdentity.ts',
-  'src/improvement/correctDecision.ts',
-  'src/improvement/historyRead.ts',
-  'src/improvement/sessionDirectory.ts',
-  'src/improvement/signals.ts',
-  'src/improvement/statusDecision.ts',
-  'src/improvement/sweepDecision.ts',
-  'src/improvement/taskFacts.ts',
-  'src/improvement/taskMapping.ts',
-  'src/improvement/transcript.ts',
-  'src/improvement/workerRecord.ts',
-  'src/improvement/writeDecision.ts',
-  'src/inbox/protocol.ts',
-  'src/inbox/receiptDecision.ts',
-  'src/inbox/targetDecision.ts',
-  'src/instructions/guideLinks.ts',
-  'src/instructions/languageRules/languageRulesDecision.ts',
-  'src/instructions/markdownLinks.ts',
-  'src/instructions/stommeGuides/stommeGuidesDecision.ts',
-  'src/instructions/syncRecord.ts',
-  'src/linear/descriptionMatch.ts',
-  'src/linear/ownership.ts',
-  'src/piStart/startedModel/startedModel.ts',
-  'src/process/stateDecision.ts',
-  'src/prose.ts',
-  'src/questionGate/decideDecision.ts',
-  'src/questionGate/decision/decision.ts',
-  'src/questionGate/examples.ts',
-  'src/questionGate/panelVerdict.ts',
-  'src/questionGate/shadowDecision.ts',
-  'src/reviewBots/reviewBotDecisions.ts',
-  'src/reviewCapture/chainSelectionDecision.ts',
-  'src/reviewCapture/coverageDecision.ts',
-  'src/reviewCapture/endpointDecision.ts',
-  'src/reviewCapture/endpointPruneDecision.ts',
-  'src/reviewCapture/evidenceDecisions.ts',
-  'src/reviewCapture/fixScope.ts',
-  'src/reviewCapture/freshness.ts',
-  'src/reviewCapture/generationDecision.ts',
-  'src/reviewCapture/gitQuotedName.ts',
-  'src/reviewCapture/lineEndingWarning.ts',
-  'src/reviewCapture/ownershipDecision.ts',
-  'src/reviewCapture/patchBlobs.ts',
-  'src/reviewCapture/predecessorDecision.ts',
-  'src/reviewCapture/reports.ts',
-  'src/role/roleGuidelines.ts',
-  'src/role/roleTools.ts',
-  'src/schema.ts',
-  'src/sessionMessage/askResult.ts',
-  'src/sessionMessage/sessionMessage.ts',
-  'src/shell.ts',
-  'src/tabName.ts',
-  'src/terminalText.ts',
-  'src/verification/freshness.ts',
-  'src/verification/selection.ts',
-  'src/wake/deliveryStep.ts',
-  'tests/hcIsolationHarness.ts',
-];
-
-export const pureAdvice =
-  'A pure module must not read records, the clock, randomness, or the environment, or escape a function into an imported, parameter, or global object. Move the read or effect to the caller and pass the value in as a fact.';
-
-// `strictToolRegistration` replaces `registerTool` on the API it is given and keeps a set of
-// installed APIs, so `src/schema.ts` breaks the no-effect rule. The import table may only shrink,
-// so a new module is not an option. Record the finding instead of dropping the module from the
-// registry.
-export const pureModuleExceptions: Readonly<Record<string, string>> = {
-  'src/schema.ts': 'assigns a function to a property',
-};
 
 const effectMembers = new Set(['Date.now', 'Math.random', 'performance.now', 'process.env']);
 
@@ -304,39 +69,6 @@ const isTypeOnly = (node: ModuleDeclaration) => {
 
 export const findingLines = (found: string[]): number[] =>
   found.map((finding) => Number(finding.split(':')[1]));
-
-const pureLibraries: Readonly<Record<string, readonly string[]>> = {
-  'scripts/questionGateScore/questionGateScorePrepare.ts': ['node:crypto'],
-  'src/extensions/modelFallback/fallbackRoute.ts': ['typebox', 'typebox/value'],
-  'src/extensions/plan/steps.ts': ['typebox', 'typebox/value'],
-  'src/extensions/pr/publish/publishDecisions.ts': ['node:crypto'],
-  'src/extensions/improvement/recordRequest.ts': ['node:path', 'typebox'],
-  'src/extensions/subagents/report/pageInventory/pageInventoryDecision.ts': ['marked'],
-  'src/extensions/subagents/report/pageInventory/pageInventoryDecisions.ts': ['marked'],
-  'src/extensions/subagents/report/reportSections.ts': ['marked'],
-  'src/extensions/tdd/inputGlob.ts': ['minimatch'],
-  'src/extensions/tdd/projectPath.ts': ['node:path'],
-  'src/extensions/tdd/runner/cargoInputFiles.ts': ['node:path'],
-  'src/extensions/tdd/runner/junit.ts': ['@xmldom/xmldom'],
-  'src/extensions/tdd/runner/report.ts': ['node:path'],
-  'src/extensions/handBack/handBackDecision.ts': ['marked'],
-  'src/improvement/classIdentity.ts': ['node:crypto'],
-  'src/improvement/historyRead.ts': ['typebox', 'typebox/value'],
-  'src/improvement/sessionDirectory.ts': ['node:path'],
-  'src/improvement/taskFacts.ts': ['node:path'],
-  'src/improvement/taskMapping.ts': ['node:path'],
-  'src/improvement/transcript.ts': ['typebox'],
-  'src/improvement/writeDecision.ts': ['node:path'],
-  'src/inbox/protocol.ts': ['typebox', 'typebox/value'],
-  'src/instructions/guideLinks.ts': ['node:path'],
-  'src/instructions/markdownLinks.ts': ['entities', 'github-slugger', 'marked'],
-  'src/instructions/stommeGuides/stommeGuidesDecision.ts': ['node:path', 'smol-toml'],
-  'src/instructions/syncRecord.ts': ['smol-toml'],
-  'src/prose.ts': ['marked'],
-  'src/schema.ts': ['typebox', 'typebox/value'],
-  'src/terminalText.ts': ['node:util'],
-  'tests/hcIsolationHarness.ts': ['node:path'],
-};
 
 const isPureLibrary = (path: string, specifier: string) =>
   pureLibraries[path]?.includes(specifier) ?? false;
@@ -510,11 +242,13 @@ const declareFunctions = (bindings: BindingScopes, statements: readonly Statemen
 const globalObjects = new Set(['global', 'globalThis', 'process', 'self', 'window']);
 
 const rootName = (node: Expression): string | undefined => {
-  if (node.type === 'Identifier') {
-    return node.name;
+  const value = unwrapExpression(node);
+
+  if (value.type === 'Identifier') {
+    return value.name;
   }
 
-  return node.type === 'MemberExpression' ? rootName(node.object) : undefined;
+  return value.type === 'MemberExpression' ? rootName(value.object) : undefined;
 };
 
 const isEscapingObject = (bindings: BindingScopes, node: MemberExpression): boolean => {
@@ -545,15 +279,24 @@ const isFunctionValue = (bindings: BindingScopes, node: Expression | null): bool
 };
 
 // A plain identifier initializer carries its binding's kind, so an alias of an imported or parameter
-// object still escapes when a property of the alias is assigned.
+// object still escapes when a property of the alias is assigned. A TypeScript-only wrapper is
+// erased, so it does not change the kind.
+const isEscapingAlias = (bindings: BindingScopes, node: Expression | null): boolean => {
+  if (node === null) {
+    return false;
+  }
+
+  const value = unwrapExpression(node);
+
+  return value.type === 'Identifier' && bindings.kindOf(value.name) === 'escaping';
+};
+
 const aliasKind = (bindings: BindingScopes, node: Expression | null): BindingKind => {
   if (isFunctionValue(bindings, node)) {
     return 'function';
   }
 
-  const isEscapingAlias = node?.type === 'Identifier' && bindings.kindOf(node.name) === 'escaping';
-
-  return isEscapingAlias ? 'escaping' : 'local';
+  return isEscapingAlias(bindings, node) ? 'escaping' : 'local';
 };
 
 const enterFunctionScope = (
@@ -578,10 +321,7 @@ const declareVariables = (bindings: BindingScopes, node: VariableDeclaration): v
   for (const declarator of node.declarations) {
     // A pattern binds properties of the initializer, such as a number from a function's `length`.
     // Only an escaping initializer passes its kind on, so `const { api } = request` still escapes.
-    const patternKind =
-      declarator.init?.type === 'Identifier' && bindings.kindOf(declarator.init.name) === 'escaping'
-        ? 'escaping'
-        : 'local';
+    const patternKind = isEscapingAlias(bindings, declarator.init) ? 'escaping' : 'local';
 
     const kind =
       declarator.id.type === 'Identifier' ? aliasKind(bindings, declarator.init) : patternKind;
@@ -705,6 +445,18 @@ export const impurities = (path: string, source: string, registry: readonly stri
     VariableDeclaration: (node) => {
       declareVariables(bindings, node);
     },
+    SwitchCase: (node) => {
+      // A class or function declared in a case is hoisted to the switch's block, so an assignment
+      // later in the same case still sees it.
+      for (const name of declarationNames(node.consequent)) {
+        bindings.declare(name, 'function');
+      }
+    },
+    StaticBlock: (node) => {
+      bindings.enter(false);
+      declareFunctions(bindings, node.body);
+    },
+    'StaticBlock:exit': bindings.exit,
     ImportDeclaration: (node) => {
       checkImport(path, registry, node, at);
     },

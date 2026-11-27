@@ -7,15 +7,8 @@ import { expect, it } from 'vitest';
 
 import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
-import {
-  environmentReads,
-  findingLines,
-  impurities,
-  pureAdvice,
-  pureModuleExceptions,
-  pureModules,
-  purityProblems,
-} from './pureModuleRules.js';
+import { pureAdvice, pureModuleExceptions, pureModules } from './pureModuleRegistry.js';
+import { environmentReads, findingLines, impurities, purityProblems } from './pureModuleRules.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -64,10 +57,6 @@ const isTest = (path: string) => path.endsWith('.test.ts');
 // A relative path through fixtures/, or the bare segment passed to join(); globs and prose do not load.
 const fixtureLoad = /['"`](?:\.{1,2}\/(?:[^'"`]*\/)?fixtures(?:\/[^'"`]*)?|fixtures)['"`]/;
 const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
-
-// Pure decision modules take every read, clock, and environment value as a fact from the caller.
-// Register a module here once its decisions are split from its reads.
-// The outside libraries a registered module may import, by module path.
 
 // Folders that group files under src/ without forming a module.
 const groupingFolders = new Set(['src', 'src/extensions', 'src/skills']);

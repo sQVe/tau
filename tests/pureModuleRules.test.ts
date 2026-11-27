@@ -108,17 +108,46 @@ it('reports a class assigned to a property of a parameter', () => {
   ]);
 });
 
+const wrappedAliasSource = (): string =>
+  'export const install = (api) => {\n  const target = api as Api;\n  target.run = () => 1;\n};\n';
+
+const wrappedDestructuredSource = (): string =>
+  'export const install = (request) => {\n  const { api } = request as Request;\n  api.run = () => 1;\n};\n';
+
+const wrappedMemberSource = (): string =>
+  'export const install = (api) => {\n  (api as Api).run = () => 1;\n};\n';
+
+const switchCaseClassSource = (): string =>
+  'const install = (api) => {\n  switch (api) {\n    case 1:\n      class Handler {}\n      api.run = Handler;\n  }\n};\n';
+
+const staticBlockClassSource = (): string =>
+  'class Holder {\n  static {\n    class Handler {}\n    const install = (api) => {\n      api.run = Handler;\n    };\n    install;\n  }\n}\n';
+
 it('reports a class declaration assigned to a property of a parameter', () => {
   expect(impurities('src/pure/decide.ts', classDeclarationPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:3: assigns a function to a property',
   ]);
 });
 
-it('reports a class declaration assigned before its declaration, and not one from an ended block', () => {
-  expect(impurities('src/pure/decide.ts', endedBlockClassSource(), testRegistry)).toEqual([]);
-
+it('reports a class declaration assigned before its declaration', () => {
   expect(impurities('src/pure/decide.ts', lateClassSource(), testRegistry)).toEqual([
     'src/pure/decide.ts:2: assigns a function to a property',
+  ]);
+});
+
+it('does not report a class declaration from an ended block', () => {
+  expect(impurities('src/pure/decide.ts', endedBlockClassSource(), testRegistry)).toEqual([]);
+});
+
+it('reports a class declaration in a switch case', () => {
+  expect(impurities('src/pure/decide.ts', switchCaseClassSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:5: assigns a function to a property',
+  ]);
+});
+
+it('reports a class declaration in a static block', () => {
+  expect(impurities('src/pure/decide.ts', staticBlockClassSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:5: assigns a function to a property',
   ]);
 });
 
@@ -175,6 +204,20 @@ it('reports a function behind a TypeScript-only wrapper', () => {
     'src/pure/decide.ts:3: assigns a function to a property',
     'src/pure/decide.ts:4: assigns a function to a property',
     'src/pure/decide.ts:5: assigns a function to a property',
+  ]);
+});
+
+it('reports an escape through a TypeScript-only wrapper on the alias', () => {
+  expect(impurities('src/pure/decide.ts', wrappedAliasSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:3: assigns a function to a property',
+  ]);
+
+  expect(impurities('src/pure/decide.ts', wrappedDestructuredSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:3: assigns a function to a property',
+  ]);
+
+  expect(impurities('src/pure/decide.ts', wrappedMemberSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:2: assigns a function to a property',
   ]);
 });
 
