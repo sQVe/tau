@@ -603,3 +603,17 @@ it('clones a node reached from an asserted and an unasserted position by its own
   expect(notChild).not.toHaveProperty('additionalProperties');
   expect(Value.Check(strict, { inner: { value: 'a' } })).toBe(false);
 });
+
+// The same object can sit in a map position and in a schema position. The map clones its entries as
+// schemas; the schema position treats an unknown keyword as written, so sharing one clone would
+// leave the map entries open.
+it('clones a node used as a map and as a schema by its own role', () => {
+  const shared = { nested: childSchema() };
+  const schema = { type: 'object', items: shared, properties: shared };
+
+  const strict = strictToolParameters(schema);
+  const nested = isRecord(strict.properties) ? strict.properties['nested'] : undefined;
+
+  expect(isClosed(nested)).toBe(true);
+  expect(Value.Check(strict, { nested: { value: 'a' } })).toBe(true);
+});

@@ -33,9 +33,15 @@ type ProbeCall = (tool: unknown) => unknown;
 interface SchemaWalk {
   readonly assertedClones: WeakMap<object, unknown>;
   readonly unassertedClones: WeakMap<object, unknown>;
+  readonly assertedMapClones: WeakMap<object, unknown>;
+  readonly unassertedMapClones: WeakMap<object, unknown>;
   readonly visiting: WeakSet<object>;
   readonly visit: (value: unknown, asserted: boolean) => unknown;
 }
+
+// The same object can sit in a map position and in a schema position, which clone it differently,
+// so each position keeps its own cache.
+type CloneRole = 'map' | 'schema';
 
 // The marker a probe tool carries, so the wrapper recognizes the probe of this install.
 interface ProbeTool {
@@ -174,8 +180,17 @@ const requiresObjectValue = (value: Record<string, unknown>): boolean => {
 const cyclicSchemaMessage =
   'Cannot install strict tool parameters: the parameters schema refers to itself.';
 
-const cloneCache = (walk: SchemaWalk, asserted: boolean): WeakMap<object, unknown> =>
-  asserted ? walk.assertedClones : walk.unassertedClones;
+const cloneCache = (
+  walk: SchemaWalk,
+  asserted: boolean,
+  role: CloneRole,
+): WeakMap<object, unknown> => {
+  if (role === 'map') {
+    return asserted ? walk.assertedMapClones : walk.unassertedMapClones;
+  }
+
+  return asserted ? walk.assertedClones : walk.unassertedClones;
+};
 
 const beginClone = (value: SchemaNode, walk: SchemaWalk): void => {
   if (walk.visiting.has(value)) {
@@ -188,21 +203,23 @@ const beginClone = (value: SchemaNode, walk: SchemaWalk): void => {
 const finishClone = (
   value: SchemaNode,
   asserted: boolean,
+  role: CloneRole,
   walk: SchemaWalk,
   clone: unknown,
 ): void => {
   walk.visiting.delete(value);
-  cloneCache(walk, asserted).set(value, clone);
+  cloneCache(walk, asserted, role).set(value, clone);
 };
 
 // The cache and cycle bookkeeping every clone shares, so the build callback only makes the copy.
 const memoizedClone = (
   value: SchemaNode,
   asserted: boolean,
+  role: CloneRole,
   walk: SchemaWalk,
   build: () => unknown,
 ): unknown => {
-  const cache = cloneCache(walk, asserted);
+  const cache = cloneCache(walk, asserted, role);
   const cached = cache.get(value);
 
   if (cached !== undefined) {
@@ -213,7 +230,7 @@ const memoizedClone = (
 
   const clone = build();
 
-  finishClone(value, asserted, walk, clone);
+  finishClone(value, asserted, role, walk, clone);
 
   return clone;
 };
@@ -223,7 +240,7 @@ const strictSchemaMap = (value: unknown, asserted: boolean, walk: SchemaWalk): u
     return value;
   }
 
-  return memoizedClone(value, asserted, walk, () => {
+  return memoizedClone(value, asserted, 'map', walk, () => {
     const clone: Record<PropertyKey, unknown> = { ...value };
 
     for (const key of Object.keys(value)) {
@@ -264,7 +281,7 @@ const strictSchemaArray = (
   asserted: boolean,
   walk: SchemaWalk,
 ): unknown =>
-  memoizedClone(value, asserted, walk, () => {
+  memoizedClone(value, asserted, 'schema', walk, () => {
     const clone: unknown[] = [];
 
     for (const item of value) {
@@ -279,7 +296,7 @@ const strictSchemaObject = (
   asserted: boolean,
   walk: SchemaWalk,
 ): unknown =>
-  memoizedClone(value, asserted, walk, () => {
+  memoizedClone(value, asserted, 'schema', walk, () => {
     const clone: Record<PropertyKey, unknown> = { ...value };
 
     for (const key of Object.keys(value)) {
@@ -326,6 +343,8 @@ export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Sc
   const walk: SchemaWalk = {
     assertedClones: new WeakMap(),
     unassertedClones: new WeakMap(),
+    assertedMapClones: new WeakMap(),
+    unassertedMapClones: new WeakMap(),
     visiting: new WeakSet(),
     visit: (value, asserted) => strictSchemaValue(value, asserted, walk),
   };
@@ -349,9 +368,14 @@ const probeRefusedMessage =
   'Cannot install strict tool parameters: the host refused the registration probe.';
 
 const descriptorOf = (target: ExtensionAPI, key: string): PropertyDescriptor | undefined => {
+  const visited = new Set<object>();
   let current: object | null = target;
 
-  while (current !== null) {
+  // An extensible proxy may return itself from `getPrototypeOf`, so a chain that does not advance
+  // must stop instead of looping.
+  while (current !== null && !visited.has(current)) {
+    visited.add(current);
+
     const descriptor = Object.getOwnPropertyDescriptor(current, key);
 
     if (descriptor !== undefined) {
@@ -378,11 +402,11 @@ const restoreRegisterTool = (pi: ExtensionAPI, original: RegisterToolReturningVa
 
 const failInstall = (
   pi: ExtensionAPI,
-  current: RegisterToolReturningValue,
+  original: RegisterToolReturningValue,
   message: string,
   cause?: unknown,
 ): never => {
-  restoreRegisterTool(pi, current);
+  restoreRegisterTool(pi, original);
 
   throw cause === undefined ? new Error(message) : new Error(message, { cause });
 };
@@ -417,7 +441,7 @@ const probeFields = {
   name: 'tau-strict-tool-parameters-probe',
   label: 'strict tool parameters probe',
   description: 'A tool used once to confirm that the strict registration wrapper is installed.',
-  execute: () => Promise.reject(probeError),
+  execute: () => Promise.resolve(undefined),
 };
 
 const createProbe = (): InstallProbe => ({
@@ -465,7 +489,7 @@ const probeOutcome = (readBack: unknown, probe: InstallProbe): ProbeOutcome => {
 const verifyInstalled = (
   pi: ExtensionAPI,
   wrapper: RegisterToolReturningValue,
-  current: RegisterToolReturningValue,
+  original: RegisterToolReturningValue,
   probe: InstallProbe,
 ): void => {
   let descriptor: PropertyDescriptor | undefined;
@@ -473,7 +497,7 @@ const verifyInstalled = (
   try {
     descriptor = descriptorOf(pi, 'registerTool');
   } catch (error) {
-    failInstall(pi, current, notReadableMessage, error);
+    failInstall(pi, original, notReadableMessage, error);
   }
 
   if (descriptor?.value === wrapper) {
@@ -486,11 +510,11 @@ const verifyInstalled = (
   try {
     readBack = descriptor?.get === undefined ? host.registerTool : descriptor.get.call(pi);
   } catch (error) {
-    failInstall(pi, current, notReadableMessage, error);
+    failInstall(pi, original, notReadableMessage, error);
   }
 
-  if (typeof readBack !== 'function' || readBack === current) {
-    failInstall(pi, current, notWritableMessage);
+  if (typeof readBack !== 'function' || readBack === original) {
+    failInstall(pi, original, notWritableMessage);
   }
 
   if (readBack === wrapper) {
@@ -500,17 +524,17 @@ const verifyInstalled = (
   const outcome = probeOutcome(readBack, probe);
 
   if (outcome === 'refused') {
-    failInstall(pi, current, probeRefusedMessage);
+    failInstall(pi, original, probeRefusedMessage);
   }
 
   if (outcome === 'unconfirmed') {
-    failInstall(pi, current, notWritableMessage);
+    failInstall(pi, original, notWritableMessage);
   }
 };
 
 const installWrapper = (pi: ExtensionAPI): void => {
-  const current = readRegisterTool(pi);
-  const registered = current.bind(pi);
+  const original = readRegisterTool(pi);
+  const registered = original.bind(pi);
   const probe = createProbe();
 
   const wrapper: RegisterToolReturningValue = (tool) => {
@@ -536,7 +560,7 @@ const installWrapper = (pi: ExtensionAPI): void => {
     throw new Error(notWritableMessage, { cause: error });
   }
 
-  verifyInstalled(pi, wrapper, current, probe);
+  verifyInstalled(pi, wrapper, original, probe);
 };
 
 // Wraps `registerTool` once per API. Every tool registered through that API after this call has
