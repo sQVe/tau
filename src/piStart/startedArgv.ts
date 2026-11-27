@@ -7,12 +7,10 @@ const executableNames = (name: string, suffixes: readonly string[]): string[] =>
 
 const piExecutableSuffixes = ['cmd', 'js', 'exe'];
 
-const piExecutableNames = new Set(executableNames('pi', piExecutableSuffixes));
+// `baseName` strips a `.exe` suffix, so the set holds only the names it can return.
+const piExecutableNames = new Set(executableNames('pi', ['cmd', 'js']));
 
-const runtimeExecutables = new Set([
-  ...executableNames('node', ['exe']),
-  ...executableNames('bun', ['exe']),
-]);
+const runtimeExecutables = new Set(['node', 'bun']);
 
 // The name a word runs, without its directory and suffix, so `BASH.EXE` and `bash` compare equal.
 export const baseName = (argument: string): string => {
