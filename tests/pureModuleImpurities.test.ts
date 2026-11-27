@@ -150,6 +150,12 @@ const wrappedMemberSource = (): string =>
 const staticBlockClassSource = (): string =>
   'class Holder {\n  static {\n    class Handler {}\n    const install = (api) => {\n      api.run = Handler;\n    };\n    install;\n  }\n}\n';
 
+const staticBlockVarSource = (): string =>
+  'export const install = (api) => {\n  class Holder {\n    static {\n      var handler = () => 1;\n    }\n  }\n  api.run = handler;\n};\n';
+
+const forOfMemberSource = (): string =>
+  'export const install = (request) => {\n  for (const item of request.items) {\n    item.handler = () => 1;\n  }\n};\n';
+
 it('reports a class declaration assigned to a property of a parameter', () => {
   expect(impurities('src/pure/decide.ts', classDeclarationPropertySource(), testRegistry)).toEqual([
     'src/pure/decide.ts:3: assigns a function to a property',
@@ -175,6 +181,16 @@ it('reports a class declaration in a switch case', () => {
 it('reports a class declaration in a static block', () => {
   expect(impurities('src/pure/decide.ts', staticBlockClassSource(), testRegistry)).toEqual([
     'src/pure/decide.ts:5: assigns a function to a property',
+  ]);
+});
+
+it('does not let a static block var escape into the enclosing function', () => {
+  expect(impurities('src/pure/decide.ts', staticBlockVarSource(), testRegistry)).toEqual([]);
+});
+
+it('reports an escape through a for-of loop binding', () => {
+  expect(impurities('src/pure/decide.ts', forOfMemberSource(), testRegistry)).toEqual([
+    'src/pure/decide.ts:3: assigns a function to a property',
   ]);
 });
 

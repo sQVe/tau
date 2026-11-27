@@ -45,6 +45,16 @@ it('applies each pure module exception to one finding and reports a stale except
   ]);
 });
 
+it('keeps the findings that an exception does not name', () => {
+  expect(
+    purityProblems(
+      ['src/pure/decide.ts'],
+      { 'src/pure/decide.ts': ['runtime import of node:fs/promises'] },
+      readImportAndDateSource,
+    ),
+  ).toEqual(['src/pure/decide.ts:2: Date()', 'src/pure/decide.ts:3: Date()']);
+});
+
 it('reports an exception reason that matches more than one finding', () => {
   expect(
     purityProblems(

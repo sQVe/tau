@@ -30,6 +30,8 @@ export interface BindingScopes {
   enter: (functionScope: boolean) => void;
   exit: () => void;
   kindOf: (name: string) => BindingKind | undefined;
+  setLoopIterable: (node: Expression | null) => void;
+  takeLoopIterable: () => Expression | null;
 }
 
 const bindingNames = (
@@ -70,6 +72,7 @@ export const importedBindings = (program: Program): Set<string> =>
 
 export const createBindingScopes = (): BindingScopes => {
   const scopes: BindingScope[] = [{ bindings: new Map(), functionScope: true }];
+  let loopIterable: Expression | null = null;
 
   const currentScope = (): BindingScope => {
     const scope = scopes.at(-1);
@@ -117,7 +120,21 @@ export const createBindingScopes = (): BindingScopes => {
     return undefined;
   };
 
-  return { declare, declareVariable, enter, exit, kindOf };
+  // A `for...of`/`for...in` head declares its binding from the iterable, so the kind is set just
+  // before the head's declaration is read.
+  const setLoopIterable = (node: Expression | null): void => {
+    loopIterable = node;
+  };
+
+  const takeLoopIterable = (): Expression | null => {
+    const node = loopIterable;
+
+    loopIterable = null;
+
+    return node;
+  };
+
+  return { declare, declareVariable, enter, exit, kindOf, setLoopIterable, takeLoopIterable };
 };
 
 // A TypeScript-only wrapper is erased at compile time, so it does not change the value's kind.
@@ -284,12 +301,14 @@ export const declareVariables = (bindings: BindingScopes, node: VariableDeclarat
   const declareName = node.kind === 'var' ? bindings.declareVariable : bindings.declare;
 
   for (const declarator of node.declarations) {
+    const initializer = declarator.init ?? bindings.takeLoopIterable();
+
     // A pattern binds properties of the initializer, such as a number from a function's `length`.
     // Only an escaping initializer passes its kind on, so `const { api } = request` still escapes.
-    const patternKind = isEscapingAlias(bindings, declarator.init) ? 'escaping' : 'local';
+    const patternKind = isEscapingAlias(bindings, initializer) ? 'escaping' : 'local';
 
     const kind =
-      declarator.id.type === 'Identifier' ? aliasKind(bindings, declarator.init) : patternKind;
+      declarator.id.type === 'Identifier' ? aliasKind(bindings, initializer) : patternKind;
 
     for (const name of bindingNames(declarator.id)) {
       declareName(name, kind);

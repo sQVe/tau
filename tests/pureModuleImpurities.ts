@@ -175,6 +175,16 @@ export const impurities = (path: string, source: string, registry: readonly stri
     VariableDeclaration: (node) => {
       declareVariables(bindings, node);
     },
+    ForOfStatement: (node) => {
+      const iterable = node.left.type === 'VariableDeclaration' ? node.right : null;
+
+      bindings.setLoopIterable(iterable);
+    },
+    ForInStatement: (node) => {
+      const iterable = node.left.type === 'VariableDeclaration' ? node.right : null;
+
+      bindings.setLoopIterable(iterable);
+    },
     SwitchStatement: (node) => {
       // The switch body is one lexical block, so a class or function declared in a case is visible
       // in the other cases but not after the switch.
@@ -186,7 +196,7 @@ export const impurities = (path: string, source: string, registry: readonly stri
     },
     'SwitchStatement:exit': bindings.exit,
     StaticBlock: (node) => {
-      bindings.enter(false);
+      bindings.enter(true);
       declareFunctions(bindings, node.body);
     },
     'StaticBlock:exit': bindings.exit,
