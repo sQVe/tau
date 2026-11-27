@@ -461,6 +461,7 @@ it('reports the started terminal when the model readback fails', async () => {
     expect(started.tab).toBe('tb-new');
     expect(started.message).toContain('hc get t-new failed');
     expect(started.message).toContain('hc kill t-new');
+    expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
   } finally {
     vi.useRealTimers();
   }
