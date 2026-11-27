@@ -198,3 +198,7 @@ it('keeps a generated tab name on a second decision', () => {
     }),
   );
 });
+
+it('keeps a role that fills the whole tab name', () => {
+  expect(tabName('abcdefghijklmnopqrstuvwx', 'task')).toBe('abcdefghijklmnopqrstuvwx');
+});
