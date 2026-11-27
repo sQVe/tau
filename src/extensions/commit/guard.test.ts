@@ -66,6 +66,8 @@ const withExactPath = (...entries: string[]): void => {
   withEnvironment('PATH', entries.join(delimiter));
 };
 
+const commitLine = `git commit`;
+
 const makeReadEvent = (): ToolCallEvent => ({
   type: 'tool_call',
   toolCallId: 'tool-call-1',
@@ -522,6 +524,50 @@ describe('guardToolCall', () => {
     writeScript(directory, 'sub/commit.sh', 'echo hello\n');
 
     expectOutcome(makeBashEvent(`${prefix}; sh commit.sh`), directory);
+  });
+
+  it.each([
+    ['a busybox applet', 'cat <<EOF | busybox sh\ngit commit -m x\nEOF'],
+    ['a busybox applet with its own heredoc', 'busybox sh <<EOF\ngit commit -m x\nEOF'],
+    ['a shell after find -exec', "find . -name x -exec sh -c 'git commit -m x' \\;"],
+  ])('blocks code for %s', (_label, template) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(template.replace('git commit', commitLine)), directory);
+  });
+
+  it('allows a find command whose exec runs no shell', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('find . -name x -exec echo {} \\;'), directory)).toBeUndefined();
+  });
+
+  it('keeps the directory when cd names an invalid option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+    const home = temporaryDirectory(onTestFinished, 'tau-commit-guard-home-');
+
+    writeScript(directory, 'commit.sh', `${commitLine} -m x\n`);
+    writeScript(home, 'commit.sh', 'echo hello\n');
+    withEnvironment('HOME', home);
+
+    expectOutcome(makeBashEvent('cd -p; sh commit.sh'), directory);
+  });
+
+  it('keeps the directory when cd names the previous directory', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', `${commitLine} -m x\n`);
+
+    expectOutcome(makeBashEvent('cd -; sh commit.sh'), directory);
+  });
+
+  it('blocks a script file in the HOME directory when HOME is empty', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', `${commitLine} -m x\n`);
+    withEnvironment('HOME', '');
+
+    expectOutcome(makeBashEvent('cd; sh commit.sh'), directory);
   });
 
   it('blocks a script file in the HOME directory a bare cd names', () => {

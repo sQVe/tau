@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 
 import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
 import type {
@@ -105,9 +105,9 @@ export const commitGuardReason =
 // statement, so it blocks mentions in quoted text too.
 const gitCommitPattern = /\bgit\b[^;|&\n]*(?<![\w/-])commit(?![\w/])|\bgit-commit\b/i;
 
-// Commands that may run a string or standard input as shell code. When one appears anywhere in the
-// source, every word and heredoc body in that source is parsed as a script too, because piped data
-// such as `echo 'git commit' | sh` becomes code.
+// Commands that may run a string or standard input as shell code. When one runs in executable
+// position, every word and heredoc body in that source is parsed as a script too, because piped
+// data such as `echo 'git commit' | sh` becomes code.
 const shellRunnerNames = new Set([
   '.',
   'ash',
@@ -908,11 +908,25 @@ const commandWord = ({ arguments: words }: ShellCommand): string | undefined => 
   return index === undefined ? undefined : words[index];
 };
 
-// A shell runs the source only in executable position, so `git add scripts/bash` is data.
-const runsShell = (command: ShellCommand) => {
-  const word = commandWord(command);
+// Options whose next word `find` runs as a command.
+const findExecOptions = new Set(['-exec', '-execdir', '-ok', '-okdir']);
 
-  return word !== undefined && shellRunnerNames.has(commandName(word));
+const isShellRunner = (word: string | undefined): boolean =>
+  word !== undefined && shellRunnerNames.has(commandName(word));
+
+// A shell runs the source only in executable position, after a busybox applet, or after a `find`
+// exec option, so `git add scripts/bash` is data.
+const runsShell = (command: ShellCommand) => {
+  const index = commandWordIndex(command.arguments);
+  const shell = index === undefined ? undefined : appletWord(command.arguments, index);
+
+  if (shell !== undefined && isShellRunner(shell.word)) {
+    return true;
+  }
+
+  return command.words.some(
+    (word, wordIndex) => findExecOptions.has(word) && isShellRunner(command.words[wordIndex + 1]),
+  );
 };
 
 // A `.` or `source` operand resolves through PATH before the working directory.
@@ -979,7 +993,21 @@ const isPlainDirectoryWord = (word: string) =>
 
 const isAssignmentWord = (word: string): boolean => assignmentPattern.test(word);
 
-// Options end at the first operand, so `cd sub -P` names two operands.
+// HOME names a directory only when it is a non-empty absolute path.
+const homeDirectory = (): string | undefined => {
+  const home = gitEnvironment().HOME;
+
+  if (home === undefined) {
+    return homedir();
+  }
+
+  return isAbsolute(home) ? home : undefined;
+};
+
+const cdOptions = new Set(['-L', '-P']);
+
+// Options end at the first operand, so `cd sub -P` names two operands. An option `cd` rejects is an
+// operand, so it keeps the current directory.
 const directoryOperands = (words: string[]): string[] => {
   const operands: string[] = [];
   let optionsEnded = false;
@@ -991,7 +1019,7 @@ const directoryOperands = (words: string[]): string[] => {
       continue;
     }
 
-    if (!optionsEnded && word !== '-' && isOptionWord(word)) {
+    if (!optionsEnded && cdOptions.has(word)) {
       continue;
     }
 
@@ -1017,7 +1045,7 @@ const nextDirectory = (command: ShellCommand, directory: string): string => {
 
   // A bare `cd` goes HOME; `cd -` goes to an OLDPWD the guard cannot know, so it stays.
   if (operands.length === 0) {
-    return gitEnvironment().HOME ?? homedir();
+    return homeDirectory() ?? directory;
   }
 
   // The shell rejects a second operand and stays where it is, so only one operand moves it.
@@ -1146,9 +1174,9 @@ const expandHome = (name: string): string | undefined => {
     return undefined;
   }
 
-  const home = gitEnvironment().HOME ?? homedir();
+  const home = homeDirectory();
 
-  return join(home, name.slice(1));
+  return home === undefined ? undefined : join(home, name.slice(1));
 };
 
 const candidatePaths = ({
