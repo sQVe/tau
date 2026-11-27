@@ -1,10 +1,14 @@
 import { Type } from 'typebox';
 import { expect, it } from 'vitest';
 
+import { failedResult as failedExecResult } from '../tests/execFake.js';
+import type { ExecResult } from '../tests/execFake.js';
 import { checkOutput, commandFailure, parseJson } from './command.js';
 
-const failedResult = (overrides: Record<string, unknown>) =>
-  ({ code: 1, killed: false, stdout: '', stderr: '', ...overrides }) as never;
+const failedResult = (overrides: Partial<ExecResult> = {}): ExecResult => ({
+  ...failedExecResult(''),
+  ...overrides,
+});
 
 it('falls back to stdout when stderr is whitespace only', () => {
   const failure = commandFailure('herdr-app do', failedResult({ stderr: ' \n', stdout: 'boom' }));
