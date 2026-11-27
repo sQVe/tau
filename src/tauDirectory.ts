@@ -316,9 +316,8 @@ export const rejectTauSymlinks = async (root: string, path: string): Promise<voi
 // Refuses any directory a write would go through that exists but is not a directory. The target is
 // not a parent, and a reader names its own refusal for a missing target.
 const rejectTauFile = async (root: string, segments: readonly string[]) => {
-  const directories = writtenPaths(segments)
-    .filter((path) => path !== '.tau/.gitignore')
-    .slice(0, -1);
+  const trailingTargetAndIgnoreFile = 2;
+  const directories = writtenPaths(segments).slice(0, -trailingTargetAndIgnoreFile);
 
   const entries = await Promise.all(directories.map((path) => existingEntry(join(root, path))));
   const index = entries.findIndex((entry) => entry !== undefined && !entry.isDirectory());

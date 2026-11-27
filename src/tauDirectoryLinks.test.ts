@@ -198,6 +198,19 @@ it('ensureTauDirectory refuses a .tau that is a regular file in a bare root', as
   expect(await listTree(bare)).toEqual(before);
 });
 
+it('ensureTauDirectory refuses a .tau that is a regular file for .gitignore', async () => {
+  const root = await createTemporaryRepository(afterThisTest);
+  const path = join(root, '.tau');
+
+  await writeFile(path, 'text\n');
+
+  await expect(ensureTauDirectory(root, '.gitignore')).rejects.toThrow(
+    `Tau directory ${path} is not a directory.`,
+  );
+
+  await expect(readFile(path, 'utf8')).resolves.toBe('text\n');
+});
+
 it('checkTauDirectory refuses a .tau that is a regular file', async () => {
   const root = await createTemporaryRepository(afterThisTest);
 
