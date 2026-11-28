@@ -42,7 +42,7 @@ it('refuses to resume a session another live Pi holds', async ({ onTestFinished:
 
   expect(appCommands(app)).not.toContain('pane.split');
   expect(appCommands(app)).not.toContain('tab.new');
-  expect(hc.calls.map((call) => call.command)).not.toContain('kill');
+  expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(lockFiles()).toEqual(filesBefore);
 });
