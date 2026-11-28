@@ -106,6 +106,13 @@ interface ListState {
   closesSubstitution: boolean;
 }
 
+// A guard must tell source bash refuses from source this parser cannot inspect, because only the
+// first may pass unchecked.
+export type ShellParse =
+  | { readonly kind: 'commands'; readonly commands: ShellCommand[] }
+  | { readonly kind: 'unparseable' }
+  | { readonly kind: 'tooDeep' };
+
 export const quoteShellArgument = (argument: string): string =>
   /^[A-Za-z0-9_./@%+=:,-]+$/u.test(argument)
     ? argument
@@ -195,13 +202,21 @@ const inputKind = (
   return undefined;
 };
 
-// Source that bash itself refuses to run, including nesting past what the parser inspects. Any
-// other failure is a defect in the parser, not a property of the source, so it must reach the
-// caller.
+// Source that bash itself refuses to run. Any other failure is a defect in the parser, not a
+// property of the source, so it must reach the caller.
 class ShellSyntaxError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ShellSyntaxError';
+  }
+}
+
+// Nesting past what the parser inspects. Bash runs the source, so a guard must fail closed instead
+// of reading this as a syntax error.
+class ShellNestingError extends Error {
+  constructor() {
+    super('Nesting is too deep to parse');
+    this.name = 'ShellNestingError';
   }
 }
 
@@ -307,7 +322,7 @@ class ShellParser {
 
   constructor(source: string, shellId = '0', scope = '', nestingDepth = 0) {
     if (nestingDepth > maximumNestingDepth) {
-      throw new ShellSyntaxError('Nesting is too deep to parse');
+      throw new ShellNestingError();
     }
 
     this.source = source;
@@ -342,7 +357,7 @@ class ShellParser {
     this.nestingDepth += 1;
 
     if (this.nestingDepth > maximumNestingDepth) {
-      throw new ShellSyntaxError('Nesting is too deep to parse');
+      throw new ShellNestingError();
     }
 
     const parentShellId = this.shellId;
@@ -1130,7 +1145,7 @@ class ShellParser {
     }
 
     if (next === '{') {
-      return { text: `\${${this.readExpandingText('}', dollarQuotes)}}`, quoted: false };
+      return { text: this.readParameterExpansion(dollarQuotes), quoted: false };
     }
 
     if (next === "'") {
@@ -1144,6 +1159,22 @@ class ShellParser {
     this.position = start + 1;
 
     return { text: '$', quoted: false };
+  }
+
+  // A parameter expansion recurses through `readExpandingText`, so it consumes the nesting budget
+  // the same way a command substitution does.
+  private readParameterExpansion(dollarQuotes: boolean): string {
+    this.nestingDepth += 1;
+
+    if (this.nestingDepth > maximumNestingDepth) {
+      throw new ShellNestingError();
+    }
+
+    try {
+      return `\${${this.readExpandingText('}', dollarQuotes)}}`;
+    } finally {
+      this.nestingDepth -= 1;
+    }
   }
 
   private readAnsiCBody(): string {
@@ -1296,21 +1327,32 @@ class ShellParser {
   }
 }
 
-// Returns undefined when the source is not valid shell syntax as far as this parser can tell. A
-// failure that is not a syntax error is a defect, so it reaches the caller instead of reading as an
-// empty command list that a guard would allow.
-export const parseShellCommands = (source: string): ShellCommand[] | undefined => {
+// A failure that is not a syntax or nesting error is a defect, so it reaches the caller instead of
+// reading as an empty command list that a guard would allow.
+export const parseShell = (source: string): ShellParse => {
   const parser = new ShellParser(source);
 
   try {
     parser.parseList(false);
 
-    return parser.commands;
+    return { kind: 'commands', commands: parser.commands };
   } catch (error) {
+    if (error instanceof ShellNestingError) {
+      return { kind: 'tooDeep' };
+    }
+
     if (error instanceof ShellSyntaxError) {
-      return undefined;
+      return { kind: 'unparseable' };
     }
 
     throw error;
   }
+};
+
+// Returns undefined when the source is not valid shell syntax, or nests deeper than the parser
+// inspects. A guard that must fail closed uses `parseShell` to tell the two apart.
+export const parseShellCommands = (source: string): ShellCommand[] | undefined => {
+  const parsed = parseShell(source);
+
+  return parsed.kind === 'commands' ? parsed.commands : undefined;
 };

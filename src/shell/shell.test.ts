@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseShellCommands } from './shell.js';
+import { parseShell, parseShellCommands } from './shell.js';
 
 const wordsOf = (source: string) =>
   parseShellCommands(source)
@@ -624,6 +624,20 @@ describe('parseShellCommands', () => {
     const source = `${'$('.repeat(depth)}a${')'.repeat(depth)}`;
 
     expect(parseShellCommands(source)).toBeUndefined();
+  });
+
+  it('rejects deeply nested parameter expansions instead of overflowing the stack', () => {
+    const depth = 20000;
+
+    expect(parseShellCommands('${'.repeat(depth))).toBeUndefined();
+  });
+
+  it('reports nesting past the parser budget apart from invalid syntax', () => {
+    const depth = 200;
+    const nested = `${'$('.repeat(depth)}a${')'.repeat(depth)}`;
+
+    expect(parseShell(nested)).toEqual({ kind: 'tooDeep' });
+    expect(parseShell('echo "')).toEqual({ kind: 'unparseable' });
   });
 
   it('reads a heredoc body after the line ends', () => {
