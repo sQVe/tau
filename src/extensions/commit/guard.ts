@@ -17,7 +17,7 @@ import type { ShellCommand, ShellInput } from '../../shell/shell.js';
 import { splitEnvString } from '../../wrapperAnalysis.js';
 import { isOptionWord, shellMode } from './shellMode.js';
 import type { ShellMode } from './shellMode.js';
-import { blocksUnresolvedDecidingWord, commandName } from './unresolvedWords.js';
+import { blocksUnresolvedDecidingWord, commandName, isUnresolvedWord } from './unresolvedWords.js';
 import type { TextOrigin } from './unresolvedWords.js';
 
 export type NamedFileFacts =
@@ -1045,7 +1045,7 @@ const evalOperandCode = (words: string[]): string[] => {
 const inputSources = (
   command: ShellCommand,
   mode: Extract<ShellMode, { kind: 'stdin' }>,
-): InterpreterSources => {
+): Extract<InterpreterSources, { kind: 'sources' }> => {
   const stdin = effectiveInput(command.inputs);
 
   if (stdin === undefined) {
@@ -1072,7 +1072,9 @@ const inputSources = (
 // `source` and `.` read only their file operand. The words after it are positional arguments, and a
 // redirected standard input is not code.
 const sourceFileSources = (words: string[]): InterpreterSources => {
-  const name = words.find((word) => !isOptionWord(word));
+  const separator = words.indexOf('--');
+
+  const name = separator === -1 ? words.find((word) => !isOptionWord(word)) : words[separator + 1];
 
   return { kind: 'sources', files: name === undefined ? [] : [name], code: [], pathFirst: true };
 };
@@ -1121,11 +1123,13 @@ const interpreterSources = (command: ShellCommand): InterpreterSources => {
   const mode = shellMode(command.arguments.slice(shell.index + 1));
 
   if (mode.kind === 'file') {
-    return {
-      kind: 'sources',
-      files: mode.names,
-      code: mode.codes,
-    };
+    if (!mode.names.some(isUnresolvedWord)) {
+      return { kind: 'sources', files: mode.names, code: mode.codes };
+    }
+
+    const input = inputSources(command, { kind: 'stdin', codes: mode.codes });
+
+    return { kind: 'sources', files: [...mode.names, ...input.files], code: input.code };
   }
 
   if (mode.kind === 'inline') {

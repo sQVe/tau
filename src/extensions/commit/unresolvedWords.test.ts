@@ -84,6 +84,18 @@ const gitTable: { name: string; words: string[]; gitIndex: number; expected: boo
     expected: false,
   },
   {
+    name: 'blocks an attached --git-dir value that expands in a directory',
+    words: ['git', '--git-dir=$DIR/x', 'log'],
+    gitIndex: 0,
+    expected: true,
+  },
+  {
+    name: 'blocks an attached -C value that expands in a directory',
+    words: ['git', '-C$DIR/x', 'log'],
+    gitIndex: 0,
+    expected: true,
+  },
+  {
     name: 'skips a literal attached -C value',
     words: ['git', '-C/repo', 'log'],
     gitIndex: 0,

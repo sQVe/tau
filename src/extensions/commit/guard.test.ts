@@ -292,6 +292,20 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('sh $FLAG script.sh'), directory)).toBeUndefined();
   });
 
+  it('blocks a heredoc on the standard input of an unresolved mode word', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent("sh $FLAG <<'EOF'\n$CMD\nEOF"), directory);
+  });
+
+  it('blocks a file redirect on the standard input of an unresolved mode word', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh $FLAG < commit.sh'), directory);
+  });
+
   it.each(['#!/usr/bin/env node', '#!/usr/bin/python3'])(
     'allows a directly executed file whose shebang is not a shell: %s',
     (shebang) => {
@@ -315,6 +329,7 @@ describe('guardToolCall', () => {
     'bash -e commit.sh',
     'bash -o pipefail commit.sh',
     'bash --rcfile profile.sh commit.sh',
+    'bash +O extglob commit.sh',
   ])('blocks a script file named after interpreter options: %s', (command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -547,6 +562,14 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
     expectOutcome(makeBashEvent('source -- commit.sh'), directory);
+  });
+
+  it('blocks an option-like script named after a source option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, '-file.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('source -- -file.sh'), directory);
   });
 
   it('allows a heredoc that mentions git commit followed by a shell name in a path', () => {
@@ -1321,6 +1344,7 @@ describe('guardToolCall', () => {
     ['bash -c -x', "bash -c -x 'git commit -m x'", undefined],
     ['bash -c -- with a script', 'bash -c -- ./commit.sh', 'commit.sh'],
     ['bash -c -x with a script', 'bash -c -x ./commit.sh', 'commit.sh'],
+    ['bash $MODE -- with a script', 'bash $MODE -- ./commit.sh', 'commit.sh'],
   ])('blocks inline code after %s', (_label, command, fixture) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -2096,6 +2120,8 @@ describe('guardToolCall', () => {
     `sh -c 'git --git-dir="$DIR" $ACTION -m x'`,
     `sh -c 'git --git-dir=$DIR log'`,
     `sh -c 'git -C$DIR log'`,
+    `sh -c 'git --git-dir=$DIR/x log'`,
+    `sh -c 'git -C$DIR/x log'`,
   ])('blocks shell code whose deciding word is a variable: %s', (command) => {
     expectOutcome(makeBashEvent(command));
   });
@@ -2132,7 +2158,7 @@ describe('guardToolCall', () => {
     'sh $FLAG script.sh',
     'source -- "$SCRIPT"',
     `printf '%s\\n' 'sh -c "$CMD"'; sh -c true`,
-    `printf '%s\\n' 'sh -c "$CMD"' | sh`,
+    `printf '%s\\n' 'echo "$HOME"' | sh`,
     `source "$SCRIPT" '$ARG'`,
     `bash -c 'function run { echo hi; }; run'`,
   ])('allows shell code whose variable is data: %s', (command) => {
