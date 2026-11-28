@@ -225,6 +225,16 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     },
   },
   {
+    name: 'adds a flat brace alternative as code',
+    words: ['{-c,$CMD}'],
+    expected: {
+      kind: 'file',
+      names: ['{-c,$CMD}'],
+      codes: ['$CMD'],
+      stdinMayBeCode: true,
+    },
+  },
+  {
     name: 'keeps a status expansion after -- as never empty',
     words: ['--', '$?', 'harmless.sh'],
     expected: { kind: 'file', names: ['$?'], codes: [], stdinMayBeCode: false },

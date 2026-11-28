@@ -430,6 +430,30 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('bash {{-c},"$CMD"}'), directory);
   });
 
+  it('blocks a flat brace alternative as inline code', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent('sh {-c,$CMD}'), directory);
+  });
+
+  it('blocks a flat quoted brace alternative as inline code', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent('sh {-c,"$CMD"}'), directory);
+  });
+
+  it('allows a flat brace whose first alternative is not an option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('sh {a,$CMD} harmless.sh'), directory)).toBeUndefined();
+  });
+
+  it('allows a flat literal brace with a following script', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('sh {a,b} harmless.sh'), directory)).toBeUndefined();
+  });
+
   it('blocks a committing redirect after a nested expansion', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 

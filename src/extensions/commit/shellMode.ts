@@ -409,10 +409,14 @@ const unresolvedOptionStep = (
 ): void => {
   const word = words[index] ?? '';
   const alternatives = braceAlternatives(word);
+  const first = alternatives?.[0] ?? '';
 
-  // A nested first alternative expands to its own words, so the later alternatives are the
-  // following words. `{{-c},code}` becomes `-c code`.
-  if (alternatives !== undefined && (alternatives[0] ?? '').startsWith('{')) {
+  const startsWithCodeOption = isOptionWord(first) && !optionValueNames.has(first);
+  const startsWithOption = first.startsWith('{') || startsWithCodeOption;
+
+  // A first alternative that is an option makes the later alternatives the following words.
+  // `{-c,code}` and `{{-c},code}` both become `-c code`.
+  if (alternatives !== undefined && startsWithOption) {
     codes.push(...alternatives.slice(1));
   }
 
