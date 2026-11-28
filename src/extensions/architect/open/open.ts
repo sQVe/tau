@@ -343,7 +343,7 @@ const recognizedCancellation = (signal: AbortSignal | undefined, error: unknown)
   }
 
   if (!(error instanceof Error)) {
-    return true;
+    return error === signal.reason;
   }
 
   const abortError = error.name === 'AbortError';
@@ -464,9 +464,9 @@ const settleLaunch = async (
 ): Promise<void> => {
   const completion = await fence.complete();
 
-  throwIfOpenCancelled(request.hc.signal);
-
   if (completion.outcome === 'adopted') {
+    throwIfOpenCancelled(request.hc.signal);
+
     return;
   }
 
@@ -474,7 +474,11 @@ const settleLaunch = async (
     throw openKeptClaimError(request.root, completion.failure);
   }
 
-  throw failure;
+  // A launch failure that races with an abort is still the failure the caller needs, so only a
+  // recognized cancellation replaces it.
+  throw recognizedCancellation(request.hc.signal, failure)
+    ? cancelledOpenError(request.hc.signal)
+    : failure;
 };
 
 const adoptionReadError = (error: unknown): Error =>
@@ -489,7 +493,9 @@ const applyLaunchOutcome = async (
   // still see the failure, so the outer catch completes the fence and reports it. An abort reports
   // the caller's cancellation error instead of the readback error.
   if (started.error instanceof StartedTabError) {
-    throwIfOpenCancelled(request.hc.signal);
+    if (recognizedCancellation(request.hc.signal, started.error.cause)) {
+      throw cancelledOpenError(request.hc.signal);
+    }
 
     throw launchFailure(started);
   }
