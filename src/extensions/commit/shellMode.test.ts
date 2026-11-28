@@ -351,15 +351,36 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
   },
 ];
 
-it('unwraps a deeply nested brace word without overflowing', () => {
-  const word = '{'.repeat(20_000) + 'a' + '}'.repeat(20_000);
-
+const timeShellMode = (word: string): number => {
   const started = performance.now();
-  const mode = shellMode([word]);
-  const elapsed = performance.now() - started;
 
-  expect(mode).toEqual({ kind: 'file', names: [word], codes: [], stdinMayBeCode: false });
-  expect(elapsed).toBeLessThan(1000);
+  for (let run = 0; run < 50; run += 1) {
+    shellMode([word]);
+  }
+
+  return performance.now() - started;
+};
+
+it('unwraps a deeply nested brace word without overflowing', () => {
+  const shallowWord = '{'.repeat(2_000) + 'a' + '}'.repeat(2_000);
+  const deepWord = '{'.repeat(20_000) + 'a' + '}'.repeat(20_000);
+
+  expect(shellMode([deepWord])).toEqual({
+    kind: 'file',
+    names: [deepWord],
+    codes: [],
+    stdinMayBeCode: false,
+  });
+
+  shellMode([shallowWord]);
+
+  // Ten times the depth costs about ten times as much when the unwrap is linear and about a
+  // hundred times as much when it is quadratic. The floor keeps a near-zero shallow time from
+  // making the ratio meaningless.
+  const shallow = Math.max(timeShellMode(shallowWord), 1);
+  const deep = timeShellMode(deepWord);
+
+  expect(deep).toBeLessThan(shallow * 30);
 });
 
 it('scans a long adversarial word without backtracking', () => {
