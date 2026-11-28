@@ -56,32 +56,14 @@ export const memberName = (node: MemberExpression): string | undefined => {
     : undefined;
 };
 
-// A specifier marked `type` emits no runtime binding.
-const isTypeSpecifier = (specifier: unknown): boolean => {
-  if (typeof specifier !== 'object' || specifier === null) {
-    return false;
-  }
-
-  if ('importKind' in specifier) {
-    return specifier.importKind === 'type';
-  }
-
-  return 'exportKind' in specifier && specifier.exportKind === 'type';
-};
-
-// Under verbatimModuleSyntax, a declaration whose specifiers are all marked `type` is erased. A
-// declaration with a value specifier still loads the module.
+// Only a top-level `import type` or `export type` is erased. Under `verbatimModuleSyntax`, a
+// declaration whose specifiers all carry an inline `type` marker still loads the module for its side
+// effects, so it must be judged as a runtime import.
 const isTypeOnly = (node: ModuleDeclaration) => {
   const typeImport = 'importKind' in node && node.importKind === 'type';
   const typeExport = 'exportKind' in node && node.exportKind === 'type';
 
-  if (typeImport || typeExport) {
-    return true;
-  }
-
-  const specifiers = 'specifiers' in node ? node.specifiers : undefined;
-
-  return specifiers !== undefined && specifiers.length > 0 && specifiers.every(isTypeSpecifier);
+  return typeImport || typeExport;
 };
 
 export const findingLines = (found: string[]): number[] =>

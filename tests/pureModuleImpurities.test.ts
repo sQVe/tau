@@ -268,11 +268,13 @@ it('reports a global effect call and a crypto read', () => {
   ]);
 });
 
-it('treats an inline type specifier as a type-only import', () => {
+it('reports an inline type specifier as a runtime load', () => {
   const source =
-    "import { type Task } from './rules.js';\nexport type { Facts } from './rules.js';\nexport const read = (task: Task) => task;\n";
+    "import { type Task } from '../tasks.js';\nexport type { Facts } from '../facts.js';\nexport const read = (task: Task) => task;\n";
 
-  expect(impurities('src/pure/decide.ts', source, testRegistry)).toEqual([]);
+  expect(impurities('src/pure/decide.ts', source, testRegistry)).toEqual([
+    'src/pure/decide.ts:1: runtime import of ../tasks.js',
+  ]);
 });
 
 it('reports a function assigned through a destructured parameter object', () => {
