@@ -205,6 +205,51 @@ it('installs through an accessor that returns a new bound wrapper on every read'
   ]);
 });
 
+it('installs once when a proxy read returns a fresh delegating function', () => {
+  const registered: unknown[] = [];
+  let assignments = 0;
+  const target = registrationApi((tool) => registered.push(tool));
+
+  const api = new Proxy(target, {
+    get: (value, key) => {
+      const properties = value as unknown as Record<PropertyKey, unknown>;
+      const property = properties[key];
+
+      if (key !== 'registerTool' || typeof property !== 'function') {
+        return property;
+      }
+
+      const registerTool = property as (tool: unknown) => unknown;
+
+      return (tool: unknown) => registerTool(tool);
+    },
+    set: (value, key, assigned: unknown) => {
+      if (key === 'registerTool') {
+        assignments += 1;
+      }
+
+      Reflect.set(value, key, assigned);
+
+      return true;
+    },
+  });
+
+  strictToolRegistration(api);
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(assignments).toBe(1);
+
+  expect(registered).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
 it('keeps the install when a later read of registerTool fails', () => {
   const registered: unknown[] = [];
   let stored = (tool: unknown): unknown => registered.push(tool);
@@ -405,6 +450,37 @@ it('wraps a registerTool that the host replaces after the install', () => {
       },
     },
   ]);
+});
+
+it('reinstalls when the host drops the wrapper of an unstable install', () => {
+  const first: unknown[] = [];
+  const second: unknown[] = [];
+  let stored = (tool: unknown): unknown => first.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => stored.bind(api),
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  strictToolRegistration(api);
+
+  stored = (tool) => second.push(tool);
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(first).toEqual([]);
+
+  expect(second.at(-1)).toMatchObject({
+    parameters: {
+      additionalProperties: false,
+      properties: { nested: { additionalProperties: false } },
+    },
+  });
 });
 
 it('reports a readback that is not callable with its own message', () => {

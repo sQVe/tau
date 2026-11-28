@@ -65,7 +65,10 @@ interface InstalledWrapper {
   wrapper: RegisterToolReturningValue;
   // Whether a read of registerTool returned the wrapper itself. An accessor or proxy host can return
   // a new function on every read, so a differing read does not prove the host replaced the wrapper.
+  // A false value means only that a probe reached the wrapper, so a later call probes again and
+  // reinstalls when the read no longer reaches it.
   stable: boolean;
+  probe: InstallProbe;
 }
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -492,7 +495,9 @@ const probeOutcome = (readBack: unknown, probe: InstallProbe): ProbeOutcome => {
 };
 
 // An inherited accessor accepts the value through its setter and creates no own property, and a
-// proxy trap may throw while it reports one, so read the descriptor through the chain.
+// proxy trap may throw while it reports one, so read the descriptor through the chain. A proxy read
+// trap can also return another function while the descriptor reports the stored wrapper, so the
+// property read decides whether the install is stable.
 const verifyInstalled = (
   pi: ExtensionAPI,
   wrapper: RegisterToolReturningValue,
@@ -505,10 +510,6 @@ const verifyInstalled = (
     descriptor = descriptorOf(pi, 'registerTool');
   } catch (error) {
     failInstall(pi, original, notReadableMessage, error);
-  }
-
-  if (descriptor?.value === wrapper) {
-    return true;
   }
 
   const host: RegisterToolHost = pi;
@@ -573,7 +574,7 @@ const installWrapper = (pi: ExtensionAPI): InstalledWrapper => {
     throw new Error(notWritableMessage, { cause: error });
   }
 
-  return { wrapper, stable: verifyInstalled(pi, wrapper, original, probe) };
+  return { wrapper, stable: verifyInstalled(pi, wrapper, original, probe), probe };
 };
 
 // The host may replace `registerTool` after the install, so read it again before trusting the
@@ -593,19 +594,26 @@ const currentRegisterTool = (pi: ExtensionAPI): RegisterToolReturningValue | und
 
 // The host may replace `registerTool` after the install, so a readable value that differs from the
 // recorded wrapper means the host replaced it. A read that throws or yields no function cannot prove
-// a replacement, and an unstable read cannot show one at all, so both keep the install.
+// a replacement, so it keeps the install. An unstable install cannot be compared by identity, so
+// probe the read for this install's wrapper before trusting it.
 const stillInstalled = (installed: InstalledWrapper | undefined, pi: ExtensionAPI): boolean => {
   if (installed === undefined) {
     return false;
   }
 
-  if (!installed.stable) {
+  const current = currentRegisterTool(pi);
+
+  if (current === undefined) {
     return true;
   }
 
-  const current = currentRegisterTool(pi);
+  if (installed.stable) {
+    return current === installed.wrapper;
+  }
 
-  return current === undefined || current === installed.wrapper;
+  installed.probe.reached = false;
+
+  return probeOutcome(current, installed.probe) === 'reached';
 };
 
 // Wraps `registerTool` once per API. Every tool registered through that API after this call has
