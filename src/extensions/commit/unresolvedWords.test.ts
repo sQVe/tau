@@ -17,6 +17,12 @@ const wordTable: { name: string; word: string; expected: boolean }[] = [
   },
   { name: 'treats a standalone closing brace as resolved', word: '}', expected: false },
   {
+    name: 'treats a lone dollar in the last segment as resolved',
+    word: 'data$.sh',
+    expected: false,
+  },
+  { name: 'treats an unclosed backtick as resolved', word: '`x', expected: false },
+  {
     name: 'treats a braced variable in a directory segment as resolved',
     word: `\${VENV}/bin/python`,
     expected: false,

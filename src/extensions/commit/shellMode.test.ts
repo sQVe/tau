@@ -190,6 +190,26 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'file', names: ['{{-O},extglob}'], codes: [], stdinMayBeCode: true },
   },
   {
+    name: 'records the script after a flat value-taking option',
+    words: ['{-O,extglob,commit.sh}'],
+    expected: {
+      kind: 'file',
+      names: ['{-O,extglob,commit.sh}', 'commit.sh'],
+      codes: [],
+      stdinMayBeCode: true,
+    },
+  },
+  {
+    name: 'records the script after a nested value-taking option',
+    words: ['{{-O,extglob},commit.sh}'],
+    expected: {
+      kind: 'file',
+      names: ['{{-O,extglob},commit.sh}', 'commit.sh'],
+      codes: [],
+      stdinMayBeCode: true,
+    },
+  },
+  {
     name: 'reads standard input for a trailing --',
     words: ['--'],
     expected: { kind: 'stdin', codes: [] },

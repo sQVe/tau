@@ -1,4 +1,4 @@
-import { isUnresolvedWord } from './unresolvedWords.js';
+import { isUnresolvedWord, startsWithExpansion } from './unresolvedWords.js';
 
 export type ShellMode =
   | { kind: 'inline'; codes: string[] }
@@ -91,6 +91,12 @@ const braceAlternatives = (word: string): string[] | undefined => {
 };
 
 const braceFirstAlternative = (word: string): string | undefined => braceAlternatives(word)?.[0];
+
+const unwrapFirstAlternative = (word: string): string => {
+  const inner = braceFirstAlternative(word);
+
+  return inner === undefined ? word : unwrapFirstAlternative(inner);
+};
 
 const nameCharacters = /[A-Za-z_0-9]/u;
 
@@ -201,25 +207,14 @@ const canExpandToNoWord = (word: string): boolean => {
   return sawExpansion;
 };
 
-// A `$` that starts no expansion and an unclosed backtick are literal text.
-const startsWithExpansion = (word: string): boolean => {
-  if (word.startsWith('`')) {
-    return word.includes('`', 1);
-  }
-
-  return word.startsWith('$') && dollarExpansion(word, 0) !== undefined;
-};
-
 const braceStartsWithModeOption = (alternative: string | undefined): boolean => {
   if (alternative === undefined) {
     return false;
   }
 
-  return (
-    isOptionWord(alternative) ||
-    startsWithExpansion(alternative) ||
-    braceStartsWithModeOption(braceFirstAlternative(alternative))
-  );
+  const unwrapped = unwrapFirstAlternative(alternative);
+
+  return isOptionWord(unwrapped) || startsWithExpansion(unwrapped);
 };
 
 const hasExpansionPrefix = (word: string): boolean =>
@@ -413,10 +408,30 @@ const candidatesWithMode = (names: string[], mode: ShellMode): ShellMode => {
   return mode;
 };
 
-const unwrapFirstAlternative = (word: string): string => {
-  const inner = braceFirstAlternative(word);
+// The words a brace mode option leaves for the shell after its first alternative. A first
+// alternative with `c` makes the rest the code; a plain option makes them file operands; a
+// value-taking option consumes its value first.
+const braceFollowWords = (alternatives: string[]): { codes: string[]; names: string[] } => {
+  const rawFirst = alternatives[0] ?? '';
+  const first = unwrapFirstAlternative(rawFirst);
+  const rest = alternatives.slice(1);
 
-  return inner === undefined ? word : unwrapFirstAlternative(inner);
+  if (isInlineCodeWord(first)) {
+    return { codes: rest, names: [] };
+  }
+
+  if (!isOptionWord(first)) {
+    return { codes: [], names: [] };
+  }
+
+  if (!optionValueNames.has(first)) {
+    return { codes: [], names: rest };
+  }
+
+  const inner = rawFirst.startsWith('{') ? braceAlternatives(rawFirst) : undefined;
+  const valueInsideFirst = (inner?.length ?? 0) > 1;
+
+  return { codes: [], names: valueInsideFirst ? rest : alternatives.slice(2) };
 };
 
 // A mode option may also be a brace expansion that yields several words. Record its file
@@ -435,19 +450,12 @@ const unresolvedOptionStep = (
   }
 
   const alternatives = braceAlternatives(word);
-  const first = unwrapFirstAlternative(alternatives?.[0] ?? '');
-  const carriesInlineCode = isInlineCodeWord(first);
-  const plainOption = isOptionWord(first) && !optionValueNames.has(first);
 
   if (alternatives !== undefined) {
-    // A first alternative with `c` makes the later alternatives the code. A plain option makes
-    // them file operands, so `{-e,script.sh}` still reads `script.sh`. A value-taking option
-    // consumes its value, so `{-O,extglob}` reads no script.
-    if (carriesInlineCode) {
-      codes.push(...alternatives.slice(1));
-    } else if (plainOption) {
-      names.push(...alternatives.slice(1));
-    }
+    const follow = braceFollowWords(alternatives);
+
+    codes.push(...follow.codes);
+    names.push(...follow.names);
   }
 
   codes.push(...step.codes);

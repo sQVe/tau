@@ -39,6 +39,15 @@ const startsExpansion = (text: string, index: number): boolean => {
   return expansionPunctuation.has(next) || nameCharacters.test(next) || specialParameters.has(next);
 };
 
+// A word that starts with a real expansion. A lone `$` and an unclosed backtick are literal.
+export const startsWithExpansion = (text: string): boolean => {
+  if (text.startsWith('`')) {
+    return text.includes('`', 1);
+  }
+
+  return text.startsWith('$') && startsExpansion(text, 0);
+};
+
 // A `$` that starts an expansion, or a closed backtick, anywhere in the text. A lone `$` and an
 // unclosed backtick are literal.
 const hasExpansionStart = (text: string): boolean => {

@@ -525,6 +525,14 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent(`sh < 'dir$/data.sh'`), directory)).toBeUndefined();
   });
 
+  it('blocks a committing script in a literal dollar path', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'dir$/commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(`sh < 'dir$/commit.sh'`), directory);
+  });
+
   it.each([
     ['flat', 'sh {-O,extglob}'],
     ['nested', 'sh {{-O},extglob}'],
@@ -534,6 +542,17 @@ describe('guardToolCall', () => {
     writeScript(directory, 'extglob', 'git commit -m x\n');
 
     expect(guard(makeBashEvent(command), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['flat', 'sh {-O,extglob,commit.sh}'],
+    ['nested', 'sh {{-O,extglob},commit.sh}'],
+  ])('blocks a script after a %s value-taking option', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(command), directory);
   });
 
   it('blocks a committing script behind a flat option alternative', () => {
