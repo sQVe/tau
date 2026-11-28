@@ -38,6 +38,16 @@ const wordTable: { name: string; word: string; expected: boolean }[] = [
     expected: true,
   },
   {
+    name: 'treats a braced variable in a directory segment with a literal closing brace as resolved',
+    word: `\${VENV}/bin/x}`,
+    expected: false,
+  },
+  {
+    name: 'treats a spanning parameter expansion with trailing literal text as unresolved',
+    word: `\${A:-b/c}log`,
+    expected: true,
+  },
+  {
     name: 'treats a braced variable in a directory segment as resolved',
     word: `\${VENV}/bin/python`,
     expected: false,

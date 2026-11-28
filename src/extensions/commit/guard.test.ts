@@ -11,6 +11,7 @@ import commitExtension from './commit.js';
 import { writeRepositoryFile } from './fixtures/commitTool.js';
 import { commitGuardReason, guardToolCall, namedFileVerdict } from './guard.js';
 import type { NamedFileFacts, NamedFileVerdict } from './guard.js';
+import { maximumBraceDepth } from './shellMode.js';
 
 const guard = (event: ToolCallEvent, cwd = process.cwd()) => guardToolCall(event, { cwd });
 
@@ -577,18 +578,27 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(`bash -so pipefail -c 'git commit -m x'`), directory);
   });
 
-  it('blocks a committing redirect for a stdin option', () => {
+  it('allows a positional argument after a stdin option and --', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'commit.sh', 'echo hi\n');
 
-    expectOutcome(makeBashEvent('bash -s < commit.sh'), directory);
+    expect(guard(makeBashEvent('bash -s -- commit.sh'), directory)).toBeUndefined();
+  });
+
+  it('blocks earlier candidates when a stdin option follows them', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'script.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('bash {$FLAG,script.sh} -s {a,b}/commit.sh'), directory);
   });
 
   it('blocks code after a brace alternative beyond the depth cap', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    const word = `{${'{'.repeat(101)}-c${'}'.repeat(101)},$CMD}`;
+    const levels = maximumBraceDepth + 1;
+    const word = `{${'{'.repeat(levels)}-c${'}'.repeat(levels)},$CMD}`;
 
     expectOutcome(makeBashEvent(`sh ${word}`), directory);
   });

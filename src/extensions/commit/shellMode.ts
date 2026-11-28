@@ -31,6 +31,11 @@ interface UnwrappedAlternative {
   readonly word: string;
 }
 
+interface Codes {
+  readonly seen: Set<string>;
+  readonly values: string[];
+}
+
 export const isOptionWord = (word: string): boolean => word.startsWith('-') || word.startsWith('+');
 
 // The index of the `}` that matches the `{` at `openIndex`, counting nested braces.
@@ -103,7 +108,7 @@ const braceAlternatives = (word: string): string[] | undefined => {
 
 const braceFirstAlternative = (word: string): string | undefined => braceAlternatives(word)?.[0];
 
-const maximumBraceDepth = 100;
+export const maximumBraceDepth = 100;
 
 const unwrapFirstAlternative = (word: string): UnwrappedAlternative => {
   let current = word;
@@ -249,23 +254,42 @@ const isModeOptionWord = (word: string): boolean => isOptionWord(word) || hasExp
 
 const namesMayBeCode = (names: string[]): boolean => names.some(isModeOptionWord);
 
-const fileMode = (names: string[], codes: string[], stdinMayBeCode: boolean): ShellMode => ({
-  kind: 'file',
-  names,
-  codes: [...new Set(codes)],
-  stdinMayBeCode,
-});
+const emptyCodes = (): Codes => ({ seen: new Set<string>(), values: [] });
 
-const addCodes = (codes: string[], next: string[]): void => {
-  const seen = new Set(codes);
+const addCodes = (codes: Codes, next: readonly string[]): void => {
+  if (next.length === 0) {
+    return;
+  }
 
   for (const code of next) {
-    if (!seen.has(code)) {
-      seen.add(code);
-      codes.push(code);
+    if (codes.seen.has(code)) {
+      continue;
     }
+
+    codes.seen.add(code);
+    codes.values.push(code);
   }
 };
+
+const copyCodes = (codes: Codes, extra: readonly string[]): Codes => {
+  const copy = emptyCodes();
+
+  addCodes(copy, codes.values);
+  addCodes(copy, extra);
+
+  return copy;
+};
+
+const fileMode = (
+  names: string[],
+  codes: readonly string[],
+  stdinMayBeCode: boolean,
+): ShellMode => ({
+  kind: 'file',
+  names,
+  codes: [...codes],
+  stdinMayBeCode,
+});
 
 // A `-` short-option word, split into its letters and the tail attached to them.
 const shortOption = (word: string): ShortOption | undefined => {
@@ -346,23 +370,21 @@ const attachedInlineCode = (word: string): string | undefined => {
 const resolvedModeStep = (
   words: string[],
   index: number,
-  codes: string[],
+  codes: Codes,
   state: ModeState,
 ): ResolvedModeStep => {
   const word = words[index] ?? '';
   const attached = attachedInlineCode(word);
 
   if (attached !== undefined) {
-    return { kind: 'mode', mode: { kind: 'inline', codes: [...codes, attached] } };
+    return { kind: 'mode', mode: { kind: 'inline', codes: copyCodes(codes, [attached]).values } };
   }
 
   if (isInlineCodeWord(word)) {
     const code = codeOperand(words, index + 1);
+    const nextCodes = code === undefined ? codes : copyCodes(codes, [code]);
 
-    return {
-      kind: 'mode',
-      mode: { kind: 'inline', codes: code === undefined ? codes : [...codes, code] },
-    };
+    return { kind: 'mode', mode: { kind: 'inline', codes: nextCodes.values } };
   }
 
   state.namesStdin ||= isStdinOptionWord(word);
@@ -370,7 +392,7 @@ const resolvedModeStep = (
   // After `-s`, a word that is not an option is a positional argument, so the shell still reads
   // its code from standard input.
   if (state.namesStdin && !isOptionWord(word)) {
-    return { kind: 'mode', mode: { kind: 'stdin', codes } };
+    return { kind: 'mode', mode: { kind: 'stdin', codes: codes.values } };
   }
 
   if (takesShellOptionValue(word)) {
@@ -382,7 +404,7 @@ const resolvedModeStep = (
   }
 
   if (!isOptionWord(word)) {
-    return { kind: 'mode', mode: fileMode([word], codes, false) };
+    return { kind: 'mode', mode: fileMode([word], codes.values, false) };
   }
 
   return { kind: 'skip', next: index + 1 };
@@ -408,7 +430,7 @@ const unresolvedModeStep = (
 const modeAtDoubleDash = (
   words: string[],
   index: number,
-  codes: string[],
+  codes: Codes,
   names: string[],
   optionMayBeCode: boolean,
 ): ShellMode => {
@@ -416,17 +438,13 @@ const modeAtDoubleDash = (
 
   if (names.length > 0) {
     const candidates = name === undefined ? names : [...names, name];
-    const nextCodes = [...codes];
+    const nextCodes = name === undefined ? codes : copyCodes(codes, [name]);
 
-    if (name !== undefined) {
-      addCodes(nextCodes, [name]);
-    }
-
-    return fileMode(candidates, nextCodes, namesMayBeCode(names) || optionMayBeCode);
+    return fileMode(candidates, nextCodes.values, namesMayBeCode(names) || optionMayBeCode);
   }
 
   if (name === undefined) {
-    return { kind: 'stdin', codes };
+    return { kind: 'stdin', codes: codes.values };
   }
 
   // Every vanishing word is dropped, so the first word that cannot vanish becomes the file
@@ -439,7 +457,7 @@ const modeAtDoubleDash = (
 
   const candidates = words.slice(index + 1, Math.min(end + 1, words.length));
 
-  return fileMode(candidates, codes, end >= words.length || optionMayBeCode);
+  return fileMode(candidates, codes.values, end >= words.length || optionMayBeCode);
 };
 
 // A file candidate from an ambiguous word still runs when a later word decides the mode, so keep it
@@ -502,7 +520,7 @@ const braceFollowWords = (alternatives: string[]): { codes: string[]; names: str
 const unresolvedOptionStep = (
   words: string[],
   index: number,
-  codes: string[],
+  codes: Codes,
   names: string[],
 ): void => {
   const word = words[index] ?? '';
@@ -524,15 +542,15 @@ const unresolvedOptionStep = (
   addCodes(codes, step.codes);
 };
 
-const fileOperandMode = (names: string[], codes: string[], state: ModeState): ShellMode =>
-  fileMode(names, codes, namesMayBeCode(names) || state.optionMayBeCode);
+const fileOperandMode = (names: string[], codes: Codes, state: ModeState): ShellMode =>
+  fileMode(names, codes.values, namesMayBeCode(names) || state.optionMayBeCode);
 
 // An unresolved mode word either names a file operand itself or keeps the scan going as a
 // possible option.
 const unresolvedMode = (
   words: string[],
   index: number,
-  codes: string[],
+  codes: Codes,
   names: string[],
   state: ModeState,
 ): ShellMode | undefined => {
@@ -540,7 +558,9 @@ const unresolvedMode = (
 
   if (!isModeOptionWord(word)) {
     if (state.namesStdin) {
-      return { kind: 'stdin', codes };
+      const stdinMode: ShellMode = { kind: 'stdin', codes: codes.values };
+
+      return candidatesWithMode(names, stdinMode, state.optionMayBeCode);
     }
 
     names.push(word);
@@ -555,7 +575,7 @@ const unresolvedMode = (
 };
 
 export const shellMode = (words: string[]): ShellMode => {
-  const codes: string[] = [];
+  const codes = emptyCodes();
   const names: string[] = [];
   const state: ModeState = { namesStdin: false, optionMayBeCode: false };
 
@@ -564,7 +584,9 @@ export const shellMode = (words: string[]): ShellMode => {
 
     if (word === '--' || word === '-') {
       if (state.namesStdin) {
-        return { kind: 'stdin', codes };
+        const stdinMode: ShellMode = { kind: 'stdin', codes: codes.values };
+
+        return candidatesWithMode(names, stdinMode, state.optionMayBeCode);
       }
 
       return modeAtDoubleDash(words, index, codes, names, state.optionMayBeCode);
@@ -603,5 +625,5 @@ export const shellMode = (words: string[]): ShellMode => {
     return fileOperandMode(names, codes, state);
   }
 
-  return { kind: 'stdin', codes };
+  return { kind: 'stdin', codes: codes.values };
 };

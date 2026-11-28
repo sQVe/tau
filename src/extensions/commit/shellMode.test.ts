@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { shellMode } from './shellMode.js';
+import { maximumBraceDepth, shellMode } from './shellMode.js';
 import type { ShellMode } from './shellMode.js';
 
 const nestedBraceWord = (levels: number, first: string, second: string): string =>
@@ -54,23 +54,38 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
   },
   {
     name: 'unwraps a brace alternative at the depth cap',
-    words: [nestedBraceWord(100, '-c', 'git commit')],
+    words: [nestedBraceWord(maximumBraceDepth, '-c', 'git commit')],
     expected: {
       kind: 'file',
-      names: [nestedBraceWord(100, '-c', 'git commit')],
+      names: [nestedBraceWord(maximumBraceDepth, '-c', 'git commit')],
       codes: ['git commit'],
       stdinMayBeCode: true,
     },
   },
   {
     name: 'fails closed when a brace alternative exceeds the depth cap',
-    words: [nestedBraceWord(101, '-c', 'git commit')],
+    words: [nestedBraceWord(maximumBraceDepth + 1, '-c', 'git commit')],
     expected: {
       kind: 'file',
-      names: [nestedBraceWord(101, '-c', 'git commit'), 'git commit'],
+      names: [nestedBraceWord(maximumBraceDepth + 1, '-c', 'git commit'), 'git commit'],
       codes: ['git commit'],
       stdinMayBeCode: true,
     },
+  },
+  {
+    name: 'keeps earlier candidates when a stdin option follows them',
+    words: ['{$FLAG,script.sh}', '-s', '{a,b}/commit.sh'],
+    expected: {
+      kind: 'file',
+      names: ['{$FLAG,script.sh}', 'script.sh'],
+      codes: ['script.sh', '{a,b}/commit.sh'],
+      stdinMayBeCode: true,
+    },
+  },
+  {
+    name: 'records an inline code once when an earlier word already added it',
+    words: ['-$FLAG', '-c', 'x'],
+    expected: { kind: 'inline', codes: ['x'] },
   },
   {
     name: 'skips a plain option before the file operand',
@@ -389,7 +404,7 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
   },
 ];
 
-it('adds many distinct brace codes without quadratic dedupe', () => {
+it('records every distinct brace code and no -c', () => {
   const alternatives = Array.from({ length: 2_000 }, (_, index) => `a${index}`);
   const word = `{-c,${alternatives.join(',')}}`;
 

@@ -65,10 +65,72 @@ const hasExpansionStart = (text: string): boolean => {
   return false;
 };
 
-// A parameter expansion can start in an earlier segment and close in the last one, as in
-// `${A:-b/c}`, so the whole word must hold a `${` before the closing brace counts.
+// The `}` that closes the `${` opened at `start`, counting nested braces.
+const matchingExpansionEnd = (word: string, start: number): number | undefined => {
+  let depth = 0;
+
+  for (let index = start + 2; index < word.length; index += 1) {
+    if (word[index] === '{') {
+      depth += 1;
+
+      continue;
+    }
+
+    if (word[index] === '}') {
+      if (depth === 0) {
+        return index;
+      }
+
+      depth -= 1;
+    }
+  }
+
+  return undefined;
+};
+
+// A parameter expansion whose body holds a `/` spans a path separator, so the slash is inside the
+// expansion rather than a real separator. `${A:-b/c}` and `${A:-b/c}log` both count.
+const hasSpanningParameterExpansion = (word: string): boolean => {
+  let start = word.indexOf('${');
+
+  while (start !== -1) {
+    const end = matchingExpansionEnd(word, start);
+
+    if (end !== undefined && word.slice(start + 2, end).includes('/')) {
+      return true;
+    }
+
+    start = word.indexOf('${', start + 2);
+  }
+
+  return false;
+};
+
+// A trailing `}` is part of a parameter expansion only when it closes a `${` still open before it.
+const closesOpenParameterExpansion = (word: string): boolean => {
+  let open = 0;
+
+  for (let index = 0; index < word.length - 1; index += 1) {
+    if (word[index] === '$' && word[index + 1] === '{') {
+      open += 1;
+      index += 1;
+
+      continue;
+    }
+
+    if (word[index] === '}' && open > 0) {
+      open -= 1;
+    }
+  }
+
+  return open > 0;
+};
+
+const endsWithOpenParameterExpansion = (word: string, lastSegment: string): boolean =>
+  lastSegment.endsWith('}') && closesOpenParameterExpansion(word);
+
 const endsWithParameterExpansion = (word: string, lastSegment: string): boolean =>
-  lastSegment.endsWith('}') && word.includes('${');
+  hasSpanningParameterExpansion(word) || endsWithOpenParameterExpansion(word, lastSegment);
 
 // A word a shell may rewrite from the environment when it sits in a deciding position. Only the last
 // path segment counts for a variable or a backtick, because the shell resolves the directory part as
