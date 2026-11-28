@@ -17,12 +17,35 @@ type ResolvedModeStep =
 
 export const isOptionWord = (word: string): boolean => word.startsWith('-') || word.startsWith('+');
 
-const modeOptionPrefixes = ['-', '+', '$', '`'];
+// A brace expansion can start a word with an option when its first alternative does, as in
+// `{-O,extglob}`.
+const braceFirstAlternative = (word: string): string | undefined => {
+  if (!word.startsWith('{')) {
+    return undefined;
+  }
+
+  const close = word.indexOf('}');
+
+  return close === -1 ? undefined : (word.slice(1, close).split(',')[0] ?? '');
+};
+
+const startsWithExpansion = (word: string): boolean => word.startsWith('$') || word.startsWith('`');
+
+const braceStartsWithOption = (alternative: string | undefined): boolean =>
+  alternative !== undefined && isOptionWord(alternative);
+
+const hasExpansionPrefix = (word: string): boolean =>
+  startsWithExpansion(word) || braceStartsWithOption(braceFirstAlternative(word));
 
 // Only a word whose text could expand to an option can be a mode option. Any other unresolved
 // word is a file operand, so the words after it and the standard input are data.
-const isModeOptionWord = (word: string): boolean =>
-  modeOptionPrefixes.some((prefix) => word.startsWith(prefix));
+const isModeOptionWord = (word: string): boolean => isOptionWord(word) || hasExpansionPrefix(word);
+
+const expansionOnlyWord = /^(?:\$\{[A-Za-z_0-9]+\}|\$[A-Za-z_0-9@*#?$!-]+|`[^`]*`)+$/u;
+
+// A word made only of expansions can expand to no word. The shell drops it and reads its code
+// from standard input.
+const canExpandToNoWord = (word: string): boolean => expansionOnlyWord.test(word);
 
 const namesMayBeCode = (names: string[]): boolean => names.some(isModeOptionWord);
 
@@ -151,8 +174,8 @@ const unresolvedModeStep = (
 };
 
 // `--` ends option scanning only while it is active. A candidate recorded before it stays a
-// candidate and `--` is data for that candidate. Otherwise the next word is a mandatory file
-// operand, so the words after it are positional arguments, never code.
+// candidate and `--` is data for that candidate. Otherwise the next word is a file operand, and
+// the words after it are positional arguments, never code.
 const modeAtDoubleDash = (
   words: string[],
   index: number,
@@ -163,18 +186,21 @@ const modeAtDoubleDash = (
 
   if (names.length > 0) {
     const candidates = name === undefined ? names : [...names, name];
+    const nextCodes = name === undefined ? codes : [...codes, name];
 
     return {
       kind: 'file',
       names: candidates,
-      codes: name === undefined ? codes : [...codes, name],
+      codes: nextCodes,
       stdinMayBeCode: namesMayBeCode(names),
     };
   }
 
-  return name === undefined
-    ? { kind: 'stdin', codes }
-    : { kind: 'file', names: [name], codes, stdinMayBeCode: false };
+  if (name === undefined) {
+    return { kind: 'stdin', codes };
+  }
+
+  return { kind: 'file', names: [name], codes, stdinMayBeCode: canExpandToNoWord(name) };
 };
 
 export const shellMode = (words: string[]): ShellMode => {

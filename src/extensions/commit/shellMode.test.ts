@@ -95,9 +95,34 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'file', names: ['script.sh'], codes: [], stdinMayBeCode: false },
   },
   {
-    name: 'reads a mandatory variable file after -- without code',
+    name: 'marks a mandatory variable file after -- as possibly empty',
     words: ['--', '$SCRIPT', '$ARG'],
-    expected: { kind: 'file', names: ['$SCRIPT'], codes: [], stdinMayBeCode: false },
+    expected: { kind: 'file', names: ['$SCRIPT'], codes: [], stdinMayBeCode: true },
+  },
+  {
+    name: 'marks a lone variable operand after -- as possibly empty',
+    words: ['--', '$SCRIPT'],
+    expected: { kind: 'file', names: ['$SCRIPT'], codes: [], stdinMayBeCode: true },
+  },
+  {
+    name: 'keeps a mandatory file with literal text as never reading standard input',
+    words: ['--', './$SCRIPT.sh'],
+    expected: { kind: 'file', names: ['./$SCRIPT.sh'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'keeps a brace word that can be an option scanning',
+    words: ['{-O,extglob}', 'script.sh'],
+    expected: {
+      kind: 'file',
+      names: ['{-O,extglob}', 'script.sh'],
+      codes: ['script.sh'],
+      stdinMayBeCode: true,
+    },
+  },
+  {
+    name: 'marks a lone leading brace option as possibly reading standard input',
+    words: ['{-O,extglob}'],
+    expected: { kind: 'file', names: ['{-O,extglob}'], codes: [], stdinMayBeCode: true },
   },
   {
     name: 'reads standard input for a trailing --',

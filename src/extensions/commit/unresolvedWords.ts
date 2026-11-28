@@ -40,6 +40,11 @@ const isBraceExpansion = (word: string): boolean => /(?<!\$)\{/u.test(word) && w
 
 const isStructuralBrace = (word: string): boolean => word === '}' || word === '{';
 
+// Text a shell expands into another value: a variable, a backtick, or a brace expansion.
+const hasExpansionMarker = (text: string): boolean => /[$`]/u.test(text) || isBraceExpansion(text);
+
+const hasBraceCharacter = (text: string): boolean => text.includes('{') || text.includes('}');
+
 // A word a shell may rewrite from the environment when it sits in a deciding position. Only the last
 // path segment counts for a variable or a backtick, because the shell resolves the directory part as
 // a path. A brace expansion anywhere in the word can rewrite a path segment, so it also counts.
@@ -50,7 +55,9 @@ export const isUnresolvedWord = (word: string): boolean => {
 
   const lastSegment = word.slice(word.lastIndexOf('/') + 1);
 
-  return /[$`{}]/u.test(lastSegment) || isBraceExpansion(word);
+  return (
+    hasExpansionMarker(lastSegment) || hasBraceCharacter(lastSegment) || isBraceExpansion(word)
+  );
 };
 
 export const commandName = (word: string): string =>
@@ -58,13 +65,16 @@ export const commandName = (word: string): string =>
 
 // An unquoted expansion anywhere in a word can split into more words. A variable in a directory
 // segment of a command word cannot, because the shell resolves it as a path.
-const expandsAnywhere = (word: string): boolean => /[$`]/u.test(word) || isBraceExpansion(word);
+const expandsAnywhere = (word: string): boolean => hasExpansionMarker(word);
 
 const unresolvedGitWord = (words: readonly string[]): boolean => {
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? '';
 
     if (gitOptionValueNames.has(word)) {
+      // A value Git takes from the next word is data. A variable in it stays data so shell code
+      // such as `git -C "$DIR" log` allows; the parser drops quotes, so the quoted form would
+      // otherwise block too.
       index += 1;
 
       continue;
