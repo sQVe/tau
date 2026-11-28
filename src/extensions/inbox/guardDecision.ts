@@ -26,12 +26,17 @@ const runsHcTyping = ([name, ...rest]: readonly string[]) => {
 const runsTypingCommand = (words: readonly string[]): boolean => {
   const command = commandWords(words);
 
+  // A lookup names a command instead of running it, so an unreadable value after it runs nothing.
+  if (command.lookup) {
+    return false;
+  }
+
   // An unreadable `env -S` value may still run a typing command, so the guard fails closed.
   if (command.unreadable) {
     return true;
   }
 
-  return !command.lookup && runsHcTyping(command.words);
+  return runsHcTyping(command.words);
 };
 
 export const typesIntoTerminal = (source: string): boolean =>
@@ -41,11 +46,6 @@ export const typesIntoTerminal = (source: string): boolean =>
     }
 
     const shellScript = shellScriptOf(command.arguments);
-
-    // An `env -S` value that depends on the environment may still run a typing command.
-    if (shellScript.kind === 'unreadable') {
-      return true;
-    }
 
     return shellScript.kind === 'script' && typesIntoTerminal(shellScript.script);
   });

@@ -86,6 +86,7 @@ const table: { command: string; refused: boolean }[] = [
   { command: 'command -v hc send', refused: false },
   { command: 'command -pv hc send', refused: false },
   { command: 'command -Vp hc send', refused: false },
+  { command: `command -v env -S '\${X} hc send'`, refused: false },
   { command: 'env echo hc send', refused: false },
   { command: 'sudo -u bob echo hc send', refused: false },
   { command: 'nohup sh -c "echo hc send"', refused: false },
