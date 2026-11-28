@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { normalizeVitestOptions, passesReporters } from './vitestOptions.js';
+import { normalizeVitestOptions, passesReporters, verificationArgvError } from './vitestOptions.js';
 
 it.for([
   { name: 'an inline reporter flag', runnerArguments: ['run', '--reporter=json'], expected: true },
@@ -66,4 +66,89 @@ it.for([
   },
 ])('normalizes $name before starting Vitest', ({ filters, options, expected }) => {
   expect(normalizeVitestOptions(filters, options)).toEqual(expected);
+});
+
+it.for([
+  {
+    name: 'the vitest default',
+    argv: ['vitest', 'run', '--reporter=json', '--reporter=default', '--no-color'],
+    accepted: true,
+  },
+  { name: 'related as the first token', argv: ['vitest', 'related', '--no-color'], accepted: true },
+  { name: 'options without a command', argv: ['vitest', '--no-color'], accepted: true },
+  { name: 'no arguments', argv: ['vitest'], accepted: true },
+  {
+    name: 'a second command word',
+    argv: ['vitest', 'run', 'related', '--reporter=json'],
+    accepted: false,
+  },
+  { name: 'a positional in the command slot', argv: ['vitest', 'other.test.ts'], accepted: false },
+  { name: 'a positional argument', argv: ['vitest', 'run', 'other.test.ts'], accepted: false },
+  { name: 'a bare --', argv: ['vitest', 'run', '--'], accepted: false },
+  { name: 'a bare -t', argv: ['vitest', 'run', '-t'], accepted: false },
+  {
+    name: 'a bare --testNamePattern',
+    argv: ['vitest', 'run', '--testNamePattern'],
+    accepted: false,
+  },
+  { name: '-t with a value', argv: ['vitest', 'run', '-t', 'adds'], accepted: false },
+  {
+    name: 'a name filter after a flag',
+    argv: ['vitest', 'run', '--no-color', '-t'],
+    accepted: false,
+  },
+  {
+    name: '--testNamePattern with a value',
+    argv: ['vitest', 'run', '--testNamePattern', 'adds'],
+    accepted: false,
+  },
+  {
+    name: '--test-name-pattern with a value',
+    argv: ['vitest', 'run', '--test-name-pattern', 'adds'],
+    accepted: false,
+  },
+  { name: '-t=', argv: ['vitest', 'run', '-t=adds'], accepted: false },
+  {
+    name: '--testNamePattern=',
+    argv: ['vitest', 'run', '--testNamePattern=adds'],
+    accepted: false,
+  },
+  {
+    name: '--test-name-pattern=',
+    argv: ['vitest', 'run', '--test-name-pattern=adds'],
+    accepted: false,
+  },
+  {
+    name: '--no-testNamePattern',
+    argv: ['vitest', 'run', '--no-testNamePattern'],
+    accepted: false,
+  },
+  {
+    name: '---no-testNamePattern',
+    argv: ['vitest', 'run', '---no-testNamePattern'],
+    accepted: false,
+  },
+  {
+    name: '--no-test-name-pattern',
+    argv: ['vitest', 'run', '--no-test-name-pattern'],
+    accepted: false,
+  },
+  {
+    name: '---no-test-name-pattern',
+    argv: ['vitest', 'run', '---no-test-name-pattern'],
+    accepted: false,
+  },
+  { name: '--no-t', argv: ['vitest', 'run', '--no-t'], accepted: false },
+  { name: '---no-t', argv: ['vitest', 'run', '---no-t'], accepted: false },
+  { name: '-no-t', argv: ['vitest', 'run', '-no-t'], accepted: false },
+  {
+    name: 'a negated filter after a flag',
+    argv: ['vitest', 'run', '--no-color', '--no-testNamePattern'],
+    accepted: false,
+  },
+  { name: 'a non-vitest command', argv: ['jest', 'run'], accepted: false },
+])('classifies $name in verificationArgv as accepted: $accepted', ({ argv, accepted }) => {
+  const error = verificationArgvError(argv);
+
+  expect(error === null).toBe(accepted);
 });

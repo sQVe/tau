@@ -174,6 +174,70 @@ describe('classifyReport', () => {
       },
     },
     {
+      name: 'no-tests-collected when the selected test was skipped but another test passed',
+      input: focusedRun(['suite skipped']),
+      exitCode: 0,
+      report: reportOf([
+        testFile([assertion(), assertion({ title: 'skipped', status: 'skipped' })]),
+      ]),
+      version: '4.1.11',
+      expected: {
+        kind: 'no-tests-collected',
+        tests: [
+          { file: testFilePath, fullname: 'suite skipped', status: 'skipped', durationMs: 3 },
+        ],
+      },
+    },
+    {
+      name: 'fail when a file marked passed holds a failed assertion and no counted failure',
+      input: fullRun(),
+      exitCode: 0,
+      report: {
+        numTotalTests: 2,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          testFile(
+            [
+              assertion(),
+              assertion({
+                title: 'broken',
+                status: 'failed',
+                failureMessages: ['expected 1 to be 2'],
+              }),
+            ],
+            { status: 'passed' },
+          ),
+        ],
+      },
+      version: '4.1.11',
+      expected: {
+        kind: 'fail',
+        failures: [{ file: testFilePath, fullname: 'suite broken', message: 'expected 1 to be 2' }],
+        tests: [
+          { file: testFilePath, fullname: 'suite works', status: 'passed', durationMs: 3 },
+          { file: testFilePath, fullname: 'suite broken', status: 'failed', durationMs: 3 },
+        ],
+        truncated: false,
+      },
+    },
+    {
+      name: 'pass when the selected tests include a passed test and a skipped test',
+      input: focusedRun(['suite works', 'suite skipped']),
+      exitCode: 0,
+      report: reportOf([
+        testFile([assertion(), assertion({ title: 'skipped', status: 'skipped' })]),
+      ]),
+      version: '4.1.11',
+      expected: {
+        kind: 'pass',
+        tests: [
+          { file: testFilePath, fullname: 'suite works', status: 'passed', durationMs: 3 },
+          { file: testFilePath, fullname: 'suite skipped', status: 'skipped', durationMs: 3 },
+        ],
+      },
+    },
+    {
       name: 'pass with a Vitest 5 " > " name in the filter',
       input: focusedRun(['suite > works']),
       exitCode: 0,

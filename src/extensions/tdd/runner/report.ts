@@ -407,7 +407,11 @@ export const classifyReport = (
   const failed = report.numFailedTests;
   const files = report.testResults;
 
-  if (failed > 0 || files.some((file) => file.status === 'failed')) {
+  if (
+    failed > 0 ||
+    files.some(hasFailedAssertion) ||
+    files.some((file) => file.status === 'failed')
+  ) {
     const { failures, truncated } = collectFailures(report, input.cwd, version);
 
     return {
@@ -426,7 +430,9 @@ export const classifyReport = (
     return noFilterMatchResult(input, report, tests, version);
   }
 
-  if (total === 0 || report.numPassedTests === 0) {
+  const hasPassedTest = tests.some((test) => test.status === 'passed');
+
+  if (total === 0 || report.numPassedTests === 0 || !hasPassedTest) {
     return { kind: 'no-tests-collected', tests };
   }
 

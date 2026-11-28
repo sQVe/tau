@@ -253,7 +253,13 @@ describe('runTests', () => {
               numTotalTests: 1,
               numFailedTests: 0,
               numPassedTests: 1,
-              testResults: [],
+              testResults: [
+                {
+                  name: '/repo/a.test.ts',
+                  status: 'passed',
+                  assertionResults: [{ title: 'works', status: 'passed' }],
+                },
+              ],
             }),
           );
 

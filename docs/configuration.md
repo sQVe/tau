@@ -45,8 +45,14 @@ replaces the list in the user file.
 - `excludedGlobs`: array of glob strings. Default:
   `**/{node_modules,.git,dist,build,coverage,.next,.nuxt,.output,.turbo,.cache,generated,__generated__}/**`.
 - `verificationArgv`: array of strings with at least one item. The selected runner validates it. For
-  `vitest`, the first item must be `vitest`; for `nextest`, it must be exactly
-  `["cargo", "nextest", "run"]`. Default:
+  `vitest`, the first item must be `vitest`. The next item may be `run` or `related`; Tau accepts
+  those words only in that position and refuses a second command word. Tau refuses any other item
+  that is not a flag, a bare `--`, and any flag that sets, clears, or negates the test name filter
+  (`-t`, `--testNamePattern`, `--test-name-pattern`, and their `--no-` forms, including
+  `--no-testNamePattern`, `--no-test-name-pattern`, and `--no-t`, with any number of leading
+  dashes). A focused run sets its own exact names, and Tau owns the files for a scoped run. Write a
+  flag value with `=`: migrate `--reporter json` to `--reporter=json`. For `nextest`, the value must
+  be exactly `["cargo", "nextest", "run"]`. Default:
   `["vitest", "run", "--reporter=json", "--reporter=default", "--no-color"]`.
 
 The defaults above describe the `vitest` runner. The `nextest` runner uses these defaults:
