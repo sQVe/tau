@@ -51,10 +51,10 @@ const parameters = Type.Object({
   ),
 });
 
-const description = `Manage a verification run saved in the shared root's .tau/verification/<run>/run.json. Config, commands, and tree stay on the checkout.
+const description = `Manage a verification run in the shared root's .tau/verification/<run>/run.json. Config, commands, and tree stay on the checkout.
 - launch: run the target's launch and doctor commands. Needs target. Returns ready with run and directory, or failed with command, exitCode, logPath, stopped. A stopped launch runs stop; if it fails, call stop again. A failed launch or doctor runs no stop and returns stopped false; call stop.
 - register: add items to a ready run. Needs run and items, each {item, steps}. Returns run, directory, items. Refuses a stopped run or one without a passing doctor.
-- stop: run the target's stop command from the launching checkout and keep the folder. Needs run. Returns stopped, run, directory, exitCode, logPath, freshness, notStopped when the stop fails. stopped false keeps it open; call stop again. A stopped run stays stopped if freshness is false.`;
+- stop: run the target's stop command in the checkout that launched it and keep the folder. Needs run. Returns stopped, run, directory, exitCode, logPath, freshness (notStopped when the stop fails). stopped false keeps it open; call stop again. A stopped run stays stopped if freshness is false.`;
 
 const parseAction = (input: Static<typeof parameters>): ParsedAction => {
   if (input.action === 'launch') {
