@@ -1,5 +1,19 @@
 # tau
 
+## 1.6.2
+
+### Patch Changes
+
+- [#848](https://github.com/sQVe/tau/pull/848)
+  [`e28cec9`](https://github.com/sQVe/tau/commit/e28cec92a24d11961e1eeb8af9e8d7515f2dc97e) Thanks
+  [@sQVe](https://github.com/sQVe)! - A TDD focused run no longer reports pass when its selected
+  test was skipped or todo while another test passed. A report that counts no failure but holds a
+  failed assertion now reports fail. A configured `verificationArgv` is rejected when it carries a
+  positional argument, a bare `--`, or a test name filter, including a negated one, because those
+  compete with the files and names Tau selects. Only `run` is accepted directly after `vitest`, and
+  a `related` command word is refused because Tau writes the `related` command itself for the
+  affected scope.
+
 ## 1.6.1
 
 ### Patch Changes
