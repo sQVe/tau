@@ -49,6 +49,7 @@ export const pureModules = [
   'src/extensions/checkoutWarning/message.ts',
   'src/extensions/commit/autosquash.ts',
   'src/extensions/commit/fileRequests.ts',
+  'src/extensions/commit/optionValue.ts',
   'src/extensions/commit/shellMode.ts',
   'src/extensions/commit/unresolvedWords.ts',
   'src/extensions/compaction/reminder.ts',

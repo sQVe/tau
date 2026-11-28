@@ -190,6 +190,61 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'stdin', codes: [] },
   },
   {
+    name: 'collects every vanishing operand and the first literal file',
+    words: ['--', '$A', '$B', 'commit.sh'],
+    expected: {
+      kind: 'file',
+      names: ['$A', '$B', 'commit.sh'],
+      codes: [],
+      stdinMayBeCode: false,
+    },
+  },
+  {
+    name: 'marks standard input when every operand after -- vanishes',
+    words: ['--', '$A', '$B'],
+    expected: { kind: 'file', names: ['$A', '$B'], codes: [], stdinMayBeCode: true },
+  },
+  {
+    name: 'marks a nested expansion after -- as possibly empty',
+    words: ['--', `\${A:-\${B}}`],
+    expected: { kind: 'file', names: [`\${A:-\${B}}`], codes: [], stdinMayBeCode: true },
+  },
+  {
+    name: 'reads standard input for a lone dash operand',
+    words: ['-', 'script.sh'],
+    expected: { kind: 'stdin', codes: [] },
+  },
+  {
+    name: 'adds a nested brace alternative as code',
+    words: ['{{-c},$CMD}'],
+    expected: {
+      kind: 'file',
+      names: ['{{-c},$CMD}'],
+      codes: ['$CMD'],
+      stdinMayBeCode: true,
+    },
+  },
+  {
+    name: 'keeps a status expansion after -- as never empty',
+    words: ['--', '$?', 'harmless.sh'],
+    expected: { kind: 'file', names: ['$?'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'keeps a count expansion after -- as never empty',
+    words: ['--', '$#', 'harmless.sh'],
+    expected: { kind: 'file', names: ['$#'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'keeps the shell name after -- as never empty',
+    words: ['--', '$0', 'harmless.sh'],
+    expected: { kind: 'file', names: ['$0'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'keeps a positional operand after -- as possibly empty',
+    words: ['--', '$9', 'harmless.sh'],
+    expected: { kind: 'file', names: ['$9', 'harmless.sh'], codes: [], stdinMayBeCode: false },
+  },
+  {
     name: 'treats a word after -- as a file even when it looks like an option',
     words: ['--', '-c'],
     expected: { kind: 'file', names: ['-c'], codes: [], stdinMayBeCode: false },

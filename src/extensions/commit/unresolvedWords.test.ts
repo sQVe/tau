@@ -1,10 +1,6 @@
 import { expect, it } from 'vitest';
 
-import {
-  blocksUnresolvedDecidingWord,
-  isUnresolvedWord,
-  unresolvedGitWordBeforeSubcommand,
-} from './unresolvedWords.js';
+import { blocksUnresolvedDecidingWord, isUnresolvedWord } from './unresolvedWords.js';
 import type { TextOrigin } from './unresolvedWords.js';
 
 const wordTable: { name: string; word: string; expected: boolean }[] = [
@@ -137,6 +133,36 @@ const gitTable: { name: string; words: string[]; gitIndex: number; expected: boo
     gitIndex: 1,
     expected: true,
   },
+  {
+    name: 'blocks a subcommand behind a directory expansion',
+    words: ['git', '$X/commit'],
+    gitIndex: 0,
+    expected: true,
+  },
+  {
+    name: 'blocks an attached value in a short-option cluster',
+    words: ['git', '-pC$DIR', 'log'],
+    gitIndex: 0,
+    expected: true,
+  },
+  {
+    name: 'skips a separate value in a short-option cluster',
+    words: ['git', '-pC', '/repo', '$SUBCOMMIT'],
+    gitIndex: 0,
+    expected: true,
+  },
+  {
+    name: 'blocks an attached abbreviated long-option value',
+    words: ['git', '--git-d=$DIR', 'log'],
+    gitIndex: 0,
+    expected: true,
+  },
+  {
+    name: 'skips a separate abbreviated long-option value',
+    words: ['git', '--git-d', '/repo', 'log'],
+    gitIndex: 0,
+    expected: false,
+  },
 ];
 
 const originTable: {
@@ -209,7 +235,13 @@ it.each(wordTable.map((row) => [row.name, row] as const))('%s', (_name, row) => 
 });
 
 it.each(gitTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
-  expect(unresolvedGitWordBeforeSubcommand(row.words, row.gitIndex)).toBe(row.expected);
+  expect(
+    blocksUnresolvedDecidingWord(
+      { kind: 'shellCode' },
+      row.words[row.gitIndex],
+      row.words.slice(row.gitIndex + 1),
+    ),
+  ).toBe(row.expected);
 });
 
 it.each(originTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {

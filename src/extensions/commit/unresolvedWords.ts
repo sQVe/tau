@@ -1,3 +1,5 @@
+import { optionValue } from './optionValue.js';
+
 // Shell code is text that a shell, `eval`, or `env -S` is known to run. In shell code, assume a
 // variable holds its worst value: block when one sits in a word that decides the command. Those
 // words are the command name, a Git word before the subcommand, and the shell's mode word, whose
@@ -18,21 +20,6 @@ const gitOptionValueNames = new Set([
   '--super-prefix',
   '--attr-source',
 ]);
-
-const attachedGitOptionValue = (word: string): string | undefined => {
-  if (word.startsWith('--')) {
-    const equals = word.indexOf('=');
-    const name = equals === -1 ? undefined : word.slice(0, equals);
-
-    return name !== undefined && gitOptionValueNames.has(name) ? word.slice(equals + 1) : undefined;
-  }
-
-  const option = [...gitOptionValueNames].find(
-    (candidate) => !candidate.startsWith('--') && word !== candidate && word.startsWith(candidate),
-  );
-
-  return option === undefined ? undefined : word.slice(option.length);
-};
 
 // A brace expansion starts with a `{` that is not part of a parameter expansion, which begins with
 // `${`. A lone brace is a structural token, not a value.
@@ -69,30 +56,21 @@ const expandsAnywhere = (word: string): boolean =>
 const unresolvedGitWord = (words: readonly string[]): boolean => {
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? '';
+    const value = optionValue(words, index, gitOptionValueNames);
 
-    if (gitOptionValueNames.has(word)) {
-      // A value Git takes from the next word is data. A variable in it stays data so shell code
-      // such as `git -C "$DIR" log` allows; the parser drops quotes, so the quoted form would
-      // otherwise block too.
-      index += 1;
-
-      continue;
-    }
-
-    const attachedValue = attachedGitOptionValue(word);
-
-    // An attached value stays one argument only when nothing in it can expand. An unquoted
-    // expansion can split into more words, and one of them can be the subcommand. The parser drops
-    // quotes, so a quoted value is blocked too; that false block is the cost of closing the bypass.
-    if (attachedValue !== undefined) {
-      if (expandsAnywhere(attachedValue)) {
+    if (value !== undefined) {
+      // An attached value is one argument, and an expansion in it can split into more words. A
+      // separate value stays data, so shell code such as `git -C "$DIR" log` allows.
+      if (value.next === index + 1 && expandsAnywhere(value.value)) {
         return true;
       }
 
+      index = value.next - 1;
+
       continue;
     }
 
-    if (isUnresolvedWord(word)) {
+    if (expandsAnywhere(word)) {
       return true;
     }
 
@@ -103,14 +81,6 @@ const unresolvedGitWord = (words: readonly string[]): boolean => {
 
   return false;
 };
-
-// The words after a `git` command word up to its subcommand. An unresolved word before the
-// subcommand, or in the subcommand slot itself, may decide which Git subcommand runs. A value Git
-// takes as data, such as the directory after `-C`, is never the subcommand.
-export const unresolvedGitWordBeforeSubcommand = (
-  words: readonly string[],
-  gitIndex: number,
-): boolean => unresolvedGitWord(words.slice(gitIndex + 1));
 
 // Only shell code runs a variable as a word. A candidate script may be data, and the tool command
 // is checked by the literal scan, so neither blocks here.
