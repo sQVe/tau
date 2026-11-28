@@ -1,4 +1,5 @@
 import { execFile, spawn, spawnSync } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { afterEach, expect, it, vi } from 'vitest';
@@ -115,7 +116,84 @@ it('reports a failed process-table read as unknown', async () => {
   const read = vi.mocked(promisify(execFile)).mockRejectedValue(new Error('ps failed'));
 
   expect(await groupState(101)).toBe('unknown');
-  expect(read).toHaveBeenCalledWith('ps', ['-A', '-o', 'pgid=,stat=']);
+
+  expect(read).toHaveBeenCalledWith(
+    'ps',
+    ['-A', '-o', 'pgid=,stat='],
+    expect.objectContaining({ killSignal: 'SIGKILL' }),
+  );
+
+  expect(read.mock.calls[0]?.[2]?.signal).toBeInstanceOf(AbortSignal);
+});
+
+const pendingExecFile = () =>
+  Object.assign(new Promise<never>(() => {}), { child: {} as ChildProcess });
+
+it('stops waiting for a process table read after the probe timeout', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  vi.spyOn(process, 'kill').mockReturnValue(true);
+
+  let options: { signal?: AbortSignal; killSignal?: string } | undefined;
+
+  vi.mocked(promisify(execFile)).mockImplementation((_command, _arguments, execOptions) => {
+    options = execOptions as { signal?: AbortSignal; killSignal?: string };
+
+    return pendingExecFile();
+  });
+
+  let settled = false;
+
+  const state = groupState(101).then((value) => {
+    settled = true;
+
+    return value;
+  });
+
+  await vi.advanceTimersByTimeAsync(1999);
+
+  expect(settled).toBe(false);
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  await expect(state).resolves.toBe('unknown');
+  expect(options?.signal?.aborted).toBe(true);
+  expect(options?.killSignal).toBe('SIGKILL');
+});
+
+it('reports a failed read when the process table command throws synchronously', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  vi.spyOn(process, 'kill').mockReturnValue(true);
+
+  vi.mocked(promisify(execFile)).mockImplementation(() => {
+    throw Object.assign(new Error('Cannot allocate memory'), { code: 'ENOMEM' });
+  });
+
+  await expect(groupState(101)).resolves.toBe('unknown');
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('bounds a stop probe by the remaining kill deadline', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const signals: unknown[] = [];
+
+  vi.spyOn(process, 'kill').mockImplementation((_processId, signal) => {
+    if (signal !== 0) {
+      signals.push(signal);
+    }
+
+    return true;
+  });
+
+  vi.mocked(promisify(execFile)).mockImplementation(() => pendingExecFile());
+
+  const stopping = stopGroup({ pid: 4242 } as never, 100);
+
+  await vi.advanceTimersByTimeAsync(100);
+
+  expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
+
+  await vi.advanceTimersByTimeAsync(3000);
+  await stopping;
 });
 
 it('signals only the direct child when no process id is available', () => {
@@ -197,10 +275,10 @@ const stoppingFixture = () => {
 
   let settled = false;
 
-  const outcome = stopGroup({ pid: 4242 } as never, 100).then(() => {
+  const outcome = stopGroup({ pid: 4242 } as never, 100).then((result) => {
     settled = true;
 
-    return undefined;
+    return result;
   });
 
   return {
@@ -228,11 +306,37 @@ it('waits through unknown until SIGKILL and then resolves for unknown', async ()
   expect(stopping.settled()).toBe(false);
 
   await vi.advanceTimersByTimeAsync(20);
-  await stopping.outcome;
+  await expect(stopping.outcome).resolves.toBe('stopped');
   await vi.advanceTimersByTimeAsync(200);
 
   expect(stopping.settled()).toBe(true);
   expect(stopping.signals).toEqual(['SIGTERM', 'SIGKILL']);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('reports unconfirmed when the process table read stalls after SIGKILL', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const signals: unknown[] = [];
+
+  vi.spyOn(process, 'kill').mockImplementation((_processId, signal) => {
+    if (signal !== 0) {
+      signals.push(signal);
+    }
+
+    return true;
+  });
+
+  vi.mocked(promisify(execFile)).mockImplementation(() => pendingExecFile());
+
+  const stopping = stopGroup({ pid: 4242 } as never, 100);
+
+  await vi.advanceTimersByTimeAsync(100);
+
+  expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
+
+  await vi.advanceTimersByTimeAsync(2000);
+
+  await expect(stopping).resolves.toBe('unconfirmed');
   expect(vi.getTimerCount()).toBe(0);
 });
 
@@ -254,6 +358,21 @@ it('escalates once while the group remains alive and stops polling when it is go
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it('reports unconfirmed when the group still runs at the confirm deadline', async () => {
+  vi.mocked(promisify(execFile)).mockResolvedValue({ stdout: '4242 S\n', stderr: '' });
+  const stopping = stoppingFixture();
+
+  await vi.advanceTimersByTimeAsync(100);
+
+  expect(stopping.signals).toEqual(['SIGTERM', 'SIGKILL']);
+
+  await vi.advanceTimersByTimeAsync(2000);
+
+  await expect(stopping.outcome).resolves.toBe('unconfirmed');
+  expect(stopping.settled()).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it('resolves at once for a child with no process id', async () => {
-  await expect(stopGroup({} as never, 100)).resolves.toBeUndefined();
+  await expect(stopGroup({} as never, 100)).resolves.toBe('stopped');
 });

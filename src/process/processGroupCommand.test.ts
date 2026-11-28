@@ -1,11 +1,45 @@
+import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { execInGroup, groupState } from './process.js';
+
+vi.mock(import('node:child_process'), async (importOriginal) => {
+  const original = await importOriginal();
+  const { promisify: asPromise } = await import('node:util');
+  const executePromise = asPromise(original.execFile);
+
+  const execute = Object.assign(
+    (...argumentsList: Parameters<typeof original.execFile>) => original.execFile(...argumentsList),
+    {
+      [asPromise.custom]: vi.fn<typeof executePromise>(executePromise),
+    },
+  );
+
+  return {
+    ...original,
+    execFile: execute as unknown as typeof original.execFile,
+    spawn: vi.fn<typeof original.spawn>(original.spawn) as unknown as typeof original.spawn,
+  };
+});
+
+vi.mock(import('node:timers/promises'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  setTimeout: (await import('../../tests/timerFake.js')).globalTimerDelay,
+}));
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+const spawnMock = vi.mocked(spawn);
 
 const startDelayMilliseconds = 200;
 
@@ -148,4 +182,159 @@ it('starts the command without launching the current executable', async () => {
   });
 
   expect(result).toEqual({ stdout: 'out', stderr: '', code: 0, killed: false, truncated: false });
+});
+
+it('keeps at most the output cap across both streams and keeps draining', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-group-command-');
+  const marker = join(directory, 'finished');
+
+  const script = [
+    "const fs = require('node:fs');",
+    "process.stdout.write('a'.repeat(700000), () => {",
+    "  process.stderr.write('b'.repeat(700000), () => {",
+    "    fs.writeFileSync(process.argv[1], 'done');",
+    '  });',
+    '});',
+  ].join('\n');
+
+  const result = await execInGroup(process.execPath, ['-e', script, marker], {
+    cwd: directory,
+    onStarted: async () => undefined,
+  });
+
+  expect(result.code).toBe(0);
+  expect(result.killed).toBe(false);
+  expect(result.truncated).toBe(true);
+  expect(result.stdout.length + result.stderr.length).toBe(1_048_576);
+  expect(existsSync(marker)).toBe(true);
+});
+
+const createFakeChild = () => {
+  const listeners = new Map<string, Set<(...argumentsList: unknown[]) => void>>();
+
+  const addListener = (event: string, listener: (...argumentsList: unknown[]) => void) => {
+    const registered = listeners.get(event) ?? new Set();
+    registered.add(listener);
+    listeners.set(event, registered);
+  };
+
+  const child = {
+    pid: 4242,
+    exitCode: null as number | null,
+    signalCode: null as NodeJS.Signals | null,
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn<(signal?: NodeJS.Signals) => boolean>(),
+    on: (event: string, listener: (...argumentsList: unknown[]) => void) => {
+      addListener(event, listener);
+
+      return child;
+    },
+    once: (event: string, listener: (...argumentsList: unknown[]) => void) => {
+      const wrapper = (...argumentsList: unknown[]) => {
+        listeners.get(event)?.delete(wrapper);
+        listener(...argumentsList);
+      };
+
+      addListener(event, wrapper);
+
+      return child;
+    },
+    emit: (event: string, ...argumentsList: unknown[]) => {
+      for (const listener of listeners.get(event) ?? []) {
+        listener(...argumentsList);
+      }
+    },
+  };
+
+  return child;
+};
+
+const startUnconfirmedRun = () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  const child = createFakeChild();
+
+  spawnMock.mockReturnValueOnce(child as never);
+  vi.spyOn(process, 'kill').mockReturnValue(true);
+  vi.mocked(promisify(execFile)).mockResolvedValue({ stdout: '4242 S\n', stderr: '' });
+
+  const controller = new AbortController();
+
+  const run = execInGroup('ignored', [], {
+    cwd: '/repository',
+    signal: controller.signal,
+    onStarted: async () => {
+      controller.abort();
+    },
+  });
+
+  return { child, run };
+};
+
+it('waits for close even when the group does not stop after SIGKILL', async () => {
+  const { child, run } = startUnconfirmedRun();
+  let settled = false;
+
+  const tracked = run.then((result) => {
+    settled = true;
+
+    return result;
+  });
+
+  await vi.advanceTimersByTimeAsync(7000);
+
+  expect(settled).toBe(false);
+
+  child.emit('close', 0);
+
+  const result = await tracked;
+
+  expect(result).toMatchObject({
+    code: 0,
+    killed: true,
+    stdout: '',
+    stderr: 'The command group did not stop within 2000 ms after SIGKILL.',
+  });
+});
+
+it('records a child error and waits for close', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as never);
+  let settled = false;
+
+  const run = execInGroup('ignored', [], {
+    cwd: '/repository',
+    onStarted: async () => undefined,
+  }).then((result) => {
+    settled = true;
+
+    return result;
+  });
+
+  child.emit('error', new Error('spawn failed'));
+
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(settled).toBe(false);
+
+  child.emit('close', 1);
+
+  const result = await run;
+
+  expect(result).toMatchObject({ code: 1, stderr: 'spawn failed' });
+});
+
+it('starts the did-not-stop line on its own line when stderr already has text', async () => {
+  const { child, run } = startUnconfirmedRun();
+
+  child.stderr.write('boom');
+  await vi.advanceTimersByTimeAsync(7000);
+  child.emit('close', 1);
+
+  const result = await run;
+
+  expect(result.stderr).toBe('boom\nThe command group did not stop within 2000 ms after SIGKILL.');
 });

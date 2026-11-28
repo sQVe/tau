@@ -29,6 +29,12 @@ export type GroupExec = (
   options: GroupCommandOptions,
 ) => Promise<GroupCommandResult>;
 
+export type GroupStop = 'stopped' | 'unconfirmed';
+
+const timedOut = Symbol('timedOut');
+
+type ProcessTableRead = string | typeof timedOut | undefined;
+
 const groupPollMilliseconds = 20;
 
 const probe = (processId: number): string | undefined => {
@@ -45,24 +51,55 @@ const probe = (processId: number): string | undefined => {
 
 export const processState = (processId: number): ProcessState => stateFromProbe(probe(processId));
 
-const readProcessTable = async (): Promise<string | undefined> => {
-  try {
-    const { stdout } = await promisify(execFile)('ps', ['-A', '-o', 'pgid=,stat=']);
+const processTableTimeoutMilliseconds = 2000;
 
-    return stdout;
+const readProcessTable = async (timeoutMilliseconds: number): Promise<ProcessTableRead> => {
+  const controller = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+
+  const timeout = new Promise<typeof timedOut>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(timedOut);
+    }, timeoutMilliseconds);
+  });
+
+  try {
+    const read = promisify(execFile)('ps', ['-A', '-o', 'pgid=,stat='], {
+      signal: controller.signal,
+      killSignal: 'SIGKILL',
+    }).then(({ stdout }) => stdout);
+
+    return await Promise.race([read, timeout]);
   } catch {
     return undefined;
+  } finally {
+    clearTimeout(timer);
   }
 };
 
-export const groupState = async (groupId: number): Promise<ProcessState> => {
+const readGroupState = async (
+  groupId: number,
+  timeoutMilliseconds: number,
+): Promise<ProcessState | 'timedOut'> => {
   const errorCode = probe(-groupId);
 
   if (errorCode !== undefined) {
     return stateFromProbe(errorCode);
   }
 
-  return groupStateFromTable(await readProcessTable(), groupId);
+  const read = await readProcessTable(timeoutMilliseconds);
+
+  return read === timedOut ? 'timedOut' : groupStateFromTable(read, groupId);
+};
+
+export const groupState = async (
+  groupId: number,
+  timeoutMilliseconds = processTableTimeoutMilliseconds,
+): Promise<ProcessState> => {
+  const state = await readGroupState(groupId, timeoutMilliseconds);
+
+  return state === 'timedOut' ? 'unknown' : state;
 };
 
 export const signalGroup = (child: ChildProcess, signal: NodeJS.Signals): void => {
@@ -81,37 +118,58 @@ export const signalGroup = (child: ChildProcess, signal: NodeJS.Signals): void =
   }
 };
 
-export const stopGroup = async (child: ChildProcess, graceMilliseconds: number): Promise<void> => {
+const killConfirmMilliseconds = 2000;
+
+export const stopGroup = async (
+  child: ChildProcess,
+  graceMilliseconds: number,
+): Promise<GroupStop> => {
   const { pid } = child;
 
   if (pid === undefined) {
-    return;
+    return 'stopped';
   }
 
   signalGroup(child, 'SIGTERM');
 
-  const deadline = Date.now() + graceMilliseconds;
+  const killDeadline = Date.now() + graceMilliseconds;
   let killed = false;
+  let confirmDeadline = 0;
 
-  for (;;) {
-    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
-    const state = await groupState(pid);
+  const poll = async (): Promise<GroupStop> => {
+    const phaseDeadline = killed ? confirmDeadline : killDeadline;
+    const budget = Math.min(processTableTimeoutMilliseconds, phaseDeadline - Date.now());
 
-    const unreadableAfterKill = killed && state === 'unknown';
+    if (budget > 0) {
+      const state = await readGroupState(pid, budget);
 
-    if (state === 'gone' || unreadableAfterKill) {
-      return;
+      const unreadableAfterKill = killed && state === 'unknown';
+
+      if (state === 'gone' || unreadableAfterKill) {
+        return 'stopped';
+      }
     }
 
-    if (!killed && Date.now() >= deadline) {
+    if (!killed && Date.now() >= killDeadline) {
       killed = true;
+      confirmDeadline = Date.now() + killConfirmMilliseconds;
       signalGroup(child, 'SIGKILL');
+    } else if (killed && Date.now() >= confirmDeadline) {
+      return 'unconfirmed';
     }
 
-    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
     await sleep(groupPollMilliseconds);
-  }
+
+    return poll();
+  };
+
+  return poll();
 };
+
+const didNotStopMessage = `The command group did not stop within ${killConfirmMilliseconds} ms after SIGKILL.`;
+
+const appendLine = (text: string, line: string): string =>
+  text === '' || text.endsWith('\n') ? `${text}${line}` : `${text}\n${line}`;
 
 export const defaultStopGraceMilliseconds = 5000;
 
@@ -135,18 +193,34 @@ const spawnGated = (command: string, commandArguments: string[], cwd: string) =>
     detached: true,
   });
 
+const outputCharacterLimit = 1_048_576;
+
+const appendWithinLimit = (
+  output: { stdout: string; stderr: string; truncated: boolean },
+  stream: 'stdout' | 'stderr',
+  data: string,
+): void => {
+  const remaining = outputCharacterLimit - output.stdout.length - output.stderr.length;
+
+  output.truncated ||= data.length > remaining;
+
+  if (remaining > 0) {
+    output[stream] += data.slice(0, remaining);
+  }
+};
+
 const collectOutput = (child: ReturnType<typeof spawnGated>) => {
-  const output = { stdout: '', stderr: '' };
+  const output = { stdout: '', stderr: '', truncated: false };
 
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
 
   child.stdout.on('data', (data: string) => {
-    output.stdout += data;
+    appendWithinLimit(output, 'stdout', data);
   });
 
   child.stderr.on('data', (data: string) => {
-    output.stderr += data;
+    appendWithinLimit(output, 'stderr', data);
   });
 
   return output;
@@ -154,12 +228,14 @@ const collectOutput = (child: ReturnType<typeof spawnGated>) => {
 
 const waitForClose = (child: ReturnType<typeof spawnGated>) =>
   new Promise<{ code: number; error?: Error }>((resolve) => {
-    child.once('error', (error) => {
-      resolve({ code: 1, error });
+    let error: Error | undefined;
+
+    child.once('error', (childError) => {
+      error = childError;
     });
 
     child.once('close', (code) => {
-      resolve({ code: code ?? 1 });
+      resolve({ code: code ?? 1, ...(error === undefined ? {} : { error }) });
     });
   });
 
@@ -170,7 +246,8 @@ export const execInGroup: GroupExec = async (command, commandArguments, options)
   const child = spawnGated(command, commandArguments, cwd);
   const output = collectOutput(child);
   const closed = waitForClose(child);
-  let stopping: Promise<void> | undefined;
+
+  let stopping: Promise<GroupStop> | undefined;
 
   const stop = () => {
     stopping ??= stopGroup(child, defaultStopGraceMilliseconds);
@@ -209,17 +286,23 @@ export const execInGroup: GroupExec = async (command, commandArguments, options)
   const [status, recordError] = await Promise.all([closed, recorded]);
 
   signal?.removeEventListener('abort', stop);
-  await stopping;
+
+  const stopOutcome = stopping === undefined ? undefined : await stopping;
 
   if (recordError !== undefined) {
     throw recordError;
   }
 
+  const baseStderr = status.error?.message ?? output.stderr;
+
+  const stderr =
+    stopOutcome === 'unconfirmed' ? appendLine(baseStderr, didNotStopMessage) : baseStderr;
+
   return {
     stdout: output.stdout,
-    stderr: status.error?.message ?? output.stderr,
+    stderr,
     code: status.code,
     killed: stopping !== undefined,
-    truncated: false,
+    truncated: output.truncated,
   };
 };

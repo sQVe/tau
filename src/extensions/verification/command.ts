@@ -9,6 +9,7 @@ import {
   defaultStopGraceMilliseconds,
   stopGroup,
 } from '../../process/process.js';
+import type { GroupStop } from '../../process/process.js';
 
 export interface CommandOptions {
   argv: readonly string[];
@@ -29,7 +30,7 @@ export type CommandOutcome =
 
 interface CommandState {
   stop: {
-    stopping: Promise<void> | undefined;
+    stopping: Promise<GroupStop> | undefined;
     reason: 'deadline' | 'cancelled' | undefined;
   };
   startFailure: Promise<string> | undefined;
