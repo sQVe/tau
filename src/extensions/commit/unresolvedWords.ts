@@ -27,8 +27,33 @@ const isBraceExpansion = (word: string): boolean => /(?<!\$)\{/u.test(word) && w
 
 const isStructuralBrace = (word: string): boolean => word === '}' || word === '{';
 
-// A variable or a backtick can rewrite the word from the environment.
-const hasVariableMarker = (text: string): boolean => /[$`]/u.test(text);
+const nameCharacters = /[A-Za-z_0-9]/u;
+
+const expansionPunctuation = new Set(['{', '(', '$']);
+
+const specialParameters = new Set(['@', '*', '!', '-', '?', '#']);
+
+const startsExpansion = (text: string, index: number): boolean => {
+  const next = text[index + 1] ?? '';
+
+  return expansionPunctuation.has(next) || nameCharacters.test(next) || specialParameters.has(next);
+};
+
+// A `$` that starts an expansion, or a closed backtick, anywhere in the text. A lone `$` and an
+// unclosed backtick are literal.
+const hasExpansionStart = (text: string): boolean => {
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '$' && startsExpansion(text, index)) {
+      return true;
+    }
+
+    if (text[index] === '`' && text.includes('`', index + 1)) {
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const hasBraceCharacter = (text: string): boolean => text.includes('{') || text.includes('}');
 
@@ -42,7 +67,7 @@ export const isUnresolvedWord = (word: string): boolean => {
 
   const lastSegment = word.slice(word.lastIndexOf('/') + 1);
 
-  return hasVariableMarker(lastSegment) || hasBraceCharacter(lastSegment) || isBraceExpansion(word);
+  return hasExpansionStart(lastSegment) || hasBraceCharacter(lastSegment) || isBraceExpansion(word);
 };
 
 export const commandName = (word: string): string =>
@@ -51,7 +76,7 @@ export const commandName = (word: string): string =>
 // An unquoted expansion anywhere in a word can split into more words. A variable in a directory
 // segment of a command word cannot, because the shell resolves it as a path.
 export const expandsAnywhere = (word: string): boolean =>
-  hasVariableMarker(word) || isBraceExpansion(word);
+  hasExpansionStart(word) || isBraceExpansion(word);
 
 const unresolvedGitWord = (words: readonly string[]): boolean => {
   for (let index = 0; index < words.length; index += 1) {

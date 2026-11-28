@@ -517,30 +517,31 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('sh < $DIR/commit.sh'), directory);
   });
 
+  it('allows a literal dollar in a standard input path', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'dir$/data.sh', 'echo hi\n');
+
+    expect(guard(makeBashEvent(`sh < 'dir$/data.sh'`), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['flat', 'sh {-O,extglob}'],
+    ['nested', 'sh {{-O},extglob}'],
+  ])('allows a committing value of a %s brace option', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'extglob', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(command), directory)).toBeUndefined();
+  });
+
   it('blocks a committing script behind a flat option alternative', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     writeScript(directory, 'script.sh', 'git commit -m x\n');
 
     expectOutcome(makeBashEvent('sh {-e,script.sh}'), directory);
-  });
-
-  it('allows a braced zero on the standard input of a file operand', () => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-
-    writeScript(directory, 'harmless.sh', 'echo hi\n');
-    writeScript(directory, 'data.sh', 'git commit -m x\n');
-
-    expect(guard(makeBashEvent(`sh -- \${0} harmless.sh < data.sh`), directory)).toBeUndefined();
-  });
-
-  it('allows a braced status on the standard input of a file operand', () => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-
-    writeScript(directory, 'harmless.sh', 'echo hi\n');
-    writeScript(directory, 'data.sh', 'git commit -m x\n');
-
-    expect(guard(makeBashEvent(`sh -- \${?} harmless.sh < data.sh`), directory)).toBeUndefined();
   });
 
   it('blocks a script after a vanishing positional operand', () => {
@@ -551,7 +552,7 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('sh -- $9 commit.sh'), directory);
   });
 
-  it.each(['$?', '$#', '$0'])(
+  it.each(['$?', '$#', '$0', `\${0}`, `\${?}`])(
     'allows a non-vanishing expansion on the standard input of a file operand: %s',
     (word) => {
       const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');

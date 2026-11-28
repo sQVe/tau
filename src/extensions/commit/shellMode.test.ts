@@ -185,6 +185,11 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'file', names: ['{-O,extglob}'], codes: [], stdinMayBeCode: true },
   },
   {
+    name: 'keeps a nested value-taking option out of the file candidates',
+    words: ['{{-O},extglob}'],
+    expected: { kind: 'file', names: ['{{-O},extglob}'], codes: [], stdinMayBeCode: true },
+  },
+  {
     name: 'reads standard input for a trailing --',
     words: ['--'],
     expected: { kind: 'stdin', codes: [] },

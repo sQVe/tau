@@ -50,9 +50,13 @@ const matchingBrace = (word: string, openIndex: number): number | undefined => {
 // A brace expansion can start a word with an option when its first alternative does, as in
 // `{-O,extglob}`.
 const braceAlternatives = (word: string): string[] | undefined => {
+  if (!word.startsWith('{')) {
+    return undefined;
+  }
+
   const close = matchingBrace(word, 0);
 
-  if (!word.startsWith('{') || close === undefined) {
+  if (close === undefined) {
     return undefined;
   }
 
@@ -409,14 +413,10 @@ const candidatesWithMode = (names: string[], mode: ShellMode): ShellMode => {
   return mode;
 };
 
-const braceCarriesInlineCode = (word: string): boolean => {
-  if (isInlineCodeWord(word)) {
-    return true;
-  }
+const unwrapFirstAlternative = (word: string): string => {
+  const inner = braceFirstAlternative(word);
 
-  const alternative = braceFirstAlternative(word);
-
-  return alternative !== undefined && braceCarriesInlineCode(alternative);
+  return inner === undefined ? word : unwrapFirstAlternative(inner);
 };
 
 // A mode option may also be a brace expansion that yields several words. Record its file
@@ -435,17 +435,17 @@ const unresolvedOptionStep = (
   }
 
   const alternatives = braceAlternatives(word);
-  const first = alternatives?.[0] ?? '';
-  const nested = first.startsWith('{');
-  const carriesInlineCode = nested ? braceCarriesInlineCode(first) : isInlineCodeWord(first);
+  const first = unwrapFirstAlternative(alternatives?.[0] ?? '');
+  const carriesInlineCode = isInlineCodeWord(first);
   const plainOption = isOptionWord(first) && !optionValueNames.has(first);
 
   if (alternatives !== undefined) {
     // A first alternative with `c` makes the later alternatives the code. A plain option makes
-    // them file operands, so `{-e,script.sh}` still reads `script.sh`.
+    // them file operands, so `{-e,script.sh}` still reads `script.sh`. A value-taking option
+    // consumes its value, so `{-O,extglob}` reads no script.
     if (carriesInlineCode) {
       codes.push(...alternatives.slice(1));
-    } else if (nested || plainOption) {
+    } else if (plainOption) {
       names.push(...alternatives.slice(1));
     }
   }
