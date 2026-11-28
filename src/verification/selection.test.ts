@@ -218,6 +218,16 @@ it.each([
     expected: [],
   },
   {
+    name: 'nothing from a run whose stop failed',
+    runs: [runWithItem(runRecord({ stop: { exitCode: 7, logPath: 'stop.log' } }), itemRecord())],
+    expected: [],
+  },
+  {
+    name: 'nothing from a run whose stop was killed',
+    runs: [runWithItem(runRecord({ stop: { exitCode: null, logPath: 'stop.log' } }), itemRecord())],
+    expected: [],
+  },
+  {
     name: 'nothing from a malformed run',
     runs: [
       {

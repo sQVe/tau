@@ -9,7 +9,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
 import { readRunRecord, runDirectoryPath, runRecordPath } from '../../verification/verification.js';
-import { createToolRepository } from './fixtures/toolRepository.js';
+import { createToolRepository, replaceStopCommand } from './fixtures/toolRepository.js';
 import type { LaunchResult } from './launchAction.js';
 import type { StopResult } from './stopAction.js';
 
@@ -61,17 +61,11 @@ it('a stop cancelled after it starts retries with a fresh log', async () => {
   const go = join(directory, 'go');
   const configPath = join(root, '.pi', 'tau.json');
 
-  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
-    verification: { targets: { app: { stop: string[] } } };
-  };
-
-  config.verification.targets.app.stop = [
+  await replaceStopCommand(configPath, [
     'sh',
     '-c',
     `touch ${JSON.stringify(marker)}; while [ ! -f ${JSON.stringify(go)} ]; do sleep 0.05; done; exit 0`,
-  ];
-
-  await writeFile(configPath, JSON.stringify(config));
+  ]);
 
   const controller = new AbortController();
   const cancelled = run({ action: 'stop', run: launch.run }, undefined, controller.signal);
@@ -150,12 +144,7 @@ it('refuses a command that cannot start and a later stop succeeds', async () => 
 
   const configPath = join(root, '.pi', 'tau.json');
 
-  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
-    verification: { targets: { app: { stop: string[] } } };
-  };
-
-  config.verification.targets.app.stop = ['tau-command-that-does-not-exist'];
-  await writeFile(configPath, JSON.stringify(config));
+  await replaceStopCommand(configPath, ['tau-command-that-does-not-exist']);
 
   await expect(run({ action: 'stop', run: launch.run })).rejects.toThrow(
     new RegExp(
@@ -176,8 +165,7 @@ it('refuses a command that cannot start and a later stop succeeds', async () => 
   expect(failed.record.treeAtStop).toBeNull();
   expect(existsSync(join(launch.directory, 'stop.log'))).toBe(true);
 
-  config.verification.targets.app.stop = ['sh', '-c', 'exit 0'];
-  await writeFile(configPath, JSON.stringify(config));
+  await replaceStopCommand(configPath, ['sh', '-c', 'exit 0']);
 
   const stopped = await run({ action: 'stop', run: launch.run });
   const stop = stopped.details as StopResult;
@@ -299,15 +287,6 @@ it('refuses to stop when the run record is not a regular file', async () => {
     stopped: false,
   });
 });
-
-const replaceStopCommand = async (configPath: string, stop: string[]): Promise<void> => {
-  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
-    verification: { targets: { app: { stop: string[] } } };
-  };
-
-  config.verification.targets.app.stop = stop;
-  await writeFile(configPath, JSON.stringify(config));
-};
 
 it('keeps a run open when its stop command exits nonzero', async () => {
   const { root, run } = await createToolRepository(onTestFinished);

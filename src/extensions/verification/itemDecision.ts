@@ -1,3 +1,4 @@
+import { isStopped } from '../../verification/freshness.js';
 import type {
   ItemRecord,
   RecordRead,
@@ -40,6 +41,9 @@ const numberedStep = (step: RecordInput['steps'][number], index: number): Step =
   number: index + 1,
 });
 
+export const alreadyRecordedReason = (run: string, item: string): string =>
+  `Item ${item} already has a result in run ${run}. Each item is recorded once.`;
+
 export const decideItemWrite = (facts: ItemFacts): ItemDecision => {
   const { run, runRead, item, steps, endState, itemFileExists, artifacts } = facts;
 
@@ -66,7 +70,7 @@ export const decideItemWrite = (facts: ItemFacts): ItemDecision => {
     };
   }
 
-  if (record.stop !== null) {
+  if (isStopped(record)) {
     return {
       kind: 'refuse',
       reason: `Run ${run} is stopped; record results before the manager stops it.`,
@@ -96,7 +100,7 @@ export const decideItemWrite = (facts: ItemFacts): ItemDecision => {
   if (itemFileExists) {
     return {
       kind: 'refuse',
-      reason: `Item ${item} already has a result in run ${run}. Each item is recorded once.`,
+      reason: alreadyRecordedReason(run, item),
     };
   }
 

@@ -12,7 +12,7 @@ import {
   runRecordPath,
   validateItemRecord,
 } from '../../verification/verification.js';
-import { decideItemWrite } from './itemDecision.js';
+import { alreadyRecordedReason, decideItemWrite } from './itemDecision.js';
 import type { ArtifactFact } from './itemDecision.js';
 import type { RecordInput } from './recordParameters.js';
 import { checkRecordDirectory, findRunDirectory } from './runDirectory.js';
@@ -99,10 +99,7 @@ export const recordItem = async (
     publishTextSync(path, recordText(record), { mode: itemRecordMode });
   } catch (error) {
     if (hasErrorCode(error, 'EEXIST')) {
-      throw new Error(
-        `Item ${input.item} already has a result in run ${input.run}. Each item is recorded once.`,
-        { cause: error },
-      );
+      throw new Error(alreadyRecordedReason(input.run, input.item), { cause: error });
     }
 
     throw error;

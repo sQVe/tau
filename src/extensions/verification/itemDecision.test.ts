@@ -93,6 +93,28 @@ const table: { name: string; facts: ItemFacts; expected: ItemDecision }[] = [
     },
   },
   {
+    name: 'writes a result on a run whose saved stop failed',
+    facts: facts({ runRead: validRunRead({ stop: { exitCode: 7, logPath: 'stop.log' } }) }),
+    expected: {
+      kind: 'write',
+      record: {
+        run,
+        item,
+        drive: 'hand',
+        steps: [
+          { number: 1, status: 'passed', artifacts: [] },
+          {
+            number: 2,
+            status: 'differs',
+            observed: 'The dialog stays open.',
+            artifacts: [],
+          },
+        ],
+        endState: { status: 'passed' },
+      },
+    },
+  },
+  {
     name: 'refuses an unregistered item',
     facts: facts({ runRead: validRunRead({ items: [{ item: 'journeys/other', steps: 2 }] }) }),
     expected: {

@@ -217,13 +217,14 @@ export const publishTextSync = (path: string, text: string, options: { mode: num
       closeSync(descriptor);
     }
 
-    const directory = openSync(dirname(path), 'r');
+    // Open the directory before the link, so a directory Tau cannot open publishes nothing.
+    const directoryDescriptor = openSync(dirname(path), 'r');
 
     try {
       linkSync(temporary, path);
-      fsyncSync(directory);
+      fsyncSync(directoryDescriptor);
     } finally {
-      closeSync(directory);
+      closeSync(directoryDescriptor);
     }
   } finally {
     unlinkSync(temporary);

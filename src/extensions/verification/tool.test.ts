@@ -19,7 +19,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readRunRecord, runRecordPath } from '../../verification/verification.js';
-import { createToolRepository } from './fixtures/toolRepository.js';
+import { createToolRepository, replaceStopCommand } from './fixtures/toolRepository.js';
 import type { LaunchResult } from './launchAction.js';
 import type { RegisterResult } from './registerAction.js';
 import type { StopResult } from './stopAction.js';
@@ -146,12 +146,7 @@ it('a timed-out launch whose stop fails returns stopped false and a later stop s
   const { root, run } = await createToolRepository(onTestFinished, { launchScript: 'sleep 5' });
   const configPath = join(root, '.pi', 'tau.json');
 
-  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
-    verification: { targets: { app: { stop: string[] } } };
-  };
-
-  config.verification.targets.app.stop = ['sh', '-c', 'exit 7'];
-  await writeFile(configPath, JSON.stringify(config));
+  await replaceStopCommand(configPath, ['sh', '-c', 'exit 7']);
 
   const launched = await run({ action: 'launch', target: 'app' }, 200);
   const launch = launched.details as LaunchResult;
@@ -172,8 +167,7 @@ it('a timed-out launch whose stop fails returns stopped false and a later stop s
 
   expect(failed.record.stop).toBeNull();
 
-  config.verification.targets.app.stop = ['sh', '-c', 'exit 0'];
-  await writeFile(configPath, JSON.stringify(config));
+  await replaceStopCommand(configPath, ['sh', '-c', 'exit 0']);
 
   const stopped = await run({ action: 'stop', run: launch.run });
   const stop = stopped.details as StopResult;

@@ -33,18 +33,19 @@ export interface StopResult {
 const exitCodeOf = (outcome: CommandOutcome): number | null =>
   outcome.kind === 'exited' ? outcome.exitCode : null;
 
-const failedStop = (
+const stopResult = (
   record: RunRecord,
   directory: string,
-  outcome: CommandOutcome,
+  exitCode: number | null,
   logPath: string,
+  currentTree: string | null,
 ): StopResult => ({
-  stopped: false,
+  stopped: exitCode === 0,
   run: record.run,
   directory,
-  exitCode: exitCodeOf(outcome),
+  exitCode,
   logPath,
-  freshness: decideFreshness(record, record.treeAtStop),
+  freshness: decideFreshness(record, currentTree),
 });
 
 const stopLogName = (directory: string): string => {
@@ -95,7 +96,7 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
   const exitCode = exitCodeOf(outcome);
 
   if (exitCode !== 0) {
-    return failedStop(record, directory, outcome, logPath);
+    return stopResult(record, directory, exitCode, logPath, null);
   }
 
   const state = await readCheckState(context.checkoutRoot);
@@ -109,12 +110,5 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
 
   await writeRunRecord(directory, updated);
 
-  return {
-    stopped: true,
-    run: record.run,
-    directory,
-    exitCode,
-    logPath,
-    freshness: decideFreshness(updated, treeAtStop),
-  };
+  return stopResult(updated, directory, exitCode, logPath, treeAtStop);
 };

@@ -1,4 +1,4 @@
-import { decideFreshness } from './freshness.js';
+import { decideFreshness, isStopped } from './freshness.js';
 import type { Freshness } from './freshness.js';
 import type { ItemRecord, RunRead } from './records.js';
 
@@ -42,7 +42,7 @@ const countSteps = (record: ItemRecord): SelectedResult['counts'] => {
 
 const candidatesOf = (runs: readonly RunRead[], currentTree: string | null): Candidate[] =>
   runs.flatMap((run) => {
-    if (run.read.status !== 'valid' || run.read.record.stop === null) {
+    if (run.read.status !== 'valid' || !isStopped(run.read.record)) {
       return [];
     }
 

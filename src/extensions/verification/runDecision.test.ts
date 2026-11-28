@@ -43,6 +43,18 @@ const registerTable: {
     },
   },
   {
+    name: 'accepts items on a run whose saved stop exited nonzero',
+    facts: run({ stop: { exitCode: 7, logPath: 'stop.log' } }),
+    request: [item('login')],
+    expected: { kind: 'accept', items: [item('login')] },
+  },
+  {
+    name: 'accepts items on a run whose saved stop was killed',
+    facts: run({ stop: { exitCode: null, logPath: 'stop.log' } }),
+    request: [item('login')],
+    expected: { kind: 'accept', items: [item('login')] },
+  },
+  {
     name: 'refuses a run with no doctor result',
     facts: run({ doctor: null }),
     request: [item('login')],

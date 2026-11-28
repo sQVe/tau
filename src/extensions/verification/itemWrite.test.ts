@@ -11,13 +11,13 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { itemRecordVersion } from '../../verification/records.js';
-import type { ItemRecord, RunRecord } from '../../verification/records.js';
+import type { ItemRecord, RunRecord, StepOutcome } from '../../verification/records.js';
 import {
   itemRecordPath,
   readItemRecord,
@@ -36,10 +36,22 @@ interface RefusalCase {
   prepare?: (directory: string) => Promise<void>;
 }
 
+const preCheck = vi.hoisted(() => ({ skip: false }));
+
+vi.mock(import('../../tauDirectory.js'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  return {
+    ...original,
+    existingEntry: async (path: string) =>
+      preCheck.skip ? undefined : original.existingEntry(path),
+  };
+});
+
 const run = 'delegate-a-check';
 const item = 'journeys/delegate-a-check';
 
-const validInput = (): RecordInput => ({
+const validInput = (): RecordInput & { endState: StepOutcome } => ({
   run,
   item,
   steps: [
@@ -376,10 +388,6 @@ it('surfaces a publication failure that is not a duplicate', async () => {
   const failure = await failureMessage(recordItem(root, validInput()));
 
   expect(failure).toContain('EACCES');
-
-  expect(failure).not.toBe(
-    `Item ${item} already has a result in run ${run}. Each item is recorded once.`,
-  );
 });
 
 it('gives the item file the mode a new record gets', async () => {
@@ -398,7 +406,7 @@ it('gives the item file the mode a new record gets', async () => {
   expect((await stat(saved.path)).mode).toBe((await stat(reference)).mode);
 });
 
-it('refuses a concurrent second write for one item and keeps the first bytes', async () => {
+it('saves one record from the winner when two writes for one item collide', async () => {
   const { root, directory } = await createRunDirectory(onTestFinished, run, {
     items: [{ item, steps: 2 }],
   });
@@ -411,11 +419,17 @@ it('refuses a concurrent second write for one item and keeps the first bytes', a
 
     input.steps[1] = { status: 'differs', observed, artifacts: [] };
 
-    return { ...input, endState: { status: 'passed' as const } };
+    return input;
   };
 
   const inputs = [inputWithObserved('first'), inputWithObserved('second')];
+
+  // Both writers pass the existing-file check, so the loser reaches the link and gets EEXIST.
+  preCheck.skip = true;
+
   const results = await Promise.allSettled(inputs.map((input) => recordItem(root, input)));
+
+  preCheck.skip = false;
 
   const fulfilled = results.filter((result) => result.status === 'fulfilled');
 
@@ -427,6 +441,10 @@ it('refuses a concurrent second write for one item and keeps the first bytes', a
     fulfilled: 1,
     failures: [`Item ${item} already has a result in run ${run}. Each item is recorded once.`],
   });
+
+  const rejection = results.find((result) => result.status === 'rejected');
+
+  expect(rejection).toMatchObject({ reason: { cause: { code: 'EEXIST' } } });
 
   const winnerIndex = results.findIndex((result) => result.status === 'fulfilled');
   const winner = inputs[winnerIndex];
@@ -447,4 +465,6 @@ it('refuses a concurrent second write for one item and keeps the first bytes', a
   expect(await readFile(itemRecordPath(directory, item), 'utf8')).toBe(
     `${JSON.stringify(expected, null, 2)}\n`,
   );
+
+  expect(await listItems(directory)).toEqual(['journeys', 'journeys/delegate-a-check.json']);
 });
