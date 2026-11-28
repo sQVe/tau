@@ -427,11 +427,13 @@ it('saves one record from the winner when two writes for one item collide', asyn
   const inputs = [inputWithObserved('first'), inputWithObserved('second')];
 
   // Both writers pass the existing-file check, so the loser reaches the link and gets EEXIST.
+  onTestFinished(() => {
+    preCheck.skip = false;
+  });
+
   preCheck.skip = true;
 
   const results = await Promise.allSettled(inputs.map((input) => recordItem(root, input)));
-
-  preCheck.skip = false;
 
   const fulfilled = results.filter((result) => result.status === 'fulfilled');
 

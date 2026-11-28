@@ -6,7 +6,7 @@ import toolResultRedaction from './toolResultRedaction.js';
 interface WithheldResult {
   content: unknown;
   details: unknown;
-  structuredContent: unknown;
+  structuredContent?: unknown;
   isError: unknown;
 }
 
@@ -15,10 +15,10 @@ const isWithheldResult = (value: unknown): value is WithheldResult => {
     return false;
   }
 
-  return ['content', 'details', 'structuredContent', 'isError'].every((key) => key in value);
+  return ['content', 'details', 'isError'].every((key) => key in value);
 };
 
-const withheldResultFor = (structuredContent: unknown): WithheldResult => {
+const withheldResultFor = (structuredContent?: unknown): WithheldResult => {
   vi.stubEnv('TAU_FAKE_API_KEY', 'fake-secret-value-1234567890');
 
   onTestFinished(() => {
@@ -36,7 +36,11 @@ const withheldResultFor = (structuredContent: unknown): WithheldResult => {
   };
 
   const result = handler('tool_result')(
-    { content: [{ type: 'text', text: 'output' }], details, structuredContent },
+    {
+      content: [{ type: 'text', text: 'output' }],
+      details,
+      ...(structuredContent === undefined ? {} : { structuredContent }),
+    },
     {} as never,
   );
 
@@ -48,9 +52,11 @@ const withheldResultFor = (structuredContent: unknown): WithheldResult => {
 };
 
 it('withholds the result when redaction throws', () => {
-  const { content, details, isError } = withheldResultFor(undefined);
+  const result = withheldResultFor(undefined);
 
-  expect({ content, details, isError }).toStrictEqual({
+  expect('structuredContent' in result).toBe(false);
+
+  expect(result).toStrictEqual({
     content: [
       { type: 'text', text: 'Tau withheld this tool result because secret redaction failed.' },
     ],
