@@ -451,6 +451,8 @@ describe('guardToolCall', () => {
   it('allows a flat literal brace with a following script', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
+    writeScript(directory, 'harmless.sh', 'git commit -m x\n');
+
     expect(guard(makeBashEvent('sh {a,b} harmless.sh'), directory)).toBeUndefined();
   });
 
@@ -561,6 +563,34 @@ describe('guardToolCall', () => {
     writeScript(directory, 'script.sh', 'git commit -m x\n');
 
     expectOutcome(makeBashEvent('sh {-e,script.sh}'), directory);
+  });
+
+  it('blocks a value-taking cluster before -c', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent('bash -euo pipefail -c "$CMD"'), directory);
+  });
+
+  it('blocks code after an unresolved mode word and an option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(`bash $MODE -x "$CMD"`), directory);
+  });
+
+  it('blocks a script after an expansion brace alternative', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('bash {$FLAG,./commit.sh}'), directory);
+  });
+
+  it('blocks a committing redirect after an unresolved option word', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('bash -$FLAG x < commit.sh'), directory);
   });
 
   it('blocks a script after a vanishing positional operand', () => {
@@ -2459,7 +2489,11 @@ describe('guardToolCall', () => {
     `source "$SCRIPT" '$ARG'`,
     `bash -c 'function run { echo hi; }; run'`,
   ])('allows shell code whose variable is data: %s', (command) => {
-    expect(guard(makeBashEvent(command))).toBeUndefined();
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'script.sh', 'echo hi\n');
+
+    expect(guard(makeBashEvent(command), directory)).toBeUndefined();
   });
 
   it.each([

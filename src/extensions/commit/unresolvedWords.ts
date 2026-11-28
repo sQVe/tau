@@ -1,3 +1,4 @@
+import { commandNameOf } from '../../wrapperAnalysis.js';
 import { optionValue } from './optionValue.js';
 
 // Shell code is text that a shell, `eval`, or `env -S` is known to run. In shell code, assume a
@@ -64,7 +65,8 @@ const hasExpansionStart = (text: string): boolean => {
   return false;
 };
 
-const hasBraceCharacter = (text: string): boolean => text.includes('{') || text.includes('}');
+const endsWithParameterExpansion = (word: string, lastSegment: string): boolean =>
+  lastSegment.endsWith('}') && hasExpansionStart(word);
 
 // A word a shell may rewrite from the environment when it sits in a deciding position. Only the last
 // path segment counts for a variable or a backtick, because the shell resolves the directory part as
@@ -74,13 +76,16 @@ export const isUnresolvedWord = (word: string): boolean => {
     return false;
   }
 
-  const lastSegment = word.slice(word.lastIndexOf('/') + 1);
+  const lastSegment = commandNameOf(word);
 
-  return hasExpansionStart(lastSegment) || hasBraceCharacter(lastSegment) || isBraceExpansion(word);
+  return (
+    hasExpansionStart(lastSegment) ||
+    endsWithParameterExpansion(word, lastSegment) ||
+    isBraceExpansion(word)
+  );
 };
 
-export const commandName = (word: string): string =>
-  word.slice(word.lastIndexOf('/') + 1).toLowerCase();
+export const commandName = (word: string): string => commandNameOf(word).toLowerCase();
 
 // An unquoted expansion anywhere in a word can split into more words. A variable in a directory
 // segment of a command word cannot, because the shell resolves it as a path.

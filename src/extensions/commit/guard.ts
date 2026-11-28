@@ -956,11 +956,11 @@ const inputSources = (
   if (stdin.input.kind === 'heredoc') {
     const body = heredocBodyFor(command, stdin);
 
-    return {
-      kind: 'sources',
-      files: [],
-      code: body === undefined ? mode.codes : [...mode.codes, body],
-    };
+    if (body === undefined) {
+      return { kind: 'unreadable' };
+    }
+
+    return { kind: 'sources', files: [], code: [...mode.codes, body] };
   }
 
   if (stdin.input.kind === 'hereString') {
@@ -975,27 +975,34 @@ const inputSources = (
   return { kind: 'sources', files: [stdin.input.target], code: mode.codes };
 };
 
-// `source` and `.` read only their file operand. Option scanning stops at the first operand, so a
-// `--` after it is data. A redirected standard input is not code.
-const sourceFileSources = (words: string[]): InterpreterSources => {
+// The first operand after a command's options. `--` ends option scanning, so the word after it is
+// an operand even when it looks like an option.
+const firstOperandIndex = (words: string[], isOption: (word: string) => boolean): number => {
   let optionsEnded = false;
-  let name: string | undefined;
 
-  for (const word of words) {
-    if (!optionsEnded && word === '--') {
+  for (const [index, word] of words.entries()) {
+    if (optionsEnded) {
+      return index;
+    }
+
+    if (word === '--') {
       optionsEnded = true;
 
       continue;
     }
 
-    if (!optionsEnded && isOptionWord(word)) {
-      continue;
+    if (!isOption(word)) {
+      return index;
     }
-
-    name = word;
-
-    break;
   }
+
+  return words.length;
+};
+
+// `source` and `.` read only their file operand. Option scanning stops at the first operand, so a
+// `--` after it is data. A redirected standard input is not code.
+const sourceFileSources = (words: string[]): InterpreterSources => {
+  const name = words[firstOperandIndex(words, isOptionWord)];
 
   return { kind: 'sources', files: name === undefined ? [] : [name], code: [], pathFirst: true };
 };
@@ -1097,27 +1104,8 @@ const cdOptionPattern = /^-[LPe@]+$/u;
 
 // Options end at the first operand, so `cd sub -P` names two operands. An option `cd` rejects is an
 // operand, so it keeps the current directory.
-const directoryOperands = (words: string[]): string[] => {
-  const operands: string[] = [];
-  let optionsEnded = false;
-
-  for (const word of words) {
-    if (!optionsEnded && word === '--') {
-      optionsEnded = true;
-
-      continue;
-    }
-
-    if (!optionsEnded && cdOptionPattern.test(word)) {
-      continue;
-    }
-
-    optionsEnded = true;
-    operands.push(word);
-  }
-
-  return operands;
-};
+const directoryOperands = (words: string[]): string[] =>
+  words.slice(firstOperandIndex(words, (word) => cdOptionPattern.test(word)));
 
 // A target moves the shell only when it names a directory.
 const directoryTarget = (target: string, directory: string): string => {

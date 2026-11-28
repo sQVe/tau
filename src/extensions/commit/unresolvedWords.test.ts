@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest';
 
-import { blocksUnresolvedDecidingWord, isUnresolvedWord } from './unresolvedWords.js';
+import {
+  blocksUnresolvedDecidingWord,
+  isUnresolvedWord,
+  startsWithExpansion,
+} from './unresolvedWords.js';
 import type { TextOrigin } from './unresolvedWords.js';
 
 const wordTable: { name: string; word: string; expected: boolean }[] = [
@@ -22,6 +26,7 @@ const wordTable: { name: string; word: string; expected: boolean }[] = [
     expected: false,
   },
   { name: 'treats an unclosed backtick as resolved', word: '`x', expected: false },
+  { name: 'treats a stray closing brace as resolved', word: 'a}b', expected: false },
   {
     name: 'treats a braced variable in a directory segment as resolved',
     word: `\${VENV}/bin/python`,
@@ -169,6 +174,12 @@ const gitTable: { name: string; words: string[]; gitIndex: number; expected: boo
     gitIndex: 0,
     expected: false,
   },
+  {
+    name: 'allows an unmatched opening brace before the subcommand',
+    words: ['git', 'x{y'],
+    gitIndex: 0,
+    expected: false,
+  },
 ];
 
 const originTable: {
@@ -239,6 +250,21 @@ const originTable: {
 it.each(wordTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
   expect(isUnresolvedWord(row.word)).toBe(row.expected);
 });
+
+const startTable: { name: string; word: string; expected: boolean }[] = [
+  { name: 'a variable', word: '$CMD', expected: true },
+  { name: 'a lone dollar', word: '$', expected: false },
+  { name: 'a variable after literal text', word: 'x$CMD', expected: false },
+  { name: 'a closed backtick', word: '`x`', expected: true },
+  { name: 'an unclosed backtick', word: '`x', expected: false },
+];
+
+it.each(startTable.map((row) => [row.name, row] as const))(
+  'starts with expansion: %s',
+  (_name, row) => {
+    expect(startsWithExpansion(row.word)).toBe(row.expected);
+  },
+);
 
 it.each(gitTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
   expect(

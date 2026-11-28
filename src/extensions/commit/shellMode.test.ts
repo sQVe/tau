@@ -30,6 +30,11 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'stdin', codes: [] },
   },
   {
+    name: 'skips a value-taking cluster before -c',
+    words: ['-euo', 'pipefail', '-c', 'git commit'],
+    expected: { kind: 'inline', codes: ['git commit'] },
+  },
+  {
     name: 'skips a plain option before the file operand',
     words: ['--norc', 'script.sh'],
     expected: { kind: 'file', names: ['script.sh'], codes: [], stdinMayBeCode: false },
@@ -75,14 +80,14 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: {
       kind: 'file',
       names: ['$MODE'],
-      codes: ['-c', 'git commit'],
+      codes: ['git commit'],
       stdinMayBeCode: false,
     },
   },
   {
     name: 'keeps an ambiguous candidate before --',
     words: ['$MODE', '--'],
-    expected: { kind: 'file', names: ['$MODE'], codes: ['--'], stdinMayBeCode: true },
+    expected: { kind: 'file', names: ['$MODE'], codes: [], stdinMayBeCode: true },
   },
   {
     name: 'adds the word after -- as code and file for a recorded candidate',
@@ -90,7 +95,7 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: {
       kind: 'file',
       names: ['$MODE', 'script.sh'],
-      codes: ['--', 'script.sh'],
+      codes: ['script.sh'],
       stdinMayBeCode: true,
     },
   },
@@ -142,12 +147,17 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
   {
     name: 'keeps a brace file when a later inline option decides the mode',
     words: ['{$FLAG,a}', '-c', 'true'],
-    expected: { kind: 'file', names: ['{$FLAG,a}'], codes: ['-c', 'true'], stdinMayBeCode: false },
+    expected: {
+      kind: 'file',
+      names: ['{$FLAG,a}', 'a'],
+      codes: ['a', 'true'],
+      stdinMayBeCode: false,
+    },
   },
   {
     name: 'keeps a brace file when a later stdin option decides the mode',
     words: ['{$FLAG,a}', '-s'],
-    expected: { kind: 'file', names: ['{$FLAG,a}'], codes: ['-s'], stdinMayBeCode: true },
+    expected: { kind: 'file', names: ['{$FLAG,a}', 'a'], codes: ['a'], stdinMayBeCode: true },
   },
   {
     name: 'marks an operator expansion after -- as possibly empty',
@@ -157,7 +167,7 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
   {
     name: 'marks a brace with an expansion first alternative as an option',
     words: ['{$FLAG,a}'],
-    expected: { kind: 'file', names: ['{$FLAG,a}'], codes: [], stdinMayBeCode: true },
+    expected: { kind: 'file', names: ['{$FLAG,a}', 'a'], codes: ['a'], stdinMayBeCode: true },
   },
   {
     name: 'marks a lone variable operand after -- as possibly empty',
@@ -270,6 +280,21 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'file', names: [`\${$}`], codes: [], stdinMayBeCode: false },
   },
   {
+    name: 'marks an unresolved option word as possible standard input',
+    words: ['-$FLAG', 'x'],
+    expected: { kind: 'file', names: ['x'], codes: ['x'], stdinMayBeCode: true },
+  },
+  {
+    name: 'adds an expansion brace alternative as code and file',
+    words: ['{$FLAG,./commit.sh}'],
+    expected: {
+      kind: 'file',
+      names: ['{$FLAG,./commit.sh}', './commit.sh'],
+      codes: ['./commit.sh'],
+      stdinMayBeCode: true,
+    },
+  },
+  {
     name: 'adds a nested brace alternative as code',
     words: ['{{-c},$CMD}'],
     expected: {
@@ -325,6 +350,17 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     },
   },
 ];
+
+it('unwraps a deeply nested brace word without overflowing', () => {
+  const word = '{'.repeat(20_000) + 'a' + '}'.repeat(20_000);
+
+  const started = performance.now();
+  const mode = shellMode([word]);
+  const elapsed = performance.now() - started;
+
+  expect(mode).toEqual({ kind: 'file', names: [word], codes: [], stdinMayBeCode: false });
+  expect(elapsed).toBeLessThan(1000);
+});
 
 it('scans a long adversarial word without backtracking', () => {
   const word = '$' + '!$'.repeat(20_000) + ':';
