@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { VerificationTarget } from '../../config/verificationTargets.js';
-import { decideFreshness } from '../../verification/freshness.js';
+import { decideFreshness, isStopped } from '../../verification/freshness.js';
 import type { Freshness } from '../../verification/freshness.js';
 import type { RunRecord } from '../../verification/records.js';
 import { writeRunRecord } from '../../verification/verification.js';
@@ -22,6 +22,7 @@ export interface StopContext {
 }
 
 export interface StopResult {
+  stopped: boolean;
   run: string;
   directory: string;
   exitCode: number | null;
@@ -31,6 +32,21 @@ export interface StopResult {
 
 const exitCodeOf = (outcome: CommandOutcome): number | null =>
   outcome.kind === 'exited' ? outcome.exitCode : null;
+
+const stopResult = (
+  record: RunRecord,
+  directory: string,
+  exitCode: number | null,
+  logPath: string,
+  currentTree: string | null,
+): StopResult => ({
+  stopped: isStopped(record),
+  run: record.run,
+  directory,
+  exitCode,
+  logPath,
+  freshness: decideFreshness(record, currentTree),
+});
 
 const stopLogName = (directory: string): string => {
   for (let attempt = 1; ; attempt += 1) {
@@ -77,22 +93,22 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
     );
   }
 
+  const exitCode = exitCodeOf(outcome);
+
+  if (exitCode !== 0) {
+    return stopResult(record, directory, exitCode, logPath, null);
+  }
+
   const state = await readCheckState(context.checkoutRoot);
   const treeAtStop = state.tree;
 
   const updated: RunRecord = {
     ...record,
-    stop: { exitCode: exitCodeOf(outcome), logPath: logName },
+    stop: { exitCode, logPath: logName },
     treeAtStop,
   };
 
   await writeRunRecord(directory, updated);
 
-  return {
-    run: record.run,
-    directory,
-    exitCode: exitCodeOf(outcome),
-    logPath,
-    freshness: decideFreshness(updated, treeAtStop),
-  };
+  return stopResult(updated, directory, exitCode, logPath, treeAtStop);
 };

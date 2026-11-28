@@ -1,3 +1,4 @@
+import { isStopped } from '../../verification/freshness.js';
 import type { RunRecord } from '../../verification/records.js';
 
 type RegisteredItem = RunRecord['items'][number];
@@ -44,7 +45,7 @@ export const decideRegister = (
   run: Pick<RunRecord, 'doctor' | 'stop' | 'items'>,
   items: readonly RegisteredItem[],
 ): RegisterDecision => {
-  if (run.stop !== null) {
+  if (isStopped(run)) {
     return { kind: 'refuse', reason: stoppedReason };
   }
 
@@ -72,9 +73,9 @@ export const decideRegister = (
 };
 
 export const decideStop = (run: Pick<RunRecord, 'stop'>): StopDecision => {
-  if (run.stop === null) {
-    return { kind: 'accept' };
+  if (isStopped(run)) {
+    return { kind: 'refuse', reason: 'The run is already stopped.' };
   }
 
-  return { kind: 'refuse', reason: 'The run is already stopped.' };
+  return { kind: 'accept' };
 };

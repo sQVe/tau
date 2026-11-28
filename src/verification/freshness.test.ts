@@ -74,6 +74,18 @@ it.each([
     currentTree: 'tree-one',
     expected: { fresh: false, reason: 'notStopped' },
   },
+  {
+    name: 'a stop that exited nonzero',
+    record: facts({ stop: { exitCode: 7, logPath: 'stop.log' } }),
+    currentTree: 'tree-one',
+    expected: { fresh: false, reason: 'stopFailed' },
+  },
+  {
+    name: 'a stop that was killed',
+    record: facts({ stop: { exitCode: null, logPath: 'stop.log' } }),
+    currentTree: 'tree-one',
+    expected: { fresh: false, reason: 'stopFailed' },
+  },
 ])('decides $name', ({ record, currentTree, expected }) => {
   expect(decideFreshness(record, currentTree)).toEqual(expected);
 });

@@ -16,10 +16,11 @@ Use this procedure when sending a change to a `qa` worker.
    - Do the guide's steps under "The manager starts" for a section whose target is `none`.
    - For each assigned section whose guide line is `Target: <name>`, call `verification` `launch`
      with that target, once per target. On `failed`, read its log, call `stop` unless `stopped` is
-     true, and report that QA did not run for those sections. On `ready`, call `register` once per
-     run with all assigned journey and feature items of that target's sections, each with its step
-     count. Name each item by its file's path under `.pi/qa/` without `.md`, such as
-     `features/new-ticket`, because the worker records results under that exact name.
+     true; when that stop reports `stopped: false`, report the run as still open with its `logPath`.
+     Report that QA did not run for those sections. On `ready`, call `register` once per run with
+     all assigned journey and feature items of that target's sections, each with its step count.
+     Name each item by its file's path under `.pi/qa/` without `.md`, such as `features/new-ticket`,
+     because the worker records results under that exact name.
    - Ask the user for the guide's steps under "Ask the user".
    - Put the lines the guide asks for in the brief, and `Verification run: <run>` and
      `Run directory: <directory>` from the launch result.
@@ -31,8 +32,9 @@ Use this procedure when sending a change to a `qa` worker.
    writes to Tau in both cases, and ask the user nothing about them in advance.
 5. Launch the worker with the brief. Pass a blocking question from the worker to the user.
 6. Call `verification` `stop` on each run, and do the guide's Stop step for each thing you started
-   by hand, after every worker that uses it has reported. When a `qa` worker fails to start, stop
-   what it would have used only when no running worker uses it. A failed target launch is handled in
-   step 3.
+   by hand, after every worker that uses it has reported. Read `stopped`: when it is false, report
+   the run as still open with its `logPath`, and do not treat cleanup as done. When a `qa` worker
+   fails to start, stop what it would have used only when no running worker uses it. A failed target
+   launch is handled in step 3.
 7. Report each run's name and directory, and each registered item with no saved result file, which
    counts as not run. The manager never records a result for a worker.

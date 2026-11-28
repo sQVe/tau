@@ -1,4 +1,4 @@
-import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { onTestFinished } from 'vitest';
@@ -35,6 +35,15 @@ interface ToolRepository {
   run: ToolRun;
   runIn: (cwd: string) => ToolRun;
 }
+
+export const replaceStopCommand = async (configPath: string, stop: string[]): Promise<void> => {
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
+    verification: { targets: { app: { stop: string[] } } };
+  };
+
+  config.verification.targets.app.stop = stop;
+  await writeFile(configPath, JSON.stringify(config));
+};
 
 export const createToolRepository = async (
   registerCleanup: typeof onTestFinished,

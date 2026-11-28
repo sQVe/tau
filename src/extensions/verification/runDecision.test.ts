@@ -43,6 +43,18 @@ const registerTable: {
     },
   },
   {
+    name: 'accepts items on a run whose saved stop exited nonzero',
+    facts: run({ stop: { exitCode: 7, logPath: 'stop.log' } }),
+    request: [item('login')],
+    expected: { kind: 'accept', items: [item('login')] },
+  },
+  {
+    name: 'accepts items on a run whose saved stop was killed',
+    facts: run({ stop: { exitCode: null, logPath: 'stop.log' } }),
+    request: [item('login')],
+    expected: { kind: 'accept', items: [item('login')] },
+  },
+  {
     name: 'refuses a run with no doctor result',
     facts: run({ doctor: null }),
     request: [item('login')],
@@ -152,6 +164,16 @@ const stopTable: {
     name: 'refuses a stopped run',
     facts: { stop: { exitCode: 0, logPath: 'stop.log' } },
     expected: { kind: 'refuse', reason: 'The run is already stopped.' },
+  },
+  {
+    name: 'accepts a retry when the saved stop exited nonzero',
+    facts: { stop: { exitCode: 7, logPath: 'stop.log' } },
+    expected: { kind: 'accept' },
+  },
+  {
+    name: 'accepts a retry when the saved stop was killed',
+    facts: { stop: { exitCode: null, logPath: 'stop.log' } },
+    expected: { kind: 'accept' },
   },
 ];
 

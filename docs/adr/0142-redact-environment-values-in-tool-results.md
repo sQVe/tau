@@ -25,8 +25,8 @@ handler reads `process.env` on each call and skips values shorter than 8 charact
 matches each value as a literal string and in the form that `JSON.stringify` writes. This covers
 output such as `NAME=value`, `set` quoting, a script that prints one variable, and
 `JSON.stringify(process.env)`. Workers do not load `src/tau.ts`, so each worker loads the same
-extension with `-e` before its bash guard. When redaction throws, the handler withholds the result,
-because Pi keeps the raw result when a handler throws.
+extension with `-e` before its bash guard. When redaction throws, the handler withholds the result's
+content, details, and structured content, because Pi keeps the raw result when a handler throws.
 
 ## Consequences
 

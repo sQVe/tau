@@ -19,7 +19,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readRunRecord, runRecordPath } from '../../verification/verification.js';
-import { createToolRepository } from './fixtures/toolRepository.js';
+import { createToolRepository, replaceStopCommand } from './fixtures/toolRepository.js';
 import type { LaunchResult } from './launchAction.js';
 import type { RegisterResult } from './registerAction.js';
 import type { StopResult } from './stopAction.js';
@@ -128,6 +128,7 @@ it('a launch past its deadline is stopped, stop runs, and launch returns failed'
   }
 
   expect(existsSync(marker)).toBe(true);
+  expect(launch.logPath.endsWith('launch.log')).toBe(true);
 
   const read = await readRunRecord(runRecordPath(launch.directory));
 
@@ -139,6 +140,53 @@ it('a launch past its deadline is stopped, stop runs, and launch returns failed'
 
   expect(read.record.launch?.exitCode).toBeNull();
   expect(read.record.stop?.exitCode).toBe(0);
+});
+
+it('a timed-out launch whose stop fails returns stopped false and a later stop succeeds', async () => {
+  const { root, run, marker } = await createToolRepository(onTestFinished, {
+    launchScript: 'sleep 5',
+  });
+
+  const configPath = join(root, '.pi', 'tau.json');
+
+  await replaceStopCommand(configPath, ['sh', '-c', `touch ${JSON.stringify(marker)}; exit 7`]);
+
+  const launched = await run({ action: 'launch', target: 'app' }, 200);
+  const launch = launched.details as LaunchResult;
+
+  expect(launch).toMatchObject({ status: 'failed', command: 'launch', stopped: false });
+  expect(existsSync(marker)).toBe(true);
+
+  if (launch.status !== 'failed') {
+    return;
+  }
+
+  const failed = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(failed.status).toBe('valid');
+
+  if (failed.status !== 'valid') {
+    return;
+  }
+
+  expect(failed.record.stop).toBeNull();
+
+  await replaceStopCommand(configPath, ['sh', '-c', 'exit 0']);
+
+  const stopped = await run({ action: 'stop', run: launch.run });
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({ stopped: true, exitCode: 0 });
+
+  const stoppedRecord = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(stoppedRecord.status).toBe('valid');
+
+  if (stoppedRecord.status !== 'valid') {
+    return;
+  }
+
+  expect(stoppedRecord.record.stop?.exitCode).toBe(0);
 });
 
 it('a non-zero launch returns failed for launch and skips doctor', async () => {
