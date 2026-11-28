@@ -371,6 +371,64 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('sh {$FLAG,a} < commit.sh'), directory);
   });
 
+  it('blocks a brace file when a later inline option decides the mode', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, '{$FLAG,a}', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent("sh '{$FLAG,a}' -c true"), directory);
+  });
+
+  it('blocks a brace file when a later stdin option decides the mode', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, '{$FLAG,a}', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent("sh '{$FLAG,a}' -s"), directory);
+  });
+
+  it('allows a length expansion on the standard input of a file operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'data.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(`sh -- \${#SCRIPT} < data.sh`), directory)).toBeUndefined();
+  });
+
+  it('allows a pid expansion before a script operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('sh -- $$ commit.sh'), directory)).toBeUndefined();
+  });
+
+  it('allows a positional suffix on the standard input of a file operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'suffix', 'echo hi\n');
+    writeScript(directory, 'data.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('sh -- $1suffix < data.sh'), directory)).toBeUndefined();
+  });
+
+  it('allows a guaranteed file after an empty-capable operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'harmless.sh', 'echo hi\n');
+    writeScript(directory, 'data.sh', 'git commit -m x\n');
+
+    expect(
+      guard(makeBashEvent(`sh -- \${UNSET:+} harmless.sh < data.sh`), directory),
+    ).toBeUndefined();
+  });
+
+  it('allows a lone dollar brace alternative', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent('sh {$,a} "$DOC"'), directory)).toBeUndefined();
+  });
+
   it.each(['#!/usr/bin/env node', '#!/usr/bin/python3'])(
     'allows a directly executed file whose shebang is not a shell: %s',
     (shebang) => {

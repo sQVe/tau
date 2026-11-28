@@ -70,9 +70,14 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'file', names: ['$SCRIPT'], codes: [], stdinMayBeCode: true },
   },
   {
-    name: 'lets a later -c decide over an unresolved word',
+    name: 'keeps an unresolved word when a later -c decides the mode',
     words: ['$MODE', '-c', 'git commit'],
-    expected: { kind: 'inline', codes: ['-c', 'git commit'] },
+    expected: {
+      kind: 'file',
+      names: ['$MODE'],
+      codes: ['-c', 'git commit'],
+      stdinMayBeCode: false,
+    },
   },
   {
     name: 'keeps an ambiguous candidate before --',
@@ -102,7 +107,47 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
   {
     name: 'adds a literal script after an empty-capable operand as a file candidate',
     words: ['--', '$UNSET', 'commit.sh'],
-    expected: { kind: 'file', names: ['$UNSET', 'commit.sh'], codes: [], stdinMayBeCode: true },
+    expected: { kind: 'file', names: ['$UNSET', 'commit.sh'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'marks a length expansion after -- as never empty',
+    words: ['--', `\${#SCRIPT}`],
+    expected: { kind: 'file', names: [`\${#SCRIPT}`], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'marks a pid expansion after -- as never empty',
+    words: ['--', '$$', 'commit.sh'],
+    expected: { kind: 'file', names: ['$$'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'keeps a positional suffix after -- as a literal file',
+    words: ['--', '$1suffix'],
+    expected: { kind: 'file', names: ['$1suffix'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'keeps standard input as data when the following word cannot vanish',
+    words: ['--', `\${UNSET:+}`, 'harmless.sh'],
+    expected: {
+      kind: 'file',
+      names: [`\${UNSET:+}`, 'harmless.sh'],
+      codes: [],
+      stdinMayBeCode: false,
+    },
+  },
+  {
+    name: 'treats a lone dollar brace alternative as a file operand',
+    words: ['{$,a}', '$DOC'],
+    expected: { kind: 'file', names: ['{$,a}'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'keeps a brace file when a later inline option decides the mode',
+    words: ['{$FLAG,a}', '-c', 'true'],
+    expected: { kind: 'file', names: ['{$FLAG,a}'], codes: ['-c', 'true'], stdinMayBeCode: false },
+  },
+  {
+    name: 'keeps a brace file when a later stdin option decides the mode',
+    words: ['{$FLAG,a}', '-s'],
+    expected: { kind: 'file', names: ['{$FLAG,a}'], codes: ['-s'], stdinMayBeCode: true },
   },
   {
     name: 'marks an operator expansion after -- as possibly empty',
@@ -162,7 +207,7 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
 ];
 
 it('scans a long adversarial word without backtracking', () => {
-  const word = '$' + '!$'.repeat(20_000);
+  const word = '$' + '!$'.repeat(20_000) + ':';
 
   const started = performance.now();
   const mode = shellMode(['--', word]);
