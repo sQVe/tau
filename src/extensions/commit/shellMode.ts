@@ -31,21 +31,99 @@ const braceFirstAlternative = (word: string): string | undefined => {
 
 const startsWithExpansion = (word: string): boolean => word.startsWith('$') || word.startsWith('`');
 
-const braceStartsWithOption = (alternative: string | undefined): boolean =>
-  alternative !== undefined && isOptionWord(alternative);
+const braceStartsWithModeOption = (alternative: string | undefined): boolean => {
+  if (alternative === undefined) {
+    return false;
+  }
+
+  return (
+    isOptionWord(alternative) ||
+    startsWithExpansion(alternative) ||
+    braceStartsWithModeOption(braceFirstAlternative(alternative))
+  );
+};
 
 const hasExpansionPrefix = (word: string): boolean =>
-  startsWithExpansion(word) || braceStartsWithOption(braceFirstAlternative(word));
+  startsWithExpansion(word) || braceStartsWithModeOption(braceFirstAlternative(word));
 
 // Only a word whose text could expand to an option can be a mode option. Any other unresolved
 // word is a file operand, so the words after it and the standard input are data.
 const isModeOptionWord = (word: string): boolean => isOptionWord(word) || hasExpansionPrefix(word);
 
-const expansionOnlyWord = /^(?:\$\{[A-Za-z_0-9]+\}|\$[A-Za-z_0-9@*#?$!-]+|`[^`]*`)+$/u;
+const nameCharacters = /[A-Za-z_0-9]/u;
 
-// A word made only of expansions can expand to no word. The shell drops it and reads its code
-// from standard input.
-const canExpandToNoWord = (word: string): boolean => expansionOnlyWord.test(word);
+const specialParameters = new Set(['@', '*', '#', '?', '$', '!', '-']);
+
+const dollarExpansionEnd = (word: string, start: number): number | undefined => {
+  const next = word[start + 1];
+
+  if (next === '{') {
+    const close = word.indexOf('}', start + 2);
+
+    return close === -1 ? undefined : close + 1;
+  }
+
+  if (next === '(') {
+    const close = word.indexOf(')', start + 2);
+
+    return close === -1 ? undefined : close + 1;
+  }
+
+  if (next !== undefined && nameCharacters.test(next)) {
+    let index = start + 2;
+
+    while (index < word.length && nameCharacters.test(word[index] ?? '')) {
+      index += 1;
+    }
+
+    return index;
+  }
+
+  return next !== undefined && specialParameters.has(next) ? start + 2 : undefined;
+};
+
+// A word made only of expansions can expand to no word, so the shell drops it and reads its code
+// from standard input. Scan once from left to right; every step advances past the expansion it
+// reads, so a long adversarial word stays linear.
+const canExpandToNoWord = (word: string): boolean => {
+  if (word === '') {
+    return false;
+  }
+
+  let index = 0;
+
+  while (index < word.length) {
+    const character = word[index];
+
+    if (character === '$') {
+      const end = dollarExpansionEnd(word, index);
+
+      if (end === undefined) {
+        return false;
+      }
+
+      index = end;
+
+      continue;
+    }
+
+    if (character === '`') {
+      const end = word.indexOf('`', index + 1);
+
+      if (end === -1) {
+        return false;
+      }
+
+      index = end + 1;
+
+      continue;
+    }
+
+    return false;
+  }
+
+  return true;
+};
 
 const namesMayBeCode = (names: string[]): boolean => names.some(isModeOptionWord);
 
@@ -200,7 +278,15 @@ const modeAtDoubleDash = (
     return { kind: 'stdin', codes };
   }
 
-  return { kind: 'file', names: [name], codes, stdinMayBeCode: canExpandToNoWord(name) };
+  if (!canExpandToNoWord(name)) {
+    return { kind: 'file', names: [name], codes, stdinMayBeCode: false };
+  }
+
+  // When the operand vanishes, the next word becomes the file operand.
+  const following = words[index + 2];
+  const candidates = following === undefined ? [name] : [name, following];
+
+  return { kind: 'file', names: candidates, codes, stdinMayBeCode: true };
 };
 
 export const shellMode = (words: string[]): ShellMode => {

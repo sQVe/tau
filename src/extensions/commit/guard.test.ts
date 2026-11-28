@@ -323,6 +323,30 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('sh -- $SCRIPT < commit.sh'), directory);
   });
 
+  it('blocks an operator expansion that can be empty on the standard input', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent(`sh -- \${UNSET:-} < commit.sh`), directory);
+  });
+
+  it('blocks a command substitution that can be empty on the standard input', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh -- $(true) < commit.sh'), directory);
+  });
+
+  it('blocks a script after an empty-capable operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh -- $UNSET commit.sh'), directory);
+  });
+
   it('allows a harmless brace script with positional data after --', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -337,6 +361,14 @@ describe('guardToolCall', () => {
     writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
     expectOutcome(makeBashEvent('bash {-O,extglob} ./commit.sh'), directory);
+  });
+
+  it('blocks a committing redirect behind a brace expansion mode option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh {$FLAG,a} < commit.sh'), directory);
   });
 
   it.each(['#!/usr/bin/env node', '#!/usr/bin/python3'])(

@@ -40,8 +40,8 @@ const isBraceExpansion = (word: string): boolean => /(?<!\$)\{/u.test(word) && w
 
 const isStructuralBrace = (word: string): boolean => word === '}' || word === '{';
 
-// Text a shell expands into another value: a variable, a backtick, or a brace expansion.
-const hasExpansionMarker = (text: string): boolean => /[$`]/u.test(text) || isBraceExpansion(text);
+// A variable or a backtick can rewrite the word from the environment.
+const hasVariableMarker = (text: string): boolean => /[$`]/u.test(text);
 
 const hasBraceCharacter = (text: string): boolean => text.includes('{') || text.includes('}');
 
@@ -55,9 +55,7 @@ export const isUnresolvedWord = (word: string): boolean => {
 
   const lastSegment = word.slice(word.lastIndexOf('/') + 1);
 
-  return (
-    hasExpansionMarker(lastSegment) || hasBraceCharacter(lastSegment) || isBraceExpansion(word)
-  );
+  return hasVariableMarker(lastSegment) || hasBraceCharacter(lastSegment) || isBraceExpansion(word);
 };
 
 export const commandName = (word: string): string =>
@@ -65,7 +63,8 @@ export const commandName = (word: string): string =>
 
 // An unquoted expansion anywhere in a word can split into more words. A variable in a directory
 // segment of a command word cannot, because the shell resolves it as a path.
-const expandsAnywhere = (word: string): boolean => hasExpansionMarker(word);
+const expandsAnywhere = (word: string): boolean =>
+  hasVariableMarker(word) || isBraceExpansion(word);
 
 const unresolvedGitWord = (words: readonly string[]): boolean => {
   for (let index = 0; index < words.length; index += 1) {

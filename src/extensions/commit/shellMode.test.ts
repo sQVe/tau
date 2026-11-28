@@ -95,9 +95,24 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'file', names: ['script.sh'], codes: [], stdinMayBeCode: false },
   },
   {
-    name: 'marks a mandatory variable file after -- as possibly empty',
+    name: 'adds the word after an empty-capable operand as a file candidate',
     words: ['--', '$SCRIPT', '$ARG'],
-    expected: { kind: 'file', names: ['$SCRIPT'], codes: [], stdinMayBeCode: true },
+    expected: { kind: 'file', names: ['$SCRIPT', '$ARG'], codes: [], stdinMayBeCode: true },
+  },
+  {
+    name: 'adds a literal script after an empty-capable operand as a file candidate',
+    words: ['--', '$UNSET', 'commit.sh'],
+    expected: { kind: 'file', names: ['$UNSET', 'commit.sh'], codes: [], stdinMayBeCode: true },
+  },
+  {
+    name: 'marks an operator expansion after -- as possibly empty',
+    words: ['--', `\${UNSET:-}`],
+    expected: { kind: 'file', names: [`\${UNSET:-}`], codes: [], stdinMayBeCode: true },
+  },
+  {
+    name: 'marks a brace with an expansion first alternative as an option',
+    words: ['{$FLAG,a}'],
+    expected: { kind: 'file', names: ['{$FLAG,a}'], codes: [], stdinMayBeCode: true },
   },
   {
     name: 'marks a lone variable operand after -- as possibly empty',
@@ -145,6 +160,17 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     },
   },
 ];
+
+it('scans a long adversarial word without backtracking', () => {
+  const word = '$' + '!$'.repeat(20_000);
+
+  const started = performance.now();
+  const mode = shellMode(['--', word]);
+  const elapsed = performance.now() - started;
+
+  expect(mode).toEqual({ kind: 'file', names: [word], codes: [], stdinMayBeCode: false });
+  expect(elapsed).toBeLessThan(1000);
+});
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, row) => {
   expect(shellMode(row.words)).toEqual(row.expected);
