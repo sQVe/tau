@@ -196,7 +196,7 @@ const prepareArchitectStart = async (
   const session = resume ? recordedSession : undefined;
 
   if (session !== undefined) {
-    await refuseHeldSession(request.location.agentDirectory, session);
+    await refuseHeldSession(request.location.agentDirectory, session, request.ui);
   }
 
   const pane = hasSpace(leadSpace) ? await findLeadPane(request) : undefined;

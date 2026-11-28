@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
+import { errorMessage } from '../../../errors.js';
 import { holdFileLock, readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import { sessionLockPath } from '../../../sessionLock/sessionLock.js';
 import { appCommands, openTool, requestFor } from '../fixtures/openHarness.js';
@@ -45,6 +47,32 @@ it('refuses to resume a session another live Pi holds', async ({ onTestFinished:
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
   expect(lockFiles()).toEqual(filesBefore);
+});
+
+it('warns and resumes when the session lock cannot be read', async ({
+  onTestFinished: cleanup,
+}) => {
+  const { root, config } = await setup(cleanup);
+  const { runtime } = openTool(root);
+  const sessionFile = await recordSession(root);
+
+  const lockDirectory = dirname(await sessionLockPath(config.location.agentDirectory, sessionFile));
+
+  mkdirSync(dirname(lockDirectory), { recursive: true });
+  writeFileSync(lockDirectory, 'not a directory');
+
+  const readFailure = await readdir(lockDirectory).catch((error: unknown) => error);
+  const warning = `The architect session lock could not be read, so architect open resumes without the check: ${errorMessage(readFailure)}`;
+  const request = requestFor(root, config.location, runtime);
+
+  await expect(openArchitect(request)).resolves.toEqual({
+    status: 'resumed',
+    sessionFile,
+    model: 'a/architect',
+  });
+
+  expect(request.ui.notify).toHaveBeenCalledTimes(1);
+  expect(request.ui.notify).toHaveBeenCalledWith(warning, 'warning');
 });
 
 it('resumes the recorded session once its holder releases it', async ({
