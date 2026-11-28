@@ -22,13 +22,14 @@ import {
 } from '../../tests/piStartRequests.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import {
-  StartedTabError,
   launchPiSession,
   launchPiSessionRightOf,
+  launchTimeoutMilliseconds,
   startPiSession,
   startPiSessionRightOf,
   startPiSessionWithTerminal,
 } from './piStart.js';
+import { StartedTabError } from './startedTab.js';
 
 it('a space start opens one tab with the argv as JSON', async () => {
   const fake = createHerdrAppFake();
@@ -70,7 +71,7 @@ it('a space start opens one tab with the argv as JSON', async () => {
         'false',
       ],
       signal: undefined,
-      timeout: 30_000,
+      timeout: launchTimeoutMilliseconds,
     },
     readbackCall('t-new'),
   ]);
@@ -192,7 +193,7 @@ it('a space start names its first tab', async () => {
         'false',
       ],
       signal: undefined,
-      timeout: 30_000,
+      timeout: launchTimeoutMilliseconds,
     },
     readbackCall('t-new'),
   ]);
@@ -298,7 +299,7 @@ it('a resolver start runs the target it resolves', async () => {
         'false',
       ],
       signal: undefined,
-      timeout: 30_000,
+      timeout: launchTimeoutMilliseconds,
     },
     readbackCall('t-new'),
   ]);
@@ -604,7 +605,7 @@ it('bounds the launch call with the launch timeout', async () => {
 
   expect(result.terminal).toBe('t-new');
   expect(result.error).toBeUndefined();
-  expect(fake.calls[0]?.timeout).toBe(30_000);
+  expect(fake.calls[0]?.timeout).toBe(launchTimeoutMilliseconds);
 });
 
 it('a launch in a folder that is not a Git checkout runs no command', async () => {
@@ -776,7 +777,7 @@ it('a start bounds the creation command with the launch timeout', async () => {
 
   await startPiSessionWithTerminal({ exec, cwd: root }, startRequest(root, readerFor(fake, root)));
 
-  expect(timeouts[0]).toBe(30_000);
+  expect(timeouts[0]).toBe(launchTimeoutMilliseconds);
 });
 
 it('a right-of start bounds the split command with the launch timeout', async () => {
@@ -792,7 +793,7 @@ it('a right-of start bounds the split command with the launch timeout', async ()
 
   await startPiSessionRightOf({ exec, cwd: root }, paneRequest(root, readerFor(fake, root)));
 
-  expect(timeouts[0]).toBe(30_000);
+  expect(timeouts[0]).toBe(launchTimeoutMilliseconds);
 });
 
 it('a start normalizes a non-Error cancellation from the creation command', async () => {
@@ -859,7 +860,8 @@ it('a launch cancelled during the model readback reports the cancellation', asyn
   );
 
   expect(result.aborted).toBe(true);
-  expect(result.error).toBeInstanceOf(StartedTabError);
+  expect(result.error).not.toBeInstanceOf(StartedTabError);
+  expect((result.error as Error).message).toBe('The started model readback was cancelled.');
 });
 
 const mismatchingReader = async (): Promise<readonly string[] | undefined> => [

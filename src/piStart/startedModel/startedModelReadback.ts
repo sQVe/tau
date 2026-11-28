@@ -221,14 +221,16 @@ const attemptArgv = (attempt: ReadAttempt): readonly string[] | undefined =>
   attempt.kind === 'read' ? attempt.argv : undefined;
 
 // A timeout is not a terminal with no foreground yet, so it must not discard an armed streak. A
-// read with no foreground, or a shell wrapper that may still exec Pi, keeps the caller deadline.
+// read with no foreground, or a shell wrapper that may still exec Pi, keeps the caller deadline. A
+// failed read carries no foreground fact, so it must not discard the streak either.
 const streakAfter = (attempt: ReadAttempt, nonPiSince: number | undefined): number | undefined => {
   if (attempt.kind === 'timeout') {
     return nonPiSince;
   }
 
+  const noForeground = attempt.argv === undefined && attempt.failure === undefined;
   const transientWrapper = attempt.argv !== undefined && runsShellScript(attempt.argv);
-  const keepsDeadline = attempt.argv === undefined || transientWrapper;
+  const keepsDeadline = noForeground || transientWrapper;
 
   return keepsDeadline ? undefined : (nonPiSince ?? Date.now());
 };

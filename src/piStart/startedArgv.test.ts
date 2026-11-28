@@ -130,6 +130,11 @@ it.each<{
     expected: undefined,
   },
   {
+    name: 'a bare pi after the value of an unlisted flag',
+    argv: ['node', '--experimental-config-file', 'config.json', 'pi', ...modelArguments],
+    expected: ['node', '--experimental-config-file', 'config.json', 'pi', ...modelArguments],
+  },
+  {
     name: 'a path-shaped pi after the value of an unlisted flag',
     argv: ['node', '--experimental-config-file', 'config.json', '/path/pi'],
     expected: ['node', '--experimental-config-file', 'config.json', '/path/pi'],

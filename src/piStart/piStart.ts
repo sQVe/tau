@@ -12,13 +12,12 @@ import {
   runCommand,
 } from '../command.js';
 import type { CommandRuntime } from '../command.js';
-import { errorMessage, isMissingFile } from '../errors.js';
+import { isMissingFile } from '../errors.js';
 import { isGitRepository } from '../git.js';
-import { isRecord, text } from '../schema.js';
+import { isRecord } from '../schema.js';
 import { piArguments } from './piArguments.js';
-import { readStartedModel } from './startedModel/startedModelReadback.js';
 import type { ReadForegroundArgv } from './startedModel/startedModelReadback.js';
-import { stillRunningClause } from './stillRunningClause.js';
+import { readStartedTerminalModel, replyText } from './startedTab.js';
 
 export type PiStartTarget = { space: string } | { name: string };
 
@@ -103,12 +102,6 @@ interface StartSessionOptions {
 }
 
 export const launchTimeoutMilliseconds = 30_000;
-// A launch that used its whole budget still leaves a window to read the model, so a slow launch is
-// not reported as an unknown model.
-const readbackMinimumMilliseconds = 5_000;
-
-const readbackDeadline = (deadline: number): number =>
-  Math.max(deadline, Date.now() + readbackMinimumMilliseconds);
 
 const splitReplySchema = Type.Object({
   pane: Type.String(),
@@ -236,81 +229,8 @@ const launchResult = (
   error,
 });
 
-const replyText = (record: Record<string, unknown>, field: string): string | undefined => {
-  const value = text(record[field]);
-
-  return value === '' ? undefined : value;
-};
-
 const terminalOfRecord = (value: unknown): string | undefined =>
   isRecord(value) ? replyText(value, 'terminal') : undefined;
-
-const placeOf = (record: Record<string, unknown>): string => {
-  const places: string[] = [];
-
-  for (const field of ['space', 'tab', 'pane'] as const) {
-    const value = replyText(record, field);
-
-    if (value !== undefined) {
-      places.push(`${field} ${value}`);
-    }
-  }
-
-  return places.length === 0 ? '' : ` (${places.join(', ')})`;
-};
-
-const startedTabMessage = (
-  record: Record<string, unknown> | undefined,
-  terminal: string,
-  error: unknown,
-): string => {
-  const where = record === undefined ? '' : placeOf(record);
-  const reason = errorMessage(error).replace(/[.!?]$/u, '');
-  const reasonPrefix = reason === '' ? '' : `${reason}. `;
-
-  return `${reasonPrefix}The started terminal ${terminal}${where} ${stillRunningClause(terminal)} and stop it with hc kill ${terminal} if you do not want to keep it.`;
-};
-
-// The readback runs after the tab exists, so a failure must still name the tab a caller can stop.
-export class StartedTabError extends Error {
-  readonly terminal: string;
-  readonly space: string | undefined;
-  readonly tab: string | undefined;
-  readonly pane: string | undefined;
-
-  constructor(reply: string, terminal: string, error: unknown) {
-    const record = parseJsonObject(reply);
-
-    super(startedTabMessage(record, terminal, error), { cause: error });
-
-    this.name = 'StartedTabError';
-    this.terminal = terminal;
-    this.space = record === undefined ? undefined : replyText(record, 'space');
-    this.tab = record === undefined ? undefined : replyText(record, 'tab');
-    this.pane = record === undefined ? undefined : replyText(record, 'pane');
-  }
-}
-
-const readStartedTerminalModel = async (
-  request: PiReadbackRequest,
-  reply: string,
-  terminal: string,
-  deadline: number,
-  signal: AbortSignal | undefined,
-): Promise<string> => {
-  try {
-    return await readStartedModel({
-      readForegroundArgv: request.readForegroundArgv,
-      terminal,
-      model: request.model,
-      message: request.task,
-      signal,
-      deadline: readbackDeadline(deadline),
-    });
-  } catch (error) {
-    throw new StartedTabError(reply, terminal, error);
-  }
-};
 
 const launch = async (
   runtime: CommandRuntime,

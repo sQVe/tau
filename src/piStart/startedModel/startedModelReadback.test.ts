@@ -400,6 +400,56 @@ it('keeps the non-Pi foreground budget across a read that times out', async () =
   }
 });
 
+it('keeps the non-Pi foreground budget across an intermittent read failure', async () => {
+  const startedAt = Date.now();
+  let settledAt = 0;
+  let reads = 0;
+
+  const read = (): Promise<readonly string[] | undefined> => {
+    reads += 1;
+
+    return reads % 2 === 1 ? Promise.resolve(['bash']) : Promise.reject(new Error('read failed'));
+  };
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  try {
+    const reading = readStartedModel({
+      readForegroundArgv: read,
+      terminal: 't-new',
+      model: undefined,
+      message: undefined,
+      signal: undefined,
+      deadline: startedAt + 30_000,
+    }).then(
+      (value) => {
+        settledAt = Date.now();
+
+        return value;
+      },
+      (error: unknown) => {
+        settledAt = Date.now();
+
+        return error;
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(readbackNoForegroundBudgetMilliseconds + 1_000);
+
+    const outcome = await reading;
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toContain('The started model on terminal t-new is unknown');
+
+    const elapsed = settledAt - startedAt;
+
+    expect(elapsed).toBeGreaterThanOrEqual(readbackNoForegroundBudgetMilliseconds);
+    expect(elapsed).toBeLessThan(30_000);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('reads the default model when the task message starts with a model flag', async () => {
   const model = await readStartedModel({
     readForegroundArgv: async () => ['pi', '--model=other'],

@@ -305,13 +305,7 @@ it('an abort during the model readback ends the call', async () => {
 
   const failure = await opening;
 
-  expect(failure).toMatchObject({ cause: cancellation });
-
-  expect((failure as Error).message).toContain(
-    'cancelled during the readback. The started terminal',
-  );
-
-  expect((failure as Error).message).toContain('t-new');
+  expect(failure).toBe(cancellation);
 });
 
 it('an abort during the backoff pause ends the call before the next read', async () => {
@@ -345,8 +339,7 @@ it('an abort during the backoff pause ends the call before the next read', async
     const stillWaiting = vi.advanceTimersByTimeAsync(0).then(() => 'still waiting' as const);
     const outcome = await Promise.race([opening, stillWaiting]);
 
-    expect(outcome).toMatchObject({ cause: cancellation });
-    expect((outcome as Error).message).toContain('cancelled during the pause');
+    expect(outcome).toBe(cancellation);
     expect(reads).toBe(1);
   } finally {
     vi.useRealTimers();

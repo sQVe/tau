@@ -133,7 +133,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'piStart',
     entry: 'piStart/piStart',
-    publicFiles: ['piStart/herdrPane', 'piStart/piArguments'],
+    publicFiles: ['piStart/herdrPane', 'piStart/piArguments', 'piStart/startedTab'],
   },
   { name: 'process', entry: 'process/process', publicFiles: [] },
   { name: 'prose', entry: 'prose', publicFiles: [] },

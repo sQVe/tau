@@ -74,6 +74,7 @@ const valueTakingRuntimeFlags = new Set([
   '-C',
   '--dns-result-order',
   '--env-file',
+  '--experimental-config-file',
   '--experimental-loader',
   '--icu-data-dir',
   '--import',
@@ -96,9 +97,10 @@ const valueTakingRuntimeFlags = new Set([
 const skipRuntimeFlagValue = (argument: string, index: number): number =>
   valueTakingRuntimeFlags.has(argument) ? index + 2 : index + 1;
 
-// The script is the first argument after the runtime once the known flag values are skipped. A
-// later Pi name counts only when it carries a path separator or an executable suffix.
-const scriptArgument = (argv: readonly string[]): string | undefined => {
+// Whether the script the runtime runs is Pi. The script is the first argument after the runtime once
+// the known flag values are skipped. A later Pi name counts only when it carries a path separator or
+// an executable suffix.
+const scriptRunsPi = (argv: readonly string[]): boolean => {
   let isFirstCandidate = true;
   let index = 1;
 
@@ -106,12 +108,12 @@ const scriptArgument = (argv: readonly string[]): string | undefined => {
     const argument = argv[index];
 
     if (argument === undefined) {
-      return undefined;
+      return false;
     }
 
     if (argument.startsWith('-')) {
       if (isInlineProgramFlag(argument)) {
-        return undefined;
+        return false;
       }
 
       index = skipRuntimeFlagValue(argument, index);
@@ -122,14 +124,14 @@ const scriptArgument = (argv: readonly string[]): string | undefined => {
     const isScript = isFirstCandidate || isPathShaped(argument);
 
     if (isPiExecutable(argument) && isScript) {
-      return argument;
+      return true;
     }
 
     isFirstCandidate = false;
     index += 1;
   }
 
-  return undefined;
+  return false;
 };
 
 export const piArgv = (argv: readonly string[] | undefined): readonly string[] | undefined => {
@@ -149,5 +151,5 @@ export const piArgv = (argv: readonly string[] | undefined): readonly string[] |
     return undefined;
   }
 
-  return isPiExecutable(scriptArgument(argv)) ? argv : undefined;
+  return scriptRunsPi(argv) ? argv : undefined;
 };

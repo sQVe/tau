@@ -16,8 +16,8 @@ import {
 import type { HerdrAppCommand } from '../../../tests/herdrAppFake.js';
 import { readbackCall } from '../../../tests/piStartRequests.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { StartedTabError } from '../../piStart/piStart.js';
 import { readbackFailureBudgetMilliseconds } from '../../piStart/startedModel/startedModelReadback.js';
+import { StartedTabError } from '../../piStart/startedTab.js';
 import { tabName } from '../../tabName.js';
 import type { SpaceChoice } from './placement.js';
 import { startHandover } from './start.js';
@@ -428,6 +428,51 @@ it('returns the model the started terminal runs', async () => {
   expect(result.model).toBe('morph/morph-dsv41flash-1017');
   expect(spaceOrTabLaunchesOf(app)).toHaveLength(1);
   expect(app.calls).toContainEqual(readbackCall('t-new'));
+});
+
+it('rejects with the caller cancellation when the signal aborts during the readback', async () => {
+  const app = createHerdrAppFake();
+  const hc = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled during the readback');
+  const readbackStarted = Promise.withResolvers<undefined>();
+
+  const runtime = hcRuntimeOf(app, hc, root);
+
+  const exec: typeof runtime.exec = (command, commandArguments, options) => {
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      readbackStarted.resolve(undefined);
+
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            reject(new Error('read aborted'));
+          },
+          {
+            once: true,
+          },
+        );
+      });
+    }
+
+    return runtime.exec(command, commandArguments, options);
+  };
+
+  const opening = startHandover(
+    { ...runtime, exec, signal: controller.signal },
+    requestFor(root, file, { kind: 'reuse', space: 'space-1' }, 'Next steps'),
+  ).catch((error: unknown) => error);
+
+  await readbackStarted.promise;
+  controller.abort(cancellation);
+
+  const failure = await opening;
+
+  expect(failure).toBe(cancellation);
+  expect(failure).not.toBeInstanceOf(StartedTabError);
 });
 
 it('reports the started terminal when the model readback fails', async () => {
