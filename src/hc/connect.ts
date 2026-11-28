@@ -5,7 +5,6 @@ import { errorMessage } from '../errors.js';
 import type { HcRuntime } from './hc.js';
 import {
   HcError,
-  isAbortError,
   matchParsedReply,
   parseHelloResult,
   parseJsonRpcReplies,
@@ -46,6 +45,11 @@ export interface TerminalRunRequest {
 const helloGeneration = 1;
 
 export const streamKillGraceMilliseconds = 5000;
+
+export const killConfirmMilliseconds = 2000;
+
+const stdoutCharacterLimit = 1_048_576;
+const stderrCharacterLimit = 4096;
 
 const terminalRunParams = (request: TerminalRunRequest): Record<string, unknown> => ({
   argv: request.argv,
@@ -133,6 +137,10 @@ const childFailure = (error: Error, spawned: boolean): HcError =>
     : new HcError('spawn_failed', `hc connect failed to start: ${errorMessage(error)}`);
 
 export const connect: Connect = (lines, options = {}) => {
+  if (options.signal?.aborted === true) {
+    return Promise.reject(new HcError('aborted', 'hc connect was aborted'));
+  }
+
   let child: ChildProcessWithoutNullStreams;
 
   try {
@@ -140,7 +148,6 @@ export const connect: Connect = (lines, options = {}) => {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       ...(options.env === undefined ? {} : { env: options.env }),
       stdio: ['pipe', 'pipe', 'pipe'],
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
   } catch (error) {
     return Promise.reject(
@@ -155,39 +162,125 @@ export const connect: Connect = (lines, options = {}) => {
     let childError: Error | undefined;
     let streamFailure: HcError | undefined;
     let aborted = false;
+    let settled = false;
     let killTimer: NodeJS.Timeout | undefined;
+    let confirmTimer: NodeJS.Timeout | undefined;
+    let onClose: (code: number | null, signal: NodeJS.Signals | null) => void = () => settled;
+    const abortListener: { remove?: () => void } = {};
 
-    const failStream = (failure: HcError) => {
-      streamFailure ??= failure;
+    const destroyPipes = () => {
+      [child.stdout, child.stderr].forEach((stream) => stream.destroy());
+    };
+
+    const settle = (action: () => void) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(killTimer);
+      clearTimeout(confirmTimer);
+      abortListener.remove?.();
+      child.off('exit', destroyPipes);
+      child.off('close', onClose);
+      destroyPipes();
+      action();
+    };
+
+    const stopChild = (failure: HcError) => {
+      if (settled) {
+        return;
+      }
+
+      const overflowWins = failure.kind === 'output_too_large' && streamFailure?.kind !== 'aborted';
+
+      if (streamFailure !== undefined && !overflowWins) {
+        return;
+      }
+
+      streamFailure = failure;
+
+      if (killTimer !== undefined) {
+        return;
+      }
+
+      if (child.exitCode !== null || child.signalCode !== null) {
+        destroyPipes();
+
+        return;
+      }
+
       child.kill('SIGTERM');
+      child.once('exit', destroyPipes);
 
-      killTimer ??= setTimeout(() => {
-        child.kill('SIGKILL');
+      killTimer = setTimeout(() => {
+        if (child.exitCode !== null || child.signalCode !== null) {
+          return;
+        }
+
+        const killSent = child.kill('SIGKILL');
+        const clause = killSent ? ' and did not exit after SIGKILL' : '';
+
+        confirmTimer = setTimeout(() => {
+          const latestFailure = streamFailure ?? failure;
+
+          settle(() => {
+            reject(new HcError(latestFailure.kind, `${latestFailure.message}${clause}`));
+          });
+        }, killConfirmMilliseconds);
       }, streamKillGraceMilliseconds);
+    };
+
+    const onAbort = () => {
+      aborted = streamFailure === undefined;
+      stopChild(new HcError('aborted', 'hc connect was aborted'));
+    };
+
+    abortListener.remove = () => {
+      options.signal?.removeEventListener('abort', onAbort);
     };
 
     child.stdout.setEncoding('utf8');
 
     child.stdout.on('data', (chunk: string) => {
+      const remaining = stdoutCharacterLimit - stdout.length;
+
+      if (chunk.length > remaining) {
+        stdout += chunk.slice(0, remaining);
+
+        stopChild(
+          new HcError(
+            'output_too_large',
+            `hc connect printed more than ${stdoutCharacterLimit} characters`,
+          ),
+        );
+
+        return;
+      }
+
       stdout += chunk;
     });
 
     child.stderr.setEncoding('utf8');
 
     child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
+      const remaining = stderrCharacterLimit - stderr.length;
+
+      if (remaining > 0) {
+        stderr += chunk.slice(0, remaining);
+      }
     });
 
     child.stdin.on('error', (error) => {
-      failStream(new HcError('write_failed', `hc connect input failed: ${errorMessage(error)}`));
+      stopChild(new HcError('write_failed', `hc connect input failed: ${errorMessage(error)}`));
     });
 
     child.stdout.on('error', (error) => {
-      failStream(new HcError('read_failed', `hc connect output failed: ${errorMessage(error)}`));
+      stopChild(new HcError('read_failed', `hc connect output failed: ${errorMessage(error)}`));
     });
 
     child.stderr.on('error', (error) => {
-      failStream(new HcError('read_failed', `hc connect stderr failed: ${errorMessage(error)}`));
+      stopChild(new HcError('read_failed', `hc connect stderr failed: ${errorMessage(error)}`));
     });
 
     child.on('spawn', () => {
@@ -195,38 +288,48 @@ export const connect: Connect = (lines, options = {}) => {
     });
 
     child.on('error', (error) => {
-      if (isAbortError(error)) {
-        aborted = true;
-      } else {
-        childError = error;
-      }
+      childError = error;
     });
 
-    child.on('close', (code, signal) => {
-      clearTimeout(killTimer);
-
+    onClose = (code, signal) => {
       if (childError !== undefined) {
-        reject(childFailure(childError, spawned));
+        const failure = childError;
+
+        settle(() => {
+          reject(childFailure(failure, spawned));
+        });
 
         return;
       }
 
       if (aborted) {
-        reject(new HcError('aborted', 'hc connect was aborted'));
+        settle(() => {
+          reject(new HcError('aborted', 'hc connect was aborted'));
+        });
 
         return;
       }
 
-      const naturalNonZero = code !== null && code !== 0;
+      const exitWins = code !== null && code !== 0 && streamFailure?.kind !== 'output_too_large';
 
-      if (streamFailure !== undefined && !naturalNonZero) {
-        reject(streamFailure);
+      if (streamFailure !== undefined && !exitWins) {
+        const failure = streamFailure;
+
+        settle(() => {
+          reject(failure);
+        });
 
         return;
       }
 
-      resolve({ stdout, stderr, code, signal });
-    });
+      settle(() => {
+        resolve({ stdout, stderr, code, signal });
+      });
+    };
+
+    child.on('close', onClose);
+
+    options.signal?.addEventListener('abort', onAbort, { once: true });
 
     child.stdin.end(lines.join(''));
   });

@@ -71,6 +71,43 @@ it('waits for Git exit before closing idle output streams', async () => {
   expect(result.stdout.toString()).toBe('collected output');
 });
 
+it('keeps Git running when the timeout is 0', async () => {
+  const capture = captureProcess();
+  const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 0 });
+
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(kill).not.toHaveBeenCalled();
+
+  capture.complete();
+  const result = await pending;
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout.toString()).toBe('collected output');
+});
+
+it('keeps Git output when Git exits before the deadline and the drain finishes after it', async () => {
+  const capture = captureProcess();
+  const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  Object.defineProperty(capture.child, 'exitCode', { value: 0, configurable: true });
+  capture.child.emit('exit', 0, null);
+
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(kill).not.toHaveBeenCalled();
+
+  await vi.advanceTimersByTimeAsync(50);
+  capture.complete();
+
+  const result = await pending;
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout.toString()).toBe('collected output');
+});
+
 it.for(['stdout', 'stderr'] as const)(
   'restarts the idle drain when %s receives data after Git exits',
   async (stream) => {
@@ -128,4 +165,243 @@ it('cancels idle draining when the native callback completes', async () => {
 
   expect(capture.stdout.destroyed).toBe(false);
   expect(capture.stderr.destroyed).toBe(false);
+});
+
+it('sends SIGTERM at the deadline, SIGKILL after the grace, and settles after the confirm', async () => {
+  const capture = captureProcess();
+  const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(49);
+
+  expect(kill).not.toHaveBeenCalled();
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  expect(kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
+
+  await vi.advanceTimersByTimeAsync(4999);
+
+  expect(kill).not.toHaveBeenCalledWith('SIGKILL');
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  expect(kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+
+  await vi.advanceTimersByTimeAsync(2000);
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stdout.length).toBe(0);
+  expect(result.stderr).toBe('git status timed out after 50 ms and did not exit after SIGKILL');
+  expect(vi.getTimerCount()).toBe(0);
+  expect(capture.child.listenerCount('exit')).toBe(0);
+});
+
+it('reports that Git could not be stopped when SIGKILL is refused', async () => {
+  const capture = captureProcess();
+
+  const kill = vi.spyOn(capture.child, 'kill').mockImplementation((signal) => signal !== 'SIGKILL');
+
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(5050);
+
+  expect(kill).toHaveBeenCalledWith('SIGKILL');
+
+  await vi.advanceTimersByTimeAsync(2000);
+
+  const stillPending = vi.advanceTimersByTimeAsync(0).then(() => 'pending' as const);
+
+  expect(await Promise.race([pending.then(() => 'settled' as const), stillPending])).toBe(
+    'settled',
+  );
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stderr).toBe('git status timed out after 50 ms and could not be stopped');
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('settles with the timeout reason before the final deadline and ignores a later callback', async () => {
+  const capture = captureProcess();
+  vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(50);
+  capture.complete(Object.assign(new Error('killed'), { code: null }));
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stderr).toBe('git status timed out after 50 ms');
+  expect(vi.getTimerCount()).toBe(0);
+
+  capture.complete();
+
+  expect(result.exitCode).toBeNull();
+});
+
+it('does not send SIGKILL when Git exited at the kill grace', async () => {
+  const capture = captureProcess();
+  const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  Object.defineProperty(capture.child, 'exitCode', { value: 0, configurable: true });
+  await vi.advanceTimersByTimeAsync(5000);
+
+  expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  capture.complete(Object.assign(new Error('killed'), { code: 0 }));
+
+  expect((await pending).exitCode).toBeNull();
+});
+
+it('keeps Git output when Git exits during the kill grace', async () => {
+  const capture = captureProcess();
+  const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  Object.defineProperty(capture.child, 'exitCode', { value: 0, configurable: true });
+  capture.child.emit('exit', 0, null);
+
+  await vi.advanceTimersByTimeAsync(7000);
+
+  expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  capture.complete(Object.assign(new Error('killed'), { code: null }));
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stdout.toString()).toBe('collected output');
+  expect(result.stderr).toBe('git status timed out after 50 ms');
+});
+
+it('keeps the abort reason when the abort lands during the kill grace', async () => {
+  const capture = captureProcess();
+  const controller = new AbortController();
+  vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+
+  const pending = runGit('/repository', ['status'], {
+    timeoutMilliseconds: 50,
+    signal: controller.signal,
+  });
+
+  await vi.advanceTimersByTimeAsync(50);
+  controller.abort();
+  capture.complete(Object.assign(new Error('The operation was aborted'), { code: 'ABORT_ERR' }));
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stderr).toContain('The operation was aborted');
+  expect(result.stderr).not.toContain('timed out');
+});
+
+it('keeps the buffer-limit reason when it lands during the kill grace', async () => {
+  const capture = captureProcess();
+  vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(50);
+
+  capture.complete(
+    Object.assign(new Error('stdout maxBuffer length exceeded'), {
+      code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+    }),
+  );
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stderr).toContain('stdout maxBuffer length exceeded');
+  expect(result.stderr).not.toContain('timed out');
+});
+
+it('destroys its output pipes at the final fallback', async () => {
+  const capture = captureProcess();
+  vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(7050);
+  await pending;
+
+  expect(capture.stdout.destroyed).toBe(true);
+  expect(capture.stderr.destroyed).toBe(true);
+});
+
+it('does not arm a timer after the native callback settles during a signal', async () => {
+  const capture = captureProcess();
+
+  const kill = vi.spyOn(capture.child, 'kill').mockImplementation((signal) => {
+    if (signal === 'SIGTERM') {
+      capture.complete(Object.assign(new Error('killed'), { code: null }));
+    }
+
+    return true;
+  });
+
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(50);
+  const result = await pending;
+
+  expect(result.stderr).toBe('git status timed out after 50 ms');
+  expect(vi.getTimerCount()).toBe(0);
+
+  await vi.advanceTimersByTimeAsync(10000);
+
+  expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+});
+
+it('does not arm a timer after the native callback settles during SIGKILL', async () => {
+  const capture = captureProcess();
+
+  const kill = vi.spyOn(capture.child, 'kill').mockImplementation((signal) => {
+    if (signal === 'SIGKILL') {
+      capture.complete(Object.assign(new Error('killed'), { code: null }));
+    }
+
+    return true;
+  });
+
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(5050);
+  const result = await pending;
+
+  expect(kill).toHaveBeenCalledWith('SIGKILL');
+  expect(result.stderr).toBe('git status timed out after 50 ms');
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('reports the timeout reason when an abort lands late without a native abort error', async () => {
+  const capture = captureProcess();
+  vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const controller = new AbortController();
+
+  const pending = runGit('/repository', ['status'], {
+    timeoutMilliseconds: 50,
+    signal: controller.signal,
+  });
+
+  await vi.advanceTimersByTimeAsync(50);
+  controller.abort();
+  capture.complete();
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stderr).toBe('git status timed out after 50 ms');
 });

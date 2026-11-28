@@ -12,7 +12,12 @@ import { declinedExec } from '../../tests/declinedExecFake.js';
 import { createHcFake } from '../../tests/hcFake.js';
 import type { HcFake } from '../../tests/hcFake.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { connect, runWithEnvironment } from './connect.js';
+import {
+  connect,
+  killConfirmMilliseconds,
+  runWithEnvironment,
+  streamKillGraceMilliseconds,
+} from './connect.js';
 import { HcError } from './hc.js';
 import type { HcRuntime } from './hc.js';
 
@@ -20,8 +25,13 @@ interface FakeChild {
   stdin: PassThrough;
   stdout: PassThrough;
   stderr: PassThrough;
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
   kill: ReturnType<typeof vi.fn>;
   on: (event: string, listener: (...argumentsList: unknown[]) => void) => FakeChild;
+  off: (event: string, listener: (...argumentsList: unknown[]) => void) => FakeChild;
+  once: (event: string, listener: (...argumentsList: unknown[]) => void) => FakeChild;
+  listenerCount: (event: string) => number;
   emit: (event: string, ...argumentsList: unknown[]) => boolean;
 }
 
@@ -85,12 +95,25 @@ const createFakeChild = (): FakeChild => {
     stdin: new PassThrough(),
     stdout: new PassThrough(),
     stderr: new PassThrough(),
-    kill: vi.fn<(signal?: NodeJS.Signals) => boolean>(),
+    exitCode: null,
+    signalCode: null,
+    kill: vi.fn<(signal?: NodeJS.Signals) => boolean>().mockReturnValue(true),
     on: (event, listener) => {
       events.on(event, listener);
 
       return child;
     },
+    off: (event, listener) => {
+      events.off(event, listener);
+
+      return child;
+    },
+    once: (event, listener) => {
+      events.once(event, listener);
+
+      return child;
+    },
+    listenerCount: (event) => events.listenerCount(event),
     emit: (event, ...argumentsList) => events.emit(event, ...argumentsList),
   };
 
@@ -274,8 +297,28 @@ it('rejects with the stdout failure after the child closes cleanly', async () =>
   expect(child.kill).toHaveBeenCalledWith('SIGTERM');
 });
 
+it('keeps a stream failure recorded before an abort when the child closes', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  child.stdout.emit('error', new Error('read broke'));
+  controller.abort();
+  child.emit('close', null, 'SIGTERM');
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'read_failed' });
+});
+
 it('escalates a stream failure to SIGKILL when the child ignores SIGTERM', async () => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   onTestFinished(() => {
     vi.useRealTimers();
@@ -298,7 +341,7 @@ it('escalates a stream failure to SIGKILL when the child ignores SIGTERM', async
 });
 
 it('does not send SIGKILL when the child closes after SIGTERM', async () => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   onTestFinished(() => {
     vi.useRealTimers();
@@ -496,4 +539,355 @@ it('has no running child when an aborted call settles', async () => {
 
   const processId = Number(readFileSync(processIdFile, 'utf8'));
   expect(() => process.kill(processId, 0)).toThrow('ESRCH');
+});
+
+it('rejects an already aborted signal before spawning', async () => {
+  spawnMock.mockClear();
+
+  const failure = await connect([helloLine], { signal: AbortSignal.abort() }).catch(
+    (error: unknown) => error,
+  );
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ kind: 'aborted' });
+  expect(spawnMock).not.toHaveBeenCalled();
+});
+
+it('sends SIGTERM and destroys both pipes when an aborted child exits', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  controller.abort();
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  child.emit('exit', null, 'SIGTERM');
+
+  expect(child.stdout.destroyed).toBe(true);
+  expect(child.stderr.destroyed).toBe(true);
+
+  child.emit('close', null, 'SIGTERM');
+
+  expect(await pending).toMatchObject({ name: 'HcError', kind: 'aborted' });
+});
+
+it('does not send SIGKILL when the child has already exited at the kill grace', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  controller.abort();
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  child.exitCode = 0;
+  await vi.advanceTimersByTimeAsync(5000);
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  child.emit('close', 0, null);
+
+  expect(await pending).toMatchObject({ name: 'HcError', kind: 'aborted' });
+});
+
+it('settles at the confirm deadline without close and appends the did-not-exit clause', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  controller.abort();
+  await vi.advanceTimersByTimeAsync(7000);
+
+  const failure = await pending;
+
+  expect(child.kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
+  expect(child.kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'aborted' });
+
+  expect((failure as HcError).message).toBe(
+    'hc connect was aborted and did not exit after SIGKILL',
+  );
+});
+
+it('keeps the full confirm window when the kill grace runs late', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  // The event loop is blocked past the kill deadline, so the kill timer runs 3000 ms late.
+  const schedule = globalThis.setTimeout;
+
+  const timerSpy = vi
+    .spyOn(globalThis, 'setTimeout')
+    .mockImplementation((callback, delay, ...argumentsList) => {
+      const lateDelay = delay === streamKillGraceMilliseconds ? delay + 3000 : delay;
+
+      return schedule(callback, lateDelay, ...argumentsList);
+    });
+
+  onTestFinished(() => {
+    timerSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  controller.abort();
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  await vi.advanceTimersByTimeAsync(streamKillGraceMilliseconds + 3000 - 1);
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  expect(child.kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+
+  const stillWaiting = vi
+    .advanceTimersByTimeAsync(killConfirmMilliseconds - 1)
+    .then(() => 'waiting' as const);
+
+  expect(await Promise.race([pending, stillWaiting])).toBe('waiting');
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ kind: 'aborted' });
+
+  expect((failure as HcError).message).toBe(
+    'hc connect was aborted and did not exit after SIGKILL',
+  );
+});
+
+it('destroys both pipes and detaches its exit hook at the confirm deadline', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  controller.abort();
+
+  expect(child.listenerCount('exit')).toBe(1);
+
+  await vi.advanceTimersByTimeAsync(7000);
+  await pending;
+
+  expect(child.stdout.destroyed).toBe(true);
+  expect(child.stderr.destroyed).toBe(true);
+  expect(child.listenerCount('exit')).toBe(0);
+});
+
+it('destroys both pipes when the child exited before cancellation', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  child.exitCode = 0;
+  child.emit('exit', 0, null);
+  controller.abort();
+
+  expect(child.kill).not.toHaveBeenCalled();
+  expect(child.stdout.destroyed).toBe(true);
+  expect(child.stderr.destroyed).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+
+  const stillWaiting = vi.advanceTimersByTimeAsync(7000).then(() => 'waiting' as const);
+
+  expect(await Promise.race([pending, stillWaiting])).toBe('waiting');
+
+  child.emit('close', 0, null);
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'aborted' });
+  expect((failure as HcError).message).toBe('hc connect was aborted');
+});
+
+it('reports output_too_large when stdout passes the cap before a nonzero exit', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const pending = connect([helloLine]).catch((error: unknown) => error);
+
+  child.stdout.emit('data', 'a'.repeat(1_048_577));
+  child.emit('close', 7, null);
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'output_too_large' });
+});
+
+it('ignores a close that arrives after settlement', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  controller.abort();
+  await vi.advanceTimersByTimeAsync(7000);
+
+  const failure = await pending;
+
+  expect(child.listenerCount('close')).toBe(0);
+
+  child.emit('close', 0, null);
+
+  expect(failure).toMatchObject({ kind: 'aborted' });
+});
+
+it('keeps the abort kind when stdout overflows after the abort at the fallback deadline', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  controller.abort();
+  child.stdout.emit('data', 'a'.repeat(1_048_577));
+
+  await vi.advanceTimersByTimeAsync(7000);
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'aborted' });
+});
+
+it('reports output_too_large when an input failure arrives before the overflow', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const pending = connect([helloLine]).catch((error: unknown) => error);
+
+  child.stdin.emit('error', new Error('write broke'));
+  child.stdout.emit('data', 'a'.repeat(1_048_577));
+  child.emit('close', 7, null);
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'output_too_large' });
+});
+
+it('rejects output_too_large past the stdout cap and stops the child', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const pending = connect([helloLine]).catch((error: unknown) => error);
+
+  child.stdout.emit('data', 'a'.repeat(1_048_577));
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  child.stdout.emit('data', 'discarded');
+  child.emit('close', 0, null);
+
+  const failure = await pending;
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'output_too_large' });
+
+  expect((failure as HcError).message).toBe('hc connect printed more than 1048576 characters');
+});
+
+it('keeps the first 4096 stderr characters and keeps reading the rest', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const pending = connect([helloLine]);
+
+  child.stderr.emit('data', 'x'.repeat(5000));
+  child.stderr.emit('data', 'y'.repeat(5000));
+  child.emit('close', 0, null);
+
+  const result = await pending;
+
+  expect(result.stderr).toBe('x'.repeat(4096));
+  expect(result.code).toBe(0);
 });

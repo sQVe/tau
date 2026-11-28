@@ -9,6 +9,7 @@ import {
   groupState,
   stopGroup,
 } from '../../process/process.js';
+import type { GroupStop } from '../../process/process.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
 import { commandIsIdle } from './idleDecision.js';
 
@@ -109,7 +110,7 @@ export const runCheck = async ({
           );
         }
 
-        let stopping: Promise<void> | undefined;
+        let stopping: Promise<GroupStop> | undefined;
 
         const stop = () => {
           stopping ??= stopGroup(child, stopGraceMilliseconds);
