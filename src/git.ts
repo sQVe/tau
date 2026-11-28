@@ -89,7 +89,7 @@ const startTimeoutKill = (
   child: ChildProcess,
   timeoutMilliseconds: number,
   onTimeout: () => void,
-  onFinal: () => void,
+  onFinal: (killSent: boolean) => void,
 ): void => {
   if (timeoutMilliseconds <= 0) {
     return;
@@ -107,9 +107,11 @@ const startTimeoutKill = (
         return;
       }
 
-      timers.confirm = setTimeout(onFinal, killConfirmMilliseconds);
+      const killSent = child.kill('SIGKILL');
 
-      child.kill('SIGKILL');
+      timers.confirm = setTimeout(() => {
+        onFinal(killSent);
+      }, killConfirmMilliseconds);
     }, killGraceMilliseconds);
 
     child.kill('SIGTERM');
@@ -219,7 +221,7 @@ export const runGit = (
       resolve({ exitCode: null, stdout: stdoutBytes, stderr: `${stderrText}${reason}` });
     };
 
-    const finishAfterKill = () => {
+    const finishAfterKill = (killSent: boolean) => {
       if (settled) {
         return;
       }
@@ -231,7 +233,8 @@ export const runGit = (
       gitChild?.stdout?.destroy();
       gitChild?.stderr?.destroy();
 
-      const reason = `git ${commandArguments.join(' ')} timed out after ${timeoutMilliseconds} ms and did not exit after SIGKILL`;
+      const clause = killSent ? ' and did not exit after SIGKILL' : ' and could not be stopped';
+      const reason = `git ${commandArguments.join(' ')} timed out after ${timeoutMilliseconds} ms${clause}`;
 
       resolve({ exitCode: null, stdout: Buffer.alloc(0), stderr: reason });
     };

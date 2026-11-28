@@ -199,6 +199,33 @@ it('sends SIGTERM at the deadline, SIGKILL after the grace, and settles after th
   expect(capture.child.listenerCount('exit')).toBe(0);
 });
 
+it('reports that Git could not be stopped when SIGKILL is refused', async () => {
+  const capture = captureProcess();
+
+  const kill = vi.spyOn(capture.child, 'kill').mockImplementation((signal) => signal !== 'SIGKILL');
+
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(5050);
+
+  expect(kill).toHaveBeenCalledWith('SIGKILL');
+
+  await vi.advanceTimersByTimeAsync(2000);
+
+  const stillPending = vi.advanceTimersByTimeAsync(0).then(() => 'pending' as const);
+
+  expect(await Promise.race([pending.then(() => 'settled' as const), stillPending])).toBe(
+    'settled',
+  );
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stderr).toContain('git status timed out after 50 ms');
+  expect(result.stderr).not.toContain('did not exit after SIGKILL');
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it('settles with the timeout reason before the final deadline and ignores a later callback', async () => {
   const capture = captureProcess();
   vi.spyOn(capture.child, 'kill').mockReturnValue(true);

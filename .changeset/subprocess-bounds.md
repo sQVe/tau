@@ -15,7 +15,8 @@ close with a reason that does not claim SIGKILL. Its confirm window runs 2000 ms
 SIGKILL is sent. A stream failure recorded before an abort stays the failure of record. `runGit`
 arms each escalation timer before signaling, sends SIGTERM at its deadline, SIGKILL 5000 ms later,
 and settles 2000 ms after SIGKILL, destroying its output pipes then; it arms that final fallback
-only when SIGKILL is sent. A Git that exits before the deadline or during the grace keeps its
+only after the SIGKILL step. A refused SIGKILL reports that Git could not be stopped instead of
+claiming the signal was sent. A Git that exits before the deadline or during the grace keeps its
 output, a timeout of 0 means no timeout, and a negative timeout is rejected with a local message. An
 abort or buffer-limit error keeps its own reason, and a late abort without a native abort error
 still reports the timeout.
