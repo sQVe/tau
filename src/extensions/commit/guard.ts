@@ -15,6 +15,10 @@ import { readTextWithinSync } from '../../record.js';
 import { parseShellCommands, quoteShellArgument } from '../../shell/shell.js';
 import type { ShellCommand, ShellInput } from '../../shell/shell.js';
 import { splitEnvString } from '../../wrapperAnalysis.js';
+import { isOptionWord, shellMode } from './shellMode.js';
+import type { ShellMode } from './shellMode.js';
+import { blocksUnresolvedDecidingWord, commandName } from './unresolvedWords.js';
+import type { TextOrigin } from './unresolvedWords.js';
 
 export type NamedFileFacts =
   | { kind: 'missing' }
@@ -36,11 +40,6 @@ interface NamedScript {
   // A `.` or `source` operand resolves through PATH before the working directory.
   pathFirst: boolean;
 }
-
-type ShellMode =
-  | { kind: 'inline'; code: string | undefined }
-  | { kind: 'file'; name: string }
-  | { kind: 'stdin' };
 
 interface GuardState {
   // Resolved path to the facts read from it, so each path is read once per call.
@@ -101,12 +100,6 @@ type WrapperWord =
   | { kind: 'positional' }
   | { kind: 'command' };
 
-interface ShortOption {
-  letters: string;
-  // What is attached to the letters, such as `./commit.sh` in `-lc./commit.sh`.
-  tail: string;
-}
-
 type PathState =
   | { kind: 'missing' }
   | { kind: 'present' }
@@ -124,6 +117,11 @@ type ShebangInterpreter =
   | { readonly kind: 'named'; readonly name: string }
   | { readonly kind: 'unnamed' }
   | { readonly kind: 'unreadable' };
+
+interface InputSlot {
+  readonly input: ShellInput;
+  readonly index: number;
+}
 
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
@@ -162,8 +160,6 @@ const shellSyntaxPattern = /[\s;&|()<>`'"\\$]/;
 // Normalize common shell spellings such as `g\it c''ommit` before matching.
 const unescapeShellWord = (command: string) =>
   command.replaceAll('\\\n', '').replaceAll(/\\(.)/gs, '$1').replaceAll(/''|""/g, '');
-
-const commandName = (word: string) => word.slice(word.lastIndexOf('/') + 1).toLowerCase();
 
 // Matches `commit` and plumbing such as `commit-tree`, and also `commit-graph`: blocking wins.
 // Substitutions may produce the subcommand, and alias values may define it. Environment-backed
@@ -335,38 +331,6 @@ const wrapperCommandOptions = new Map<string, ReadonlySet<string>>([
 ]);
 
 const envSplitStringOptions = wrapperCommandOptions.get('env') ?? new Set<string>();
-
-const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
-
-// A `-` short-option word, split into its letters and the tail attached to them.
-const shortOption = (word: string): ShortOption | undefined => {
-  const match = /^-([A-Za-z]*)([\s\S]*)$/u.exec(word);
-
-  return match === null ? undefined : { letters: match[1] ?? '', tail: match[2] ?? '' };
-};
-
-// A letter of an enabled short option; no `o` or `O` may precede it, because that letter then
-// belongs to the option's value.
-const enabledLetterIndex = (option: ShortOption, letter: string): number => {
-  const index = option.letters.indexOf(letter);
-
-  return index !== -1 && /[oO]/u.test(option.letters.slice(0, index)) ? -1 : index;
-};
-
-// An option with `c`, such as `-c` or `-lc`, puts the code in an argument, not in a file.
-const isInlineCodeWord = (word: string): boolean => {
-  const option = shortOption(word);
-
-  return option !== undefined && enabledLetterIndex(option, 'c') !== -1;
-};
-
-// An option that makes the shell read its code from standard input; `+s` disables one instead.
-const isStdinOptionWord = (word: string): boolean => {
-  const option = shortOption(word);
-  const namesStdin = option !== undefined && enabledLetterIndex(option, 's') !== -1;
-
-  return word === '--stdin' || namesStdin;
-};
 
 const assignmentPattern = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 
@@ -709,8 +673,6 @@ export const namedFileVerdict = (
   return textVerdict(facts.text, checksShebang);
 };
 
-const isOptionWord = (word: string) => word.startsWith('-') || word.startsWith('+');
-
 const isMissingPathError = (error: unknown): boolean =>
   isMissingFile(error) || hasErrorCode(error, 'ENOTDIR');
 
@@ -757,105 +719,54 @@ const readFileFacts = (path: string, failClosed: boolean): NamedFileFacts => {
   }
 };
 
-// A shell takes its code from the first operand after its options, so `-c --` and `-c -x` still
-// name the code word.
-const codeOperand = (words: string[], start: number): string | undefined => {
-  let index = start;
-
-  while (index < words.length) {
-    const word = words[index] ?? '';
-
-    if (optionValueNames.has(word)) {
-      index += 2;
-
-      continue;
-    }
-
-    if (word === '--' || isOptionWord(word)) {
-      index += 1;
-
-      continue;
-    }
-
-    return word;
-  }
-
-  return undefined;
-};
-
-// A short-option word can carry its code after the `c`, as in `-c'git commit'`. A `c` after an
-// `o` or `O` letter belongs to that option's value, as in `-onoclobber`.
-const attachedInlineCode = (word: string): string | undefined => {
-  const option = shortOption(word);
-
-  if (option === undefined) {
-    return undefined;
-  }
-
-  const index = enabledLetterIndex(option, 'c');
-
-  if (index === -1) {
-    return undefined;
-  }
-
-  const code = option.letters.slice(index + 1) + option.tail;
-
-  return code === '' ? undefined : code;
-};
-
-const shellMode = (words: string[]): ShellMode => {
-  for (let index = 0; index < words.length; index += 1) {
-    const word = words[index] ?? '';
-
-    const attached = attachedInlineCode(word);
-
-    if (attached !== undefined) {
-      return { kind: 'inline', code: attached };
-    }
-
-    if (isInlineCodeWord(word)) {
-      return { kind: 'inline', code: codeOperand(words, index + 1) };
-    }
-
-    if (isStdinOptionWord(word)) {
-      return { kind: 'stdin' };
-    }
-
-    if (optionValueNames.has(word)) {
-      index += 1;
-    } else if (!isOptionWord(word)) {
-      return { kind: 'file', name: word };
-    }
-  }
-
-  return { kind: 'stdin' };
-};
-
 const normalizeDescriptor = (descriptor: string | undefined): string =>
   String(Number(descriptor ?? '0'));
 
-// Redirections apply in order, and `<&N` copies the target of descriptor N at that point.
-const effectiveInput = (inputs: ShellInput[]): ShellInput | undefined => {
-  const open = new Map<string, ShellInput>();
-  let stdin: ShellInput | undefined;
+// Redirections apply in order, and `<&N` copies the target of descriptor N at that point. A copy
+// keeps the slot of the input it copies, so a heredoc body still matches its own redirection.
+const effectiveInput = (inputs: ShellInput[]): InputSlot | undefined => {
+  const open = new Map<string, InputSlot>();
+  let stdin: InputSlot | undefined;
 
-  for (const input of inputs) {
+  for (const [index, input] of inputs.entries()) {
     const descriptor = normalizeDescriptor(input.descriptor);
-    const copied = input.kind === 'duplicate' ? open.get(normalizeDescriptor(input.target)) : input;
-    const entry = copied === undefined ? undefined : { ...copied, descriptor: input.descriptor };
 
-    if (entry === undefined) {
+    if (input.kind === 'duplicate') {
+      const copied = open.get(normalizeDescriptor(input.target));
+
+      if (copied === undefined) {
+        continue;
+      }
+
+      open.set(descriptor, copied);
+
+      if (descriptor === '0') {
+        stdin = copied;
+      }
+
       continue;
     }
 
-    open.set(descriptor, entry);
+    const slot = { input, index };
+
+    open.set(descriptor, slot);
 
     if (descriptor === '0') {
-      stdin = entry;
+      stdin = slot;
     }
   }
 
   return stdin;
+};
+
+// A heredoc body reaches its command in source order, so the body at the same position as the
+// heredoc redirection feeds standard input.
+const heredocBodyFor = (command: ShellCommand, slot: InputSlot): string | undefined => {
+  const position = command.inputs
+    .slice(0, slot.index + 1)
+    .filter((input) => input.kind === 'heredoc').length;
+
+  return command.heredocs[position - 1]?.body;
 };
 
 const isInterpreter = (word: string) => shellInterpreters.has(commandName(word));
@@ -1121,6 +1032,51 @@ const searchesPathFirst = (word: string): boolean => {
   return name === '.' || name === 'source';
 };
 
+// Every `eval` operand is code, joined with spaces as the shell joins them. `--` ends the options
+// and is not an operand.
+const evalOperandCode = (words: string[]): string[] => {
+  const operands = words[0] === '--' ? words.slice(1) : words;
+
+  return operands.length === 0 ? [] : [operands.join(' ')];
+};
+
+// A shell reads its code from a file, from inline code, or from standard input. A heredoc on
+// standard input is shell code; a here-string is too.
+const inputSources = (
+  command: ShellCommand,
+  mode: Extract<ShellMode, { kind: 'stdin' }>,
+): InterpreterSources => {
+  const stdin = effectiveInput(command.inputs);
+
+  if (stdin === undefined) {
+    return { kind: 'sources', files: [], code: mode.codes };
+  }
+
+  if (stdin.input.kind === 'heredoc') {
+    const body = heredocBodyFor(command, stdin);
+
+    return {
+      kind: 'sources',
+      files: [],
+      code: body === undefined ? mode.codes : [...mode.codes, body],
+    };
+  }
+
+  if (stdin.input.kind === 'hereString') {
+    return { kind: 'sources', files: [], code: [...mode.codes, stdin.input.target] };
+  }
+
+  return { kind: 'sources', files: [stdin.input.target], code: mode.codes };
+};
+
+// `source` and `.` read only their file operand. The words after it are positional arguments, and a
+// redirected standard input is not code.
+const sourceFileSources = (words: string[]): InterpreterSources => {
+  const name = words.find((word) => !isOptionWord(word));
+
+  return { kind: 'sources', files: name === undefined ? [] : [name], code: [], pathFirst: true };
+};
+
 // An interpreter runs a file or inline code only from the executable position, so data such as
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
@@ -1142,35 +1098,41 @@ const interpreterSources = (command: ShellCommand): InterpreterSources => {
 
   const shell = appletWord(command.arguments, commandIndex);
 
-  if (shell === undefined || !isInterpreter(shell.word)) {
+  if (shell === undefined) {
     return { kind: 'sources', files: [], code: [] };
   }
 
+  if (commandName(shell.word) === 'eval') {
+    return {
+      kind: 'sources',
+      files: [],
+      code: evalOperandCode(command.arguments.slice(shell.index + 1)),
+    };
+  }
+
+  if (!isInterpreter(shell.word)) {
+    return { kind: 'sources', files: [], code: [] };
+  }
+
+  if (searchesPathFirst(shell.word)) {
+    return sourceFileSources(command.arguments.slice(shell.index + 1));
+  }
+
   const mode = shellMode(command.arguments.slice(shell.index + 1));
-  const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
     return {
       kind: 'sources',
-      files: [mode.name],
-      code: [],
-      pathFirst: searchesPathFirst(shell.word),
+      files: mode.names,
+      code: mode.codes,
     };
   }
 
   if (mode.kind === 'inline') {
-    return { kind: 'sources', files: [], code: mode.code === undefined ? [] : [mode.code] };
+    return { kind: 'sources', files: [], code: mode.codes };
   }
 
-  if (stdin === undefined || stdin.kind === 'heredoc') {
-    return { kind: 'sources', files: [], code: [] };
-  }
-
-  if (stdin.kind === 'hereString') {
-    return { kind: 'sources', files: [], code: [stdin.target] };
-  }
-
-  return { kind: 'sources', files: [stdin.target], code: [] };
+  return inputSources(command, mode);
 };
 
 // A bare word resolves through `PATH`, so only a word with a path separator names a local file.
@@ -1541,8 +1503,47 @@ const recordHeredocBases = (
   }
 };
 
+const blocksCommand = (origin: TextOrigin, command: ShellCommand): boolean => {
+  const index = commandWordIndex(command.arguments);
+
+  if (index === undefined) {
+    return blocksUnresolvedDecidingWord(origin, undefined, []);
+  }
+
+  return blocksUnresolvedDecidingWord(
+    origin,
+    command.arguments[index],
+    command.arguments.slice(index + 1),
+  );
+};
+
+// Inline code is shell code. A word or heredoc body is only a candidate script: it may be data. A
+// variable decides nothing in a candidate, so the two kinds are inspected apart.
+const runsCommandTexts = (
+  command: ShellCommand,
+  code: string[],
+  source: string,
+  runsScripts: boolean,
+  inspect: (text: string, origin: TextOrigin) => boolean,
+): boolean => {
+  if (code.length === 0 && !runsScripts) {
+    return false;
+  }
+
+  const codeTexts = code.filter((text) => text !== source);
+
+  if (codeTexts.some((text) => inspect(text, { kind: 'shellCode' }))) {
+    return true;
+  }
+
+  const candidateTexts = scriptsOf([command]).filter((text) => text !== source);
+
+  return candidateTexts.some((text) => inspect(text, { kind: 'scriptCandidate' }));
+};
+
 const createsCommit = (
   source: string,
+  origin: TextOrigin,
   cwd: string,
   state: GuardState,
   depth = 0,
@@ -1562,8 +1563,22 @@ const createsCommit = (
     return true;
   }
 
-  const inspect = (directory: string, text: string, pathDirectories: string[]) =>
-    createsCommit(text, directory, state, depth + 1, pathDirectories);
+  if (commands.some((command) => blocksCommand(origin, command))) {
+    return true;
+  }
+
+  const speculative = origin.kind === 'scriptCandidate';
+
+  const inspect = (
+    directory: string,
+    text: string,
+    pathDirectories: string[],
+    textOrigin: TextOrigin,
+  ) => {
+    const childOrigin = speculative ? origin : textOrigin;
+
+    return createsCommit(text, childOrigin, directory, state, depth + 1, pathDirectories);
+  };
 
   const scriptCommands = commands.some(runsShell) ? commands : commands.filter(runsGit);
   const stacks = new Map<string, string[]>();
@@ -1591,21 +1606,26 @@ const createsCommit = (
 
     const blocks = (script: NamedScript) =>
       inspectNamedScript(script, state, (text) =>
-        inspect(script.cwd, text, script.pathDirectories),
+        inspect(script.cwd, text, script.pathDirectories, { kind: 'shellCode' }),
       );
 
     if (scripts.some(blocks)) {
       return true;
     }
 
-    const inline = sources.code;
+    const inspectText = (text: string, textOrigin: TextOrigin) =>
+      inspect(directory, text, pathDirectories, textOrigin);
 
-    if (inline.length > 0 || scriptCommands.includes(command)) {
-      const texts = [...scriptsOf([command]), ...inline];
+    const runsTexts = runsCommandTexts(
+      command,
+      sources.code,
+      source,
+      scriptCommands.includes(command),
+      inspectText,
+    );
 
-      if (texts.some((text) => text !== source && inspect(directory, text, pathDirectories))) {
-        return true;
-      }
+    if (runsTexts) {
+      return true;
     }
 
     stack[command.depth] = nextDirectory(command, directory);
@@ -1628,7 +1648,7 @@ export const guardToolCall = (
     pathDirectories: readPathDirectories(),
   };
 
-  if (createsCommit(event.input.command, context.cwd, state)) {
+  if (createsCommit(event.input.command, { kind: 'toolCommand' }, context.cwd, state)) {
     return { block: true, reason: commitGuardReason };
   }
 
