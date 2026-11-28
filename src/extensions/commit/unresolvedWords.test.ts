@@ -28,6 +28,16 @@ const wordTable: { name: string; word: string; expected: boolean }[] = [
   { name: 'treats an unclosed backtick as resolved', word: '`x', expected: false },
   { name: 'treats a stray closing brace as resolved', word: 'a}b', expected: false },
   {
+    name: 'treats a variable in a directory segment with a literal closing brace as resolved',
+    word: '$DIR/x}',
+    expected: false,
+  },
+  {
+    name: 'treats a parameter expansion that closes in the last segment as unresolved',
+    word: `\${A:-b/c}`,
+    expected: true,
+  },
+  {
     name: 'treats a braced variable in a directory segment as resolved',
     word: `\${VENV}/bin/python`,
     expected: false,

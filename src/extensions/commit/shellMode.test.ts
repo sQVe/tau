@@ -3,6 +3,9 @@ import { expect, it } from 'vitest';
 import { shellMode } from './shellMode.js';
 import type { ShellMode } from './shellMode.js';
 
+const nestedBraceWord = (levels: number, first: string, second: string): string =>
+  `{${'{'.repeat(levels)}${first}${'}'.repeat(levels)},${second}}`;
+
 const table: { name: string; words: string[]; expected: ShellMode }[] = [
   {
     name: 'reads standard input with no words',
@@ -33,6 +36,41 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     name: 'skips a value-taking cluster before -c',
     words: ['-euo', 'pipefail', '-c', 'git commit'],
     expected: { kind: 'inline', codes: ['git commit'] },
+  },
+  {
+    name: 'reads inline code after a stdin option',
+    words: ['-s', '-c', 'git commit'],
+    expected: { kind: 'inline', codes: ['git commit'] },
+  },
+  {
+    name: 'reads inline code after a stdin cluster with a value',
+    words: ['-so', 'pipefail', '-c', 'git commit'],
+    expected: { kind: 'inline', codes: ['git commit'] },
+  },
+  {
+    name: 'keeps standard input after a stdin cluster and a file word',
+    words: ['-so', 'pipefail', 'script.sh'],
+    expected: { kind: 'stdin', codes: [] },
+  },
+  {
+    name: 'unwraps a brace alternative at the depth cap',
+    words: [nestedBraceWord(100, '-c', 'git commit')],
+    expected: {
+      kind: 'file',
+      names: [nestedBraceWord(100, '-c', 'git commit')],
+      codes: ['git commit'],
+      stdinMayBeCode: true,
+    },
+  },
+  {
+    name: 'fails closed when a brace alternative exceeds the depth cap',
+    words: [nestedBraceWord(101, '-c', 'git commit')],
+    expected: {
+      kind: 'file',
+      names: [nestedBraceWord(101, '-c', 'git commit'), 'git commit'],
+      codes: ['git commit'],
+      stdinMayBeCode: true,
+    },
   },
   {
     name: 'skips a plain option before the file operand',
@@ -361,6 +399,15 @@ const timeShellMode = (word: string): number => {
   return performance.now() - started;
 };
 
+it('adds many distinct brace codes without quadratic dedupe', () => {
+  const alternatives = Array.from({ length: 100_000 }, (_, index) => `a${index}`);
+  const word = `{-c,${alternatives.join(',')}}`;
+  const mode = shellMode([word]);
+  const codes = mode.kind === 'file' ? mode.codes : [];
+
+  expect(codes).toHaveLength(100_000);
+});
+
 it('unwraps a deeply nested brace word without overflowing', () => {
   const shallowWord = '{'.repeat(2_000) + 'a' + '}'.repeat(2_000);
   const deepWord = '{'.repeat(20_000) + 'a' + '}'.repeat(20_000);
@@ -369,7 +416,7 @@ it('unwraps a deeply nested brace word without overflowing', () => {
     kind: 'file',
     names: [deepWord],
     codes: [],
-    stdinMayBeCode: false,
+    stdinMayBeCode: true,
   });
 
   shellMode([shallowWord]);

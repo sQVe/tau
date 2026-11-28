@@ -451,9 +451,9 @@ describe('guardToolCall', () => {
   it('allows a flat literal brace with a following script', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    writeScript(directory, 'harmless.sh', 'git commit -m x\n');
+    writeScript(directory, 'committing.sh', 'git commit -m x\n');
 
-    expect(guard(makeBashEvent('sh {a,b} harmless.sh'), directory)).toBeUndefined();
+    expect(guard(makeBashEvent('sh {a,b} committing.sh'), directory)).toBeUndefined();
   });
 
   it('blocks a committing redirect after a nested expansion', () => {
@@ -563,6 +563,34 @@ describe('guardToolCall', () => {
     writeScript(directory, 'script.sh', 'git commit -m x\n');
 
     expectOutcome(makeBashEvent('sh {-e,script.sh}'), directory);
+  });
+
+  it('blocks inline code after a stdin option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(`bash -s -c 'git commit -m x'`), directory);
+  });
+
+  it('blocks inline code after a stdin cluster with a value', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(`bash -so pipefail -c 'git commit -m x'`), directory);
+  });
+
+  it('blocks a committing redirect for a stdin option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('bash -s < commit.sh'), directory);
+  });
+
+  it('blocks code after a brace alternative beyond the depth cap', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    const word = `{${'{'.repeat(101)}-c${'}'.repeat(101)},$CMD}`;
+
+    expectOutcome(makeBashEvent(`sh ${word}`), directory);
   });
 
   it('blocks a value-taking cluster before -c', () => {

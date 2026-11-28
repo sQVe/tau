@@ -65,12 +65,16 @@ const hasExpansionStart = (text: string): boolean => {
   return false;
 };
 
+// A parameter expansion can start in an earlier segment and close in the last one, as in
+// `${A:-b/c}`, so the whole word must hold a `${` before the closing brace counts.
 const endsWithParameterExpansion = (word: string, lastSegment: string): boolean =>
-  lastSegment.endsWith('}') && hasExpansionStart(word);
+  lastSegment.endsWith('}') && word.includes('${');
 
 // A word a shell may rewrite from the environment when it sits in a deciding position. Only the last
 // path segment counts for a variable or a backtick, because the shell resolves the directory part as
-// a path. A brace expansion anywhere in the word can rewrite a path segment, so it also counts.
+// a path. A parameter expansion that ends the word is the exception: it is checked across the whole
+// word because its closing brace may sit in the last segment. A brace expansion anywhere in the
+// word can rewrite a path segment, so it also counts.
 export const isUnresolvedWord = (word: string): boolean => {
   if (isStructuralBrace(word)) {
     return false;
