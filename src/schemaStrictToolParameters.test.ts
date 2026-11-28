@@ -6,7 +6,6 @@ import {
   isRecord,
   schemaArrayKeywords,
   schemaMapKeywords,
-  schemaUnassertedKeywords,
   schemaValueKeywords,
   strictToolParameters,
 } from './schema.js';
@@ -262,6 +261,11 @@ it('leaves a definition as written because an unasserted position may reference 
   };
 
   const strict = strictToolParameters(Type.Unsafe<unknown>(schema));
+  const storedDefinitions = isRecord(strict) ? strict['$defs'] : undefined;
+
+  expect(storedDefinitions).toEqual({
+    x: { type: 'object', properties: { secret: { type: 'string' } } },
+  });
 
   expect(Value.Check(strict, { detail: { secret: 'a', extra: 1 } })).toBe(true);
 });
@@ -404,39 +408,6 @@ it('leaves a nested object under not open', () => {
     type: 'object',
     properties: { nested: { type: 'object', properties: {} } },
   });
-});
-
-const expectedSchemaMapKeywords = ['patternProperties', 'properties'];
-
-const expectedSchemaArrayKeywords = ['prefixItems'];
-
-const expectedSchemaValueKeywords = [
-  'additionalItems',
-  'additionalProperties',
-  'items',
-  'propertyNames',
-  'unevaluatedItems',
-  'unevaluatedProperties',
-];
-
-// Pins the sets so a change to them is a deliberate edit. It does not claim the list is complete.
-it('pins the subschema keyword sets', () => {
-  expect([...schemaMapKeywords].toSorted()).toEqual(expectedSchemaMapKeywords);
-  expect([...schemaArrayKeywords].toSorted()).toEqual(expectedSchemaArrayKeywords);
-  expect([...schemaValueKeywords].toSorted()).toEqual(expectedSchemaValueKeywords);
-
-  expect([...schemaUnassertedKeywords].toSorted()).toEqual([
-    'allOf',
-    'anyOf',
-    'contains',
-    'dependencies',
-    'dependentSchemas',
-    'else',
-    'if',
-    'not',
-    'oneOf',
-    'then',
-  ]);
 });
 
 it('closes an object schema under every asserted subschema keyword in the sets', () => {

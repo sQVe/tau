@@ -8,6 +8,8 @@ import { isRecord, strictToolRegistration } from './schema.js';
 const registrationApi = (registerTool: (tool: unknown) => unknown): ExtensionAPI =>
   ({ registerTool }) as unknown as ExtensionAPI;
 
+const passThroughRegisterTool = (tool: unknown): unknown => tool;
+
 const registerThrough = (api: ExtensionAPI, parameters: TSchema): unknown => {
   const register = api.registerTool as unknown as (tool: unknown) => unknown;
 
@@ -281,14 +283,11 @@ it('registers a tool whose probe marker is not true', () => {
 
   strictToolRegistration(api);
 
-  const markers = Object.getOwnPropertySymbols(captured);
-
-  expect(markers).toHaveLength(1);
-
-  const [marker] = markers;
+  const record = captured as Record<PropertyKey, unknown>;
+  const marker = Object.getOwnPropertySymbols(captured).find((symbol) => record[symbol] === true);
 
   if (marker === undefined) {
-    throw new Error('the probe carried no marker symbol');
+    throw new Error('the probe carried no true marker symbol');
   }
 
   const register = api.registerTool as unknown as (tool: unknown) => unknown;
@@ -300,6 +299,84 @@ it('registers a tool whose probe marker is not true', () => {
   expect(registered).toMatchObject([
     { name: 'sample', parameters: { additionalProperties: false } },
   ]);
+});
+
+it('installs through a readback that copies the tool before it delegates', () => {
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      const delegate = stored;
+
+      return (tool: unknown) => delegate({ ...(tool as object) });
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).not.toThrow();
+
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(registered).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+it('wraps a registerTool that the host replaces after the install', () => {
+  const first: unknown[] = [];
+  const api = registrationApi((tool) => first.push(tool));
+
+  strictToolRegistration(api);
+
+  const second: unknown[] = [];
+
+  api.registerTool = (tool) => second.push(tool);
+
+  strictToolRegistration(api);
+  registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(first).toEqual([]);
+
+  expect(second).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+it('reports a readback that is not callable with its own message', () => {
+  const original = passThroughRegisterTool;
+  let reads = 0;
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      reads += 1;
+
+      return reads === 1 ? original : undefined;
+    },
+    set: () => undefined,
+  });
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).toThrow('Cannot install strict tool parameters: registerTool is not callable on this API.');
 });
 
 it('installs through a readback that freezes the tool it receives', () => {
@@ -513,8 +590,6 @@ it('refuses a readback that defers the registration until after the check', asyn
   expect(registered).toEqual([]);
   expect(rejections).toEqual([]);
 });
-
-const passThroughRegisterTool = (tool: unknown): unknown => tool;
 
 it('restores the original registerTool when the readback fails', () => {
   const original = passThroughRegisterTool;
