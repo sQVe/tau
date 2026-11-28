@@ -860,8 +860,14 @@ it('a launch cancelled during the model readback reports the cancellation', asyn
   );
 
   expect(result.aborted).toBe(true);
-  expect(result.error).not.toBeInstanceOf(StartedTabError);
-  expect((result.error as Error).message).toBe('The started model readback was cancelled.');
+  expect(result.error).toBeInstanceOf(StartedTabError);
+
+  const started = result.error as StartedTabError;
+
+  expect(started.cause).toBeInstanceOf(Error);
+  expect((started.cause as Error).message).toBe('The started model readback was cancelled.');
+  expect(started.message).toContain('The started model readback was cancelled');
+  expect(started.message).toContain('hc kill t-new');
 });
 
 const mismatchingReader = async (): Promise<readonly string[] | undefined> => [

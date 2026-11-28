@@ -430,7 +430,7 @@ it('returns the model the started terminal runs', async () => {
   expect(app.calls).toContainEqual(readbackCall('t-new'));
 });
 
-it('rejects with the caller cancellation when the signal aborts during the readback', async () => {
+it('names the started terminal when the signal aborts during the readback', async () => {
   const app = createHerdrAppFake();
   const hc = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
@@ -471,8 +471,14 @@ it('rejects with the caller cancellation when the signal aborts during the readb
 
   const failure = await opening;
 
-  expect(failure).toBe(cancellation);
-  expect(failure).not.toBeInstanceOf(StartedTabError);
+  expect(failure).toBeInstanceOf(StartedTabError);
+
+  const started = failure as StartedTabError;
+
+  expect(started.cause).toBe(cancellation);
+  expect(started.terminal).toBe('t-new');
+  expect(started.message).toContain('cancelled during the readback');
+  expect(started.message).toContain('hc kill t-new');
 });
 
 it('reports the started terminal when the model readback fails', async () => {

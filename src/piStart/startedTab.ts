@@ -49,7 +49,8 @@ const startedTabMessage = (
   return `${reasonPrefix}The started terminal ${terminal}${where} may still be running; check it with hc get ${terminal} and stop it with hc kill ${terminal} if you do not want to keep it.`;
 };
 
-// The readback runs after the tab exists, so a failure must still name the tab a caller can stop.
+// The readback runs after the tab exists, so any failure, including the caller's cancellation, must
+// still name the tab a caller can stop. The failure stays reachable as the cause.
 export class StartedTabError extends Error {
   readonly terminal: string;
   readonly space: string | undefined;
@@ -69,8 +70,8 @@ export class StartedTabError extends Error {
   }
 }
 
-// An abort during the readback is the caller's cancellation, not a readback failure on a started
-// tab, so it reaches the caller unchanged.
+// A failure or an abort during the readback reaches the caller as a started-tab error, so a caller
+// that only throws still learns which tab may be running. The failure stays reachable as the cause.
 export const readStartedTerminalModel = async (
   request: StartedTabReadRequest,
   reply: string,
@@ -88,10 +89,6 @@ export const readStartedTerminalModel = async (
       deadline: readbackDeadline(deadline),
     });
   } catch (error) {
-    if (signal?.aborted === true) {
-      throw error;
-    }
-
     throw new StartedTabError(reply, terminal, error);
   }
 };

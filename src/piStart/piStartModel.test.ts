@@ -17,6 +17,7 @@ import {
   startPiSessionWithTerminal,
 } from './piStart.js';
 import { readbackFailureBudgetMilliseconds } from './startedModel/startedModelReadback.js';
+import { StartedTabError } from './startedTab.js';
 
 const neverResolves = new Promise<readonly string[] | undefined>(() => {});
 const neverReads = (): Promise<readonly string[] | undefined> => neverResolves;
@@ -305,7 +306,9 @@ it('an abort during the model readback ends the call', async () => {
 
   const failure = await opening;
 
-  expect(failure).toBe(cancellation);
+  expect(failure).toBeInstanceOf(StartedTabError);
+  expect((failure as StartedTabError).cause).toBe(cancellation);
+  expect((failure as StartedTabError).terminal).toBe('t-new');
 });
 
 it('an abort during the backoff pause ends the call before the next read', async () => {
@@ -339,7 +342,8 @@ it('an abort during the backoff pause ends the call before the next read', async
     const stillWaiting = vi.advanceTimersByTimeAsync(0).then(() => 'still waiting' as const);
     const outcome = await Promise.race([opening, stillWaiting]);
 
-    expect(outcome).toBe(cancellation);
+    expect(outcome).toBeInstanceOf(StartedTabError);
+    expect((outcome as StartedTabError).cause).toBe(cancellation);
     expect(reads).toBe(1);
   } finally {
     vi.useRealTimers();
