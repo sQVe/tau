@@ -244,6 +244,54 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('./commit.sh'), directory);
   });
 
+  it('blocks a variable command in a named shell file', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', '$CMD\n');
+
+    expectOutcome(makeBashEvent('sh commit.sh'), directory);
+  });
+
+  it('blocks a literal brace directory that holds a committing script', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, '{a,b}/commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent("sh '{a,b}/commit.sh'"), directory);
+  });
+
+  it('blocks a literal brace directory that holds a committing script with an argument', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, '{a,b}/commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent("sh '{a,b}/commit.sh' arg"), directory);
+  });
+
+  it('blocks a literal brace directory that holds a committing script before --', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, '{a,b}/commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent("sh '{a,b}/commit.sh' --"), directory);
+  });
+
+  it('blocks a committing script after an unresolved mode word', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'script.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh $FLAG script.sh'), directory);
+  });
+
+  it('allows a harmless script after an unresolved mode word', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'script.sh', 'echo hi\n');
+
+    expect(guard(makeBashEvent('sh $FLAG script.sh'), directory)).toBeUndefined();
+  });
+
   it.each(['#!/usr/bin/env node', '#!/usr/bin/python3'])(
     'allows a directly executed file whose shebang is not a shell: %s',
     (shebang) => {
@@ -483,6 +531,22 @@ describe('guardToolCall', () => {
     withExactPath(pathDirectory);
 
     expectOutcome(makeBashEvent('. tool.sh'), directory);
+  });
+
+  it('allows a variable heredoc on the standard input of a sourced file', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(
+      guard(makeBashEvent('source "$SCRIPT" <<\'EOF\'\n$CMD\nEOF'), directory),
+    ).toBeUndefined();
+  });
+
+  it('blocks a script named after a source option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('source -- commit.sh'), directory);
   });
 
   it('allows a heredoc that mentions git commit followed by a shell name in a path', () => {
@@ -879,6 +943,28 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('sh < commit.sh <<EOF\nbody\nEOF'), directory)).toBeUndefined();
   });
 
+  it('blocks a variable in a heredoc that replaces a script file input', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'echo hello\n');
+
+    expectOutcome(makeBashEvent("sh < commit.sh <<'EOF'\n$CMD\nEOF"), directory);
+  });
+
+  it('blocks a variable in the heredoc body a duplicate descriptor selects', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent("sh 3<<'A' 4<<'B' 0<&3\n$CMD\nA\nbody\nB"), directory);
+  });
+
+  it('allows a variable in the heredoc body a duplicate descriptor does not select', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(
+      guard(makeBashEvent("sh 3<<'A' 4<<'B' 0<&3\nbody\nA\n$CMD\nB"), directory),
+    ).toBeUndefined();
+  });
+
   it('blocks an outer script after a failed cd', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1135,6 +1221,20 @@ describe('guardToolCall', () => {
     ['an env split value after command', `command env -S '\${SHELL} -c "git commit -m x"'`],
     ['an env split value after sudo', `sudo env -S '\${SHELL} -c "git commit -m x"'`],
   ])('blocks a commit behind %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it.each([
+    ['an env split value whose -c code is a variable', `env -S 'sh -c "\${CMD}"'`],
+    ['an env split value whose shell mode is a variable', `env -S 'sh \${FLAG} "\${CMD}"'`],
+    [
+      'an env split value whose git subcommand is a variable',
+      `env -S 'sh -c "git \${ACTION} -m x"'`,
+    ],
+    ['an env split value whose -c code is an escaped variable', `env -S 'sh -c "\\\${CMD}"'`],
+  ])('blocks shell code that runs a variable behind %s', (_label, command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     expectOutcome(makeBashEvent(command), directory);
@@ -1981,6 +2081,26 @@ describe('guardToolCall', () => {
   });
 
   it.each([
+    'sh -c "$CMD"',
+    'sh -c "git $ACTION -m x"',
+    'eval "$CMD"',
+    'eval -- "$CMD"',
+    'sh $FLAG "$CMD"',
+    `sh -c '"$TOOL" file'`,
+    'sh -c "$1"',
+    'bash -c "$CMD"',
+    'sh <<< "$CMD"',
+    "sh <<'EOF'\n$CMD\nEOF",
+    'sudo sh -c "$CMD"',
+    `sh -c '{git,commit} -m x'`,
+    `sh -c 'git --git-dir="$DIR" $ACTION -m x'`,
+    `sh -c 'git --git-dir=$DIR log'`,
+    `sh -c 'git -C$DIR log'`,
+  ])('blocks shell code whose deciding word is a variable: %s', (command) => {
+    expectOutcome(makeBashEvent(command));
+  });
+
+  it.each([
     'git for-each-ref --sort=-committerdate refs/heads',
     'commits="$(git log --oneline)"; echo "$commits"',
     "for c in $(git rev-list HEAD); do git show --format='### commit %H %s' $c; done",
@@ -1990,6 +2110,32 @@ describe('guardToolCall', () => {
     'git log `cat "$commits_file"`',
     'bash $(bash)',
   ])('allows git data and shell substitutions that do not commit: %s', (command) => {
+    expect(guard(makeBashEvent(command))).toBeUndefined();
+  });
+
+  it.each([
+    `sh -c 'echo "$HOME"'`,
+    `env -S 'node -e "$X"'`,
+    `sh -c '"$VENV/bin/python" x.py'`,
+    `sh -c 'git log --grep "$X"'`,
+    'source "$NVM_DIR/nvm.sh"',
+    `eval 'echo "$HOME"'`,
+    `sh -c 'x=$(git rev-parse HEAD); echo "$x"'`,
+    `sh -c 'git -C "$DIR" log'`,
+    `sh -c 'git --git-dir=/repo log'`,
+    `sh -c 'git -C/repo log'`,
+    `sh -c '"\${VENV}/bin/python" x.py'`,
+    'sh "$SCRIPT"',
+    'sh -- "$SCRIPT"',
+    'sh -- "$SCRIPT" "$ARG"',
+    'sh -- "$CMD"',
+    'sh $FLAG script.sh',
+    'source -- "$SCRIPT"',
+    `printf '%s\\n' 'sh -c "$CMD"'; sh -c true`,
+    `printf '%s\\n' 'sh -c "$CMD"' | sh`,
+    `source "$SCRIPT" '$ARG'`,
+    `bash -c 'function run { echo hi; }; run'`,
+  ])('allows shell code whose variable is data: %s', (command) => {
     expect(guard(makeBashEvent(command))).toBeUndefined();
   });
 
