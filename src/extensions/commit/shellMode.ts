@@ -1,4 +1,5 @@
 import { takesShellOptionValue } from '../../shell/shellScript.js';
+import { matchingBrace } from './braceMatching.js';
 import { isUnresolvedWord, startsWithExpansion } from './unresolvedWords.js';
 
 export type ShellMode =
@@ -37,31 +38,6 @@ interface Codes {
 }
 
 export const isOptionWord = (word: string): boolean => word.startsWith('-') || word.startsWith('+');
-
-// The index of the `}` that matches the `{` at `openIndex`, counting nested braces.
-const matchingBrace = (word: string, openIndex: number): number | undefined => {
-  let depth = 0;
-
-  for (let index = openIndex; index < word.length; index += 1) {
-    const character = word[index];
-
-    if (character === '{') {
-      depth += 1;
-
-      continue;
-    }
-
-    if (character === '}') {
-      depth -= 1;
-
-      if (depth === 0) {
-        return index;
-      }
-    }
-  }
-
-  return undefined;
-};
 
 // A brace expansion can start a word with an option when its first alternative does, as in
 // `{-O,extglob}`.
@@ -256,6 +232,11 @@ const namesMayBeCode = (names: string[]): boolean => names.some(isModeOptionWord
 
 const emptyCodes = (): Codes => ({ seen: new Set<string>(), values: [] });
 
+export const stdinMode = (codes: readonly string[]): ShellMode => ({
+  kind: 'stdin',
+  codes: [...codes],
+});
+
 const addCodes = (codes: Codes, next: readonly string[]): void => {
   if (next.length === 0) {
     return;
@@ -392,7 +373,7 @@ const resolvedModeStep = (
   // After `-s`, a word that is not an option is a positional argument, so the shell still reads
   // its code from standard input.
   if (state.namesStdin && !isOptionWord(word)) {
-    return { kind: 'mode', mode: { kind: 'stdin', codes: codes.values } };
+    return { kind: 'mode', mode: stdinMode(codes.values) };
   }
 
   if (takesShellOptionValue(word)) {
@@ -444,7 +425,7 @@ const modeAtDoubleDash = (
   }
 
   if (name === undefined) {
-    return { kind: 'stdin', codes: codes.values };
+    return stdinMode(codes.values);
   }
 
   // Every vanishing word is dropped, so the first word that cannot vanish becomes the file
@@ -558,9 +539,7 @@ const unresolvedMode = (
 
   if (!isModeOptionWord(word)) {
     if (state.namesStdin) {
-      const stdinMode: ShellMode = { kind: 'stdin', codes: codes.values };
-
-      return candidatesWithMode(names, stdinMode, state.optionMayBeCode);
+      return candidatesWithMode(names, stdinMode(codes.values), state.optionMayBeCode);
     }
 
     names.push(word);
@@ -584,9 +563,7 @@ export const shellMode = (words: string[]): ShellMode => {
 
     if (word === '--' || word === '-') {
       if (state.namesStdin) {
-        const stdinMode: ShellMode = { kind: 'stdin', codes: codes.values };
-
-        return candidatesWithMode(names, stdinMode, state.optionMayBeCode);
+        return candidatesWithMode(names, stdinMode(codes.values), state.optionMayBeCode);
       }
 
       return modeAtDoubleDash(words, index, codes, names, state.optionMayBeCode);
@@ -625,5 +602,5 @@ export const shellMode = (words: string[]): ShellMode => {
     return fileOperandMode(names, codes, state);
   }
 
-  return { kind: 'stdin', codes: codes.values };
+  return stdinMode(codes.values);
 };

@@ -581,7 +581,7 @@ describe('guardToolCall', () => {
   it('allows a positional argument after a stdin option and --', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
-    writeScript(directory, 'commit.sh', 'echo hi\n');
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
 
     expect(guard(makeBashEvent('bash -s -- commit.sh'), directory)).toBeUndefined();
   });
@@ -590,8 +590,9 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     writeScript(directory, 'script.sh', 'git commit -m x\n');
+    writeScript(directory, 'data.sh', 'echo hi\n');
 
-    expectOutcome(makeBashEvent('bash {$FLAG,script.sh} -s {a,b}/commit.sh'), directory);
+    expectOutcome(makeBashEvent('bash {$FLAG,script.sh} -s data.sh'), directory);
   });
 
   it('blocks code after a brace alternative beyond the depth cap', () => {
@@ -2516,6 +2517,7 @@ describe('guardToolCall', () => {
     `sh -c 'git --git-dir=/repo log'`,
     `sh -c 'git -C/repo log'`,
     `sh -c '"\${VENV}/bin/python" x.py'`,
+    `sh -c '"\${VENV:-/opt/venv}/bin/python" x.py'`,
     'sh "$SCRIPT"',
     'sh -- "$SCRIPT"',
     'sh -- "$SCRIPT" "$ARG"',

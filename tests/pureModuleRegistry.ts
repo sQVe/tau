@@ -48,6 +48,7 @@ export const pureModules = [
   'src/extensions/bashGuard/detachedStreams.ts',
   'src/extensions/checkoutWarning/message.ts',
   'src/extensions/commit/autosquash.ts',
+  'src/extensions/commit/braceMatching.ts',
   'src/extensions/commit/fileRequests.ts',
   'src/extensions/commit/optionValue.ts',
   'src/extensions/commit/shellMode.ts',

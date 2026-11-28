@@ -53,6 +53,16 @@ const wordTable: { name: string; word: string; expected: boolean }[] = [
     expected: false,
   },
   {
+    name: 'treats a parameter expansion with a slash in a directory segment as resolved',
+    word: `\${VENV:-/opt/venv}/bin/python`,
+    expected: false,
+  },
+  {
+    name: 'treats a nested parameter expansion in the last segment as unresolved',
+    word: `\${A:-{b/c}}`,
+    expected: true,
+  },
+  {
     name: 'treats a brace expansion in a directory segment as unresolved',
     word: '{a,b}/commit.sh',
     expected: true,

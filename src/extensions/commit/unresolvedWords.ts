@@ -1,4 +1,5 @@
 import { commandNameOf } from '../../wrapperAnalysis.js';
+import { matchingBrace } from './braceMatching.js';
 import { optionValue } from './optionValue.js';
 
 // Shell code is text that a shell, `eval`, or `env -S` is known to run. In shell code, assume a
@@ -65,38 +66,19 @@ const hasExpansionStart = (text: string): boolean => {
   return false;
 };
 
-// The `}` that closes the `${` opened at `start`, counting nested braces.
-const matchingExpansionEnd = (word: string, start: number): number | undefined => {
-  let depth = 0;
-
-  for (let index = start + 2; index < word.length; index += 1) {
-    if (word[index] === '{') {
-      depth += 1;
-
-      continue;
-    }
-
-    if (word[index] === '}') {
-      if (depth === 0) {
-        return index;
-      }
-
-      depth -= 1;
-    }
-  }
-
-  return undefined;
-};
-
 // A parameter expansion whose body holds a `/` spans a path separator, so the slash is inside the
-// expansion rather than a real separator. `${A:-b/c}` and `${A:-b/c}log` both count.
+// expansion rather than a real separator. Only an expansion that closes in the last path segment
+// counts, because a directory expansion such as `${VENV:-/opt/venv}` resolves to a path.
 const hasSpanningParameterExpansion = (word: string): boolean => {
+  const lastSegmentStart = word.lastIndexOf('/') + 1;
   let start = word.indexOf('${');
 
   while (start !== -1) {
-    const end = matchingExpansionEnd(word, start);
+    const end = matchingBrace(word, start + 1);
+    const closesInLastSegment = end !== undefined && end >= lastSegmentStart;
+    const body = end === undefined ? '' : word.slice(start + 2, end);
 
-    if (end !== undefined && word.slice(start + 2, end).includes('/')) {
+    if (closesInLastSegment && body.includes('/')) {
       return true;
     }
 
@@ -106,37 +88,11 @@ const hasSpanningParameterExpansion = (word: string): boolean => {
   return false;
 };
 
-// A trailing `}` is part of a parameter expansion only when it closes a `${` still open before it.
-const closesOpenParameterExpansion = (word: string): boolean => {
-  let open = 0;
-
-  for (let index = 0; index < word.length - 1; index += 1) {
-    if (word[index] === '$' && word[index + 1] === '{') {
-      open += 1;
-      index += 1;
-
-      continue;
-    }
-
-    if (word[index] === '}' && open > 0) {
-      open -= 1;
-    }
-  }
-
-  return open > 0;
-};
-
-const endsWithOpenParameterExpansion = (word: string, lastSegment: string): boolean =>
-  lastSegment.endsWith('}') && closesOpenParameterExpansion(word);
-
-const endsWithParameterExpansion = (word: string, lastSegment: string): boolean =>
-  hasSpanningParameterExpansion(word) || endsWithOpenParameterExpansion(word, lastSegment);
-
 // A word a shell may rewrite from the environment when it sits in a deciding position. Only the last
 // path segment counts for a variable or a backtick, because the shell resolves the directory part as
-// a path. A parameter expansion that ends the word is the exception: it is checked across the whole
-// word because its closing brace may sit in the last segment. A brace expansion anywhere in the
-// word can rewrite a path segment, so it also counts.
+// a path. A parameter expansion that closes in the last segment is the exception: it is checked
+// across the whole word because its closing brace may sit in the last segment. A brace expansion
+// anywhere in the word can rewrite a path segment, so it also counts.
 export const isUnresolvedWord = (word: string): boolean => {
   if (isStructuralBrace(word)) {
     return false;
@@ -145,9 +101,7 @@ export const isUnresolvedWord = (word: string): boolean => {
   const lastSegment = commandNameOf(word);
 
   return (
-    hasExpansionStart(lastSegment) ||
-    endsWithParameterExpansion(word, lastSegment) ||
-    isBraceExpansion(word)
+    hasExpansionStart(lastSegment) || hasSpanningParameterExpansion(word) || isBraceExpansion(word)
   );
 };
 

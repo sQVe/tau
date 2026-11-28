@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { maximumBraceDepth, shellMode } from './shellMode.js';
+import { maximumBraceDepth, shellMode, stdinMode } from './shellMode.js';
 import type { ShellMode } from './shellMode.js';
 
 const nestedBraceWord = (levels: number, first: string, second: string): string =>
@@ -86,6 +86,16 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     name: 'records an inline code once when an earlier word already added it',
     words: ['-$FLAG', '-c', 'x'],
     expected: { kind: 'inline', codes: ['x'] },
+  },
+  {
+    name: 'keeps an earlier candidate next to an attached code',
+    words: ['{$FLAG,script.sh}', '-cx'],
+    expected: {
+      kind: 'file',
+      names: ['{$FLAG,script.sh}', 'script.sh'],
+      codes: ['script.sh', 'x'],
+      stdinMayBeCode: false,
+    },
   },
   {
     name: 'skips a plain option before the file operand',
@@ -403,6 +413,15 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     },
   },
 ];
+
+it('snapshots the codes of a stdin mode', () => {
+  const codes = ['git commit -m x'];
+  const mode = stdinMode(codes);
+
+  codes.push('git push');
+
+  expect(mode).toEqual({ kind: 'stdin', codes: ['git commit -m x'] });
+});
 
 it('records every distinct brace code and no -c', () => {
   const alternatives = Array.from({ length: 2_000 }, (_, index) => `a${index}`);
