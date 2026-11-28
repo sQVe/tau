@@ -1,6 +1,6 @@
 import type { ShellCommand, ShellRedirection } from '../../shell/shell.js';
 import { runsRedirectionsOnlyExec } from '../../wrapperAnalysis.js';
-import { isDescriptor, streamsOf, targetOf, terminal } from './detachedStreams.js';
+import { isDescriptor, isDevNull, streamsOf, targetOf, terminal } from './detachedStreams.js';
 import type { StreamTarget, Streams } from './detachedStreams.js';
 
 export interface CompoundScope {
@@ -334,10 +334,21 @@ const stdoutTargetOf = (scope: CompoundScope, index: number): StreamTarget => {
   return targetOf(streamsOf(command, enclosingOf(scope, index)), 1);
 };
 
-// A command in a pipeline writes to the next element. The element that leaves the pipeline, or the
-// first one whose own redirection changes its stdout, decides where the merged stream goes.
-// Following the chain keeps a `2>&1` from reading the pipe as the terminal, and still reads a
-// consumer's log file.
+// A stream ends in a target that discards it, so an element that redirects its stdout there cannot
+// pass the stream on.
+const discardsStream = (target: StreamTarget | undefined): boolean => {
+  if (target?.kind === 'closed') {
+    return true;
+  }
+
+  return target?.kind === 'file' && isDevNull(target.path);
+};
+
+// A command in a pipeline writes to the next element. The element that leaves the pipeline decides
+// where the merged stream goes, and an element that discards its own stdout ends the chain. A
+// middle element that logs its stdout may or may not pass the stream on, so a later discarding
+// element stays authoritative. Following the chain keeps a `2>&1` from reading the pipe as the
+// terminal, and still reads a consumer's log file.
 export const pipelineStdout = (scope: CompoundScope, index: number): StreamTarget | undefined => {
   let target = scope.commands[index]?.pipeTarget;
   const seen = new Set<number>();
@@ -353,12 +364,18 @@ export const pipelineStdout = (scope: CompoundScope, index: number): StreamTarge
 
     const next = element.pipeTarget;
 
+    if (next === undefined) {
+      return stdoutTargetOf(scope, target);
+    }
+
     const changesStdout = element.redirections.some((redirection) =>
       redirectionDescriptors(redirection).includes(1),
     );
 
-    if (next === undefined || changesStdout) {
-      return stdoutTargetOf(scope, target);
+    const elementStdout = changesStdout ? stdoutTargetOf(scope, target) : undefined;
+
+    if (discardsStream(elementStdout)) {
+      return elementStdout;
     }
 
     target = next;

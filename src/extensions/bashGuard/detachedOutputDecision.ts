@@ -1,4 +1,4 @@
-import { parseShellCommands } from '../../shell/shell.js';
+import { parseShell } from '../../shell/shell.js';
 import type { ShellCommand, ShellRedirection } from '../../shell/shell.js';
 import { shellNameOf, shellScriptOf } from '../../shell/shellScript.js';
 import { detachesProcess, runsRedirectionsOnlyExec } from '../../wrapperAnalysis.js';
@@ -133,14 +133,18 @@ const scriptFacts = (
   scriptInherited: Streams,
   depth: number,
 ): CompoundFacts => {
-  const commands = parseShellCommands(script);
+  const parsed = parseShell(script);
 
   // The parser cannot rule out a hidden failure in a script it does not understand.
-  if (commands === undefined) {
+  if (parsed.kind === 'unparseable') {
     return unparseableFacts;
   }
 
-  const scope = compoundScope(commands, scriptInherited);
+  if (parsed.kind === 'tooDeep') {
+    return depthFacts;
+  }
+
+  const scope = compoundScope(parsed.commands, scriptInherited);
 
   return membersFacts(factsOf, scope, undefined, depth);
 };
@@ -148,26 +152,44 @@ const scriptFacts = (
 const namesStdin = (descriptor: string | undefined): boolean =>
   descriptor === undefined || descriptor === '0';
 
-// A shell reads its script from standard input when a heredoc or here-string feeds descriptor 0
-// and no `-c` word names one. The payload is the script the shell runs.
-const stdinScriptOf = (command: ShellCommand): string | undefined => {
+// A shell reads its script from the last redirection that feeds descriptor 0 when no `-c` word names
+// one. Bash uses the last redirection, and a script file it reads from stdin is as unreadable as a
+// file operand. A duplicate descriptor can carry a script the guard cannot read.
+const stdinScriptOf = (command: ShellCommand): CommandScript => {
   if (shellNameOf(command.arguments) === undefined) {
-    return undefined;
+    return { kind: 'none' };
   }
 
-  const readsHeredoc = command.inputs.some(
-    ({ descriptor, kind }) => kind === 'heredoc' && namesStdin(descriptor),
-  );
+  let script: CommandScript = { kind: 'none' };
+  let heredocIndex = 0;
 
-  if (readsHeredoc) {
-    return command.heredocs[0]?.body;
+  for (const input of command.inputs) {
+    if (input.kind === 'heredoc') {
+      const body = command.heredocs[heredocIndex]?.body;
+
+      heredocIndex += 1;
+
+      if (namesStdin(input.descriptor)) {
+        script = body === undefined ? { kind: 'unreadable' } : { kind: 'script', script: body };
+      }
+
+      continue;
+    }
+
+    if (!namesStdin(input.descriptor)) {
+      continue;
+    }
+
+    if (input.kind === 'hereString') {
+      script = { kind: 'script', script: input.target };
+    } else if (input.kind === 'file') {
+      script = isDevNull(input.target) ? { kind: 'none' } : { kind: 'file' };
+    } else {
+      script = { kind: 'unreadable' };
+    }
   }
 
-  const hereString = command.inputs.find(
-    ({ descriptor, kind }) => kind === 'hereString' && namesStdin(descriptor),
-  );
-
-  return hereString?.target;
+  return script;
 };
 
 const commandScriptOf = (command: ShellCommand): CommandScript => {
@@ -181,9 +203,9 @@ const commandScriptOf = (command: ShellCommand): CommandScript => {
     return { kind: 'file' };
   }
 
-  const script = shellScript.kind === 'script' ? shellScript.script : stdinScriptOf(command);
-
-  return script === undefined ? { kind: 'none' } : { kind: 'script', script };
+  return shellScript.kind === 'script'
+    ? { kind: 'script', script: shellScript.script }
+    : stdinScriptOf(command);
 };
 
 const uninspectableFailure = (kind: Uninspectable): HiddenFailure | undefined => {
@@ -376,17 +398,21 @@ const nestedScriptFailure = (
     return 'unverifiable';
   }
 
-  const commands = parseShellCommands(script.script);
+  const parsed = parseShell(script.script);
 
-  if (commands === undefined) {
+  if (parsed.kind === 'tooDeep') {
+    return 'unverifiable';
+  }
+
+  if (parsed.kind === 'unparseable') {
     return undefined;
   }
 
   const inherited = streamsOf(command, enclosingOf(scope, index, pipelineStdout(scope, index)));
 
-  const nested = compoundScope(commands, inherited);
+  const nested = compoundScope(parsed.commands, inherited);
 
-  for (let nestedIndex = 0; nestedIndex < commands.length; nestedIndex += 1) {
+  for (let nestedIndex = 0; nestedIndex < parsed.commands.length; nestedIndex += 1) {
     const nestedFailure = judge(nested, nestedIndex, depth + 1);
 
     if (nestedFailure !== undefined) {
@@ -446,18 +472,22 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
     return undefined;
   }
 
-  const commands = parseShellCommands(facts.command);
+  const parsed = parseShell(facts.command);
 
   // The parser rejects only source that bash itself refuses to run, so an unreadable command cannot
-  // hide a detached failure. When the parser learns to reject valid syntax, this must fail closed.
-  if (commands === undefined) {
+  // hide a detached failure. Source that nests deeper than the parser inspects can.
+  if (parsed.kind === 'tooDeep') {
+    return { block: true, reason: unverifiableReason };
+  }
+
+  if (parsed.kind === 'unparseable') {
     return undefined;
   }
 
-  const scope = compoundScope(commands, new Map());
+  const scope = compoundScope(parsed.commands, new Map());
   let failClosed: Exclude<HiddenFailure, 'hidden'> | undefined;
 
-  for (let index = 0; index < commands.length; index += 1) {
+  for (let index = 0; index < parsed.commands.length; index += 1) {
     const failure = judgesHiddenFailure(scope, index);
 
     if (failure === 'hidden') {

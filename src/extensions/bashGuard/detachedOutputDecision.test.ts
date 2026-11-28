@@ -195,6 +195,31 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a backgrounded shell that reads its script from a redirected file',
+    command: 'bash < script.sh &',
+    blocked: true,
+  },
+  {
+    name: 'a backgrounded shell whose last here-string is the script',
+    command: `bash <<< true <<< 'nohup app 2>/dev/null' &`,
+    blocked: true,
+  },
+  {
+    name: 'a backgrounded shell whose last here-string hides nothing',
+    command: `bash <<< 'nohup app 2>/dev/null' <<< true &`,
+    blocked: false,
+  },
+  {
+    name: 'a backgrounded shell that reads its script from the null device',
+    command: 'bash < /dev/null &',
+    blocked: false,
+  },
+  {
+    name: 'a detached pipeline whose middle element logs a stream it does not forward',
+    command: 'cmd 2>&1 | true > /tmp/x.log | cat >/dev/null &',
+    blocked: true,
+  },
+  {
     name: 'a detached pipeline whose middle element discards the merged stream',
     command: 'cmd 2>&1 | cat >/dev/null | cat &',
     blocked: true,
@@ -869,6 +894,16 @@ it('names a script file the guard cannot inspect', () => {
 
   expect(decision?.block).toBe(true);
   expect(decision?.reason).toContain('runs a shell script file that the guard cannot inspect');
+});
+
+it('fails closed when the command nests deeper than the parser inspects', () => {
+  const depth = 101;
+  const script = 'nohup app 2>/dev/null';
+  const command = `${'echo $('.repeat(depth)}${script}${')'.repeat(depth)} &`;
+  const decision = decideDetachedOutput({ toolName: 'bash', command });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('nests scripts deeper than the guard can inspect');
 });
 
 it('names an unreadable nested script instead of the depth budget', () => {
