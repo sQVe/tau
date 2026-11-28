@@ -591,7 +591,10 @@ const envTarget = (words: string[]): EnvSplitWords | undefined => {
         return splitWords;
       }
 
-      remaining.splice(index, split.next - index, ...splitWords.words);
+      // The value already holds the words after the split option, so replace the whole consumed span
+      // with them. Keeping the original tail would fold it into the value twice and, when the value
+      // parses back to the same words, rewind forever.
+      remaining.splice(index, remaining.length - index, ...splitWords.words);
       index -= 1;
 
       continue;

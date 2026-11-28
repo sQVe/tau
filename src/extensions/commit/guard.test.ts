@@ -1120,6 +1120,14 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent("env -S 'git status'"), directory)).toBeUndefined();
   });
 
+  it('allows a file whose env split value repeats the split option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', '#!/usr/bin/env -S -S -S\ngit status\n');
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
   it.each([
     ['a direct env split value', `env -S '\${SHELL} -c "git commit -m x"'`],
     ['an env split value with a separate -c', `env -S '\${SHELL}' -c 'git commit -m x'`],
