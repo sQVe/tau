@@ -56,12 +56,13 @@ it('warns and resumes when the session lock cannot be read', async ({
   const { runtime } = openTool(root);
   const sessionFile = await recordSession(root);
 
-  const lockDirectory = dirname(await sessionLockPath(config.location.agentDirectory, sessionFile));
+  const lockDirectory = join(config.location.agentDirectory, 'tau', 'session-locks');
+  const lockPath = await sessionLockPath(config.location.agentDirectory, sessionFile);
 
   mkdirSync(dirname(lockDirectory), { recursive: true });
   writeFileSync(lockDirectory, 'not a directory');
 
-  const readFailure = await readdir(lockDirectory).catch((error: unknown) => error);
+  const readFailure = await readdir(dirname(lockPath)).catch((error: unknown) => error);
   const warning = `The architect session lock could not be read, so architect open resumes without the check: ${errorMessage(readFailure)}`;
   const request = requestFor(root, config.location, runtime);
 
