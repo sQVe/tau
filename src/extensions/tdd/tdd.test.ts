@@ -66,14 +66,14 @@ const setup = (hasUI = false, trusted = true) => {
       details: { original: true },
     });
 
-  const run = (cwd: string) => {
+  const run = (cwd: string, scope: 'focused' | 'full' = 'focused') => {
     if (tool === undefined) {
       throw new Error('Missing test tool');
     }
 
     return tool.execute(
       'run',
-      { behavior: 'value', testFullName: 'works', files: ['value.test.ts'], scope: 'focused' },
+      { behavior: 'value', testFullName: 'works', files: ['value.test.ts'], scope },
       undefined,
       undefined,
       contextFor(cwd),
@@ -681,6 +681,18 @@ it('reports malformed config without falling back to defaults or blocking edits'
   expect(JSON.stringify(patch)).not.toContain(redHint);
   expect(await application.emit('tool_result', cwd, event)).toBeUndefined();
   await expect(application.run(cwd)).rejects.toThrow(path);
+  expect(runTests).not.toHaveBeenCalled();
+});
+
+it('refuses a full run whose configured argv carries a second command word and starts no runner', async ({
+  onTestFinished,
+}) => {
+  const { cwd, writeProject } = await configFixture(onTestFinished);
+  await writeProject({ verificationArgv: ['vitest', 'run', 'related', '--reporter=json'] });
+  vi.mocked(runTests).mockClear();
+  const application = setup();
+
+  await expect(application.run(cwd, 'full')).rejects.toThrow(Error);
   expect(runTests).not.toHaveBeenCalled();
 });
 

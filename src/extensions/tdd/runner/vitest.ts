@@ -25,7 +25,7 @@ import type {
   SpawnResult,
   TestRunner,
 } from './types.js';
-import { passesReporters } from './vitestOptions.js';
+import { passesReporters, verificationArgvError } from './vitestOptions.js';
 import {
   givesConfigReporterOptionsToCliReporters,
   supportsFocusedVitest,
@@ -220,11 +220,6 @@ export const runTests = async (
       return { report, stages: stage === undefined ? [] : [stage] };
     },
   );
-
-const verificationArgvError = (verificationArgv: readonly string[]): string | null =>
-  verificationArgv[0] === 'vitest'
-    ? null
-    : 'verificationArgv must start with "vitest" for the vitest runner.';
 
 export const vitestRunner = {
   name: 'vitest',

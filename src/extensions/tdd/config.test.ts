@@ -188,6 +188,27 @@ describe('TDD config', () => {
     expect(config.verificationArgv).toEqual(['vitest', 'run', '--silent']);
   });
 
+  it('refuses a configured command word after the first position', async ({ onTestFinished }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-argv-word-');
+    await mkdir(join(cwd, '.pi'));
+
+    await writeFile(
+      join(cwd, '.pi', 'tau.json'),
+      JSON.stringify({
+        tdd: { verificationArgv: ['vitest', 'run', 'related', '--reporter=json'] },
+      }),
+    );
+
+    const loading = () =>
+      loadTddConfig(
+        { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+        { notify: () => undefined },
+        runners,
+      );
+
+    expect(loading).toThrow(Error);
+  });
+
   it('loads the Vitest defaults with the runner name when no file sets one', async ({
     onTestFinished,
   }) => {
@@ -294,6 +315,11 @@ describe('TDD config', () => {
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["jest"]}}', 'verificationArgv'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": []}}', 'verificationArgv'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["vitest", ""]}}', 'verificationArgv'],
+    [
+      '.pi/tau.json',
+      '{"tdd": {"verificationArgv": ["vitest", "run", "other.test.ts"]}}',
+      'positional argument',
+    ],
     ['agent/tau.json', '{"tdd": {"excludedGlobs": "dist"}}', 'excludedGlobs'],
     ['.pi/tau.json', '{"tdd": {"runner": "nextest", "cargoLocked": "yes"}}', 'cargoLocked'],
     [
