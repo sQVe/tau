@@ -17,7 +17,7 @@ import type { ShellCommand, ShellInput } from '../../shell/shell.js';
 import { splitEnvString } from '../../wrapperAnalysis.js';
 import { isOptionWord, shellMode } from './shellMode.js';
 import type { ShellMode } from './shellMode.js';
-import { blocksUnresolvedDecidingWord, commandName, isUnresolvedWord } from './unresolvedWords.js';
+import { blocksUnresolvedDecidingWord, commandName } from './unresolvedWords.js';
 import type { TextOrigin } from './unresolvedWords.js';
 
 export type NamedFileFacts =
@@ -1069,12 +1069,27 @@ const inputSources = (
   return { kind: 'sources', files: [stdin.input.target], code: mode.codes };
 };
 
-// `source` and `.` read only their file operand. The words after it are positional arguments, and a
-// redirected standard input is not code.
+// `source` and `.` read only their file operand. Option scanning stops at the first operand, so a
+// `--` after it is data. A redirected standard input is not code.
 const sourceFileSources = (words: string[]): InterpreterSources => {
-  const separator = words.indexOf('--');
+  let optionsEnded = false;
+  let name: string | undefined;
 
-  const name = separator === -1 ? words.find((word) => !isOptionWord(word)) : words[separator + 1];
+  for (const word of words) {
+    if (!optionsEnded && word === '--') {
+      optionsEnded = true;
+
+      continue;
+    }
+
+    if (!optionsEnded && isOptionWord(word)) {
+      continue;
+    }
+
+    name = word;
+
+    break;
+  }
 
   return { kind: 'sources', files: name === undefined ? [] : [name], code: [], pathFirst: true };
 };
@@ -1123,7 +1138,7 @@ const interpreterSources = (command: ShellCommand): InterpreterSources => {
   const mode = shellMode(command.arguments.slice(shell.index + 1));
 
   if (mode.kind === 'file') {
-    if (!mode.names.some(isUnresolvedWord)) {
+    if (!mode.stdinMayBeCode) {
       return { kind: 'sources', files: mode.names, code: mode.codes };
     }
 

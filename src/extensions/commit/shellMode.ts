@@ -2,7 +2,7 @@ import { isUnresolvedWord } from './unresolvedWords.js';
 
 export type ShellMode =
   | { kind: 'inline'; codes: string[] }
-  | { kind: 'file'; names: string[]; codes: string[] }
+  | { kind: 'file'; names: string[]; codes: string[]; stdinMayBeCode: boolean }
   | { kind: 'stdin'; codes: string[] };
 
 interface ShortOption {
@@ -16,6 +16,15 @@ type ResolvedModeStep =
   | { readonly kind: 'skip'; readonly next: number };
 
 export const isOptionWord = (word: string): boolean => word.startsWith('-') || word.startsWith('+');
+
+const modeOptionPrefixes = ['-', '+', '$', '`'];
+
+// Only a word whose text could expand to an option can be a mode option. Any other unresolved
+// word is a file operand, so the words after it and the standard input are data.
+const isModeOptionWord = (word: string): boolean =>
+  modeOptionPrefixes.some((prefix) => word.startsWith(prefix));
+
+const namesMayBeCode = (names: string[]): boolean => names.some(isModeOptionWord);
 
 const optionValueNames = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file']);
 
@@ -121,7 +130,7 @@ const resolvedModeStep = (words: string[], index: number, codes: string[]): Reso
   }
 
   if (!isOptionWord(word)) {
-    return { kind: 'mode', mode: { kind: 'file', names: [word], codes } };
+    return { kind: 'mode', mode: { kind: 'file', names: [word], codes, stdinMayBeCode: false } };
   }
 
   return { kind: 'skip', next: index + 1 };
@@ -141,9 +150,9 @@ const unresolvedModeStep = (
   return { file, codes: next === undefined ? [] : [next] };
 };
 
-// `--` ends option scanning only while it is active. A file candidate recorded before it stays a
-// candidate and `--` is data for that file. Otherwise the next word is the only candidate, and the
-// words after it are positional arguments, never code.
+// `--` ends option scanning only while it is active. A candidate recorded before it stays a
+// candidate and `--` is data for that candidate. Otherwise the next word is a mandatory file
+// operand, so the words after it are positional arguments, never code.
 const modeAtDoubleDash = (
   words: string[],
   index: number,
@@ -153,14 +162,19 @@ const modeAtDoubleDash = (
   const name = words[index + 1];
 
   if (names.length > 0) {
+    const candidates = name === undefined ? names : [...names, name];
+
     return {
       kind: 'file',
-      names,
+      names: candidates,
       codes: name === undefined ? codes : [...codes, name],
+      stdinMayBeCode: namesMayBeCode(names),
     };
   }
 
-  return name === undefined ? { kind: 'stdin', codes } : { kind: 'file', names: [name], codes };
+  return name === undefined
+    ? { kind: 'stdin', codes }
+    : { kind: 'file', names: [name], codes, stdinMayBeCode: false };
 };
 
 export const shellMode = (words: string[]): ShellMode => {
@@ -175,6 +189,12 @@ export const shellMode = (words: string[]): ShellMode => {
     }
 
     if (isUnresolvedWord(word)) {
+      if (!isModeOptionWord(word)) {
+        names.push(word);
+
+        return { kind: 'file', names, codes, stdinMayBeCode: namesMayBeCode(names) };
+      }
+
       const step = unresolvedModeStep(words, index, names);
 
       if (step.file !== undefined) {
@@ -199,14 +219,14 @@ export const shellMode = (words: string[]): ShellMode => {
     if (step.mode.kind === 'file') {
       names.push(...step.mode.names);
 
-      return { kind: 'file', names, codes };
+      return { kind: 'file', names, codes, stdinMayBeCode: namesMayBeCode(names) };
     }
 
     return step.mode;
   }
 
   if (names.length > 0) {
-    return { kind: 'file', names, codes };
+    return { kind: 'file', names, codes, stdinMayBeCode: namesMayBeCode(names) };
   }
 
   return { kind: 'stdin', codes };
