@@ -21,6 +21,8 @@ export type ProbeCache<Value> = Map<string, Promise<Value>>;
 
 export type BareProbe = { status: 'read'; bare: boolean } | { status: 'failed' };
 
+type TimeoutTimers = Partial<Record<'kill' | 'confirm', ReturnType<typeof setTimeout>>>;
+
 const scopedEnvironment = new AsyncLocalStorage<Record<string, string>>();
 
 export const createProbeCache = <Value>(): ProbeCache<Value> => new Map();
@@ -79,18 +81,29 @@ const maxOutputBytes = 1_073_741_824;
 
 const defaultTimeoutMilliseconds = 60_000;
 const outputIdleMilliseconds = 100;
+const killGraceMilliseconds = 5000;
+const killConfirmMilliseconds = 2000;
 
-const killedByTimeout = (
-  child: ChildProcess | undefined,
-  error: ExecFileException | null,
-  options: GitOptions,
-): boolean => {
-  const aborted = options.signal?.aborted === true;
-  const overflowed = error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
-  const hasTimeout = options.timeoutMilliseconds !== null;
-  const stoppedByLimit = aborted || overflowed;
+const startTimeoutKill = (
+  timers: TimeoutTimers,
+  child: ChildProcess,
+  timeoutMilliseconds: number,
+  onTimeout: () => void,
+  onFinal: () => void,
+): void => {
+  timers.kill = setTimeout(() => {
+    onTimeout();
 
-  return child?.killed === true && hasTimeout && !stoppedByLimit;
+    timers.confirm = setTimeout(() => {
+      timers.confirm = setTimeout(onFinal, killConfirmMilliseconds);
+
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGKILL');
+      }
+    }, killGraceMilliseconds);
+
+    child.kill('SIGTERM');
+  }, timeoutMilliseconds);
 };
 
 const unfinished = (reason: string): GitResult => ({
@@ -98,6 +111,9 @@ const unfinished = (reason: string): GitResult => ({
   stdout: Buffer.alloc(0),
   stderr: reason,
 });
+
+const stoppedByLimit = (error: ExecFileException | null): boolean =>
+  error?.code === 'ABORT_ERR' || error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
 
 const drainAfterExit = (child: ChildProcess): (() => void) => {
   const streams = [child.stdout, child.stderr];
@@ -150,16 +166,28 @@ export const runGit = (
       environment,
     } = options;
 
-    let child: ChildProcess | undefined;
     let stopDraining: (() => void) | undefined;
+    let gitChild: ChildProcess | undefined;
+    const timers: TimeoutTimers = {};
+    let timedOut = false;
+    let settled = false;
+
+    const clearTimers = () => {
+      clearTimeout(timers.kill);
+      clearTimeout(timers.confirm);
+    };
 
     const finish = (error: ExecFileException | null, stdout: Buffer, stderr: Buffer) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
       stopDraining?.();
+      clearTimers();
 
       const stdoutBytes = Buffer.from(stdout);
       const stderrText = Buffer.from(stderr).toString('utf8');
-
-      const timedOut = killedByTimeout(child, error, options);
 
       if (error === null && !timedOut) {
         resolve({ exitCode: 0, stdout: stdoutBytes, stderr: stderrText });
@@ -173,21 +201,44 @@ export const runGit = (
         return;
       }
 
-      const reason = timedOut
-        ? `git ${commandArguments.join(' ')} timed out after ${timeoutMilliseconds} ms`
-        : (error?.message ?? 'git was killed');
+      const reason =
+        timedOut && !stoppedByLimit(error)
+          ? `git ${commandArguments.join(' ')} timed out after ${timeoutMilliseconds} ms`
+          : (error?.message ?? 'git was killed');
 
       resolve({ exitCode: null, stdout: stdoutBytes, stderr: `${stderrText}${reason}` });
     };
 
+    const finishAfterKill = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      stopDraining?.();
+      clearTimers();
+
+      gitChild?.stdout?.destroy();
+      gitChild?.stderr?.destroy();
+
+      const reason = `git ${commandArguments.join(' ')} timed out after ${timeoutMilliseconds} ms and did not exit after SIGKILL`;
+
+      resolve({ exitCode: null, stdout: Buffer.alloc(0), stderr: reason });
+    };
+
     try {
-      child = execFile(
+      if (timeoutMilliseconds !== null && timeoutMilliseconds < 0) {
+        throw new RangeError(
+          `The value of "timeout" is out of range. It must be an unsigned integer. Received ${timeoutMilliseconds}`,
+        );
+      }
+
+      gitChild = execFile(
         'git',
         commandArguments,
         {
           cwd,
           env: { ...gitEnvironment(), ...scopedEnvironment.getStore(), ...environment },
-          timeout: timeoutMilliseconds ?? 0,
           encoding: 'buffer',
           maxBuffer: maxOutputBytes,
           ...(signal === undefined ? {} : { signal }),
@@ -195,15 +246,30 @@ export const runGit = (
         finish,
       );
 
-      stopDraining = drainAfterExit(child);
+      stopDraining = drainAfterExit(gitChild);
 
-      child.stdin?.on('error', () => undefined);
+      gitChild.stdin?.on('error', () => undefined);
 
       if (input !== undefined) {
-        child.stdin?.end(input);
+        gitChild.stdin?.end(input);
+      }
+
+      if (timeoutMilliseconds !== null) {
+        startTimeoutKill(
+          timers,
+          gitChild,
+          timeoutMilliseconds,
+          () => {
+            timedOut = true;
+          },
+          finishAfterKill,
+        );
       }
     } catch (error) {
+      settled = true;
       stopDraining?.();
+      clearTimers();
+
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       resolve(unfinished(errorMessage));
