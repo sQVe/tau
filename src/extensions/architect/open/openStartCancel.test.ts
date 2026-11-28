@@ -63,7 +63,7 @@ it('an abort during the model readback rejects with the cancellation error', asy
   const { terminals, runtime } = openTool(root, undefined, undefined, { takeover: false });
   const controller = new AbortController();
   const cancellation = new Error('cancelled during the readback');
-  const readbackStarted = Promise.withResolvers<undefined>();
+  let readbackStarted = false;
 
   const nonPiForeground = succeededResult(
     JSON.stringify({
@@ -89,7 +89,7 @@ it('an abort during the model readback rejects with the cancellation error', asy
       commandArguments.at(-1) === 't-architect';
 
     if (readingStartedTerminal) {
-      readbackStarted.resolve(undefined);
+      readbackStarted = true;
     }
 
     return result;
@@ -99,7 +99,10 @@ it('an abort during the model readback rejects with the cancellation error', asy
     requestFor(root, config.location, { ...runtime, exec, signal: controller.signal }),
   ).catch((error: unknown) => error);
 
-  await readbackStarted.promise;
+  await vi.waitFor(() => {
+    expect(readbackStarted).toBe(true);
+  });
+
   controller.abort(cancellation);
 
   await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);

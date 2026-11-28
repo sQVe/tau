@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 
 import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { StartedTabError } from '../../../piStart/piStart.js';
+import { StartedTabError } from '../../../piStart/startedTab.js';
 import { openTool, requestFor, wrongModelReadbackExec } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
@@ -13,6 +13,10 @@ it('reports a started model that disagrees with the request after the child adop
 }) => {
   const { root, config } = await setup(cleanup);
   const { runtime, processControl } = openTool(root);
+
+  if (processControl === undefined) {
+    throw new Error('the default takeover provided no process control');
+  }
 
   await recordSession(root);
 
@@ -30,7 +34,7 @@ it('reports a started model that disagrees with the request after the child adop
   expect(message).toContain('a/architect');
   expect(message).toContain('t-architect');
   expect(message).toContain('may still be running');
-  expect(processControl?.signals).toEqual([]);
+  expect(processControl.signals).toEqual([]);
   // The adopted child keeps its own claim, so a retry reports the running terminal instead of
   // starting a second architect.
   expect(await readLiveLockHolder(architectLockPath(root))).toBeDefined();

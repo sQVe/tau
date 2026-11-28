@@ -9,15 +9,12 @@ import { errorMessage, isMissingFile, toError } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../../fileLock/fileLock.js';
 import { isBareRootWithoutGitEntry } from '../../../git.js';
-import { foregroundArgv, get } from '../../../hc/hc.js';
+import { HcError, foregroundArgv, get } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
-import {
-  launchPiSession,
-  launchPiSessionRightOf,
-  StartedTabError,
-} from '../../../piStart/piStart.js';
+import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
 import type { PiLaunchResult } from '../../../piStart/piStart.js';
+import { StartedTabError } from '../../../piStart/startedTab.js';
 import { tabName } from '../../../tabName.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import { architectLockPath } from '../lock.js';
@@ -338,6 +335,30 @@ const throwIfOpenCancelled = (signal: AbortSignal | undefined): void => {
   }
 };
 
+// A launch failure that races with an abort is still the failure the caller needs, so only a
+// recognized cancellation becomes the caller's cancellation error.
+const recognizedCancellation = (signal: AbortSignal | undefined, error: unknown): boolean => {
+  if (signal?.aborted !== true) {
+    return false;
+  }
+
+  if (!(error instanceof Error)) {
+    return true;
+  }
+
+  const abortError = error.name === 'AbortError';
+  const abortedHcError = error instanceof HcError && error.kind === 'aborted';
+
+  if (abortError || abortedHcError) {
+    return true;
+  }
+
+  return error === signal.reason || error.cause === signal.reason;
+};
+
+const openFailure = (signal: AbortSignal | undefined, error: unknown): Error =>
+  recognizedCancellation(signal, error) ? cancelledOpenError(signal) : toError(error);
+
 // The launch's checkout probe reports piStart's own cancellation message, so report the caller's
 // cancellation instead.
 const launchArchitectForOpen = async (
@@ -348,9 +369,19 @@ const launchArchitectForOpen = async (
   try {
     return await launchArchitect(request, prepared, fence);
   } catch (error) {
-    throwIfOpenCancelled(request.hc.signal);
+    throw openFailure(request.hc.signal, error);
+  }
+};
 
-    throw error;
+const prepareArchitectForOpen = async (
+  request: OpenRequest,
+  record: SavedArchitectRecord | undefined,
+  fence: StartFence,
+): Promise<PreparedArchitectStart> => {
+  try {
+    return await prepareArchitectStart(request, record?.sessionFile ?? undefined, fence.token);
+  } catch (error) {
+    throw openFailure(request.hc.signal, error);
   }
 };
 
@@ -514,11 +545,7 @@ export const openArchitect = async (
   try {
     await fence.createTicket();
 
-    const prepared = await prepareArchitectStart(
-      request,
-      record?.sessionFile ?? undefined,
-      fence.token,
-    );
+    const prepared = await prepareArchitectForOpen(request, record, fence);
 
     throwIfOpenCancelled(request.hc.signal);
 
