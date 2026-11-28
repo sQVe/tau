@@ -1138,6 +1138,24 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(`env -S '\${SHELL} -c "git status"'`), directory);
   });
 
+  it('blocks an env split value whose program follows an assignment and expands', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(`env -S 'FOO=bar' \${SHELL} -c 'git commit -m x'`), directory);
+  });
+
+  it('blocks a file whose env -S shebang is unreadable and whose words cannot be recovered', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(
+      directory,
+      'commit.sh',
+      `#!/usr/bin/env -S \${SHELL} -c "git commit -m x\necho hello\n`,
+    );
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
   it('allows an env split value whose resolved program is not a shell', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1162,6 +1180,20 @@ describe('guardToolCall', () => {
 
     expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
   });
+
+  it.each([
+    ['a short unset option', `#!/usr/bin/env -S -u FOO \${SHELL}`],
+    ['a long unset option', `#!/usr/bin/env -S --unset FOO \${SHELL}`],
+  ])(
+    'blocks a commit in a file whose env -S %s precedes an expanded program',
+    (_label, shebang) => {
+      const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+      writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
+
+      expectOutcome(makeBashEvent('./commit.sh'), directory);
+    },
+  );
 
   it.each([
     ['xargs -e', 'xargs -e sh commit.sh'],
