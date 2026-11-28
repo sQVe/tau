@@ -143,15 +143,19 @@ it('a launch past its deadline is stopped, stop runs, and launch returns failed'
 });
 
 it('a timed-out launch whose stop fails returns stopped false and a later stop succeeds', async () => {
-  const { root, run } = await createToolRepository(onTestFinished, { launchScript: 'sleep 5' });
+  const { root, run, marker } = await createToolRepository(onTestFinished, {
+    launchScript: 'sleep 5',
+  });
+
   const configPath = join(root, '.pi', 'tau.json');
 
-  await replaceStopCommand(configPath, ['sh', '-c', 'exit 7']);
+  await replaceStopCommand(configPath, ['sh', '-c', `touch ${JSON.stringify(marker)}; exit 7`]);
 
   const launched = await run({ action: 'launch', target: 'app' }, 200);
   const launch = launched.details as LaunchResult;
 
   expect(launch).toMatchObject({ status: 'failed', command: 'launch', stopped: false });
+  expect(existsSync(marker)).toBe(true);
 
   if (launch.status !== 'failed') {
     return;

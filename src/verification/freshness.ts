@@ -28,7 +28,7 @@ export const decideFreshness = (record: FreshnessFacts, currentTree: string | nu
     return { fresh: false, reason: 'notStopped' };
   }
 
-  if (record.stop.exitCode !== 0) {
+  if (!isStopped(record)) {
     return { fresh: false, reason: 'stopFailed' };
   }
 

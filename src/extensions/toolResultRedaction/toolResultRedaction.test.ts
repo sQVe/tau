@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import toolResultRedaction from './toolResultRedaction.js';
@@ -20,6 +20,11 @@ const isWithheldResult = (value: unknown): value is WithheldResult => {
 
 const withheldResultFor = (structuredContent: unknown): WithheldResult => {
   vi.stubEnv('TAU_FAKE_API_KEY', 'fake-secret-value-1234567890');
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
   const { pi, handler } = fakeExtensionApi();
 
   toolResultRedaction(pi);
@@ -34,8 +39,6 @@ const withheldResultFor = (structuredContent: unknown): WithheldResult => {
     { content: [{ type: 'text', text: 'output' }], details, structuredContent },
     {} as never,
   );
-
-  vi.unstubAllEnvs();
 
   if (!isWithheldResult(result)) {
     throw new Error('The redaction handler returned no withheld result.');

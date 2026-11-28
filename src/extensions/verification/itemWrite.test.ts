@@ -385,9 +385,11 @@ it('surfaces a publication failure that is not a duplicate', async () => {
   await chmod(itemDirectory, 0o500);
   onTestFinished(() => chmod(itemDirectory, 0o700));
 
+  const before = await listItems(directory);
   const failure = await failureMessage(recordItem(root, validInput()));
 
   expect(failure).toContain('EACCES');
+  expect(await listItems(directory)).toEqual(before);
 });
 
 it('gives the item file the mode a new record gets', async () => {

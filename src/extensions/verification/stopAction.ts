@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { VerificationTarget } from '../../config/verificationTargets.js';
-import { decideFreshness } from '../../verification/freshness.js';
+import { decideFreshness, isStopped } from '../../verification/freshness.js';
 import type { Freshness } from '../../verification/freshness.js';
 import type { RunRecord } from '../../verification/records.js';
 import { writeRunRecord } from '../../verification/verification.js';
@@ -40,7 +40,7 @@ const stopResult = (
   logPath: string,
   currentTree: string | null,
 ): StopResult => ({
-  stopped: exitCode === 0,
+  stopped: isStopped(record),
   run: record.run,
   directory,
   exitCode,
