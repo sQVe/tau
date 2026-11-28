@@ -29,12 +29,12 @@ it('reports an exception that names no finding', () => {
   expect(
     purityProblems(
       modules,
-      { 'src/pure/decide.ts': ['assigns a function to a property'] },
+      { 'src/pure/decide.ts': ['assigns a function or class to a property'] },
       readImportSource,
     ),
   ).toEqual([
     'src/pure/decide.ts:1: runtime import of node:fs/promises',
-    'src/pure/decide.ts: unused exception assigns a function to a property',
+    'src/pure/decide.ts: unused exception assigns a function or class to a property',
   ]);
 });
 

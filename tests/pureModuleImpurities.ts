@@ -24,7 +24,14 @@ import {
 } from './pureModuleScopes.js';
 import type { BindingScopes } from './pureModuleScopes.js';
 
-const effectMembers = new Set(['Date.now', 'Math.random', 'performance.now', 'process.env']);
+const effectMembers = new Set([
+  'Date.now',
+  'Math.random',
+  'crypto.getRandomValues',
+  'crypto.randomUUID',
+  'performance.now',
+  'process.env',
+]);
 
 // Reads `Date.now` and `Date['now']` alike.
 export const propertyKey = ({ computed, property }: MemberExpression): string | undefined => {
@@ -49,13 +56,32 @@ export const memberName = (node: MemberExpression): string | undefined => {
     : undefined;
 };
 
-// Inline `{ type X }` specifiers still load the module under verbatimModuleSyntax, so only a
-// top-level `import type` or `export type` is type-only.
+// A specifier marked `type` emits no runtime binding.
+const isTypeSpecifier = (specifier: unknown): boolean => {
+  if (typeof specifier !== 'object' || specifier === null) {
+    return false;
+  }
+
+  if ('importKind' in specifier) {
+    return specifier.importKind === 'type';
+  }
+
+  return 'exportKind' in specifier && specifier.exportKind === 'type';
+};
+
+// Under verbatimModuleSyntax, a declaration whose specifiers are all marked `type` is erased. A
+// declaration with a value specifier still loads the module.
 const isTypeOnly = (node: ModuleDeclaration) => {
   const typeImport = 'importKind' in node && node.importKind === 'type';
   const typeExport = 'exportKind' in node && node.exportKind === 'type';
 
-  return typeImport || typeExport;
+  if (typeImport || typeExport) {
+    return true;
+  }
+
+  const specifiers = 'specifiers' in node ? node.specifiers : undefined;
+
+  return specifiers !== undefined && specifiers.length > 0 && specifiers.every(isTypeSpecifier);
 };
 
 export const findingLines = (found: string[]): number[] =>
@@ -93,11 +119,19 @@ const checkImport = (
   }
 };
 
-// `Date()` returns the current time as a string.
+// A global call reads the clock, escapes the module, or schedules work outside the decision.
+const effectCalls: ReadonlySet<string> = new Set([
+  'Date',
+  'fetch',
+  'require',
+  'setInterval',
+  'setTimeout',
+]);
+
 const callProblem = (node: CallExpression): string | undefined => {
   const callee = node.callee.type === 'Identifier' ? node.callee.name : undefined;
 
-  return callee === 'require' || callee === 'Date' ? `${callee}()` : undefined;
+  return callee !== undefined && effectCalls.has(callee) ? `${callee}()` : undefined;
 };
 
 const isCurrentDate = (node: NewExpression): boolean =>
@@ -113,7 +147,7 @@ const effectVisitors = (
     const escapes = node.left.type === 'MemberExpression' && isEscapingObject(bindings, node.left);
 
     if (escapes && isFunctionValue(bindings, node.right)) {
-      at(node.start, 'assigns a function to a property');
+      at(node.start, 'assigns a function or class to a property');
     }
   },
   CallExpression: (node) => {

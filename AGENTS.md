@@ -23,9 +23,10 @@ verification.
   failure conventions in [ADR 0055](docs/adr/0055-record-tau-coding-conventions-in-agents-md.md).
   Give each new public read path over saved records or running workers a contract test for normal,
   missing, and malformed evidence.
-- Write a new decision rule as a pure function in a module registered in `tests/structure.test.ts`,
-  tested with a decision table like `src/extensions/subagents/workerDecision.test.ts`. The caller
-  reads records, the clock, and the environment, and passes the values in as facts
+- Write a new decision rule as a pure function in a module registered in
+  `tests/pureModuleRegistry.ts`, tested with a decision table like
+  `src/extensions/subagents/workerDecision.test.ts`. The caller reads records, the clock, and the
+  environment, and passes the values in as facts
   ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
 - Change a saved record format with a new version and fixtures, except the lock owner record, which
   stays unversioned ([ADR 0053](docs/adr/0053-version-each-saved-record-format.md)).

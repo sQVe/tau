@@ -51,8 +51,8 @@ review signal under ADR 0034.
 
 ### Unordered registries
 
-- Keep these lists sorted and free of duplicates: `pureModules` in `tests/structure.test.ts` and the
-  public files of each module in the module list of `lint/rules/moduleBoundaries.ts`.
+- Keep these lists sorted and free of duplicates: `pureModules` in `tests/pureModuleRegistry.ts` and
+  the public files of each module in the module list of `lint/rules/moduleBoundaries.ts`.
   `tests/structure.test.ts` checks both.
 - Sorting lowers conflicts only for additions in different places. It does not apply to ordered
   lists such as lint overrides in `vite.config.ts`.

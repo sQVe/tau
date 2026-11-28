@@ -6,8 +6,7 @@ import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
-import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
+import { workerExtensionEntries } from '../src/extensions/subagents/workerCommand.js';
 import {
   isRecord,
   schemaArrayKeywords,
@@ -16,7 +15,6 @@ import {
   schemaUnassertedKeywords,
   schemaValueKeywords,
 } from '../src/schema.js';
-import { skillTools } from '../src/skillTools.js';
 import tauRegistration from '../src/tau/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
 
@@ -176,11 +174,7 @@ const toolNamed = (tools: Tool[], name: string): Tool => {
   return tool;
 };
 
-const workerEntryPoints = (): string[] => {
-  const argv = workerArguments('/tmp/session.jsonl', fixtureLoadout('/tmp'), [], skillTools);
-
-  return argv.filter((_argument, index) => argv[index - 1] === '-e');
-};
+const workerEntryPoints = (): string[] => workerExtensionEntries();
 
 const registrationFor = async (path: string): Promise<Registration> => {
   const module = (await import(pathToFileURL(path).href)) as {
@@ -231,7 +225,7 @@ const toolsOf = async (registration: Registration): Promise<Tool[]> => {
 // The Tau root (lead and architect) and worker entry points register these tools synchronously. A
 // tool registered from an event handler, such as `handover_question` from `before_agent_start`, is
 // outside this collection.
-const registeredTools = async (): Promise<{ registration: string; tools: Tool[] }[]> => {
+const collectRegisteredTools = async (): Promise<{ registration: string; tools: Tool[] }[]> => {
   const all: { registration: string; tools: Tool[] }[] = [];
 
   // Each registration reads the environment that `toolsOf` stubs, so register one at a time.
@@ -242,13 +236,30 @@ const registeredTools = async (): Promise<{ registration: string; tools: Tool[] 
   return all;
 };
 
+// The registrations and their environments are fixed, so every test reads one collection.
+let registeredToolsPromise: Promise<{ registration: string; tools: Tool[] }[]> | undefined;
+
+const registeredTools = (): Promise<{ registration: string; tools: Tool[] }[]> =>
+  (registeredToolsPromise ??= collectRegisteredTools());
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 // Production leaves `$ref` and the definitions it reaches as written, so an argument object reached
 // through a reference keeps its keys open. No registered tool may use that shape while it is open.
-const referencePaths = (value: unknown, path: string): string[] => {
+// Annotation values are data, not schema positions, so a `$ref` key inside one is not a reference.
+const annotationKeywords: ReadonlySet<string> = new Set([
+  '$comment',
+  'const',
+  'default',
+  'description',
+  'enum',
+  'examples',
+  'title',
+]);
+
+export const referencePaths = (value: unknown, path: string): string[] => {
   if (Array.isArray(value)) {
     return value.flatMap((item, index) => referencePaths(item, `${path}/${index}`));
   }
@@ -263,9 +274,19 @@ const referencePaths = (value: unknown, path: string): string[] => {
 
   return [
     ...own,
-    ...Object.entries(value).flatMap(([key, child]) => referencePaths(child, `${path}/${key}`)),
+    ...Object.entries(value)
+      .filter(([key]) => !annotationKeywords.has(key))
+      .flatMap(([key, child]) => referencePaths(child, `${path}/${key}`)),
   ];
 };
+
+it('does not treat a $ref inside an annotation value as a reference', () => {
+  expect(referencePaths({ type: 'object', default: { $ref: '#/$defs/x' } }, 'tool')).toEqual([]);
+});
+
+it('reports a $ref under a combining keyword', () => {
+  expect(referencePaths({ anyOf: [{ $ref: '#/$defs/x' }] }, 'tool')).toEqual(['tool/anyOf/0/$ref']);
+});
 
 it('registers no tool whose parameters reach an argument object through $ref', async () => {
   const offenders = (await registeredTools()).flatMap(({ registration, tools }) =>

@@ -11,9 +11,20 @@ import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
 import { purityProblems } from './pureModuleExceptions.js';
 import { findingLines, impurities, memberName, propertyKey } from './pureModuleImpurities.js';
-import { pureAdvice, pureModuleExceptions, pureModules } from './pureModuleRegistry.js';
+import {
+  pureAdvice,
+  pureLibraries,
+  pureModuleExceptions,
+  pureModules,
+} from './pureModuleRegistry.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+it('keeps every pure library allowance on a registered pure module', () => {
+  const unregistered = Object.keys(pureLibraries).filter((path) => !pureModules.includes(path));
+
+  expect(unregistered).toEqual([]);
+});
 
 it('keeps registered pure modules free of reads and effects', () => {
   const found = purityProblems(pureModules, pureModuleExceptions, (path: string) =>
@@ -251,6 +262,8 @@ it('refuses reads and effects in a pure module but allows types and other pure m
     "import type { Report } from '../records.js';",
     "import { limit } from './rules.js';",
     "export type { Facts } from '../facts.js';",
+    "import { type Task as InlineTask } from '../tasks.js';",
+    "export { type Facts as InlineFacts } from '../facts.js';",
     'export const decide = (task: Task, report: Report, now: number) =>',
     '  now - task.createdAt > limit && new Date(now).getDay() > 0 && report.outcome;',
   ].join('\n');
@@ -260,8 +273,6 @@ it('refuses reads and effects in a pure module but allows types and other pure m
     "import { join } from 'node:path';",
     "export { readTask } from '../tasks.js';",
     "export * from './unregistered.js';",
-    "import { type Task } from '../tasks.js';",
-    "export { type Facts } from '../facts.js';",
     "export const load = () => import('./rules.js');",
     "export const legacy = () => require('./rules.js');",
     'export const now = () => Date.now();',
@@ -281,7 +292,7 @@ it('refuses reads and effects in a pure module but allows types and other pure m
   expect(impurities('src/pure/decide.ts', allowed, registry)).toEqual([]);
 
   expect(findingLines(impurities('src/pure/decide.ts', refused, registry))).toEqual(
-    Array.from({ length: 18 }, (_, index) => index + 1),
+    Array.from({ length: 16 }, (_, index) => index + 1),
   );
 
   expect(impurities('src/schema.ts', schemaLibrary, registry)).toEqual([]);

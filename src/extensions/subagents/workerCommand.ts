@@ -8,6 +8,16 @@ import type { Loadout } from './types.js';
 import { workerStartMessage } from './workerStart.js';
 import { workerTools } from './workerTools.js';
 
+// The Tau extensions a worker loads before any package extension. Pi loads these command-line
+// extensions before the saved configuration's, so the guard is active before CC Safety Net.
+export const workerExtensionEntries = (): string[] => [
+  fileURLToPath(new URL('../toolResultRedaction/toolResultRedaction.ts', import.meta.url)),
+  fileURLToPath(new URL('./workerBashGuard.ts', import.meta.url)),
+  fileURLToPath(new URL('./workerExtension.ts', import.meta.url)),
+  fileURLToPath(new URL('../inbox/inbox.ts', import.meta.url)),
+  fileURLToPath(new URL('../verification/workerRecord.ts', import.meta.url)),
+];
+
 export const workerArguments = (
   sessionFile: string,
   loadout: Loadout,
@@ -34,17 +44,7 @@ export const workerArguments = (
     workerTools(loadout, skillTools).join(','),
     '--no-skills',
     ...loadout.skills.flatMap((path) => ['--skill', path]),
-    // Pi loads these command-line extensions before the saved configuration's, so the guard is active before CC Safety Net.
-    '-e',
-    fileURLToPath(new URL('../toolResultRedaction/toolResultRedaction.ts', import.meta.url)),
-    '-e',
-    fileURLToPath(new URL('./workerBashGuard.ts', import.meta.url)),
-    '-e',
-    fileURLToPath(new URL('./workerExtension.ts', import.meta.url)),
-    '-e',
-    fileURLToPath(new URL('../inbox/inbox.ts', import.meta.url)),
-    '-e',
-    fileURLToPath(new URL('../verification/workerRecord.ts', import.meta.url)),
+    ...workerExtensionEntries().flatMap((path) => ['-e', path]),
     ...extensionPackages.flatMap(({ path }) => ['-e', path]),
     workerStartMessage,
   ];

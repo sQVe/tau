@@ -7,7 +7,12 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { skillTools } from '../../skillTools.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
-import { workerArguments, workerCommand, workerEnvironment } from './workerCommand.js';
+import {
+  workerArguments,
+  workerCommand,
+  workerEnvironment,
+  workerExtensionEntries,
+} from './workerCommand.js';
 import { workerStartMessage } from './workerStart.js';
 
 afterEach(() => {
@@ -141,6 +146,14 @@ it('ends the Pi arguments with the start message after the extension flags', () 
   ).slice(-3);
 
   expect(trailingArguments).toEqual(['-e', '/ext/package.ts', workerStartMessage]);
+});
+
+it('loads every built-in extension entry point behind an -e flag', () => {
+  const commandLine = workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools);
+
+  for (const entry of workerExtensionEntries()) {
+    expect(commandLine[commandLine.indexOf(entry) - 1]).toBe('-e');
+  }
 });
 
 it('loads the inbox extension without saved Tau settings', () => {

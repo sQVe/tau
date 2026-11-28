@@ -238,7 +238,7 @@ export const pureAdvice =
 // registry. Each reason must match exactly one finding, so a second effect in the module still
 // fails the registry.
 export const pureModuleExceptions: Readonly<Record<string, readonly string[]>> = {
-  'src/schema.ts': ['assigns a function to a property'],
+  'src/schema.ts': ['assigns a function or class to a property'],
 };
 
 // The outside libraries a registered module may import, by module path.
