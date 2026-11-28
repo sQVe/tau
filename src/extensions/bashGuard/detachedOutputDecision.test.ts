@@ -200,6 +200,16 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a backgrounded shell that reads its script through a zero-padded stdin descriptor',
+    command: `bash 00<<< 'nohup app 2>/dev/null' &`,
+    blocked: true,
+  },
+  {
+    name: 'a backgrounded shell that reads its script file through a zero-padded descriptor',
+    command: 'bash 00< script.sh &',
+    blocked: true,
+  },
+  {
     name: 'a backgrounded shell whose last here-string is the script',
     command: `bash <<< true <<< 'nohup app 2>/dev/null' &`,
     blocked: true,
@@ -217,6 +227,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
   {
     name: 'a detached pipeline whose middle element logs a stream it does not forward',
     command: 'cmd 2>&1 | true > /tmp/x.log | cat >/dev/null &',
+    blocked: true,
+  },
+  {
+    name: 'a detached pipeline whose middle element redirects stdout before a forwarding consumer',
+    command: 'cmd 2>&1 | cat > /tmp/x.log | cat &',
     blocked: true,
   },
   {

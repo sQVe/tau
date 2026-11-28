@@ -1,6 +1,13 @@
 import type { ShellCommand, ShellRedirection } from '../../shell/shell.js';
 import { runsRedirectionsOnlyExec } from '../../wrapperAnalysis.js';
-import { isDescriptor, isDevNull, streamsOf, targetOf, terminal } from './detachedStreams.js';
+import {
+  isDescriptor,
+  isDevNull,
+  streamsOf,
+  targetOf,
+  terminal,
+  unknownTarget,
+} from './detachedStreams.js';
 import type { StreamTarget, Streams } from './detachedStreams.js';
 
 export interface CompoundScope {
@@ -345,10 +352,10 @@ const discardsStream = (target: StreamTarget | undefined): boolean => {
 };
 
 // A command in a pipeline writes to the next element. The element that leaves the pipeline decides
-// where the merged stream goes, and an element that discards its own stdout ends the chain. A
-// middle element that logs its stdout may or may not pass the stream on, so a later discarding
-// element stays authoritative. Following the chain keeps a `2>&1` from reading the pipe as the
-// terminal, and still reads a consumer's log file.
+// where the merged stream goes, and an element that discards its own stdout ends the chain. A middle
+// element that redirects its stdout may still read the stream it receives, so neither its own target
+// nor a later element can decide where the stream goes. Following the chain keeps a `2>&1` from
+// reading the pipe as the terminal, and still reads a consumer's log file.
 export const pipelineStdout = (scope: CompoundScope, index: number): StreamTarget | undefined => {
   let target = scope.commands[index]?.pipeTarget;
   const seen = new Set<number>();
@@ -372,10 +379,10 @@ export const pipelineStdout = (scope: CompoundScope, index: number): StreamTarge
       redirectionDescriptors(redirection).includes(1),
     );
 
-    const elementStdout = changesStdout ? stdoutTargetOf(scope, target) : undefined;
+    if (changesStdout) {
+      const elementStdout = stdoutTargetOf(scope, target);
 
-    if (discardsStream(elementStdout)) {
-      return elementStdout;
+      return discardsStream(elementStdout) ? elementStdout : unknownTarget;
     }
 
     target = next;

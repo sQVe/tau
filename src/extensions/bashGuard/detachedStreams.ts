@@ -13,7 +13,7 @@ export type Streams = Map<number, StreamTarget>;
 const devNull = '/dev/null';
 
 export const terminal: StreamTarget = { kind: 'terminal' };
-const unknownTarget: StreamTarget = { kind: 'unknown' };
+export const unknownTarget: StreamTarget = { kind: 'unknown' };
 
 const terminalDescriptors = new Set([1, 2]);
 

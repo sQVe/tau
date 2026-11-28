@@ -149,8 +149,9 @@ const scriptFacts = (
   return membersFacts(factsOf, scope, undefined, depth);
 };
 
+// Bash reads a zero-padded descriptor as its number, so `00` also feeds stdin.
 const namesStdin = (descriptor: string | undefined): boolean =>
-  descriptor === undefined || descriptor === '0';
+  descriptor === undefined || Number(descriptor) === 0;
 
 // A shell reads its script from the last redirection that feeds descriptor 0 when no `-c` word names
 // one. Bash uses the last redirection, and a script file it reads from stdin is as unreadable as a
