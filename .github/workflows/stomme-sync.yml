@@ -1,4 +1,4 @@
-# The reusable stomme workflow below is pinned by release commit.
+# The reusable stomme workflow below is pinned to the stomme release commit.
 name: Sync stomme
 
 on:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   sync:
-    uses: sQVe/stomme/.github/workflows/sync-update.yml@1311289dc3a8942023c60b09dfcb46e62c6e85c7 # v0.2.7
+    uses: sQVe/stomme/.github/workflows/sync-update.yml@9f180438089fc15639b32bec3325ae20bacb6fb2 # v0.2.8
     secrets:
       app-id: ${{ secrets.STOMME_APP_ID }}
       app-private-key: ${{ secrets.STOMME_APP_PRIVATE_KEY }}
