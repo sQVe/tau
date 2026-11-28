@@ -91,7 +91,15 @@ const startTimeoutKill = (
   onTimeout: () => void,
   onFinal: () => void,
 ): void => {
+  if (timeoutMilliseconds <= 0) {
+    return;
+  }
+
   timers.kill = setTimeout(() => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return;
+    }
+
     onTimeout();
 
     timers.confirm = setTimeout(() => {
@@ -229,7 +237,7 @@ export const runGit = (
     try {
       if (timeoutMilliseconds !== null && timeoutMilliseconds < 0) {
         throw new RangeError(
-          `The value of "timeout" is out of range. It must be an unsigned integer. Received ${timeoutMilliseconds}`,
+          `The Git timeout must not be negative. Received ${timeoutMilliseconds}`,
         );
       }
 

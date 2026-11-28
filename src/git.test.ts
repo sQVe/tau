@@ -202,6 +202,18 @@ it('resolves a null exit code when Git runs past the timeout', async ({ onTestFi
   expect(result.exitCode).toBeNull();
 });
 
+it('runs Git to completion when the timeout is 0', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await runGit(root, ['rev-parse', '--is-inside-work-tree'], {
+    timeoutMilliseconds: 0,
+  });
+
+  expect(result.exitCode).toBe(0);
+  const trimmedOutput = result.stdout.toString('utf8').trim();
+  expect(trimmedOutput).toBe('true');
+});
+
 it('finds the checkout root from a directory inside it', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const nested = join(root, 'src', 'deep');
@@ -419,4 +431,5 @@ it('resolves a null exit code for a timeout Node rejects', async ({ onTestFinish
   const result = await runGit(root, ['status'], { timeoutMilliseconds: -1 });
 
   expect(result.exitCode).toBeNull();
+  expect(result.stderr).toContain('The Git timeout must not be negative');
 });

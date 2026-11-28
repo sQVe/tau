@@ -5,7 +5,6 @@ import { errorMessage } from '../errors.js';
 import type { HcRuntime } from './hc.js';
 import {
   HcError,
-  isAbortError,
   matchParsedReply,
   parseHelloResult,
   parseJsonRpcReplies,
@@ -202,8 +201,12 @@ export const connect: Connect = (lines, options = {}) => {
       streamFailure = failure;
 
       if (killTimer === undefined) {
-        child.kill('SIGTERM');
-        child.once('exit', destroyPipes);
+        if (child.exitCode !== null || child.signalCode !== null) {
+          destroyPipes();
+        } else {
+          child.kill('SIGTERM');
+          child.once('exit', destroyPipes);
+        }
 
         killTimer = setTimeout(() => {
           if (child.exitCode === null && child.signalCode === null) {
@@ -227,7 +230,7 @@ export const connect: Connect = (lines, options = {}) => {
     };
 
     const onAbort = () => {
-      aborted = true;
+      aborted = streamFailure === undefined;
       stopChild(new HcError('aborted', 'hc connect was aborted'));
     };
 
@@ -283,11 +286,7 @@ export const connect: Connect = (lines, options = {}) => {
     });
 
     child.on('error', (error) => {
-      if (isAbortError(error)) {
-        aborted = true;
-      } else {
-        childError = error;
-      }
+      childError = error;
     });
 
     onClose = (code, signal) => {

@@ -71,6 +71,43 @@ it('waits for Git exit before closing idle output streams', async () => {
   expect(result.stdout.toString()).toBe('collected output');
 });
 
+it('keeps Git running when the timeout is 0', async () => {
+  const capture = captureProcess();
+  const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 0 });
+
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(kill).not.toHaveBeenCalled();
+
+  capture.complete();
+  const result = await pending;
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout.toString()).toBe('collected output');
+});
+
+it('keeps Git output when Git exits before the deadline and the drain finishes after it', async () => {
+  const capture = captureProcess();
+  const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  Object.defineProperty(capture.child, 'exitCode', { value: 0, configurable: true });
+  capture.child.emit('exit', 0, null);
+
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(kill).not.toHaveBeenCalled();
+
+  await vi.advanceTimersByTimeAsync(50);
+  capture.complete();
+
+  const result = await pending;
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout.toString()).toBe('collected output');
+});
+
 it.for(['stdout', 'stderr'] as const)(
   'restarts the idle drain when %s receives data after Git exits',
   async (stream) => {
@@ -184,10 +221,14 @@ it('settles with the timeout reason before the final deadline and ignores a late
 it('does not send SIGKILL when Git exited at the kill grace', async () => {
   const capture = captureProcess();
   const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
-  Object.defineProperty(capture.child, 'exitCode', { value: 0, configurable: true });
   const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
 
-  await vi.advanceTimersByTimeAsync(5050);
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  Object.defineProperty(capture.child, 'exitCode', { value: 0, configurable: true });
+  await vi.advanceTimersByTimeAsync(5000);
 
   expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
 

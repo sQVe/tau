@@ -292,6 +292,26 @@ it('rejects with the stdout failure after the child closes cleanly', async () =>
   expect(child.kill).toHaveBeenCalledWith('SIGTERM');
 });
 
+it('keeps a stream failure recorded before an abort when the child closes', async () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  child.stdout.emit('error', new Error('read broke'));
+  controller.abort();
+  child.emit('close', null, 'SIGTERM');
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'read_failed' });
+});
+
 it('escalates a stream failure to SIGKILL when the child ignores SIGTERM', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
@@ -567,7 +587,6 @@ it('does not send SIGKILL when the child has already exited at the kill grace', 
 
   const child = createFakeChild();
   spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
-  child.exitCode = 0;
 
   const controller = new AbortController();
 
@@ -576,6 +595,10 @@ it('does not send SIGKILL when the child has already exited at the kill grace', 
   );
 
   controller.abort();
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  child.exitCode = 0;
   await vi.advanceTimersByTimeAsync(5000);
 
   expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
@@ -664,9 +687,14 @@ it('destroys both pipes when the child exited before cancellation', async () => 
   child.emit('exit', 0, null);
   controller.abort();
 
+  expect(child.kill).not.toHaveBeenCalled();
+  expect(child.stdout.destroyed).toBe(true);
+  expect(child.stderr.destroyed).toBe(true);
+
   await vi.advanceTimersByTimeAsync(7000);
   await pending;
 
+  expect(child.kill).not.toHaveBeenCalled();
   expect(child.stdout.destroyed).toBe(true);
   expect(child.stderr.destroyed).toBe(true);
 });
