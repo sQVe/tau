@@ -61,6 +61,13 @@ type SchemaNode = Record<PropertyKey, unknown> | readonly unknown[];
 // evidence: another install's probe is refused without being registered.
 type ProbeOutcome = 'reached' | 'refused' | 'unconfirmed';
 
+interface InstalledWrapper {
+  wrapper: RegisterToolReturningValue;
+  // Whether a read of registerTool returned the wrapper itself. An accessor or proxy host can return
+  // a new function on every read, so a differing read does not prove the host replaced the wrapper.
+  stable: boolean;
+}
+
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -352,7 +359,7 @@ export const strictToolParameters = <Schema extends TSchema>(schema: Schema): Sc
   return isRecord(strict) ? { ...schema, ...strict } : schema;
 };
 
-const installedApis = new WeakMap<ExtensionAPI, RegisterToolReturningValue>();
+const installedApis = new WeakMap<ExtensionAPI, InstalledWrapper>();
 
 const notWritableMessage =
   'Cannot install strict tool parameters: registerTool is not writable on this API.';
@@ -491,7 +498,7 @@ const verifyInstalled = (
   wrapper: RegisterToolReturningValue,
   original: RegisterToolReturningValue,
   probe: InstallProbe,
-): void => {
+): boolean => {
   let descriptor: PropertyDescriptor | undefined;
 
   try {
@@ -501,7 +508,7 @@ const verifyInstalled = (
   }
 
   if (descriptor?.value === wrapper) {
-    return;
+    return true;
   }
 
   const host: RegisterToolHost = pi;
@@ -522,7 +529,7 @@ const verifyInstalled = (
   }
 
   if (readBack === wrapper) {
-    return;
+    return true;
   }
 
   const outcome = probeOutcome(readBack, probe);
@@ -534,9 +541,11 @@ const verifyInstalled = (
   if (outcome === 'unconfirmed') {
     failInstall(pi, original, notWritableMessage);
   }
+
+  return false;
 };
 
-const installWrapper = (pi: ExtensionAPI): void => {
+const installWrapper = (pi: ExtensionAPI): InstalledWrapper => {
   const original = readRegisterTool(pi);
   const registered = original.bind(pi);
   const probe = createProbe();
@@ -564,7 +573,7 @@ const installWrapper = (pi: ExtensionAPI): void => {
     throw new Error(notWritableMessage, { cause: error });
   }
 
-  verifyInstalled(pi, wrapper, original, probe);
+  return { wrapper, stable: verifyInstalled(pi, wrapper, original, probe) };
 };
 
 // The host may replace `registerTool` after the install, so read it again before trusting the
@@ -582,22 +591,31 @@ const currentRegisterTool = (pi: ExtensionAPI): RegisterToolReturningValue | und
   return typeof current === 'function' ? current : undefined;
 };
 
+// The host may replace `registerTool` after the install, so a readable value that differs from the
+// recorded wrapper means the host replaced it. A read that throws or yields no function cannot prove
+// a replacement, and an unstable read cannot show one at all, so both keep the install.
+const stillInstalled = (installed: InstalledWrapper | undefined, pi: ExtensionAPI): boolean => {
+  if (installed === undefined) {
+    return false;
+  }
+
+  if (!installed.stable) {
+    return true;
+  }
+
+  const current = currentRegisterTool(pi);
+
+  return current === undefined || current === installed.wrapper;
+};
+
 // Wraps `registerTool` once per API. Every tool registered through that API after this call has
 // strict parameters, including tools that another extension registers.
 export const strictToolRegistration = (pi: ExtensionAPI): void => {
-  const installed = installedApis.get(pi);
-
-  if (installed !== undefined && currentRegisterTool(pi) === installed) {
+  if (stillInstalled(installedApis.get(pi), pi)) {
     return;
   }
 
-  installWrapper(pi);
-
-  const wrapper = currentRegisterTool(pi);
-
-  if (wrapper !== undefined) {
-    installedApis.set(pi, wrapper);
-  }
+  installedApis.set(pi, installWrapper(pi));
 };
 
 export const stringEnum = <const Values extends readonly string[]>(

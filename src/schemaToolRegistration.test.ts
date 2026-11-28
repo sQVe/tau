@@ -177,18 +177,66 @@ it('installs through an accessor on the prototype', () => {
 it('installs through an accessor that returns a new bound wrapper on every read', () => {
   const registered: unknown[] = [];
   let stored = (tool: unknown): unknown => registered.push(tool);
+  let assignments = 0;
   const api = {} as ExtensionAPI;
 
   Object.defineProperty(api, 'registerTool', {
     configurable: true,
     get: () => stored.bind(api),
     set: (value: (tool: unknown) => unknown) => {
+      assignments += 1;
       stored = value;
     },
   });
 
   strictToolRegistration(api);
+  strictToolRegistration(api);
   registerThrough(api, Type.Object({ nested: Type.Object({ value: Type.String() }) }));
+
+  expect(assignments).toBe(1);
+
+  expect(registered).toMatchObject([
+    {
+      parameters: {
+        additionalProperties: false,
+        properties: { nested: { additionalProperties: false } },
+      },
+    },
+  ]);
+});
+
+it('keeps the install when a later read of registerTool fails', () => {
+  const registered: unknown[] = [];
+  let stored = (tool: unknown): unknown => registered.push(tool);
+  let reads = 0;
+  const api = {} as ExtensionAPI;
+
+  Object.defineProperty(api, 'registerTool', {
+    configurable: true,
+    get: () => {
+      reads += 1;
+
+      if (reads > 2) {
+        throw new Error('read failed');
+      }
+
+      return stored;
+    },
+    set: (value: (tool: unknown) => unknown) => {
+      stored = value;
+    },
+  });
+
+  strictToolRegistration(api);
+
+  expect(() => {
+    strictToolRegistration(api);
+  }).not.toThrow();
+
+  stored({
+    name: 'sample',
+    parameters: Type.Object({ nested: Type.Object({ value: Type.String() }) }),
+  });
 
   expect(registered).toMatchObject([
     {
