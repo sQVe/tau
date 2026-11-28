@@ -7,6 +7,7 @@ const withheldResult: ToolResultEventResult = {
     { type: 'text', text: 'Tau withheld this tool result because secret redaction failed.' },
   ],
   details: {},
+  structuredContent: {},
   isError: true,
 };
 
