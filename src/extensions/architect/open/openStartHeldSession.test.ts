@@ -27,8 +27,14 @@ it('refuses to resume a session another live Pi holds', async ({ onTestFinished:
     }
   });
 
-  const generation = `${lockPath}.1`;
-  const bytes = readFileSync(generation);
+  const lockDirectory = dirname(lockPath);
+
+  const lockFiles = (): [string, Buffer][] =>
+    readdirSync(lockDirectory)
+      .toSorted()
+      .map((name): [string, Buffer] => [name, readFileSync(join(lockDirectory, name))]);
+
+  const filesBefore = lockFiles();
 
   await expect(openArchitect(requestFor(root, config.location, runtime))).rejects.toThrow(
     new Error(refusal(sessionFile)),
@@ -38,7 +44,7 @@ it('refuses to resume a session another live Pi holds', async ({ onTestFinished:
   expect(appCommands(app)).not.toContain('tab.new');
   expect(hc.calls.map((call) => call.command)).not.toContain('kill');
   expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
-  expect(readFileSync(generation)).toEqual(bytes);
+  expect(lockFiles()).toEqual(filesBefore);
 });
 
 it('resumes the recorded session once its holder releases it', async ({
