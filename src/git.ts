@@ -107,11 +107,13 @@ const startTimeoutKill = (
         return;
       }
 
-      const killSent = child.kill('SIGKILL');
+      let killSent = false;
 
       timers.confirm = setTimeout(() => {
         onFinal(killSent);
       }, killConfirmMilliseconds);
+
+      killSent = child.kill('SIGKILL');
     }, killGraceMilliseconds);
 
     child.kill('SIGTERM');

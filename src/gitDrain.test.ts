@@ -221,8 +221,7 @@ it('reports that Git could not be stopped when SIGKILL is refused', async () => 
   const result = await pending;
 
   expect(result.exitCode).toBeNull();
-  expect(result.stderr).toContain('git status timed out after 50 ms');
-  expect(result.stderr).not.toContain('did not exit after SIGKILL');
+  expect(result.stderr).toBe('git status timed out after 50 ms and could not be stopped');
   expect(vi.getTimerCount()).toBe(0);
 });
 
@@ -364,6 +363,27 @@ it('does not arm a timer after the native callback settles during a signal', asy
   await vi.advanceTimersByTimeAsync(10000);
 
   expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+});
+
+it('does not arm a timer after the native callback settles during SIGKILL', async () => {
+  const capture = captureProcess();
+
+  const kill = vi.spyOn(capture.child, 'kill').mockImplementation((signal) => {
+    if (signal === 'SIGKILL') {
+      capture.complete(Object.assign(new Error('killed'), { code: null }));
+    }
+
+    return true;
+  });
+
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(5050);
+  const result = await pending;
+
+  expect(kill).toHaveBeenCalledWith('SIGKILL');
+  expect(result.stderr).toBe('git status timed out after 50 ms');
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it('reports the timeout reason when an abort lands late without a native abort error', async () => {
