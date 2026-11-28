@@ -74,7 +74,11 @@ it.for([
     argv: ['vitest', 'run', '--reporter=json', '--reporter=default', '--no-color'],
     accepted: true,
   },
-  { name: 'related as the first token', argv: ['vitest', 'related', '--no-color'], accepted: true },
+  {
+    name: 'related as the command word',
+    argv: ['vitest', 'related', '--no-color'],
+    accepted: false,
+  },
   { name: 'options without a command', argv: ['vitest', '--no-color'], accepted: true },
   { name: 'no arguments', argv: ['vitest'], accepted: true },
   {
@@ -151,4 +155,51 @@ it.for([
   const error = verificationArgvError(argv);
 
   expect(error === null).toBe(accepted);
+});
+
+it.for([
+  {
+    name: 'a related command word',
+    argv: ['vitest', 'related', '--no-color'],
+    expected:
+      'verificationArgv must not pass the positional argument "related"; write flag values with "=", such as --reporter=json, because Tau selects the files for a scoped run.',
+  },
+  {
+    name: 'a three-dash short alias filter',
+    argv: ['vitest', 'run', '---t=adds'],
+    expected:
+      'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'a three-dash camel-case filter',
+    argv: ['vitest', 'run', '---testNamePattern=adds'],
+    expected:
+      'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'a three-dash kebab-case filter',
+    argv: ['vitest', 'run', '---test-name-pattern=adds'],
+    expected:
+      'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'a negated camel-case filter with a value',
+    argv: ['vitest', 'run', '--no-testNamePattern=false'],
+    expected:
+      'verificationArgv must not clear or negate the test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'a negated kebab-case filter with a value',
+    argv: ['vitest', 'run', '--no-test-name-pattern=1'],
+    expected:
+      'verificationArgv must not clear or negate the test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'a negated short alias filter with a value',
+    argv: ['vitest', 'run', '--no-t=1'],
+    expected:
+      'verificationArgv must not clear or negate the test name filter; a focused run sets its own exact names.',
+  },
+])('refuses $name in verificationArgv with its own message', ({ argv, expected }) => {
+  expect(verificationArgvError(argv)).toBe(expected);
 });

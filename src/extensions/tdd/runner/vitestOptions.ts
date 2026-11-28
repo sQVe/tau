@@ -2,15 +2,11 @@ import type { parseCLI } from 'vitest/node';
 
 type CliOptions = ReturnType<typeof parseCLI>['options'];
 
-const commandWords = new Set(['run', 'related']);
-
-const testNameFilterFlags = ['-t', '--testNamePattern', '--test-name-pattern'];
+const commandWords = new Set(['run']);
 
 // The installed parser clears the pattern for the "t" alias and for any run of leading dashes.
-const clearedTestNameFilterPattern = /^-+no-(?:t|testNamePattern|test-name-pattern)$/u;
-
-const isTestNameFilter = (argument: string): boolean =>
-  testNameFilterFlags.some((flag) => argument === flag || argument.startsWith(`${flag}=`));
+const testNameFilterPattern = /^-+(?:t|testNamePattern|test-name-pattern)(?:=.*)?$/u;
+const clearedTestNameFilterPattern = /^-+no-(?:t|testNamePattern|test-name-pattern)(?:=.*)?$/u;
 
 export const verificationArgvError = (verificationArgv: readonly string[]): string | null => {
   if (verificationArgv[0] !== 'vitest') {
@@ -25,7 +21,7 @@ export const verificationArgvError = (verificationArgv: readonly string[]): stri
     return 'verificationArgv must not pass "--"; Tau appends its own options after the configured arguments.';
   }
 
-  if (options.some(isTestNameFilter)) {
+  if (options.some((argument) => testNameFilterPattern.test(argument))) {
     return 'verificationArgv must not set a test name filter; a focused run sets its own exact names.';
   }
 
