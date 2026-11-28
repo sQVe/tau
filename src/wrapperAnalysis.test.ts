@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { commandStart, commandWords, runsRedirectionsOnlyExec } from './wrapperAnalysis.js';
+import {
+  commandStart,
+  commandWords,
+  detachesProcess,
+  runsRedirectionsOnlyExec,
+} from './wrapperAnalysis.js';
+
+describe('detachesProcess', () => {
+  it('reads a setsid behind an env split value', () => {
+    expect(detachesProcess(['env', '-S', 'setsid -f cmd'])).toBe(true);
+  });
+
+  it('fails closed on an env split value that depends on the environment', () => {
+    expect(detachesProcess(['env', '-S', `\${X}`])).toBe(true);
+  });
+});
 
 describe('commandWords', () => {
   it.each([

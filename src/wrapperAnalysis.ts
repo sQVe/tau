@@ -363,20 +363,6 @@ export const commandStart = (words: readonly string[]): CommandStart => {
   return { index: Math.min(index, words.length), wrappers, lookup };
 };
 
-// `setsid -f` always forks and exits, so the command it starts is detached even without a `&`.
-const setsidForkOption = /^-[A-Za-z]*f[A-Za-z]*$/u;
-
-export const detachesProcess = (words: readonly string[]): boolean =>
-  commandStart(words).wrappers.some(({ name, index }) => {
-    if (name !== 'setsid') {
-      return false;
-    }
-
-    const option = words[index + 1] ?? '';
-
-    return option === '--fork' || setsidForkOption.test(option);
-  });
-
 const envWhitespace: ReadonlySet<string> = new Set([' ', '\t', '\n', '\r', '\v', '\f']);
 
 const envEscapeCharacters: Readonly<Record<string, string>> = {
@@ -739,6 +725,31 @@ export const withEnvSplitStrings = (words: readonly string[]): ExpandedWords => 
       ...result.slice(found.split.end),
     ];
   }
+};
+
+// `setsid -f` always forks and exits, so the command it starts is detached even without a `&`.
+const setsidForkOption = /^-[A-Za-z]*f[A-Za-z]*$/u;
+
+// An `env -S` value that depends on the environment may name `setsid`, so the caller must fail
+// closed.
+export const detachesProcess = (words: readonly string[]): boolean => {
+  const expanded = withEnvSplitStrings(words);
+
+  if (expanded.unreadable) {
+    return true;
+  }
+
+  return commandStart(expanded.words).wrappers.some(({ name, index }) => {
+    if (name !== 'setsid') {
+      return false;
+    }
+
+    const afterOptions = optionEnd(expanded.words, index + 1, emptyOptionValues);
+
+    return expanded.words
+      .slice(index + 1, afterOptions)
+      .some((option) => option === '--fork' || setsidForkOption.test(option));
+  });
 };
 
 // The words a wrapper or keyword runs as a command. `lookup` is true when a `command -v` or

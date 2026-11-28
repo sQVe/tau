@@ -11,9 +11,9 @@ import {
 } from './detachedScope.js';
 import type { CompoundScope } from './detachedScope.js';
 import {
-  devNull,
   discardsStderr,
   isDescriptor,
+  isDevNull,
   showsStderr,
   streamsOf,
 } from './detachedStreams.js';
@@ -33,7 +33,7 @@ export type DetachedOutputDecision = BlockedDetachedOutput | undefined;
 
 // Whether a reader sees a compound's failure, whether a command inside it throws stderr away, and
 // whether the command's own redirection does.
-type Uninspectable = 'none' | 'unparseable' | 'depth';
+type Uninspectable = 'none' | 'unparseable' | 'depth' | 'unreadable' | 'unreadableFile';
 
 interface CompoundFacts {
   readonly shows: boolean;
@@ -44,12 +44,13 @@ interface CompoundFacts {
 }
 
 type CompoundFactsOf = (scope: CompoundScope, index: number, depth: number) => CompoundFacts;
-type HiddenFailure = 'hidden' | 'unreadable' | 'unparseable' | 'unverifiable';
+type HiddenFailure = 'hidden' | 'unreadable' | 'unreadableFile' | 'unparseable' | 'unverifiable';
 
 type CommandScript =
   | { readonly kind: 'none' }
   | { readonly kind: 'script'; readonly script: string }
-  | { readonly kind: 'unreadable' };
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'file' };
 
 const maximumDepth = 4;
 
@@ -72,6 +73,20 @@ const depthFacts: CompoundFacts = {
   discards: false,
   ownDiscards: false,
   uninspectable: 'depth',
+};
+
+const unreadableFacts: CompoundFacts = {
+  shows: false,
+  discards: false,
+  ownDiscards: false,
+  uninspectable: 'unreadable',
+};
+
+const unreadableFileFacts: CompoundFacts = {
+  shows: false,
+  discards: false,
+  ownDiscards: false,
+  uninspectable: 'unreadableFile',
 };
 
 // A compound reports its last command's exit status, so its last member with arguments decides
@@ -130,20 +145,29 @@ const scriptFacts = (
   return membersFacts(factsOf, scope, undefined, depth);
 };
 
-// A shell reads its script from standard input when a heredoc feeds descriptor 0 and no `-c` word
-// names one. The body is the script the shell runs.
+const namesStdin = (descriptor: string | undefined): boolean =>
+  descriptor === undefined || descriptor === '0';
+
+// A shell reads its script from standard input when a heredoc or here-string feeds descriptor 0
+// and no `-c` word names one. The payload is the script the shell runs.
 const stdinScriptOf = (command: ShellCommand): string | undefined => {
   if (shellNameOf(command.arguments) === undefined) {
     return undefined;
   }
 
-  const readsStdin = command.inputs.some(({ descriptor, kind }) => {
-    const namesStdin = descriptor === undefined || descriptor === '0';
+  const readsHeredoc = command.inputs.some(
+    ({ descriptor, kind }) => kind === 'heredoc' && namesStdin(descriptor),
+  );
 
-    return kind === 'heredoc' && namesStdin;
-  });
+  if (readsHeredoc) {
+    return command.heredocs[0]?.body;
+  }
 
-  return readsStdin ? command.heredocs[0]?.body : undefined;
+  const hereString = command.inputs.find(
+    ({ descriptor, kind }) => kind === 'hereString' && namesStdin(descriptor),
+  );
+
+  return hereString?.target;
 };
 
 const commandScriptOf = (command: ShellCommand): CommandScript => {
@@ -151,6 +175,10 @@ const commandScriptOf = (command: ShellCommand): CommandScript => {
 
   if (shellScript.kind === 'unreadable') {
     return { kind: 'unreadable' };
+  }
+
+  if (shellScript.kind === 'file') {
+    return { kind: 'file' };
   }
 
   const script = shellScript.kind === 'script' ? shellScript.script : stdinScriptOf(command);
@@ -161,6 +189,14 @@ const commandScriptOf = (command: ShellCommand): CommandScript => {
 const uninspectableFailure = (kind: Uninspectable): HiddenFailure | undefined => {
   if (kind === 'unparseable') {
     return 'unparseable';
+  }
+
+  if (kind === 'unreadable') {
+    return 'unreadable';
+  }
+
+  if (kind === 'unreadableFile') {
+    return 'unreadableFile';
   }
 
   return kind === 'depth' ? 'unverifiable' : undefined;
@@ -190,7 +226,11 @@ const compoundFacts = (scope: CompoundScope, index: number, depth: number): Comp
   const script = commandScriptOf(command);
 
   if (script.kind === 'unreadable') {
-    return depthFacts;
+    return unreadableFacts;
+  }
+
+  if (script.kind === 'file') {
+    return unreadableFileFacts;
   }
 
   if (script.kind === 'script') {
@@ -250,6 +290,10 @@ const hidesFailure = (
     return 'unreadable';
   }
 
+  if (script.kind === 'file') {
+    return 'unreadableFile';
+  }
+
   const hasNestedCommand = script.kind === 'script' || command.group !== undefined;
 
   if (!hasNestedCommand) {
@@ -272,14 +316,14 @@ const redirectionCanFail = (redirection: ShellRedirection): boolean => {
   const { operator, target } = redirection;
 
   if (operator === '>&' || operator === '<&') {
-    return !isDescriptor(target) && target !== devNull;
+    return !isDescriptor(target) && !isDevNull(target);
   }
 
   if (operator === '<<<') {
     return false;
   }
 
-  return target !== devNull;
+  return !isDevNull(target);
 };
 
 const someRedirectionCanFail = (command: ShellCommand): boolean =>
@@ -318,6 +362,10 @@ const nestedScriptFailure = (
 
   if (script.kind === 'unreadable') {
     return 'unreadable';
+  }
+
+  if (script.kind === 'file') {
+    return 'unreadableFile';
   }
 
   if (script.kind === 'none') {
@@ -390,6 +438,9 @@ export const unparseableReason =
 export const unreadableReason =
   'This bash command has an `env -S` value that depends on the environment, so the guard cannot tell whether it hides a failure. Write the value out in full, or write its output to a log file such as `> /tmp/<name>.log 2>&1` and read it before reporting the effect.';
 
+const scriptFileReason =
+  'This bash command runs a shell script file that the guard cannot inspect, so a hidden failure cannot be ruled out. Run the script command directly, or write its output to a log file such as `> /tmp/<name>.log 2>&1` and read it before reporting the effect.';
+
 export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutputDecision => {
   if (facts.toolName !== 'bash' || typeof facts.command !== 'string') {
     return undefined;
@@ -404,7 +455,7 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
   }
 
   const scope = compoundScope(commands, new Map());
-  let failClosed: HiddenFailure | undefined;
+  let failClosed: Exclude<HiddenFailure, 'hidden'> | undefined;
 
   for (let index = 0; index < commands.length; index += 1) {
     const failure = judgesHiddenFailure(scope, index);
@@ -418,12 +469,13 @@ export const decideDetachedOutput = (facts: DetachedOutputFacts): DetachedOutput
     }
   }
 
-  if (failClosed === undefined || failClosed === 'hidden') {
+  if (failClosed === undefined) {
     return undefined;
   }
 
   const reasons: Readonly<Record<Exclude<HiddenFailure, 'hidden'>, string>> = {
     unreadable: unreadableReason,
+    unreadableFile: scriptFileReason,
     unparseable: unparseableReason,
     unverifiable: unverifiableReason,
   };

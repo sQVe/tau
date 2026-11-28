@@ -1,6 +1,6 @@
 import type { ShellCommand, ShellRedirection } from '../../shell/shell.js';
 import { runsRedirectionsOnlyExec } from '../../wrapperAnalysis.js';
-import { streamsOf, targetOf, terminal } from './detachedStreams.js';
+import { isDescriptor, streamsOf, targetOf, terminal } from './detachedStreams.js';
 import type { StreamTarget, Streams } from './detachedStreams.js';
 
 export interface CompoundScope {
@@ -112,11 +112,16 @@ const enclosingGroupsOf = (scope: CompoundScope, index: number): readonly Enclos
 
 const outputRedirectionOperators: ReadonlySet<string> = new Set(['>', '>>', '>|', '>&']);
 
-// The descriptors a redirection changes. `&>` changes both output streams.
+// The descriptors a redirection changes. `&>` changes both output streams, and so does an
+// unnumbered `>&word` whose word is a file.
 const redirectionDescriptors = (redirection: ShellRedirection): number[] => {
-  const { fileDescriptor, operator } = redirection;
+  const { fileDescriptor, operator, target } = redirection;
 
   if (operator === '&>' || operator === '&>>') {
+    return [1, 2];
+  }
+
+  if (operator === '>&' && fileDescriptor === undefined && !isDescriptor(target)) {
     return [1, 2];
   }
 
@@ -329,9 +334,10 @@ const stdoutTargetOf = (scope: CompoundScope, index: number): StreamTarget => {
   return targetOf(streamsOf(command, enclosingOf(scope, index)), 1);
 };
 
-// A command in a pipeline writes to the next element, and the element that leaves the pipeline
-// decides where the merged stream goes. Following the chain keeps a `2>&1` from reading the pipe
-// as the terminal, and still reads a consumer's log file.
+// A command in a pipeline writes to the next element. The element that leaves the pipeline, or the
+// first one whose own redirection changes its stdout, decides where the merged stream goes.
+// Following the chain keeps a `2>&1` from reading the pipe as the terminal, and still reads a
+// consumer's log file.
 export const pipelineStdout = (scope: CompoundScope, index: number): StreamTarget | undefined => {
   let target = scope.commands[index]?.pipeTarget;
   const seen = new Set<number>();
@@ -339,9 +345,19 @@ export const pipelineStdout = (scope: CompoundScope, index: number): StreamTarge
   while (target !== undefined && !seen.has(target)) {
     seen.add(target);
 
-    const next = scope.commands[target]?.pipeTarget;
+    const element = scope.commands[target];
 
-    if (next === undefined) {
+    if (element === undefined) {
+      return undefined;
+    }
+
+    const next = element.pipeTarget;
+
+    const changesStdout = element.redirections.some((redirection) =>
+      redirectionDescriptors(redirection).includes(1),
+    );
+
+    if (next === undefined || changesStdout) {
       return stdoutTargetOf(scope, target);
     }
 

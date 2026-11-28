@@ -10,11 +10,40 @@ export type StreamTarget =
 // terminal for stdout and stderr, and unresolved for any other descriptor.
 export type Streams = Map<number, StreamTarget>;
 
-export const devNull = '/dev/null';
+const devNull = '/dev/null';
+
 export const terminal: StreamTarget = { kind: 'terminal' };
 const unknownTarget: StreamTarget = { kind: 'unknown' };
 
 const terminalDescriptors = new Set([1, 2]);
+
+// A path that names the null device through a different spelling, such as `/dev//null` or
+// `/dev/../dev/null`, still discards the stream. A trailing slash names a directory instead.
+const normalizeAbsolutePath = (path: string): string => {
+  if (!path.startsWith('/')) {
+    return path;
+  }
+
+  const segments: string[] = [];
+
+  for (const segment of path.split('/')) {
+    if (segment === '' || segment === '.') {
+      continue;
+    }
+
+    if (segment === '..') {
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+
+  const endsWithSeparator = path.endsWith('/') || path.endsWith('/.') || path.endsWith('/..');
+
+  return `/${segments.join('/')}${endsWithSeparator ? '/' : ''}`;
+};
+
+export const isDevNull = (path: string): boolean => normalizeAbsolutePath(path) === devNull;
 
 export const isDescriptor = (target: string): boolean => /^\d+$/u.test(target) || target === '-';
 
@@ -31,14 +60,14 @@ export const targetOf = (streams: Streams, fileDescriptor: number): StreamTarget
 // A stream with no redirection reaches the terminal, which is visible.
 export const showsStderr = (streams: Streams): boolean => {
   const stderr = targetOf(streams, 2);
-  const writesVisibleFile = stderr.kind === 'file' && stderr.path !== devNull;
+  const writesVisibleFile = stderr.kind === 'file' && !isDevNull(stderr.path);
 
   return stderr.kind === 'terminal' || writesVisibleFile;
 };
 
 export const discardsStderr = (streams: Streams): boolean => {
   const stderr = targetOf(streams, 2);
-  const writesDevNull = stderr.kind === 'file' && stderr.path === devNull;
+  const writesDevNull = stderr.kind === 'file' && isDevNull(stderr.path);
 
   return stderr.kind === 'closed' || writesDevNull;
 };

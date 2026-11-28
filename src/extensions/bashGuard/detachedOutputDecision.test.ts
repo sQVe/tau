@@ -59,6 +59,11 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a detached setsid behind an env split string',
+    command: `env -S 'setsid -f cmd' 2>/dev/null`,
+    blocked: true,
+  },
+  {
     name: 'a detached script behind an env value that depends on the environment',
     command: `env -S "\${SHELL} -c 'cmd 2>/dev/null'" &`,
     blocked: true,
@@ -120,6 +125,26 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     blocked: true,
   },
   {
+    name: 'a detached command with stderr to a doubled-slash null device',
+    command: 'cmd 2>/dev//null &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command with stderr to a dotted null device',
+    command: 'cmd 2>/dev/./null &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command with stderr to a parent-segment null device',
+    command: 'cmd 2>/dev/../dev/null &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command with both streams to a doubled-slash null device',
+    command: 'cmd &>/dev//null &',
+    blocked: true,
+  },
+  {
     name: 'a foreground command that discards stderr',
     command: 'cmd >/dev/null 2>&1',
     blocked: false,
@@ -153,6 +178,41 @@ it.each<{ name: string; command: string; blocked: boolean }>([
     name: 'a setsid without fork that discards stderr',
     command: 'setsid cmd 2>/dev/null',
     blocked: false,
+  },
+  {
+    name: 'a setsid long options before fork that discards stderr',
+    command: 'setsid --ctty --fork cmd 2>/dev/null',
+    blocked: true,
+  },
+  {
+    name: 'a setsid short options before fork that discards stderr',
+    command: 'setsid -c -f cmd 2>/dev/null',
+    blocked: true,
+  },
+  {
+    name: 'a backgrounded shell that reads its script from a here-string',
+    command: `bash <<< 'nohup app 2>/dev/null' &`,
+    blocked: true,
+  },
+  {
+    name: 'a detached pipeline whose middle element discards the merged stream',
+    command: 'cmd 2>&1 | cat >/dev/null | cat &',
+    blocked: true,
+  },
+  {
+    name: 'a detached command after a group that restores stderr through an unnumbered ampersand',
+    command: '{ exec 2>/dev/null; } >& /tmp/x.log; nohup app &',
+    blocked: false,
+  },
+  {
+    name: 'a detached shell that runs a script file it cannot inspect',
+    command: 'bash script.sh &',
+    blocked: true,
+  },
+  {
+    name: 'a detached shell whose heredoc is not the script because a file operand wins',
+    command: "bash script.sh <<'EOF' &\nnohup app > /tmp/x.log 2>&1\nEOF",
+    blocked: true,
   },
   {
     name: 'a backgrounded shell that reads its script from a heredoc',
@@ -797,6 +857,24 @@ it('names an env value that depends on the environment instead of the depth budg
   const decision = decideDetachedOutput({
     toolName: 'bash',
     command: `env -S "\${SHELL} -c 'make'"`,
+  });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('depends on the environment');
+  expect(decision?.reason).not.toContain('nests scripts deeper');
+});
+
+it('names a script file the guard cannot inspect', () => {
+  const decision = decideDetachedOutput({ toolName: 'bash', command: 'bash script.sh &' });
+
+  expect(decision?.block).toBe(true);
+  expect(decision?.reason).toContain('runs a shell script file that the guard cannot inspect');
+});
+
+it('names an unreadable nested script instead of the depth budget', () => {
+  const decision = decideDetachedOutput({
+    toolName: 'bash',
+    command: `bash -c "env -S '\${SHELL} -c make'" &`,
   });
 
   expect(decision?.block).toBe(true);
