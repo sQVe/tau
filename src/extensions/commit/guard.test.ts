@@ -306,6 +306,23 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('sh $FLAG < commit.sh'), directory);
   });
 
+  it('allows a mandatory script file with a committing redirect on its input', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, '$SCRIPT.sh', 'echo hi\n');
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent('sh -- ./"$SCRIPT".sh < commit.sh'), directory)).toBeUndefined();
+  });
+
+  it('allows a harmless brace script with positional data after --', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, '{a,b}/clean.sh', 'echo hi\n');
+
+    expect(guard(makeBashEvent("sh '{a,b}/clean.sh' -- '$CMD'"), directory)).toBeUndefined();
+  });
+
   it.each(['#!/usr/bin/env node', '#!/usr/bin/python3'])(
     'allows a directly executed file whose shebang is not a shell: %s',
     (shebang) => {
@@ -570,6 +587,24 @@ describe('guardToolCall', () => {
     writeScript(directory, '-file.sh', 'git commit -m x\n');
 
     expectOutcome(makeBashEvent('source -- -file.sh'), directory);
+  });
+
+  it('blocks a script named before a source separator', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'clean.sh', 'echo hi\n');
+
+    expectOutcome(makeBashEvent('source ./commit.sh --'), directory);
+  });
+
+  it('allows a clean script named before a source separator with later data', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+    writeScript(directory, 'clean.sh', 'echo hi\n');
+
+    expect(guard(makeBashEvent('source ./clean.sh -- ./commit.sh'), directory)).toBeUndefined();
   });
 
   it('allows a heredoc that mentions git commit followed by a shell name in a path', () => {
@@ -1345,6 +1380,7 @@ describe('guardToolCall', () => {
     ['bash -c -- with a script', 'bash -c -- ./commit.sh', 'commit.sh'],
     ['bash -c -x with a script', 'bash -c -x ./commit.sh', 'commit.sh'],
     ['bash $MODE -- with a script', 'bash $MODE -- ./commit.sh', 'commit.sh'],
+    ['bash $MODE -- with a bare script', 'bash $MODE -- commit.sh', 'commit.sh'],
   ])('blocks inline code after %s', (_label, command, fixture) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
