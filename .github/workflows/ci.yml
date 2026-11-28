@@ -202,8 +202,9 @@ jobs:
               jq --raw-output '.survivors[] | "- \(.file):\(.line) \(.mutator): \(.original) => \(.replacement)\(if .covered == false then " (no coverage)" else "" end)"' "${report}"
             } >> "${GITHUB_STEP_SUMMARY}"
           fi
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: always() && hashFiles('.tau/stryker-incremental.json') != ''
+      - if: ${{ !cancelled() && hashFiles('.tau/stryker-incremental.json') != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tau/stryker-incremental.json
           key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
