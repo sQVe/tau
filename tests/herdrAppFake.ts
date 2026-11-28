@@ -86,6 +86,8 @@ const tabReply = (commandArguments: readonly string[]): string => {
   return launchReply(space);
 };
 
+// Every launch answers with the same terminal, `t-new`, so the fake models one terminal at a time.
+// A test that needs two live terminals must override the reply.
 const replyFor = (
   key: HerdrAppCommand,
   commandArguments: readonly string[],
@@ -207,7 +209,15 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
     handlerFor: (key) => {
       if (key === getKey) {
         return (commandArguments) => {
-          const address = commandArguments.at(-1) ?? '';
+          const delimiter = commandArguments.indexOf('--');
+
+          const address =
+            delimiter === -1 ? commandArguments.at(-1) : commandArguments[delimiter + 1];
+
+          if (address === undefined || address === '') {
+            throw new Error('hc get needs a terminal address');
+          }
+
           const foreground = startedForegrounds.get(address);
 
           if (foreground !== undefined) {
@@ -237,13 +247,18 @@ export const createHerdrAppFake = (options: HerdrAppFakeOptions = {}): ExecFake<
   });
 
   const exec: Exec = async (command, commandArguments, execOptions) => {
+    // Resolve a malformed launch before the inner fake records it, so a test mistake fails at the
+    // fake boundary without a half-applied launch.
+    const launchForeground =
+      command === 'herdr-app' ? startedForegroundOf(commandArguments) : undefined;
+
     const result = await execFake.exec(command, commandArguments, execOptions);
 
     if (result.code === 0 && command === 'herdr-app') {
       const terminal = terminalFromReply(result.stdout);
 
       if (terminal !== undefined) {
-        const foreground = startedForegroundOf(commandArguments);
+        const foreground = launchForeground;
 
         startedTerminals.add(terminal);
 

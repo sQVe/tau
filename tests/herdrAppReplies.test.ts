@@ -73,6 +73,14 @@ it('fails a command it does not model instead of answering it', async () => {
   expect(result.stderr).toContain('pane.swap');
 });
 
+it('refuses an hc get without a terminal address', async () => {
+  const fake = createHerdrAppFake();
+
+  await expect(fake.exec('hc', ['get', '--json', '--'], undefined)).rejects.toThrow(
+    'hc get needs a terminal address',
+  );
+});
+
 it('reports a terminal it did not start as not_found', async () => {
   const fake = createHerdrAppFake();
   const result = await fake.exec('hc', ['get', '--json', '--', 't-missing'], undefined);
@@ -105,6 +113,12 @@ it('does not report an earlier launch foreground after a later launch without --
     undefined,
   );
 
+  const first = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(JSON.parse(first.stdout)).toMatchObject({
+    foreground: { argv: ['pi', '--provider', 'morph', '--model', 'morph/glm'] },
+  });
+
   await fake.exec(
     'herdr-app',
     ['do', 'pane.split', '--pane', 'p-2', '--folder', '/work/repo'],
@@ -124,6 +138,8 @@ it('fails a launch with an argv but no folder instead of reporting an empty cwd'
     fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', '["pi"]'], undefined),
   ).rejects.toThrow('herdr-app fake received a launch without --folder or -C');
 
+  expect(fake.calls).toEqual([]);
+
   const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
 
   expect(lookup.code).toBe(3);
@@ -139,6 +155,10 @@ it('fails a launch whose --folder value is another flag', async () => {
       undefined,
     ),
   ).rejects.toThrow('herdr-app fake received a launch without --folder or -C');
+
+  const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(lookup.code).toBe(3);
 });
 
 it('fails a malformed --argv instead of reporting no foreground', async () => {
@@ -147,6 +167,8 @@ it('fails a malformed --argv instead of reporting no foreground', async () => {
   await expect(
     fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', 'not json'], undefined),
   ).rejects.toThrow('herdr-app fake received malformed --argv JSON: not json');
+
+  expect(fake.calls).toEqual([]);
 
   const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
 
