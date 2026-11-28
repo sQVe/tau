@@ -95,8 +95,6 @@ const attachedInlineCode = (word: string): string | undefined => {
   return code === '' ? undefined : code;
 };
 
-// A resolved mode word is a code option, a stdin option, an option with a value, a file operand, or
-// another option to skip.
 const resolvedModeStep = (words: string[], index: number, codes: string[]): ResolvedModeStep => {
   const word = words[index] ?? '';
   const attached = attachedInlineCode(word);
