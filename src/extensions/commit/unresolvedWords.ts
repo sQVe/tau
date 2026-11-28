@@ -19,7 +19,6 @@ const gitOptionValueNames = new Set([
   '--attr-source',
 ]);
 
-// The value attached to a known Git option, such as `/repo` in `--git-dir=/repo` or `-C/repo`.
 const attachedGitOptionValue = (word: string): string | undefined => {
   if (word.startsWith('--')) {
     const equals = word.indexOf('=');
@@ -54,7 +53,6 @@ export const isUnresolvedWord = (word: string): boolean => {
   return /[$`{}]/u.test(lastSegment) || isBraceExpansion(word);
 };
 
-// The last path segment of a command word, lowercased, as a shell resolves the directory part.
 export const commandName = (word: string): string =>
   word.slice(word.lastIndexOf('/') + 1).toLowerCase();
 
