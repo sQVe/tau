@@ -77,7 +77,8 @@ const shellOptionOperand = (words: readonly string[]): ShellOperand | undefined 
   while (index < words.length) {
     const word = words[index] ?? '';
 
-    if (word === '--') {
+    // Bash, sh, and ksh treat a lone `-` as the end of options, so it names no script file.
+    if (word === '--' || word === '-') {
       const operand = words[index + 1];
 
       if (operand === undefined) {

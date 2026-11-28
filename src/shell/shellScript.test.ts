@@ -77,6 +77,11 @@ it('reads the script after an option terminator that never names the script', ()
   expect(scriptOf(['bash', '-c', '--'])).toBeUndefined();
 });
 
+it('reads a lone dash as the end of the shell options', () => {
+  expect(shellScriptOf(['bash', '-'])).toEqual({ kind: 'none' });
+  expect(shellScriptOf(['bash', '-', 'script.sh'])).toEqual({ kind: 'file', path: 'script.sh' });
+});
+
 it('reads the script after a wrapper operand after an option terminator', () => {
   expect(scriptOf(['flock', '--', '-lockfile', 'bash', '-lc', 'cmd'])).toBe('cmd');
 });
