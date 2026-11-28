@@ -237,6 +237,31 @@ it('does not send SIGKILL when Git exited at the kill grace', async () => {
   expect((await pending).exitCode).toBeNull();
 });
 
+it('keeps Git output when Git exits during the kill grace', async () => {
+  const capture = captureProcess();
+  const kill = vi.spyOn(capture.child, 'kill').mockReturnValue(true);
+  const pending = runGit('/repository', ['status'], { timeoutMilliseconds: 50 });
+
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  Object.defineProperty(capture.child, 'exitCode', { value: 0, configurable: true });
+  capture.child.emit('exit', 0, null);
+
+  await vi.advanceTimersByTimeAsync(7000);
+
+  expect(kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  capture.complete(Object.assign(new Error('killed'), { code: null }));
+
+  const result = await pending;
+
+  expect(result.exitCode).toBeNull();
+  expect(result.stdout.toString()).toBe('collected output');
+  expect(result.stderr).toBe('git status timed out after 50 ms');
+});
+
 it('keeps the abort reason when the abort lands during the kill grace', async () => {
   const capture = captureProcess();
   const controller = new AbortController();

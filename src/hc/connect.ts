@@ -200,33 +200,35 @@ export const connect: Connect = (lines, options = {}) => {
 
       streamFailure = failure;
 
-      if (killTimer === undefined) {
+      if (killTimer !== undefined) {
+        return;
+      }
+
+      if (child.exitCode !== null || child.signalCode !== null) {
+        destroyPipes();
+
+        return;
+      }
+
+      child.kill('SIGTERM');
+      child.once('exit', destroyPipes);
+
+      killTimer = setTimeout(() => {
         if (child.exitCode !== null || child.signalCode !== null) {
-          destroyPipes();
-        } else {
-          child.kill('SIGTERM');
-          child.once('exit', destroyPipes);
+          return;
         }
 
-        killTimer = setTimeout(() => {
-          if (child.exitCode === null && child.signalCode === null) {
-            child.kill('SIGKILL');
-          }
-        }, streamKillGraceMilliseconds);
+        const killSent = child.kill('SIGKILL');
+        const clause = killSent ? ' and did not exit after SIGKILL' : '';
 
         confirmTimer = setTimeout(() => {
           const latestFailure = streamFailure ?? failure;
 
           settle(() => {
-            reject(
-              new HcError(
-                latestFailure.kind,
-                `${latestFailure.message} and did not exit after SIGKILL`,
-              ),
-            );
+            reject(new HcError(latestFailure.kind, `${latestFailure.message}${clause}`));
           });
-        }, streamKillGraceMilliseconds + killConfirmMilliseconds);
-      }
+        }, killConfirmMilliseconds);
+      }, streamKillGraceMilliseconds);
     };
 
     const onAbort = () => {

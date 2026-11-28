@@ -12,7 +12,12 @@ import { declinedExec } from '../../tests/declinedExecFake.js';
 import { createHcFake } from '../../tests/hcFake.js';
 import type { HcFake } from '../../tests/hcFake.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { connect, runWithEnvironment } from './connect.js';
+import {
+  connect,
+  killConfirmMilliseconds,
+  runWithEnvironment,
+  streamKillGraceMilliseconds,
+} from './connect.js';
 import { HcError } from './hc.js';
 import type { HcRuntime } from './hc.js';
 
@@ -92,7 +97,7 @@ const createFakeChild = (): FakeChild => {
     stderr: new PassThrough(),
     exitCode: null,
     signalCode: null,
-    kill: vi.fn<(signal?: NodeJS.Signals) => boolean>(),
+    kill: vi.fn<(signal?: NodeJS.Signals) => boolean>().mockReturnValue(true),
     on: (event, listener) => {
       events.on(event, listener);
 
@@ -639,6 +644,64 @@ it('settles at the confirm deadline without close and appends the did-not-exit c
   );
 });
 
+it('keeps the full confirm window when the kill grace runs late', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const controller = new AbortController();
+
+  const pending = connect([helloLine], { signal: controller.signal }).catch(
+    (error: unknown) => error,
+  );
+
+  // The event loop is blocked past the kill deadline, so the kill timer runs 3000 ms late.
+  const schedule = globalThis.setTimeout;
+
+  const timerSpy = vi
+    .spyOn(globalThis, 'setTimeout')
+    .mockImplementation((callback, delay, ...argumentsList) => {
+      const lateDelay = delay === streamKillGraceMilliseconds ? delay + 3000 : delay;
+
+      return schedule(callback, lateDelay, ...argumentsList);
+    });
+
+  onTestFinished(() => {
+    timerSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  controller.abort();
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  await vi.advanceTimersByTimeAsync(streamKillGraceMilliseconds + 3000 - 1);
+
+  expect(child.kill).toHaveBeenCalledExactlyOnceWith('SIGTERM');
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  expect(child.kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+
+  const stillWaiting = vi
+    .advanceTimersByTimeAsync(killConfirmMilliseconds - 1)
+    .then(() => 'waiting' as const);
+
+  expect(await Promise.race([pending, stillWaiting])).toBe('waiting');
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ kind: 'aborted' });
+
+  expect((failure as HcError).message).toBe(
+    'hc connect was aborted and did not exit after SIGKILL',
+  );
+});
+
 it('destroys both pipes and detaches its exit hook at the confirm deadline', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
@@ -690,13 +753,19 @@ it('destroys both pipes when the child exited before cancellation', async () => 
   expect(child.kill).not.toHaveBeenCalled();
   expect(child.stdout.destroyed).toBe(true);
   expect(child.stderr.destroyed).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
 
-  await vi.advanceTimersByTimeAsync(7000);
-  await pending;
+  const stillWaiting = vi.advanceTimersByTimeAsync(7000).then(() => 'waiting' as const);
 
-  expect(child.kill).not.toHaveBeenCalled();
-  expect(child.stdout.destroyed).toBe(true);
-  expect(child.stderr.destroyed).toBe(true);
+  expect(await Promise.race([pending, stillWaiting])).toBe('waiting');
+
+  child.emit('close', 0, null);
+
+  const failure = await pending;
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'aborted' });
+  expect((failure as HcError).message).toBe('hc connect was aborted');
 });
 
 it('reports output_too_large when stdout passes the cap before a nonzero exit', async () => {

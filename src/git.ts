@@ -103,11 +103,13 @@ const startTimeoutKill = (
     onTimeout();
 
     timers.confirm = setTimeout(() => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+      }
+
       timers.confirm = setTimeout(onFinal, killConfirmMilliseconds);
 
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill('SIGKILL');
-      }
+      child.kill('SIGKILL');
     }, killGraceMilliseconds);
 
     child.kill('SIGTERM');

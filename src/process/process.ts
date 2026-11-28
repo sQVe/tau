@@ -200,7 +200,7 @@ const appendWithinLimit = (
   stream: 'stdout' | 'stderr',
   data: string,
 ): void => {
-  const remaining = outputCharacterLimit - output.stdout.length - output.stderr.length;
+  const remaining = outputCharacterLimit - output[stream].length;
 
   output.truncated ||= data.length > remaining;
 

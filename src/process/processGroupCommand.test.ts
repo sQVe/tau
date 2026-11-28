@@ -184,13 +184,13 @@ it('starts the command without launching the current executable', async () => {
   expect(result).toEqual({ stdout: 'out', stderr: '', code: 0, killed: false, truncated: false });
 });
 
-it('keeps at most the output cap across both streams and keeps draining', async () => {
+it('caps stdout and stderr separately and keeps draining', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-group-command-');
   const marker = join(directory, 'finished');
 
   const script = [
     "const fs = require('node:fs');",
-    "process.stdout.write('a'.repeat(700000), () => {",
+    "process.stdout.write('a'.repeat(1100000), () => {",
     "  process.stderr.write('b'.repeat(700000), () => {",
     "    fs.writeFileSync(process.argv[1], 'done');",
     '  });',
@@ -205,7 +205,8 @@ it('keeps at most the output cap across both streams and keeps draining', async 
   expect(result.code).toBe(0);
   expect(result.killed).toBe(false);
   expect(result.truncated).toBe(true);
-  expect(result.stdout.length + result.stderr.length).toBe(1_048_576);
+  expect(result.stdout).toBe('a'.repeat(1_048_576));
+  expect(result.stderr).toBe('b'.repeat(700000));
   expect(existsSync(marker)).toBe(true);
 });
 
