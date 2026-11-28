@@ -102,6 +102,14 @@ describe('guardToolCall', () => {
     },
   );
 
+  it('allows a case pattern that names git and commit', () => {
+    expect(guard(makeBashEvent('case $x in git|commit) echo ok ;; esac'))).toBeUndefined();
+  });
+
+  it('blocks a commit that a case branch runs', () => {
+    expectOutcome(makeBashEvent('case $x in a) git commit -m x ;; esac'));
+  });
+
   it('returns a block result for a plain git commit bash command', () => {
     expectOutcome(makeBashEvent("git commit -m 'feat: add'"));
   });
@@ -1096,6 +1104,8 @@ describe('guardToolCall', () => {
     ['env -S', "env -S 'git commit -m x'"],
     ['env -S with a script', "env -S 'sh commit.sh'"],
     ['env --split-string=', "env --split-string='git commit -m x'"],
+    ['an abbreviated env --split', "env --split 'git commit -m x'"],
+    ['an abbreviated env --split=', "env --split='git commit -m x'"],
   ])('blocks inline code after %s', (_label, command) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1108,6 +1118,56 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     expect(guard(makeBashEvent("env -S 'git status'"), directory)).toBeUndefined();
+  });
+
+  it('allows a file whose env split value repeats the split option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', '#!/usr/bin/env -S -S -S\ngit status\n');
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
+  it.each([
+    ['a direct env split value', `env -S '\${SHELL} -c "git commit -m x"'`],
+    ['an env split value with a separate -c', `env -S '\${SHELL}' -c 'git commit -m x'`],
+    ['a nested env split value', `sh -c 'env -S "\\\${SHELL} -c \\"git commit -m x\\""'`],
+    ['an env split value after command', `command env -S '\${SHELL} -c "git commit -m x"'`],
+    ['an env split value after sudo', `sudo env -S '\${SHELL} -c "git commit -m x"'`],
+  ])('blocks a commit behind %s', (_label, command) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(command), directory);
+  });
+
+  it('blocks an env split value whose program depends on the environment even when its text looks safe', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(`env -S '\${SHELL} -c "git status"'`), directory);
+  });
+
+  it('blocks an env split value whose program follows an assignment and expands', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent(`env -S 'FOO=bar' \${SHELL} -c 'git commit -m x'`), directory);
+  });
+
+  it('blocks a file whose env -S shebang is unreadable and whose words cannot be recovered', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(
+      directory,
+      'commit.sh',
+      `#!/usr/bin/env -S \${SHELL} -c "git commit -m x\necho hello\n`,
+    );
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
+  it('allows an env split value whose resolved program is not a shell', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expect(guard(makeBashEvent(`env -S 'node -e "$X"'`), directory)).toBeUndefined();
   });
 
   it.each([
@@ -1128,6 +1188,20 @@ describe('guardToolCall', () => {
 
     expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
   });
+
+  it.each([
+    ['a short unset option', `#!/usr/bin/env -S -u FOO \${SHELL}`],
+    ['a long unset option', `#!/usr/bin/env -S --unset FOO \${SHELL}`],
+  ])(
+    'blocks a commit in a file whose env -S %s precedes an expanded program',
+    (_label, shebang) => {
+      const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+      writeScript(directory, 'commit.sh', `${shebang}\ngit commit -m x\n`);
+
+      expectOutcome(makeBashEvent('./commit.sh'), directory);
+    },
+  );
 
   it.each([
     ['xargs -e', 'xargs -e sh commit.sh'],
@@ -1207,6 +1281,38 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('./commit.sh'), directory);
   });
 
+  it('blocks a commit in a file whose env -S shebang quotes its interpreter', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(
+      directory,
+      'commit.sh',
+      `#!/usr/bin/env -S "bash" -c "true $MSG"\ngit commit -m x\n`,
+    );
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
+  it('blocks a commit in a file whose env -S shebang cannot be split', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', `#!/usr/bin/env -S "bash -c 'true'\ngit commit -m x\n`);
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
+  it('blocks a commit in a file whose env -S shebang expands its interpreter', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(
+      directory,
+      'commit.sh',
+      `#!/usr/bin/env -S \${SHELL} -c 'git commit -m x'\necho hello\n`,
+    );
+
+    expectOutcome(makeBashEvent('./commit.sh'), directory);
+  });
+
   it('allows a commit in a file whose env shebang names another program', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
@@ -1260,6 +1366,14 @@ describe('guardToolCall', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     writeScript(directory, 'tool.js', '#!/usr/bin/env -Snode\ngit commit -m x\n');
+
+    expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
+  });
+
+  it('allows a non-shell file whose env -S value depends on the environment', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'tool.js', '#!/usr/bin/env -S node -e "$X"\ngit commit -m x\n');
 
     expect(guard(makeBashEvent('./tool.js'), directory)).toBeUndefined();
   });

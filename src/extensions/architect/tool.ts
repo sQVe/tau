@@ -191,7 +191,7 @@ export const createArchitectTool = (
   return defineTool({
     name: 'architect',
     label: 'Architect',
-    description: `- open: with request, starts or resumes it beside the lead. Returns {status, sessionFile} or {status: "running", terminal}; send a live one the request with handover.
+    description: `- open: with request, starts or resumes it beside the lead. Returns {status, sessionFile, model} or {status: "running", terminal}; model is the started provider/model-id, or "unknown" when no terminal was reported. Send a live one the request with handover.
 - ask: with question or gate, a gate record path. Live: {queued|unknown, askId, note}; follow note, retry unknown by askId. Else hidden: {askId, answer} or needsOpen. Refuses if busy.
 - gate: classifies request and restatement. Returns {decision, label, confidence, recordPath}. Gate only a new request; an acceptance reply follows your offer. Follow specified; on open, open it; on uncertain, ask with gate = recordPath.`,
     promptSnippet: 'Open, ask, or gate the checkout architect.',

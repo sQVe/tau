@@ -537,8 +537,8 @@ imports = ["command", "errors"]
 
 [modules.piStart]
 entry = "src/piStart/piStart.ts"
-public = ["src/piStart/herdrPane.ts", "src/piStart/piArguments.ts"]
-imports = ["command", "config", "errors", "git"]
+public = ["src/piStart/herdrPane.ts", "src/piStart/piArguments.ts", "src/piStart/startedTab.ts"]
+imports = ["command", "config", "errors", "git", "schema", "shell"]
 
 [modules.process]
 entry = "src/process/process.ts"
@@ -586,9 +586,9 @@ public = ["src/sessionMessage/askResult.ts"]
 imports = ["schema"]
 
 [modules.shell]
-entry = "src/shell.ts"
-public = []
-imports = []
+entry = "src/shell/shell.ts"
+public = ["src/shell/shellScript.ts"]
+imports = ["wrapperAnalysis"]
 
 [modules.skillTools]
 entry = "src/skillTools.ts"
@@ -626,6 +626,11 @@ imports = ["errors", "record", "schema", "tauDirectory"]
 
 [modules.wake]
 entry = "src/wake/wake.ts"
+public = []
+imports = []
+
+[modules.wrapperAnalysis]
+entry = "src/wrapperAnalysis.ts"
 public = []
 imports = []
 

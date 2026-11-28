@@ -13,7 +13,7 @@ import { declinedExec } from './declinedExecFake.js';
 type Handler = (event: never, context: ExtensionContext) => unknown;
 type Command = Parameters<ExtensionAPI['registerCommand']>[1];
 
-interface FakeExtensionApi {
+export interface FakeExtensionApi {
   pi: ExtensionAPI;
   handlers: Map<string, Handler[]>;
   handler: (name: string) => (event: unknown, context: ExtensionContext) => unknown;

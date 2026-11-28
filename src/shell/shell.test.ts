@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseShellCommands } from './shell.js';
+import { parseShell, parseShellCommands } from './shell.js';
 
 const wordsOf = (source: string) =>
   parseShellCommands(source)
@@ -17,6 +17,22 @@ const inputsOf = (source: string) =>
     ?.filter(({ words }) => words.length > 0)
     .map(({ inputs }) => inputs);
 
+const backgroundsOf = (source: string): boolean[] | undefined =>
+  parseShellCommands(source)
+    ?.filter(({ arguments: commandArguments }) => commandArguments.length > 0)
+    .map(({ background }) => background);
+
+const groupsOf = (source: string): (number | undefined)[] | undefined =>
+  parseShellCommands(source)?.map(({ group }) => group);
+
+const pipeTargetsOf = (source: string): (number | undefined)[] | undefined =>
+  parseShellCommands(source)?.map(({ pipeTarget }) => pipeTarget);
+
+const shellIdsOf = (source: string): string[] | undefined =>
+  parseShellCommands(source)
+    ?.filter(({ arguments: commandArguments }) => commandArguments.length > 0)
+    .map(({ shellId }) => shellId);
+
 describe('parseShellCommands', () => {
   it.each([
     ['git commit>out', [['git', 'commit', 'out']]],
@@ -31,30 +47,6 @@ describe('parseShellCommands', () => {
     ['a&&b', [['a'], ['b']]],
   ])('splits redirections from words: %s', (source, expected) => {
     expect(wordsOf(source)).toEqual(expected);
-  });
-
-  it.each([
-    ['git 2>&1 commit', [['git', 'commit']]],
-    ['git 2>/dev/null commit', [['git', 'commit']]],
-    ['git commit>out', [['git', 'commit']]],
-    ['git>/dev/null commit', [['git', 'commit']]],
-    ['git commit&>/dev/null', [['git', 'commit']]],
-    ['git commit<<<msg', [['git', 'commit']]],
-    ["echo '2'>out", [['echo', '2']]],
-    ['a 2 >out', [['a', '2']]],
-    ['git 12>out commit', [['git', 'commit']]],
-    ['git tag v2>out', [['git', 'tag', 'v2']]],
-    ['echo 2a>out', [['echo', '2a']]],
-    ['cat <<EOF arg\nbody\nEOF', [['cat', 'arg']]],
-    [
-      'git commit > $(git push)',
-      [
-        ['git', 'commit'],
-        ['git', 'push'],
-      ],
-    ],
-  ])('keeps only the arguments bash passes: %s', (source, expected) => {
-    expect(argumentsOf(source)).toEqual(expected);
   });
 
   it.each([
@@ -144,6 +136,328 @@ describe('parseShellCommands', () => {
     ],
   ])('records the redirections that feed standard input: %s', (source, expected) => {
     expect(inputsOf(source)).toEqual(expected);
+  });
+
+  it('records a background command and its redirections', () => {
+    expect(parseShellCommands('cmd 2>/dev/null &')?.[0]).toMatchObject({
+      background: true,
+      redirections: [{ fileDescriptor: 2, operator: '>', target: '/dev/null' }],
+    });
+
+    expect(parseShellCommands('cmd > /tmp/x.log 2>&1 &')?.[0]).toMatchObject({
+      background: true,
+      redirections: [
+        { fileDescriptor: undefined, operator: '>', target: '/tmp/x.log' },
+        { fileDescriptor: 2, operator: '>&', target: '1' },
+      ],
+    });
+
+    expect(parseShellCommands('cmd &>/dev/null &')?.[0]).toMatchObject({
+      background: true,
+      redirections: [{ fileDescriptor: undefined, operator: '&>', target: '/dev/null' }],
+    });
+  });
+
+  it('records the implicit stderr duplication of a pipe-and after its own redirections', () => {
+    expect(parseShellCommands('cmd 2>/dev/null |& cat &')?.[0]?.redirections).toEqual([
+      { fileDescriptor: 2, operator: '>', target: '/dev/null' },
+      { fileDescriptor: 2, operator: '>&', target: '1' },
+    ]);
+  });
+
+  it('does not mark an and-list as background', () => {
+    expect(backgroundsOf('cmd && other')).toEqual([false, false]);
+  });
+
+  it('marks every command in a background pipeline or list unit', () => {
+    expect(backgroundsOf('cmd 2>/dev/null | cat &')).toEqual([true, true]);
+    expect(backgroundsOf('cmd 2>/dev/null & cat')).toEqual([true, false]);
+    expect(backgroundsOf('cmd && other &')).toEqual([true, true]);
+    expect(backgroundsOf('cmd 2>/dev/null && ( other ) &')).toEqual([true, true]);
+    expect(backgroundsOf('cmd; other &')).toEqual([false, true]);
+  });
+
+  it('backgrounds only the command that ends a list inside a foreground group', () => {
+    expect(backgroundsOf('( a; b & )')).toEqual([false, true]);
+  });
+
+  it('keeps an ampersand inside a compound away from the enclosing unit', () => {
+    expect(backgroundsOf('a && { b & }')).toEqual([false, true, false]);
+    expect(backgroundsOf('producer | { consumer & }')).toEqual([false, true, false]);
+  });
+
+  it('backgrounds a whole and-list when the ampersand follows the compound', () => {
+    expect(backgroundsOf('a && { b; } &')).toEqual([true, true, true]);
+  });
+
+  it('opens a compound nested inside another compound', () => {
+    expect(groupsOf('{ if a; then b; fi & }')).toEqual([undefined, undefined, 0, 0]);
+    expect(groupsOf('{ case x in a) b ;; esac & }')).toEqual([undefined, undefined, 0, 0]);
+    expect(groupsOf('{ { a; } & }')).toEqual([undefined, 0, 0]);
+  });
+
+  it('records the next pipeline element on each command that writes to a pipe', () => {
+    expect(pipeTargetsOf('a | b | c > log')).toEqual([1, 2, undefined]);
+    expect(pipeTargetsOf('a && b')).toEqual([undefined, undefined]);
+    expect(pipeTargetsOf('{ a; b; } | c')).toEqual([3, 3, 3, undefined]);
+  });
+
+  it('points a pipe at the first command of an element that opens a group', () => {
+    expect(pipeTargetsOf('a | (b > log)')).toEqual([2, undefined, undefined, undefined]);
+    expect(pipeTargetsOf('a | (b) > log')).toEqual([2, undefined, undefined, undefined]);
+
+    expect(pipeTargetsOf('a | ((b))')).toEqual([
+      3,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('offsets the pipe target of a spliced sub-parse into the outer list', () => {
+    expect(pipeTargetsOf('echo `a | b`')).toEqual([undefined, 2, undefined]);
+
+    expect(pipeTargetsOf('cat <<EOF\n$(a | b)\nEOF')).toEqual([undefined, undefined, 3, undefined]);
+  });
+
+  it('keeps an inner pipe target when a group follows a heredoc body', () => {
+    expect(pipeTargetsOf('cat <<EOF\n$(a | b)\nEOF\n(c)')).toEqual([
+      undefined,
+      undefined,
+      3,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('does not give a spliced command the pipe target of the element that contains it', () => {
+    expect(pipeTargetsOf('echo $(a) | cat')).toEqual([2, undefined, undefined]);
+    expect(pipeTargetsOf('echo `a` | cat')).toEqual([2, undefined, undefined]);
+
+    expect(pipeTargetsOf('cat <<EOF\n$(a)\nEOF\nb | c')).toEqual([
+      undefined,
+      3,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('keeps an inner pipeline target when an enclosing element is also piped', () => {
+    expect(pipeTargetsOf('{ a | b; } | c')).toEqual([1, 3, 3, undefined]);
+  });
+
+  it('records the group start on the command that closes the group', () => {
+    expect(groupsOf('( a; b ) > out')).toEqual([undefined, undefined, undefined, 1]);
+  });
+
+  it('offsets the group of a backtick group into the outer list', () => {
+    expect(groupsOf('echo `( a )`')).toEqual([undefined, undefined, undefined, 2]);
+  });
+
+  it('gives each pipeline element its own child shell', () => {
+    expect(shellIdsOf('a | b | c; d')).toEqual(['0.1', '0.2', '0.3', '0']);
+  });
+
+  it('keeps a compound pipeline element in its own child shell', () => {
+    expect(shellIdsOf('a | { b; c; }')).toEqual(['0.1', '0.2', '0.2', '0.2']);
+    expect(shellIdsOf('a | { b && c; }')).toEqual(['0.1', '0.2', '0.2', '0.2']);
+    expect(shellIdsOf('a | { b\nc; }')).toEqual(['0.1', '0.2', '0.2', '0.2']);
+    expect(shellIdsOf('{ a; b; } | cat')).toEqual(['0.1', '0.1', '0.1', '0.2']);
+  });
+
+  it('keeps an exec in a compound pipeline element out of the parent shell', () => {
+    expect(shellIdsOf('a | { exec 2>/dev/null; b; }')).toEqual(['0.1', '0.2', '0.2', '0.2']);
+  });
+
+  it('keeps a case pattern paren from closing an enclosing group', () => {
+    expect(groupsOf('( case x in a) b ;; esac )')).toEqual([undefined, undefined, undefined, 1, 1]);
+  });
+
+  it('reads a case inside a command substitution', () => {
+    const commands = parseShellCommands('echo $(case x in a) b ;; c) d ;; esac)');
+
+    expect(commands?.map(({ words }) => words)).toContainEqual(['b']);
+    expect(commands?.map(({ words }) => words)).toContainEqual(['d']);
+  });
+
+  it('gives a backgrounded unit its own child shell and keeps its members together', () => {
+    expect(shellIdsOf('{ exec 2>/dev/null; cmd & } &')).toEqual(['0.2', '0.2.1', '0.2']);
+  });
+
+  it('gives a command substitution and a backtick their own child shells', () => {
+    expect(shellIdsOf('echo $(true)')).toEqual(['0', '0.1']);
+    expect(shellIdsOf('echo `true`')).toEqual(['0', '0.1']);
+    expect(shellIdsOf('echo $(true $(false))')).toEqual(['0', '0.1', '0.1.1']);
+  });
+
+  it('puts a heredoc body substitution under its owner shell', () => {
+    expect(shellIdsOf('cat <<EOF &\n$(cmd)\nEOF')).toEqual(['0.1', '0.1.2.1']);
+    expect(shellIdsOf('cat <<EOF | grep\n$(cmd)\nEOF')).toEqual(['0.1', '0.2', '0.1.3.1']);
+  });
+
+  it.each([
+    ['a pipeline with |&', 'printf example 2>/dev/null |& cat', [false, false]],
+    ['a pipeline with |& and a trailing ampersand', 'cmd 2>/dev/null |& cat &', [true, true]],
+    [
+      'a pipeline broken across a newline with a trailing ampersand',
+      'nohup cmd 2>/dev/null |\n  cat &',
+      [true, true],
+    ],
+    [
+      'an outer command before a substitution with an inner ampersand',
+      'printf example 2>/dev/null; printf "%s" "$(true &)"',
+      [false, false, true],
+    ],
+    [
+      'an and-list broken across a newline with a trailing ampersand',
+      'nohup cmd 2>/dev/null &&\n  other &',
+      [true, true],
+    ],
+    [
+      'an or-list broken across a newline with a trailing ampersand',
+      'nohup cmd 2>/dev/null ||\n  other &',
+      [true, true],
+    ],
+    [
+      'an and-list broken across a newline without a trailing ampersand',
+      'cmd 2>/dev/null &&\n  other',
+      [false, false],
+    ],
+    [
+      'a heredoc body command before a background unit',
+      'cat <<EOF\n$(touch x 2>/dev/null)\nEOF\nother &',
+      [false, true, false],
+    ],
+    ['an if compound with a trailing ampersand', 'if a; then b; fi &', [true, true, true]],
+    ['a brace compound with a trailing ampersand', '{ a; } &', [true, true]],
+    ['a negated brace compound with a trailing ampersand', '! { a; } &', [true, true]],
+    ['a timed brace compound with a trailing ampersand', 'time { a; } &', [true, true]],
+    [
+      'a timed brace compound after a time output option',
+      'time -o /tmp/x.log { a; } &',
+      [false, true],
+    ],
+    [
+      'an external time before a brace argument',
+      '/usr/bin/time -o /tmp/x.log { a; } &',
+      [false, true],
+    ],
+    ['a wrapper before a brace argument', 'sudo { a; } &', [false, true]],
+    ['an env assignment before a brace argument', 'env FOO=1 { a; } &', [false, true]],
+    [
+      'a heredoc body read after its owner is backgrounded',
+      'cat <<EOF &\n$(grep x 2>/dev/null)\nEOF',
+      [true, true],
+    ],
+    ['a background inside an if compound', 'if a; then b & fi', [false, true, false]],
+    [
+      'a command before an if compound with a trailing ampersand',
+      'a; if b; then c; fi &',
+      [false, true, true, true],
+    ],
+    [
+      'an and-list before a backgrounded brace compound',
+      'a 2>/dev/null && { b; } &',
+      [true, true, true],
+    ],
+    [
+      'a brace compound before a backgrounded and-list',
+      '{ b 2>/dev/null; } && c &',
+      [true, true, true],
+    ],
+    [
+      'an and-list after a separator before a backgrounded brace compound',
+      'a; b 2>/dev/null && { c; } &',
+      [false, true, true, true],
+    ],
+  ])(
+    'marks background inside the unit that ends with an ampersand: %s',
+    (_name, source, expected) => {
+      expect(backgroundsOf(source)).toEqual(expected);
+    },
+  );
+
+  it('reads a case pattern as words that run nothing', () => {
+    expect(wordsOf('case $x in git|commit) echo ok ;; esac')).toEqual([
+      ['case', '$x', 'in'],
+      ['echo', 'ok'],
+      ['esac'],
+    ]);
+
+    expect(argumentsOf('case $x in git|commit) echo ok ;; esac')).toEqual([
+      ['case', '$x', 'in'],
+      ['echo', 'ok'],
+      ['esac'],
+    ]);
+  });
+
+  it.each(['fi', 'done', '}'])(
+    'keeps a case pattern that spells the %s keyword out of the command',
+    (pattern) => {
+      expect(wordsOf(`case x in ${pattern}) echo ok ;; esac`)).toEqual([
+        ['case', 'x', 'in'],
+        ['echo', 'ok'],
+        ['esac'],
+      ]);
+    },
+  );
+
+  it('keeps a quoted case closer out of the command', () => {
+    expect(wordsOf("case x in 'esac') echo ok ;; esac")).toEqual([
+      ['case', 'x', 'in'],
+      ['echo', 'ok'],
+      ['esac'],
+    ]);
+  });
+
+  it('records the command after a case whose pattern list is empty', () => {
+    expect(wordsOf('case x in esac; echo ok')).toEqual([
+      ['case', 'x', 'in', 'esac'],
+      ['echo', 'ok'],
+    ]);
+  });
+
+  it('records a detached command after a case whose pattern list is empty', () => {
+    expect(parseShellCommands('case $x in esac; nohup cmd 2>/dev/null &')).toContainEqual(
+      expect.objectContaining({ arguments: ['nohup', 'cmd'], background: true }),
+    );
+  });
+
+  it('backgrounds only a case pattern list member that ends with an ampersand', () => {
+    expect(backgroundsOf('case x in a) b & ;; esac')).toEqual([false, true, false]);
+  });
+
+  it('splits an append of both streams', () => {
+    expect(parseShellCommands('cmd &>>/tmp/x.log')?.[0]).toMatchObject({
+      redirections: [{ fileDescriptor: undefined, operator: '&>>', target: '/tmp/x.log' }],
+    });
+  });
+
+  it.each([
+    ['git 2>&1 commit', [['git', 'commit']]],
+    ['git 2>/dev/null commit', [['git', 'commit']]],
+    ['git commit>out', [['git', 'commit']]],
+    ['git>/dev/null commit', [['git', 'commit']]],
+    ['git commit&>/dev/null', [['git', 'commit']]],
+    ['git commit<<<msg', [['git', 'commit']]],
+    ["echo '2'>out", [['echo', '2']]],
+    ['a 2 >out', [['a', '2']]],
+    ['git 12>out commit', [['git', 'commit']]],
+    ['git tag v2>out', [['git', 'tag', 'v2']]],
+    ['echo 2a>out', [['echo', '2a']]],
+    ['cat <<EOF arg\nbody\nEOF', [['cat', 'arg']]],
+    [
+      'git commit > $(git push)',
+      [
+        ['git', 'commit'],
+        ['git', 'push'],
+      ],
+    ],
+  ])('keeps only the arguments bash passes: %s', (source, expected) => {
+    expect(argumentsOf(source)).toEqual(expected);
   });
 
   it.each([
@@ -305,6 +619,27 @@ describe('parseShellCommands', () => {
     },
   );
 
+  it('rejects deeply nested input instead of overflowing the stack', () => {
+    const depth = 20000;
+    const source = `${'$('.repeat(depth)}a${')'.repeat(depth)}`;
+
+    expect(parseShellCommands(source)).toBeUndefined();
+  });
+
+  it('rejects deeply nested parameter expansions instead of overflowing the stack', () => {
+    const depth = 20000;
+
+    expect(parseShellCommands('${'.repeat(depth))).toBeUndefined();
+  });
+
+  it('reports nesting past the parser budget apart from invalid syntax', () => {
+    const depth = 200;
+    const nested = `${'$('.repeat(depth)}a${')'.repeat(depth)}`;
+
+    expect(parseShell(nested)).toEqual({ kind: 'tooDeep' });
+    expect(parseShell('echo "')).toEqual({ kind: 'unparseable' });
+  });
+
   it('reads a heredoc body after the line ends', () => {
     expect(parseShellCommands('cat <<EOF\nbody\nEOF\nnext')).toEqual([
       {
@@ -314,6 +649,10 @@ describe('parseShellCommands', () => {
         heredocs: [{ body: 'body\n', scope: '0' }],
         depth: 0,
         scope: '',
+        background: false,
+        shellId: '0',
+        pipeTarget: undefined,
+        redirections: [],
       },
       {
         words: ['next'],
@@ -322,7 +661,34 @@ describe('parseShellCommands', () => {
         heredocs: [],
         depth: 0,
         scope: '',
+        background: false,
+        shellId: '0',
+        pipeTarget: undefined,
+        redirections: [],
       },
+    ]);
+  });
+
+  it('reads a heredoc body after a continued line', () => {
+    const commands = parseShellCommands('cat <<EOF &&\nbody\nEOF\nnext');
+
+    expect(commands?.[0]?.heredocs).toEqual([{ body: 'body\n', scope: '0' }]);
+    expect(commands?.map(({ words }) => words)).toEqual([['cat'], ['next']]);
+  });
+
+  it('keeps a heredoc body command inside a backtick in the background unit', () => {
+    expect(backgroundsOf('echo `cat <<EOF\n$(touch x 2>/dev/null)\nEOF` &')).toEqual([
+      true,
+      true,
+      true,
+    ]);
+  });
+
+  it('keeps a heredoc body command inside a command substitution in the background unit', () => {
+    expect(backgroundsOf('echo $(cat <<EOF\n$(touch x 2>/dev/null)\nEOF\n) &')).toEqual([
+      true,
+      true,
+      true,
     ]);
   });
 
@@ -388,6 +754,10 @@ describe('parseShellCommands', () => {
         heredocs: [],
         depth: 0,
         scope: '',
+        background: false,
+        shellId: '0',
+        pipeTarget: undefined,
+        redirections: [{ fileDescriptor: undefined, operator: '<<<', target: 'word' }],
       },
       {
         words: ['next'],
@@ -396,6 +766,10 @@ describe('parseShellCommands', () => {
         heredocs: [],
         depth: 0,
         scope: '',
+        background: false,
+        shellId: '0',
+        pipeTarget: undefined,
+        redirections: [],
       },
     ]);
   });
@@ -456,6 +830,10 @@ describe('parseShellCommands', () => {
         heredocs: [{ body: '', scope: '0' }],
         depth: 0,
         scope: '',
+        background: false,
+        shellId: '0',
+        pipeTarget: undefined,
+        redirections: [],
       },
     ]);
   });

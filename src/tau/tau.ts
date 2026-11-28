@@ -7,6 +7,7 @@ import { forgetReportedWarnings } from '../config/config.js';
 import architectExtension from '../extensions/architect/architect.js';
 import askUserQuestionExtension from '../extensions/askUserQuestion/askUserQuestion.js';
 import bareRootExtension from '../extensions/bareRoot.js';
+import bashGuardExtension from '../extensions/bashGuard/bashGuard.js';
 import checkoutWarningExtension from '../extensions/checkoutWarning/checkoutWarning.js';
 import codemodeExtension from '../extensions/codemode.js';
 import codeReviewExtension from '../extensions/codeReview/codeReview.js';
@@ -39,11 +40,14 @@ import toolResultRedactionExtension from '../extensions/toolResultRedaction/tool
 import trackerExtension from '../extensions/tracker/tracker.js';
 import verificationExtension from '../extensions/verification/verification.js';
 import webAccessExtension from '../extensions/webAccess.js';
+import { strictToolRegistration } from '../schema.js';
 
 const skillsDirectory = fileURLToPath(new URL('../skills/', import.meta.url));
 const checkoutDirectory = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
 export default async function tauRegistration(pi: ExtensionAPI): Promise<void> {
+  strictToolRegistration(pi);
+
   // Must be the first session_start handler, so a refused start runs no other handler.
   sessionLockExtension(pi);
 
@@ -59,6 +63,7 @@ export default async function tauRegistration(pi: ExtensionAPI): Promise<void> {
   // It must be Tau's first tool_result handler, so Tau's later handlers and the full-output files
   // they save see redacted text.
   toolResultRedactionExtension(pi);
+  bashGuardExtension(pi);
 
   await instructionsExtension(pi);
   codemodeExtension(pi);

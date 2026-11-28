@@ -1,28 +1,9 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
-import tauRegistration from '../src/tau/tau.js';
-import { fakeExtensionApi } from './extensionApi.js';
-
-const register = async (role: 'lead' | 'architect' | 'worker') => {
-  const roleVariable = role === 'lead' ? undefined : role;
-  vi.stubEnv('TAU_ROLE', roleVariable);
-  const fake = fakeExtensionApi();
-
-  try {
-    await tauRegistration(fake.pi);
-  } finally {
-    vi.unstubAllEnvs();
-  }
-
-  return fake;
-};
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
+import { registeredTauApi } from './tauRegistrationHarness.js';
 
 it('registers the plan tool through the Tau registration for the lead', async () => {
-  const fake = await register('lead');
+  const fake = await registeredTauApi('lead');
 
   expect(fake.tools.get('plan')?.name).toBe('plan');
 });
@@ -30,7 +11,7 @@ it('registers the plan tool through the Tau registration for the lead', async ()
 it.each(['architect', 'worker'] as const)(
   'registers no plan tool through the Tau registration for the %s',
   async (role) => {
-    const fake = await register(role);
+    const fake = await registeredTauApi(role);
 
     expect(fake.tools.has('plan')).toBe(false);
   },

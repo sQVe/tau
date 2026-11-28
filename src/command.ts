@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { describeSchemaProblem } from './schema.js';
+import { describeSchemaProblem, isRecord } from './schema.js';
 
 export type Exec = ExtensionAPI['exec'];
 
@@ -26,21 +26,61 @@ export const piExec =
 
 export const outputPreviewLength = 200;
 
+// The abort signal's reason may be a plain value, which would reject with a non-Error.
+export const normalizeCancellation = (
+  signal: AbortSignal | undefined,
+  error: unknown,
+  message: string,
+): unknown =>
+  signal?.aborted === true && !(error instanceof Error)
+    ? new Error(message, { cause: error })
+    : error;
+
+export const commandFailure = (
+  label: string,
+  result: Awaited<ReturnType<Exec>>,
+): Error | undefined => {
+  if (result.code === 0 && !result.killed) {
+    return undefined;
+  }
+
+  const output = result.stderr.trim() || result.stdout.trim();
+  // A cut output is incomplete, so the message must not read as the whole output.
+  const truncatedSuffix = result.truncated ? ' (output truncated)' : '';
+  const killedSuffix = result.killed ? ' (killed)' : '';
+
+  if (output !== '') {
+    return new Error(`${label} failed: ${output}${killedSuffix}${truncatedSuffix}`);
+  }
+
+  const status = result.killed ? 'killed' : `exit code ${result.code}`;
+
+  return new Error(`${label} failed: ${status}${truncatedSuffix}`);
+};
+
 export const runCommand = async (
   runtime: CommandRuntime,
   command: string,
   commandArguments: string[],
   label: string,
+  options: { timeout?: number | undefined } = {},
 ): Promise<string> => {
-  const result = await runtime.exec(command, commandArguments, {
-    cwd: runtime.cwd,
-    ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
-  });
+  let result: Awaited<ReturnType<Exec>>;
 
-  if (result.code !== 0 || result.killed) {
-    const output = (result.stderr || result.stdout).trim();
+  try {
+    result = await runtime.exec(command, commandArguments, {
+      cwd: runtime.cwd,
+      ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+      ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
+    });
+  } catch (error) {
+    throw normalizeCancellation(runtime.signal, error, `${label} failed: cancelled`);
+  }
 
-    throw new Error(`${label} failed: ${output}`);
+  const failure = commandFailure(label, result);
+
+  if (failure !== undefined) {
+    throw failure;
   }
 
   return result.stdout;
@@ -54,6 +94,17 @@ export const parseJson = (label: string, stdout: string): unknown => {
       `${label} printed output that is not JSON: ${stdout.slice(0, outputPreviewLength)}`,
       { cause: error },
     );
+  }
+};
+
+// Returns the object a JSON document holds, or undefined when the text is not a JSON object.
+export const parseJsonObject = (value: string): Record<string, unknown> | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(value);
+
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
   }
 };
 

@@ -58,9 +58,14 @@ In this section, a pure module is a module with no I/O file. It is not the same 
 `pureModules`, which makes pure decisions.
 
 The pure modules are `errors`, `handoverSender`, `judgeSchema`, `prose`, `schema`, `sessionMessage`,
-`shell`, and `tabName`. None of their files does I/O by the criterion above. Every other module in
-`importTable` is an I/O module. Each of its edges to a pure module follows the shared rule and is
-not listed.
+`shell`, `shellScript`, `tabName`, and `wrapperAnalysis`. None of their files does I/O by the
+criterion above. Every other module in `importTable` is an I/O module. Each of its edges to a pure
+module follows the shared rule and is not listed.
+
+`schema` keeps one exception to the no-effect rule: `strictToolRegistration` replaces `registerTool`
+on the API it is given and records the APIs it has installed on. The import table may only shrink,
+so a new module is not an option. `tests/pureModuleRegistry.ts` records the exception, and the rest
+of the module still makes pure decisions.
 
 `questionGate` is an I/O module because its judges call models and set timers. It imports no I/O
 module, so it has no line below.
@@ -106,14 +111,14 @@ to the table updates the list in the same commit until the mirror ends.
 - Other modules import a folder module through its entry file. A module may list extra public files
   in `stomme.toml`. An `eslint/no-restricted-imports` override in `vite.config.ts` lists Tau's extra
   public files, and tests and fixtures may import private files. Do not add shared `types.ts` files.
-- Register a module that makes pure decisions in `pureModules` in `tests/structure.test.ts`. The
+- Register a module that makes pure decisions in `pureModules` in `tests/pureModuleRegistry.ts`. The
   check fails the suite when a registered module does a runtime import of an unregistered module,
-  imports dynamically, or reads the clock, randomness, or the environment. The caller reads those
-  values and passes them in as facts. `pureLibraries` in the same file lists the outside libraries
-  each registered module may import. The check follows imports, not names, so renaming a file does
-  not escape it.
-- Keep `pureModules` in `tests/structure.test.ts` and the module list and each module's public files
-  in `lint/rules/moduleBoundaries.ts` sorted and free of duplicates, as
+  imports dynamically, reads the clock, randomness, or the environment, or assigns a function to a
+  property of an imported, parameter, or global object. The caller reads those values and passes
+  them in as facts. `pureLibraries` in the same file lists the outside libraries each registered
+  module may import. The check follows imports, not names, so renaming a file does not escape it.
+- Keep `pureModules` in `tests/pureModuleRegistry.ts` and the module list and each module's public
+  files in `lint/rules/moduleBoundaries.ts` sorted and free of duplicates, as
   [ADR 0109](./0109-keep-action-behavior-out-of-extension-roots.md) says.
 
 ## Consequences

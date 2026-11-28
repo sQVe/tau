@@ -133,7 +133,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'piStart',
     entry: 'piStart/piStart',
-    publicFiles: ['piStart/herdrPane', 'piStart/piArguments'],
+    publicFiles: ['piStart/herdrPane', 'piStart/piArguments', 'piStart/startedTab'],
   },
   { name: 'process', entry: 'process/process', publicFiles: [] },
   { name: 'prose', entry: 'prose', publicFiles: [] },
@@ -156,7 +156,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'sessionMessage/sessionMessage',
     publicFiles: ['sessionMessage/askResult'],
   },
-  { name: 'shell', entry: 'shell', publicFiles: [] },
+  { name: 'shell', entry: 'shell/shell', publicFiles: ['shell/shellScript'] },
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
   { name: 'tabName', entry: 'tabName', publicFiles: [] },
   { name: 'tau', entry: 'tau/tau', publicFiles: ['tau/tauArtifact', 'tau/tauSelection'] },
@@ -168,6 +168,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: ['verification/freshness', 'verification/records', 'verification/selection'],
   },
   { name: 'wake', entry: 'wake/wake', publicFiles: [] },
+  { name: 'wrapperAnalysis', entry: 'wrapperAnalysis', publicFiles: [] },
 ];
 
 // The shared modules each module may import, one row per module. src/tau/tau.ts is the
@@ -201,7 +202,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   instructions: ['errors'],
   judgeSchema: [],
   linear: ['command', 'errors'],
-  piStart: ['command', 'config', 'errors', 'git'],
+  piStart: ['command', 'config', 'errors', 'git', 'schema', 'shell'],
   process: ['errors'],
   prose: [],
   questionGate: ['errors', 'judgeSchema', 'schema'],
@@ -211,13 +212,14 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   role: ['schema'],
   schema: [],
   sessionMessage: ['schema'],
-  shell: [],
+  shell: ['wrapperAnalysis'],
   skillTools: [],
   tabName: [],
   tauDirectory: ['errors', 'git'],
   terminalText: [],
   verification: ['errors', 'record', 'schema', 'tauDirectory'],
   wake: [],
+  wrapperAnalysis: [],
 };
 
 const publicPaths = new Set(moduleList.flatMap((module) => [module.entry, ...module.publicFiles]));

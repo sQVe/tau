@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
+import { normalizeCancellation } from '../../../command.js';
 import type { ConfigLocation, ConfigWarnings } from '../../../config/config.js';
 import { userConfigPath } from '../../../config/config.js';
 import { readRoleModel } from '../../../config/roleModels.js';
@@ -8,11 +9,12 @@ import { errorMessage, isMissingFile, toError } from '../../../errors.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../../fileLock/fileLock.js';
 import { isBareRootWithoutGitEntry } from '../../../git.js';
-import { get } from '../../../hc/hc.js';
+import { HcError, foregroundArgv, get } from '../../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../../hc/hc.js';
 import { findPane } from '../../../piStart/herdrPane.js';
 import { launchPiSession, launchPiSessionRightOf } from '../../../piStart/piStart.js';
 import type { PiLaunchResult } from '../../../piStart/piStart.js';
+import { StartedTabError } from '../../../piStart/startedTab.js';
 import { tabName } from '../../../tabName.js';
 import { launchOutcomeDecision } from '../claimRelease/launchOutcomeDecision.js';
 import { architectLockPath } from '../lock.js';
@@ -34,9 +36,9 @@ export interface OpenRequest {
 }
 
 export type OpenResult =
-  | { status: 'opened'; sessionFile: null }
+  | { status: 'opened'; sessionFile: null; model: string }
   | { status: 'running'; terminal: string }
-  | { status: 'resumed'; sessionFile: string };
+  | { status: 'resumed'; sessionFile: string; model: string };
 
 interface PreparedArchitectStart {
   session: string | undefined;
@@ -213,7 +215,6 @@ const prepareArchitectStart = async (
 };
 
 const launchArchitect = (
-  hc: HcRuntime,
   request: OpenRequest,
   prepared: PreparedArchitectStart,
   fence: StartFence,
@@ -225,17 +226,41 @@ const launchArchitect = (
     session: prepared.session,
     bareRoot: prepared.bareRoot,
     environment: prepared.environment,
+    readForegroundArgv: (terminal: string, signal: AbortSignal) =>
+      foregroundArgv({ ...request.hc, signal }, terminal),
     argvWrapper: (argv: string[]): string[] => fence.wrapArgv(argv),
   };
 
   if (prepared.pane === undefined) {
     const target = { name: `architect-${basename(request.root)}` };
-    const started = launchPiSession(hc, { ...start, target, tabName: tabName('architect') });
+
+    const started = launchPiSession(request.hc, {
+      ...start,
+      target,
+      tabName: tabName('architect'),
+    });
 
     return started;
   }
 
-  return launchPiSessionRightOf(hc, { ...start, pane: prepared.pane });
+  return launchPiSessionRightOf(request.hc, { ...start, pane: prepared.pane });
+};
+
+const keptClaimFailure = (
+  completionFailure: Error | undefined,
+  readbackFailure: Error | undefined,
+): Error | undefined => {
+  if (completionFailure === undefined) {
+    return readbackFailure;
+  }
+
+  if (readbackFailure === undefined) {
+    return completionFailure;
+  }
+
+  return new Error(`${completionFailure.message} ${readbackFailure.message}`, {
+    cause: completionFailure,
+  });
 };
 
 const replyTerminalOf = (launch: PiLaunchResult): ReplyTerminal =>
@@ -253,10 +278,13 @@ const launchFailure = (launch: PiLaunchResult): Error =>
     ? launch.error
     : new Error('The architect launch failed before it reported a terminal.');
 
-const launchResult = (prepared: PreparedArchitectStart): OpenResult =>
+const launchReportedFailure = (launch: PiLaunchResult): boolean =>
+  launchOutcomeDecision(launchFacts(launch)) === 'notCreated';
+
+const launchResult = (prepared: PreparedArchitectStart, model: string): OpenResult =>
   prepared.session === undefined
-    ? { status: 'opened', sessionFile: null }
-    : { status: 'resumed', sessionFile: prepared.session };
+    ? { status: 'opened', sessionFile: null, model }
+    : { status: 'resumed', sessionFile: prepared.session, model };
 
 const refusal = (checkout: string): Error =>
   new Error(`The architect is already running in ${checkout}.`);
@@ -298,15 +326,62 @@ export const takeoverAdoptedChildEndedError = (): Error =>
     'The architect took the checkout lock but its process ended before it could answer. Call architect open again.',
   );
 
-const cancelledOpenError = (signal: AbortSignal | undefined): Error => {
-  const reason: unknown = signal?.reason;
-
-  return reason instanceof Error ? reason : new Error('The open was cancelled.', { cause: reason });
-};
+const cancelledOpenError = (signal: AbortSignal | undefined): Error =>
+  toError(normalizeCancellation(signal, signal?.reason, 'The open was cancelled.'));
 
 const throwIfOpenCancelled = (signal: AbortSignal | undefined): void => {
   if (signal?.aborted === true) {
     throw cancelledOpenError(signal);
+  }
+};
+
+// A launch failure that races with an abort is still the failure the caller needs, so only a
+// recognized cancellation becomes the caller's cancellation error.
+const recognizedCancellation = (signal: AbortSignal | undefined, error: unknown): boolean => {
+  if (signal?.aborted !== true) {
+    return false;
+  }
+
+  if (!(error instanceof Error)) {
+    return error === signal.reason;
+  }
+
+  const abortError = error.name === 'AbortError';
+  const abortedHcError = error instanceof HcError && error.kind === 'aborted';
+
+  if (abortError || abortedHcError) {
+    return true;
+  }
+
+  return error === signal.reason || error.cause === signal.reason;
+};
+
+const openFailure = (signal: AbortSignal | undefined, error: unknown): Error =>
+  recognizedCancellation(signal, error) ? cancelledOpenError(signal) : toError(error);
+
+// The launch's checkout probe reports piStart's own cancellation message, so report the caller's
+// cancellation instead.
+const launchArchitectForOpen = async (
+  request: OpenRequest,
+  prepared: PreparedArchitectStart,
+  fence: StartFence,
+): Promise<PiLaunchResult> => {
+  try {
+    return await launchArchitect(request, prepared, fence);
+  } catch (error) {
+    throw openFailure(request.hc.signal, error);
+  }
+};
+
+const prepareArchitectForOpen = async (
+  request: OpenRequest,
+  record: SavedArchitectRecord | undefined,
+  fence: StartFence,
+): Promise<PreparedArchitectStart> => {
+  try {
+    return await prepareArchitectStart(request, record?.sessionFile ?? undefined, fence.token);
+  } catch (error) {
+    throw openFailure(request.hc.signal, error);
   }
 };
 
@@ -389,9 +464,9 @@ const settleLaunch = async (
 ): Promise<void> => {
   const completion = await fence.complete();
 
-  throwIfOpenCancelled(request.hc.signal);
-
   if (completion.outcome === 'adopted') {
+    throwIfOpenCancelled(request.hc.signal);
+
     return;
   }
 
@@ -399,7 +474,11 @@ const settleLaunch = async (
     throw openKeptClaimError(request.root, completion.failure);
   }
 
-  throw failure;
+  // A launch failure that races with an abort is still the failure the caller needs, so only a
+  // recognized cancellation replaces it.
+  throw recognizedCancellation(request.hc.signal, failure)
+    ? cancelledOpenError(request.hc.signal)
+    : failure;
 };
 
 const adoptionReadError = (error: unknown): Error =>
@@ -410,7 +489,18 @@ const applyLaunchOutcome = async (
   fence: StartFence,
   started: PiLaunchResult,
 ): Promise<void> => {
-  if (launchOutcomeDecision(launchFacts(started)) === 'notCreated') {
+  // A readback failure leaves a live terminal, and an adopted child keeps running. The caller must
+  // still see the failure, so the outer catch completes the fence and reports it. An abort reports
+  // the caller's cancellation error instead of the readback error.
+  if (started.error instanceof StartedTabError) {
+    if (recognizedCancellation(request.hc.signal, started.error.cause)) {
+      throw cancelledOpenError(request.hc.signal);
+    }
+
+    throw launchFailure(started);
+  }
+
+  if (launchReportedFailure(started)) {
     await settleLaunch(request, fence, launchFailure(started));
 
     return;
@@ -457,24 +547,19 @@ export const openArchitect = async (
   }
 
   const fence = acquisition.fence;
-  const launchHc = { ...request.hc, signal: undefined };
 
   try {
     await fence.createTicket();
 
-    const prepared = await prepareArchitectStart(
-      request,
-      record?.sessionFile ?? undefined,
-      fence.token,
-    );
+    const prepared = await prepareArchitectForOpen(request, record, fence);
 
     throwIfOpenCancelled(request.hc.signal);
 
-    const started = await launchArchitect(launchHc, request, prepared, fence);
+    const started = await launchArchitectForOpen(request, prepared, fence);
 
     await applyLaunchOutcome(request, fence, started);
 
-    const result = launchResult(prepared);
+    const result = launchResult(prepared, started.model ?? 'unknown');
 
     keptClaims.delete(request.root);
 
@@ -483,12 +568,17 @@ export const openArchitect = async (
     const completion = await fence.complete();
 
     if (completion.claim === 'kept') {
+      // A readback failure is the only error that names the started terminal and its model, so it
+      // survives the kept-claim message and a later open.
+      const readbackFailure = error instanceof StartedTabError ? error : undefined;
+      const failure = keptClaimFailure(completion.failure, readbackFailure);
+
       keptClaims.set(request.root, {
         token: fence.token,
-        ...(completion.failure === undefined ? {} : { failure: completion.failure }),
+        ...(failure === undefined ? {} : { failure }),
       });
 
-      throw openKeptClaimError(request.root, completion.failure);
+      throw openKeptClaimError(request.root, failure);
     }
 
     throw error;

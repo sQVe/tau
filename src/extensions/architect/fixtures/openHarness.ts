@@ -8,7 +8,11 @@ import { argumentAfter, failedResult, succeededResult } from '../../../../tests/
 import type { ExecFake, ExecResult } from '../../../../tests/execFake.js';
 import { createHcFake } from '../../../../tests/hcFake.js';
 import type { HcFake } from '../../../../tests/hcFake.js';
-import { createHerdrAppFake } from '../../../../tests/herdrAppFake.js';
+import {
+  createHerdrAppFake,
+  launchedTerminalReply,
+  terminalFromReply,
+} from '../../../../tests/herdrAppFake.js';
 import type { HerdrAppCommand } from '../../../../tests/herdrAppFake.js';
 import { replaceCurrentLockOwnerPid } from '../../../../tests/lockOwnerRecord.js';
 import {
@@ -18,6 +22,7 @@ import {
   takingStartTicket,
   useFakeStartProcess,
 } from '../../../../tests/startTicketFake.js';
+import type { FakeStartProcess } from '../../../../tests/startTicketFake.js';
 import type { Exec } from '../../../command.js';
 import { holdFileLock } from '../../../fileLock/fileLock.js';
 import type { HcRuntime } from '../../../hc/hc.js';
@@ -34,6 +39,8 @@ interface OpenTool {
   terminals: Map<string, ExecResult>;
   tool: ReturnType<typeof createArchitectTool>;
   runtime: HcRuntime;
+  // The fake child process, when the started terminal adopts the claim.
+  processControl: FakeStartProcess | undefined;
 }
 
 interface OpenToolOptions {
@@ -71,16 +78,55 @@ const appFake = (): ExecFake<HerdrAppCommand> => {
 
 const leadTerminal = 't-lead';
 
-const routedExec =
-  (
-    hc: HcFake,
-    app: ExecFake<HerdrAppCommand>,
-    terminals: Map<string, ExecResult>,
-    afterTerminalLookup: () => Promise<void>,
-  ): Exec =>
-  async (command, commandArguments, options) => {
+const recordStartedTerminal = (
+  terminals: Map<string, ExecResult>,
+  commandArguments: readonly string[],
+  reply: string,
+): string | undefined => {
+  const terminal = terminalFromReply(reply);
+
+  if (terminal === undefined) {
+    return undefined;
+  }
+
+  terminals.set(terminal, succeededResult(launchedTerminalReply(terminal, commandArguments)));
+
+  return terminal;
+};
+
+// Records the terminal a launch reply names and returns the reply as a successful result.
+export const startedTerminalResult = (
+  terminals: Map<string, ExecResult>,
+  commandArguments: readonly string[],
+  reply: string = appSplit,
+): ExecResult => {
+  recordStartedTerminal(terminals, commandArguments, reply);
+
+  return succeededResult(reply);
+};
+
+const routedExec = (
+  hc: HcFake,
+  app: ExecFake<HerdrAppCommand>,
+  terminals: Map<string, ExecResult>,
+  afterTerminalLookup: () => Promise<void>,
+): Exec => {
+  const launchedTerminals = new Set<string>();
+
+  return async (command, commandArguments, options) => {
     if (command === 'herdr-app') {
-      return app.exec(command, commandArguments, options);
+      const result = await app.exec(command, commandArguments, options);
+
+      const terminal =
+        result.code === 0
+          ? recordStartedTerminal(terminals, commandArguments, result.stdout)
+          : undefined;
+
+      if (terminal !== undefined) {
+        launchedTerminals.add(terminal);
+      }
+
+      return result;
     }
 
     if (commandArguments[0] !== 'get') {
@@ -91,7 +137,9 @@ const routedExec =
     const terminalReply = terminals.get(address);
 
     if (terminalReply !== undefined) {
-      await afterTerminalLookup();
+      if (!launchedTerminals.has(address)) {
+        await afterTerminalLookup();
+      }
 
       return terminalReply;
     }
@@ -102,6 +150,7 @@ const routedExec =
 
     return failedResult(`no such terminal: ${address}`);
   };
+};
 
 const leadInSpace = (hc: HcFake, space: string | undefined): void => {
   hc.reply(
@@ -213,6 +262,37 @@ const withTakeover = (
   },
 });
 
+const wrongModelForeground = (root: string): string =>
+  JSON.stringify({
+    address: 't-architect',
+    state: 'live',
+    foreground: {
+      pid: 1,
+      name: 'pi',
+      argv: ['pi', '--provider', 'morph', '--model', 'morph-dsv41flash-1017'],
+      cwd: root,
+    },
+  });
+
+// Answers the model readback with a live terminal that runs another model. A start also reads the
+// recorded terminal before it launches, so the answer waits until herdr-app has run.
+export const wrongModelReadbackExec = (runtime: HcRuntime, root: string): typeof runtime.exec => {
+  let launched = false;
+
+  return async (command, commandArguments, options) => {
+    const result = await runtime.exec(command, commandArguments, options);
+
+    launched ||= command === 'herdr-app';
+
+    const readingTerminal =
+      command === 'hc' &&
+      commandArguments[0] === 'get' &&
+      commandArguments.at(-1) === 't-architect';
+
+    return readingTerminal && launched ? succeededResult(wrongModelForeground(root)) : result;
+  };
+};
+
 export const openRequest = 'Start ME-1540';
 
 export const requestFor = (
@@ -239,9 +319,10 @@ export const openTool = (
   const processId = options.takeover === false ? fakeStartProcessId : fakeRunningStartProcessId;
   const fake = withStartTicket(appFake(), processId);
 
-  if (options.takeover !== false) {
-    useFakeStartProcess(onTestFinished, 'running', false, fakeRunningStartProcessId);
-  }
+  const processControl =
+    options.takeover === false
+      ? undefined
+      : useFakeStartProcess(onTestFinished, 'running', false, fakeRunningStartProcessId);
 
   const app =
     options.takeover === false
@@ -258,7 +339,7 @@ export const openTool = (
 
   const tool = createArchitectTool(runtime);
 
-  return { hc, app, terminals, tool, runtime };
+  return { hc, app, terminals, tool, runtime, processControl };
 };
 
 export const open = (

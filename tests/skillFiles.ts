@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { loadSkillsFromDir, parseFrontmatter } from '@earendil-works/pi-coding-agent';
 
 import { requiredActions } from '../src/extensions/tauSkills/requiredFor.js';
-import { parseShellCommands } from '../src/shell.js';
+import { parseShellCommands } from '../src/shell/shell.js';
 import { diskFiles, fencedCodeBlock, linkProblems, withoutCode } from './markdownFiles.js';
 
 export type SkillProblemKind =

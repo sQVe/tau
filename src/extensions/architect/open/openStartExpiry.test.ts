@@ -2,7 +2,7 @@ import type { setTimeout as promiseDelay } from 'node:timers/promises';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { argumentAfter, failedResult, succeededResult } from '../../../../tests/execFake.js';
+import { argumentAfter, failedResult } from '../../../../tests/execFake.js';
 import { writeNextLockOwnerRecordSync } from '../../../../tests/lockOwnerRecord.js';
 import {
   fakeStartProcessId,
@@ -18,6 +18,7 @@ import {
   openRequest,
   openTool,
   requestFor,
+  startedTerminalResult,
 } from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
@@ -238,7 +239,7 @@ it('returns the takeover result when the child adopts after the wait expires', a
 
   const result = await opening;
 
-  expect(result).toEqual({ status: 'resumed', sessionFile });
+  expect(result).toEqual({ status: 'resumed', sessionFile, model: 'a/architect' });
 
   expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({
     pid: fakeStartProcessId,
@@ -249,7 +250,7 @@ it('throws when the child is gone after the wait saw its adoption', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const { runtime, terminals } = openTool(root, undefined, undefined, { takeover: false });
   const child = useFakeStartProcess(cleanup, 'running');
 
   await recordSession(root);
@@ -269,7 +270,7 @@ it('throws when the child is gone after the wait saw its adoption', async ({
 
       child.state = 'gone';
 
-      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+      return startedTerminalResult(terminals, commandArguments);
     }
 
     return runtime.exec(command, commandArguments, options);
@@ -446,8 +447,9 @@ it('returns the normal result when a space reply has no terminal and the child a
     requestFor(root, config.location, { ...runtime, exec: routedExec }),
   );
 
-  expect(result).toEqual({ status: 'resumed', sessionFile });
+  expect(result).toEqual({ status: 'resumed', sessionFile, model: 'unknown' });
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
+
   expect(await readLiveLockHolder(architectLockPath(root))).toMatchObject({ token: 'adopted' });
 });
 
@@ -630,7 +632,7 @@ it('keeps a successful result when a split adopts the claim', async ({
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const { hc, runtime, terminals } = openTool(root, undefined, undefined, { takeover: false });
   const sessionFile = await recordSession(root);
 
   useFakeStartProcess(cleanup, 'running');
@@ -648,7 +650,7 @@ it('keeps a successful result when a split adopts the claim', async ({
         cleanup(release);
       }
 
-      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+      return startedTerminalResult(terminals, commandArguments);
     }
 
     return runtime.exec(command, commandArguments, options);
@@ -656,6 +658,6 @@ it('keeps a successful result when a split adopts the claim', async ({
 
   const result = await openArchitect(requestFor(root, config.location, { ...runtime, exec }));
 
-  expect(result).toEqual({ status: 'resumed', sessionFile });
+  expect(result).toEqual({ status: 'resumed', sessionFile, model: 'a/architect' });
   expect(hc.calls.filter((call) => call.commandArguments[0] === 'kill')).toEqual([]);
 });

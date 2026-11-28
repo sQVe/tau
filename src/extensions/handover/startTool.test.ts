@@ -163,6 +163,7 @@ it('creates a space when a listed space folder no longer exists', async () => {
     space: 'sp-new',
     tab: 'tb-new',
     terminal: 't-new',
+    model: 'default',
     spaceStatus: 'created',
   });
 
@@ -206,6 +207,7 @@ it.each(creationRows)('creates a space in $label', async ({ spacesFor, extras })
     space: 'sp-new',
     tab: 'tb-new',
     terminal: 't-new',
+    model: 'default',
     spaceStatus: 'created',
   });
 
@@ -243,6 +245,7 @@ it('creates a space when a listed space folder cannot be resolved', async () => 
     space: 'sp-new',
     tab: 'tb-new',
     terminal: 't-new',
+    model: 'default',
     spaceStatus: 'created',
   });
 
@@ -289,10 +292,11 @@ it('creates a space without listing the spaces when the caller asks for one', as
     space: 'sp-new',
     tab: 'tb-new',
     terminal: 't-new',
+    model: 'default',
     spaceStatus: 'created',
   });
 
-  expect(app.calls.map((call) => call.commandArguments[0])).toEqual(['do']);
+  expect(app.calls.map((call) => call.commandArguments[0])).toEqual(['do', 'get']);
 });
 
 it('opens a tab in the space the caller names without listing the spaces', async () => {
@@ -313,12 +317,13 @@ it('opens a tab in the space the caller names without listing the spaces', async
     space: 'space-1',
     tab: 'tb-new',
     terminal: 't-new',
+    model: 'default',
     spaceStatus: 'reused',
   });
 
   const commands = app.calls.map((call) => call.commandArguments[0]);
 
-  expect(commands).toEqual(['do']);
+  expect(commands).toEqual(['do', 'get']);
 
   const launches = spaceOrTabLaunchesOf(app);
 

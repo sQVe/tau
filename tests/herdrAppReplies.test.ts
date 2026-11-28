@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { commandArgumentsOf, createHerdrAppFake, spaceOrTabLaunchesOf } from './herdrAppFake.js';
+import {
+  commandArgumentsOf,
+  createHerdrAppFake,
+  spaceOrTabLaunchesOf,
+  terminalFromReply,
+} from './herdrAppFake.js';
 
 const replyTo = async (commandArguments: readonly string[]): Promise<string> => {
   const fake = createHerdrAppFake();
@@ -66,4 +71,193 @@ it('fails a command it does not model instead of answering it', async () => {
 
   expect(result).toMatchObject({ code: 1, stdout: '' });
   expect(result.stderr).toContain('pane.swap');
+});
+
+it('refuses an hc get without a terminal address', async () => {
+  const fake = createHerdrAppFake();
+
+  await expect(fake.exec('hc', ['get', '--json', '--'], undefined)).rejects.toThrow(
+    'hc get needs a terminal address',
+  );
+});
+
+it('reports a terminal it did not start as not_found', async () => {
+  const fake = createHerdrAppFake();
+  const result = await fake.exec('hc', ['get', '--json', '--', 't-missing'], undefined);
+
+  expect(result.code).toBe(3);
+  expect(JSON.parse(result.stderr)).toMatchObject({ error: { kind: 'not_found' } });
+});
+
+it('answers live without a foreground for a started terminal that carried no --argv', async () => {
+  const fake = createHerdrAppFake();
+
+  const launched = await fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1'], undefined);
+  const address = terminalFromReply(launched.stdout) ?? '';
+
+  expect(address).toBe('t-new');
+
+  const result = await fake.exec('hc', ['get', '--json', '--', address], undefined);
+
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ address: 't-new', state: 'live' });
+});
+
+it('does not report an earlier launch foreground after a later launch without --argv', async () => {
+  const fake = createHerdrAppFake();
+  const argv = JSON.stringify(['pi', '--provider', 'morph', '--model', 'morph/glm']);
+
+  await fake.exec(
+    'herdr-app',
+    ['do', 'pane.split', '--pane', 'p-1', '--folder', '/work/repo', '--argv', argv],
+    undefined,
+  );
+
+  const first = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(JSON.parse(first.stdout)).toMatchObject({
+    foreground: { argv: ['pi', '--provider', 'morph', '--model', 'morph/glm'] },
+  });
+
+  await fake.exec(
+    'herdr-app',
+    ['do', 'pane.split', '--pane', 'p-2', '--folder', '/work/repo'],
+    undefined,
+  );
+
+  const result = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ address: 't-new', state: 'live' });
+});
+
+it('fails a launch with an argv but no folder instead of reporting an empty cwd', async () => {
+  const fake = createHerdrAppFake();
+
+  await expect(
+    fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', '["pi"]'], undefined),
+  ).rejects.toThrow('herdr-app fake received a launch without --folder or -C');
+
+  expect(fake.calls).toEqual([]);
+
+  const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(lookup.code).toBe(3);
+});
+
+it('fails a launch whose --folder value is another flag', async () => {
+  const fake = createHerdrAppFake();
+
+  await expect(
+    fake.exec(
+      'herdr-app',
+      ['do', 'pane.split', '--pane', 'p-1', '--folder', '--name', '--argv', '["pi"]'],
+      undefined,
+    ),
+  ).rejects.toThrow('herdr-app fake received a launch without --folder or -C');
+
+  const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(lookup.code).toBe(3);
+});
+
+it('fails a malformed --argv instead of reporting no foreground', async () => {
+  const fake = createHerdrAppFake();
+
+  await expect(
+    fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', 'not json'], undefined),
+  ).rejects.toThrow('herdr-app fake received malformed --argv JSON: not json');
+
+  expect(fake.calls).toEqual([]);
+
+  const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+  expect(lookup.code).toBe(3);
+});
+
+it.each(['{}', '7', '[1,2]'])(
+  'fails a --argv that parses to %s instead of reporting no foreground',
+  async (argv) => {
+    const fake = createHerdrAppFake();
+
+    await expect(
+      fake.exec('herdr-app', ['do', 'pane.split', '--pane', 'p-1', '--argv', argv], undefined),
+    ).rejects.toThrow(`herdr-app fake received a --argv that is not a list of strings: ${argv}`);
+
+    const lookup = await fake.exec('hc', ['get', '--json', '--', 't-new'], undefined);
+
+    expect(lookup.code).toBe(3);
+  },
+);
+
+it('reads the started folder from the --folder and the model from the argv on a tab.new', async () => {
+  const fake = createHerdrAppFake();
+
+  const argv = JSON.stringify([
+    'env',
+    'pi',
+    '--provider',
+    'morph',
+    '--model',
+    'morph/morph-dsv41flash-1017',
+  ]);
+
+  const launched = await fake.exec(
+    'herdr-app',
+    [
+      'do',
+      'tab.new',
+      '--space',
+      'space-1',
+      '--folder',
+      '/work/repo',
+      '--name',
+      'lead',
+      '--argv',
+      argv,
+      '--task',
+      'Next steps',
+      '--focus',
+      'false',
+    ],
+    undefined,
+  );
+
+  const address = terminalFromReply(launched.stdout) ?? '';
+
+  expect(address).toBe('t-new');
+
+  const result = await fake.exec('hc', ['get', '--json', '--', address], undefined);
+
+  expect(JSON.parse(result.stdout)).toEqual({
+    address: 't-new',
+    state: 'live',
+    foreground: {
+      pid: 1,
+      name: 'pi',
+      argv: ['pi', '--provider', 'morph', '--model', 'morph/morph-dsv41flash-1017'],
+      cwd: '/work/repo',
+    },
+  });
+});
+
+it('reads the started folder from the argv env -C for a split', async () => {
+  const fake = createHerdrAppFake();
+  const argv = JSON.stringify(['env', '-C', '/work/repo', 'pi']);
+
+  const launched = await fake.exec(
+    'herdr-app',
+    ['do', 'pane.split', '--pane', 'p-1', '--argv', argv],
+    undefined,
+  );
+
+  const address = terminalFromReply(launched.stdout) ?? '';
+
+  expect(address).toBe('t-new');
+
+  const result = await fake.exec('hc', ['get', '--json', '--', address], undefined);
+
+  const reply = JSON.parse(result.stdout) as { foreground?: { cwd?: string } };
+
+  expect(reply.foreground?.cwd).toBe('/work/repo');
 });

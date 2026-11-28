@@ -113,6 +113,27 @@ export const get = (
 ): Promise<HcTerminal> =>
   runHc(runtime, 'get', ['get', '--json', '--', terminal], `hc get ${terminal}`, options);
 
+// A terminal that is not registered yet has no foreground command, so a caller that retries a read
+// treats it the same as a terminal with no foreground process.
+export const foregroundArgv = async (
+  runtime: CommandRuntime,
+  terminal: string,
+): Promise<readonly string[] | undefined> => {
+  let found: HcTerminal;
+
+  try {
+    found = await get(runtime, terminal);
+  } catch (error) {
+    if (error instanceof HcError && error.kind === 'not_found') {
+      return undefined;
+    }
+
+    throw error;
+  }
+
+  return found.foreground?.argv;
+};
+
 export const ls = (runtime: HcRuntime, request: LsRequest = {}): Promise<HcTerminalList> => {
   const flags = request.all === true ? ['--all'] : [];
 

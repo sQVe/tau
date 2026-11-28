@@ -5,6 +5,7 @@ import type { HcFake } from '../../tests/hcFake.js';
 import {
   HcError,
   currentTerminalAddress,
+  foregroundArgv,
   get,
   kill,
   label,
@@ -49,6 +50,47 @@ it('returns the terminal a get command parsed and starts no connection', async (
   expect(result.labels).toEqual({ role: 'worker' });
   expect(fake.calls).toHaveLength(1);
   expect(fake.connectCalls).toHaveLength(0);
+});
+
+it('reads the foreground argv of a terminal', async () => {
+  const fake = createHcFake();
+
+  fake.reply(
+    'get',
+    JSON.stringify({
+      ...terminal,
+      foreground: { pid: 1, name: 'pi', argv: ['pi', '--model', 'a/b'], cwd: '/repository' },
+    }),
+  );
+
+  expect(await foregroundArgv(runtimeOf(fake), 't7')).toEqual(['pi', '--model', 'a/b']);
+});
+
+it('reads no foreground argv from a terminal without a foreground', async () => {
+  const fake = createHcFake();
+
+  fake.reply('get', JSON.stringify({ ...terminal, foreground: null }));
+
+  expect(await foregroundArgv(runtimeOf(fake), 't7')).toBeUndefined();
+});
+
+it('reads no foreground argv from a terminal that is not registered yet', async () => {
+  const fake = createHcFake();
+
+  fake.fail('get', notFound, 3);
+
+  expect(await foregroundArgv(runtimeOf(fake), 't7')).toBeUndefined();
+});
+
+it('keeps a foreground read failure that is not a missing terminal', async () => {
+  const fake = createHcFake();
+
+  fake.reply('get', 'not-json');
+
+  const failure = await foregroundArgv(runtimeOf(fake), 't7').catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'malformed' });
 });
 
 const abortedExecError = (): Error => {

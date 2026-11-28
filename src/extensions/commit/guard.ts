@@ -12,8 +12,9 @@ import type {
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { gitEnvironment } from '../../git.js';
 import { readTextWithinSync } from '../../record.js';
-import { parseShellCommands, quoteShellArgument } from '../../shell.js';
-import type { ShellCommand, ShellInput } from '../../shell.js';
+import { parseShellCommands, quoteShellArgument } from '../../shell/shell.js';
+import type { ShellCommand, ShellInput } from '../../shell/shell.js';
+import { splitEnvString } from '../../wrapperAnalysis.js';
 
 export type NamedFileFacts =
   | { kind: 'missing' }
@@ -49,11 +50,14 @@ interface GuardState {
   pathDirectories: string[];
 }
 
-interface InterpreterSources {
-  files: string[];
-  code: string[];
-  pathFirst?: boolean;
-}
+type InterpreterSources =
+  | {
+      readonly kind: 'sources';
+      readonly files: string[];
+      readonly code: string[];
+      readonly pathFirst?: boolean;
+    }
+  | { readonly kind: 'unreadable' };
 
 // A wrapper positional word before the command word, skipped unless one of its options is present.
 interface PositionalSkip {
@@ -61,17 +65,26 @@ interface PositionalSkip {
   unless: ReadonlySet<string>;
 }
 
-interface WrapperScan {
-  // The assignment words the shell applies before the command, in source order.
-  assignments: string[];
-  // The shell code of every command option seen, in source order.
-  codes: string[];
-  // Where the wrapped command word starts, when a command follows.
-  commandIndex: number | undefined;
-}
+type WrapperScan =
+  | {
+      readonly kind: 'command';
+      // The assignment words the shell applies before the command, in source order.
+      readonly assignments: string[];
+      // The shell code of every command option seen, in source order.
+      readonly codes: string[];
+      // Where the wrapped command word starts, when a command follows.
+      readonly commandIndex: number | undefined;
+    }
+  | {
+      // A command option's value names its program through a variable expansion.
+      readonly kind: 'unreadable';
+      readonly assignments: string[];
+      readonly codes: string[];
+    };
 
 type WrapperStep =
   | { kind: 'code'; code: string; next: number }
+  | { kind: 'unreadable' }
   | { kind: 'skip'; next: number }
   | { kind: 'command' };
 
@@ -82,6 +95,7 @@ interface WrapperProgress {
 
 type WrapperWord =
   | { kind: 'code'; code: string; next: number }
+  | { kind: 'unreadable' }
   | { kind: 'skip'; next: number }
   | { kind: 'assignment'; word: string }
   | { kind: 'positional' }
@@ -97,6 +111,19 @@ type PathState =
   | { kind: 'missing' }
   | { kind: 'present' }
   | { kind: 'failed'; facts: NamedFileFacts };
+
+// `env -S` splits its value with its own word rules, so a quoted value stays one word. A value that
+// depends on the environment cannot be resolved, so the shell's word rules recover the words. When
+// the recovered program word itself needs the environment, the file may run any program, so the
+// caller cannot allow it.
+type EnvSplitWords =
+  | { readonly kind: 'words'; readonly words: readonly string[] }
+  | { readonly kind: 'unreadable' };
+
+type ShebangInterpreter =
+  | { readonly kind: 'named'; readonly name: string }
+  | { readonly kind: 'unnamed' }
+  | { readonly kind: 'unreadable' };
 
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
@@ -366,7 +393,7 @@ const matchesOption = (word: string, option: string) =>
 // In a short-option cluster such as `-Eu`, a value-taking letter takes the rest of the word or,
 // when it is last, the next word.
 const clusterValue = (
-  words: string[],
+  words: readonly string[],
   index: number,
   word: string,
   options: ReadonlySet<string>,
@@ -398,9 +425,26 @@ const clusterValue = (
   return undefined;
 };
 
+// getopt_long accepts any unambiguous abbreviation of a long option, so `--split` names
+// `--split-string`.
+const abbreviatedLongOption = (word: string, options: ReadonlySet<string>): string | undefined => {
+  if (!word.startsWith('--') || word === '--') {
+    return undefined;
+  }
+
+  const equals = word.indexOf('=');
+  const name = equals === -1 ? word : word.slice(0, equals);
+
+  const candidates = [...options].filter(
+    (option) => option.startsWith('--') && option.startsWith(name),
+  );
+
+  return candidates.length === 1 ? candidates[0] : undefined;
+};
+
 // A value option takes the next word, an attached value, or a short-option cluster's value.
 const optionValue = (
-  words: string[],
+  words: readonly string[],
   index: number,
   options: ReadonlySet<string>,
 ): { value: string; next: number } | undefined => {
@@ -423,59 +467,26 @@ const optionValue = (
     return { value, next: index + 1 };
   }
 
-  return clusterValue(words, index, word, options);
-};
+  const abbreviated = abbreviatedLongOption(word, options);
 
-// `env -S` splits its value with the shell's own word rules, so a quoted value stays one word.
-const splitStringWords = (value: string): string[] => {
-  const commands = parseShellCommands(value);
-  const words = commands?.flatMap((command) => command.words);
+  const equals = word.indexOf('=');
 
-  return words ?? value.split(/\s+/u);
-};
-
-// `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
-// before the program.
-const envTarget = (words: string[]): string[] | undefined => {
-  const valueOptions = wrapperOptionValues.get('env') ?? new Set<string>();
-  const expanded: string[] = [];
-
-  for (let index = 0; index < words.length; index += 1) {
-    const word = words[index] ?? '';
-
-    const split = optionValue(words, index, envSplitStringOptions);
-
-    if (split !== undefined) {
-      const value = [split.value, ...words.slice(split.next)].join(' ');
-
-      expanded.push(...splitStringWords(value));
-
-      break;
-    }
-
-    const option = [...valueOptions].find((candidate) => matchesOption(word, candidate));
-
-    if (option !== undefined) {
-      if (word === option) {
-        index += 1;
-      }
-
-      continue;
-    }
-
-    expanded.push(word);
+  if (abbreviated !== undefined && equals !== -1) {
+    return { value: word.slice(equals + 1), next: index + 1 };
   }
 
-  const index = expanded.findIndex(
-    (word) => word !== '' && !word.startsWith('-') && !assignmentPattern.test(word),
-  );
+  if (abbreviated !== undefined) {
+    const value = words[index + 1];
 
-  return index === -1 ? undefined : expanded.slice(index);
+    return value === undefined ? undefined : { value, next: index + 2 };
+  }
+
+  return clusterValue(words, index, word, options);
 };
 
 // A busybox applet is the program the wrapper runs, such as `sh` in `busybox sh`.
 const appletWord = (
-  words: string[],
+  words: readonly string[],
   index: number,
 ): { index: number; word: string } | undefined => {
   const word = words[index];
@@ -493,7 +504,7 @@ const appletWord = (
   return applet === undefined ? undefined : { index: index + 1, word: applet };
 };
 
-const appletInterpreter = (words: string[]): string | undefined => {
+const appletInterpreter = (words: readonly string[]): string | undefined => {
   const applet = appletWord(words, 0);
 
   if (applet !== undefined) {
@@ -505,7 +516,112 @@ const appletInterpreter = (words: string[]): string | undefined => {
   return first === undefined ? undefined : commandName(first);
 };
 
-const shebangInterpreter = (text: string): string | undefined => {
+// The index of the program word among `env` arguments, skipping assignments and the value of every
+// env option. An option value such as `FOO` in `-u FOO` is not the program.
+const envProgramIndex = (words: readonly string[]): number => {
+  const valueOptions = wrapperOptionValues.get('env') ?? new Set<string>();
+
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index] ?? '';
+    const value = optionValue(words, index, valueOptions);
+
+    if (value !== undefined) {
+      index = value.next - 1;
+
+      continue;
+    }
+
+    if (word === '' || word.startsWith('-') || assignmentPattern.test(word)) {
+      continue;
+    }
+
+    return index;
+  }
+
+  return -1;
+};
+
+// When `env` cannot split its value, the shell's word rules recover the words. Only a program word
+// that needs the environment makes the value unreadable, so the caller can still allow a file whose
+// program is a literal non-shell.
+const splitStringWords = (value: string): EnvSplitWords | undefined => {
+  const split = splitEnvString(value);
+
+  if (split.kind === 'words') {
+    return { kind: 'words', words: split.words };
+  }
+
+  const commands = parseShellCommands(value);
+  const words = commands?.flatMap((command) => command.words);
+
+  if (words === undefined) {
+    return split.kind === 'unreadable' ? { kind: 'unreadable' } : undefined;
+  }
+
+  if (split.kind !== 'unreadable') {
+    return { kind: 'words', words };
+  }
+
+  const programIndex = envProgramIndex(words);
+  const program = programIndex === -1 ? undefined : appletWord(words, programIndex)?.word;
+
+  return program?.includes('$') === true ? { kind: 'unreadable' } : { kind: 'words', words };
+};
+
+// `env` accepts assignments, options with values, and `-S`, whose value it splits into words,
+// before the program. The split words are further env arguments, so they are read the same way.
+const envTarget = (words: string[]): EnvSplitWords | undefined => {
+  const valueOptions = wrapperOptionValues.get('env') ?? new Set<string>();
+  const remaining = [...words];
+
+  for (let index = 0; index < remaining.length; index += 1) {
+    const word = remaining[index] ?? '';
+
+    const split = optionValue(remaining, index, envSplitStringOptions);
+
+    if (split !== undefined) {
+      const value = [split.value, ...remaining.slice(split.next)].join(' ');
+      const splitWords = splitStringWords(value);
+
+      if (splitWords === undefined) {
+        return undefined;
+      }
+
+      if (splitWords.kind === 'unreadable') {
+        return splitWords;
+      }
+
+      // The value already holds the words after the split option, so replace the whole consumed span
+      // with them. Keeping the original tail would fold it into the value twice and, when the value
+      // parses back to the same words, rewind forever.
+      remaining.splice(index, remaining.length - index, ...splitWords.words);
+      index -= 1;
+
+      continue;
+    }
+
+    const value = optionValue(remaining, index, valueOptions);
+
+    if (value !== undefined) {
+      index = value.next - 1;
+
+      continue;
+    }
+
+    if (word === '' || word.startsWith('-') || assignmentPattern.test(word)) {
+      continue;
+    }
+
+    return { kind: 'words', words: remaining.slice(index) };
+  }
+
+  return undefined;
+};
+
+const interpreterOf = (name: string | undefined): ShebangInterpreter =>
+  name === undefined ? { kind: 'unnamed' } : { kind: 'named', name };
+
+const shebangInterpreter = (text: string): ShebangInterpreter | undefined => {
   if (!text.startsWith('#!')) {
     return undefined;
   }
@@ -521,23 +637,48 @@ const shebangInterpreter = (text: string): string | undefined => {
   const name = commandName(program);
 
   if (name !== 'env') {
-    return appletInterpreter([program, ...rest]);
+    return interpreterOf(appletInterpreter([program, ...rest]));
   }
 
   const target = envTarget(rest);
 
-  return target === undefined ? undefined : appletInterpreter(target);
+  if (target === undefined) {
+    return { kind: 'unnamed' };
+  }
+
+  if (target.kind === 'unreadable') {
+    return { kind: 'unreadable' };
+  }
+
+  return interpreterOf(appletInterpreter(target.words));
 };
 
-const isShellScript = (text: string): boolean => {
-  const interpreter = shebangInterpreter(text);
+// The shebang runs the file as shell code when it names no program or a shell interpreter. An
+// unreadable `env -S` value may name any program, so it also runs as shell code.
+const runsAsShell = (shebang: ShebangInterpreter): boolean =>
+  shebang.kind === 'unreadable' ||
+  shebang.kind === 'unnamed' ||
+  shellInterpreters.has(shebang.name);
 
-  return interpreter === undefined || shellInterpreters.has(interpreter);
+const isShellScript = (text: string): boolean => {
+  const shebang = shebangInterpreter(text);
+
+  return shebang === undefined || runsAsShell(shebang);
 };
 
 const textVerdict = (text: string, checksShebang: boolean): NamedFileVerdict => {
-  if (checksShebang && !isShellScript(text)) {
-    return 'allow';
+  if (checksShebang) {
+    const shebang = shebangInterpreter(text);
+
+    if (shebang?.kind === 'unreadable') {
+      return 'block';
+    }
+
+    const namesAnotherProgram = shebang !== undefined && !runsAsShell(shebang);
+
+    if (namesAnotherProgram) {
+      return 'allow';
+    }
   }
 
   return text.includes('\u0000') ? 'block' : 'inspect';
@@ -739,6 +880,15 @@ const wrapperStep = (
   const code = optionValue(words, index, commandOptions);
 
   if (code !== undefined) {
+    // An `env -S` value that expands a variable to the program word cannot be read from the literal
+    // words, so the caller must fail closed. The words after the value are further env arguments.
+    const splitValue =
+      name === 'env' ? [code.value, ...words.slice(code.next)].join(' ') : code.value;
+
+    if (name === 'env' && splitStringWords(splitValue)?.kind === 'unreadable') {
+      return { kind: 'unreadable' };
+    }
+
     // `env -S` runs its split words together with the arguments that follow them.
     const trailing = name === 'env' ? words.slice(code.next).map(quoteShellArgument) : [];
     const text = [code.value, ...trailing].join(' ');
@@ -769,6 +919,18 @@ const operandKind = (
   return assignmentPattern.test(word) ? 'assignment' : 'command';
 };
 
+const wrapperStepWord = (step: WrapperStep): WrapperWord | undefined => {
+  if (step.kind === 'code') {
+    return { kind: 'code', next: step.next, code: step.code };
+  }
+
+  if (step.kind === 'unreadable') {
+    return { kind: 'unreadable' };
+  }
+
+  return undefined;
+};
+
 const wrapperWord = (
   words: string[],
   index: number,
@@ -786,9 +948,10 @@ const wrapperWord = (
   }
 
   const step = wrapperStep(words, index, name, valueOptions, commandOptions);
+  const stepWord = wrapperStepWord(step);
 
-  if (step.kind === 'code') {
-    return { kind: 'code', next: step.next, code: step.code };
+  if (stepWord !== undefined) {
+    return stepWord;
   }
 
   if (step.kind === 'skip') {
@@ -821,7 +984,11 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
     const classified = wrapperWord(words, next, name, progress);
 
     if (classified.kind === 'command') {
-      return { assignments, codes, commandIndex: next };
+      return { kind: 'command', assignments, codes, commandIndex: next };
+    }
+
+    if (classified.kind === 'unreadable') {
+      return { kind: 'unreadable', assignments, codes };
     }
 
     if (classified.kind === 'code') {
@@ -846,7 +1013,7 @@ const scanWrapper = (words: string[], index: number, name: string): WrapperScan 
     next += 1;
   }
 
-  return { assignments, codes, commandIndex: undefined };
+  return { kind: 'command', assignments, codes, commandIndex: undefined };
 };
 
 // Shell keywords that can precede a command word in the same simple command.
@@ -879,28 +1046,41 @@ const walkWrappers = (words: string[]): WrapperScan => {
     const name = commandName(word);
 
     if (wrapperOptionValues.get(name) === undefined) {
-      return { assignments, codes: [], commandIndex: isOptionWord(word) ? undefined : index };
+      return {
+        kind: 'command',
+        assignments,
+        codes: [],
+        commandIndex: isOptionWord(word) ? undefined : index,
+      };
     }
 
     const scan = scanWrapper(words, index, name);
 
     assignments.push(...scan.assignments);
 
+    if (scan.kind === 'unreadable') {
+      return { kind: 'unreadable', assignments, codes: scan.codes };
+    }
+
     if (scan.codes.length > 0) {
-      return { assignments, codes: scan.codes, commandIndex: undefined };
+      return { kind: 'command', assignments, codes: scan.codes, commandIndex: undefined };
     }
 
     if (scan.commandIndex === undefined) {
-      return { assignments, codes: [], commandIndex: undefined };
+      return { kind: 'command', assignments, codes: [], commandIndex: undefined };
     }
 
     index = scan.commandIndex;
   }
 
-  return { assignments, codes: [], commandIndex: undefined };
+  return { kind: 'command', assignments, codes: [], commandIndex: undefined };
 };
 
-const commandWordIndex = (words: string[]): number | undefined => walkWrappers(words).commandIndex;
+const commandWordIndex = (words: string[]): number | undefined => {
+  const scan = walkWrappers(words);
+
+  return scan.kind === 'command' ? scan.commandIndex : undefined;
+};
 
 const commandWord = ({ arguments: words }: ShellCommand): string | undefined => {
   const index = commandWordIndex(words);
@@ -944,42 +1124,53 @@ const searchesPathFirst = (word: string): boolean => {
 // An interpreter runs a file or inline code only from the executable position, so data such as
 // `printf sh commit.sh` names no script.
 const interpreterSources = (command: ShellCommand): InterpreterSources => {
-  const { codes, commandIndex } = walkWrappers(command.arguments);
+  const scan = walkWrappers(command.arguments);
+
+  if (scan.kind === 'unreadable') {
+    return { kind: 'unreadable' };
+  }
+
+  const { codes, commandIndex } = scan;
 
   if (codes.length > 0) {
-    return { files: [], code: codes };
+    return { kind: 'sources', files: [], code: codes };
   }
 
   if (commandIndex === undefined) {
-    return { files: [], code: [] };
+    return { kind: 'sources', files: [], code: [] };
   }
 
   const shell = appletWord(command.arguments, commandIndex);
 
   if (shell === undefined || !isInterpreter(shell.word)) {
-    return { files: [], code: [] };
+    return { kind: 'sources', files: [], code: [] };
   }
 
   const mode = shellMode(command.arguments.slice(shell.index + 1));
   const stdin = effectiveInput(command.inputs);
 
   if (mode.kind === 'file') {
-    return { files: [mode.name], code: [], pathFirst: searchesPathFirst(shell.word) };
+    return {
+      kind: 'sources',
+      files: [mode.name],
+      code: [],
+      pathFirst: searchesPathFirst(shell.word),
+    };
   }
 
   if (mode.kind === 'inline') {
-    return { files: [], code: mode.code === undefined ? [] : [mode.code] };
+    return { kind: 'sources', files: [], code: mode.code === undefined ? [] : [mode.code] };
   }
 
   if (stdin === undefined || stdin.kind === 'heredoc') {
-    return { files: [], code: [] };
+    return { kind: 'sources', files: [], code: [] };
   }
 
   if (stdin.kind === 'hereString') {
-    return { files: [], code: [stdin.target] };
+    return { kind: 'sources', files: [], code: [stdin.target] };
   }
 
-  return { files: [stdin.target], code: [] };
+  return { kind: 'sources', files: [stdin.target], code: [] };
 };
 
 // A bare word resolves through `PATH`, so only a word with a path separator names a local file.
@@ -1109,7 +1300,7 @@ const namedScriptsOf = (
   command: ShellCommand,
   directory: string,
   pathDirectories: string[],
-  sources: InterpreterSources,
+  sources: Extract<InterpreterSources, { kind: 'sources' }>,
 ): NamedScript[] => {
   const pathFirst = sources.pathFirst ?? false;
 
@@ -1382,6 +1573,10 @@ const createsCommit = (
     const stack = directoryStack(stacks, command.scope, cwd, bases);
     const directory = directoryFor(stack, command.depth);
     const sources = interpreterSources(command);
+
+    if (sources.kind === 'unreadable') {
+      return true;
+    }
 
     const pathDirectories = pathDirectoriesFor(
       commandPathAssignment(command),

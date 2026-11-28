@@ -6,7 +6,15 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { succeededResult } from '../../../../tests/execFake.js';
 import { useFakeStartProcess } from '../../../../tests/startTicketFake.js';
 import { readLiveLockHolder } from '../../../fileLock/fileLock.js';
-import { appCommands, open, openRequest, openTool, requestFor } from '../fixtures/openHarness.js';
+import { launchTimeoutMilliseconds } from '../../../piStart/piStart.js';
+import {
+  appCommands,
+  open,
+  openRequest,
+  openTool,
+  requestFor,
+  startedTerminalResult,
+} from '../fixtures/openHarness.js';
 import { recordSession, setup } from '../fixtures/toolHarness.js';
 import { architectLockPath } from '../lock.js';
 import { openArchitect, openKeptClaimMessage } from './open.js';
@@ -32,6 +40,78 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+const expectCancelled = (failure: unknown, reason: unknown): void => {
+  if (reason instanceof Error) {
+    expect(failure).toBe(reason);
+
+    return;
+  }
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe('The open was cancelled.');
+  expect((failure as Error).cause).toBe(reason);
+};
+
+it('an abort during the model readback rejects with the cancellation error', async ({
+  onTestFinished: cleanup,
+}) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+  const { root, config } = await setup(cleanup);
+  const { terminals, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const controller = new AbortController();
+  const cancellation = new Error('cancelled during the readback');
+  let readbackStarted = false;
+
+  const nonPiForeground = succeededResult(
+    JSON.stringify({
+      address: 't-architect',
+      state: 'live',
+      foreground: { pid: 1, name: 'bash', argv: ['bash'], cwd: '' },
+    }),
+  );
+
+  const processControl = useFakeStartProcess(cleanup, 'running', true);
+  await recordSession(root);
+
+  const exec: typeof runtime.exec = async (command, commandArguments, options) => {
+    const result = await runtime.exec(command, commandArguments, options);
+
+    if (command === 'herdr-app' && commandArguments[1] === 'pane.split') {
+      terminals.set('t-architect', nonPiForeground);
+    }
+
+    const readingStartedTerminal =
+      command === 'hc' &&
+      commandArguments[0] === 'get' &&
+      commandArguments.at(-1) === 't-architect';
+
+    if (readingStartedTerminal) {
+      readbackStarted = true;
+    }
+
+    return result;
+  };
+
+  const opening = openArchitect(
+    requestFor(root, config.location, { ...runtime, exec, signal: controller.signal }),
+  ).catch((error: unknown) => error);
+
+  await vi.waitFor(() => {
+    expect(readbackStarted).toBe(true);
+  });
+
+  controller.abort(cancellation);
+
+  await vi.advanceTimersByTimeAsync(launchTimeoutMilliseconds);
+
+  const failure = await opening;
+
+  expectCancelled(failure, cancellation);
+  expect(processControl.signals).toEqual(['SIGTERM']);
+  expect(await readLiveLockHolder(architectLockPath(root))).toBeUndefined();
 });
 
 it('an abort during the poll stops the terminal, releases the claim, and rejects', async ({
@@ -128,7 +208,7 @@ it('resolves an unused ticket when a valid reply arrives before the rename and a
   onTestFinished: cleanup,
 }) => {
   const { root, config } = await setup(cleanup);
-  const { hc, runtime } = openTool(root, undefined, undefined, { takeover: false });
+  const { hc, runtime, terminals } = openTool(root, undefined, undefined, { takeover: false });
   const controller = new AbortController();
   const cancellation = new Error('cancelled after the valid reply');
   const replied = Promise.withResolvers<undefined>();
@@ -141,7 +221,7 @@ it('resolves an unused ticket when a valid reply arrives before the rename and a
       replied.resolve(undefined);
       await release.promise;
 
-      return succeededResult('{"pane":"p-architect","terminal":"t-architect"}');
+      return startedTerminalResult(terminals, commandArguments);
     }
 
     return runtime.exec(command, commandArguments, options);
@@ -201,18 +281,6 @@ it('an abort after the takeover rejects and leaves the architect running', async
     terminal: 't-architect',
   });
 });
-
-const expectCancelled = (failure: unknown, reason: unknown): void => {
-  if (reason instanceof Error) {
-    expect(failure).toBe(reason);
-
-    return;
-  }
-
-  expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toBe('The open was cancelled.');
-  expect((failure as Error).cause).toBe(reason);
-};
 
 it.each([
   ['an Error reason', () => new Error('cancelled before dispatch')],

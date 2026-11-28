@@ -42,16 +42,17 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 
 // Each ceiling caps a session at its larger measured size, the empty folder or the adopted project.
 // The test rejects only growth, so lower a ceiling by hand after a cut. The target is beside each
-// ceiling.
+// ceiling. CI measures the pull request merged into its base branch, so rebase and measure again
+// when the base branch changes the prompt text.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  lead: 70_076, // target 38,000; measured locally
-  architect: 63_888, // measured locally
-  worker: 28_435, // target 14,000
-  reviewer: 23_888, // target 11,000
-  checker: 24_041,
-  qa: 18_426, // measured locally; target 9,000
-  browser: 16_050, // target 9,000
-  scout: 15_609, // target 9,000
+  lead: 72_029, // target 38,000
+  architect: 65_692,
+  worker: 29_356, // target 14,000
+  reviewer: 24_635, // target 11,000
+  checker: 24_788,
+  qa: 19_173, // target 9,000
+  browser: 16_797, // target 9,000
+  scout: 16_356, // target 9,000
 };
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];

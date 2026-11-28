@@ -3,11 +3,21 @@ import { stat } from 'node:fs/promises';
 import { Type } from 'typebox';
 import type { TSchema } from 'typebox';
 
-import { checkOutput, parseJson, runCommand } from '../command.js';
+import {
+  checkOutput,
+  commandFailure,
+  normalizeCancellation,
+  parseJson,
+  parseJsonObject,
+  runCommand,
+} from '../command.js';
 import type { CommandRuntime } from '../command.js';
 import { isMissingFile } from '../errors.js';
 import { isGitRepository } from '../git.js';
+import { isRecord } from '../schema.js';
 import { piArguments } from './piArguments.js';
+import type { ReadForegroundArgv } from './startedModel/startedModelReadback.js';
+import { readStartedTerminalModel, replyText } from './startedTab.js';
 
 export type PiStartTarget = { space: string } | { name: string };
 
@@ -22,7 +32,11 @@ interface PiSessionRequest {
   argvWrapper?: ((argv: string[]) => string[]) | undefined;
 }
 
-interface PiStartBaseRequest extends PiSessionRequest {
+interface PiReadbackRequest extends PiSessionRequest {
+  readForegroundArgv: ReadForegroundArgv;
+}
+
+interface PiStartBaseRequest extends PiReadbackRequest {
   bareRoot: boolean;
   tabName: string;
 }
@@ -35,7 +49,7 @@ export interface PiStartRequest extends PiStartBaseRequest {
   target: PiStartTarget | PiStartTargetResolver;
 }
 
-export interface PiStartRightOfRequest extends PiSessionRequest {
+export interface PiStartRightOfRequest extends PiReadbackRequest {
   pane: string;
   bareRoot: boolean;
 }
@@ -54,6 +68,9 @@ export interface PiLaunchResult {
   aborted: boolean;
   reply: string | undefined;
   terminal: string | undefined;
+  // Undefined means no readback happened, or it failed and `error` carries a `StartedTabError`. A
+  // launch can set `error` while `terminal` is live, so a caller must read both fields.
+  model: string | undefined;
   error: unknown;
 }
 
@@ -70,6 +87,19 @@ type TerminalReply = (
   terminal: string | undefined;
   error: unknown;
 };
+
+interface PiSessionStarted {
+  reply: string;
+  target: PiStartTarget;
+  terminal: string;
+  model: string;
+}
+
+type PiSessionStart = { reply: string; target: PiStartTarget } | PiSessionStarted;
+
+interface StartSessionOptions {
+  requireTerminal: boolean;
+}
 
 export const launchTimeoutMilliseconds = 30_000;
 
@@ -159,6 +189,18 @@ const isGitCheckout = async (folder: string, bareRoot: boolean): Promise<boolean
   return bareRoot || (await isGitRepository(folder));
 };
 
+// The abort signal's reason may be a plain value, which would reject with a non-Error.
+const normalizeLaunchCancellation = (signal: AbortSignal | undefined, error: unknown): unknown =>
+  normalizeCancellation(signal, error, 'The Pi launch was cancelled.');
+
+const throwIfLaunchCancelled = (signal: AbortSignal | undefined): void => {
+  try {
+    signal?.throwIfAborted();
+  } catch (error) {
+    throw normalizeLaunchCancellation(signal, error);
+  }
+};
+
 const requireCheckout = async (
   runtime: CommandRuntime,
   folder: string,
@@ -168,7 +210,7 @@ const requireCheckout = async (
     throw new Error(`start folder is not a Git checkout: ${folder}`);
   }
 
-  runtime.signal?.throwIfAborted();
+  throwIfLaunchCancelled(runtime.signal);
 };
 
 const launchResult = (
@@ -183,45 +225,22 @@ const launchResult = (
   aborted: runtime.signal?.aborted === true,
   reply: result.stdout,
   terminal,
+  model: undefined,
   error,
 });
 
-const commandError = (
-  label: string,
-  result: Awaited<ReturnType<CommandRuntime['exec']>>,
-): unknown => {
-  if (result.code === 0 && !result.killed) {
-    return undefined;
-  }
-
-  const output = (result.stderr || result.stdout).trim();
-
-  return new Error(`${label} failed: ${output}`);
-};
-
-const findTerminal = (value: unknown): string | undefined => {
-  if (typeof value !== 'object' || value === null || !('terminal' in value)) {
-    return undefined;
-  }
-
-  const terminal = value.terminal;
-
-  return typeof terminal === 'string' && terminal !== '' ? terminal : undefined;
-};
-
-const replyTerminal = (reply: string): string | undefined => {
-  try {
-    return findTerminal(JSON.parse(reply));
-  } catch {
-    return undefined;
-  }
-};
+const terminalOfRecord = (value: unknown): string | undefined =>
+  isRecord(value) ? replyText(value, 'terminal') : undefined;
 
 const launch = async (
   runtime: CommandRuntime,
   command: LaunchCommand,
   terminalOf: TerminalReply,
+  request: PiReadbackRequest,
 ): Promise<PiLaunchResult> => {
+  let launched: PiLaunchResult;
+  const deadline = Date.now() + launchTimeoutMilliseconds;
+
   try {
     const result = await runtime.exec(command.command, command.commandArguments, {
       cwd: runtime.cwd,
@@ -230,7 +249,12 @@ const launch = async (
 
     const { terminal, error } = terminalOf(command.label, result.stdout);
 
-    return launchResult(runtime, result, terminal, commandError(command.label, result) ?? error);
+    launched = launchResult(
+      runtime,
+      result,
+      terminal,
+      commandFailure(command.label, result) ?? error,
+    );
   } catch (error) {
     return {
       exitCode: null,
@@ -239,8 +263,27 @@ const launch = async (
       aborted: runtime.signal?.aborted === true,
       reply: undefined,
       terminal: undefined,
-      error,
+      model: undefined,
+      error: normalizeLaunchCancellation(runtime.signal, error),
     };
+  }
+
+  if (launched.terminal === undefined || launched.error !== undefined) {
+    return launched;
+  }
+
+  try {
+    const model = await readStartedTerminalModel(
+      request,
+      launched.reply ?? '',
+      launched.terminal,
+      deadline,
+      runtime.signal,
+    );
+
+    return { ...launched, model };
+  } catch (error) {
+    return { ...launched, aborted: runtime.signal?.aborted === true, error };
   }
 };
 
@@ -254,7 +297,10 @@ const terminalFromReply = (
 
     checkOutput(label, schema, created);
 
-    return { terminal: findTerminal(created), error: undefined };
+    return {
+      terminal: terminalOfRecord(created),
+      error: undefined,
+    };
   } catch (error) {
     return { terminal: undefined, error };
   }
@@ -284,6 +330,7 @@ export const launchPiSession = async (
       label: 'herdr-app do',
     },
     spaceTerminal,
+    request,
   );
 };
 
@@ -301,48 +348,105 @@ export const launchPiSessionRightOf = async (
       label: 'herdr-app do pane.split',
     },
     splitTerminal,
+    request,
   );
 };
 
-export const startPiSession = async (
+async function startSession(
   runtime: CommandRuntime,
   request: PiStartRequest,
-): Promise<{ reply: string; target: PiStartTarget; terminal?: string }> => {
+  options: { requireTerminal: true },
+): Promise<PiSessionStarted>;
+async function startSession(
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+  options: { requireTerminal: false },
+): Promise<PiSessionStart>;
+
+async function startSession(
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+  options: StartSessionOptions,
+): Promise<PiSessionStart> {
   await requireCheckout(runtime, request.folder, request.bareRoot);
 
   const target = isTargetResolver(request.target) ? await request.target() : request.target;
 
   // The resolver awaits, so the signal can abort after the checkout check above.
-  runtime.signal?.throwIfAborted();
+  throwIfLaunchCancelled(runtime.signal);
+
+  const deadline = Date.now() + launchTimeoutMilliseconds;
 
   const reply = await runCommand(
     runtime,
     'herdr-app',
     startArguments(request, target),
     'herdr-app do',
+    { timeout: launchTimeoutMilliseconds },
   );
 
-  const terminal = replyTerminal(reply);
+  const created = options.requireTerminal
+    ? parseJson('herdr-app do', reply)
+    : parseJsonObject(reply);
 
-  return terminal === undefined ? { reply, target } : { reply, target, terminal };
-};
+  if (options.requireTerminal) {
+    checkOutput('herdr-app do', terminalReplySchema, created);
+  }
+
+  const terminal = terminalOfRecord(created);
+
+  if (terminal === undefined) {
+    return { reply, target };
+  }
+
+  // The handover result carries the model, so an abort after the terminal exists reports the started
+  // tab instead of a start without a model. A right-of start can return without a model.
+  const model = await readStartedTerminalModel(request, reply, terminal, deadline, runtime.signal);
+
+  return { reply, target, terminal, model };
+}
+
+// The lenient variant keeps a non-JSON reply as text, so a caller that does not need a terminal
+// still reads the start. `startPiSessionWithTerminal` requires the terminal reply.
+export const startPiSession = (
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+): Promise<PiSessionStart> => startSession(runtime, request, { requireTerminal: false });
+
+export const startPiSessionWithTerminal = (
+  runtime: CommandRuntime,
+  request: PiStartRequest,
+): Promise<PiSessionStarted> => startSession(runtime, request, { requireTerminal: true });
 
 export const startPiSessionRightOf = async (
   runtime: CommandRuntime,
   request: PiStartRightOfRequest,
-): Promise<{ reply: string; terminal?: string }> => {
+): Promise<{ reply: string; terminal: string; model: string | undefined }> => {
   await requireCheckout(runtime, request.folder, request.bareRoot);
+
+  const deadline = Date.now() + launchTimeoutMilliseconds;
 
   const reply = await runCommand(
     runtime,
     'herdr-app',
     splitArguments(request, request.pane),
     'herdr-app do pane.split',
+    { timeout: launchTimeoutMilliseconds },
   );
 
   const created = parseJson('herdr-app do pane.split', reply);
 
   checkOutput('herdr-app do pane.split', splitReplySchema, created);
 
-  return { reply, terminal: created.terminal };
+  const terminal = created.terminal;
+
+  // The split already created the terminal, so an abort that arrived while the command ran still
+  // reports it. The readback is skipped because the abort would cancel it.
+  if (runtime.signal?.aborted === true) {
+    return { reply, terminal, model: undefined };
+  }
+
+  const model = await readStartedTerminalModel(request, reply, terminal, deadline, runtime.signal);
+
+  return { reply, terminal, model };
 };

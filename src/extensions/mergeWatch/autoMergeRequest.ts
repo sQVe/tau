@@ -1,4 +1,4 @@
-import { parseShellCommands } from '../../shell.js';
+import { parseShellCommands } from '../../shell/shell.js';
 
 export interface AutoMergeRequest {
   selector: string | undefined;
