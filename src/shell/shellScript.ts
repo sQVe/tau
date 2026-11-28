@@ -47,7 +47,7 @@ const startsLikeOption = (word: string): boolean => word.startsWith('-') || word
 
 const isShellOptionWord = (word: string): boolean => word.length > 1 && startsLikeOption(word);
 
-const takesShellOptionValue = (word: string): boolean =>
+export const takesShellOptionValue = (word: string): boolean =>
   shellValueOptions.has(word) || /^[-+][a-zA-Z]*[oO]$/u.test(word);
 
 // A `-c` flag names a script only when it is not the value of an `-o`/`-O` option earlier in the
