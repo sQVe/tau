@@ -14,10 +14,10 @@ import type {
 import { expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
-import { sessionLockPath } from '../src/extensions/sessionLock/hold.js';
 import sessionLockExtension from '../src/extensions/sessionLock/sessionLock.js';
 import { holdFileLock, readLiveLockHolder } from '../src/fileLock/fileLock.js';
 import type { LiveLockHolder } from '../src/fileLock/fileLock.js';
+import { sessionLockPath } from '../src/sessionLock/sessionLock.js';
 import { exitedPid } from './exitedPid.js';
 import { writeLockOwnerRecord } from './lockOwnerRecord.js';
 import { createPiSession, shutdownSession } from './piSession.js';
