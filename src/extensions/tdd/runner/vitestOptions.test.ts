@@ -113,6 +113,11 @@ it.for([
   },
   { name: '-t=', argv: ['vitest', 'run', '-t=adds'], accepted: false },
   {
+    name: '--testTimeout with a value',
+    argv: ['vitest', 'run', '--testTimeout=5000'],
+    accepted: true,
+  },
+  {
     name: '--testNamePattern=',
     argv: ['vitest', 'run', '--testNamePattern=adds'],
     accepted: false,
@@ -167,6 +172,36 @@ it.for([
   {
     name: 'a three-dash short alias filter',
     argv: ['vitest', 'run', '---t=adds'],
+    expected:
+      'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'an attached short alias filter',
+    argv: ['vitest', 'run', '-tadds'],
+    expected:
+      'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'an attached three-dash short alias filter',
+    argv: ['vitest', 'run', '---tadds'],
+    expected:
+      'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'an attached quoted short alias filter',
+    argv: ['vitest', 'run', '-t"adds"'],
+    expected:
+      'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'an attached two-dash short alias filter',
+    argv: ['vitest', 'run', '--t=adds'],
+    expected:
+      'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
+  },
+  {
+    name: 'a camel-case filter with a trailing line break',
+    argv: ['vitest', 'run', '--testNamePattern=adds\n'],
     expected:
       'verificationArgv must not set a test name filter; a focused run sets its own exact names.',
   },

@@ -4,9 +4,13 @@ type CliOptions = ReturnType<typeof parseCLI>['options'];
 
 const commandWords = new Set(['run']);
 
-// The installed parser clears the pattern for the "t" alias and for any run of leading dashes.
-const testNameFilterPattern = /^-+(?:t|testNamePattern|test-name-pattern)(?:=.*)?$/u;
-const clearedTestNameFilterPattern = /^-+no-(?:t|testNamePattern|test-name-pattern)(?:=.*)?$/u;
+// The installed parser takes an attached value for the short alias, but only with one or
+// three or more leading dashes.
+const attachedTestNameFilterPattern = /^(?:-|-{3,})t.+$/su;
+
+const testNameFilterPattern = /^-+(?:t=.*|t|testNamePattern(?:=.*)?|test-name-pattern(?:=.*)?)$/su;
+
+const clearedTestNameFilterPattern = /^-+no-(?:t|testNamePattern|test-name-pattern)(?:=.*)?$/su;
 
 export const verificationArgvError = (verificationArgv: readonly string[]): string | null => {
   if (verificationArgv[0] !== 'vitest') {
@@ -21,7 +25,12 @@ export const verificationArgvError = (verificationArgv: readonly string[]): stri
     return 'verificationArgv must not pass "--"; Tau appends its own options after the configured arguments.';
   }
 
-  if (options.some((argument) => testNameFilterPattern.test(argument))) {
+  const setsTestNameFilter = options.some(
+    (argument) =>
+      attachedTestNameFilterPattern.test(argument) || testNameFilterPattern.test(argument),
+  );
+
+  if (setsTestNameFilter) {
     return 'verificationArgv must not set a test name filter; a focused run sets its own exact names.';
   }
 
