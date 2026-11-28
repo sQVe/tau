@@ -1,5 +1,5 @@
 schema = 1
-version = "0.2.5"
+version = "0.2.7"
 agents = "e4709089cae6d3203af7029baef328066def7225d7f9a3510fe596e8d7c2396d"
 
 [files]
@@ -21,4 +21,4 @@ agents = "e4709089cae6d3203af7029baef328066def7225d7f9a3510fe596e8d7c2396d"
 "shared/adr/TEMPLATE.md" = "7a7cfaaff820de36b149faa94638b0374102c5bf3c7fbb10932619418c825cf5"
 "shared/coding.md" = "360a5a2a9b7f60a0149a4148baeff3e16766fa611b21433022aa08c8cb5fef03"
 "shared/ratchet.md" = "9cb34de379258a5511633fc925e45fe64719e468637f7447daf780eb3d4e12c2"
-"shared/rules.md" = "e2c6b6116948888c283fd84224255b36e65613326fedc6dddf5c970f9cc7c97b"
+"shared/rules.md" = "6e238c3f00b4d1c1ae508b77e88773d1b34ddf945b5fd8a8892227c049ec3ba7"
