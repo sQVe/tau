@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ExtensionContext, SessionBeforeSwitchEvent } from '@earendil-works/pi-coding-agent';
@@ -7,7 +7,8 @@ import type { TestContext } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readLiveLockHolder } from '../../fileLock/fileLock.js';
-import { guardResume, releaseSessionLock, sessionLockPath, startSessionLock } from './hold.js';
+import { sessionLockPath } from '../../sessionLock/sessionLock.js';
+import { guardResume, releaseSessionLock, startSessionLock } from './hold.js';
 
 const isolatedAgentDirectory = (onTestFinished: TestContext['onTestFinished']): string => {
   const directory = temporaryDirectory(onTestFinished, 'tau-session-lock-hold-');
@@ -52,28 +53,6 @@ it('does not refuse a resume onto the session file this process holds', async ({
 
   await expect(guardResume(event, context)).resolves.toBeUndefined();
   expect(notices).toEqual([]);
-});
-
-it('gives one lock path to a session file and a symlink to it', async ({ onTestFinished }) => {
-  const agentDirectory = isolatedAgentDirectory(onTestFinished);
-  const sessionFile = join(agentDirectory, 'session.jsonl');
-  const alias = join(agentDirectory, 'alias.jsonl');
-
-  mkdirSync(agentDirectory, { recursive: true });
-  writeFileSync(sessionFile, '');
-  symlinkSync(sessionFile, alias);
-
-  expect(await sessionLockPath(agentDirectory, alias)).toBe(
-    await sessionLockPath(agentDirectory, sessionFile),
-  );
-});
-
-it('gives different lock paths to different session files', async ({ onTestFinished }) => {
-  const agentDirectory = isolatedAgentDirectory(onTestFinished);
-
-  expect(await sessionLockPath(agentDirectory, join(agentDirectory, 'one.jsonl'))).not.toBe(
-    await sessionLockPath(agentDirectory, join(agentDirectory, 'two.jsonl')),
-  );
 });
 
 it('keeps the lock across a reload of the same file and frees it for any other shutdown', async ({

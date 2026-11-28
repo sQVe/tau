@@ -151,6 +151,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   },
   { name: 'role', entry: 'role/role', publicFiles: ['role/roleGuidelines', 'role/roleTools'] },
   { name: 'schema', entry: 'schema', publicFiles: [] },
+  { name: 'sessionLock', entry: 'sessionLock/sessionLock', publicFiles: [] },
   {
     name: 'sessionMessage',
     entry: 'sessionMessage/sessionMessage',
@@ -211,6 +212,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   reviewCapture: ['command', 'errors', 'git', 'github', 'record', 'schema', 'tauDirectory'],
   role: ['schema'],
   schema: [],
+  sessionLock: [],
   sessionMessage: ['schema'],
   shell: ['wrapperAnalysis'],
   skillTools: [],

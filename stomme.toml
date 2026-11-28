@@ -580,6 +580,11 @@ entry = "src/schema.ts"
 public = []
 imports = []
 
+[modules.sessionLock]
+entry = "src/sessionLock/sessionLock.ts"
+public = []
+imports = []
+
 [modules.sessionMessage]
 entry = "src/sessionMessage/sessionMessage.ts"
 public = ["src/sessionMessage/askResult.ts"]

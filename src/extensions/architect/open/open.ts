@@ -23,6 +23,7 @@ import { readArchitectRecord, readAskRecords } from '../record.js';
 import type { SavedArchitectRecord } from '../record.js';
 import { acquireStartFence, startFenceBlockerMessage } from '../startFence/startFence.js';
 import type { StartFence, StartFenceBlocker } from '../startFence/startFence.js';
+import { refuseHeldSession } from './openHeldSession.js';
 import { eligibleTerminal, openCandidate, openReuse, openTerminal } from './openReuseDecision.js';
 import type { OpenCandidate } from './openReuseDecision.js';
 
@@ -193,6 +194,11 @@ const prepareArchitectStart = async (
   const model = requireModel(request);
   const resume = recordedSession !== undefined && (await fileExists(recordedSession));
   const session = resume ? recordedSession : undefined;
+
+  if (session !== undefined) {
+    await refuseHeldSession(request.location.agentDirectory, session);
+  }
+
   const pane = hasSpace(leadSpace) ? await findLeadPane(request) : undefined;
 
   const task =

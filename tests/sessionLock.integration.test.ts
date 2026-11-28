@@ -6,9 +6,9 @@ import { fauxProvider } from '@earendil-works/pi-ai';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { sessionLockPath } from '../src/extensions/sessionLock/hold.js';
 import { holdFileLock } from '../src/fileLock/fileLock.js';
 import { get, kill, run } from '../src/hc/hc.js';
+import { sessionLockPath } from '../src/sessionLock/sessionLock.js';
 import tauRegistration from '../src/tau/tau.js';
 import { exitedPid } from './exitedPid.js';
 import { startHcSession } from './hcSessionHarness.js';

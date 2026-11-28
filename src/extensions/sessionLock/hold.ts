@@ -1,7 +1,3 @@
-import { createHash } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
-
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type {
   ExtensionContext,
@@ -14,6 +10,7 @@ import { holdFileLock, readLiveLockHolder } from '../../fileLock/fileLock.js';
 import type { LiveLockHolder } from '../../fileLock/fileLock.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import { isRecord } from '../../schema.js';
+import { describeSessionHolder, sessionLockPath } from '../../sessionLock/sessionLock.js';
 import { decideResume, decideShutdown, decideStart, needsResumeCheck } from './lockDecision.js';
 import type { ResumeHolderFact, StartFacts } from './lockDecision.js';
 
@@ -63,41 +60,8 @@ const sharedState = (): SessionLockState => {
 
 const state = sharedState();
 
-const canonicalSessionFile = async (sessionFile: string): Promise<string> => {
-  const resolvedFile = await realpath(sessionFile).catch(() => undefined);
-
-  if (resolvedFile !== undefined) {
-    return resolvedFile;
-  }
-
-  const directory = dirname(sessionFile);
-  const resolvedDirectory = await realpath(directory).catch(() => resolve(directory));
-
-  return join(resolvedDirectory, basename(sessionFile));
-};
-
-export const sessionLockPath = async (
-  agentDirectory: string,
-  sessionFile: string,
-): Promise<string> => {
-  const canonical = await canonicalSessionFile(sessionFile);
-  const digest = createHash('sha256').update(canonical).digest('hex');
-
-  return join(agentDirectory, 'tau', 'session-locks', digest, 'lock');
-};
-
-const describeHolder = (holder: LiveLockHolder | undefined): string => {
-  if (holder === undefined) {
-    return 'another Pi';
-  }
-
-  const terminal = holder.terminal === undefined ? 'no hc terminal' : `terminal ${holder.terminal}`;
-
-  return `another Pi (${terminal}, pid ${String(holder.pid)})`;
-};
-
 const refusalMessage = (sessionFile: string, holder: LiveLockHolder | undefined): string =>
-  `Session ${sessionFile} is open in ${describeHolder(holder)}. This Pi exits.`;
+  `Session ${sessionFile} is open in ${describeSessionHolder(holder)}. This Pi exits.`;
 
 const releaseHeld = async (): Promise<void> => {
   const { held } = state;
@@ -179,7 +143,7 @@ export const lockSessionOnStart = async (context: ExtensionContext): Promise<voi
 };
 
 const resumeRefusal = (targetSessionFile: string, holder: LiveLockHolder | undefined): string =>
-  `Session ${targetSessionFile} is open in ${describeHolder(holder)}. Resume cancelled.`;
+  `Session ${targetSessionFile} is open in ${describeSessionHolder(holder)}. Resume cancelled.`;
 
 export const guardResume = async (
   event: SessionBeforeSwitchEvent,
