@@ -7,13 +7,23 @@ import {
   wrapperValueOptions,
 } from '../wrapperAnalysis.js';
 
-// The script a command runs through a shell: a shell's `-c` word, a wrapper's script option, or
-// the words `watch` joins. An `env -S` value that cannot be resolved has no script the caller can
-// read, so the caller must not treat the command as running no script.
+// The script a command runs through a shell: a shell's `-c` word, a wrapper's script option, the
+// words `watch` joins, or a script file operand the caller must read itself. An `env -S` value that
+// cannot be resolved has no script the caller can read, so the caller must not treat the command as
+// running no script.
 export type ShellScript =
   | { readonly kind: 'script'; readonly script: string }
+  | { readonly kind: 'file'; readonly path: string }
   | { readonly kind: 'none' }
   | { readonly kind: 'unreadable' };
+
+// A shell runs the script named after its options. `-c` takes the first non-option operand, or the
+// word after `--`, as the script. A flag word can set `c` and take a value at once, as `-co
+// pipefail` does, so the scan remembers `c` until it reaches the script word. Without `-c` the first
+// operand is a script file the caller must read.
+type ShellOperand =
+  | { readonly kind: 'script'; readonly script: string }
+  | { readonly kind: 'file'; readonly path: string };
 
 const shellNames: ReadonlySet<string> = new Set([
   'ash',
@@ -60,10 +70,7 @@ const namesShellScript = (word: string): boolean => {
   return false;
 };
 
-// A shell runs the script named after its options. `-c` takes the first non-option operand, or the
-// word after `--`, as the script. A flag word can set `c` and take a value at once, as `-co
-// pipefail` does, so the scan remembers `c` until it reaches the script word.
-const shellOptionScript = (words: readonly string[]): string | undefined => {
+const shellOptionOperand = (words: readonly string[]): ShellOperand | undefined => {
   let index = 0;
   let namesScript = false;
 
@@ -71,13 +78,17 @@ const shellOptionScript = (words: readonly string[]): string | undefined => {
     const word = words[index] ?? '';
 
     if (word === '--') {
-      const script = words[index + 1];
+      const operand = words[index + 1];
 
-      return namesScript ? script : undefined;
+      if (operand === undefined) {
+        return undefined;
+      }
+
+      return namesScript ? { kind: 'script', script: operand } : { kind: 'file', path: operand };
     }
 
     if (!isShellOptionWord(word)) {
-      return namesScript ? word : undefined;
+      return namesScript ? { kind: 'script', script: word } : { kind: 'file', path: word };
     }
 
     const consumesValue = takesShellOptionValue(word);
@@ -194,7 +205,13 @@ export const shellScriptOf = (words: readonly string[]): ShellScript => {
   const headName = commandNameOf(expanded.words[index] ?? '');
 
   if (shellNames.has(headName)) {
-    return scriptVariant(shellOptionScript(expanded.words.slice(index + 1)));
+    const operand = shellOptionOperand(expanded.words.slice(index + 1));
+
+    if (operand === undefined) {
+      return { kind: 'none' };
+    }
+
+    return operand.kind === 'script' ? operand : { kind: 'file', path: operand.path };
   }
 
   const scriptWrapper = wrappers.findLast(({ name }) => scriptWrapperNames.has(name));

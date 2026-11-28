@@ -195,14 +195,17 @@ const inputKind = (
   return undefined;
 };
 
-// Source that bash itself refuses to run. Any other failure is a defect in the parser, not a
-// property of the source, so it must reach the caller.
+// Source that bash itself refuses to run, including nesting past what the parser inspects. Any
+// other failure is a defect in the parser, not a property of the source, so it must reach the
+// caller.
 class ShellSyntaxError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ShellSyntaxError';
   }
 }
+
+const maximumNestingDepth = 100;
 
 const rejectPendingHeredoc = (state: ListState) => {
   if (state.heredocOperator !== undefined) {
@@ -300,11 +303,17 @@ class ShellParser {
   private childShells = 0;
   private scope: string;
   private childScopes = 0;
+  private nestingDepth: number;
 
-  constructor(source: string, shellId = '0', scope = '') {
+  constructor(source: string, shellId = '0', scope = '', nestingDepth = 0) {
+    if (nestingDepth > maximumNestingDepth) {
+      throw new ShellSyntaxError('Nesting is too deep to parse');
+    }
+
     this.source = source;
     this.shellId = shellId;
     this.scope = scope;
+    this.nestingDepth = nestingDepth;
   }
 
   // Each substitution or expanding heredoc body runs in its own scope, named by its parent and an
@@ -330,6 +339,12 @@ class ShellParser {
   // A substitution runs in a child shell. The parser keeps its position, so only the commands it
   // creates belong to the child.
   private parseSubshell(parse: () => void): void {
+    this.nestingDepth += 1;
+
+    if (this.nestingDepth > maximumNestingDepth) {
+      throw new ShellSyntaxError('Nesting is too deep to parse');
+    }
+
     const parentShellId = this.shellId;
     const childShellId = this.childShellId();
     const parentChildShells = this.childShells;
@@ -350,6 +365,7 @@ class ShellParser {
       this.shellId = parentShellId;
       this.childShells = parentChildShells;
       this.scope = parentScope;
+      this.nestingDepth -= 1;
     }
   }
 
@@ -1169,7 +1185,13 @@ class ShellParser {
     }
 
     this.position += 1;
-    const innerParser = new ShellParser(inner, this.childShellId(), this.nextChildScope());
+
+    const innerParser = new ShellParser(
+      inner,
+      this.childShellId(),
+      this.nextChildScope(),
+      this.nestingDepth + 1,
+    );
 
     innerParser.parseList(false);
 
@@ -1234,7 +1256,7 @@ class ShellParser {
 
       if (scope !== undefined) {
         const bodyShellId = this.childShellIdOf(heredoc.command.shellId);
-        const bodyParser = new ShellParser(body, bodyShellId, scope);
+        const bodyParser = new ShellParser(body, bodyShellId, scope, this.nestingDepth + 1);
 
         bodyParser.readExpandingText(undefined, false);
 

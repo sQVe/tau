@@ -149,6 +149,12 @@ it('joins the words watch hands to its shell', () => {
   expect(scriptOf(['watch', '-n', '1', 'cmd 2>/dev/null'])).toBe('cmd 2>/dev/null');
 });
 
+it('reports a script file operand as a file the caller must read', () => {
+  expect(shellScriptOf(['bash', 'script.sh'])).toEqual({ kind: 'file', path: 'script.sh' });
+  expect(shellScriptOf(['bash', '--', 'script.sh'])).toEqual({ kind: 'file', path: 'script.sh' });
+  expect(shellScriptOf(['bash', '-x', 'script.sh'])).toEqual({ kind: 'file', path: 'script.sh' });
+});
+
 it('reports no script for a command lookup', () => {
   expect(scriptOf(['command', '-v', 'sh', '-c', 'cmd'])).toBeUndefined();
 });

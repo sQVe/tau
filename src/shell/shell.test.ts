@@ -619,11 +619,11 @@ describe('parseShellCommands', () => {
     },
   );
 
-  it('propagates an unexpected parser failure instead of reporting an empty parse', () => {
+  it('rejects deeply nested input instead of overflowing the stack', () => {
     const depth = 20000;
     const source = `${'$('.repeat(depth)}a${')'.repeat(depth)}`;
 
-    expect(() => parseShellCommands(source)).toThrow(RangeError);
+    expect(parseShellCommands(source)).toBeUndefined();
   });
 
   it('reads a heredoc body after the line ends', () => {
