@@ -106,6 +106,7 @@ const table: { command: string; refused: boolean }[] = [
   { command: 'coproc hc get t1', refused: false },
   { command: "grep -c 'hc send t1 x' notes.txt", refused: false },
   { command: "bash script.sh 'hc send t1 x'", refused: false },
+  { command: `${'echo $('.repeat(101)}hc send t1 x${')'.repeat(101)}`, refused: true },
   { command: "hc send t1 'unterminated", refused: false },
 ];
 

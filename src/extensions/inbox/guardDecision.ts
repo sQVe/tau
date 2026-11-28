@@ -1,4 +1,4 @@
-import { parseShellCommands } from '../../shell/shell.js';
+import { parseShell } from '../../shell/shell.js';
 import { shellScriptOf } from '../../shell/shellScript.js';
 import { commandNameOf, commandWords } from '../../wrapperAnalysis.js';
 
@@ -39,8 +39,19 @@ const runsTypingCommand = (words: readonly string[]): boolean => {
   return runsHcTyping(command.words);
 };
 
-export const typesIntoTerminal = (source: string): boolean =>
-  (parseShellCommands(source) ?? []).some((command) => {
+export const typesIntoTerminal = (source: string): boolean => {
+  const parsed = parseShell(source);
+
+  // Source that nests deeper than the parser inspects may still type into a terminal.
+  if (parsed.kind === 'tooDeep') {
+    return true;
+  }
+
+  if (parsed.kind === 'unparseable') {
+    return false;
+  }
+
+  return parsed.commands.some((command) => {
     if (runsTypingCommand(command.arguments)) {
       return true;
     }
@@ -49,3 +60,4 @@ export const typesIntoTerminal = (source: string): boolean =>
 
     return shellScript.kind === 'script' && typesIntoTerminal(shellScript.script);
   });
+};
