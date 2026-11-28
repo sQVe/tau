@@ -47,8 +47,10 @@ export const typesIntoTerminal = (source: string): boolean => {
     return true;
   }
 
+  // Bash runs the commands before a syntax error, so a source the parser rejects as a whole may
+  // still type into a terminal.
   if (parsed.kind === 'unparseable') {
-    return false;
+    return true;
   }
 
   return parsed.commands.some((command) => {
