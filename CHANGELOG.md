@@ -1,5 +1,22 @@
 # tau
 
+## 1.6.1
+
+### Patch Changes
+
+- [#850](https://github.com/sQVe/tau/pull/850)
+  [`71a3bb3`](https://github.com/sQVe/tau/commit/71a3bb381d51c997445b87df25554dbae6b46d84) Thanks
+  [@sQVe](https://github.com/sQVe)! - Refuse `architect open` while another live Pi holds the
+  recorded session. `open` reads the session lock before it launches a resume, names the holding
+  terminal and pid, and starts no pane. End that Pi once it is idle, then call `architect open`
+  again. A failed session-lock read warns and resumes instead of refusing.
+
+- [#847](https://github.com/sQVe/tau/pull/847)
+  [`2a7e4a2`](https://github.com/sQVe/tau/commit/2a7e4a2038d2c6a3a7409ab90d349d0c7624f361) Thanks
+  [@sQVe](https://github.com/sQVe)! - Redact structured content when a tool result is withheld,
+  refuse a second item result instead of replacing it, and keep a run open when its stop command
+  fails.
+
 ## 1.6.0
 
 ### Minor Changes
