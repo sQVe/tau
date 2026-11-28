@@ -22,18 +22,11 @@ interface Expansion {
 
 export const isOptionWord = (word: string): boolean => word.startsWith('-') || word.startsWith('+');
 
-// A brace expansion can start a word with an option when its first alternative does, as in
-// `{-O,extglob}`.
-const braceAlternatives = (word: string): string[] | undefined => {
-  if (!word.startsWith('{')) {
-    return undefined;
-  }
+// The index of the `}` that matches the `{` at `openIndex`, counting nested braces.
+const matchingBrace = (word: string, openIndex: number): number | undefined => {
+  let depth = 0;
 
-  const alternatives: string[] = [];
-  let depth = 1;
-  let start = 1;
-
-  for (let index = 1; index < word.length; index += 1) {
+  for (let index = openIndex; index < word.length; index += 1) {
     const character = word[index];
 
     if (character === '{') {
@@ -46,21 +39,51 @@ const braceAlternatives = (word: string): string[] | undefined => {
       depth -= 1;
 
       if (depth === 0) {
-        alternatives.push(word.slice(start, index));
-
-        return alternatives;
+        return index;
       }
+    }
+  }
+
+  return undefined;
+};
+
+// A brace expansion can start a word with an option when its first alternative does, as in
+// `{-O,extglob}`.
+const braceAlternatives = (word: string): string[] | undefined => {
+  const close = matchingBrace(word, 0);
+
+  if (!word.startsWith('{') || close === undefined) {
+    return undefined;
+  }
+
+  const alternatives: string[] = [];
+  let depth = 0;
+  let start = 1;
+
+  for (let index = 1; index < close; index += 1) {
+    const character = word[index];
+
+    if (character === '{') {
+      depth += 1;
 
       continue;
     }
 
-    if (character === ',' && depth === 1) {
+    if (character === '}') {
+      depth -= 1;
+
+      continue;
+    }
+
+    if (character === ',' && depth === 0) {
       alternatives.push(word.slice(start, index));
       start = index + 1;
     }
   }
 
-  return undefined;
+  alternatives.push(word.slice(start, close));
+
+  return alternatives;
 };
 
 const braceFirstAlternative = (word: string): string | undefined => braceAlternatives(word)?.[0];
@@ -69,30 +92,17 @@ const nameCharacters = /[A-Za-z_0-9]/u;
 
 const specialParameters = new Set(['@', '*', '!', '-']);
 
+const nonEmptyBracedBodies = new Set(['0', '?', '$']);
+
+const bracedCanBeEmpty = (body: string): boolean =>
+  !nonEmptyBracedBodies.has(body) && !body.startsWith('#');
+
 const bracedExpansion = (word: string, start: number): Expansion | undefined => {
-  let depth = 1;
+  const close = matchingBrace(word, start + 1);
 
-  for (let index = start + 2; index < word.length; index += 1) {
-    const character = word[index];
-
-    if (character === '{') {
-      depth += 1;
-
-      continue;
-    }
-
-    if (character === '}') {
-      depth -= 1;
-
-      if (depth === 0) {
-        const body = word.slice(start + 2, index);
-
-        return { end: index + 1, canBeEmpty: !body.startsWith('#') };
-      }
-    }
-  }
-
-  return undefined;
+  return close === undefined
+    ? undefined
+    : { end: close + 1, canBeEmpty: bracedCanBeEmpty(word.slice(start + 2, close)) };
 };
 
 const parenthesizedExpansion = (word: string, start: number): Expansion | undefined => {
@@ -399,6 +409,16 @@ const candidatesWithMode = (names: string[], mode: ShellMode): ShellMode => {
   return mode;
 };
 
+const braceCarriesInlineCode = (word: string): boolean => {
+  if (isInlineCodeWord(word)) {
+    return true;
+  }
+
+  const alternative = braceFirstAlternative(word);
+
+  return alternative !== undefined && braceCarriesInlineCode(alternative);
+};
+
 // A mode option may also be a brace expansion that yields several words. Record its file
 // candidate and every word that may follow it.
 const unresolvedOptionStep = (
@@ -408,22 +428,26 @@ const unresolvedOptionStep = (
   names: string[],
 ): void => {
   const word = words[index] ?? '';
-  const alternatives = braceAlternatives(word);
-  const first = alternatives?.[0] ?? '';
-
-  const startsWithCodeOption = isOptionWord(first) && !optionValueNames.has(first);
-  const startsWithOption = first.startsWith('{') || startsWithCodeOption;
-
-  // A first alternative that is an option makes the later alternatives the following words.
-  // `{-c,code}` and `{{-c},code}` both become `-c code`.
-  if (alternatives !== undefined && startsWithOption) {
-    codes.push(...alternatives.slice(1));
-  }
-
   const step = unresolvedModeStep(words, index, names);
 
   if (step.file !== undefined) {
     names.push(step.file);
+  }
+
+  const alternatives = braceAlternatives(word);
+  const first = alternatives?.[0] ?? '';
+  const nested = first.startsWith('{');
+  const carriesInlineCode = nested ? braceCarriesInlineCode(first) : isInlineCodeWord(first);
+  const plainOption = isOptionWord(first) && !optionValueNames.has(first);
+
+  if (alternatives !== undefined) {
+    // A first alternative with `c` makes the later alternatives the code. A plain option makes
+    // them file operands, so `{-e,script.sh}` still reads `script.sh`.
+    if (carriesInlineCode) {
+      codes.push(...alternatives.slice(1));
+    } else if (nested || plainOption) {
+      names.push(...alternatives.slice(1));
+    }
   }
 
   codes.push(...step.codes);
@@ -436,12 +460,8 @@ export const shellMode = (words: string[]): ShellMode => {
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? '';
 
-    if (word === '--') {
+    if (word === '--' || word === '-') {
       return modeAtDoubleDash(words, index, codes, names);
-    }
-
-    if (word === '-') {
-      return candidatesWithMode(names, { kind: 'stdin', codes });
     }
 
     if (isUnresolvedWord(word)) {

@@ -50,7 +50,7 @@ export const commandName = (word: string): string =>
 
 // An unquoted expansion anywhere in a word can split into more words. A variable in a directory
 // segment of a command word cannot, because the shell resolves it as a path.
-const expandsAnywhere = (word: string): boolean =>
+export const expandsAnywhere = (word: string): boolean =>
   hasVariableMarker(word) || isBraceExpansion(word);
 
 const unresolvedGitWord = (words: readonly string[]): boolean => {

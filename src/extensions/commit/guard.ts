@@ -18,7 +18,7 @@ import { splitEnvString } from '../../wrapperAnalysis.js';
 import { matchesOption, optionValue } from './optionValue.js';
 import { isOptionWord, shellMode } from './shellMode.js';
 import type { ShellMode } from './shellMode.js';
-import { blocksUnresolvedDecidingWord, commandName, isUnresolvedWord } from './unresolvedWords.js';
+import { blocksUnresolvedDecidingWord, commandName, expandsAnywhere } from './unresolvedWords.js';
 import type { TextOrigin } from './unresolvedWords.js';
 
 export type NamedFileFacts =
@@ -967,12 +967,8 @@ const inputSources = (
     return { kind: 'sources', files: [], code: [...mode.codes, stdin.input.target] };
   }
 
-  if (stdin.input.kind !== 'file') {
-    return { kind: 'unreadable' };
-  }
-
-  // A variable can name any file, so the guard cannot read its content.
-  if (isUnresolvedWord(stdin.input.target)) {
+  // An expansion anywhere in the path can name any file, so the guard cannot read its content.
+  if (expandsAnywhere(stdin.input.target)) {
     return { kind: 'unreadable' };
   }
 

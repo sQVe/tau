@@ -210,9 +210,39 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'file', names: [`\${A:-\${B}}`], codes: [], stdinMayBeCode: true },
   },
   {
-    name: 'reads standard input for a lone dash operand',
+    name: 'reads the file operand after a lone dash',
     words: ['-', 'script.sh'],
+    expected: { kind: 'file', names: ['script.sh'], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'reads standard input for a lone dash with no operand',
+    words: ['-'],
     expected: { kind: 'stdin', codes: [] },
+  },
+  {
+    name: 'records a flat option alternative as a file operand',
+    words: ['{-e,script.sh}'],
+    expected: {
+      kind: 'file',
+      names: ['{-e,script.sh}', 'script.sh'],
+      codes: [],
+      stdinMayBeCode: true,
+    },
+  },
+  {
+    name: 'marks a braced zero as never empty',
+    words: ['--', `\${0}`, 'harmless.sh'],
+    expected: { kind: 'file', names: [`\${0}`], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'marks a braced status as never empty',
+    words: ['--', `\${?}`, 'harmless.sh'],
+    expected: { kind: 'file', names: [`\${?}`], codes: [], stdinMayBeCode: false },
+  },
+  {
+    name: 'marks a braced pid as never empty',
+    words: ['--', `\${$}`, 'harmless.sh'],
+    expected: { kind: 'file', names: [`\${$}`], codes: [], stdinMayBeCode: false },
   },
   {
     name: 'adds a nested brace alternative as code',

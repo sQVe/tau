@@ -462,12 +462,21 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent(`sh -- \${A:-\${B}} < commit.sh`), directory);
   });
 
-  it('blocks a committing redirect for a lone dash operand', () => {
+  it('allows a harmless script for a lone dash operand', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
+    writeScript(directory, 'script.sh', 'echo hi\n');
     writeScript(directory, 'data.sh', 'git commit -m x\n');
 
-    expectOutcome(makeBashEvent('sh - script.sh < data.sh'), directory);
+    expect(guard(makeBashEvent('sh - script.sh < data.sh'), directory)).toBeUndefined();
+  });
+
+  it('blocks a committing script for a lone dash operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh - commit.sh'), directory);
   });
 
   it('blocks builtin eval', () => {
@@ -502,7 +511,47 @@ describe('guardToolCall', () => {
     expectOutcome(makeBashEvent('sh < $FILE'), directory);
   });
 
-  it.each(['$?', '$#', '$0', '$9'])(
+  it('blocks an unresolved directory in a standard input file', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    expectOutcome(makeBashEvent('sh < $DIR/commit.sh'), directory);
+  });
+
+  it('blocks a committing script behind a flat option alternative', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'script.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh {-e,script.sh}'), directory);
+  });
+
+  it('allows a braced zero on the standard input of a file operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'harmless.sh', 'echo hi\n');
+    writeScript(directory, 'data.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(`sh -- \${0} harmless.sh < data.sh`), directory)).toBeUndefined();
+  });
+
+  it('allows a braced status on the standard input of a file operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'harmless.sh', 'echo hi\n');
+    writeScript(directory, 'data.sh', 'git commit -m x\n');
+
+    expect(guard(makeBashEvent(`sh -- \${?} harmless.sh < data.sh`), directory)).toBeUndefined();
+  });
+
+  it('blocks a script after a vanishing positional operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh -- $9 commit.sh'), directory);
+  });
+
+  it.each(['$?', '$#', '$0'])(
     'allows a non-vanishing expansion on the standard input of a file operand: %s',
     (word) => {
       const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
