@@ -315,12 +315,28 @@ describe('guardToolCall', () => {
     expect(guard(makeBashEvent('sh -- ./"$SCRIPT".sh < commit.sh'), directory)).toBeUndefined();
   });
 
+  it('blocks a committing redirect on the standard input of an empty operand', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('sh -- $SCRIPT < commit.sh'), directory);
+  });
+
   it('allows a harmless brace script with positional data after --', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
     writeScript(directory, '{a,b}/clean.sh', 'echo hi\n');
 
     expect(guard(makeBashEvent("sh '{a,b}/clean.sh' -- '$CMD'"), directory)).toBeUndefined();
+  });
+
+  it('blocks a committing script behind a brace mode option', () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
+
+    writeScript(directory, 'commit.sh', 'git commit -m x\n');
+
+    expectOutcome(makeBashEvent('bash {-O,extglob} ./commit.sh'), directory);
   });
 
   it.each(['#!/usr/bin/env node', '#!/usr/bin/python3'])(
