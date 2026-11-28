@@ -128,6 +128,7 @@ it('a launch past its deadline is stopped, stop runs, and launch returns failed'
   }
 
   expect(existsSync(marker)).toBe(true);
+  expect(launch.logPath.endsWith('launch.log')).toBe(true);
 
   const read = await readRunRecord(runRecordPath(launch.directory));
 
@@ -139,6 +140,55 @@ it('a launch past its deadline is stopped, stop runs, and launch returns failed'
 
   expect(read.record.launch?.exitCode).toBeNull();
   expect(read.record.stop?.exitCode).toBe(0);
+});
+
+it('a timed-out launch whose stop fails returns stopped false and a later stop succeeds', async () => {
+  const { root, run } = await createToolRepository(onTestFinished, { launchScript: 'sleep 5' });
+  const configPath = join(root, '.pi', 'tau.json');
+
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
+    verification: { targets: { app: { stop: string[] } } };
+  };
+
+  config.verification.targets.app.stop = ['sh', '-c', 'exit 7'];
+  await writeFile(configPath, JSON.stringify(config));
+
+  const launched = await run({ action: 'launch', target: 'app' }, 200);
+  const launch = launched.details as LaunchResult;
+
+  expect(launch).toMatchObject({ status: 'failed', command: 'launch', stopped: false });
+
+  if (launch.status !== 'failed') {
+    return;
+  }
+
+  const failed = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(failed.status).toBe('valid');
+
+  if (failed.status !== 'valid') {
+    return;
+  }
+
+  expect(failed.record.stop).toBeNull();
+
+  config.verification.targets.app.stop = ['sh', '-c', 'exit 0'];
+  await writeFile(configPath, JSON.stringify(config));
+
+  const stopped = await run({ action: 'stop', run: launch.run });
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({ stopped: true, exitCode: 0 });
+
+  const stoppedRecord = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(stoppedRecord.status).toBe('valid');
+
+  if (stoppedRecord.status !== 'valid') {
+    return;
+  }
+
+  expect(stoppedRecord.record.stop?.exitCode).toBe(0);
 });
 
 it('a non-zero launch returns failed for launch and skips doctor', async () => {

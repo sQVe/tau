@@ -2,7 +2,7 @@ import { mkdir, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
-import { writeRecord } from '../../record.js';
+import { publishTextSync, recordText } from '../../record.js';
 import { climbsOut, existingEntry } from '../../tauDirectory.js';
 import { isItemName, itemRecordVersion } from '../../verification/records.js';
 import type { ItemRecord } from '../../verification/records.js';
@@ -16,6 +16,9 @@ import { decideItemWrite } from './itemDecision.js';
 import type { ArtifactFact } from './itemDecision.js';
 import type { RecordInput } from './recordParameters.js';
 import { checkRecordDirectory, findRunDirectory } from './runDirectory.js';
+
+// The mode writeFile gives a record, before the umask applies.
+const itemRecordMode = 0o666;
 
 const artifactLocation = async (
   directory: string,
@@ -91,7 +94,19 @@ export const recordItem = async (
 
   await checkRecordDirectory(recordRoot, dirname(path));
   await mkdir(dirname(path), { recursive: true });
-  await writeRecord(path, record);
+
+  try {
+    publishTextSync(path, recordText(record), { mode: itemRecordMode });
+  } catch (error) {
+    if (hasErrorCode(error, 'EEXIST')) {
+      throw new Error(
+        `Item ${input.item} already has a result in run ${input.run}. Each item is recorded once.`,
+        { cause: error },
+      );
+    }
+
+    throw error;
+  }
 
   return { run: input.run, item: input.item, path };
 };

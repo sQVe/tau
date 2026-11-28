@@ -117,7 +117,7 @@ export const launchRun = async (context: LaunchContext): Promise<LaunchResult> =
   await writeRunRecord(directory, record);
 
   if (launchOutcome.kind === 'stopped') {
-    await stopRun({
+    const stop = await stopRun({
       checkoutRoot: context.checkoutRoot,
       directory,
       deadlineMilliseconds: context.deadlineMilliseconds,
@@ -126,7 +126,7 @@ export const launchRun = async (context: LaunchContext): Promise<LaunchResult> =
       readTarget: () => context.commands,
     });
 
-    return failedResult(run, directory, 'launch', launchOutcome, 'launch.log', true);
+    return failedResult(run, directory, 'launch', launchOutcome, 'launch.log', stop.stopped);
   }
 
   if (launchOutcome.kind !== 'exited' || launchOutcome.exitCode !== 0) {

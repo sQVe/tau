@@ -1,13 +1,23 @@
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, readdir, rename, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { isMissingFile } from '../../errors.js';
-import type { RunRecord } from '../../verification/records.js';
+import { errorMessage, isMissingFile } from '../../errors.js';
+import { itemRecordVersion } from '../../verification/records.js';
+import type { ItemRecord, RunRecord } from '../../verification/records.js';
 import {
   itemRecordPath,
   readItemRecord,
@@ -343,4 +353,98 @@ it('saves two items recorded at once', async () => {
     { item: 'journeys/one', status: 'valid' },
     { item: 'journeys/two', status: 'valid' },
   ]);
+});
+
+it('surfaces a publication failure that is not a duplicate', async () => {
+  if (process.getuid?.() === 0) {
+    return;
+  }
+
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+  });
+
+  await mkdir(join(directory, 'screenshots'), { recursive: true });
+  await writeFile(join(directory, 'screenshots', 'step-1.png'), 'png');
+
+  const itemDirectory = join(directory, 'items', 'journeys');
+
+  await mkdir(itemDirectory, { recursive: true });
+  await chmod(itemDirectory, 0o500);
+  onTestFinished(() => chmod(itemDirectory, 0o700));
+
+  const failure = await failureMessage(recordItem(root, validInput()));
+
+  expect(failure).toContain('EACCES');
+
+  expect(failure).not.toBe(
+    `Item ${item} already has a result in run ${run}. Each item is recorded once.`,
+  );
+});
+
+it('gives the item file the mode a new record gets', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+  });
+
+  await mkdir(join(directory, 'screenshots'), { recursive: true });
+  await writeFile(join(directory, 'screenshots', 'step-1.png'), 'png');
+
+  const saved = await recordItem(root, validInput());
+  const reference = join(directory, 'reference');
+
+  await writeFile(reference, '');
+
+  expect((await stat(saved.path)).mode).toBe((await stat(reference)).mode);
+});
+
+it('refuses a concurrent second write for one item and keeps the first bytes', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+  });
+
+  await mkdir(join(directory, 'screenshots'), { recursive: true });
+  await writeFile(join(directory, 'screenshots', 'step-1.png'), 'png');
+
+  const inputWithObserved = (observed: string) => {
+    const input = validInput();
+
+    input.steps[1] = { status: 'differs', observed, artifacts: [] };
+
+    return { ...input, endState: { status: 'passed' as const } };
+  };
+
+  const inputs = [inputWithObserved('first'), inputWithObserved('second')];
+  const results = await Promise.allSettled(inputs.map((input) => recordItem(root, input)));
+
+  const fulfilled = results.filter((result) => result.status === 'fulfilled');
+
+  const failures = results.flatMap((result) =>
+    result.status === 'rejected' ? [errorMessage(result.reason)] : [],
+  );
+
+  expect({ fulfilled: fulfilled.length, failures }).toEqual({
+    fulfilled: 1,
+    failures: [`Item ${item} already has a result in run ${run}. Each item is recorded once.`],
+  });
+
+  const winnerIndex = results.findIndex((result) => result.status === 'fulfilled');
+  const winner = inputs[winnerIndex];
+
+  if (winner === undefined) {
+    throw new Error('No write won the race.');
+  }
+
+  const expected: ItemRecord = {
+    version: itemRecordVersion,
+    run,
+    item,
+    drive: 'hand',
+    steps: winner.steps.map((step, index) => ({ ...step, number: index + 1 })),
+    endState: winner.endState,
+  };
+
+  expect(await readFile(itemRecordPath(directory, item), 'utf8')).toBe(
+    `${JSON.stringify(expected, null, 2)}\n`,
+  );
 });

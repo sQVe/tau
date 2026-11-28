@@ -52,9 +52,9 @@ const parameters = Type.Object({
 });
 
 const description = `Manage a verification run on a target. A run is saved in the shared repository root's .tau/verification/<run>/run.json. Config, commands, and the tree stay on the checkout.
-- launch: start the target's launch and doctor commands. Needs target. Returns ready with run and directory, or failed with command, exitCode, logPath, stopped. A launch stopped by the deadline or a cancel runs stop and returns stopped true. A failed launch or doctor returns stopped false; call stop.
+- launch: start the target's launch and doctor commands. Needs target. Returns ready with run and directory, or failed with command, exitCode, logPath, stopped. A launch stopped by deadline or cancel runs stop and returns its stopped status. A failed launch or doctor returns stopped false; call stop.
 - register: add items to a ready run. Needs run and items, each {item, steps}. Returns run, directory, and items. Refuses a stopped run or a run without a passing doctor.
-- stop: run the target's stop command and keep the run directory. Needs run. Call it from the checkout that launched the run. Returns run, directory, exitCode, logPath, and freshness. freshness compares the run's tree with the current tree.`;
+- stop: run the target's stop command and keep the run directory. Needs run. Call it from the launching checkout. Returns stopped, run, directory, exitCode, logPath, and freshness. freshness compares the run's tree with the current tree.`;
 
 const parseAction = (input: Static<typeof parameters>): ParsedAction => {
   if (input.action === 'launch') {

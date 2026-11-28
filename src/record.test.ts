@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
@@ -207,6 +207,28 @@ it('a fence that allows the write publishes the record', async () => {
   expect(reason).toBeUndefined();
   expect(await readFile(path, 'utf8')).toBe('{\n  "version": 2\n}\n');
   expect(await readdir(directory)).toEqual(['a.json']);
+});
+
+it('fails before publishing when the destination directory cannot be opened', async () => {
+  if (process.getuid?.() === 0) {
+    return;
+  }
+
+  const directory = await directoryFixture();
+  const locked = join(directory, 'locked');
+
+  await mkdir(locked, { mode: 0o300 });
+  onTestFinished(() => chmod(locked, 0o700));
+
+  expect(
+    thrownBy(() => {
+      publishTextSync(join(locked, 'a.json'), 'text', { mode: 0o600 });
+    }),
+  ).toMatchObject({ code: 'EACCES' });
+
+  await chmod(locked, 0o700);
+
+  expect(await readdir(locked)).toEqual([]);
 });
 
 it('publishes text once and leaves no receipt file', async () => {

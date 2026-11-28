@@ -142,7 +142,7 @@ const refuseSymlink = async (path: string): Promise<void> => {
   }
 };
 
-const recordText = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+export const recordText = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
 // Writes a new file and renames it over the record, so a failed write keeps the old record or none.
 // The rename replaces a link at the path instead of following it.
@@ -203,16 +203,6 @@ export const writeFencedRecord = async (
 export const savedVersion = (value: unknown): unknown =>
   isRecord(value) ? value['version'] : undefined;
 
-const fsyncPath = (path: string, flags: string) => {
-  const descriptor = openSync(path, flags);
-
-  try {
-    fsyncSync(descriptor);
-  } finally {
-    closeSync(descriptor);
-  }
-};
-
 // Publishes a complete file without replacing an existing record. The temporary name starts with
 // `.receipt-`, which readers of unpublished folders match.
 export const publishTextSync = (path: string, text: string, options: { mode: number }): void => {
@@ -227,8 +217,14 @@ export const publishTextSync = (path: string, text: string, options: { mode: num
       closeSync(descriptor);
     }
 
-    linkSync(temporary, path);
-    fsyncPath(dirname(path), 'r');
+    const directory = openSync(dirname(path), 'r');
+
+    try {
+      linkSync(temporary, path);
+      fsyncSync(directory);
+    } finally {
+      closeSync(directory);
+    }
   } finally {
     unlinkSync(temporary);
   }

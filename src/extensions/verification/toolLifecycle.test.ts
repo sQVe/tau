@@ -299,3 +299,103 @@ it('refuses to stop when the run record is not a regular file', async () => {
     stopped: false,
   });
 });
+
+const replaceStopCommand = async (configPath: string, stop: string[]): Promise<void> => {
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
+    verification: { targets: { app: { stop: string[] } } };
+  };
+
+  config.verification.targets.app.stop = stop;
+  await writeFile(configPath, JSON.stringify(config));
+};
+
+it('keeps a run open when its stop command exits nonzero', async () => {
+  const { root, run } = await createToolRepository(onTestFinished);
+  const launch = (await run({ action: 'launch', target: 'app' })).details as LaunchResult;
+
+  if (launch.status !== 'ready') {
+    throw new Error('The launch did not become ready.');
+  }
+
+  const configPath = join(root, '.pi', 'tau.json');
+
+  await replaceStopCommand(configPath, ['sh', '-c', 'exit 7']);
+
+  const stopped = await run({ action: 'stop', run: launch.run });
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({
+    stopped: false,
+    run: launch.run,
+    exitCode: 7,
+    freshness: { fresh: false, reason: 'notStopped' },
+  });
+
+  expect(stop.logPath.endsWith('stop.log')).toBe(true);
+  expect(existsSync(stop.logPath)).toBe(true);
+
+  const failed = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(failed.status).toBe('valid');
+
+  if (failed.status !== 'valid') {
+    return;
+  }
+
+  expect(failed.record.stop).toBeNull();
+  expect(failed.record.treeAtStop).toBeNull();
+
+  await replaceStopCommand(configPath, ['sh', '-c', 'exit 0']);
+
+  const retried = await run({ action: 'stop', run: launch.run });
+  const retry = retried.details as StopResult;
+
+  expect(retry).toMatchObject({ stopped: true, run: launch.run, exitCode: 0 });
+  expect(retry.logPath.endsWith('stop-2.log')).toBe(true);
+
+  const stoppedRecord = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(stoppedRecord.status).toBe('valid');
+
+  if (stoppedRecord.status !== 'valid') {
+    return;
+  }
+
+  expect(stoppedRecord.record.stop?.exitCode).toBe(0);
+  expect(stoppedRecord.record.stop?.logPath).toBe('stop-2.log');
+});
+
+it('keeps a run open when its stop command reaches the deadline', async () => {
+  const { root, run } = await createToolRepository(onTestFinished);
+  const launch = (await run({ action: 'launch', target: 'app' })).details as LaunchResult;
+
+  if (launch.status !== 'ready') {
+    throw new Error('The launch did not become ready.');
+  }
+
+  await replaceStopCommand(join(root, '.pi', 'tau.json'), ['sh', '-c', 'sleep 5']);
+
+  const stopped = await run({ action: 'stop', run: launch.run }, 200);
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({
+    stopped: false,
+    run: launch.run,
+    exitCode: null,
+    freshness: { fresh: false, reason: 'notStopped' },
+  });
+
+  expect(stop.logPath.endsWith('stop.log')).toBe(true);
+  expect(existsSync(stop.logPath)).toBe(true);
+
+  const failed = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(failed.status).toBe('valid');
+
+  if (failed.status !== 'valid') {
+    return;
+  }
+
+  expect(failed.record.stop).toBeNull();
+  expect(failed.record.treeAtStop).toBeNull();
+});

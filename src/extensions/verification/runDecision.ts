@@ -72,7 +72,7 @@ export const decideRegister = (
 };
 
 export const decideStop = (run: Pick<RunRecord, 'stop'>): StopDecision => {
-  if (run.stop === null) {
+  if (run.stop?.exitCode !== 0) {
     return { kind: 'accept' };
   }
 

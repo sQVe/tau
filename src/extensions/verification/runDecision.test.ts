@@ -153,6 +153,16 @@ const stopTable: {
     facts: { stop: { exitCode: 0, logPath: 'stop.log' } },
     expected: { kind: 'refuse', reason: 'The run is already stopped.' },
   },
+  {
+    name: 'accepts a retry when the saved stop exited nonzero',
+    facts: { stop: { exitCode: 7, logPath: 'stop.log' } },
+    expected: { kind: 'accept' },
+  },
+  {
+    name: 'accepts a retry when the saved stop was killed',
+    facts: { stop: { exitCode: null, logPath: 'stop.log' } },
+    expected: { kind: 'accept' },
+  },
 ];
 
 it.each(stopTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {

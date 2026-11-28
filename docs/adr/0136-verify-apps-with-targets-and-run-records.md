@@ -34,8 +34,8 @@ run, and reads those records instead of parsing QA prose.
 
 - Each entry command must exit. Tau runs it with a deadline, and runs stop after a launch timeout or
   a cancelled launch, so a hung or abandoned launcher cannot hold the run.
-- A stop that is cancelled or cannot start saves nothing, so the manager can call stop again. A stop
-  that ran is saved, even when it was killed or timed out.
+- A stop that is cancelled, cannot start, or does not exit 0 saves nothing, so the manager can call
+  stop again. The attempt stays in its log. Only a stop that exits 0 marks the run stopped.
 - Tau passes `TAU_VERIFICATION_RUN` and `TAU_VERIFICATION_DIRECTORY`. Each app derives its instance,
   such as a port or socket, from the run, so two runs do not collide.
 - Doctor exits non-zero when the running build does not match the checkout, not only when the app is
@@ -60,9 +60,9 @@ run, and reads those records instead of parsing QA prose.
   visible.
 - Only the manager's tool writes `run.json`. Each item result is its own file, `items/<item>.json`,
   written by the `qa` worker's tool. No two writers share a file, so no lock is needed.
-- The write-once check is not atomic. Two workers that record the same item in one run can race, and
-  the later result wins. The QA launch procedure assigns each item to one worker. We accept this
-  limit.
+- Each item file is published atomically and never replaces an existing file. Two workers that
+  record the same item in one run cannot both succeed; the later write refuses with the
+  registered-item error.
 - The run and item files are versioned saved records, and the schemas live in
   `src/verification/records.ts`. [ADR 0053](./0053-version-each-saved-record-format.md) owns their
   versions, reader outcomes, atomic publication, and fixtures.
@@ -74,9 +74,9 @@ run, and reads those records instead of parsing QA prose.
 
 ### Freshness
 
-- A run is fresh when the tree identity at launch equals the one at stop and the current one, and
-  doctor exited 0. A null identity is never fresh, because an unknown tree can never be shown to
-  match.
+- A run is fresh when the tree identity at launch equals the one at stop and the current one, doctor
+  exited 0, and the saved stop exited 0. A saved stop that did not exit 0 is not fresh. A null
+  identity is never fresh, because an unknown tree can never be shown to match.
 - The identity is the content-based tree identity from
   [ADR 0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md).
 
@@ -106,8 +106,8 @@ run, and reads those records instead of parsing QA prose.
 
 ### Negative
 
-- Two workers that record the same item in one run can race, and the later result wins. The launch
-  procedure must assign each item to one worker.
+- An item result is published once. A second writer for the same item gets a refusal instead of
+  replacing the first result.
 - Fresh evidence needs a launch, doctor, drive, and stop after each change, so a full verification
   costs more than a prose note.
 - An app must keep three working entry commands, and a broken doctor hides its evidence.

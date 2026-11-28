@@ -6,6 +6,7 @@ export type Freshness =
       fresh: false;
       reason:
         | 'notStopped'
+        | 'stopFailed'
         | 'noIdentity'
         | 'treeChangedDuringRun'
         | 'treeChangedSinceRun'
@@ -22,6 +23,10 @@ const doctorPassed = (record: FreshnessFacts): boolean => record.doctor?.exitCod
 export const decideFreshness = (record: FreshnessFacts, currentTree: string | null): Freshness => {
   if (record.stop === null) {
     return { fresh: false, reason: 'notStopped' };
+  }
+
+  if (record.stop.exitCode !== 0) {
+    return { fresh: false, reason: 'stopFailed' };
   }
 
   if (!hasIdentity(record, currentTree)) {
