@@ -56,6 +56,10 @@ export const isUnresolvedWord = (word: string): boolean => {
 export const commandName = (word: string): string =>
   word.slice(word.lastIndexOf('/') + 1).toLowerCase();
 
+// An unquoted expansion anywhere in a word can split into more words. A variable in a directory
+// segment of a command word cannot, because the shell resolves it as a path.
+const expandsAnywhere = (word: string): boolean => /[$`]/u.test(word) || isBraceExpansion(word);
+
 const unresolvedGitWord = (words: readonly string[]): boolean => {
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index] ?? '';
@@ -71,7 +75,11 @@ const unresolvedGitWord = (words: readonly string[]): boolean => {
     // An attached value stays one argument only when nothing in it can expand. An unquoted
     // expansion can split into more words, and one of them can be the subcommand. The parser drops
     // quotes, so a quoted value is blocked too; that false block is the cost of closing the bypass.
-    if (attachedValue !== undefined && !isUnresolvedWord(attachedValue)) {
+    if (attachedValue !== undefined) {
+      if (expandsAnywhere(attachedValue)) {
+        return true;
+      }
+
       continue;
     }
 

@@ -30,6 +30,16 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     expected: { kind: 'stdin', codes: [] },
   },
   {
+    name: 'skips a plain option before the file operand',
+    words: ['--norc', 'script.sh'],
+    expected: { kind: 'file', names: ['script.sh'], codes: [] },
+  },
+  {
+    name: 'skips an option and its value before the file operand',
+    words: ['--rcfile', 'profile.sh', 'script.sh'],
+    expected: { kind: 'file', names: ['script.sh'], codes: [] },
+  },
+  {
     name: 'reads a literal file operand',
     words: ['script.sh'],
     expected: { kind: 'file', names: ['script.sh'], codes: [] },
@@ -58,6 +68,11 @@ const table: { name: string; words: string[]; expected: ShellMode }[] = [
     name: 'keeps a candidate before --',
     words: ['{a,b}/commit.sh', '--'],
     expected: { kind: 'file', names: ['{a,b}/commit.sh'], codes: ['--'] },
+  },
+  {
+    name: 'adds the word after -- as code for a recorded candidate',
+    words: ['$MODE', '--', 'script.sh'],
+    expected: { kind: 'file', names: ['$MODE'], codes: ['--', 'script.sh'] },
   },
   {
     name: 'reads the single candidate after -- and ignores the later words',

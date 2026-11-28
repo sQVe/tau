@@ -17,7 +17,7 @@ type ResolvedModeStep =
 
 export const isOptionWord = (word: string): boolean => word.startsWith('-') || word.startsWith('+');
 
-const optionValueNames = new Set(['-o', '+o', '-O', '--rcfile', '--init-file']);
+const optionValueNames = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file']);
 
 // A `-` short-option word, split into its letters and the tail attached to them.
 const shortOption = (word: string): ShortOption | undefined => {
@@ -150,11 +150,15 @@ const modeAtDoubleDash = (
   codes: string[],
   names: string[],
 ): ShellMode => {
-  if (names.length > 0) {
-    return { kind: 'file', names, codes };
-  }
-
   const name = words[index + 1];
+
+  if (names.length > 0) {
+    return {
+      kind: 'file',
+      names,
+      codes: name === undefined ? codes : [...codes, name],
+    };
+  }
 
   return name === undefined ? { kind: 'stdin', codes } : { kind: 'file', names: [name], codes };
 };
