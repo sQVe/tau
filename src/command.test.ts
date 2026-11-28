@@ -56,6 +56,15 @@ it('marks a truncated failure that printed nothing', () => {
   expect(failure?.message).toBe('git push failed: exit code 3 (output truncated)');
 });
 
+it('names a killed command whose output was also cut', () => {
+  const failure = commandFailure(
+    'herdr-app do',
+    failedResult({ killed: true, truncated: true, stderr: 'starting pi...' }),
+  );
+
+  expect(failure?.message).toBe('herdr-app do failed: starting pi... (killed) (output truncated)');
+});
+
 it('names the command when a cancelled call rejects with a non-Error reason', async () => {
   const controller = new AbortController();
   const reason: unknown = 'stopped';
